@@ -5,6 +5,10 @@ module Snarky.Curves.Pallas
 
 import Prelude
 
+import Random.LCG (unSeed)
+import Test.QuickCheck (class Arbitrary)
+import Test.QuickCheck.Gen (stateful)
+
 foreign import data ScalarField :: Type
 foreign import zero :: Unit -> ScalarField
 foreign import one :: Unit -> ScalarField
@@ -72,3 +76,9 @@ fieldToString = toString
 
 instance Show ScalarField where
   show = fieldToString
+
+foreign import rand :: Int -> ScalarField
+
+instance Arbitrary ScalarField where
+  arbitrary = stateful \{newSeed} -> 
+    pure $ rand $ unSeed newSeed

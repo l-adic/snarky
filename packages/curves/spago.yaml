@@ -3,11 +3,12 @@ package:
   dependencies:
     - prelude
     - effect
+    - lcg
+    - quickcheck
   test:
     main: Test.Main
     dependencies:
       - spec
       - spec-quickcheck
-      - quickcheck
       - quickcheck-laws
       - aff
