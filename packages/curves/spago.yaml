@@ -1,0 +1,13 @@
+package:
+  name: curves
+  dependencies:
+    - prelude
+    - effect
+  test:
+    main: Test.Main
+    dependencies:
+      - spec
+      - spec-quickcheck
+      - quickcheck
+      - quickcheck-laws
+      - aff

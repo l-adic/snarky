@@ -1,0 +1,20 @@
+{
+  "name": "curves-napi",
+  "version": "0.1.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "curves-napi",
+    "triples": {}
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.4.1"
+  },
+  "scripts": {
+    "build-pallas": "cargo build --release --features pallas && cp target/release/libcurves_napi.so ../src/Snarky/Curves/pallas-napi.node",
+    "build-vesta": "cargo build --release --features vesta && cp target/release/libcurves_napi.so ../src/Snarky/Curves/vesta-napi.node",
+    "build-bn254": "cargo build --release --features bn254 && cp target/release/libcurves_napi.so ../src/Snarky/Curves/bn254-napi.node",
+    "build": "npm run build-pallas && npm run build-vesta && npm run build-bn254",
+    "build-debug": "napi build --platform"
+  }
+}

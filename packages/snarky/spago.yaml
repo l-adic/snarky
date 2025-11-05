@@ -1,0 +1,11 @@
+package:
+  name: snarky
+  dependencies:
+    - curves
+    - prelude
+    - effect
+    - console
+  test:
+    main: Test.Main
+    dependencies:
+      - spec

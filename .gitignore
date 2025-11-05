@@ -1,0 +1,32 @@
+
+# PureScript build artifacts
+bower_components/
+node_modules/
+.pulp-cache/
+output/
+output-es/
+generated-docs/
+.psc-package/
+.psc*
+.purs*
+.psa*
+.spago
+
+# Spago lockfiles (should be committed)
+# spago.lock
+
+# Package-specific build artifacts
+packages/*/output/
+packages/*/node_modules/
+
+# Native modules and Rust artifacts
+*.node
+packages/curves/curves-napi/target/
+packages/curves/curves-napi/node_modules/
+packages/curves/curves-napi/Cargo.lock
+packages/curves/curves-napi/*.d.ts
+packages/curves/curves-napi/*.js
+packages/curves/curves-napi/*.linux-*.node
+
+# FFI bindings in source (generated from build)
+packages/curves/src/FiniteField/*.node
