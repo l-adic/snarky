@@ -11,10 +11,10 @@ build-napi:
 	cd $(NAPI_DIR) && npm run build
 
 build: install-deps build-napi
-	spago build
+	npx spago build
 
 test: build
-	spago test
+	npx spago test
 
 clean:
 	rm -rf output ../../node_modules

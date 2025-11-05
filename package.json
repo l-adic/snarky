@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "make test"
   },
   "repository": {
     "type": "git",
@@ -20,5 +20,9 @@
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
     "curves-napi": "file:./packages/curves/curves-napi"
+  },
+  "devDependencies": {
+    "purescript": "^0.15.15",
+    "spago": "^0.93.42"
   }
 }

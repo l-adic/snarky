@@ -11,16 +11,16 @@ build-curves: ## Build curves package (includes native compilation)
 	cd packages/curves && $(MAKE) all
 
 build-snarky: build-curves ## Build snarky package (depends on curves being built)
-	cd packages/snarky && spago build
+	cd packages/snarky && npx spago build
 
 test-curves: build-curves ## Test curves
-	cd packages/curves && spago test
+	cd packages/curves && npx spago test
 
 test-snarky: build-snarky ## Test snarky
-	cd packages/snarky && spago test
+	cd packages/snarky && npx spago test
 
 run-snarky: build-snarky ## Run snarky main
-	cd packages/snarky && spago run
+	cd packages/snarky && npx spago run
 
 test: test-curves test-snarky ## Test everything
 
