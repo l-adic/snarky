@@ -1,7 +1,6 @@
 module Snarky.Curves.BN254
   ( ScalarField
-  )
-  where
+  ) where
 
 import Prelude
 
@@ -18,7 +17,7 @@ foreign import mul :: ScalarField -> ScalarField -> ScalarField
 fieldZero :: ScalarField
 fieldZero = zero unit
 
-fieldOne :: ScalarField  
+fieldOne :: ScalarField
 fieldOne = one unit
 
 fieldAdd :: ScalarField -> ScalarField -> ScalarField
@@ -80,5 +79,5 @@ instance Show ScalarField where
 foreign import rand :: Int -> ScalarField
 
 instance Arbitrary ScalarField where
-  arbitrary = stateful \{newSeed} -> 
+  arbitrary = stateful \{ newSeed } ->
     pure $ rand $ unSeed newSeed

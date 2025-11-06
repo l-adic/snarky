@@ -5,7 +5,15 @@ package:
     - prelude
     - effect
     - console
+    - quickcheck
+    - ordered-collections
+    - maybe
+    - foldable-traversable
+    - tuples
+    - arrays
   test:
     main: Test.Main
     dependencies:
       - spec
+      - aff
+      - debug
