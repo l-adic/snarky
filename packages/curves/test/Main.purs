@@ -12,7 +12,7 @@ import Test.Vesta as VestaTest
 import Test.BN254 as BN254Test
 
 main :: Effect Unit
-main = launchAff_ $ runSpec [consoleReporter] do
+main = launchAff_ $ runSpec [ consoleReporter ] do
   PallasTest.spec
   VestaTest.spec
   BN254Test.spec

@@ -48,3 +48,20 @@ jobs:
     
     - name: Build and test
       run: npm test
+
+  format-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Check PureScript formatting
+      run: npx purs-tidy check "packages/**/*.purs"

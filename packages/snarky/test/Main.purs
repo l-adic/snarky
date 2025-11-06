@@ -3,8 +3,11 @@ module Test.Main where
 import Prelude
 
 import Effect (Effect)
-import Effect.Console (log)
+import Effect.Aff (launchAff_)
+import Snarky.Test.Circuit.Affine as AffineTests
+import Test.Spec.Reporter (consoleReporter)
+import Test.Spec.Runner (runSpec)
 
 main :: Effect Unit
-main = do
-  log "Snarky tests: All good! 🎉"
+main = launchAff_ $ runSpec [ consoleReporter ] do
+  AffineTests.spec

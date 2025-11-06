@@ -12,20 +12,20 @@ spec :: Spec Unit
 spec = describe "Pallas Field Laws" do
   it "satisfies Eq laws" $ liftEffect $
     Laws.checkEq prxTestPallas
-  
+
   it "satisfies Semiring laws" $ liftEffect $
     Laws.checkSemiring prxTestPallas
-  
+
   it "satisfies Ring laws" $ liftEffect $
     Laws.checkRing prxTestPallas
-  
+
   it "satisfies CommutativeRing laws" $ liftEffect $
     Laws.checkCommutativeRing prxTestPallas
-  
+
   it "satisfies EuclideanRing laws" $ liftEffect $
     Laws.checkEuclideanRing prxTestPallas
-  
+
   it "satisfies DivisionRing laws" $ liftEffect $
     Laws.checkDivisionRing prxTestPallas
   where
-    prxTestPallas = Proxy :: Proxy ScalarField
+  prxTestPallas = Proxy :: Proxy ScalarField
