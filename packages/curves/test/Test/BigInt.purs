@@ -16,12 +16,11 @@ newtype TestBigInt = TestBigInt BigInt
 derive newtype instance Eq TestBigInt
 derive newtype instance Show TestBigInt
 
--- Arbitrary instance for TestBigInt
+-- Arbitrary instance for TestBigInt - includes both positive and negative integers
 instance Arbitrary TestBigInt where
   arbitrary = do
     n <- arbitrary :: Gen Int
-    let absN = if n >= 0 then n else (-n)
-    pure $ TestBigInt $ BigInt.fromInt absN
+    pure $ TestBigInt $ BigInt.fromInt n
 
 -- Generic ring homomorphism test functions
 -- Test that fromBigInt preserves addition: f(a) + f(b) = f(a + b)

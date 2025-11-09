@@ -1,11 +1,12 @@
-use ark_ff::{Field, Zero, One, UniformRand, PrimeField};
+use crate::bigint::napi_bigint_to_ark_bigint;
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_pallas::Fq as VestaFr;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::str::FromStr;
-use num_bigint::BigUint;
 
 type FieldExternal = External<VestaFr>;
 
@@ -22,7 +23,7 @@ pub fn vesta_one() -> FieldExternal {
 #[napi]
 pub fn vesta_from_string(s: String) -> Result<FieldExternal> {
     VestaFr::from_str(&s)
-        .map(|value| External::new(value))
+        .map(External::new)
         .map_err(|_| Error::from_reason("Failed to parse field element"))
 }
 
@@ -52,7 +53,7 @@ pub fn vesta_div(a: &FieldExternal, b: &FieldExternal) -> Result<FieldExternal> 
 #[napi]
 pub fn vesta_invert(a: &FieldExternal) -> Result<FieldExternal> {
     a.inverse()
-        .map(|value| External::new(value))
+        .map(External::new)
         .ok_or_else(|| Error::from_reason("Cannot invert zero"))
 }
 
@@ -74,22 +75,9 @@ pub fn vesta_rand(seed: u32) -> FieldExternal {
 
 #[napi]
 pub fn vesta_from_bigint(bigint: BigInt) -> Result<FieldExternal> {
-    // Check if negative
-    if bigint.sign_bit {
-        return Err(Error::from_reason("Negative BigInt not supported for field elements"));
-    }
-    
-    // Convert u64 words to u32 words for num_bigint::BigUint
-    let mut u32_words = Vec::new();
-    for word in bigint.words {
-        // Split each u64 into two u32s (little-endian)
-        u32_words.push(word as u32);
-        u32_words.push((word >> 32) as u32);
-    }
-    let biguint = BigUint::new(u32_words);
-    
-    // Use PrimeField's From<BigUint> trait (automatically reduces modulo p)
-    let field_elem = VestaFr::from(biguint);
+    // Use the bigint module to handle conversion with proper modular reduction
+    let ark_bigint = napi_bigint_to_ark_bigint::<VestaFr, 4>(bigint)?;
+    let field_elem = VestaFr::from(ark_bigint);
     Ok(External::new(field_elem))
 }
 
@@ -97,10 +85,10 @@ pub fn vesta_from_bigint(bigint: BigInt) -> Result<FieldExternal> {
 pub fn vesta_modulus() -> BigInt {
     // Convert modulus to BigUint and then to NAPI BigInt
     let modulus_biguint: BigUint = VestaFr::MODULUS.into();
-    
+
     // Get the u64 limbs (little-endian)
     let limbs: Vec<u64> = modulus_biguint.to_u64_digits();
-    
+
     BigInt {
         sign_bit: false,
         words: limbs,
