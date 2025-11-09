@@ -4,19 +4,21 @@ import Prelude
 
 import Control.Monad.Reader (class MonadAsk, Reader, ask)
 import Control.Monad.State (class MonadState, class MonadTrans, StateT, evalStateT)
-import Data.Array (foldMap, foldl, uncons)
+import Data.Array (foldMap, foldl)
 import Data.Array as Array
 import Data.Bifunctor (class Bifunctor)
-import Data.Foldable (class Foldable, foldM)
+import Data.Foldable (class Foldable)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (class Newtype, un)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..))
+import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Affine (AffineCircuit(..), subtract)
 import Snarky.Circuit.Affine as AffineCircuit
+import Snarky.Circuit.Types (class PrimeField, fromBigInt)
 import Type.Proxy (Proxy(..))
 
 data Gate f i
@@ -378,14 +380,13 @@ any_ as =
     Nothing -> pure false_
     Just { head: a0, tail } -> case Array.uncons tail of
       Nothing -> pure a0
-      Just { a1, tail: rest } ->
+      Just { head: a1, tail: rest } ->
         if Array.null rest then a0 `or_` a1
         else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f m
-   . Field f
-  => Eq f
+  :: forall f m.
+     PrimeField f
   => CircuitBuilderM f m
   => Array (AffineCircuit f BooleanVariable)
   -> m (AffineCircuit f BooleanVariable)
@@ -395,5 +396,8 @@ all_ as =
     Just { head: a0, tail } -> case Array.uncons tail of
       Nothing -> pure a0
       Just { head: a1, tail: rest } ->
-        if Array.null rest then a0 `and_` a1
-        else eq_ (sum_ (coerce as)) (Const $ Array.length as)
+        if Array.null rest 
+          then a0 `and_` a1
+          else 
+            let n = fromBigInt $ BigInt.fromInt $ Array.length as
+            in eq_ (sum_ (coerce as)) (Const n)
