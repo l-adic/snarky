@@ -45,6 +45,27 @@ instance (Arbitrary f, Arbitrary i) => Arbitrary (AffineCircuit f i) where
       where
       subCircuit = go (n `div` 2)
 
+instance (Field f, Eq f) => Semigroup (AffineCircuit f i) where
+  append a b = case a, b of
+    Const f, Const f' -> Const (f + f')
+    Const f, c | f == zero -> c
+    c, Const f | f == zero -> c
+    _, _ -> Add a b
+
+instance (Field f, Eq f) => Monoid (AffineCircuit f i) where
+  mempty = Const zero
+
+subtract :: forall f i. Field f => Eq f => AffineCircuit f i -> AffineCircuit f i -> AffineCircuit f i
+subtract a b = case a, b of
+  Const f, Const f' -> Const (f - f')
+  _, _ -> a <> (scale (negate one) b)
+
+scale :: forall f i. Field f => Eq f => f -> AffineCircuit f i -> AffineCircuit f i
+scale f c
+  | f == zero = Const zero
+  | f == one = c
+  | otherwise = ScalarMul f c
+
 -- Given a way of looking up variable assignmetns 'i -> vars -> Maybe f', 
 -- recursively evaluate the AffineCircuit
 eval
@@ -81,7 +102,7 @@ reduce c = case c of
     }
   Add l r -> AffineExpression
     { constant: constLeft + constRight
-    , terms: Map.unionWith add termsLeft termsRight
+    , terms: Map.unionWith (+) termsLeft termsRight
     }
     where
     AffineExpression { constant: constLeft, terms: termsLeft } = reduce l

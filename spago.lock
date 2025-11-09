@@ -138,6 +138,7 @@
             "ordered-collections",
             "prelude",
             "quickcheck",
+            "safe-coerce",
             "tuples"
           ],
           "build_plan": [

@@ -11,6 +11,7 @@ package:
     - foldable-traversable
     - tuples
     - arrays
+    - safe-coerce
   test:
     main: Test.Main
     dependencies:
