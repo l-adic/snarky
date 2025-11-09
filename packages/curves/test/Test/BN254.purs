@@ -4,8 +4,11 @@ import Prelude
 
 import Effect.Class (liftEffect)
 import Snarky.Curves.BN254 (ScalarField)
+import Snarky.Curves.BN254 as BN254
+import Test.QuickCheck (quickCheck)
 import Test.QuickCheck.Laws.Data as Laws
 import Test.Spec (Spec, describe, it)
+import Test.BigInt (bigIntHomomorphismSpec)
 import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
@@ -27,5 +30,8 @@ spec = describe "BN254 Field Laws" do
 
   it "satisfies DivisionRing laws" $ liftEffect $
     Laws.checkDivisionRing prxTestBN254
+
+  bigIntHomomorphismSpec "BN254" BN254.fromBigInt zero one
+
   where
   prxTestBN254 = Proxy :: Proxy ScalarField

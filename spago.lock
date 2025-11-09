@@ -6,6 +6,7 @@
         "core": {
           "dependencies": [
             "effect",
+            "js-bigints",
             "lcg",
             "prelude",
             "quickcheck"
@@ -30,6 +31,7 @@
             "identity",
             "integers",
             "invariant",
+            "js-bigints",
             "lazy",
             "lcg",
             "lists",
@@ -162,6 +164,7 @@
             "identity",
             "integers",
             "invariant",
+            "js-bigints",
             "lazy",
             "lcg",
             "lists",
@@ -1160,6 +1163,16 @@
       "integrity": "sha256-RGWWyYrz0Hs1KjPDA+87Kia67ZFBhfJ5lMGOMCEFoLo=",
       "dependencies": [
         "control",
+        "prelude"
+      ]
+    },
+    "js-bigints": {
+      "type": "registry",
+      "version": "2.2.1",
+      "integrity": "sha256-hKWZo9NxtsAaHmNXr6B8GY4c0olQbYLXPVGWm4TF2Ss=",
+      "dependencies": [
+        "integers",
+        "maybe",
         "prelude"
       ]
     },

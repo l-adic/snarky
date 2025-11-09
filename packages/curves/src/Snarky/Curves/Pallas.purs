@@ -1,9 +1,12 @@
 module Snarky.Curves.Pallas
   ( ScalarField
+  , fromBigInt
+  , modulus
   ) where
 
 import Prelude
 
+import JS.BigInt (BigInt)
 import Random.LCG (unSeed)
 import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (stateful)
@@ -77,6 +80,8 @@ instance Show ScalarField where
   show = fieldToString
 
 foreign import rand :: Int -> ScalarField
+foreign import fromBigInt :: BigInt -> ScalarField
+foreign import modulus :: Unit -> BigInt
 
 instance Arbitrary ScalarField where
   arbitrary = stateful \{ newSeed } ->

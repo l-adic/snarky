@@ -18,8 +18,9 @@ ark-bn254 = { version = "0.5.0" }
 ark-std = { version = "0.5.0" }
 rand = { version = "0.8", features = ["std_rng"] }
 rand_chacha = { version = "0.3" }
-napi = { version = "3.4.0", features = ["napi4"] }
+napi = { version = "3.4.0", features = ["napi6"] }
 napi-derive = "3.3.0"
+num-bigint = "0.4.4"
 
 [profile.release]
 opt-level = "s"

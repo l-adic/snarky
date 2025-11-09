@@ -51,3 +51,11 @@ export function toString(x) {
 export function rand(seed) {
     return napi.pallasRand(seed);
 }
+
+export function fromBigInt(bigint) {
+    return napi.pallasFromBigint(bigint);
+}
+
+export function modulus() {
+    return napi.pallasModulus();
+}

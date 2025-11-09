@@ -5,6 +5,7 @@ package:
     - effect
     - lcg
     - quickcheck
+    - js-bigints
   test:
     main: Test.Main
     dependencies:
