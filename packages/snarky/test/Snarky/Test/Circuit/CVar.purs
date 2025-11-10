@@ -1,15 +1,18 @@
-module Snarky.Test.Circuit.Affine (spec) where
+module Snarky.Test.Circuit.CVar (spec) where
 
 import Prelude
 
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Except (runExcept)
 import Data.Array as Array
 import Data.Map (Map)
 import Data.Map as Map
+import Data.Maybe (Maybe(..))
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (foldl, traverse)
 import Effect.Class (liftEffect)
-import Snarky.Circuit.Affine (AffineCircuit, eval, evalAffineExpression, reduce)
+import Snarky.Circuit.CVar (CVar, EvaluationError(..), eval, evalAffineExpression, reduce)
 import Snarky.Curves.BN254 (ScalarField)
 import Snarky.Curves.BN254 as BN254
 import Test.QuickCheck (arbitrary, quickCheckGen)
@@ -17,7 +20,7 @@ import Test.QuickCheck.Gen (Gen)
 import Test.Spec (Spec, describe, it)
 
 -- | Collect all variable identifiers used in an AffineCircuit
-collectVariables :: forall f i. Ord i => AffineCircuit f i -> Set i
+collectVariables :: forall f i. Ord i => CVar f i -> Set i
 collectVariables = foldl (flip Set.insert) Set.empty
 
 -- | Generate a random variable assignment for the given set of variables
@@ -31,8 +34,12 @@ spec :: Spec Unit
 spec = describe "AffineCircuit" do
   it "eval equals evalAffineExpression after reduction" do
     liftEffect $ quickCheckGen do
-      affineCircuit <- arbitrary @(AffineCircuit BN254.ScalarField Int)
-      assignments <- genAssignments $ collectVariables affineCircuit
-      let lhs = evalAffineExpression (reduce affineCircuit) Map.lookup assignments
-      let rhs = eval Map.lookup assignments affineCircuit
+      cvar <- arbitrary @(CVar BN254.ScalarField Int)
+      assignments <- genAssignments $ collectVariables cvar
+      let
+        _lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just a -> pure a
+      let lhs = runExcept $ evalAffineExpression (reduce cvar) _lookup
+      let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs

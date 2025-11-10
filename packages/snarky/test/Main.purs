@@ -1,13 +1,14 @@
-module Test.Main where
+module Test.Snarky.Circuit.Main where
 
 import Prelude
 
 import Effect (Effect)
-import Effect.Aff (launchAff_)
-import Snarky.Test.Circuit.Affine as AffineTests
+import Snarky.Test.Circuit.CVar as CVarTests
+import Snarky.Test.Circuit.Circuit as CircuitTests
 import Test.Spec.Reporter (consoleReporter)
-import Test.Spec.Runner (runSpec)
+import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 main :: Effect Unit
-main = launchAff_ $ runSpec [ consoleReporter ] do
-  AffineTests.spec
+main = runSpecAndExitProcess [ consoleReporter ] do
+  CVarTests.spec
+  CircuitTests.spec
