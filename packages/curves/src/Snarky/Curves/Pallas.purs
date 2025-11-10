@@ -4,80 +4,60 @@ module Snarky.Curves.Pallas
 
 import Prelude
 
-import Random.LCG (unSeed)
-import Test.QuickCheck (class Arbitrary)
+import JS.BigInt (BigInt)
+import Snarky.Curves.Types (class PrimeField)
+import Test.QuickCheck (class Arbitrary, unSeed)
 import Test.QuickCheck.Gen (stateful)
 
 foreign import data ScalarField :: Type
-foreign import zero :: Unit -> ScalarField
-foreign import one :: Unit -> ScalarField
-foreign import add :: ScalarField -> ScalarField -> ScalarField
-foreign import mul :: ScalarField -> ScalarField -> ScalarField
-
-fieldZero :: ScalarField
-fieldZero = zero unit
-
-fieldOne :: ScalarField
-fieldOne = one unit
-
-fieldAdd :: ScalarField -> ScalarField -> ScalarField
-fieldAdd = add
-
-fieldMul :: ScalarField -> ScalarField -> ScalarField
-fieldMul = mul
+foreign import _zero :: Unit -> ScalarField
+foreign import _one :: Unit -> ScalarField
+foreign import _add :: ScalarField -> ScalarField -> ScalarField
+foreign import _mul :: ScalarField -> ScalarField -> ScalarField
 
 instance Semiring ScalarField where
-  add = fieldAdd
-  mul = fieldMul
-  zero = fieldZero
-  one = fieldOne
+  add = _add
+  mul = _mul
+  zero = _zero unit
+  one = _one unit
 
-foreign import sub :: ScalarField -> ScalarField -> ScalarField
-
-fieldSub :: ScalarField -> ScalarField -> ScalarField
-fieldSub = sub
+foreign import _sub :: ScalarField -> ScalarField -> ScalarField
 
 instance Ring ScalarField where
-  sub = fieldSub
+  sub = _sub
 
 instance CommutativeRing ScalarField
 
-foreign import div :: ScalarField -> ScalarField -> ScalarField
-
-fieldDiv :: ScalarField -> ScalarField -> ScalarField
-fieldDiv = div
+foreign import _div :: ScalarField -> ScalarField -> ScalarField
 
 instance EuclideanRing ScalarField where
   degree _ = 1
-  div = fieldDiv
-  mod _ _ = fieldZero
+  div = _div
+  mod _ _ = zero
 
-foreign import invert :: ScalarField -> ScalarField
-
-fieldInvert :: ScalarField -> ScalarField
-fieldInvert = invert
+foreign import _invert :: ScalarField -> ScalarField
 
 instance DivisionRing ScalarField where
-  recip = fieldInvert
+  recip = _invert
 
-foreign import eq :: ScalarField -> ScalarField -> Boolean
-
-fieldEq :: ScalarField -> ScalarField -> Boolean
-fieldEq = eq
+foreign import _eq :: ScalarField -> ScalarField -> Boolean
 
 instance Eq ScalarField where
-  eq = fieldEq
+  eq = _eq
 
-foreign import toString :: ScalarField -> String
-
-fieldToString :: ScalarField -> String
-fieldToString = toString
+foreign import _toString :: ScalarField -> String
 
 instance Show ScalarField where
-  show = fieldToString
+  show = _toString
 
-foreign import rand :: Int -> ScalarField
+foreign import _rand :: Int -> ScalarField
+foreign import _fromBigInt :: BigInt -> ScalarField
+foreign import _modulus :: Unit -> BigInt
 
 instance Arbitrary ScalarField where
   arbitrary = stateful \{ newSeed } ->
-    pure $ rand $ unSeed newSeed
+    pure $ _rand $ unSeed newSeed
+
+instance PrimeField ScalarField where
+  fromBigInt = _fromBigInt
+  modulus = _modulus unit

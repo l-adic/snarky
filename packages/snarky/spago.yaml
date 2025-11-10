@@ -1,19 +1,20 @@
 package:
   name: snarky
   dependencies:
-    - curves
     - prelude
-    - effect
-    - console
-    - quickcheck
-    - ordered-collections
-    - maybe
-    - foldable-traversable
-    - tuples
     - arrays
+    - curves
+    - foldable-traversable
+    - maybe
+    - ordered-collections
+    - quickcheck
+    - safe-coerce
+    - transformers
+    - tuples
   test:
-    main: Test.Main
+    main: Test.Snarky.Circuit.Main
     dependencies:
-      - spec
       - aff
-      - debug
+      - spec
+      - spec-node
+      - spec-quickcheck

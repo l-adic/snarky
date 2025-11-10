@@ -2,52 +2,60 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const napi = require('curves-napi');
 
-export function zero() {
+export function _zero() {
     return napi.vestaZero();
 }
 
-export function one() {
+export function _one() {
     return napi.vestaOne();
 }
 
-export function mul(x) {
+export function _mul(x) {
     return function(y) {
         return napi.vestaMul(x, y);
     };
 }
 
-export function add(x) {
+export function _add(x) {
     return function(y) {
         return napi.vestaAdd(x, y);
     };
 }
 
-export function sub(x) {
+export function _sub(x) {
     return function(y) {
         return napi.vestaSub(x, y);
     };
 }
 
-export function div(x) {
+export function _div(x) {
     return function(y) {
         return napi.vestaDiv(x, y);
     };
 }
 
-export function invert(x) {
+export function _invert(x) {
     return napi.vestaInvert(x);
 }
 
-export function eq(x) {
+export function _eq(x) {
     return function(y) {
         return napi.vestaEq(x, y);
     };
 }
 
-export function toString(x) {
+export function _toString(x) {
     return napi.vestaToString(x);
 }
 
-export function rand(seed) {
+export function _rand(seed) {
     return napi.vestaRand(seed);
+}
+
+export function _fromBigInt(bigint) {
+    return napi.vestaFromBigint(bigint);
+}
+
+export function _modulus() {
+    return napi.vestaModulus();
 }
