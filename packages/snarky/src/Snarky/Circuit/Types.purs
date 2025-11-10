@@ -15,15 +15,18 @@ module Snarky.Circuit.Types
 
 import Prelude
 
+import Data.Array (foldMap)
 import Data.Array as Array
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar)
 import Snarky.Circuit.Constraint (R1CS(..))
 import Snarky.Curves.Types (class PrimeField)
+import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -68,6 +71,27 @@ instance (FieldEncoded f a, FieldEncoded f b) => FieldEncoded f (Tuple a b) wher
       Tuple (fieldsToValue @f @a as) (fieldsToValue @f @b bs)
   sizeInFields _ = sizeInFields @f @a (Proxy @a) + sizeInFields @f @b (Proxy @b)
 
+chunk :: forall a. Int -> Array a -> Array (Array a)
+chunk n arr
+  | n <= 0 = []
+  | Array.null arr = []
+  | otherwise =
+      let
+        current = Array.take n arr
+        rest = Array.drop n arr
+      in
+        [ current ] <> chunk n rest
+
+instance (FieldEncoded f a, Reflectable n Int) => FieldEncoded f (Vector n a) where
+  valueToFields as = foldMap valueToFields (unVector as)
+  fieldsToValue as =
+    let
+      chunks = chunk (sizeInFields @f (Proxy @a)) as
+      vals = fieldsToValue <$> chunks
+    in
+      unsafePartial $ fromJust $ toVector (Proxy @n) vals
+  sizeInFields _ = reflectType (Proxy @n) * sizeInFields @f (Proxy @a)
+
 class FieldEncoded f a <= ConstrainedType f var a | a -> var where
   varToFields :: var -> Array (CVar f Variable)
   fieldsToVar :: Array (CVar f Variable) -> var
@@ -91,6 +115,16 @@ else instance (ConstrainedType f avar a, ConstrainedType f bvar b) => Constraine
     in
       Tuple (fieldsToVar @f @avar @a avs) (fieldsToVar @f @bvar @b bvs)
   check (Tuple a b) = check @f @avar @a a <> check @f @bvar @b b
+
+instance (ConstrainedType f avar a, Reflectable n Int) => ConstrainedType f (Vector n avar) (Vector n a) where
+  varToFields as = foldMap (varToFields @f @avar @a) $ unVector as
+  fieldsToVar as = unsafePartial fromJust $
+    let
+      chunks = chunk (Array.length as / reflectType (Proxy @n)) as
+      vs = fieldsToVar @f @avar @a <$> chunks
+    in
+      toVector (Proxy @n) vs
+  check as = foldMap (check @f @avar @a) $ unVector as
 
 newtype FieldElem f = FieldElem f
 

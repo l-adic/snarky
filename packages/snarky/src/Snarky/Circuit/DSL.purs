@@ -19,6 +19,7 @@ module Snarky.Circuit.DSL
   , ifThenElse_
   , not_
   , and_
+  , or_
   , xor_
   , all_
   , any_
@@ -226,7 +227,7 @@ or_
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
-or_ a b = (not_ a) `and_` (not_ b)
+or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
   :: forall f m
