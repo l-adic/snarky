@@ -1,18 +1,18 @@
-module Test.Main where
+module Test.Snarky.Curves.Main where
 
 import Prelude
 
 import Effect (Effect)
-import Effect.Aff (launchAff_)
+import Snarky.Curves.BN254 as BN254
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Test.Snarky.Curves.Field as Field
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner (runSpec)
-
-import Test.Pallas as PallasTest
-import Test.Vesta as VestaTest
-import Test.BN254 as BN254Test
+import Test.Spec.Runner.Node (runSpecAndExitProcess)
+import Type.Proxy (Proxy(..))
 
 main :: Effect Unit
-main = launchAff_ $ runSpec [ consoleReporter ] do
-  PallasTest.spec
-  VestaTest.spec
-  BN254Test.spec
+main = runSpecAndExitProcess [ consoleReporter ] do
+  Field.spec (Proxy @BN254.ScalarField)
+  Field.spec (Proxy @Vesta.ScalarField)
+  Field.spec (Proxy @Pallas.ScalarField)

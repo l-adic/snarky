@@ -2,14 +2,12 @@ package:
   name: curves
   dependencies:
     - prelude
-    - effect
-    - lcg
-    - quickcheck
     - js-bigints
+    - quickcheck
   test:
-    main: Test.Main
+    main: Test.Snarky.Curves.Main
     dependencies:
-      - spec
-      - spec-quickcheck
       - quickcheck-laws
-      - aff
+      - spec
+      - spec-node
+      - spec-quickcheck
