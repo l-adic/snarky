@@ -1,4 +1,4 @@
-module Snarky.Circuit.DSL 
+module Snarky.Circuit.DSL
   ( AsProver
   , runAsProver
   , class MonadFresh
@@ -18,6 +18,7 @@ module Snarky.Circuit.DSL
   , false_
   , ifThenElse_
   , not_
+  , and_
   , xor_
   , all_
   , any_
@@ -84,7 +85,6 @@ class MonadFresh m <= CircuitM f m where
   exists :: forall a var. ConstrainedType f var a => AsProver f a -> m var
   addConstraint :: R1CS f Variable -> m Unit
   publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> m var
-
 
 readCVar :: forall f. PrimeField f => CVar f Variable -> AsProver f f
 readCVar v = do
@@ -255,7 +255,7 @@ xor_ a b = case a, b of
     addConstraint $ R1CS
       { left: _a `CVar.add_` _a
       , right: _b
-      , output: _a `CVar.add_` _b `CVar.add_` _res
+      , output: _a `CVar.add_` _b `CVar.sub_` _res
       }
     pure res
 

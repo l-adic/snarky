@@ -45,6 +45,11 @@ class FieldEncoded f a where
   fieldsToValue :: Array f -> a
   sizeInFields :: Proxy a -> Int
 
+instance FieldEncoded f Unit where
+  valueToFields _ = mempty
+  fieldsToValue _ = unit
+  sizeInFields _ = 0
+
 instance PrimeField f => FieldEncoded f Boolean where
   valueToFields b = Array.singleton $ if b then one @f else zero
   fieldsToValue a =
@@ -73,7 +78,12 @@ instance PrimeField f => ConstrainedType f (CVar f BooleanVariable) Boolean wher
   fieldsToVar a = coerce $ unsafePartial fromJust $ Array.head a
   check var = Array.singleton $ Boolean (coerce var)
 
-instance (ConstrainedType f avar a, ConstrainedType f bvar b) => ConstrainedType f (Tuple avar bvar) (Tuple a b) where
+instance (ConstrainedType f avar a) => ConstrainedType f avar (Tuple a Unit) where
+  varToFields av = varToFields @f @avar @a av
+  fieldsToVar vs = fieldsToVar @f @avar @a vs
+  check a = check @f @avar @a a
+
+else instance (ConstrainedType f avar a, ConstrainedType f bvar b) => ConstrainedType f (Tuple avar bvar) (Tuple a b) where
   varToFields (Tuple av bv) = varToFields @f @avar @a av <> varToFields @f @bvar @b bv
   fieldsToVar vs =
     let
