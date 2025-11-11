@@ -10,7 +10,7 @@
     "@napi-rs/cli": "^3.4.1"
   },
   "scripts": {
-    "build": "cargo build --release && cp target/release/libcurves_napi.so curves-napi.node",
+    "build": "napi build --release",
     "prepublish": "npm run build"
   },
   "files": [
