@@ -3,7 +3,6 @@ use ark_bn254::Fr as BN254Fr;
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use num_bigint::BigUint;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use std::str::FromStr;
@@ -83,14 +82,23 @@ pub fn bn254_from_bigint(bigint: BigInt) -> Result<FieldExternal> {
 
 #[napi]
 pub fn bn254_modulus() -> BigInt {
-    // Convert modulus to BigUint and then to NAPI BigInt
-    let modulus_biguint: BigUint = BN254Fr::MODULUS.into();
+    crate::bigint::ark_bigint_to_napi(&BN254Fr::MODULUS)
+}
 
-    // Get the u64 limbs (little-endian)
-    let limbs: Vec<u64> = modulus_biguint.to_u64_digits();
+#[napi]
+pub fn bn254_to_bigint(a: &FieldExternal) -> BigInt {
+    // Convert field element to its BigInt representation
+    let repr = a.into_bigint();
+    crate::bigint::ark_bigint_to_napi(&repr)
+}
 
-    BigInt {
-        sign_bit: false,
-        words: limbs,
-    }
+#[napi]
+pub fn bn254_pow(base: &FieldExternal, exponent: BigInt) -> Result<FieldExternal> {
+    // Convert NAPI BigInt to ark BigInt
+    let exp_ark = napi_bigint_to_ark_bigint::<BN254Fr, 4>(exponent)?;
+    let exp_limbs = exp_ark.as_ref();
+
+    // Use arkworks' efficient field exponentiation
+    let result = base.pow(exp_limbs);
+    Ok(External::new(result))
 }
