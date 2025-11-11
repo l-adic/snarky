@@ -36,8 +36,9 @@ module Snarky.Circuit.DSL
 import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow)
-import Control.Monad.Except (class MonadTrans, ExceptT, lift, runExceptT, throwError)
+import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (class MonadAsk, ReaderT, ask, runReaderT)
+import Control.Monad.Trans.Class (class MonadTrans, lift)
 import Data.Array (foldl)
 import Data.Array as Array
 import Data.Either (Either)

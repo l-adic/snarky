@@ -96,7 +96,7 @@ instance (Monad m, PrimeField f) => CircuitM f (ProverT f m) m where
   publicInputs proxy = do
     let n = sizeInFields @f proxy
     vars <- replicateA n fresh
-    modify_ \s -> s { publicInputs = s.publicInputs }
+    modify_ \s -> s { publicInputs = vars }
     pure $ fieldsToVar @f @var @a (map Var vars)
 
 instance Monad m => MonadFresh (ProverT f m) where
