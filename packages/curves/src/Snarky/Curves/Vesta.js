@@ -59,3 +59,13 @@ export function _fromBigInt(bigint) {
 export function _modulus() {
     return napi.vestaModulus();
 }
+
+export function _toBigInt(x) {
+    return napi.vestaToBigint(x);
+}
+
+export function _pow(base) {
+    return function(exponent) {
+        return napi.vestaPow(base, exponent);
+    };
+}

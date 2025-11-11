@@ -59,3 +59,13 @@ export function _fromBigInt(bigint) {
 export function _modulus() {
     return napi.bn254Modulus();
 }
+
+export function _toBigInt(x) {
+    return napi.bn254ToBigint(x);
+}
+
+export function _pow(base) {
+    return function(exponent) {
+        return napi.bn254Pow(base, exponent);
+    };
+}

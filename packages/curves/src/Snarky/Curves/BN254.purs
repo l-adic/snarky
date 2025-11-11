@@ -52,7 +52,9 @@ instance Show ScalarField where
 
 foreign import _rand :: Int -> ScalarField
 foreign import _fromBigInt :: BigInt -> ScalarField
+foreign import _toBigInt :: ScalarField -> BigInt
 foreign import _modulus :: Unit -> BigInt
+foreign import _pow :: ScalarField -> BigInt -> ScalarField
 
 instance Arbitrary ScalarField where
   arbitrary = stateful \{ newSeed } ->
@@ -60,4 +62,6 @@ instance Arbitrary ScalarField where
 
 instance PrimeField ScalarField where
   fromBigInt = _fromBigInt
+  toBigInt = _toBigInt
   modulus = _modulus unit
+  pow = _pow
