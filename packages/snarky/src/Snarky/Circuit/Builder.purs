@@ -1,20 +1,27 @@
 module Snarky.Circuit.Builder
-  ( CircuitBuilderM
-  , runCircuitBuilderM
+  ( CircuitBuilderT
+  , runCircuitBuilderT
+  , execCircuitBuilderT
   , CircuitBuilderState
   , emptyCircuitBuilderState
+  , CircuitBuilder
+  , runCircuitBuilder
   ) where
 
 import Prelude
 
-import Control.Monad.State (class MonadState, State, get, modify_, runState)
+import Control.Monad.State (class MonadState, StateT, execStateT, get, modify_, runStateT)
+import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
+import Data.Identity (Identity(..))
+import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint (R1CS)
-import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProver, fresh)
+import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields)
+import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type CircuitBuilderState f =
@@ -30,33 +37,42 @@ emptyCircuitBuilderState =
   , publicInputs: mempty
   }
 
-newtype CircuitBuilderM f a = CircuitBuilderM (State (CircuitBuilderState f) a)
+newtype CircuitBuilderT f m a = CircuitBuilderT (StateT (CircuitBuilderState f) m a)
 
-derive newtype instance Functor (CircuitBuilderM f)
-derive newtype instance Apply (CircuitBuilderM f)
-derive newtype instance Bind (CircuitBuilderM f)
-derive newtype instance Applicative (CircuitBuilderM f)
-derive newtype instance Monad (CircuitBuilderM f)
-derive newtype instance MonadState (CircuitBuilderState f) (CircuitBuilderM f)
+derive newtype instance Functor m => Functor (CircuitBuilderT f m)
+derive newtype instance Monad m => Apply (CircuitBuilderT f m)
+derive newtype instance Monad m => Bind (CircuitBuilderT f m)
+derive newtype instance Monad m => Applicative (CircuitBuilderT f m)
+derive newtype instance Monad m => Monad (CircuitBuilderT f m)
+derive newtype instance Monad m => MonadState (CircuitBuilderState f) (CircuitBuilderT f m)
+derive newtype instance MonadTrans (CircuitBuilderT f)
 
-runCircuitBuilderM :: forall f a. CircuitBuilderM f a -> CircuitBuilderState f -> Tuple a (CircuitBuilderState f)
-runCircuitBuilderM (CircuitBuilderM m) = runState m
+runCircuitBuilderT :: forall f a m. Monad m => CircuitBuilderT f m a -> CircuitBuilderState f -> m (Tuple a (CircuitBuilderState f))
+runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s
 
-instance MonadFresh (CircuitBuilderM f) where
+execCircuitBuilderT :: forall f a m. Monad m => CircuitBuilderT f m a -> CircuitBuilderState f -> m (CircuitBuilderState f)
+execCircuitBuilderT (CircuitBuilderT m) s = execStateT m s
+
+type CircuitBuilder f = CircuitBuilderT f Identity
+
+runCircuitBuilder :: forall f a. CircuitBuilder f a -> CircuitBuilderState f -> Tuple a (CircuitBuilderState f)
+runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
+
+instance Monad m => MonadFresh (CircuitBuilderT f m) where
   fresh = do
     { nextVar } <- get
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-instance CircuitM f (CircuitBuilderM f) where
+instance (Monad m, PrimeField f) => CircuitM f (CircuitBuilderT f m) m where
   addConstraint c = modify_ \s ->
     s { constraints = s.constraints `snoc` c }
-  exists :: forall a var. ConstrainedType f var a => AsProver f a -> CircuitBuilderM f var
+  exists :: forall a var n. ConstrainedType f var a => Monad n => AsProverT f n a -> CircuitBuilderT f n var
   exists _ = do
     let n = sizeInFields @f (Proxy @a)
     vars <- replicateA n fresh
     pure $ fieldsToVar @f @var @a (map Var vars)
-  publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> CircuitBuilderM f var
+  publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> CircuitBuilderT f m var
   publicInputs proxy = do
     let n = sizeInFields @f proxy
     vars <- replicateA n fresh
