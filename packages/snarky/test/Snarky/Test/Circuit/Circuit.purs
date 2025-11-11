@@ -178,8 +178,8 @@ assertEqualCircuit
    . CircuitM Fr m n
   => m Unit
 assertEqualCircuit = do
-  publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
-    assertEqual a b
+  publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
+    assertEqual a a
 
 mkCircuitSpec
   :: forall f a b avar bvar

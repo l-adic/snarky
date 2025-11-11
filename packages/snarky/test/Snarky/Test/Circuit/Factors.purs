@@ -14,15 +14,15 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, execCircuitBuilderT)
-import Snarky.Circuit.CVar (CVar, EvaluationError(..))
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CS, R1CSCircuit(..), evalR1CSCircuit)
-import Snarky.Circuit.DSL (class CircuitM, all_, const_, eq_, exists, mul_, neq_, publicInputs, read, runAsProverT)
+import Snarky.Circuit.DSL (class CircuitM, all_, assert, const_, eq_, exists, mul_, neq_, publicInputs, read, runAsProverT)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProverT)
-import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
+import Snarky.Circuit.Types (class ConstrainedType, FieldElem(..), Variable)
 import Snarky.Curves.Types (class PrimeField)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (Result, arbitrary, withHelp)
-import Test.QuickCheck.Gen (Gen)
+import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
@@ -36,7 +36,7 @@ factorsCircuit
   :: forall m n
    . FactorM Fr n
   => CircuitM Fr m n
-  => m (CVar Fr BooleanVariable)
+  => m Unit
 factorsCircuit = do
   n <- publicInputs @Fr (Proxy @(FieldElem Fr))
   Tuple a b <- exists @Fr @m @n do
@@ -46,28 +46,29 @@ factorsCircuit = do
   c1 <- mul_ a b >>= eq_ n
   c2 <- neq_ a (const_ one)
   c3 <- neq_ b (const_ one)
-  all_ [ c1, c2, c3 ]
+  assert =<< all_ [ c1, c2, c3 ]
 
 instance FactorM Fr Gen where
-  factor f = do
-    a <- arbitrary @Fr
-    pure $ Tuple a (f / a)
+  factor n = do
+    a <- arbitrary @Fr `suchThat` \a ->
+      a /= one && a /= n
+    let b = n / a
+    pure $ Tuple a b
 
 instance FactorM Fr Effect where
   factor _ = do
     throw "unhandled request: Factor"
 
 mkCircuitSpec'
-  :: forall f a avar bvar
+  :: forall f a avar
    . PrimeField f
   => ConstrainedType f avar a
-  => ConstrainedType f bvar Boolean
   => Proxy f
   -> Gen a
   -> { constraints :: Array (R1CS f Variable)
      , publicInputs :: Array Variable
      }
-  -> (forall m. CircuitM f m Gen => m bvar)
+  -> (forall m. CircuitM f m Gen => m Unit)
   -> Gen Result
 mkCircuitSpec' (_ :: Proxy f) gen { constraints, publicInputs } circuit = do
   inputs <- gen

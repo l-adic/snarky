@@ -5,6 +5,7 @@ module Snarky.Circuit.DSL
   , all_
   , and_
   , any_
+  , assert
   , assertNonZero
   , assertEqual
   , class CircuitM
@@ -345,3 +346,10 @@ assertEqual x y = case x, y of
     else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
     addConstraint $ R1CS { left: x `sub_` y, right: Const one, output: Const zero }
+
+assert
+  :: forall f m n
+   . CircuitM f m n
+  => CVar f BooleanVariable
+  -> m Unit
+assert v = assertEqual (coerce v) (const_ $ one @f)

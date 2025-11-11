@@ -6,8 +6,7 @@ import Prelude
 
 import JS.BigInt (BigInt)
 import Snarky.Curves.Types (class PrimeField)
-import Test.QuickCheck (class Arbitrary, unSeed)
-import Test.QuickCheck.Gen (stateful)
+import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
 foreign import _zero :: Unit -> ScalarField
@@ -57,8 +56,7 @@ foreign import _modulus :: Unit -> BigInt
 foreign import _pow :: ScalarField -> BigInt -> ScalarField
 
 instance Arbitrary ScalarField where
-  arbitrary = stateful \{ newSeed } ->
-    pure $ _rand $ unSeed newSeed
+  arbitrary = _rand <$> arbitrary
 
 instance PrimeField ScalarField where
   fromBigInt = _fromBigInt
