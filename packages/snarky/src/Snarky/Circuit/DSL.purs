@@ -16,6 +16,7 @@ module Snarky.Circuit.DSL
   , ifThenElse_
   , inv_
   , mul_
+  , neq_
   , not_
   , or_
   , publicInputs
@@ -163,6 +164,14 @@ eq_ a b = case a `CVar.sub_` b of
     addConstraint $ R1CS { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ R1CS { left: r, right: z, output: Const zero }
     pure $ coerce r
+
+neq_
+  :: forall f m n
+   . CircuitM f m n
+  => CVar f Variable
+  -> CVar f Variable
+  -> m (CVar f BooleanVariable)
+neq_ a b = not_ <$> eq_ a b
 
 inv_
   :: forall f m n

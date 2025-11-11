@@ -14,7 +14,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, execCircuitBuilderT)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CSCircuit(..), evalR1CSCircuit)
-import Snarky.Circuit.DSL (class CircuitM, all_, const_, eq_, exists, mul_, not_, publicInputs, read, runAsProverT)
+import Snarky.Circuit.DSL (class CircuitM, all_, const_, eq_, exists, mul_, neq_, publicInputs, read, runAsProverT)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProverT)
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
 import Snarky.Curves.Types (class PrimeField)
@@ -42,8 +42,8 @@ factorsCircuit = do
     Tuple a b <- lift $ factor @Fr nVal
     pure $ Tuple (FieldElem a) (FieldElem b)
   c1 <- mul_ a b >>= eq_ n
-  c2 <- not_ <$> eq_ a (const_ one)
-  c3 <- not_ <$> eq_ b (const_ one)
+  c2 <- neq_ a (const_ one)
+  c3 <- neq_ b (const_ one)
   let cs = c1 `cons` (c2 `cons` (c3 `cons` mempty))
   all_ cs
 
