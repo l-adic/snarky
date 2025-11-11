@@ -101,7 +101,7 @@ instance MonadTrans (AsProverT f) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-class (Monad n, MonadFresh m) <= CircuitM f m n | m -> n where
+class (Monad n, MonadFresh m, PrimeField f) <= CircuitM f m n | m -> n where
   exists :: forall a var. ConstrainedType f var a => AsProverT f n a -> m var
   addConstraint :: R1CS f Variable -> m Unit
   publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> m var
@@ -114,8 +114,7 @@ readCVar v = do
 
 mul_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f Variable)
@@ -134,8 +133,7 @@ mul_ a b =
 
 square_
   :: forall m f n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f Variable
   -> m (CVar f Variable)
 square_ = case _ of
@@ -149,8 +147,7 @@ square_ = case _ of
 
 eq_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f BooleanVariable)
@@ -169,8 +166,7 @@ eq_ a b = case a `CVar.sub_` b of
 
 inv_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f Variable
   -> m (CVar f Variable)
 inv_ = case _ of
@@ -189,8 +185,7 @@ const_ = Const
 
 div_
   :: forall m f n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f Variable)
@@ -211,8 +206,7 @@ not_ a = coerce (Const one `CVar.sub_` a)
 
 ifThenElse_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f Variable
   -> CVar f Variable
@@ -235,8 +229,7 @@ ifThenElse_ b thenBranch elseBranch = case b of
 
 and_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
@@ -246,8 +239,7 @@ and_ a b = do
 
 or_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
@@ -255,8 +247,7 @@ or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
@@ -293,8 +284,7 @@ sum_ = foldl CVar.add_ (Const zero)
 
 any_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)
 any_ as =
@@ -308,8 +298,7 @@ any_ as =
 
 all_
   :: forall f m n
-   . PrimeField f
-  => CircuitM f m n
+   . CircuitM f m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)
 all_ as =
