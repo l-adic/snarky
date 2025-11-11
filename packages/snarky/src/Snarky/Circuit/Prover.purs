@@ -29,6 +29,7 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError)
 import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh, runAsProverT)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
+import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 data ProverError
@@ -76,7 +77,7 @@ type Prover f = ProverT f Identity
 runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either ProverError a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
-instance Monad m => CircuitM f (ProverT f m) m where
+instance (Monad m, PrimeField f) => CircuitM f (ProverT f m) m where
   addConstraint _ = pure unit
   exists :: forall a var. ConstrainedType f var a => AsProverT f m a -> ProverT f m var
   exists m = do

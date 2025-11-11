@@ -3,31 +3,34 @@ module Snarky.Test.Circuit.Circuit (spec) where
 import Prelude
 
 import Data.Array (filter, foldMap, (..))
+import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray, fromArray)
 import Data.Either (Either(..))
-import Data.Foldable (for_, sum)
+import Data.Foldable (foldl, for_, sum)
+import Data.Traversable (sequence)
 import Data.Identity (Identity)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)
-import Data.Reflectable (class Reflectable, reifyType)
+import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Effect.Aff (throwError)
 import Effect.Class (liftEffect)
-import Partial.Unsafe (unsafeCrashWith)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CSCircuit(..), evalR1CSCircuit)
-import Snarky.Circuit.DSL (class CircuitM, all_, and_, any_, div_, eq_, ifThenElse_, inv_, mul_, not_, or_, publicInputs, read, runAsProver, square_, sum_, xor_)
+import Snarky.Circuit.DSL (class CircuitM, all_, and_, any_, assertEqual, assertNonZero, div_, eq_, ifThenElse_, inv_, mul_, not_, or_, publicInputs, read, runAsProver, square_, sum_, unpack, xor_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
+import JS.BigInt as BigInt
 import Snarky.Curves.BN254 as BN254
-import Snarky.Curves.Types (class PrimeField)
-import Snarky.Data.Vector (Vector, unVector)
+import Snarky.Curves.Types (class PrimeField, toBigInt, fromBigInt)
+import Snarky.Data.Vector (Vector, toVector, unVector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (Result, arbitrary, quickCheckGen, withHelp)
 import Test.QuickCheck.Gen (Gen, chooseInt)
@@ -165,6 +168,22 @@ sumCircuit _ =
   publicInputs @Fr (Proxy @(Vector n (FieldElem Fr))) >>= \bs ->
     pure $ sum_ (unVector bs)
 
+assertNonZeroCircuit
+  :: forall m n
+   . CircuitM Fr m n
+  => m Unit
+assertNonZeroCircuit = do
+  publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
+    assertNonZero a
+
+assertEqualCircuit
+  :: forall m n
+   . CircuitM Fr m n
+  => m Unit
+assertEqualCircuit = do
+  publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
+    assertEqual a b
+
 mkCircuitSpec
   :: forall f a b avar bvar
    . PrimeField f
@@ -202,6 +221,45 @@ mkCircuitSpec (_ :: Proxy f) inputsGen circuit f = do
     case eres of
       Right res -> withHelp res "Circuit constraints satisfied and evals correctly"
       Left e -> withHelp false ("Failed to parse circuit output: " <> show e)
+
+mkAssertionSpec
+  :: forall f a avar
+   . PrimeField f
+  => ConstrainedType f avar a
+  => Proxy f
+  -> Gen a
+  -> (forall m. CircuitM f m Identity => m Unit)
+  -> (a -> Boolean) -- predicate that should be true for valid inputs
+  -> Gen Result
+mkAssertionSpec (_ :: Proxy f) inputsGen circuit isValid = do
+  inputs <- inputsGen
+  let
+    shouldSucceed = isValid inputs
+    Tuple _ { constraints, publicInputs } =
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
+    proverResult =
+      let
+        proverState = emptyProverState { publicInputs = publicInputs }
+      in
+        runProver (assignPublicInputs inputs *> circuit) proverState
+  case proverResult of
+    Tuple (Left e) _ ->
+      pure $ withHelp (not shouldSucceed) $
+        if shouldSucceed then "Circuit failed with valid input: " <> show e
+        else "Circuit correctly rejected invalid input"
+    Tuple (Right _) { assignments } ->
+      let
+        _lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just res -> pure res
+        eres = runAsProver (evalR1CSCircuit _lookup (R1CSCircuit constraints)) assignments
+      in
+        pure $ case eres of
+          Right true -> withHelp shouldSucceed $
+            if shouldSucceed then "Assertion circuit satisfied with valid input"
+            else "Assertion circuit should have failed with invalid input"
+          Right false -> withHelp false "Constraints not satisfied"
+          Left e -> withHelp false ("Failed to evaluate circuit: " <> show e)
 
 spec :: Spec Unit
 spec = describe "Circuit Specs" do
@@ -299,3 +357,67 @@ spec = describe "Circuit Specs" do
           k <- chooseInt 1 n
           reifyType k \pk ->
             mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (sumCircuit pk) f
+
+  it "assertNonZero Circuit is Valid" $ quickCheck $
+    let
+      f :: FieldElem Fr -> Boolean
+      f (FieldElem a) = a /= zero
+    in
+      mkAssertionSpec (Proxy @Fr) arbitrary assertNonZeroCircuit f
+
+  it "assertEqual Circuit is Valid" $ quickCheck $
+    let
+      f :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
+      f (Tuple (FieldElem a) (FieldElem b)) = a == b
+    in
+      mkAssertionSpec (Proxy @Fr) arbitrary assertEqualCircuit f
+
+  it "unpack Circuit is Valid" $
+    let
+      unpackCircuit :: forall m n k. CircuitM Fr m n => Reflectable k Int => Proxy k -> m (Vector k (CVar Fr BooleanVariable))
+      unpackCircuit pk = do
+        publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \value ->
+          unpack (reflectType pk) value >>= \bits ->
+            pure $ unsafePartial $ fromJust $ toVector pk bits
+
+      f :: forall k. Reflectable k Int => Proxy k -> FieldElem Fr -> Vector k Boolean
+      f pk (FieldElem v) =
+        let
+          bitCount = reflectType pk
+          toBit i =
+            if (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) == BigInt.fromInt 0 then false
+            else true
+          bits = map toBit (Array.range 0 (bitCount - 1))
+        in
+          unsafePartial $ fromJust $ toVector pk bits
+
+      -- Generate field elements that fit in the given number of bits
+      smallFieldElem :: Int -> Gen (FieldElem Fr)
+      smallFieldElem bitCount = do
+        if bitCount <= 31 then do
+          -- For small bit counts, generate directly
+          let maxValue = (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt bitCount) - BigInt.fromInt 1
+          n <- chooseInt 0 (min 2147483647 $ unsafePartial $ fromJust $ BigInt.toInt maxValue)
+          pure $ FieldElem $ fromBigInt $ BigInt.fromInt n
+        else do
+          -- For larger bit counts, generate in chunks
+          let chunks = (bitCount + 15) / 16 -- How many 16-bit chunks we need
+          values <- sequence $ Array.replicate chunks (chooseInt 0 65535)
+          let
+            combined = foldl
+              ( \acc (Tuple i val) ->
+                  acc `BigInt.or` (BigInt.fromInt val `BigInt.shl` BigInt.fromInt (i * 16))
+              )
+              (BigInt.fromInt 0)
+              (Array.mapWithIndex Tuple values)
+            -- Mask to ensure we don't exceed bitCount bits
+            mask = (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt bitCount) - BigInt.fromInt 1
+          pure $ FieldElem $ fromBigInt $ combined `BigInt.and` mask
+
+      -- Test bit sizes: 8, 16, 24, 32, 40, 48, 56, 64
+      bitSizes = [ 8, 16, 24, 32, 40, 48, 56, 64 ]
+    in
+      liftEffect $
+        for_ bitSizes \n -> quickCheckGen do
+          reifyType n \pk ->
+            mkCircuitSpec (Proxy @Fr) (smallFieldElem n) (unpackCircuit pk) (f pk)

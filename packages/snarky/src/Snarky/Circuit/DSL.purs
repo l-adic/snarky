@@ -5,6 +5,8 @@ module Snarky.Circuit.DSL
   , all_
   , and_
   , any_
+  , assertNonZero
+  , assertEqual
   , class CircuitM
   , class MonadFresh
   , const_
@@ -27,6 +29,7 @@ module Snarky.Circuit.DSL
   , square_
   , sum_
   , true_
+  , unpack
   , xor_
   ) where
 
@@ -43,16 +46,16 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (un)
-import Data.Traversable (traverse)
+import Data.Traversable (traverse, for)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..))
+import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint (R1CS(..))
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable(..), FieldElem(..), UnChecked(..), Variable(..), fieldsToValue, varToFields)
-import Snarky.Curves.Types (class PrimeField, fromBigInt)
+import Snarky.Curves.Types (class PrimeField, fromBigInt, toBigInt, pow)
 import Type.Proxy (Proxy)
 
 newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError Variable) (ReaderT (Map Variable f) m) a)
@@ -322,3 +325,59 @@ all_ as =
             n = fromBigInt $ BigInt.fromInt $ Array.length as
           in
             eq_ (sum_ (coerce as)) (Const n)
+
+assertNonZero
+  :: forall f m n
+   . CircuitM f m n
+  => CVar f Variable
+  -> m Unit
+assertNonZero v = void $ inv_ v
+
+assertEqual
+  :: forall f m n
+   . CircuitM f m n
+  => CVar f Variable
+  -> CVar f Variable
+  -> m Unit
+assertEqual x y = case x, y of
+  Const f, Const g ->
+    if f == g then pure unit
+    else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
+  _, _ -> do
+    addConstraint $ R1CS { left: x `sub_` y, right: Const one, output: Const zero }
+
+-- Convert field element to bits (LSB first)
+unpack
+  :: forall f m n
+   . CircuitM f m n
+  => PrimeField f
+  => Int -- number of bits
+  -> CVar f Variable
+  -> m (Array (CVar f BooleanVariable))
+unpack length v = do
+  -- Generate bit witnesses
+  bits <- for (Array.range 0 (length - 1)) \i -> exists do
+    vVal <- readCVar v
+    -- Extract i-th bit (LSB first) using toBigInt FFI
+    let
+      bit =
+        if (toBigInt vVal `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) == BigInt.fromInt 0 then zero
+        else one :: f
+    pure $ bit == one
+
+  -- Add packing constraint: sum(bits[i] * 2^i) = v
+  let
+    two = fromBigInt (BigInt.fromInt 2) :: f
+    packingSum = foldl
+      ( \acc (Tuple i bit) ->
+          -- Use efficient field pow from FFI: 2^i mod p
+          let
+            coeff = pow two (BigInt.fromInt i)
+          in
+            acc `CVar.add_` CVar.scale_ coeff (coerce bit)
+      )
+      (Const zero)
+      (Array.mapWithIndex Tuple bits)
+
+  addConstraint $ R1CS { left: packingSum, right: Const one, output: v }
+  pure bits

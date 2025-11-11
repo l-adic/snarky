@@ -21,6 +21,7 @@ import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint (R1CS)
 import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields)
+import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type CircuitBuilderState f =
@@ -63,7 +64,7 @@ instance Monad m => MonadFresh (CircuitBuilderT f m) where
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-instance Monad m => CircuitM f (CircuitBuilderT f m) m where
+instance (Monad m, PrimeField f) => CircuitM f (CircuitBuilderT f m) m where
   addConstraint c = modify_ \s ->
     s { constraints = s.constraints `snoc` c }
   exists :: forall a var n. ConstrainedType f var a => Monad n => AsProverT f n a -> CircuitBuilderT f n var
