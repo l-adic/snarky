@@ -94,3 +94,27 @@ pub fn vesta_modulus() -> BigInt {
         words: limbs,
     }
 }
+
+#[napi]
+pub fn vesta_to_bigint(a: &FieldExternal) -> BigInt {
+    // Convert field element to its BigInt representation
+    let repr = a.into_bigint();
+    let biguint: BigUint = repr.into();
+    let limbs: Vec<u64> = biguint.to_u64_digits();
+
+    BigInt {
+        sign_bit: false,
+        words: limbs,
+    }
+}
+
+#[napi]
+pub fn vesta_pow(base: &FieldExternal, exponent: BigInt) -> Result<FieldExternal> {
+    // Convert NAPI BigInt to ark BigInt
+    let exp_ark = napi_bigint_to_ark_bigint::<VestaFr, 4>(exponent)?;
+    let exp_limbs = exp_ark.as_ref();
+
+    // Use arkworks' efficient field exponentiation
+    let result = base.pow(exp_limbs);
+    Ok(External::new(result))
+}

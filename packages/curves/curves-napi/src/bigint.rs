@@ -120,7 +120,7 @@ mod tests {
                 high.to_le_bytes(),
             ].concat();
             let original = NumBigInt::from_bytes_le(Sign::Plus, &bytes);
-            
+
             let napi = num_bigint_to_napi(&original);
             let recovered = napi_bigint_to_num_bigint(napi).unwrap();
             prop_assert_eq!(original, recovered);
@@ -138,10 +138,10 @@ mod tests {
         fn prop_ark_reduces_modulo(value: i64, multiplier in 0i32..10) {
             let modulus: NumBigInt = Fr::MODULUS.into();
             let input = NumBigInt::from(value) + &modulus * multiplier;
-            
+
             let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(input).unwrap();
             let result = ark_bigint_to_num_bigint(ark);
-            
+
             // Result should be in range [0, modulus)
             prop_assert!(result >= NumBigInt::from(0));
             prop_assert!(result < modulus);
@@ -152,10 +152,10 @@ mod tests {
             let input = NumBigInt::from(-value);
             let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(input).unwrap();
             let result = ark_bigint_to_num_bigint(ark);
-            
+
             // Negative inputs should produce positive outputs
             prop_assert!(result > NumBigInt::from(0));
-            
+
             // And should equal modulus - value
             let modulus: NumBigInt = Fr::MODULUS.into();
             let expected = modulus - NumBigInt::from(value);
@@ -166,34 +166,34 @@ mod tests {
         fn prop_full_pipeline_idempotent(value in 0u64..1_000_000) {
             // Converting twice should give the same result
             let original = NumBigInt::from(value);
-            
+
             let napi1 = num_bigint_to_napi(&original);
             let ark1: BigInt<4> = napi_bigint_to_ark_bigint::<Fr, 4>(napi1).unwrap();
-            
+
             let napi2 = num_bigint_to_napi(&original);
             let ark2: BigInt<4> = napi_bigint_to_ark_bigint::<Fr, 4>(napi2).unwrap();
-            
+
             prop_assert_eq!(ark1, ark2);
         }
 
         #[test]
         fn prop_modular_arithmetic_consistent(a: i32, b: i32) {
             let modulus: NumBigInt = Fr::MODULUS.into();
-            
+
             let num_a = NumBigInt::from(a);
             let num_b = NumBigInt::from(b);
-            
+
             // (a + b) mod p == ((a mod p) + (b mod p)) mod p
             let sum = &num_a + &num_b;
             let ark_sum: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(sum).unwrap();
             let result_sum = ark_bigint_to_num_bigint(ark_sum);
-            
+
             let ark_a: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(num_a).unwrap();
             let ark_b: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(num_b).unwrap();
             let reduced_a = ark_bigint_to_num_bigint(ark_a);
             let reduced_b = ark_bigint_to_num_bigint(ark_b);
             let sum_reduced = (&reduced_a + &reduced_b).mod_floor(&modulus);
-            
+
             prop_assert_eq!(result_sum, sum_reduced);
         }
     }
@@ -205,7 +205,7 @@ mod tests {
         let zero = NumBigInt::from(0);
         let napi = num_bigint_to_napi(&zero);
         assert_eq!(napi_bigint_to_num_bigint(napi).unwrap(), zero);
-        
+
         // Exactly the modulus
         let modulus: NumBigInt = Fr::MODULUS.into();
         let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(modulus).unwrap();
