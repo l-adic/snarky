@@ -1,27 +1,13 @@
-module Snarky.Test.Circuit.Circuit
-  ( BoolInputs2
-  , Fr
-  , IfThenElseInputs
-  , Inputs2
-  , andCircuit
-  , divCircuit
-  , eqCircuit
-  , ifThenElseCircuit
-  , invCircuit
-  , mkCircuitSpec
-  , mulCircuit
-  , notCircuit
-  , spec
-  , squareCircuit
-  , xorCircuit
-  ) where
+module Snarky.Test.Circuit.Circuit (spec) where
 
 import Prelude
 
-import Data.Array ((..), foldMap, filter)
+import Data.Array (filter, foldMap, (..))
 import Data.Array.NonEmpty (NonEmptyArray, fromArray)
 import Data.Either (Either(..))
 import Data.Foldable (for_, sum)
+import Data.Identity (Identity)
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Monoid.Conj (Conj(..))
@@ -33,11 +19,11 @@ import Data.Tuple.Nested (Tuple3, uncurry3)
 import Effect.Aff (throwError)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderM)
+import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CSCircuit(..), evalR1CSCircuit)
 import Snarky.Circuit.DSL (class CircuitM, all_, and_, any_, div_, eq_, ifThenElse_, inv_, mul_, not_, or_, publicInputs, read, runAsProver, square_, sum_, xor_)
-import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProverM)
+import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Types (class PrimeField)
@@ -57,48 +43,48 @@ type Inputs2 =
     (FieldElem Fr)
 
 mulCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr Variable)
 mulCircuit = do
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
     mul_ a b
 
 squareCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m p
+   . CircuitM Fr m p
   => m (CVar Fr Variable)
 squareCircuit =
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
     square_ a
 
 eqCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr BooleanVariable)
 eqCircuit = do
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
     eq_ a b
 
 invCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr Variable)
 invCircuit =
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
     inv_ a
 
 divCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr Variable)
 divCircuit =
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
     div_ a b
 
 notCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr BooleanVariable)
 notCircuit = do
   publicInputs @Fr (Proxy @Boolean) >>= \a ->
@@ -110,24 +96,24 @@ type BoolInputs2 =
     Boolean
 
 andCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr BooleanVariable)
 andCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
     and_ a b
 
 orCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr BooleanVariable)
 orCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
     or_ a b
 
 xorCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr BooleanVariable)
 xorCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
@@ -137,8 +123,8 @@ type IfThenElseInputs =
   Tuple3 Boolean (FieldElem Fr) (FieldElem Fr)
 
 ifThenElseCircuit
-  :: forall m
-   . CircuitM Fr m
+  :: forall m n
+   . CircuitM Fr m n
   => m (CVar Fr Variable)
 ifThenElseCircuit =
   publicInputs @Fr (Proxy @IfThenElseInputs) >>= \(Tuple b (Tuple t e)) ->
@@ -150,8 +136,8 @@ intSizes = case fromArray $ filter (\x -> x `mod` 8 == 0) (8 .. 256) of
   Just x -> x
 
 allCircuit
-  :: forall m n
-   . CircuitM Fr m
+  :: forall m n p
+   . CircuitM Fr m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr BooleanVariable)
@@ -160,8 +146,8 @@ allCircuit _ =
     all_ (unVector bs)
 
 anyCircuit
-  :: forall m n
-   . CircuitM Fr m
+  :: forall m n p
+   . CircuitM Fr m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr BooleanVariable)
@@ -170,8 +156,8 @@ anyCircuit _ =
     any_ (unVector bs)
 
 sumCircuit
-  :: forall m n
-   . CircuitM Fr m
+  :: forall m n p
+   . CircuitM Fr m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr Variable)
@@ -187,19 +173,19 @@ mkCircuitSpec
   => Eq b
   => Proxy f
   -> Gen a
-  -> (forall m. CircuitM f m => m bvar)
+  -> (forall m. CircuitM f m Identity => m bvar)
   -> (a -> b)
   -> Gen Result
 mkCircuitSpec (_ :: Proxy f) inputsGen circuit f = do
   inputs <- inputsGen
   let
     Tuple _ { constraints, publicInputs } =
-      runCircuitBuilderM circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
-    Tuple result assignments =
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
+    Tuple result (assignments :: Map Variable f) =
       let
         proverState = emptyProverState { publicInputs = publicInputs }
       in
-        case runProverM (assignPublicInputs inputs *> circuit) proverState of
+        case runProver (assignPublicInputs inputs *> circuit) proverState of
           Tuple (Left e) _ -> unsafeCrashWith $ "Error in circuit: " <> show e
           Tuple (Right c) { assignments } -> Tuple c assignments
     _lookup v = case Map.lookup v assignments of

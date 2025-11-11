@@ -1,42 +1,47 @@
 module Snarky.Circuit.DSL
-  ( AsProver
-  , runAsProver
-  , class MonadFresh
-  , fresh
-  , class CircuitM
-  , exists
+  ( AsProverT
+  , AsProver
   , addConstraint
-  , publicInputs
-  , readCVar
-  , read
-  , mul_
-  , square_
-  , eq_
-  , inv_
-  , div_
-  , true_
-  , false_
-  , ifThenElse_
-  , not_
-  , and_
-  , or_
-  , xor_
   , all_
+  , and_
   , any_
+  , class CircuitM
+  , class MonadFresh
+  , const_
+  , div_
+  , eq_
+  , exists
+  , false_
+  , fresh
+  , ifThenElse_
+  , inv_
+  , mul_
+  , not_
+  , or_
+  , publicInputs
+  , read
+  , readCVar
+  , runAsProver
+  , runAsProverT
+  , square_
   , sum_
+  , true_
+  , xor_
   ) where
 
 import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow)
-import Control.Monad.Except (ExceptT, runExceptT, throwError)
-import Control.Monad.Reader (class MonadAsk, Reader, ask, runReader)
+import Control.Monad.Except (class MonadTrans, ExceptT, lift, runExceptT, throwError)
+import Control.Monad.Reader (class MonadAsk, ReaderT, ask, runReaderT)
 import Data.Array (foldl)
 import Data.Array as Array
 import Data.Either (Either)
+import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (un)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
@@ -49,21 +54,32 @@ import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable(..), FieldEl
 import Snarky.Curves.Types (class PrimeField, fromBigInt)
 import Type.Proxy (Proxy)
 
-newtype AsProver f a = AsProver (ExceptT (EvaluationError Variable) (Reader (Map Variable f)) a)
+newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError Variable) (ReaderT (Map Variable f) m) a)
+
+runAsProverT
+  :: forall f a m
+   . Monad m
+  => AsProverT f m a
+  -> Map Variable f
+  -> m (Either (EvaluationError Variable) a)
+runAsProverT (AsProverT m) env = runReaderT (runExceptT m) env
+
+type AsProver f = AsProverT f Identity
 
 runAsProver
   :: forall f a
    . AsProver f a
   -> Map Variable f
   -> Either (EvaluationError Variable) a
-runAsProver (AsProver m) env = runReader (runExceptT m) env
+runAsProver m e = un Identity $ runAsProverT m e
 
 read
-  :: forall f var a
+  :: forall f var a m
    . ConstrainedType f var a
   => PrimeField f
+  => Monad m
   => var
-  -> AsProver f a
+  -> AsProverT f m a
 read var = do
   let fieldVars = varToFields @_ @_ @a var
   m <- ask
@@ -71,32 +87,35 @@ read var = do
   fields <- traverse (CVar.eval _lookup) fieldVars
   pure $ fieldsToValue fields
 
-derive newtype instance Functor (AsProver f)
-derive newtype instance Apply (AsProver f)
-derive newtype instance Bind (AsProver f)
-derive newtype instance Applicative (AsProver f)
-derive newtype instance Monad (AsProver f)
-derive newtype instance MonadAsk (Map Variable f) (AsProver f)
-derive newtype instance MonadThrow (EvaluationError Variable) (AsProver f)
+derive newtype instance Functor m => Functor (AsProverT f m)
+derive newtype instance Monad m => Apply (AsProverT f m)
+derive newtype instance Monad m => Bind (AsProverT f m)
+derive newtype instance Monad m => Applicative (AsProverT f m)
+derive newtype instance Monad m => Monad (AsProverT f m)
+derive newtype instance Monad m => MonadAsk (Map Variable f) (AsProverT f m)
+derive newtype instance Monad m => MonadThrow (EvaluationError Variable) (AsProverT f m)
+
+instance MonadTrans (AsProverT f) where
+  lift m = AsProverT $ lift $ lift m
 
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-class MonadFresh m <= CircuitM f m where
-  exists :: forall a var. ConstrainedType f var a => AsProver f a -> m var
+class (Monad n, MonadFresh m) <= CircuitM f m n | m -> n where
+  exists :: forall a var. ConstrainedType f var a => AsProverT f n a -> m var
   addConstraint :: R1CS f Variable -> m Unit
   publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> m var
 
-readCVar :: forall f. PrimeField f => CVar f Variable -> AsProver f f
+readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
 readCVar v = do
   m <- ask
   let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
   CVar.eval _lookup v
 
 mul_
-  :: forall m f
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f Variable)
@@ -114,9 +133,9 @@ mul_ a b =
       pure z
 
 square_
-  :: forall m f
+  :: forall m f n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f Variable
   -> m (CVar f Variable)
 square_ = case _ of
@@ -129,9 +148,9 @@ square_ = case _ of
     pure z
 
 eq_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f BooleanVariable)
@@ -141,15 +160,17 @@ eq_ a b = case a `CVar.sub_` b of
     let z = a `CVar.sub_` b
     Tuple r zInv <- exists do
       zVal <- readCVar z
-      pure $ if zVal == zero then Tuple (FieldElem (one :: f)) (FieldElem zero) else Tuple (FieldElem zero) (FieldElem $ recip zVal)
+      pure $
+        if zVal == zero then Tuple (FieldElem (one :: f)) (FieldElem zero)
+        else Tuple (FieldElem zero) (FieldElem $ recip zVal)
     addConstraint $ R1CS { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ R1CS { left: r, right: z, output: Const zero }
     pure $ coerce r
 
 inv_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f Variable
   -> m (CVar f Variable)
 inv_ = case _ of
@@ -163,10 +184,13 @@ inv_ = case _ of
     addConstraint $ R1CS { left: a, right: aInv, output: Const one }
     pure aInv
 
+const_ :: forall f. PrimeField f => f -> CVar f Variable
+const_ = Const
+
 div_
-  :: forall m f
+  :: forall m f n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f Variable
   -> CVar f Variable
   -> m (CVar f Variable)
@@ -186,9 +210,9 @@ not_
 not_ a = coerce (Const one `CVar.sub_` a)
 
 ifThenElse_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f Variable
   -> CVar f Variable
@@ -210,29 +234,29 @@ ifThenElse_ b thenBranch elseBranch = case b of
       pure r
 
 and_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
 and_ a b = do
-  conj <- (coerce a :: CVar f Variable) `mul_` coerce b
+  conj <- mul_ (coerce a :: CVar f Variable) (coerce b)
   pure $ coerce conj
 
 or_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
   -> m (CVar f BooleanVariable)
@@ -268,9 +292,9 @@ sum_
 sum_ = foldl CVar.add_ (Const zero)
 
 any_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)
 any_ as =
@@ -283,9 +307,9 @@ any_ as =
         else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f m
+  :: forall f m n
    . PrimeField f
-  => CircuitM f m
+  => CircuitM f m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)
 all_ as =
