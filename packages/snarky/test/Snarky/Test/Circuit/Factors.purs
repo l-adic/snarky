@@ -102,6 +102,6 @@ spec = describe "Factors Specs" do
 
   it "factors Circuit is Valid" $ do
     { constraints, publicInputs } <- liftEffect $
-      execCircuitBuilderT factorsCircuit (emptyCircuitBuilderState :: CircuitBuilderState Fr ConstraintSystem)
+      execCircuitBuilderT factorsCircuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
     quickCheck $
       mkCircuitSpec' (arbitrary @(FieldElem Fr)) { constraints, publicInputs } factorsCircuit

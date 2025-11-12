@@ -25,51 +25,50 @@ import Snarky.Circuit.Types (class ConstrainedType, Variable(..), check, fieldsT
 import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy(..))
 
-type CircuitBuilderState :: Type -> Type -> Type
-type CircuitBuilderState f c =
+type CircuitBuilderState c =
   { nextVar :: Int
   , constraints :: Array c
   , publicInputs :: Array Variable
   }
 
-emptyCircuitBuilderState :: forall f c. CircuitBuilderState f c
+emptyCircuitBuilderState :: forall c. CircuitBuilderState c
 emptyCircuitBuilderState =
   { nextVar: 0
   , constraints: mempty
   , publicInputs: mempty
   }
 
-newtype CircuitBuilderT f c m a = CircuitBuilderT (StateT (CircuitBuilderState f c) m a)
+newtype CircuitBuilderT c m a = CircuitBuilderT (StateT (CircuitBuilderState c) m a)
 
-derive newtype instance Functor m => Functor (CircuitBuilderT c f m)
-derive newtype instance Monad m => Apply (CircuitBuilderT f c m)
-derive newtype instance Monad m => Bind (CircuitBuilderT f c m)
-derive newtype instance Monad m => Applicative (CircuitBuilderT f c m)
-derive newtype instance Monad m => Monad (CircuitBuilderT f c m)
-derive newtype instance Monad m => MonadState (CircuitBuilderState f c) (CircuitBuilderT f c m)
-derive newtype instance MonadTrans (CircuitBuilderT f c)
+derive newtype instance Functor m => Functor (CircuitBuilderT c m)
+derive newtype instance Monad m => Apply (CircuitBuilderT c m)
+derive newtype instance Monad m => Bind (CircuitBuilderT c m)
+derive newtype instance Monad m => Applicative (CircuitBuilderT c m)
+derive newtype instance Monad m => Monad (CircuitBuilderT c m)
+derive newtype instance Monad m => MonadState (CircuitBuilderState c) (CircuitBuilderT c m)
+derive newtype instance MonadTrans (CircuitBuilderT c)
 
-runCircuitBuilderT :: forall f a m c. Monad m => CircuitBuilderT f c m a -> CircuitBuilderState f c -> m (Tuple a (CircuitBuilderState f c))
+runCircuitBuilderT :: forall c m a. Monad m => CircuitBuilderT c m a -> CircuitBuilderState c -> m (Tuple a (CircuitBuilderState c))
 runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s
 
-execCircuitBuilderT :: forall f a m c. Monad m => CircuitBuilderT f c m a -> CircuitBuilderState f c -> m (CircuitBuilderState f c)
+execCircuitBuilderT :: forall c m a. Monad m => CircuitBuilderT c m a -> CircuitBuilderState c -> m (CircuitBuilderState c)
 execCircuitBuilderT (CircuitBuilderT m) s = execStateT m s
 
-type CircuitBuilder f c = CircuitBuilderT f c Identity
+type CircuitBuilder c = CircuitBuilderT c Identity
 
-runCircuitBuilder :: forall f a c. CircuitBuilder f c a -> CircuitBuilderState f c -> Tuple a (CircuitBuilderState f c)
+runCircuitBuilder :: forall c a. CircuitBuilder c a -> CircuitBuilderState c -> Tuple a (CircuitBuilderState c)
 runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
-instance Monad m => MonadFresh (CircuitBuilderT f c m) where
+instance Monad m => MonadFresh (CircuitBuilderT c m) where
   fresh = do
     { nextVar } <- get
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT f c m) m where
+instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT c m) m where
   addConstraint c = modify_ \s ->
     s { constraints = s.constraints `snoc` c }
-  exists :: forall a var. ConstrainedType f var a c => AsProverT f m a -> CircuitBuilderT f c m var
+  exists :: forall a var. ConstrainedType f var a c => AsProverT f m a -> CircuitBuilderT c m var
   exists _ = do
     let n = sizeInFields @f (Proxy @a)
     vars <- replicateA n fresh
@@ -77,7 +76,7 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
     traverse_ (addConstraint @f @c) (check @f @var @a v)
     pure v
 
-  publicInputs :: forall a var. ConstrainedType f var a c => Proxy a -> CircuitBuilderT f c m var
+  publicInputs :: forall a var. ConstrainedType f var a c => Proxy a -> CircuitBuilderT c m var
   publicInputs proxy = do
     let n = sizeInFields @f proxy
     vars <- replicateA n fresh

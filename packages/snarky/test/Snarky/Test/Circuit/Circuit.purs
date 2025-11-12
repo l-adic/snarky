@@ -204,7 +204,7 @@ mkCircuitSpec inputsGen circuit f = do
   inputs <- inputsGen
   let
     Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState Fr ConstraintSystem)
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
     Tuple result (assignments :: Map Variable Fr) =
       let
         proverState = emptyProverState { publicInputs = publicInputs }
@@ -339,7 +339,7 @@ mkAssertionSpec inputsGen circuit isValid = do
   let
     shouldSucceed = isValid inputs
     Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState Fr ConstraintSystem)
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
     proverResult =
       let
         proverState = emptyProverState { publicInputs = publicInputs }
