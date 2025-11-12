@@ -22,7 +22,7 @@ import Snarky.Circuit.Types (BooleanVariable(..), FieldElem(..), Variable(..))
 import Snarky.Curves.Types (class PrimeField)
 
 mul_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f Variable
   -> CVar f Variable
@@ -55,7 +55,7 @@ square_ = case _ of
     pure z
 
 eq_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f Variable
   -> CVar f Variable
@@ -74,7 +74,7 @@ eq_ a b = case a `CVar.sub_` b of
     pure $ coerce r
 
 neq_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f Variable
   -> CVar f Variable
@@ -84,7 +84,7 @@ neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
   pure $ const_ (one :: f) `sub_` c
 
 inv_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f Variable
   -> m (CVar f Variable)
@@ -93,10 +93,10 @@ inv_ = case _ of
     if a == zero then unsafeCrashWith "inv: expected nonzero arg"
     else Const (recip a)
   a -> do
-    aInv <- exists @_ @c do
+    aInv <- exists do
       aVal <- readCVar a
       pure $ FieldElem $ if aVal == zero then zero else recip aVal
-    addConstraint @f @c $ r1cs { left: a, right: aInv, output: Const one }
+    addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 
 div_

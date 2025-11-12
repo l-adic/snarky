@@ -92,40 +92,40 @@ instance (FieldEncoded f a, Reflectable n Int) => FieldEncoded f (Vector n a) wh
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
   sizeInFields _ = reflectType (Proxy @n) * sizeInFields @f (Proxy @a)
 
-class FieldEncoded f a <= ConstrainedType f var a c | a -> var c, c -> f var where
+class FieldEncoded f a <= ConstrainedType f a c var | f a -> var c, c -> f, var -> f where
   varToFields :: var -> Array (CVar f Variable)
   fieldsToVar :: Array (CVar f Variable) -> var
   check :: var -> Array c
 
-instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f (CVar f BooleanVariable) Boolean c where
+instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f Boolean c (CVar f BooleanVariable) where
   varToFields var = Array.singleton $ coerce var
   fieldsToVar a = coerce $ unsafePartial fromJust $ Array.head a
   check :: CVar f BooleanVariable -> Array c
   check var = Array.singleton $ boolean (coerce var :: CVar f Variable)
 
-instance (ConstrainedType f avar a c) => ConstrainedType f avar (Tuple a Unit) c where
-  varToFields av = varToFields @f @avar @a av
-  fieldsToVar vs = fieldsToVar @f @avar @a vs
-  check a = check @f @avar @a a
+instance (ConstrainedType f a c avar) => ConstrainedType f (Tuple a Unit) c avar where
+  varToFields av = varToFields @f @a av
+  fieldsToVar vs = fieldsToVar @f @a vs
+  check a = check @f @a a
 
-else instance (ConstrainedType f avar a c, ConstrainedType f bvar b c) => ConstrainedType f (Tuple avar bvar) (Tuple a b) c where
-  varToFields (Tuple av bv) = varToFields @f @avar @a av <> varToFields @f @bvar @b bv
+else instance (ConstrainedType f a c avar, ConstrainedType f b c bvar) => ConstrainedType f (Tuple a b) c (Tuple avar bvar) where
+  varToFields (Tuple av bv) = varToFields @f @a av <> varToFields @f @b bv
   fieldsToVar vs =
     let
       { before: avs, after: bvs } = Array.splitAt (sizeInFields @f (Proxy @a)) vs
     in
-      Tuple (fieldsToVar @f @avar @a avs) (fieldsToVar @f @bvar @b bvs)
-  check (Tuple a b) = check @f @avar @a a <> check @f @bvar @b b
+      Tuple (fieldsToVar @f @a avs) (fieldsToVar @f @b bvs)
+  check (Tuple a b) = check @f @a a <> check @f @b b
 
-instance (ConstrainedType f avar a c, Reflectable n Int) => ConstrainedType f (Vector n avar) (Vector n a) c where
-  varToFields as = foldMap (varToFields @f @avar @a) $ unVector as
+instance (ConstrainedType f a c avar, Reflectable n Int) => ConstrainedType f (Vector n a) c (Vector n avar) where
+  varToFields as = foldMap (varToFields @f @a) $ unVector as
   fieldsToVar as = unsafePartial fromJust $
     let
       chunks = chunk (Array.length as / reflectType (Proxy @n)) as
-      vs = fieldsToVar @f @avar @a <$> chunks
+      vs = fieldsToVar @f @a <$> chunks
     in
       toVector (Proxy @n) vs
-  check as = foldMap (check @f @avar @a) $ unVector as
+  check as = foldMap (check @f @a) $ unVector as
 
 newtype FieldElem f = FieldElem f
 
@@ -138,7 +138,7 @@ instance FieldEncoded f (FieldElem f) where
   fieldsToValue a = coerce $ unsafePartial fromJust $ Array.head a
   sizeInFields _ = 1
 
-instance PrimeField f => ConstrainedType f (CVar f Variable) (FieldElem f) c where
+instance PrimeField f => ConstrainedType f (FieldElem f) c (CVar f Variable) where
   varToFields = Array.singleton
   fieldsToVar a = unsafePartial fromJust $ Array.head a
   check _ = mempty
@@ -152,7 +152,7 @@ instance FieldEncoded f a => FieldEncoded f (UnChecked a) where
   fieldsToValue = UnChecked <<< fieldsToValue
   sizeInFields _ = sizeInFields @f (Proxy @a)
 
-instance ConstrainedType f var a c => ConstrainedType f (UnChecked var) (UnChecked a) c where
-  varToFields (UnChecked var) = varToFields @f @var @a var
-  fieldsToVar a = UnChecked $ fieldsToVar @f @var @a a
+instance ConstrainedType f a c var => ConstrainedType f (UnChecked a) c (UnChecked var) where
+  varToFields (UnChecked var) = varToFields @f @a var
+  fieldsToVar a = UnChecked $ fieldsToVar @f @a a
   check _ = mempty

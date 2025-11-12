@@ -80,7 +80,7 @@ runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
 instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (ProverT f m) m where
   addConstraint _ = pure unit
-  exists :: forall a var. ConstrainedType f var a c => AsProverT f m a -> ProverT f m var
+  exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> ProverT f m var
   exists m = do
     let n = sizeInFields @f (Proxy @a)
     { assignments } <- get
@@ -92,13 +92,13 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
     do
       let aFieldElems = valueToFields a
       modify_ _ { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) assignments (zip vars aFieldElems) }
-    pure $ fieldsToVar @f @var @a (map Var vars)
-  publicInputs :: forall a var. ConstrainedType f var a c => Proxy a -> ProverT f m var
+    pure $ fieldsToVar @f @a (map Var vars)
+  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> ProverT f m var
   publicInputs proxy = do
     let n = sizeInFields @f proxy
     vars <- replicateA n fresh
     modify_ \s -> s { publicInputs = vars }
-    pure $ fieldsToVar @f @var @a (map Var vars)
+    pure $ fieldsToVar @f @a (map Var vars)
 
 instance Monad m => MonadFresh (ProverT f m) where
   fresh = do
@@ -106,7 +106,7 @@ instance Monad m => MonadFresh (ProverT f m) where
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-assignPublicInputs :: forall f var a m c. ConstrainedType f var a c => Monad m => a -> ProverT f m Unit
+assignPublicInputs :: forall f a c var m. ConstrainedType f a c var => Monad m => a -> ProverT f m Unit
 assignPublicInputs a = do
   let fs = valueToFields a
   { publicInputs } <- get

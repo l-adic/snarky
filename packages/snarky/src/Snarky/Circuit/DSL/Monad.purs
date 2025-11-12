@@ -54,13 +54,13 @@ runAsProver m e = un Identity $ runAsProverT m e
 
 read
   :: forall f var a m c
-   . ConstrainedType f var a c
+   . ConstrainedType f a c var
   => PrimeField f
   => Monad m
   => var
   -> AsProverT f m a
 read var = do
-  let fieldVars = varToFields @_ @_ @a var
+  let fieldVars = varToFields @f @a var
   m <- ask
   let _lookup v = maybe (throwError $ MissingVariable v) pure $ Map.lookup v m
   fields <- traverse (CVar.eval _lookup) fieldVars
@@ -81,9 +81,9 @@ class Monad m <= MonadFresh m where
   fresh :: m Variable
 
 class (Monad n, MonadFresh m, PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c m n | m -> n c f, c -> f where
-  exists :: forall a var. ConstrainedType f var a c => AsProverT f n a -> m var
+  exists :: forall a var. ConstrainedType f a c var => AsProverT f n a -> m var
   addConstraint :: c -> m Unit
-  publicInputs :: forall a var. ConstrainedType f var a c => Proxy a -> m var
+  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> m var
 
 readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
 readCVar v = do

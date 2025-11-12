@@ -65,7 +65,7 @@ instance FactorM Fr Effect where
 
 mkCircuitSpec'
   :: forall a avar
-   . ConstrainedType Fr avar a ConstraintSystem
+   . ConstrainedType Fr a ConstraintSystem avar
   => Gen a
   -> { constraints :: Array (R1CS Fr Variable)
      , publicInputs :: Array Variable

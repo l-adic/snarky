@@ -38,7 +38,7 @@ not_
 not_ a = const_ one `CVar.sub_` a
 
 ifThenElse_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f BooleanVariable
   -> CVar f Variable
@@ -61,7 +61,7 @@ ifThenElse_ b thenBranch elseBranch = case b of
       pure r
 
 and_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
@@ -71,7 +71,7 @@ and_ a b = do
   pure $ coerce conj
 
 or_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
@@ -79,7 +79,7 @@ or_
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => CVar f BooleanVariable
   -> CVar f BooleanVariable
@@ -110,7 +110,7 @@ xor_ a b = case a, b of
     pure res
 
 any_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)
@@ -124,7 +124,7 @@ any_ as =
         else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f m n c
+  :: forall f c m n
    . CircuitM f c m n
   => Array (CVar f BooleanVariable)
   -> m (CVar f BooleanVariable)

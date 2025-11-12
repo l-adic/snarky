@@ -193,8 +193,8 @@ assertEqualCircuit = do
 
 mkCircuitSpec
   :: forall a b avar bvar
-   . ConstrainedType Fr avar a ConstraintSystem
-  => ConstrainedType Fr bvar b ConstraintSystem
+   . ConstrainedType Fr a ConstraintSystem avar
+  => ConstrainedType Fr b ConstraintSystem bvar
   => Eq b
   => Gen a
   -> (forall m. CircuitM Fr ConstraintSystem m Identity => m bvar)
@@ -329,7 +329,7 @@ boolSpec = describe "Boolean Circuit Specs" do
 
 mkAssertionSpec
   :: forall a avar
-   . ConstrainedType Fr avar a ConstraintSystem
+   . ConstrainedType Fr a ConstraintSystem avar
   => Gen a
   -> (forall m. CircuitM Fr ConstraintSystem m Identity => m Unit)
   -> (a -> Boolean) -- predicate that should be true for valid inputs
