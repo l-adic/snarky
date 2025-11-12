@@ -14,6 +14,7 @@ import Data.Newtype (un)
 import Data.Traversable (class Foldable, class Traversable)
 import Snarky.Circuit.CVar (CVar, EvaluationError)
 import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Curves.Types (class PrimeField)
 
 data R1CS f i
@@ -64,3 +65,7 @@ evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
     )
     mempty
     gates
+
+instance R1CSSystem (CVar f i) (R1CS f i) where
+  r1cs = R1CS
+  boolean = Boolean

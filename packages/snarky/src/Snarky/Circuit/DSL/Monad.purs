@@ -28,7 +28,7 @@ import Data.Newtype (un)
 import Data.Traversable (traverse)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (R1CS)
+import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToValue, varToFields)
 import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy)
@@ -53,8 +53,8 @@ runAsProver
 runAsProver m e = un Identity $ runAsProverT m e
 
 read
-  :: forall f var a m
-   . ConstrainedType f var a
+  :: forall f var a m c
+   . ConstrainedType f var a c
   => PrimeField f
   => Monad m
   => var
@@ -80,10 +80,10 @@ instance MonadTrans (AsProverT f) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-class (Monad n, MonadFresh m, PrimeField f) <= CircuitM f m n | m -> n where
-  exists :: forall a var. ConstrainedType f var a => AsProverT f n a -> m var
-  addConstraint :: R1CS f Variable -> m Unit
-  publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> m var
+class (Monad n, MonadFresh m, PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c m n | m -> n c f, c -> f where
+  exists :: forall a var. ConstrainedType f var a c => AsProverT f n a -> m var
+  addConstraint :: c -> m Unit
+  publicInputs :: forall a var. ConstrainedType f var a c => Proxy a -> m var
 
 readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
 readCVar v = do

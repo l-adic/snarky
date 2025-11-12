@@ -21,7 +21,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
-import Snarky.Circuit.Constraint (R1CSCircuit(..), evalR1CSCircuit)
+import Snarky.Circuit.Constraint (R1CS, R1CSCircuit(..), evalR1CSCircuit)
 import Snarky.Circuit.DSL (class CircuitM, publicInputs, read, runAsProver)
 import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
 import Snarky.Circuit.DSL.Boolean (all_, and_, any_, ifThenElse_, not_, or_, xor_)
@@ -29,7 +29,6 @@ import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
-import Snarky.Curves.Types (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (Result, arbitrary, quickCheckGen', withHelp)
@@ -46,6 +45,8 @@ spec = do
 
 type Fr = BN254.ScalarField
 
+type ConstraintSystem = R1CS Fr Variable
+
 type Inputs2 =
   Tuple
     (FieldElem Fr)
@@ -53,7 +54,7 @@ type Inputs2 =
 
 mulCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr Variable)
 mulCircuit = do
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
@@ -61,7 +62,7 @@ mulCircuit = do
 
 squareCircuit
   :: forall m p
-   . CircuitM Fr m p
+   . CircuitM Fr ConstraintSystem m p
   => m (CVar Fr Variable)
 squareCircuit =
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
@@ -69,7 +70,7 @@ squareCircuit =
 
 eqCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr BooleanVariable)
 eqCircuit = do
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
@@ -77,7 +78,7 @@ eqCircuit = do
 
 invCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr Variable)
 invCircuit =
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
@@ -85,7 +86,7 @@ invCircuit =
 
 divCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr Variable)
 divCircuit =
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
@@ -93,7 +94,7 @@ divCircuit =
 
 notCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr BooleanVariable)
 notCircuit = do
   publicInputs @Fr (Proxy @Boolean) >>= \a ->
@@ -106,7 +107,7 @@ type BoolInputs2 =
 
 andCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr BooleanVariable)
 andCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
@@ -114,7 +115,7 @@ andCircuit = do
 
 orCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr BooleanVariable)
 orCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
@@ -122,7 +123,7 @@ orCircuit = do
 
 xorCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr BooleanVariable)
 xorCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
@@ -133,7 +134,7 @@ type IfThenElseInputs =
 
 ifThenElseCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m (CVar Fr Variable)
 ifThenElseCircuit =
   publicInputs @Fr (Proxy @IfThenElseInputs) >>= \(Tuple b (Tuple t e)) ->
@@ -146,7 +147,7 @@ intSizes = case fromArray $ filter (\x -> x `mod` 8 == 0) (8 .. 256) of
 
 allCircuit
   :: forall m n p
-   . CircuitM Fr m p
+   . CircuitM Fr ConstraintSystem m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr BooleanVariable)
@@ -156,7 +157,7 @@ allCircuit _ =
 
 anyCircuit
   :: forall m n p
-   . CircuitM Fr m p
+   . CircuitM Fr ConstraintSystem m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr BooleanVariable)
@@ -166,7 +167,7 @@ anyCircuit _ =
 
 sumCircuit
   :: forall m n p
-   . CircuitM Fr m p
+   . CircuitM Fr ConstraintSystem m p
   => Reflectable n Int
   => Proxy n
   -> m (CVar Fr Variable)
@@ -176,7 +177,7 @@ sumCircuit _ =
 
 assertNonZeroCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m Unit
 assertNonZeroCircuit = do
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
@@ -184,29 +185,27 @@ assertNonZeroCircuit = do
 
 assertEqualCircuit
   :: forall m n
-   . CircuitM Fr m n
+   . CircuitM Fr ConstraintSystem m n
   => m Unit
 assertEqualCircuit = do
   publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
     assertEqual a a
 
 mkCircuitSpec
-  :: forall f a b avar bvar
-   . PrimeField f
-  => ConstrainedType f avar a
-  => ConstrainedType f bvar b
+  :: forall a b avar bvar
+   . ConstrainedType Fr avar a ConstraintSystem
+  => ConstrainedType Fr bvar b ConstraintSystem
   => Eq b
-  => Proxy f
-  -> Gen a
-  -> (forall m. CircuitM f m Identity => m bvar)
+  => Gen a
+  -> (forall m. CircuitM Fr ConstraintSystem m Identity => m bvar)
   -> (a -> b)
   -> Gen Result
-mkCircuitSpec (_ :: Proxy f) inputsGen circuit f = do
+mkCircuitSpec inputsGen circuit f = do
   inputs <- inputsGen
   let
     Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
-    Tuple result (assignments :: Map Variable f) =
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState Fr ConstraintSystem)
+    Tuple result (assignments :: Map Variable Fr) =
       let
         proverState = emptyProverState { publicInputs = publicInputs }
       in
@@ -232,11 +231,11 @@ fieldSpec :: Spec Unit
 fieldSpec = describe "Field Circuit Specs" do
 
   it "mul Circuit is Valid" $ quickCheck $
-    mkCircuitSpec (Proxy @Fr) arbitrary mulCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
+    mkCircuitSpec arbitrary mulCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
       FieldElem @Fr (a * b)
 
   it "square Circuit is Valid" $ quickCheck $
-    mkCircuitSpec (Proxy @Fr) arbitrary squareCircuit \(FieldElem a) ->
+    mkCircuitSpec arbitrary squareCircuit \(FieldElem a) ->
       FieldElem @Fr (a * a)
 
   it "eq Circuit is Valid" $ quickCheck $
@@ -244,15 +243,15 @@ fieldSpec = describe "Field Circuit Specs" do
       f :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
       f = uncurry (==)
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary eqCircuit f
+      mkCircuitSpec arbitrary eqCircuit f
 
   it "inv Circuit is Valid" $ quickCheck $
-    mkCircuitSpec (Proxy @Fr) arbitrary invCircuit \(FieldElem a) ->
+    mkCircuitSpec arbitrary invCircuit \(FieldElem a) ->
       if a == zero then FieldElem zero
       else FieldElem @Fr (recip a)
 
   it "div Circuit is Valid" $ quickCheck $
-    mkCircuitSpec (Proxy @Fr) arbitrary divCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
+    mkCircuitSpec arbitrary divCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
       if b == zero then FieldElem zero
       else FieldElem @Fr (a / b)
 
@@ -265,7 +264,7 @@ fieldSpec = describe "Field Circuit Specs" do
         for_ intSizes \n -> quickCheckGen' 10 do
           k <- chooseInt 1 n
           reifyType k \pk ->
-            mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (sumCircuit pk) f
+            mkCircuitSpec (Vector.generator pk arbitrary) (sumCircuit pk) f
 
 boolSpec :: Spec Unit
 boolSpec = describe "Boolean Circuit Specs" do
@@ -275,28 +274,28 @@ boolSpec = describe "Boolean Circuit Specs" do
       f :: Boolean -> Boolean
       f = not
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary notCircuit f
+      mkCircuitSpec arbitrary notCircuit f
 
   it "and Circuit is Valid" $ quickCheck $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (&&)
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary andCircuit f
+      mkCircuitSpec arbitrary andCircuit f
 
   it "or Circuit is Valid" $ quickCheck $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (||)
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary orCircuit f
+      mkCircuitSpec arbitrary orCircuit f
 
   it "xor Circuit is Valid" $ quickCheck $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary xorCircuit f
+      mkCircuitSpec arbitrary xorCircuit f
 
   it "ifThenElse Circuit is Valid" $ quickCheck $
     let
@@ -304,7 +303,7 @@ boolSpec = describe "Boolean Circuit Specs" do
       f = uncurry3 \b t e ->
         if b then t else e
     in
-      mkCircuitSpec (Proxy @Fr) arbitrary ifThenElseCircuit f
+      mkCircuitSpec arbitrary ifThenElseCircuit f
 
   it "all Circuit is Valid" $
     let
@@ -315,7 +314,7 @@ boolSpec = describe "Boolean Circuit Specs" do
         for_ intSizes \n -> quickCheckGen' 10 do
           k <- chooseInt 1 n
           reifyType k \pk ->
-            mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (allCircuit pk) f
+            mkCircuitSpec (Vector.generator pk arbitrary) (allCircuit pk) f
 
   it "any Circuit is Valid" $
     let
@@ -326,23 +325,21 @@ boolSpec = describe "Boolean Circuit Specs" do
         for_ intSizes \n -> quickCheckGen' 10 do
           k <- chooseInt 1 n
           reifyType k \pk ->
-            mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (anyCircuit pk) f
+            mkCircuitSpec (Vector.generator pk arbitrary) (anyCircuit pk) f
 
 mkAssertionSpec
-  :: forall f a avar
-   . PrimeField f
-  => ConstrainedType f avar a
-  => Proxy f
-  -> Gen a
-  -> (forall m. CircuitM f m Identity => m Unit)
+  :: forall a avar
+   . ConstrainedType Fr avar a ConstraintSystem
+  => Gen a
+  -> (forall m. CircuitM Fr ConstraintSystem m Identity => m Unit)
   -> (a -> Boolean) -- predicate that should be true for valid inputs
   -> Gen Result
-mkAssertionSpec (_ :: Proxy f) inputsGen circuit isValid = do
+mkAssertionSpec inputsGen circuit isValid = do
   inputs <- inputsGen
   let
     shouldSucceed = isValid inputs
     Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState Fr ConstraintSystem)
     proverResult =
       let
         proverState = emptyProverState { publicInputs = publicInputs }
@@ -375,11 +372,11 @@ assertSpec = describe "Assertion Circuit Specs" do
       f :: FieldElem Fr -> Boolean
       f (FieldElem a) = a /= zero
     in
-      mkAssertionSpec (Proxy @Fr) arbitrary assertNonZeroCircuit f
+      mkAssertionSpec arbitrary assertNonZeroCircuit f
 
   it "assertEqual Circuit is Valid" $ quickCheck $
     let
       f :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
       f (Tuple (FieldElem a) (FieldElem b)) = a == b
     in
-      mkAssertionSpec (Proxy @Fr) arbitrary assertEqualCircuit f
+      mkAssertionSpec arbitrary assertEqualCircuit f
