@@ -13,14 +13,15 @@ import Prelude
 import Control.Monad.State (class MonadState, StateT, execStateT, get, modify_, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
+import Data.Foldable (traverse_)
 import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint (R1CS)
-import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh)
-import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields)
+import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, addConstraint, fresh)
+import Snarky.Circuit.Types (class ConstrainedType, Variable(..), check, fieldsToVar, sizeInFields)
 import Snarky.Curves.Types (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -71,7 +72,10 @@ instance (Monad m, PrimeField f) => CircuitM f (CircuitBuilderT f m) m where
   exists _ = do
     let n = sizeInFields @f (Proxy @a)
     vars <- replicateA n fresh
-    pure $ fieldsToVar @f @var @a (map Var vars)
+    let v = fieldsToVar @f @var @a (map Var vars)
+    traverse_ addConstraint (check @f @var @a v)
+    pure v
+
   publicInputs :: forall a var. ConstrainedType f var a => Proxy a -> CircuitBuilderT f m var
   publicInputs proxy = do
     let n = sizeInFields @f proxy

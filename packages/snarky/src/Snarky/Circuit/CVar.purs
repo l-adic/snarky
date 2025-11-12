@@ -1,6 +1,7 @@
 module Snarky.Circuit.CVar
   ( CVar(..)
   , add_
+  , const_
   , sub_
   , scale_
   , eval
@@ -83,6 +84,9 @@ scale_ f c
   | f == zero = Const zero
   | f == one = c
   | otherwise = ScalarMul f c
+
+const_ :: forall f i. PrimeField f => f -> CVar f i
+const_ = Const
 
 data EvaluationError i = MissingVariable i
 

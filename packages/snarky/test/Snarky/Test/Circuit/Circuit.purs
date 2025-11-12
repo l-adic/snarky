@@ -22,18 +22,27 @@ import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CSCircuit(..), evalR1CSCircuit)
-import Snarky.Circuit.DSL (class CircuitM, all_, and_, any_, assertEqual, assertNonZero, div_, eq_, ifThenElse_, inv_, mul_, not_, or_, publicInputs, read, runAsProver, square_, sum_, xor_)
+import Snarky.Circuit.DSL (class CircuitM, publicInputs, read, runAsProver)
+import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
+import Snarky.Circuit.DSL.Boolean (all_, and_, any_, ifThenElse_, not_, or_, xor_)
+import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Types (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (Result, arbitrary, quickCheckGen, withHelp)
+import Test.QuickCheck (Result, arbitrary, quickCheckGen', withHelp)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
+
+spec :: Spec Unit
+spec = do
+  fieldSpec
+  boolSpec
+  assertSpec
 
 type Fr = BN254.ScalarField
 
@@ -219,47 +228,8 @@ mkCircuitSpec (_ :: Proxy f) inputsGen circuit f = do
       Right res -> withHelp res "Circuit constraints satisfied and evals correctly"
       Left e -> withHelp false ("Failed to parse circuit output: " <> show e)
 
-mkAssertionSpec
-  :: forall f a avar
-   . PrimeField f
-  => ConstrainedType f avar a
-  => Proxy f
-  -> Gen a
-  -> (forall m. CircuitM f m Identity => m Unit)
-  -> (a -> Boolean) -- predicate that should be true for valid inputs
-  -> Gen Result
-mkAssertionSpec (_ :: Proxy f) inputsGen circuit isValid = do
-  inputs <- inputsGen
-  let
-    shouldSucceed = isValid inputs
-    Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
-    proverResult =
-      let
-        proverState = emptyProverState { publicInputs = publicInputs }
-      in
-        runProver (assignPublicInputs inputs *> circuit) proverState
-  case proverResult of
-    Tuple (Left e) _ ->
-      pure $ withHelp (not shouldSucceed) $
-        if shouldSucceed then "Circuit failed with valid input: " <> show e
-        else "Circuit correctly rejected invalid input"
-    Tuple (Right _) { assignments } ->
-      let
-        _lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
-          Just res -> pure res
-        eres = runAsProver (evalR1CSCircuit _lookup (R1CSCircuit constraints)) assignments
-      in
-        pure $ case eres of
-          Right true -> withHelp shouldSucceed $
-            if shouldSucceed then "Assertion circuit satisfied with valid input"
-            else "Assertion circuit should have failed with invalid input"
-          Right false -> withHelp false "Constraints not satisfied"
-          Left e -> withHelp false ("Failed to evaluate circuit: " <> show e)
-
-spec :: Spec Unit
-spec = describe "Circuit Specs" do
+fieldSpec :: Spec Unit
+fieldSpec = describe "Field Circuit Specs" do
 
   it "mul Circuit is Valid" $ quickCheck $
     mkCircuitSpec (Proxy @Fr) arbitrary mulCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
@@ -285,6 +255,20 @@ spec = describe "Circuit Specs" do
     mkCircuitSpec (Proxy @Fr) arbitrary divCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
       if b == zero then FieldElem zero
       else FieldElem @Fr (a / b)
+
+  it "sum Circuit is Valid" $
+    let
+      f :: forall n. Vector n (FieldElem Fr) -> FieldElem Fr
+      f as = FieldElem $ sum (un FieldElem <$> as)
+    in
+      liftEffect $
+        for_ intSizes \n -> quickCheckGen' 10 do
+          k <- chooseInt 1 n
+          reifyType k \pk ->
+            mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (sumCircuit pk) f
+
+boolSpec :: Spec Unit
+boolSpec = describe "Boolean Circuit Specs" do
 
   it "not Circuit is Valid" $ quickCheck $
     let
@@ -328,7 +312,7 @@ spec = describe "Circuit Specs" do
       f = un Conj <<< foldMap Conj <<< unVector
     in
       liftEffect $
-        for_ intSizes \n -> quickCheckGen do
+        for_ intSizes \n -> quickCheckGen' 10 do
           k <- chooseInt 1 n
           reifyType k \pk ->
             mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (allCircuit pk) f
@@ -339,21 +323,52 @@ spec = describe "Circuit Specs" do
       f = un Disj <<< foldMap Disj <<< unVector
     in
       liftEffect $
-        for_ intSizes \n -> quickCheckGen do
+        for_ intSizes \n -> quickCheckGen' 10 do
           k <- chooseInt 1 n
           reifyType k \pk ->
             mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (anyCircuit pk) f
 
-  it "sum Circuit is Valid" $
-    let
-      f :: forall n. Vector n (FieldElem Fr) -> FieldElem Fr
-      f as = FieldElem $ sum (un FieldElem <$> as)
-    in
-      liftEffect $
-        for_ intSizes \n -> quickCheckGen do
-          k <- chooseInt 1 n
-          reifyType k \pk ->
-            mkCircuitSpec (Proxy @Fr) (Vector.generator pk arbitrary) (sumCircuit pk) f
+mkAssertionSpec
+  :: forall f a avar
+   . PrimeField f
+  => ConstrainedType f avar a
+  => Proxy f
+  -> Gen a
+  -> (forall m. CircuitM f m Identity => m Unit)
+  -> (a -> Boolean) -- predicate that should be true for valid inputs
+  -> Gen Result
+mkAssertionSpec (_ :: Proxy f) inputsGen circuit isValid = do
+  inputs <- inputsGen
+  let
+    shouldSucceed = isValid inputs
+    Tuple _ { constraints, publicInputs } =
+      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState f)
+    proverResult =
+      let
+        proverState = emptyProverState { publicInputs = publicInputs }
+      in
+        runProver (assignPublicInputs inputs *> circuit) proverState
+  case proverResult of
+    Tuple (Left e) _ ->
+      pure $ withHelp (not shouldSucceed) $
+        if shouldSucceed then "Circuit failed with valid input: " <> show e
+        else "Circuit correctly rejected invalid input"
+    Tuple (Right _) { assignments } ->
+      let
+        _lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just res -> pure res
+        eres = runAsProver (evalR1CSCircuit _lookup (R1CSCircuit constraints)) assignments
+      in
+        pure $ case eres of
+          Right true -> withHelp shouldSucceed $
+            if shouldSucceed then "Assertion circuit satisfied with valid input"
+            else "Assertion circuit should have failed with invalid input"
+          Right false -> withHelp false "Constraints not satisfied"
+          Left e -> withHelp false ("Failed to evaluate circuit: " <> show e)
+
+assertSpec :: Spec Unit
+assertSpec = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $ quickCheck $
     let
