@@ -27,7 +27,7 @@ import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
 import Snarky.Circuit.DSL.Boolean (all_, and_, any_, ifThenElse_, not_, or_, xor_)
 import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
-import Snarky.Circuit.Types (class ConstrainedType, BooleanVariable, FieldElem(..), Variable)
+import Snarky.Circuit.Types (class ConstrainedType, Bool, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
@@ -71,7 +71,7 @@ squareCircuit =
 eqCircuit
   :: forall m n
    . CircuitM Fr ConstraintSystem m n
-  => m (CVar Fr BooleanVariable)
+  => m (CVar Fr (Bool Variable))
 eqCircuit = do
   publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
     eq_ a b
@@ -95,7 +95,7 @@ divCircuit =
 notCircuit
   :: forall m n
    . CircuitM Fr ConstraintSystem m n
-  => m (CVar Fr BooleanVariable)
+  => m (CVar Fr (Bool Variable))
 notCircuit = do
   publicInputs @Fr (Proxy @Boolean) >>= \a ->
     pure $ not_ a
@@ -108,7 +108,7 @@ type BoolInputs2 =
 andCircuit
   :: forall m n
    . CircuitM Fr ConstraintSystem m n
-  => m (CVar Fr BooleanVariable)
+  => m (CVar Fr (Bool Variable))
 andCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
     and_ a b
@@ -116,7 +116,7 @@ andCircuit = do
 orCircuit
   :: forall m n
    . CircuitM Fr ConstraintSystem m n
-  => m (CVar Fr BooleanVariable)
+  => m (CVar Fr (Bool Variable))
 orCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
     or_ a b
@@ -124,7 +124,7 @@ orCircuit = do
 xorCircuit
   :: forall m n
    . CircuitM Fr ConstraintSystem m n
-  => m (CVar Fr BooleanVariable)
+  => m (CVar Fr (Bool Variable))
 xorCircuit = do
   publicInputs @Fr (Proxy @BoolInputs2) >>= \(Tuple a b) ->
     xor_ a b
@@ -150,7 +150,7 @@ allCircuit
    . CircuitM Fr ConstraintSystem m p
   => Reflectable n Int
   => Proxy n
-  -> m (CVar Fr BooleanVariable)
+  -> m (CVar Fr (Bool Variable))
 allCircuit _ =
   publicInputs @Fr (Proxy @(Vector n Boolean)) >>= \bs ->
     all_ (unVector bs)
@@ -160,7 +160,7 @@ anyCircuit
    . CircuitM Fr ConstraintSystem m p
   => Reflectable n Int
   => Proxy n
-  -> m (CVar Fr BooleanVariable)
+  -> m (CVar Fr (Bool Variable))
 anyCircuit _ =
   publicInputs @Fr (Proxy @(Vector n Boolean)) >>= \bs ->
     any_ (unVector bs)

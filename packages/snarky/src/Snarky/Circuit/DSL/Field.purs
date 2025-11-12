@@ -18,7 +18,7 @@ import Snarky.Circuit.CVar (CVar(Const, ScalarMul), sub_, const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, readCVar)
-import Snarky.Circuit.Types (BooleanVariable(..), FieldElem(..), Variable(..))
+import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
 import Snarky.Curves.Types (class PrimeField)
 
 mul_
@@ -59,7 +59,7 @@ eq_
    . CircuitM f c m n
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f BooleanVariable)
+  -> m (CVar f (Bool Variable))
 eq_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
@@ -78,9 +78,9 @@ neq_
    . CircuitM f c m n
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f BooleanVariable)
+  -> m (CVar f (Bool Variable))
 neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
-  c :: CVar f BooleanVariable <- eq_ (a :: CVar f Variable) b
+  c :: CVar f (Bool Variable) <- eq_ (a :: CVar f Variable) b
   pure $ const_ (one :: f) `sub_` c
 
 inv_

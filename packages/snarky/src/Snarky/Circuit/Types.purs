@@ -1,6 +1,6 @@
 module Snarky.Circuit.Types
   ( Variable(..)
-  , BooleanVariable(..)
+  , Bool(..)
   , class FieldEncoded
   , valueToFields
   , fieldsToValue
@@ -36,12 +36,12 @@ derive newtype instance Eq Variable
 derive newtype instance Show Variable
 derive newtype instance Ord Variable
 
-newtype BooleanVariable = BooleanVariable Variable
+newtype Bool a = Bool a
 
-derive newtype instance Eq BooleanVariable
-derive newtype instance Show BooleanVariable
-derive newtype instance Ord BooleanVariable
-derive instance Newtype BooleanVariable _
+derive newtype instance Eq a => Eq (Bool a)
+derive newtype instance Show a => Show (Bool a)
+derive newtype instance Ord a => Ord (Bool a)
+derive instance Newtype (Bool a) _
 
 class FieldEncoded f a where
   valueToFields :: a -> Array f
@@ -97,11 +97,11 @@ class FieldEncoded f a <= ConstrainedType f a c var | f a -> var c, c -> f, var 
   fieldsToVar :: Array (CVar f Variable) -> var
   check :: var -> Array c
 
-instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f Boolean c (CVar f BooleanVariable) where
+instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f Boolean c (CVar f (Bool Variable)) where
   varToFields var = Array.singleton $ coerce var
   fieldsToVar a = coerce $ unsafePartial fromJust $ Array.head a
-  check :: CVar f BooleanVariable -> Array c
-  check var = Array.singleton $ boolean (coerce var :: CVar f Variable)
+  check :: CVar f (Bool Variable) -> Array c
+  check var = Array.singleton $ boolean (coerce var)
 
 instance (ConstrainedType f a c avar) => ConstrainedType f (Tuple a Unit) c avar where
   varToFields av = varToFields @f @a av

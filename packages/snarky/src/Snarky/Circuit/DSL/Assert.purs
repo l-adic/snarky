@@ -12,7 +12,7 @@ import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint)
 import Snarky.Circuit.DSL.Field (inv_)
-import Snarky.Circuit.Types (BooleanVariable(..), Variable)
+import Snarky.Circuit.Types (Bool(..), Variable)
 
 assertNonZero
   :: forall f c m n
@@ -37,6 +37,6 @@ assertEqual x y = case x, y of
 assert
   :: forall f c m n
    . CircuitM f c m n
-  => CVar f BooleanVariable
+  => CVar f (Bool Variable)
   -> m Unit
 assert v = assertEqual (coerce v) (const_ $ one @f)
