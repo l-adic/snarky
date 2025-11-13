@@ -93,18 +93,15 @@ xor_ a b = case a, b of
     | bVal == zero -> pure a
     | bVal == one -> pure $ not_ a
   _, _ -> do
-    let
-      _a = (coerce a :: CVar f Variable)
-      _b = coerce b
     UnChecked res <- exists do
-      FieldElem aVal <- read _a
-      FieldElem bVal <- read _b
+      FieldElem aVal <- read $ coerce a
+      FieldElem bVal <- read $ coerce b
       pure $ UnChecked (aVal /= bVal)
     addConstraint $
       r1cs
-        { left: _a `CVar.add_` _a
-        , right: _b
-        , output: _a `CVar.add_` _b `CVar.sub_` (coerce res)
+        { left: coerce a `CVar.add_` coerce a
+        , right: coerce b
+        , output: coerce a `CVar.add_` coerce b `CVar.sub_` coerce res
         }
     pure res
 

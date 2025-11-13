@@ -2,36 +2,42 @@ module Snarky.Test.Circuit.Circuit (spec) where
 
 import Prelude
 
-import Data.Array (filter, foldMap, (..))
+import Data.Array (filter, foldMap, foldl, (..))
+import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray, fromArray)
 import Data.Either (Either(..))
 import Data.Foldable (for_, sum)
 import Data.Identity (Identity)
+import Data.Int (pow)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)
-import Data.Reflectable (class Reflectable, reifyType)
+import Data.Reflectable (class Reflectable, reflectType, reifyType)
+import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Effect.Aff (throwError)
 import Effect.Class (liftEffect)
-import Partial.Unsafe (unsafeCrashWith)
+import JS.BigInt as BigInt
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.Constraint (R1CS, R1CSCircuit(..), evalR1CSCircuit)
 import Snarky.Circuit.DSL (class CircuitM, publicInputs, read, runAsProver)
 import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
+import Snarky.Circuit.DSL.Bits (pack, unpack)
 import Snarky.Circuit.DSL.Boolean (all_, and_, any_, ifThenElse_, not_, or_, xor_)
 import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, Bool, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
-import Snarky.Data.Vector (Vector, unVector)
+import Snarky.Curves.Types (fromBigInt, toBigInt)
+import Snarky.Data.Vector (Vector, toVector, unVector)
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (Result, arbitrary, quickCheckGen', withHelp)
+import Test.QuickCheck (Result, arbitrary, quickCheckGen, quickCheckGen', withHelp)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
@@ -42,6 +48,7 @@ spec = do
   fieldSpec
   boolSpec
   assertSpec
+  bitsSpec
 
 type Fr = BN254.ScalarField
 
@@ -380,3 +387,71 @@ assertSpec = describe "Assertion Circuit Specs" do
       f (Tuple (FieldElem a) (FieldElem b)) = a == b
     in
       mkAssertionSpec arbitrary assertEqualCircuit f
+
+unpackCircuit
+  :: forall m n k
+   . CircuitM Fr ConstraintSystem m n
+  => Reflectable k Int
+  => Proxy k
+  -> m (Vector k (CVar Fr (Bool Variable)))
+unpackCircuit pk = do
+  publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \value ->
+    unpack (reflectType pk) value >>= \bits ->
+      pure $ unsafePartial $ fromJust $ toVector pk bits
+
+packUnpackCircuit
+  :: forall m n
+   . CircuitM Fr ConstraintSystem m n
+  => Int
+  -> m (CVar Fr Variable)
+packUnpackCircuit nBits = do
+  publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \value ->
+    unpack nBits value >>= \bits ->
+      pure $ pack bits
+
+bitSizes :: Array Int
+bitSizes = [ 8, 16, 32, 64, 256 ]
+
+smallFieldElem :: Int -> Gen (FieldElem Fr)
+smallFieldElem bitCount = do
+  if bitCount <= 31 then do
+    -- For small bit counts, generate directly
+    n <- chooseInt 0 $ (2 `pow` bitCount) - 1
+    pure $ FieldElem $ fromBigInt $ BigInt.fromInt n
+  else do
+    -- For larger bit counts, generate in chunks
+    let chunks = (bitCount + 31) / 32
+    values <- sequence $ Array.replicate chunks $
+      chooseInt 0 ((2 `pow` 32) - 1)
+    let
+      combined = foldl
+        ( \acc (Tuple i val) ->
+            acc `BigInt.or` (BigInt.fromInt val `BigInt.shl` BigInt.fromInt (i * 32))
+        )
+        zero
+        (Array.mapWithIndex Tuple values)
+      mask = (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt bitCount) - BigInt.fromInt 1
+    pure $ FieldElem $ fromBigInt $ combined `BigInt.and` mask
+
+bitsSpec :: Spec Unit
+bitsSpec = describe "Bits Circuit Specs" do
+  it "unpack Circuit is Valid" $ do
+    let
+      f :: forall k. Reflectable k Int => Proxy k -> FieldElem Fr -> Vector k Boolean
+      f pk (FieldElem v) =
+        let
+          bitCount = reflectType pk
+          toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
+          bits = map toBit (Array.range 0 (bitCount - 1))
+        in
+          unsafePartial $ fromJust $ toVector pk bits
+    liftEffect $
+      for_ bitSizes \n -> quickCheckGen do
+        reifyType n \pk ->
+          mkCircuitSpec (smallFieldElem n) (unpackCircuit pk) (f pk)
+
+  it "pack/unpack round trip is Valid"
+    $ liftEffect
+    $
+      for_ bitSizes \n -> quickCheckGen do
+        mkCircuitSpec (smallFieldElem n) (packUnpackCircuit n) identity

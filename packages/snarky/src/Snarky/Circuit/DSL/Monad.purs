@@ -52,6 +52,12 @@ runAsProver
   -> Either (EvaluationError Variable) a
 runAsProver m e = un Identity $ runAsProverT m e
 
+readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
+readCVar v = do
+  m <- ask
+  let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
+  CVar.eval _lookup v
+
 read
   :: forall f var a m c
    . ConstrainedType f a c var
@@ -84,9 +90,3 @@ class (Monad n, MonadFresh m, PrimeField f, R1CSSystem (CVar f Variable) c) <= C
   exists :: forall a var. ConstrainedType f a c var => AsProverT f n a -> m var
   addConstraint :: c -> m Unit
   publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> m var
-
-readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
-readCVar v = do
-  m <- ask
-  let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
-  CVar.eval _lookup v
