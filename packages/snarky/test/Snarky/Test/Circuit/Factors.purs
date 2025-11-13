@@ -22,7 +22,6 @@ import Snarky.Circuit.DSL.Boolean (all_)
 import Snarky.Circuit.DSL.Field (eq_, mul_, neq_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProverT)
 import Snarky.Circuit.Types (class ConstrainedType, FieldElem(..), Variable)
-import Snarky.Curves.Types (class PrimeField)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (Result, arbitrary, withHelp)
 import Test.QuickCheck.Gen (Gen, suchThat)
@@ -32,17 +31,19 @@ import Type.Proxy (Proxy(..))
 
 type Fr = Vesta.ScalarField
 
+type ConstraintSystem = R1CS Fr Variable
+
 class Monad m <= FactorM f m where
   factor :: f -> m (Tuple f f)
 
 factorsCircuit
   :: forall m n
    . FactorM Fr n
-  => CircuitM Fr m n
+  => CircuitM Fr ConstraintSystem m n
   => m Unit
 factorsCircuit = do
   n <- publicInputs @Fr (Proxy @(FieldElem Fr))
-  Tuple a b <- exists @Fr @m @n do
+  Tuple a b <- exists do
     FieldElem nVal <- read n
     Tuple a b <- lift $ factor @Fr nVal
     pure $ Tuple (FieldElem a) (FieldElem b)
@@ -63,19 +64,17 @@ instance FactorM Fr Effect where
     throw "unhandled request: Factor"
 
 mkCircuitSpec'
-  :: forall f a avar
-   . PrimeField f
-  => ConstrainedType f avar a
-  => Proxy f
-  -> Gen a
-  -> { constraints :: Array (R1CS f Variable)
+  :: forall a avar
+   . ConstrainedType Fr a ConstraintSystem avar
+  => Gen a
+  -> { constraints :: Array (R1CS Fr Variable)
      , publicInputs :: Array Variable
      }
-  -> (forall m. CircuitM f m Gen => m Unit)
+  -> (forall m. CircuitM Fr ConstraintSystem m Gen => m Unit)
   -> Gen Result
-mkCircuitSpec' (_ :: Proxy f) gen { constraints, publicInputs } circuit = do
+mkCircuitSpec' gen { constraints, publicInputs } circuit = do
   inputs <- gen
-  Tuple _ (assignments :: Map Variable f) <- do
+  Tuple _ (assignments :: Map Variable Fr) <- do
     let proverState = emptyProverState { publicInputs = publicInputs }
     res <- runProverT
       ( do
@@ -103,6 +102,6 @@ spec = describe "Factors Specs" do
 
   it "factors Circuit is Valid" $ do
     { constraints, publicInputs } <- liftEffect $
-      execCircuitBuilderT factorsCircuit (emptyCircuitBuilderState :: CircuitBuilderState Fr)
+      execCircuitBuilderT factorsCircuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
     quickCheck $
-      mkCircuitSpec' (Proxy @Fr) (arbitrary @(FieldElem Fr)) { constraints, publicInputs } factorsCircuit
+      mkCircuitSpec' (arbitrary @(FieldElem Fr)) { constraints, publicInputs } factorsCircuit

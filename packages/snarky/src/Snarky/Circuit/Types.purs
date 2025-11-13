@@ -1,6 +1,6 @@
 module Snarky.Circuit.Types
   ( Variable(..)
-  , BooleanVariable(..)
+  , Bool(..)
   , class FieldEncoded
   , valueToFields
   , fieldsToValue
@@ -24,7 +24,7 @@ import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar)
-import Snarky.Circuit.Constraint (R1CS(..))
+import Snarky.Circuit.Constraint.Class (class R1CSSystem, boolean)
 import Snarky.Curves.Types (class PrimeField)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)
@@ -36,12 +36,12 @@ derive newtype instance Eq Variable
 derive newtype instance Show Variable
 derive newtype instance Ord Variable
 
-newtype BooleanVariable = BooleanVariable Variable
+newtype Bool a = Bool a
 
-derive newtype instance Eq BooleanVariable
-derive newtype instance Show BooleanVariable
-derive newtype instance Ord BooleanVariable
-derive instance Newtype BooleanVariable _
+derive newtype instance Eq a => Eq (Bool a)
+derive newtype instance Show a => Show (Bool a)
+derive newtype instance Ord a => Ord (Bool a)
+derive instance Newtype (Bool a) _
 
 class FieldEncoded f a where
   valueToFields :: a -> Array f
@@ -92,39 +92,40 @@ instance (FieldEncoded f a, Reflectable n Int) => FieldEncoded f (Vector n a) wh
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
   sizeInFields _ = reflectType (Proxy @n) * sizeInFields @f (Proxy @a)
 
-class FieldEncoded f a <= ConstrainedType f var a | a -> var where
+class FieldEncoded f a <= ConstrainedType f a c var | f a -> var c, c -> f, var -> f where
   varToFields :: var -> Array (CVar f Variable)
   fieldsToVar :: Array (CVar f Variable) -> var
-  check :: var -> Array (R1CS f Variable)
+  check :: var -> Array c
 
-instance PrimeField f => ConstrainedType f (CVar f BooleanVariable) Boolean where
+instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f Boolean c (CVar f (Bool Variable)) where
   varToFields var = Array.singleton $ coerce var
   fieldsToVar a = coerce $ unsafePartial fromJust $ Array.head a
-  check var = Array.singleton $ Boolean (coerce var)
+  check :: CVar f (Bool Variable) -> Array c
+  check var = Array.singleton $ boolean (coerce var)
 
-instance (ConstrainedType f avar a) => ConstrainedType f avar (Tuple a Unit) where
-  varToFields av = varToFields @f @avar @a av
-  fieldsToVar vs = fieldsToVar @f @avar @a vs
-  check a = check @f @avar @a a
+instance (ConstrainedType f a c avar) => ConstrainedType f (Tuple a Unit) c avar where
+  varToFields av = varToFields @f @a av
+  fieldsToVar vs = fieldsToVar @f @a vs
+  check a = check @f @a a
 
-else instance (ConstrainedType f avar a, ConstrainedType f bvar b) => ConstrainedType f (Tuple avar bvar) (Tuple a b) where
-  varToFields (Tuple av bv) = varToFields @f @avar @a av <> varToFields @f @bvar @b bv
+else instance (ConstrainedType f a c avar, ConstrainedType f b c bvar) => ConstrainedType f (Tuple a b) c (Tuple avar bvar) where
+  varToFields (Tuple av bv) = varToFields @f @a av <> varToFields @f @b bv
   fieldsToVar vs =
     let
       { before: avs, after: bvs } = Array.splitAt (sizeInFields @f (Proxy @a)) vs
     in
-      Tuple (fieldsToVar @f @avar @a avs) (fieldsToVar @f @bvar @b bvs)
-  check (Tuple a b) = check @f @avar @a a <> check @f @bvar @b b
+      Tuple (fieldsToVar @f @a avs) (fieldsToVar @f @b bvs)
+  check (Tuple a b) = check @f @a a <> check @f @b b
 
-instance (ConstrainedType f avar a, Reflectable n Int) => ConstrainedType f (Vector n avar) (Vector n a) where
-  varToFields as = foldMap (varToFields @f @avar @a) $ unVector as
+instance (ConstrainedType f a c avar, Reflectable n Int) => ConstrainedType f (Vector n a) c (Vector n avar) where
+  varToFields as = foldMap (varToFields @f @a) $ unVector as
   fieldsToVar as = unsafePartial fromJust $
     let
       chunks = chunk (Array.length as / reflectType (Proxy @n)) as
-      vs = fieldsToVar @f @avar @a <$> chunks
+      vs = fieldsToVar @f @a <$> chunks
     in
       toVector (Proxy @n) vs
-  check as = foldMap (check @f @avar @a) $ unVector as
+  check as = foldMap (check @f @a) $ unVector as
 
 newtype FieldElem f = FieldElem f
 
@@ -137,7 +138,7 @@ instance FieldEncoded f (FieldElem f) where
   fieldsToValue a = coerce $ unsafePartial fromJust $ Array.head a
   sizeInFields _ = 1
 
-instance PrimeField f => ConstrainedType f (CVar f Variable) (FieldElem f) where
+instance PrimeField f => ConstrainedType f (FieldElem f) c (CVar f Variable) where
   varToFields = Array.singleton
   fieldsToVar a = unsafePartial fromJust $ Array.head a
   check _ = mempty
@@ -151,7 +152,7 @@ instance FieldEncoded f a => FieldEncoded f (UnChecked a) where
   fieldsToValue = UnChecked <<< fieldsToValue
   sizeInFields _ = sizeInFields @f (Proxy @a)
 
-instance ConstrainedType f var a => ConstrainedType f (UnChecked var) (UnChecked a) where
-  varToFields (UnChecked var) = varToFields @f @var @a var
-  fieldsToVar a = UnChecked $ fieldsToVar @f @var @a a
+instance ConstrainedType f a c var => ConstrainedType f (UnChecked a) c (UnChecked var) where
+  varToFields (UnChecked var) = varToFields @f @a var
+  fieldsToVar a = UnChecked $ fieldsToVar @f @a a
   check _ = mempty

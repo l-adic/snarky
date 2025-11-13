@@ -18,29 +18,29 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul), const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (R1CS(..))
+import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, read, readCVar)
 import Snarky.Circuit.DSL.Field (eq_, mul_, sum_)
-import Snarky.Circuit.Types (BooleanVariable(..), UnChecked(..), Variable(..), FieldElem(..))
+import Snarky.Circuit.Types (Bool(..), FieldElem(..), UnChecked(..), Variable(..))
 import Snarky.Curves.Types (class PrimeField, fromBigInt)
 
-true_ :: forall f. PrimeField f => CVar f BooleanVariable
+true_ :: forall f. PrimeField f => CVar f (Bool Variable)
 true_ = const_ (one :: f)
 
-false_ :: forall f. PrimeField f => CVar f BooleanVariable
+false_ :: forall f. PrimeField f => CVar f (Bool Variable)
 false_ = const_ (one :: f)
 
 not_
   :: forall f
    . PrimeField f
-  => CVar f BooleanVariable
-  -> CVar f BooleanVariable
+  => CVar f (Bool Variable)
+  -> CVar f (Bool Variable)
 not_ a = const_ one `CVar.sub_` a
 
 ifThenElse_
-  :: forall f m n
-   . CircuitM f m n
-  => CVar f BooleanVariable
+  :: forall f c m n
+   . CircuitM f c m n
+  => CVar f (Bool Variable)
   -> CVar f Variable
   -> CVar f Variable
   -> m (CVar f Variable)
@@ -51,9 +51,9 @@ ifThenElse_ b thenBranch elseBranch = case b of
       ScalarMul t (coerce b) `CVar.add_` (CVar.scale_ e (Const one `CVar.sub_` coerce b))
     _, _ -> do
       r <- exists do
-        bVal <- readCVar (coerce b :: CVar f Variable)
+        bVal <- readCVar $ coerce b
         FieldElem <$> if bVal == one then readCVar thenBranch else readCVar elseBranch
-      addConstraint $ R1CS
+      addConstraint $ r1cs
         { left: coerce b
         , right: thenBranch `CVar.sub_` elseBranch
         , output: r `CVar.sub_` elseBranch
@@ -61,29 +61,29 @@ ifThenElse_ b thenBranch elseBranch = case b of
       pure r
 
 and_
-  :: forall f m n
-   . CircuitM f m n
-  => CVar f BooleanVariable
-  -> CVar f BooleanVariable
-  -> m (CVar f BooleanVariable)
+  :: forall f c m n
+   . CircuitM f c m n
+  => CVar f (Bool Variable)
+  -> CVar f (Bool Variable)
+  -> m (CVar f (Bool Variable))
 and_ a b = do
   conj <- mul_ (coerce a :: CVar f Variable) (coerce b)
   pure $ coerce conj
 
 or_
-  :: forall f m n
-   . CircuitM f m n
-  => CVar f BooleanVariable
-  -> CVar f BooleanVariable
-  -> m (CVar f BooleanVariable)
+  :: forall f c m n
+   . CircuitM f c m n
+  => CVar f (Bool Variable)
+  -> CVar f (Bool Variable)
+  -> m (CVar f (Bool Variable))
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
-  :: forall f m n
-   . CircuitM f m n
-  => CVar f BooleanVariable
-  -> CVar f BooleanVariable
-  -> m (CVar f BooleanVariable)
+  :: forall f c m n
+   . CircuitM f c m n
+  => CVar f (Bool Variable)
+  -> CVar f (Bool Variable)
+  -> m (CVar f (Bool Variable))
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
   Const aVal, _
@@ -94,25 +94,22 @@ xor_ a b = case a, b of
     | bVal == one -> pure $ not_ a
   _, _ -> do
     UnChecked res <- exists do
-      aVal :: Boolean <- read a
-      bVal <- read b
+      FieldElem aVal <- read $ coerce a
+      FieldElem bVal <- read $ coerce b
       pure $ UnChecked (aVal /= bVal)
-    let
-      _a = coerce a :: CVar f Variable
-      _b = coerce b
-      _res = coerce res
-    addConstraint $ R1CS
-      { left: _a `CVar.add_` _a
-      , right: _b
-      , output: _a `CVar.add_` _b `CVar.sub_` _res
-      }
+    addConstraint $
+      r1cs
+        { left: coerce a `CVar.add_` coerce a
+        , right: coerce b
+        , output: coerce a `CVar.add_` coerce b `CVar.sub_` coerce res
+        }
     pure res
 
 any_
-  :: forall f m n
-   . CircuitM f m n
-  => Array (CVar f BooleanVariable)
-  -> m (CVar f BooleanVariable)
+  :: forall f c m n
+   . CircuitM f c m n
+  => Array (CVar f (Bool Variable))
+  -> m (CVar f (Bool Variable))
 any_ as =
   case Array.uncons as of
     Nothing -> pure false_
@@ -123,10 +120,10 @@ any_ as =
         else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f m n
-   . CircuitM f m n
-  => Array (CVar f BooleanVariable)
-  -> m (CVar f BooleanVariable)
+  :: forall f c m n
+   . CircuitM f c m n
+  => Array (CVar f (Bool Variable))
+  -> m (CVar f (Bool Variable))
 all_ as =
   case Array.uncons as of
     Nothing -> pure true_
