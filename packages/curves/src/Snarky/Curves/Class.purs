@@ -7,7 +7,7 @@ module Snarky.Curves.Class
   , class FrModule
   , scalarMul
   , inverse
-  , class WierstraussCurve
+  , class WeierstrassCurve
   , curveParams
   ) where
 
@@ -28,6 +28,6 @@ class (PrimeField f, Monoid g) <= FrModule f g | g -> f where
   scalarMul :: f -> g -> g
   inverse :: g -> g
 
-class WierstraussCurve :: Type -> Type -> Constraint
-class PrimeField f <= WierstraussCurve f g where
+class WeierstrassCurve :: Type -> Type -> Constraint
+class PrimeField f <= WeierstrassCurve f g where
   curveParams :: Proxy g -> { a :: f, b :: f }

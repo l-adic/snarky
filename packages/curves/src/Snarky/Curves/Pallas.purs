@@ -7,7 +7,7 @@ module Snarky.Curves.Pallas
 import Prelude
 
 import JS.BigInt (BigInt)
-import Snarky.Curves.Class (class PrimeField, class FrModule, class WierstraussCurve)
+import Snarky.Curves.Class (class PrimeField, class FrModule, class WeierstrassCurve)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
@@ -149,7 +149,7 @@ instance FrModule ScalarField G where
   scalarMul = _groupScale
   inverse = _groupNeg
 
-instance WierstraussCurve BaseField G where
+instance WeierstrassCurve BaseField G where
   curveParams _ =
     { a: _weierstrassA unit
     , b: _weierstrassB unit
