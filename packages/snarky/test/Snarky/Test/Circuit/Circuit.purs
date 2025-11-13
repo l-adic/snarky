@@ -34,7 +34,7 @@ import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
 import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
 import Snarky.Circuit.Types (class ConstrainedType, Bool, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
-import Snarky.Curves.Types (fromBigInt, toBigInt)
+import Snarky.Curves.Class (fromBigInt, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (Result, arbitrary, quickCheckGen, quickCheckGen', withHelp)

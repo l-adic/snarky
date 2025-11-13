@@ -5,7 +5,7 @@ import Prelude
 import Effect.Class (liftEffect)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Snarky.Curves.Types (class PrimeField, fromBigInt)
+import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Test.QuickCheck (Result, quickCheck, (===))
 import Test.QuickCheck.Arbitrary (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)

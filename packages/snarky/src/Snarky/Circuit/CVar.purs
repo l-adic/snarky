@@ -24,7 +24,7 @@ import Data.Map as Map
 import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..))
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (frequency, sized)
 

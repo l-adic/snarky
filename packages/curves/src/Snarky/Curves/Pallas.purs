@@ -1,11 +1,13 @@
 module Snarky.Curves.Pallas
   ( ScalarField
+  , BaseField
+  , G
   ) where
 
 import Prelude
 
 import JS.BigInt (BigInt)
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField, class FrModule, class WierstraussCurve)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
@@ -63,3 +65,92 @@ instance PrimeField ScalarField where
   toBigInt = _toBigInt
   modulus = _modulus unit
   pow = _pow
+
+-- BaseField type and instances
+foreign import data BaseField :: Type
+foreign import _baseFieldZero :: Unit -> BaseField
+foreign import _baseFieldOne :: Unit -> BaseField
+foreign import _baseFieldAdd :: BaseField -> BaseField -> BaseField
+foreign import _baseFieldMul :: BaseField -> BaseField -> BaseField
+foreign import _baseFieldSub :: BaseField -> BaseField -> BaseField
+foreign import _baseFieldDiv :: BaseField -> BaseField -> BaseField
+foreign import _baseFieldInvert :: BaseField -> BaseField
+foreign import _baseFieldEq :: BaseField -> BaseField -> Boolean
+foreign import _baseFieldToString :: BaseField -> String
+foreign import _baseFieldFromString :: String -> BaseField
+foreign import _baseFieldRand :: Int -> BaseField
+foreign import _baseFieldFromBigInt :: BigInt -> BaseField
+foreign import _baseFieldToBigInt :: BaseField -> BigInt
+foreign import _baseFieldModulus :: Unit -> BigInt
+foreign import _baseFieldPow :: BaseField -> BigInt -> BaseField
+
+instance Semiring BaseField where
+  add = _baseFieldAdd
+  mul = _baseFieldMul
+  zero = _baseFieldZero unit
+  one = _baseFieldOne unit
+
+instance Ring BaseField where
+  sub = _baseFieldSub
+
+instance CommutativeRing BaseField
+
+instance EuclideanRing BaseField where
+  degree _ = 1
+  div = _baseFieldDiv
+  mod _ _ = zero
+
+instance DivisionRing BaseField where
+  recip = _baseFieldInvert
+
+instance Eq BaseField where
+  eq = _baseFieldEq
+
+instance Show BaseField where
+  show = _baseFieldToString
+
+instance Arbitrary BaseField where
+  arbitrary = _baseFieldRand <$> arbitrary
+
+instance PrimeField BaseField where
+  fromBigInt = _baseFieldFromBigInt
+  toBigInt = _baseFieldToBigInt
+  modulus = _baseFieldModulus unit
+  pow = _baseFieldPow
+
+-- Group Element type
+foreign import data G :: Type
+foreign import _groupAdd :: G -> G -> G
+foreign import _groupIdentity :: Unit -> G
+foreign import _groupRand :: Int -> G
+foreign import _groupEq :: G -> G -> Boolean
+foreign import _groupToString :: G -> String
+foreign import _groupNeg :: G -> G
+foreign import _groupScale :: ScalarField -> G -> G
+foreign import _weierstrassA :: Unit -> BaseField
+foreign import _weierstrassB :: Unit -> BaseField
+
+instance Semigroup G where
+  append = _groupAdd
+
+instance Monoid G where
+  mempty = _groupIdentity unit
+
+instance Eq G where
+  eq = _groupEq
+
+instance Show G where
+  show = _groupToString
+
+instance Arbitrary G where
+  arbitrary = _groupRand <$> arbitrary
+
+instance FrModule ScalarField G where
+  scalarMul = _groupScale
+  inverse = _groupNeg
+
+instance WierstraussCurve BaseField G where
+  curveParams _ =
+    { a: _weierstrassA unit
+    , b: _weierstrassB unit
+    }

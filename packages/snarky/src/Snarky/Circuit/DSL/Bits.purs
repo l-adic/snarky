@@ -13,7 +13,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), Variable(..))
-import Snarky.Curves.Types (class PrimeField, fromBigInt, pow, toBigInt)
+import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
 
 unpack
   :: forall f c m n

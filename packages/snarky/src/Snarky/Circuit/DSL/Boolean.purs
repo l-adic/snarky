@@ -22,7 +22,7 @@ import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, read, readCVar)
 import Snarky.Circuit.DSL.Field (eq_, mul_, sum_)
 import Snarky.Circuit.Types (Bool(..), FieldElem(..), UnChecked(..), Variable(..))
-import Snarky.Curves.Types (class PrimeField, fromBigInt)
+import Snarky.Curves.Class (class PrimeField, fromBigInt)
 
 true_ :: forall f. PrimeField f => CVar f (Bool Variable)
 true_ = const_ (one :: f)
