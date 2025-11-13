@@ -19,7 +19,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 
 mul_
   :: forall f c m n

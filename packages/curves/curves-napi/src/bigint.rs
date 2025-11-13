@@ -103,12 +103,10 @@ pub fn ark_bigint_to_napi<const N: usize>(ark: &BigInt<N>) -> NapiBigInt {
 mod tests {
     use super::*;
     use ark_bn254::Fr;
-    use napi::bindgen_prelude::BigInt as NapiBigInt;
     use num_bigint::BigInt as NumBigInt;
     use proptest::prelude::*;
 
     // --- Inverse Functions ---
-
 
     // --- Property Tests ---
 
@@ -139,7 +137,7 @@ mod tests {
         fn prop_ark_preserves_small_positive(value in 0u64..1_000_000) {
             let original = NumBigInt::from(value);
             let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(original.clone()).unwrap();
-            let recovered = ark_bigint_to_num_bigint(ark);
+            let recovered = ark_bigint_to_num_bigint(&ark);
             prop_assert_eq!(original, recovered);
         }
 
@@ -149,7 +147,7 @@ mod tests {
             let input = NumBigInt::from(value) + &modulus * multiplier;
 
             let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(input).unwrap();
-            let result = ark_bigint_to_num_bigint(ark);
+            let result = ark_bigint_to_num_bigint(&ark);
 
             // Result should be in range [0, modulus)
             prop_assert!(result >= NumBigInt::from(0));
@@ -160,7 +158,7 @@ mod tests {
         fn prop_ark_negative_becomes_positive(value in 1i64..1_000_000) {
             let input = NumBigInt::from(-value);
             let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(input).unwrap();
-            let result = ark_bigint_to_num_bigint(ark);
+            let result = ark_bigint_to_num_bigint(&ark);
 
             // Negative inputs should produce positive outputs
             prop_assert!(result > NumBigInt::from(0));
@@ -195,12 +193,12 @@ mod tests {
             // (a + b) mod p == ((a mod p) + (b mod p)) mod p
             let sum = &num_a + &num_b;
             let ark_sum: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(sum).unwrap();
-            let result_sum = ark_bigint_to_num_bigint(ark_sum);
+            let result_sum = ark_bigint_to_num_bigint(&ark_sum);
 
             let ark_a: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(num_a).unwrap();
             let ark_b: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(num_b).unwrap();
-            let reduced_a = ark_bigint_to_num_bigint(ark_a);
-            let reduced_b = ark_bigint_to_num_bigint(ark_b);
+            let reduced_a = ark_bigint_to_num_bigint(&ark_a);
+            let reduced_b = ark_bigint_to_num_bigint(&ark_b);
             let sum_reduced = (&reduced_a + &reduced_b).mod_floor(&modulus);
 
             prop_assert_eq!(result_sum, sum_reduced);
@@ -218,7 +216,7 @@ mod tests {
         // Exactly the modulus
         let modulus: NumBigInt = Fr::MODULUS.into();
         let ark: BigInt<4> = num_bigint_to_ark_bigint::<Fr, 4>(modulus).unwrap();
-        let result = ark_bigint_to_num_bigint(ark);
+        let result = ark_bigint_to_num_bigint(&ark);
         assert_eq!(result, NumBigInt::from(0));
     }
 }

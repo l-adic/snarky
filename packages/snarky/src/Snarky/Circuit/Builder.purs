@@ -22,7 +22,7 @@ import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, addConstraint, fresh)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), check, fieldsToVar, sizeInFields)
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type CircuitBuilderState c =

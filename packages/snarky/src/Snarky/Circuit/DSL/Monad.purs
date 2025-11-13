@@ -30,7 +30,7 @@ import Snarky.Circuit.CVar (CVar, EvaluationError(..))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToValue, varToFields)
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy)
 
 newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError Variable) (ReaderT (Map Variable f) m) a)

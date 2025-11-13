@@ -15,7 +15,7 @@ import Data.Traversable (class Foldable, class Traversable)
 import Snarky.Circuit.CVar (CVar, EvaluationError)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 
 data R1CS f i
   = R1CS

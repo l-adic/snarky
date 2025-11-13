@@ -30,7 +30,7 @@ import Snarky.Circuit.CVar (CVar(Var), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh, runAsProverT)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
-import Snarky.Curves.Types (class PrimeField)
+import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 data ProverError
