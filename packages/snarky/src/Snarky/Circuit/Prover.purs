@@ -6,7 +6,6 @@ module Snarky.Circuit.Prover
   , emptyProverState
   , Prover
   , runProver
-  , assignPublicInputs
   ) where
 
 import Prelude
@@ -16,7 +15,6 @@ import Control.Monad.Except (ExceptT, lift, runExceptT)
 import Control.Monad.State (class MonadState, StateT, get, modify_, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (foldl, zip)
-import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(..))
@@ -45,14 +43,12 @@ instance Show ProverError where
 type ProverState f =
   { nextVar :: Int
   , assignments :: Map Variable f
-  , publicInputs :: Array Variable
   }
 
 emptyProverState :: forall f. ProverState f
 emptyProverState =
   { nextVar: 0
   , assignments: Map.empty
-  , publicInputs: mempty
   }
 
 newtype ProverT f m a = ProverT (ExceptT ProverError (StateT (ProverState f) m) a)
@@ -93,28 +89,9 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
       let aFieldElems = valueToFields a
       modify_ _ { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) assignments (zip vars aFieldElems) }
     pure $ fieldsToVar @f @a (map Var vars)
-  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> ProverT f m var
-  publicInputs proxy = do
-    let n = sizeInFields @f proxy
-    vars <- replicateA n fresh
-    modify_ \s -> s { publicInputs = vars }
-    pure $ fieldsToVar @f @a (map Var vars)
 
 instance Monad m => MonadFresh (ProverT f m) where
   fresh = do
     { nextVar } <- get
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
-
-assignPublicInputs :: forall f a c var m. ConstrainedType f a c var => Monad m => a -> ProverT f m Unit
-assignPublicInputs a = do
-  let fs = valueToFields a
-  { publicInputs } <- get
-  if Array.length fs /= Array.length publicInputs then throwError $ PublicInputsMismatch
-    { expected: Array.length publicInputs
-    , found: Array.length fs
-    }
-  else do
-    let as = zip publicInputs fs
-    modify_ \s ->
-      s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments as }

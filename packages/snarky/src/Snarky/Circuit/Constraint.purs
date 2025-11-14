@@ -10,8 +10,10 @@ import Prelude
 import Control.Monad.Error.Class (class MonadThrow)
 import Data.Array (foldM)
 import Data.Bifunctor (class Bifunctor)
+import Data.Generic.Rep (class Generic)
 import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (un)
+import Data.Show.Generic (genericShow)
 import Data.Traversable (class Foldable, class Traversable)
 import Snarky.Circuit.CVar (CVar, EvaluationError)
 import Snarky.Circuit.CVar as CVar
@@ -31,6 +33,11 @@ derive instance Foldable (R1CS f)
 derive instance Traversable (R1CS f)
 derive instance Bifunctor R1CS
 
+derive instance Generic (R1CS f i) _
+
+instance (Show f, Show i) => Show (R1CS f i) where
+  show = genericShow
+
 evalR1CSConstraint
   :: forall f i m
    . PrimeField f
@@ -38,7 +45,7 @@ evalR1CSConstraint
   => (i -> m f)
   -> R1CS f i
   -> m Boolean
-evalR1CSConstraint lookup gate =
+evalR1CSConstraint lookup gate = do
   case gate of
     R1CS { left, right, output } -> do
       lval <- CVar.eval lookup left

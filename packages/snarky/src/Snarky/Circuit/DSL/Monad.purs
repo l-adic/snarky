@@ -6,7 +6,6 @@ module Snarky.Circuit.DSL
   , class MonadFresh
   , exists
   , fresh
-  , publicInputs
   , read
   , readCVar
   , runAsProver
@@ -31,7 +30,6 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
-import Type.Proxy (Proxy)
 
 newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError Variable) (ReaderT (Map Variable f) m) a)
 
@@ -89,4 +87,3 @@ class Monad m <= MonadFresh m where
 class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c t m | t -> c f, c -> f where
   exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> t m var
   addConstraint :: c -> t m Unit
-  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> t m var

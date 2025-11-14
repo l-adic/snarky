@@ -3,10 +3,12 @@ module Snarky.Circuit.Compile
   , Solver
   , SolverT
   , compile
-  , compile_
+  , makeSolver
   , makeAssertionSpec
+  , makeAssertionSpecPure
   , makeChecker
   , makeCircuitSpec
+  , makeCircuitSpecPure
   , runSolver
   , runSolverT
   ) where
@@ -14,24 +16,29 @@ module Snarky.Circuit.Compile
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (Except, ExceptT(..), lift, runExcept, runExceptT, withExceptT)
-import Data.Either (Either(..))
-import Data.Foldable (foldM)
+import Control.Monad.Except (Except, ExceptT, lift, runExcept, runExceptT)
+import Control.Monad.State (gets, modify_)
+import Data.Array (foldl, zip)
+import Data.Array as Array
+import Data.Either (Either(..), either)
+import Data.Foldable (foldM, for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
-import Snarky.Circuit.Builder (emptyCircuitBuilderState, runCircuitBuilderT)
-import Snarky.Circuit.CVar (CVar, EvaluationError(..))
+import Data.Unfoldable (replicateA)
+import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT)
+import Snarky.Circuit.CVar (CVar(..), EvaluationError(..))
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL (class CircuitM, read, runAsProverT)
-import Snarky.Circuit.Prover (ProverError(..), assignPublicInputs, emptyProverState, runProverT)
-import Snarky.Circuit.Types (class ConstrainedType, Variable)
+import Snarky.Circuit.DSL (class CircuitM, fresh, read, runAsProverT)
+import Snarky.Circuit.DSL.Assert (assertEqual)
+import Snarky.Circuit.Prover (ProverError(..), emptyProverState, runProverT)
+import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (Result, withHelp)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
 compile
   :: forall f c m a b avar bvar
@@ -41,43 +48,62 @@ compile
   => Monad m
   => R1CSSystem (CVar f Variable) c
   => Proxy a
-  -> (forall t. CircuitM f c t m => t m bvar)
-  -> m
-       { constraints :: Array c
-       , solver :: SolverT f m a b
-       }
-compile _ circuit = do
-  Tuple _ { constraints, publicInputs } <-
-    runCircuitBuilderT circuit emptyCircuitBuilderState
-  pure
-    { constraints
-    , solver: mkSolverT publicInputs
-    }
-  where
+  -> Proxy b
+  -> (forall t. CircuitM f c t m => avar -> t m bvar)
+  -> m (CircuitBuilderState c)
+compile _ _ circuit = do
+  Tuple _ s <-
+    flip runCircuitBuilderT emptyCircuitBuilderState do
+      let
+        n = sizeInFields @f (Proxy @a)
+        m = sizeInFields @f (Proxy @b)
+      vars <- replicateA (n + m) fresh
+      let { before: avars, after: bvars } = Array.splitAt n vars
+      modify_ \s ->
+        s { publicInputs = vars }
+      let avar = fieldsToVar @f @a (map Var avars)
+      out <- circuit avar
+      for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
+        assertEqual v1 v2
+      pure out
+  pure s
 
-  mkSolverT publicInputs = \inputs -> do
-    Tuple resultVar (assignments :: Map Variable f) <- do
-      let proverState = emptyProverState { publicInputs = publicInputs }
-      res <- lift $ runProverT (assignPublicInputs inputs *> circuit) proverState
-      case res of
-        Tuple (Left e) _ -> throwError e
-        Tuple (Right c) { assignments } -> pure $ Tuple c assignments
-    res <- withExceptT EvalError $ ExceptT $ runAsProverT (read resultVar) assignments
-    pure $ Tuple res assignments
-
-compile_
-  :: forall f c m a avar
+makeSolver
+  :: forall f c m a b avar bvar
    . PrimeField f
   => ConstrainedType f a c avar
+  => ConstrainedType f b c bvar
   => Monad m
   => R1CSSystem (CVar f Variable) c
-  => Proxy a
-  -> (forall t. CircuitM f c t m => t m Unit)
-  -> m
-       { constraints :: Array c
-       , solver :: SolverT f m a Unit
-       }
-compile_ = compile
+  => Proxy c
+  -> (forall t. CircuitM f c t m => avar -> t m bvar)
+  -> SolverT f m a b
+makeSolver _ circuit = \inputs -> do
+  eres <- lift $ flip runProverT emptyProverState do
+    let n = sizeInFields @f (Proxy @a)
+    let m = sizeInFields @f (Proxy @b)
+    vars <- replicateA (n + m) fresh
+    let { before: avars, after: bvars } = Array.splitAt n vars
+    modify_ \s ->
+      let
+        fs = valueToFields inputs
+      in
+        s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments (zip avars fs) }
+    outVar <- circuit (fieldsToVar @f @a (map Var avars))
+    eres <- gets _.assignments >>= runAsProverT (read outVar)
+    either (throwError <<< EvalError)
+      ( \output -> do
+          modify_ \s ->
+            let
+              fs = valueToFields output
+            in
+              s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments (zip bvars fs) }
+          pure output
+      )
+      eres
+  case eres of
+    Tuple (Left e) _ -> throwError e
+    Tuple (Right c) { assignments } -> pure $ Tuple c assignments
 
 type SolverResult f a =
   { result :: a
@@ -133,6 +159,23 @@ makeCircuitSpec { constraints, solver, evalConstraint, f } inputs = do
           Right isSatisfied ->
             withHelp (isSatisfied && (f inputs == b)) "Circuit is satisfied and agrees with spec"
 
+makeCircuitSpecPure
+  :: forall f c a b avar bvar
+   . ConstrainedType f a c avar
+  => ConstrainedType f b c bvar
+  => Eq b
+  => { constraints :: Array c
+     , solver :: Solver f a b
+     , evalConstraint ::
+         (Variable -> Except (EvaluationError Variable) f)
+         -> c
+         -> Except (EvaluationError Variable) Boolean
+     , f :: a -> b
+     }
+  -> a
+  -> Result
+makeCircuitSpecPure spc inputs = un Identity $ makeCircuitSpec spc inputs
+
 makeAssertionSpec
   :: forall f c a avar m
    . ConstrainedType f a c avar
@@ -164,3 +207,19 @@ makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
           Left e -> withHelp false ("Error during constraint checking: " <> show e)
           Right isSatisfied ->
             withHelp (isSatisfied == isValid inputs) "Circuit is satisfied and agrees with spec"
+
+makeAssertionSpecPure
+  :: forall f c a avar
+   . ConstrainedType f a c avar
+  => { constraints :: Array c
+     , solver :: Solver f a Unit
+     , evalConstraint ::
+         (Variable -> Except (EvaluationError Variable) f)
+         -> c
+         -> Except (EvaluationError Variable) Boolean
+     , isValid :: a -> Boolean
+     }
+  -> a
+  -> Result
+makeAssertionSpecPure spc inputs =
+  un Identity $ makeAssertionSpec spc inputs

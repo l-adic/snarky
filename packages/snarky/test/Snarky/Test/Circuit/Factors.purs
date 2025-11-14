@@ -7,10 +7,10 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.Compile (compile_, makeAssertionSpec)
+import Snarky.Circuit.CVar (CVar, const_)
+import Snarky.Circuit.Compile (compile, makeAssertionSpec, makeSolver)
 import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
-import Snarky.Circuit.DSL (class CircuitM, exists, publicInputs, read)
+import Snarky.Circuit.DSL (class CircuitM, exists, read)
 import Snarky.Circuit.DSL.Assert (assert)
 import Snarky.Circuit.DSL.Boolean (all_)
 import Snarky.Circuit.DSL.Field (eq_, mul_, neq_)
@@ -33,9 +33,9 @@ factorsCircuit
   :: forall t m
    . FactorM Fr m
   => CircuitM Fr ConstraintSystem t m
-  => t m Unit
-factorsCircuit = do
-  n <- publicInputs @Fr (Proxy @(FieldElem Fr))
+  => CVar Fr Variable
+  -> t m Unit
+factorsCircuit n = do
   Tuple a b <- exists do
     FieldElem nVal <- read n
     Tuple a b <- lift $ factor @Fr nVal
@@ -61,10 +61,12 @@ spec = describe "Factors Specs" do
 
   it "factors Circuit is Valid" $ do
     { constraints } <- liftEffect $
-      compile_ (Proxy @(FieldElem Fr)) factorsCircuit
-    quickCheck $ do
-      { solver } <- compile_ (Proxy @(FieldElem Fr)) factorsCircuit
-      a <- arbitrary @(FieldElem Fr)
+      compile
+        (Proxy @(FieldElem Fr))
+        (Proxy @Unit)
+        factorsCircuit
+    let solver = makeSolver (Proxy @ConstraintSystem) factorsCircuit
+    quickCheck $ arbitrary >>= \a ->
       ( makeAssertionSpec
           { constraints
           , solver
