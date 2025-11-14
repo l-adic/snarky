@@ -9,10 +9,12 @@ module Snarky.Curves.Class
   , inverse
   , class WeierstrassCurve
   , curveParams
+  , toAffine
   ) where
 
 import Prelude
 
+import Data.Maybe (Maybe)
 import JS.BigInt (BigInt)
 import Type.Proxy (Proxy)
 
@@ -29,5 +31,6 @@ class (PrimeField f, Monoid g) <= FrModule f g | g -> f where
   inverse :: g -> g
 
 class WeierstrassCurve :: Type -> Type -> Constraint
-class PrimeField f <= WeierstrassCurve f g where
+class PrimeField f <= WeierstrassCurve f g | g -> f where
   curveParams :: Proxy g -> { a :: f, b :: f }
+  toAffine :: g -> Maybe { x :: f, y :: f }

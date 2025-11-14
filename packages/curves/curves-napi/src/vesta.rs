@@ -208,7 +208,7 @@ pub mod base_field {
 
 pub mod group {
     use super::*;
-    use ark_ec::CurveGroup;
+    use ark_ec::{AffineRepr, CurveGroup};
     use ark_vesta::Projective;
 
     type G = External<Affine>;
@@ -261,5 +261,15 @@ pub mod group {
     pub fn vesta_group_scale(p: &G, scalar: &scalar_field::FieldExternal) -> G {
         let result = (**p) * (**scalar);
         External::new(result.into())
+    }
+
+    #[napi]
+    pub fn vesta_group_to_affine(p: &G) -> Option<(BaseFieldExternal, BaseFieldExternal)> {
+        if (**p).is_zero() {
+            // Point at infinity (identity element) has no affine coordinates
+            None
+        } else {
+            Some((External::new(p.x), External::new(p.y)))
+        }
     }
 }
