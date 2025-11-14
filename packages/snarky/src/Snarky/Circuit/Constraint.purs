@@ -1,5 +1,6 @@
 module Snarky.Circuit.Constraint
   ( R1CS(..)
+  , evalR1CSConstraint
   , R1CSCircuit(..)
   , evalR1CSCircuit
   ) where
@@ -30,14 +31,14 @@ derive instance Foldable (R1CS f)
 derive instance Traversable (R1CS f)
 derive instance Bifunctor R1CS
 
-evalConstraint
+evalR1CSConstraint
   :: forall f i m
    . PrimeField f
   => MonadThrow (EvaluationError i) m
   => (i -> m f)
   -> R1CS f i
   -> m Boolean
-evalConstraint lookup gate =
+evalR1CSConstraint lookup gate =
   case gate of
     R1CS { left, right, output } -> do
       lval <- CVar.eval lookup left
@@ -60,7 +61,7 @@ evalR1CSCircuit
 evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
   foldM
     ( \acc c ->
-        evalConstraint lookup c <#> \cVal ->
+        evalR1CSConstraint lookup c <#> \cVal ->
           acc <> Conj cVal
     )
     mempty

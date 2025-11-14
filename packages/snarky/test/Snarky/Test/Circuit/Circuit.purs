@@ -5,12 +5,9 @@ import Prelude
 import Data.Array (filter, foldMap, foldl, (..))
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray, fromArray)
-import Data.Either (Either(..))
 import Data.Foldable (for_, sum)
-import Data.Identity (Identity)
+import Data.Identity (Identity(..))
 import Data.Int (pow)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
@@ -19,25 +16,22 @@ import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
-import Effect.Aff (throwError)
-import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilder)
-import Snarky.Circuit.CVar (CVar, EvaluationError(..))
-import Snarky.Circuit.Constraint (R1CS, R1CSCircuit(..), evalR1CSCircuit)
-import Snarky.Circuit.DSL (class CircuitM, publicInputs, read, runAsProver)
+import Snarky.Circuit.CVar (CVar)
+import Snarky.Circuit.Compile (compile, compile_, makeAssertionSpec, makeCircuitSpec)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
+import Snarky.Circuit.DSL (class CircuitM, publicInputs)
 import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
 import Snarky.Circuit.DSL.Bits (pack, unpack)
 import Snarky.Circuit.DSL.Boolean (all_, and_, any_, ifThenElse_, not_, or_, xor_)
 import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, square_, sum_)
-import Snarky.Circuit.Prover (assignPublicInputs, emptyProverState, runProver)
-import Snarky.Circuit.Types (class ConstrainedType, Bool, FieldElem(..), Variable)
+import Snarky.Circuit.Types (Bool, FieldElem(..), Variable)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (fromBigInt, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (Result, arbitrary, quickCheckGen, quickCheckGen', withHelp)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
@@ -195,198 +189,162 @@ assertEqualCircuit
    . CircuitM Fr ConstraintSystem m n
   => m Unit
 assertEqualCircuit = do
-  publicInputs @Fr (Proxy @(FieldElem Fr)) >>= \a ->
-    assertEqual a a
-
-mkCircuitSpec
-  :: forall a b avar bvar
-   . ConstrainedType Fr a ConstraintSystem avar
-  => ConstrainedType Fr b ConstraintSystem bvar
-  => Eq b
-  => Gen a
-  -> (forall m. CircuitM Fr ConstraintSystem m Identity => m bvar)
-  -> (a -> b)
-  -> Gen Result
-mkCircuitSpec inputsGen circuit f = do
-  inputs <- inputsGen
-  let
-    Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
-    Tuple result (assignments :: Map Variable Fr) =
-      let
-        proverState = emptyProverState { publicInputs = publicInputs }
-      in
-        case runProver (assignPublicInputs inputs *> circuit) proverState of
-          Tuple (Left e) _ -> unsafeCrashWith $ "Error in circuit: " <> show e
-          Tuple (Right c) { assignments } -> Tuple c assignments
-    _lookup v = case Map.lookup v assignments of
-      Nothing -> throwError $ MissingVariable v
-      Just res -> pure res
-    eres = runAsProver
-      ( do
-          isSatisfied <- evalR1CSCircuit _lookup (R1CSCircuit constraints)
-          b <- read result
-          pure $ isSatisfied && f inputs == b
-      )
-      assignments
-  pure $
-    case eres of
-      Right res -> withHelp res "Circuit constraints satisfied and evals correctly"
-      Left e -> withHelp false ("Failed to parse circuit output: " <> show e)
+  publicInputs @Fr (Proxy @Inputs2) >>= \(Tuple a b) ->
+    assertEqual a b
 
 fieldSpec :: Spec Unit
 fieldSpec = describe "Field Circuit Specs" do
 
-  it "mul Circuit is Valid" $ quickCheck $
-    mkCircuitSpec arbitrary mulCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
-      FieldElem @Fr (a * b)
-
-  it "square Circuit is Valid" $ quickCheck $
-    mkCircuitSpec arbitrary squareCircuit \(FieldElem a) ->
-      FieldElem @Fr (a * a)
-
-  it "eq Circuit is Valid" $ quickCheck $
+  it "mul Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile mulCircuit
+      f (Tuple (FieldElem a) (FieldElem b)) = FieldElem @Fr (a * b)
+    in
+      quickCheck $
+        makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
+
+  it "square Circuit is Valid" $
+    let
+      { constraints, solver } = un Identity $ compile squareCircuit
+      f (FieldElem a) = FieldElem @Fr (a * a)
+    in
+      quickCheck $
+        makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
+
+  it "eq Circuit is Valid" $
+    let
+      { solver, constraints } = un Identity $ compile eqCircuit
+
       f :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
       f = uncurry (==)
     in
-      mkCircuitSpec arbitrary eqCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "inv Circuit is Valid" $ quickCheck $
-    mkCircuitSpec arbitrary invCircuit \(FieldElem a) ->
-      if a == zero then FieldElem zero
-      else FieldElem @Fr (recip a)
+  it "inv Circuit is Valid" $
+    let
+      { constraints, solver } = un Identity $ compile invCircuit
+      f (FieldElem a) =
+        if a == zero then FieldElem zero
+        else FieldElem @Fr (recip a)
+    in
+      quickCheck $
+        makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "div Circuit is Valid" $ quickCheck $
-    mkCircuitSpec arbitrary divCircuit \(Tuple (FieldElem a) (FieldElem b)) ->
-      if b == zero then FieldElem zero
-      else FieldElem @Fr (a / b)
+  it "div Circuit is Valid" $
+    let
+      { constraints, solver } = un Identity $ compile divCircuit
+      f (Tuple (FieldElem a) (FieldElem b)) =
+        if b == zero then FieldElem zero
+        else FieldElem @Fr (a / b)
+    in
+      quickCheck $
+        makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
   it "sum Circuit is Valid" $
     let
       f :: forall n. Vector n (FieldElem Fr) -> FieldElem Fr
       f as = FieldElem $ sum (un FieldElem <$> as)
     in
-      liftEffect $
-        for_ intSizes \n -> quickCheckGen' 10 do
-          k <- chooseInt 1 n
-          reifyType k \pk ->
-            mkCircuitSpec (Vector.generator pk arbitrary) (sumCircuit pk) f
+      for_ intSizes \n -> do
+        reifyType n \pn ->
+          let
+            { constraints, solver } = un Identity $ compile (sumCircuit pn)
+          in
+            quickCheck $ makeCircuitSpec (Vector.generator pn arbitrary) { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
 boolSpec :: Spec Unit
 boolSpec = describe "Boolean Circuit Specs" do
 
-  it "not Circuit is Valid" $ quickCheck $
+  it "not Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile notCircuit
+
       f :: Boolean -> Boolean
       f = not
     in
-      mkCircuitSpec arbitrary notCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "and Circuit is Valid" $ quickCheck $
+  it "and Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile andCircuit
+
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (&&)
     in
-      mkCircuitSpec arbitrary andCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "or Circuit is Valid" $ quickCheck $
+  it "or Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile orCircuit
+
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (||)
     in
-      mkCircuitSpec arbitrary orCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "xor Circuit is Valid" $ quickCheck $
+  it "xor Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile xorCircuit
+
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
     in
-      mkCircuitSpec arbitrary xorCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
-  it "ifThenElse Circuit is Valid" $ quickCheck $
+  it "ifThenElse Circuit is Valid" $
     let
+      { constraints, solver } = un Identity $ compile ifThenElseCircuit
+
       f :: Tuple3 Boolean (FieldElem Fr) (FieldElem Fr) -> FieldElem Fr
       f = uncurry3 \b t e ->
         if b then t else e
     in
-      mkCircuitSpec arbitrary ifThenElseCircuit f
+      quickCheck $ makeCircuitSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
   it "all Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Conj <<< foldMap Conj <<< unVector
     in
-      liftEffect $
-        for_ intSizes \n -> quickCheckGen' 10 do
-          k <- chooseInt 1 n
-          reifyType k \pk ->
-            mkCircuitSpec (Vector.generator pk arbitrary) (allCircuit pk) f
+      for_ intSizes \n ->
+        reifyType n \pn ->
+          let
+            { constraints, solver } = un Identity $ compile (allCircuit pn)
+          in
+            quickCheck $ makeCircuitSpec (Vector.generator pn arbitrary) { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
   it "any Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Disj <<< foldMap Disj <<< unVector
     in
-      liftEffect $
-        for_ intSizes \n -> quickCheckGen' 10 do
-          k <- chooseInt 1 n
-          reifyType k \pk ->
-            mkCircuitSpec (Vector.generator pk arbitrary) (anyCircuit pk) f
-
-mkAssertionSpec
-  :: forall a avar
-   . ConstrainedType Fr a ConstraintSystem avar
-  => Gen a
-  -> (forall m. CircuitM Fr ConstraintSystem m Identity => m Unit)
-  -> (a -> Boolean) -- predicate that should be true for valid inputs
-  -> Gen Result
-mkAssertionSpec inputsGen circuit isValid = do
-  inputs <- inputsGen
-  let
-    shouldSucceed = isValid inputs
-    Tuple _ { constraints, publicInputs } =
-      runCircuitBuilder circuit (emptyCircuitBuilderState :: CircuitBuilderState ConstraintSystem)
-    proverResult =
-      let
-        proverState = emptyProverState { publicInputs = publicInputs }
-      in
-        runProver (assignPublicInputs inputs *> circuit) proverState
-  case proverResult of
-    Tuple (Left e) _ ->
-      pure $ withHelp (not shouldSucceed) $
-        if shouldSucceed then "Circuit failed with valid input: " <> show e
-        else "Circuit correctly rejected invalid input"
-    Tuple (Right _) { assignments } ->
-      let
-        _lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
-          Just res -> pure res
-        eres = runAsProver (evalR1CSCircuit _lookup (R1CSCircuit constraints)) assignments
-      in
-        pure $ case eres of
-          Right true -> withHelp shouldSucceed $
-            if shouldSucceed then "Assertion circuit satisfied with valid input"
-            else "Assertion circuit should have failed with invalid input"
-          Right false -> withHelp false "Constraints not satisfied"
-          Left e -> withHelp false ("Failed to evaluate circuit: " <> show e)
+      for_ intSizes \n ->
+        reifyType n \pn ->
+          let
+            { constraints, solver } = un Identity $ compile (anyCircuit pn)
+          in
+            quickCheck $ makeCircuitSpec (Vector.generator pn arbitrary) { constraints, solver, evalConstraint: evalR1CSConstraint, f }
 
 assertSpec :: Spec Unit
 assertSpec = describe "Assertion Circuit Specs" do
 
-  it "assertNonZero Circuit is Valid" $ quickCheck $
+  it "assertNonZero Circuit is Valid" $
     let
-      f :: FieldElem Fr -> Boolean
-      f (FieldElem a) = a /= zero
-    in
-      mkAssertionSpec arbitrary assertNonZeroCircuit f
+      { constraints, solver } = un Identity $ compile_ assertNonZeroCircuit
 
-  it "assertEqual Circuit is Valid" $ quickCheck $
-    let
-      f :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
-      f (Tuple (FieldElem a) (FieldElem b)) = a == b
+      isValid :: FieldElem Fr -> Boolean
+      isValid (FieldElem a) = a /= zero
     in
-      mkAssertionSpec arbitrary assertEqualCircuit f
+      quickCheck $ makeAssertionSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
+
+  it "assertEqual Circuit is Valid" $
+    let
+      { constraints, solver } = un Identity $ compile_ assertEqualCircuit
+
+      isValid :: Tuple (FieldElem Fr) (FieldElem Fr) -> Boolean
+      isValid (Tuple (FieldElem a) (FieldElem b)) = a == b
+    in
+      quickCheck $ makeAssertionSpec arbitrary { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
 
 unpackCircuit
   :: forall m n k
@@ -445,13 +403,18 @@ bitsSpec = describe "Bits Circuit Specs" do
           bits = map toBit (Array.range 0 (bitCount - 1))
         in
           unsafePartial $ fromJust $ toVector pk bits
-    liftEffect $
-      for_ bitSizes \n -> quickCheckGen do
-        reifyType n \pk ->
-          mkCircuitSpec (smallFieldElem n) (unpackCircuit pk) (f pk)
+    for_ bitSizes \n ->
+      reifyType n \pn ->
+        let
+          { constraints, solver } = un Identity $ compile (unpackCircuit pn)
+        in
+          quickCheck $ makeCircuitSpec (smallFieldElem n) { constraints, solver, evalConstraint: evalR1CSConstraint, f: f pn }
 
-  it "pack/unpack round trip is Valid"
-    $ liftEffect
-    $
-      for_ bitSizes \n -> quickCheckGen do
-        mkCircuitSpec (smallFieldElem n) (packUnpackCircuit n) identity
+  it "pack/unpack round trip is Valid" $
+    for_ bitSizes \n ->
+      let
+        { constraints, solver } = un Identity $ compile (packUnpackCircuit n)
+        f = identity
+      in
+        quickCheck $
+          makeCircuitSpec (smallFieldElem n) { constraints, solver, evalConstraint: evalR1CSConstraint, f }
