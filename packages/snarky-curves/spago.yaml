@@ -1,0 +1,14 @@
+package:
+  name: snarky-curves
+  dependencies:
+    - prelude
+    - snarky
+    - curves
+  test:
+    main: Test.Snarky.Circuit.Curves.Main
+    dependencies:
+      - aff
+      - spec
+      - spec-node
+      - spec-quickcheck
+      - quickcheck
