@@ -86,7 +86,7 @@ instance MonadTrans (AsProverT f) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-class (Monad n, MonadFresh m, PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c m n | m -> n c f, c -> f where
-  exists :: forall a var. ConstrainedType f a c var => AsProverT f n a -> m var
-  addConstraint :: c -> m Unit
-  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> m var
+class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c t m | t -> c f, c -> f where
+  exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> t m var
+  addConstraint :: c -> t m Unit
+  publicInputs :: forall a var. ConstrainedType f a c var => Proxy a -> t m var

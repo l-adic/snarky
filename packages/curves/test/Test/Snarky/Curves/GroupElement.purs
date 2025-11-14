@@ -20,7 +20,16 @@ import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
-frModuleLaws :: forall f g. Show g => Eq g => FrModule f g => Arbitrary f => Arbitrary g => Proxy f -> Proxy g -> Effect Unit
+frModuleLaws
+  :: forall f g
+   . Show g
+  => Eq g
+  => FrModule f g
+  => Arbitrary f
+  => Arbitrary g
+  => Proxy f
+  -> Proxy g
+  -> Effect Unit
 frModuleLaws _ proxyG = do
 
   Data.checkEq proxyG

@@ -103,6 +103,11 @@ instance (PrimeField f, R1CSSystem (CVar f Variable) c) => ConstrainedType f Boo
   check :: CVar f (Bool Variable) -> Array c
   check var = Array.singleton $ boolean (coerce var)
 
+instance ConstrainedType f Unit c Unit where
+  varToFields _ = mempty
+  fieldsToVar _ = unit
+  check _ = mempty
+
 instance (ConstrainedType f a c avar) => ConstrainedType f (Tuple a Unit) c avar where
   varToFields av = varToFields @f @a av
   fieldsToVar vs = fieldsToVar @f @a vs

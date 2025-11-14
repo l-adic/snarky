@@ -16,12 +16,12 @@ import Snarky.Circuit.Types (Bool(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
 
 unpack
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => PrimeField f
   => Int
   -> CVar f Variable
-  -> m (Array (CVar f (Bool Variable)))
+  -> t m (Array (CVar f (Bool Variable)))
 unpack nBits v = do
   bits :: Array (CVar f (Bool Variable)) <- for (Array.range 0 (nBits - 1)) \i -> exists do
     vVal <- readCVar v

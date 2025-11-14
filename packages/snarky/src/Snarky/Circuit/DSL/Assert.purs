@@ -15,18 +15,18 @@ import Snarky.Circuit.DSL.Field (inv_)
 import Snarky.Circuit.Types (Bool(..), Variable)
 
 assertNonZero
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
-  -> m Unit
+  -> t m Unit
 assertNonZero v = void $ inv_ v
 
 assertEqual
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
   -> CVar f Variable
-  -> m Unit
+  -> t m Unit
 assertEqual x y = case x, y of
   Const f, Const g ->
     if f == g then pure unit
@@ -35,8 +35,8 @@ assertEqual x y = case x, y of
     addConstraint $ r1cs { left: x `sub_` y, right: Const one, output: Const zero }
 
 assert
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f (Bool Variable)
-  -> m Unit
+  -> t m Unit
 assert v = assertEqual (coerce v) (const_ $ one @f)
