@@ -108,12 +108,7 @@ instance ConstrainedType f Unit c Unit where
   fieldsToVar _ = unit
   check _ = mempty
 
-instance (ConstrainedType f a c avar) => ConstrainedType f (Tuple a Unit) c avar where
-  varToFields av = varToFields @f @a av
-  fieldsToVar vs = fieldsToVar @f @a vs
-  check a = check @f @a a
-
-else instance (ConstrainedType f a c avar, ConstrainedType f b c bvar) => ConstrainedType f (Tuple a b) c (Tuple avar bvar) where
+instance (ConstrainedType f a c avar, ConstrainedType f b c bvar) => ConstrainedType f (Tuple a b) c (Tuple avar bvar) where
   varToFields (Tuple av bv) = varToFields @f @a av <> varToFields @f @b bv
   fieldsToVar vs =
     let

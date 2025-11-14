@@ -69,6 +69,11 @@ instance PrimeField f => Semigroup (CVar f i) where
 instance PrimeField f => Monoid (CVar f i) where
   mempty = Const zero
 
+derive instance Generic (CVar f i) _
+
+instance (Show f, Show i) => Show (CVar f i) where
+  show = genericShow
+
 add_ :: forall f i. PrimeField f => CVar f i -> CVar f i -> CVar f i
 add_ a b = case a, b of
   Const f, Const f' -> Const (f + f')
