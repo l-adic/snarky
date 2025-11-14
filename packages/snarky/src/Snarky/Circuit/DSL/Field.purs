@@ -22,11 +22,11 @@ import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField)
 
 mul_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f Variable)
+  -> t m (CVar f Variable)
 mul_ a b =
   case a, b of
     Const f, Const f' -> pure $ Const (f * f')
@@ -41,10 +41,10 @@ mul_ a b =
       pure z
 
 square_
-  :: forall m f n c
-   . CircuitM f c m n
+  :: forall t f m c
+   . CircuitM f c t m
   => CVar f Variable
-  -> m (CVar f Variable)
+  -> t m (CVar f Variable)
 square_ = case _ of
   Const f -> pure $ Const (f * f)
   a -> do
@@ -55,11 +55,11 @@ square_ = case _ of
     pure z
 
 eq_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 eq_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
@@ -74,20 +74,20 @@ eq_ a b = case a `CVar.sub_` b of
     pure $ coerce r
 
 neq_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
   c :: CVar f (Bool Variable) <- eq_ (a :: CVar f Variable) b
   pure $ const_ (one :: f) `sub_` c
 
 inv_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f Variable
-  -> m (CVar f Variable)
+  -> t m (CVar f Variable)
 inv_ = case _ of
   Const a -> pure
     if a == zero then unsafeCrashWith "inv: expected nonzero arg"
@@ -100,11 +100,11 @@ inv_ = case _ of
     pure aInv
 
 div_
-  :: forall m f n c
-   . CircuitM f c m n
+  :: forall t f m c
+   . CircuitM f c t m
   => CVar f Variable
   -> CVar f Variable
-  -> m (CVar f Variable)
+  -> t m (CVar f Variable)
 div_ a b = inv_ b >>= mul_ a
 
 sum_

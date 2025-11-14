@@ -38,12 +38,12 @@ not_
 not_ a = const_ one `CVar.sub_` a
 
 ifThenElse_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f (Bool Variable)
   -> CVar f Variable
   -> CVar f Variable
-  -> m (CVar f Variable)
+  -> t m (CVar f Variable)
 ifThenElse_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
@@ -61,29 +61,29 @@ ifThenElse_ b thenBranch elseBranch = case b of
       pure r
 
 and_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f (Bool Variable)
   -> CVar f (Bool Variable)
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 and_ a b = do
   conj <- mul_ (coerce a :: CVar f Variable) (coerce b)
   pure $ coerce conj
 
 or_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f (Bool Variable)
   -> CVar f (Bool Variable)
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 xor_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => CVar f (Bool Variable)
   -> CVar f (Bool Variable)
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
   Const aVal, _
@@ -106,10 +106,10 @@ xor_ a b = case a, b of
     pure res
 
 any_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => Array (CVar f (Bool Variable))
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 any_ as =
   case Array.uncons as of
     Nothing -> pure false_
@@ -120,10 +120,10 @@ any_ as =
         else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
 
 all_
-  :: forall f c m n
-   . CircuitM f c m n
+  :: forall f c t m
+   . CircuitM f c t m
   => Array (CVar f (Bool Variable))
-  -> m (CVar f (Bool Variable))
+  -> t m (CVar f (Bool Variable))
 all_ as =
   case Array.uncons as of
     Nothing -> pure true_

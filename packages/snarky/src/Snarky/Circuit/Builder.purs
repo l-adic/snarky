@@ -65,7 +65,7 @@ instance Monad m => MonadFresh (CircuitBuilderT c m) where
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT c m) m where
+instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT c) m where
   addConstraint c = modify_ \s ->
     s { constraints = s.constraints `snoc` c }
   exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> CircuitBuilderT c m var
