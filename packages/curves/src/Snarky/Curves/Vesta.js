@@ -186,3 +186,12 @@ export function _groupScale(scalar) {
         return napi.vestaGroupScale(p, scalar);
     };
 }
+
+export function _toAffine(just, nothing, value) {
+  let p = napi.vestaGroupToAffine(value)
+  if (p == null) {
+    return nothing;
+  } else {
+    return just([p[0], p[1]]);
+  }
+}

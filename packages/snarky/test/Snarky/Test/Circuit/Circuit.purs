@@ -18,7 +18,6 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.CVar (CVar)
@@ -34,7 +33,7 @@ import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (fromBigInt, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (class Arbitrary, arbitrary, quickCheck')
+import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
@@ -98,12 +97,12 @@ circuitSpec'
   -> (a -> b)
   -> Gen a
   -> Aff Unit
-circuitSpec' constraints solver f g = liftEffect $
+circuitSpec' constraints solver f g =
   let
     spc = un Identity <<<
       makeCircuitSpec { constraints, solver, evalConstraint: evalR1CSConstraint, f }
   in
-    quickCheck' 2 $
+    quickCheck $
       g <#> spc
 
 assertionSpec

@@ -209,6 +209,7 @@ pub mod base_field {
 pub mod group {
     use super::*;
     use ark_bn254::G1Projective as Projective;
+    use ark_ec::AffineRepr;
 
     type G = External<Affine>;
     type BaseFieldExternal = External<Bn254Fq>;
@@ -260,5 +261,15 @@ pub mod group {
     pub fn bn254_group_scale(p: &G, scalar: &scalar_field::FieldExternal) -> G {
         let result = (**p) * (**scalar);
         External::new(result.into())
+    }
+
+    #[napi]
+    pub fn bn254_group_to_affine(p: &G) -> Option<(BaseFieldExternal, BaseFieldExternal)> {
+        if (**p).is_zero() {
+            // Point at infinity (identity element) has no affine coordinates
+            None
+        } else {
+            Some((External::new(p.x), External::new(p.y)))
+        }
     }
 }

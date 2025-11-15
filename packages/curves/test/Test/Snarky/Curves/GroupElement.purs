@@ -10,10 +10,12 @@ import Effect.Class (liftEffect)
 import Effect.Console (log)
 import JS.BigInt as BigInt
 import Snarky.Curves.BN254 as BN254
-import Snarky.Curves.Class (class FrModule, curveParams, fromBigInt, inverse, scalarMul)
+import Snarky.Curves.Class (class FrModule, class WeierstrassCurve, curveParams, fromBigInt, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Data.Maybe (Maybe(..))
 import Test.QuickCheck (class Arbitrary, Result, arbitrary, quickCheck', (===))
+import Test.QuickCheck.Gen (suchThat)
 import Test.QuickCheck.Laws (checkLaws)
 import Test.QuickCheck.Laws.Data as Data
 import Test.Spec (Spec, describe, it)
@@ -81,6 +83,39 @@ frModuleLaws _ proxyG = do
     scalarMul (a + b) (g <> h) ===
       fold [ scalarMul a g, scalarMul a h, scalarMul b g, scalarMul b h ]
 
+toAffineLaws
+  :: forall f g
+   . Show g
+  => Eq g
+  => Eq f
+  => Ring f
+  => Monoid g
+  => WeierstrassCurve f g
+  => Arbitrary g
+  => Proxy f
+  -> Proxy g
+  -> Effect Unit
+toAffineLaws _ proxyG = do
+  log "Checking 'identity maps to Nothing'"
+  (toAffine (mempty :: g)) `shouldEqual` (Nothing :: Maybe { x :: f, y :: f })
+
+  log "Checking 'non-identity points satisfy Weierstrass equation'"
+  quickCheck' 100 $ nonIdentityOnCurve <$> suchThat arbitrary (_ /= (mempty :: g))
+  where
+  nonIdentityOnCurve :: g -> Result
+  nonIdentityOnCurve g =
+    case (toAffine g :: Maybe { x :: f, y :: f }) of
+      Nothing -> false === true -- Should not happen for non-identity
+      Just { x, y } ->
+        let
+          params = curveParams proxyG
+          y_sq = y * y
+          x_sq = x * x
+          x_cb = x_sq * x
+          rhs = x_cb + params.a * x + params.b
+        in
+          y_sq === rhs
+
 spec :: Spec Unit
 spec = describe "Elliptic Curve" do
   describe "Weierstrass parameters" do
@@ -114,3 +149,13 @@ spec = describe "Elliptic Curve" do
 
     it "BN254" $ liftEffect $ checkLaws "" do
       frModuleLaws (Proxy @BN254.ScalarField) (Proxy @BN254.G)
+
+  describe "toAffine" do
+    it "Vesta" $ liftEffect do
+      toAffineLaws (Proxy @Vesta.BaseField) (Proxy @Vesta.G)
+
+    it "Pallas" $ liftEffect do
+      toAffineLaws (Proxy @Pallas.BaseField) (Proxy @Pallas.G)
+
+    it "BN254" $ liftEffect do
+      toAffineLaws (Proxy @BN254.BaseField) (Proxy @BN254.G)

@@ -2,7 +2,7 @@ use ark_ec::models::short_weierstrass::SWCurveConfig;
 use ark_ec::CurveGroup;
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
 use ark_pallas::{Affine, Fr as PallasFr, PallasConfig};
-use ark_vesta::Fq as VestaFq;
+use ark_vesta::Fr as VestaFr;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use rand::SeedableRng;
@@ -110,21 +110,21 @@ pub mod base_field {
     use crate::bigint::napi_bigint_to_ark_bigint;
 
     // Note: Pallas base field is Vesta scalar field
-    type BaseFieldExternal = External<VestaFq>;
+    type BaseFieldExternal = External<VestaFr>;
 
     #[napi]
     pub fn pallas_basefield_zero() -> BaseFieldExternal {
-        External::new(VestaFq::zero())
+        External::new(VestaFr::zero())
     }
 
     #[napi]
     pub fn pallas_basefield_one() -> BaseFieldExternal {
-        External::new(VestaFq::one())
+        External::new(VestaFr::one())
     }
 
     #[napi]
     pub fn pallas_basefield_from_string(s: String) -> Result<BaseFieldExternal> {
-        VestaFq::from_str(&s)
+        VestaFr::from_str(&s)
             .map(External::new)
             .map_err(|_| Error::from_reason("Failed to parse base field element"))
     }
@@ -175,19 +175,19 @@ pub mod base_field {
     #[napi]
     pub fn pallas_basefield_rand(seed: u32) -> BaseFieldExternal {
         let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
-        External::new(VestaFq::rand(&mut rng))
+        External::new(VestaFr::rand(&mut rng))
     }
 
     #[napi]
     pub fn pallas_basefield_from_bigint(bigint: BigInt) -> Result<BaseFieldExternal> {
-        let ark_bigint = napi_bigint_to_ark_bigint::<VestaFq, 4>(bigint)?;
-        let field_elem = VestaFq::from(ark_bigint);
+        let ark_bigint = napi_bigint_to_ark_bigint::<VestaFr, 4>(bigint)?;
+        let field_elem = VestaFr::from(ark_bigint);
         Ok(External::new(field_elem))
     }
 
     #[napi]
     pub fn pallas_basefield_modulus() -> BigInt {
-        crate::bigint::ark_bigint_to_napi(&VestaFq::MODULUS)
+        crate::bigint::ark_bigint_to_napi(&VestaFr::MODULUS)
     }
 
     #[napi]
@@ -201,7 +201,7 @@ pub mod base_field {
         base: &BaseFieldExternal,
         exponent: BigInt,
     ) -> Result<BaseFieldExternal> {
-        let exp_ark = napi_bigint_to_ark_bigint::<VestaFq, 4>(exponent)?;
+        let exp_ark = napi_bigint_to_ark_bigint::<VestaFr, 4>(exponent)?;
         let exp_limbs = exp_ark.as_ref();
         let result = base.pow(exp_limbs);
         Ok(External::new(result))
@@ -211,24 +211,25 @@ pub mod base_field {
 pub mod group {
     use super::*;
     use ark_pallas::Projective;
+    use ark_ec::AffineRepr;
 
     type G = External<Affine>;
-    type BaseFieldExternal = External<VestaFq>;
+    type BaseFieldExternal = External<VestaFr>;
 
     #[napi]
     pub fn pallas_group_weierstrass_a() -> BaseFieldExternal {
-        // Convert PallasFq to VestaFq (they have same representation)
+        // Convert PallasFq to VestaFr (they have same representation)
         let coeff_a = <PallasConfig as SWCurveConfig>::COEFF_A;
-        let vesta_fq = VestaFq::from(coeff_a.into_bigint());
-        External::new(vesta_fq)
+        let vesta_fr = VestaFr::from(coeff_a.into_bigint());
+        External::new(vesta_fr)
     }
 
     #[napi]
     pub fn pallas_group_weierstrass_b() -> BaseFieldExternal {
-        // Convert PallasFq to VestaFq (they have same representation)
+        // Convert PallasFq to VestaFr (they have same representation)
         let coeff_b = <PallasConfig as SWCurveConfig>::COEFF_B;
-        let vesta_fq = VestaFq::from(coeff_b.into_bigint());
-        External::new(vesta_fq)
+        let vesta_fr = VestaFr::from(coeff_b.into_bigint());
+        External::new(vesta_fr)
     }
 
     #[napi]
@@ -268,5 +269,15 @@ pub mod group {
     pub fn pallas_group_scale(p: &G, scalar: &scalar_field::FieldExternal) -> G {
         let result = (**p) * (**scalar);
         External::new(result.into())
+    }
+
+    #[napi]
+    pub fn pallas_group_to_affine(p: &G) -> Option<(BaseFieldExternal, BaseFieldExternal)> {
+        if (**p).is_zero() {
+            // Point at infinity (identity element) has no affine coordinates
+            None
+        } else {
+            Some((External::new(p.x), External::new(p.y)))
+        }
     }
 }

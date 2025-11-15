@@ -6,7 +6,11 @@ module Snarky.Curves.Vesta
 
 import Prelude
 
+import Data.Function.Uncurried (Fn3, runFn3)
+import Data.Maybe (Maybe(..), fromJust)
+import Data.Array as Array
 import JS.BigInt (BigInt)
+import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, class FrModule)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
@@ -154,3 +158,17 @@ instance WeierstrassCurve BaseField G where
     { a: _weierstrassA unit
     , b: _weierstrassB unit
     }
+  toAffine x = f <$> runFn3 _toAffine Just Nothing x
+    where
+    f as =
+      { x: unsafePartial $ fromJust $ as Array.!! 0
+      , y: unsafePartial $ fromJust $ as Array.!! 1
+      }
+
+foreign import _toAffine
+  :: forall a
+   . Fn3
+       (a -> Maybe a)
+       (Maybe a)
+       G
+       (Maybe a)
