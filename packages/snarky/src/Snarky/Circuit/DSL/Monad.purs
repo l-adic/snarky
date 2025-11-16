@@ -14,9 +14,8 @@ module Snarky.Circuit.DSL
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadThrow)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
-import Control.Monad.Reader (class MonadAsk, ReaderT, ask, runReaderT)
+import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
 import Data.Either (Either)
 import Data.Identity (Identity(..))
@@ -51,7 +50,7 @@ runAsProver
 runAsProver m e = un Identity $ runAsProverT m e
 
 readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
-readCVar v = do
+readCVar v = AsProverT do
   m <- ask
   let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
   CVar.eval _lookup v
@@ -63,7 +62,7 @@ read
   => Monad m
   => var
   -> AsProverT f m a
-read var = do
+read var = AsProverT do
   let fieldVars = varToFields @f @a var
   m <- ask
   let _lookup v = maybe (throwError $ MissingVariable v) pure $ Map.lookup v m
@@ -75,8 +74,6 @@ derive newtype instance Monad m => Apply (AsProverT f m)
 derive newtype instance Monad m => Bind (AsProverT f m)
 derive newtype instance Monad m => Applicative (AsProverT f m)
 derive newtype instance Monad m => Monad (AsProverT f m)
-derive newtype instance Monad m => MonadAsk (Map Variable f) (AsProverT f m)
-derive newtype instance Monad m => MonadThrow (EvaluationError Variable) (AsProverT f m)
 
 instance MonadTrans (AsProverT f) where
   lift m = AsProverT $ lift $ lift m

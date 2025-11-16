@@ -6,16 +6,19 @@ module Snarky.Circuit.Prover
   , emptyProverState
   , Prover
   , runProver
+  , throwProverError
+  , setAssignments
+  , getAssignments
   ) where
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.Except (ExceptT, lift, runExceptT)
-import Control.Monad.State (class MonadState, StateT, get, modify_, runStateT)
+import Control.Monad.Except (ExceptT(..), lift, runExceptT, throwError)
+import Control.Monad.State (StateT, get, gets, modify_, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
-import Data.Array (foldl, zip)
-import Data.Either (Either(..))
+import Data.Array (foldl, zip, (..))
+import Data.Bifunctor (lmap)
+import Data.Either (Either)
 import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
@@ -23,10 +26,9 @@ import Data.Map as Map
 import Data.Newtype (un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple(..))
-import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, fresh, runAsProverT)
+import Snarky.Circuit.DSL (class CircuitM, class MonadFresh, AsProverT, runAsProverT)
 import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -58,9 +60,6 @@ derive newtype instance Monad m => Apply (ProverT f m)
 derive newtype instance Monad m => Bind (ProverT f m)
 derive newtype instance Monad m => Applicative (ProverT f m)
 derive newtype instance Monad m => Monad (ProverT f m)
-derive newtype instance Monad m => MonadState (ProverState f) (ProverT f m)
-derive newtype instance Monad m => MonadThrow ProverError (ProverT f m)
--- derive newtype instance MonadTrans (ProverT f)
 
 -- TODO: why is this not newtype derivable
 instance MonadTrans (ProverT f) where
@@ -77,21 +76,44 @@ runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (ProverT f) m where
   addConstraint _ = pure unit
   exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> ProverT f m var
-  exists m = do
-    let n = sizeInFields @f (Proxy @a)
+  exists m = ProverT do
     { assignments } <- get
-    res <- lift $ runAsProverT m assignments
-    a <- case res of
-      Left e -> throwError (EvalError e)
-      Right a -> pure a
-    vars <- replicateA n fresh
-    do
-      let aFieldElems = valueToFields a
-      modify_ _ { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) assignments (zip vars aFieldElems) }
+    a <- ExceptT $ lift $ do
+      lmap EvalError <$> runAsProverT m assignments
+    vars <- do
+      { nextVar } <- get
+      let n = sizeInFields @f (Proxy @a)
+      let vars = Variable <$> (nextVar .. (nextVar + n - 1))
+      modify_
+        _
+          { nextVar = nextVar + n
+          , assignments =
+              let
+                aFieldElems = valueToFields a
+              in
+                foldl
+                  ( \acc (Tuple v f) ->
+                      Map.insert v f acc
+                  )
+                  assignments
+                  (zip vars aFieldElems)
+          }
+      pure vars
     pure $ fieldsToVar @f @a (map Var vars)
 
 instance Monad m => MonadFresh (ProverT f m) where
-  fresh = do
+  fresh = ProverT do
     { nextVar } <- get
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
+
+throwProverError :: forall f m a. Monad m => ProverError -> ProverT f m a
+throwProverError = ProverT <<< throwError
+
+setAssignments :: forall f m. Monad m => Array (Tuple Variable f) -> ProverT f m Unit
+setAssignments vs = ProverT $
+  modify_ \s ->
+    s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments vs }
+
+getAssignments :: forall f m. Monad m => ProverT f m (Map Variable f)
+getAssignments = ProverT $ gets _.assignments

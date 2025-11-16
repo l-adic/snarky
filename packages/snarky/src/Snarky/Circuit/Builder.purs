@@ -6,11 +6,12 @@ module Snarky.Circuit.Builder
   , emptyCircuitBuilderState
   , CircuitBuilder
   , runCircuitBuilder
+  , setPublicInputVars
   ) where
 
 import Prelude
 
-import Control.Monad.State (class MonadState, StateT, execStateT, get, modify_, runStateT)
+import Control.Monad.State (StateT, execStateT, get, modify_, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
 import Data.Foldable (traverse_)
@@ -45,7 +46,6 @@ derive newtype instance Monad m => Apply (CircuitBuilderT c m)
 derive newtype instance Monad m => Bind (CircuitBuilderT c m)
 derive newtype instance Monad m => Applicative (CircuitBuilderT c m)
 derive newtype instance Monad m => Monad (CircuitBuilderT c m)
-derive newtype instance Monad m => MonadState (CircuitBuilderState c) (CircuitBuilderT c m)
 derive newtype instance MonadTrans (CircuitBuilderT c)
 
 runCircuitBuilderT :: forall c m a. Monad m => CircuitBuilderT c m a -> CircuitBuilderState c -> m (Tuple a (CircuitBuilderState c))
@@ -60,13 +60,13 @@ runCircuitBuilder :: forall c a. CircuitBuilder c a -> CircuitBuilderState c -> 
 runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
 instance Monad m => MonadFresh (CircuitBuilderT c m) where
-  fresh = do
+  fresh = CircuitBuilderT do
     { nextVar } <- get
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
 instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT c) m where
-  addConstraint c = modify_ \s ->
+  addConstraint c = CircuitBuilderT $ modify_ \s ->
     s { constraints = s.constraints `snoc` c }
   exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> CircuitBuilderT c m var
   exists _ = do
@@ -75,3 +75,7 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
     let v = fieldsToVar @f @a (map Var vars)
     traverse_ (addConstraint @f) (check @f @a v)
     pure v
+
+setPublicInputVars :: forall f m. Monad m => Array Variable -> CircuitBuilderT f m Unit
+setPublicInputVars vars = CircuitBuilderT $ modify_ \s ->
+  s { publicInputs = vars }

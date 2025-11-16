@@ -13,23 +13,21 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
-import Control.Monad.State (gets, modify_)
-import Data.Array (foldl, zip)
+import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..), either)
 import Data.Foldable (foldM, for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
-import Data.Map as Map
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT)
+import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.DSL.Assert (assertEqual)
-import Snarky.Circuit.Prover (ProverError(..), emptyProverState, runProverT)
+import Snarky.Circuit.Prover (ProverError(..), emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -53,8 +51,7 @@ compile _ _ circuit = do
         m = sizeInFields @f (Proxy @b)
       vars <- replicateA (n + m) fresh
       let { before: avars, after: bvars } = Array.splitAt n vars
-      modify_ \s ->
-        s { publicInputs = vars }
+      setPublicInputVars vars
       let avar = fieldsToVar @f @a (map Var avars)
       out <- circuit avar
       for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
@@ -78,20 +75,12 @@ makeSolver _ circuit = \inputs -> do
     let m = sizeInFields @f (Proxy @b)
     vars <- replicateA (n + m) fresh
     let { before: avars, after: bvars } = Array.splitAt n vars
-    modify_ \s ->
-      let
-        fs = valueToFields inputs
-      in
-        s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments (zip avars fs) }
+    setAssignments $ zip avars (valueToFields inputs)
     outVar <- circuit (fieldsToVar @f @a (map Var avars))
-    eres <- gets _.assignments >>= runAsProverT (read outVar)
-    either (throwError <<< EvalError)
+    eres <- getAssignments >>= runAsProverT (read outVar)
+    either (throwProverError <<< EvalError)
       ( \output -> do
-          modify_ \s ->
-            let
-              fs = valueToFields output
-            in
-              s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments (zip bvars fs) }
+          setAssignments $ (zip bvars (valueToFields output))
           pure output
       )
       eres
