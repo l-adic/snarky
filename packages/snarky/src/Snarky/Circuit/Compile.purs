@@ -25,9 +25,9 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL (class CircuitM, fresh, read, runAsProverT)
+import Snarky.Circuit.DSL.Monad (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.DSL.Assert (assertEqual)
-import Snarky.Circuit.Prover (ProverError(..), emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -78,7 +78,7 @@ makeSolver _ circuit = \inputs -> do
     setAssignments $ zip avars (valueToFields inputs)
     outVar <- circuit (fieldsToVar @f @a (map Var avars))
     eres <- getAssignments >>= runAsProverT (read outVar)
-    either (throwProverError <<< EvalError)
+    either throwProverError
       ( \output -> do
           setAssignments $ (zip bvars (valueToFields output))
           pure output
@@ -93,17 +93,17 @@ type SolverResult f a =
   , assignments :: Map Variable f
   }
 
-type SolverT f m a b = a -> ExceptT ProverError m (Tuple b (Map Variable f))
+type SolverT f m a b = a -> ExceptT (EvaluationError f Variable) m (Tuple b (Map Variable f))
 
-runSolverT :: forall f m a b. SolverT f m a b -> a -> m (Either ProverError (Tuple b (Map Variable f)))
+runSolverT :: forall f m a b. SolverT f m a b -> a -> m (Either (EvaluationError f Variable) (Tuple b (Map Variable f)))
 runSolverT f a = runExceptT (f a)
 
 type Solver f a b = SolverT f Identity a b
 
-runSolver :: forall f a b. Solver f a b -> a -> Either ProverError (Tuple b (Map Variable f))
+runSolver :: forall f a b. Solver f a b -> a -> Either (EvaluationError f Variable) (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
-type Checker c = Array c -> Except (EvaluationError Variable) Boolean
+type Checker f c = Array c -> Except ((EvaluationError f Variable)) Boolean
 
-makeChecker :: forall c. (c -> Except (EvaluationError Variable) Boolean) -> Checker c
+makeChecker :: forall f c. (c -> Except (EvaluationError f Variable) Boolean) -> Checker f c
 makeChecker f = foldM (\acc c -> f c <#> \a -> acc && a) true

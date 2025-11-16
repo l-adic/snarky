@@ -5,7 +5,7 @@ module Snarky.Circuit.Curves
 import Prelude
 
 import Snarky.Circuit.CVar (CVar, add_)
-import Snarky.Circuit.DSL (class CircuitM)
+import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.DSL.Assert (assertEqual)
 import Snarky.Circuit.DSL.Field (mul_, square_)
 import Snarky.Circuit.Types (Variable)

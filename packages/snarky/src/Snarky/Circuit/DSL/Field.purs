@@ -14,10 +14,10 @@ import Data.Array (foldl)
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const, ScalarMul), sub_, const_)
+import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, readCVar)
+import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar, throwAsProver)
 import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField)
 
@@ -95,7 +95,8 @@ inv_ = case _ of
   a -> do
     aInv <- exists do
       aVal <- readCVar a
-      pure $ FieldElem $ if aVal == zero then zero else recip aVal
+      if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
+      else pure $ FieldElem $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 

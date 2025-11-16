@@ -19,7 +19,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul), const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, read, readCVar)
+import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, read, readCVar)
 import Snarky.Circuit.DSL.Field (eq_, mul_, sum_)
 import Snarky.Circuit.Types (Bool(..), FieldElem(..), UnChecked(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField, fromBigInt)

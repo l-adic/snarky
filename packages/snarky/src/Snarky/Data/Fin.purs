@@ -19,7 +19,7 @@ getFinite (Finite k) = k
 derive instance Generic (Finite n) _
 
 instance Show (Finite n) where
-  show = genericShow
+  show x = genericShow x
 
 derive newtype instance Eq (Finite n)
 derive newtype instance Ord (Finite n)

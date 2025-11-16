@@ -5,6 +5,7 @@ import Prelude
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (runExcept)
 import Data.Array as Array
+import Data.Either (Either)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -40,6 +41,8 @@ spec = describe "AffineCircuit" do
         _lookup v = case Map.lookup v assignments of
           Nothing -> throwError $ MissingVariable v
           Just a -> pure a
-      let lhs = runExcept $ evalAffineExpression (reduce cvar) _lookup
+      let
+        lhs :: Either (EvaluationError BN254.ScalarField Int) BN254.ScalarField
+        lhs = runExcept $ evalAffineExpression (reduce cvar) _lookup
       let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs

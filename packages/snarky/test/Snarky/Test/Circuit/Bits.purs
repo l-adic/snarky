@@ -14,7 +14,7 @@ import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.CVar (CVar)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM)
+import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.DSL.Bits (pack, unpack)
 import Snarky.Circuit.Types (FieldElem(..), Variable)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)

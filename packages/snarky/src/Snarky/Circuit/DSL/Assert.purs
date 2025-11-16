@@ -10,7 +10,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL (class CircuitM, addConstraint)
+import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint)
 import Snarky.Circuit.DSL.Field (inv_)
 import Snarky.Circuit.Types (Bool(..), Variable)
 
