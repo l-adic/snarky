@@ -7,7 +7,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect (Effect)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.Curves (assertOnCurve)
+import Snarky.Circuit.Curves (assertOnCurve, assertEqual)
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffinePoint)
 import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec')
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
@@ -27,6 +27,7 @@ spec
   :: forall g f
    . Arbitrary f
   => Arbitrary g
+  => Eq f
   => WeierstrassCurve f g
   => Proxy g
   -> Spec Unit
@@ -59,6 +60,29 @@ spec pg =
         gen = do
           p :: AffinePoint f <- genAffinePoint pg
           pure $ Tuple (CurveParams $ curveParams pg) p
+
+      in
+        assertionSpec' constraints solver isValid gen
+
+    it "assertEqual Circuit is Valid" $
+      let
+        isValid :: Tuple (AffinePoint f) (AffinePoint f) -> Boolean
+        isValid (Tuple p1 p2) = p1 == p2
+        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertEqual)
+        { constraints } = un Identity $
+          compile
+            ( Proxy
+                @( Tuple
+                    (AffinePoint f)
+                    (AffinePoint f)
+                )
+            )
+            (Proxy @Unit)
+            (uncurry assertEqual)
+
+        gen = do
+          p :: AffinePoint f <- genAffinePoint pg
+          pure $ Tuple p p
 
       in
         assertionSpec' constraints solver isValid gen

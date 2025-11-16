@@ -14,6 +14,8 @@ import Type.Proxy (Proxy(..))
 
 newtype AffinePoint f = AffinePoint { x :: f, y :: f }
 
+derive instance Eq f => Eq (AffinePoint f)
+
 genAffinePoint :: forall g f. Arbitrary g => WeierstrassCurve f g => Proxy g -> Gen (AffinePoint f)
 genAffinePoint _ = AffinePoint <$> do
   let g = (toAffine @f @g <$> arbitrary) `suchThat` isJust
@@ -21,6 +23,8 @@ genAffinePoint _ = AffinePoint <$> do
     unsafePartial $ fromJust p
 
 newtype CurveParams f = CurveParams { a :: f, b :: f }
+
+derive instance Eq f => Eq (CurveParams f)
 
 instance PrimeField f => FieldEncoded f (AffinePoint f) where
   valueToFields (AffinePoint { x, y }) = valueToFields (Tuple (FieldElem x) (FieldElem (y)))
