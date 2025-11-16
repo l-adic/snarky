@@ -1,4 +1,4 @@
-module Test.Snarky.Test.Circuit.Bits (spec) where
+module Test.Snarky.Circuit.Bits (spec) where
 
 import Prelude
 
@@ -22,7 +22,7 @@ import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
 import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt)
-import Test.Snarky.Test.Circuit.Utils (ConstraintSystem, circuitSpec')
+import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpec')
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 

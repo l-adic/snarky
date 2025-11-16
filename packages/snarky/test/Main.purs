@@ -6,11 +6,11 @@ import Effect (Effect)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Test.Circuit.CVar as CVarTests
-import Test.Snarky.Test.Circuit.Assert as AssertTest
-import Test.Snarky.Test.Circuit.Bits as BitsTest
-import Test.Snarky.Test.Circuit.Bool as BoolTest
-import Test.Snarky.Test.Circuit.Factors as Factors
-import Test.Snarky.Test.Circuit.Field as FieldTest
+import Test.Snarky.Circuit.Assert as AssertTest
+import Test.Snarky.Circuit.Bits as BitsTest
+import Test.Snarky.Circuit.Bool as BoolTest
+import Test.Snarky.Circuit.Factors as Factors
+import Test.Snarky.Circuit.Field as FieldTest
 import Test.Spec (Spec)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)

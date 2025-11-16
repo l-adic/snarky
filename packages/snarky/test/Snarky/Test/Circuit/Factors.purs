@@ -1,4 +1,4 @@
-module Test.Snarky.Test.Circuit.Factors (spec) where
+module Test.Snarky.Circuit.Factors (spec) where
 
 import Prelude
 
@@ -8,7 +8,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.CVar (CVar, const_)
-import Snarky.Circuit.Compile (compile, makeAssertionSpec, makeSolver)
+import Snarky.Circuit.Compile (compile, makeSolver)
 import Snarky.Circuit.Constraint (evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, exists, read)
 import Snarky.Circuit.DSL.Assert (assert)
@@ -18,7 +18,7 @@ import Snarky.Circuit.Types (FieldElem(..), Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result, arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
-import Test.Snarky.Test.Circuit.Utils (ConstraintSystem)
+import Snarky.Circuit.TestUtils (ConstraintSystem, makeAssertionSpec)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))

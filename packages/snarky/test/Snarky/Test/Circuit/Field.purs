@@ -1,4 +1,4 @@
-module Test.Snarky.Test.Circuit.Field (spec) where
+module Test.Snarky.Circuit.Field (spec) where
 
 import Prelude
 
@@ -13,7 +13,7 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary, arbitrary)
-import Test.Snarky.Test.Circuit.Utils (ConstraintSystem, circuitSpec, circuitSpec')
+import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpec, circuitSpec')
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 

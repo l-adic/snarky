@@ -4,9 +4,7 @@ module Snarky.Circuit.Compile
   , SolverT
   , compile
   , makeSolver
-  , makeAssertionSpec
   , makeChecker
-  , makeCircuitSpec
   , runSolver
   , runSolverT
   ) where
@@ -14,7 +12,7 @@ module Snarky.Circuit.Compile
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (Except, ExceptT, lift, runExcept, runExceptT)
+import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
 import Control.Monad.State (gets, modify_)
 import Data.Array (foldl, zip)
 import Data.Array as Array
@@ -23,19 +21,17 @@ import Data.Foldable (foldM, for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT)
-import Snarky.Circuit.CVar (CVar(..), EvaluationError(..))
+import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.DSL.Assert (assertEqual)
 import Snarky.Circuit.Prover (ProverError(..), emptyProverState, runProverT)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (Result, withHelp)
 import Type.Proxy (Proxy(..))
 
 compile
@@ -122,69 +118,3 @@ type Checker c = Array c -> Except (EvaluationError Variable) Boolean
 
 makeChecker :: forall c. (c -> Except (EvaluationError Variable) Boolean) -> Checker c
 makeChecker f = foldM (\acc c -> f c <#> \a -> acc && a) true
-
-makeCircuitSpec
-  :: forall f c a b avar bvar m
-   . ConstrainedType f a c avar
-  => ConstrainedType f b c bvar
-  => Eq b
-  => Monad m
-  => { constraints :: Array c
-     , solver :: SolverT f m a b
-     , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
-         -> c
-         -> Except (EvaluationError Variable) Boolean
-     , f :: a -> b
-     }
-  -> a
-  -> m Result
-makeCircuitSpec { constraints, solver, evalConstraint, f } inputs = do
-  runSolverT solver inputs <#> case _ of
-    Left e -> withHelp false ("Prover error when solving ciruit: " <> show e)
-    Right (Tuple b assignments) ->
-      let
-        checker =
-          let
-            lookup v = case Map.lookup v assignments of
-              Nothing -> throwError $ MissingVariable v
-              Just res -> pure res
-          in
-            makeChecker (evalConstraint lookup)
-      in
-        case runExcept $ checker constraints of
-          Left e -> withHelp false ("Error during constraint checking: " <> show e)
-          Right isSatisfied ->
-            withHelp (isSatisfied && (f inputs == b)) "Circuit is satisfied and agrees with spec"
-
-makeAssertionSpec
-  :: forall f c a avar m
-   . ConstrainedType f a c avar
-  => Monad m
-  => { constraints :: Array c
-     , solver :: SolverT f m a Unit
-     , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
-         -> c
-         -> Except (EvaluationError Variable) Boolean
-     , isValid :: a -> Boolean
-     }
-  -> a
-  -> m Result
-makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
-  runSolverT solver inputs <#> case _ of
-    Left e -> withHelp false ("Prover error when solving ciruit: " <> show e)
-    Right (Tuple _ assignments) ->
-      let
-        checker =
-          let
-            lookup v = case Map.lookup v assignments of
-              Nothing -> throwError $ MissingVariable v
-              Just res -> pure res
-          in
-            makeChecker (evalConstraint lookup)
-      in
-        case runExcept $ checker constraints of
-          Left e -> withHelp false ("Error during constraint checking: " <> show e)
-          Right isSatisfied ->
-            withHelp (isSatisfied == isValid inputs) "Circuit is satisfied and agrees with spec"

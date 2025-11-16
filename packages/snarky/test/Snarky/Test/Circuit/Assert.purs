@@ -1,4 +1,4 @@
-module Test.Snarky.Test.Circuit.Assert (spec) where
+module Test.Snarky.Circuit.Assert (spec) where
 
 import Prelude
 
@@ -10,7 +10,7 @@ import Snarky.Circuit.DSL.Assert (assertEqual, assertNonZero)
 import Snarky.Circuit.Types (FieldElem(..))
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary)
-import Test.Snarky.Test.Circuit.Utils (ConstraintSystem, assertionSpec)
+import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
