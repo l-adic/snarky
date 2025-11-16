@@ -4,11 +4,7 @@ module Snarky.Circuit.Curves
 
 import Prelude
 
-import Snarky.Circuit.CVar (CVar, add_)
-import Snarky.Circuit.DSL (class CircuitM)
-import Snarky.Circuit.DSL.Assert (assertEqual)
-import Snarky.Circuit.DSL.Field (mul_, square_)
-import Snarky.Circuit.Types (Variable)
+import Snarky.Circuit.DSL (class CircuitM, CVar, add_, assertEqual, mul_, square_, Variable)
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..))
 import Snarky.Curves.Class (class PrimeField)
 

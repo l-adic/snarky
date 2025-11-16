@@ -26,13 +26,14 @@ makeCircuitSpec
    . ConstrainedType f a c avar
   => ConstrainedType f b c bvar
   => Eq b
+  => PrimeField f
   => Monad m
   => { constraints :: Array c
      , solver :: SolverT f m a b
      , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
+         (Variable -> Except (EvaluationError f Variable) f)
          -> c
-         -> Except (EvaluationError Variable) Boolean
+         -> Except (EvaluationError f Variable) Boolean
      , f :: a -> b
      }
   -> a
@@ -59,19 +60,20 @@ makeAssertionSpec
   :: forall f c a avar m
    . ConstrainedType f a c avar
   => Monad m
+  => PrimeField f
   => { constraints :: Array c
      , solver :: SolverT f m a Unit
      , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
+         (Variable -> Except (EvaluationError f Variable) f)
          -> c
-         -> Except (EvaluationError Variable) Boolean
+         -> Except (EvaluationError f Variable) Boolean
      , isValid :: a -> Boolean
      }
   -> a
   -> m Result
 makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
   runSolverT solver inputs <#> case _ of
-    Left e -> withHelp false ("Prover error when solving ciruit: " <> show e)
+    Left e -> withHelp false ("Prover error when solving ciruit:" <> show e)
     Right (Tuple _ assignments) ->
       let
         checker =

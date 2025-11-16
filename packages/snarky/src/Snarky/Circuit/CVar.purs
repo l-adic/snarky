@@ -4,6 +4,7 @@ module Snarky.Circuit.CVar
   , const_
   , sub_
   , scale_
+  , negate_
   , eval
   , reduce
   , AffineExpression
@@ -13,7 +14,6 @@ module Snarky.Circuit.CVar
 
 import Prelude
 
-import Control.Monad.Error.Class (class MonadThrow)
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
 import Data.Foldable (class Foldable)
@@ -37,12 +37,13 @@ data CVar f i
   | Var i
 
 derive instance Functor (CVar f)
-
 derive instance Foldable (CVar f)
-
 derive instance Traversable (CVar f)
-
 derive instance Bifunctor CVar
+derive instance (Eq f, Eq i) => Eq (CVar f i)
+
+instance (Show f, Show i) => Show (CVar f i) where
+  show x = genericShow x
 
 instance (Arbitrary f, Arbitrary i) => Arbitrary (CVar f i) where
   arbitrary = sized go
@@ -71,9 +72,6 @@ instance PrimeField f => Monoid (CVar f i) where
 
 derive instance Generic (CVar f i) _
 
-instance (Show f, Show i) => Show (CVar f i) where
-  show = genericShow
-
 add_ :: forall f i. PrimeField f => CVar f i -> CVar f i -> CVar f i
 add_ a b = case a, b of
   Const f, Const f' -> Const (f + f')
@@ -93,20 +91,25 @@ scale_ f c
 const_ :: forall f i. PrimeField f => f -> CVar f i
 const_ = Const
 
-data EvaluationError i = MissingVariable i
+negate_ :: forall f i. PrimeField f => CVar f i -> CVar f i
+negate_ = scale_ (negate one)
 
-derive instance Eq i => Eq (EvaluationError i)
-derive instance Generic (EvaluationError i) _
+data EvaluationError f i
+  = MissingVariable i
+  | DivisionByZero { numerator :: CVar f i, denominator :: CVar f i }
 
-instance Show i => Show (EvaluationError i) where
-  show = genericShow
+derive instance (Eq f, Eq i) => Eq (EvaluationError f i)
+derive instance Generic (EvaluationError f i) _
+
+instance (Show f, Show i) => Show (EvaluationError f i) where
+  show x = genericShow x
 
 -- Given a way of looking up variable assignmetns 'i -> vars -> Maybe f', 
 -- recursively evaluate the CVar
 eval
   :: forall f i m
-   . MonadThrow (EvaluationError i) m
-  => PrimeField f
+   . PrimeField f
+  => Monad m
   => (i -> m f)
   -> CVar f i
   -> m f
@@ -150,8 +153,8 @@ reduce c = case c of
 evalAffineExpression
   :: forall f i m
    . PrimeField f
+  => Monad m
   => Ord i
-  => MonadThrow (EvaluationError i) m
   => AffineExpression f i
   -> (i -> m f)
   -> m f
