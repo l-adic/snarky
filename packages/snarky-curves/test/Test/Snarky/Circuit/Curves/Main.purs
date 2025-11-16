@@ -8,8 +8,9 @@ import Data.Tuple (Tuple(..), uncurry)
 import Effect (Effect)
 import Snarky.Circuit.Compile (compile, makeSolver)
 import Snarky.Circuit.Curves (assertOnCurve, assertEqual)
+import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffinePoint)
-import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec')
+import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec', circuitSpec')
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary)
@@ -86,3 +87,17 @@ spec pg =
 
       in
         assertionSpec' constraints solver isValid gen
+
+    it "negate Circuit is Valid" $
+      let
+        pureNegate :: AffinePoint f -> AffinePoint f
+        pureNegate (AffinePoint { x, y }) = AffinePoint { x, y: negate y }
+        solver = makeSolver (Proxy @(ConstraintSystem f)) Curves.negate
+        { constraints } = un Identity $
+          compile
+            (Proxy @(AffinePoint f))
+            (Proxy @(AffinePoint f))
+            Curves.negate
+        gen = genAffinePoint pg
+      in
+        circuitSpec' constraints solver pureNegate gen

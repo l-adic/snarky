@@ -3,8 +3,8 @@ module Snarky.Circuit.CVar
   , add_
   , const_
   , sub_
-  , scale_
   , negate_
+  , scale_
   , eval
   , reduce
   , AffineExpression

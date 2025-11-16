@@ -7,7 +7,12 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compile, makeSolver)
+<<<<<<< HEAD
 import Snarky.Circuit.DSL (div_, eq_, inv_, mul_, square_, sum_, FieldElem(..))
+=======
+import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, negate_, square_, sum_)
+import Snarky.Circuit.Types (FieldElem(..))
+>>>>>>> 0774c25 (added negate circuit to snarky, negate circuit to snarky-curves)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
@@ -96,3 +101,15 @@ spec _ = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< unVector)
     in
       circuitSpec' constraints solver f (Vector.generator (Proxy @10) arbitrary)
+
+  it "negate Circuit is Valid" $
+    let
+      f (FieldElem a) = FieldElem (negate a)
+      solver = makeSolver (Proxy @(ConstraintSystem f)) (pure <<< negate_)
+      { constraints } = un Identity $
+        compile
+          (Proxy @(FieldElem f))
+          (Proxy @(FieldElem f))
+          (pure <<< negate_)
+    in
+      circuitSpec constraints solver f
