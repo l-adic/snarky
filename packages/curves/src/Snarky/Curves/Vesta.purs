@@ -11,7 +11,7 @@ import Data.Maybe (Maybe(..), fromJust)
 import Data.Array as Array
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, class FrModule)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, class FrModule, class FieldSizeInBits)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
@@ -172,3 +172,6 @@ foreign import _toAffine
        (Maybe a)
        G
        (Maybe a)
+
+instance FieldSizeInBits ScalarField 255
+instance FieldSizeInBits BaseField 255

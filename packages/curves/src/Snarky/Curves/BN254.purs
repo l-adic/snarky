@@ -6,12 +6,12 @@ module Snarky.Curves.BN254
 
 import Prelude
 
+import Data.Array as Array
 import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Array as Array
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FrModule, class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
@@ -172,3 +172,6 @@ foreign import _toAffine
        (Maybe a)
        G
        (Maybe a)
+
+instance FieldSizeInBits ScalarField 254
+instance FieldSizeInBits BaseField 254

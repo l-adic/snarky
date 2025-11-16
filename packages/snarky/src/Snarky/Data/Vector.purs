@@ -7,6 +7,10 @@ module Snarky.Data.Vector
   , vectorLength
   , toVector
   , generator
+  , zip
+  , zipWith
+  , unzip
+  , replicate
   ) where
 
 import Prelude
@@ -14,10 +18,12 @@ import Prelude
 import Control.Monad.Gen (class MonadGen)
 import Data.Array ((:))
 import Data.Array as A
+import Data.Array as Array
 import Data.Foldable (class Foldable)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (class Traversable)
+import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Prim.Int (class Add)
 import Type.Proxy (Proxy(..))
@@ -61,3 +67,36 @@ toVector _ as =
     Nothing
   else
     Just (Vector as)
+
+zip
+  :: forall a b n
+   . Vector n a
+  -> Vector n b
+  -> Vector n (Tuple a b)
+zip = zipWith Tuple
+
+zipWith
+  :: forall a b n c
+   . (a -> b -> c)
+  -> Vector n a
+  -> Vector n b
+  -> Vector n c
+zipWith f (Vector as) (Vector bs) =
+  Vector (Array.zipWith f as bs)
+
+unzip
+  :: forall a b n
+   . Vector n (Tuple a b)
+  -> Tuple (Vector n a) (Vector n b)
+unzip (Vector cs) =
+  let
+    Tuple as bs = Array.unzip cs
+  in
+    Tuple (Vector as) (Vector bs)
+
+replicate
+  :: forall a n
+   . Reflectable n Int
+  => a
+  -> Vector n a
+replicate a = Vector $ Array.replicate (reflectType (Proxy @n)) a
