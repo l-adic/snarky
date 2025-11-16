@@ -2,9 +2,11 @@ module Test.Snarky.Circuit.Curves.Main where
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
+import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Snarky.Circuit.Compile (compile, makeSolver)
 import Snarky.Circuit.Curves (assertOnCurve, assertEqual)
@@ -13,7 +15,8 @@ import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffineP
 import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec', circuitSpec')
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
-import Test.QuickCheck (class Arbitrary)
+import Test.QuickCheck (class Arbitrary, arbitrary)
+import Test.QuickCheck.Gen (frequency)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -101,3 +104,28 @@ spec pg =
         gen = genAffinePoint pg
       in
         circuitSpec' constraints solver pureNegate gen
+
+    it "lookupSingleBit Circuit is Valid" $
+      let
+        pureLookupSingleBit :: Tuple3 Boolean (AffinePoint f) (AffinePoint f) -> AffinePoint f
+        pureLookupSingleBit = uncurry3 \b p1 p2 -> if b then p2 else p1
+        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 Curves.lookupSingleBit)
+        { constraints } = un Identity $
+          compile
+            (Proxy @(Tuple3 Boolean (AffinePoint f) (AffinePoint f)))
+            (Proxy @(AffinePoint f))
+            (uncurry3 Curves.lookupSingleBit)
+        gen = do
+          b <- arbitrary
+          frequency $ NEA.cons'
+            ( Tuple 1.0 do -- Same points (test when selection doesn't matter)
+                p <- genAffinePoint pg
+                pure $ tuple3 b p p
+            )
+            [ Tuple 1.0 do -- Different points (test actual selection)
+                p1 <- genAffinePoint pg
+                p2 <- genAffinePoint pg
+                pure $ tuple3 b p1 p2
+            ]
+      in
+        circuitSpec' constraints solver pureLookupSingleBit gen

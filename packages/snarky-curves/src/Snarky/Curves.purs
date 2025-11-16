@@ -2,11 +2,13 @@ module Snarky.Circuit.Curves
   ( assertOnCurve
   , assertEqual
   , negate
+  , lookupSingleBit
   ) where
 
 import Prelude
 
-import Snarky.Circuit.DSL (class CircuitM, CVar, Variable)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, CVar, Variable, Bool)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..))
 import Snarky.Curves.Class (class PrimeField)
@@ -46,3 +48,20 @@ negate
   -> t m (AffinePoint (CVar f Variable))
 negate (AffinePoint { x, y }) = do
   pure $ AffinePoint { x, y: Snarky.negate_ y }
+
+lookupSingleBit
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => CVar f (Bool Variable)
+  -> AffinePoint (CVar f Variable)
+  -> AffinePoint (CVar f Variable)
+  -> t m (AffinePoint (CVar f Variable))
+lookupSingleBit b (AffinePoint { x: x1, y: y1 }) (AffinePoint { x: x2, y: y2 }) = do
+  -- x = x1 + b * (x2 - x1)
+  xTerm <- Snarky.mul_ (coerce b) (Snarky.sub_ x2 x1)
+  let x = Snarky.add_ x1 xTerm
+  -- y = y1 + b * (y2 - y1)  
+  yTerm <- Snarky.mul_ (coerce b) (Snarky.sub_ y2 y1)
+  let y = Snarky.add_ y1 yTerm
+  pure $ AffinePoint { x, y }
