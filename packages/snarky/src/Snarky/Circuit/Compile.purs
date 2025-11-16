@@ -5,10 +5,8 @@ module Snarky.Circuit.Compile
   , compile
   , makeSolver
   , makeAssertionSpec
-  , makeAssertionSpecPure
   , makeChecker
   , makeCircuitSpec
-  , makeCircuitSpecPure
   , runSolver
   , runSolverT
   ) where
@@ -159,23 +157,6 @@ makeCircuitSpec { constraints, solver, evalConstraint, f } inputs = do
           Right isSatisfied ->
             withHelp (isSatisfied && (f inputs == b)) "Circuit is satisfied and agrees with spec"
 
-makeCircuitSpecPure
-  :: forall f c a b avar bvar
-   . ConstrainedType f a c avar
-  => ConstrainedType f b c bvar
-  => Eq b
-  => { constraints :: Array c
-     , solver :: Solver f a b
-     , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
-         -> c
-         -> Except (EvaluationError Variable) Boolean
-     , f :: a -> b
-     }
-  -> a
-  -> Result
-makeCircuitSpecPure spc inputs = un Identity $ makeCircuitSpec spc inputs
-
 makeAssertionSpec
   :: forall f c a avar m
    . ConstrainedType f a c avar
@@ -207,19 +188,3 @@ makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
           Left e -> withHelp false ("Error during constraint checking: " <> show e)
           Right isSatisfied ->
             withHelp (isSatisfied == isValid inputs) "Circuit is satisfied and agrees with spec"
-
-makeAssertionSpecPure
-  :: forall f c a avar
-   . ConstrainedType f a c avar
-  => { constraints :: Array c
-     , solver :: Solver f a Unit
-     , evalConstraint ::
-         (Variable -> Except (EvaluationError Variable) f)
-         -> c
-         -> Except (EvaluationError Variable) Boolean
-     , isValid :: a -> Boolean
-     }
-  -> a
-  -> Result
-makeAssertionSpecPure spc inputs =
-  un Identity $ makeAssertionSpec spc inputs

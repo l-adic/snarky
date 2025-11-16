@@ -10,7 +10,10 @@ module Snarky.Data.Vector
   , zip
   , zipWith
   , unzip
-  , replicate
+  , index
+  , (!!)
+  , generate
+  , generateA
   ) where
 
 import Prelude
@@ -20,12 +23,17 @@ import Data.Array ((:))
 import Data.Array as A
 import Data.Array as Array
 import Data.Foldable (class Foldable)
-import Data.Maybe (Maybe(..))
+import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
+import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (class Traversable)
+import Data.Traversable (class Traversable, traverse)
+import Data.TraversableWithIndex (class TraversableWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
+import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add)
+import Snarky.Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Type.Proxy (Proxy(..))
 
 newtype Vector (n :: Int) a = Vector (Array a)
@@ -37,6 +45,20 @@ derive newtype instance Unfoldable1 (Vector n)
 derive newtype instance Unfoldable (Vector n)
 derive newtype instance Foldable (Vector n)
 derive newtype instance Traversable (Vector n)
+
+instance (Reflectable n Int) => FoldableWithIndex (Finite n) (Vector n) where
+  foldrWithIndex f init (Vector as) =
+    foldrWithIndex (\i a b -> f (unsafeFinite i) a b) init as
+  foldlWithIndex f init (Vector as) =
+    foldlWithIndex (\i b a -> f (unsafeFinite i) b a) init as
+  foldMapWithIndex f (Vector as) =
+    foldMapWithIndex (\i a -> f (unsafeFinite i) a) as
+
+instance (Reflectable n Int) => FunctorWithIndex (Finite n) (Vector n) where
+  mapWithIndex f (Vector as) = Vector $ mapWithIndex (\i a -> f (unsafeFinite i) a) as
+
+instance Reflectable n Int => TraversableWithIndex (Finite n) (Vector n) where
+  traverseWithIndex f (Vector as) = Vector <$> traverseWithIndex (\i a -> f (unsafeFinite i) a) as
 
 generator
   :: forall n m proxy a
@@ -58,8 +80,8 @@ vCons a (Vector as) = Vector (a : as)
 
 infixr 6 vCons as :<
 
-vectorLength :: forall a n. Vector n a -> Int
-vectorLength (Vector as) = A.length as
+vectorLength :: forall a n. Reflectable n Int => Vector n a -> Int
+vectorLength _ = reflectType (Proxy @n)
 
 toVector :: forall a (n :: Int) proxy. Reflectable n Int => proxy n -> Array a -> Maybe (Vector n a)
 toVector _ as =
@@ -94,9 +116,15 @@ unzip (Vector cs) =
   in
     Tuple (Vector as) (Vector bs)
 
-replicate
-  :: forall a n
-   . Reflectable n Int
-  => a
-  -> Vector n a
-replicate a = Vector $ Array.replicate (reflectType (Proxy @n)) a
+index :: forall a n. Reflectable n Int => Vector n a -> Finite n -> a
+index (Vector as) k =
+  unsafePartial $ fromJust $
+    as Array.!! (getFinite k)
+
+infixl 8 index as !!
+
+generate :: forall n a. Reflectable n Int => (Finite n -> a) -> Vector n a
+generate f = Vector $ map f (finites $ Proxy @n)
+
+generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
+generateA f = Vector <$> traverse f (finites $ Proxy @n)
