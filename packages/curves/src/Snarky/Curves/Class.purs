@@ -10,11 +10,13 @@ module Snarky.Curves.Class
   , class WeierstrassCurve
   , curveParams
   , toAffine
+  , class FieldSizeInBits
   ) where
 
 import Prelude
 
 import Data.Maybe (Maybe)
+import Data.Reflectable (class Reflectable)
 import JS.BigInt (BigInt)
 import Type.Proxy (Proxy)
 
@@ -34,3 +36,6 @@ class WeierstrassCurve :: Type -> Type -> Constraint
 class PrimeField f <= WeierstrassCurve f g | g -> f where
   curveParams :: Proxy g -> { a :: f, b :: f }
   toAffine :: g -> Maybe { x :: f, y :: f }
+
+class FieldSizeInBits :: Type -> Int -> Constraint
+class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n

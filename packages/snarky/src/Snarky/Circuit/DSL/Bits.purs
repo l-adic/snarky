@@ -2,9 +2,9 @@ module Snarky.Circuit.DSL.Bits where
 
 import Prelude
 
-import Data.Array (foldl)
-import Data.Array as Array
-import Data.Traversable (for)
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.Reflectable (class Reflectable)
+import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
@@ -13,22 +13,24 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL (class CircuitM, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), Variable(..))
-import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
+import Snarky.Data.Fin (getFinite)
+import Snarky.Data.Vector (Vector, generateA)
 
+-- NB: LSB first
 unpack
-  :: forall f c t m
+  :: forall f c t m n
    . CircuitM f c t m
   => PrimeField f
-  => Int
-  -> CVar f Variable
-  -> t m (Array (CVar f (Bool Variable)))
-unpack nBits v = do
-  bits :: Array (CVar f (Bool Variable)) <- for (Array.range 0 (nBits - 1)) \i -> exists do
+  => FieldSizeInBits f n
+  => CVar f Variable
+  -> t m (Vector n (CVar f (Bool Variable)))
+unpack v = do
+  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists do
     vVal <- readCVar v
-    -- Extract i-th bit (LSB first)
     let
       bit =
-        if (toBigInt vVal `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) == BigInt.fromInt 0 then zero
+        if (toBigInt vVal `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then zero
         else one :: f
     pure $ bit == one
 
@@ -37,20 +39,21 @@ unpack nBits v = do
     packingSum = foldl
       ( \acc (Tuple i bit) ->
           let
-            coeff = pow two (BigInt.fromInt i)
+            coeff = pow two (BigInt.fromInt $ getFinite i)
           in
             acc `CVar.add_` CVar.scale_ coeff (coerce bit :: CVar f Variable)
       )
       (const_ zero)
-      (Array.mapWithIndex Tuple bits)
+      (mapWithIndex Tuple bits)
 
   addConstraint $ r1cs { left: packingSum, right: const_ one, output: v }
   pure bits
 
 pack
-  :: forall f
+  :: forall f n
    . PrimeField f
-  => Array (CVar f (Bool Variable))
+  => Reflectable n Int
+  => Vector n (CVar f (Bool Variable))
   -> CVar f Variable
 pack bits =
   let
@@ -59,9 +62,9 @@ pack bits =
     foldl
       ( \acc (Tuple i bit) ->
           let
-            coeff = pow two (BigInt.fromInt i)
+            coeff = pow two (BigInt.fromInt $ getFinite i)
           in
             acc `CVar.add_` CVar.scale_ coeff (coerce bit :: CVar f Variable)
       )
       (const_ zero)
-      (Array.mapWithIndex Tuple bits)
+      (mapWithIndex Tuple bits)
