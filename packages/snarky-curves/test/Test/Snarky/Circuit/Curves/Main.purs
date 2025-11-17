@@ -2,6 +2,7 @@ module Test.Snarky.Circuit.Curves.Main where
 
 import Prelude
 
+import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity(..))
 import Data.Newtype (un)
@@ -12,7 +13,7 @@ import Snarky.Circuit.Compile (compile, makeSolver)
 import Snarky.Circuit.Curves (assertOnCurve, assertEqual)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffinePoint)
-import Snarky.Circuit.TestUtils (ConstraintSystem, assertionSpec', circuitSpec')
+import Snarky.Circuit.TestUtils (AssertionExpectation(..), ConstraintSystem, assertionSpec', circuitSpec')
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -40,15 +41,6 @@ spec pg =
 
     it "assertOnCurve Circuit is Valid" $
       let
-        isValid :: Tuple (CurveParams f) (AffinePoint f) -> Boolean
-        isValid (Tuple (CurveParams { a, b }) (AffinePoint { x, y })) =
-          let
-            y_sq = y * y
-            x_sq = x * x
-            x_cb = x_sq * x
-            rhs = x_cb + a * x + b
-          in
-            y_sq == rhs
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertOnCurve)
         { constraints } = un Identity $
           compile
@@ -61,17 +53,22 @@ spec pg =
             (Proxy @Unit)
             (uncurry assertOnCurve)
 
-        gen = do
+        onCurve = do
           p :: AffinePoint f <- genAffinePoint pg
           pure $ Tuple (CurveParams $ curveParams pg) p
+        offCurve = do
+          let { a, b } = curveParams pg
+          x <- arbitrary
+          y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + a * x + b
+          pure $ Tuple (CurveParams $ curveParams pg) (AffinePoint { x, y })
 
       in
-        assertionSpec' constraints solver isValid gen
+        do
+          assertionSpec' constraints solver (const Satisfied) onCurve
+          assertionSpec' constraints solver (const Unsatisfied) offCurve
 
     it "assertEqual Circuit is Valid" $
       let
-        isValid :: Tuple (AffinePoint f) (AffinePoint f) -> Boolean
-        isValid (Tuple p1 p2) = p1 == p2
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertEqual)
         { constraints } = un Identity $
           compile
@@ -84,12 +81,17 @@ spec pg =
             (Proxy @Unit)
             (uncurry assertEqual)
 
-        gen = do
+        same = do
           p :: AffinePoint f <- genAffinePoint pg
           pure $ Tuple p p
-
+        distinct = do
+          p1 :: AffinePoint f <- genAffinePoint pg
+          p2 <- genAffinePoint pg `suchThat` \p -> p /= p1
+          pure $ Tuple p1 p2
       in
-        assertionSpec' constraints solver isValid gen
+        do
+          assertionSpec' constraints solver (const Satisfied) same
+          assertionSpec' constraints solver (const Unsatisfied) distinct
 
     it "negate Circuit is Valid" $
       let

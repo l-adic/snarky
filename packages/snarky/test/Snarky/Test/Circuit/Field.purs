@@ -54,8 +54,17 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(Tuple (FieldElem f) (FieldElem f)))
           (Proxy @Boolean)
           (uncurry eq_)
+      same = do
+        a <- arbitrary
+        pure $ Tuple (FieldElem a) (FieldElem a)
+      distinct = do
+        a <- arbitrary
+        b <- arbitrary
+        pure $ Tuple (FieldElem a) (FieldElem b)
     in
-      circuitSpec constraints solver f
+      do
+        circuitSpec' constraints solver f same
+        circuitSpec' constraints solver f distinct
 
   it "inv Circuit is Valid" $
     let

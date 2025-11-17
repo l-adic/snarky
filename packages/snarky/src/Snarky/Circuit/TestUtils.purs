@@ -16,7 +16,7 @@ import Snarky.Circuit.Compile (Solver, SolverT, makeChecker, runSolverT)
 import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.Types (class ConstrainedType, Variable)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, Result, arbitrary, quickCheck, withHelp)
+import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
 import Test.QuickCheck.Gen (Gen)
 
 type ConstraintSystem f = R1CS f Variable
@@ -56,6 +56,22 @@ makeCircuitSpec { constraints, solver, evalConstraint, f } inputs = do
           Right isSatisfied ->
             withHelp (isSatisfied && (f inputs == b)) "Circuit is satisfied and agrees with spec"
 
+data AssertionExpectation f
+  = Unsatisfied
+  | Satisfied
+  | ProverError (EvaluationError f Variable -> Boolean)
+
+expectDivideByZero :: forall a f. a -> AssertionExpectation f
+expectDivideByZero _ = ProverError \e -> case e of
+  DivisionByZero _ -> true
+  _ -> false
+
+instance Show (AssertionExpectation f) where
+  show = case _ of
+    Unsatisfied -> "Unsatisfiable"
+    Satisfied -> "Satisfied"
+    ProverError _ -> "ProverError"
+
 makeAssertionSpec
   :: forall f c a avar m
    . ConstrainedType f a c avar
@@ -67,13 +83,16 @@ makeAssertionSpec
          (Variable -> Except (EvaluationError f Variable) f)
          -> c
          -> Except (EvaluationError f Variable) Boolean
-     , isValid :: a -> Boolean
+     , isValid :: a -> AssertionExpectation f
      }
   -> a
   -> m Result
 makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
   runSolverT solver inputs <#> case _ of
-    Left e -> withHelp false ("Prover error when solving ciruit:" <> show e)
+    Left e ->
+      case isValid inputs of
+        ProverError f -> withHelp (f e) ("Prover exited with error " <> show e)
+        _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple _ assignments) ->
       let
         checker =
@@ -85,9 +104,11 @@ makeAssertionSpec { constraints, solver, evalConstraint, isValid } inputs = do
             makeChecker (evalConstraint lookup)
       in
         case runExcept $ checker constraints of
-          Left e -> withHelp false ("Error during constraint checking: " <> show e)
-          Right isSatisfied ->
-            withHelp (isSatisfied == isValid inputs) "Circuit is satisfied and agrees with spec"
+          Left e -> withHelp false ("Encountered unexpected  error when checking circuit: " <> show e)
+          Right isSatisfied -> case isValid inputs of
+            Satisfied | isSatisfied == true -> Success
+            Unsatisfied | isSatisfied == false -> Success
+            res -> withHelp false ("Circuit satisfiability: " <> show isSatisfied <> ", checker exited with " <> show res)
 
 circuitSpec
   :: forall a avar b bvar f
@@ -129,7 +150,7 @@ assertionSpec
   => Arbitrary a
   => Array (R1CS f Variable)
   -> Solver f a Unit
-  -> (a -> Boolean)
+  -> (a -> AssertionExpectation f)
   -> Aff Unit
 assertionSpec constraints solver isValid =
   assertionSpec' constraints solver isValid arbitrary
@@ -140,7 +161,7 @@ assertionSpec'
   => ConstrainedType f a (R1CS f Variable) avar
   => Array (R1CS f Variable)
   -> Solver f a Unit
-  -> (a -> Boolean)
+  -> (a -> AssertionExpectation f)
   -> Gen a
   -> Aff Unit
 assertionSpec' constraints solver isValid g = liftEffect
