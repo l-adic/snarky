@@ -9,8 +9,9 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
+import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.Curves (assertOnCurve, assertEqual)
+import Snarky.Circuit.Curves (assertOnCurve, assertEqual, if_, unsafeAdd)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffinePoint)
 import Snarky.Circuit.TestUtils (AssertionExpectation(..), ConstraintSystem, assertionSpec', circuitSpec')
@@ -107,20 +108,20 @@ spec pg =
       in
         circuitSpec' constraints solver pureNegate gen
 
-    it "lookupSingleBit Circuit is Valid" $
+    it "if_ Circuit is Valid" $
       let
-        pureLookupSingleBit :: Tuple3 Boolean (AffinePoint f) (AffinePoint f) -> AffinePoint f
-        pureLookupSingleBit = uncurry3 \b p1 p2 -> if b then p2 else p1
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 Curves.lookupSingleBit)
+        pureIf :: Tuple3 Boolean (AffinePoint f) (AffinePoint f) -> AffinePoint f
+        pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
+        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
         { constraints } = un Identity $
           compile
             (Proxy @(Tuple3 Boolean (AffinePoint f) (AffinePoint f)))
             (Proxy @(AffinePoint f))
-            (uncurry3 Curves.lookupSingleBit)
+            (uncurry3 if_)
         gen = do
           b <- arbitrary
           frequency $ NEA.cons'
-            ( Tuple 1.0 do -- Same points (test when selection doesn't matter)
+            ( Tuple 1.0 do -- Same points (test when condition doesn't matter)
                 p <- genAffinePoint pg
                 pure $ tuple3 b p p
             )
@@ -130,4 +131,36 @@ spec pg =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpec' constraints solver pureLookupSingleBit gen
+        circuitSpec' constraints solver pureIf gen
+
+    it "unsafeAdd Circuit is Valid" $ unsafePartial $
+      let
+        f :: Tuple (AffinePoint f) (AffinePoint f) -> AffinePoint f
+        f (Tuple (AffinePoint { x: x1, y: y1 }) (AffinePoint { x: x2, y: y2 })) =
+          let
+            lambda = (y2 - y1) / (x2 - x1) -- Assumes x1 ≠ x2
+            x3 = (lambda * lambda) - x1 - x2
+            y3 = lambda * (x1 - x3) - y1
+          in
+            AffinePoint { x: x3, y: y3 }
+
+        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry unsafeAdd)
+        { constraints } = un Identity $
+          compile
+            (Proxy @(Tuple (AffinePoint f) (AffinePoint f)))
+            (Proxy @(AffinePoint f))
+            (uncurry unsafeAdd)
+
+        -- Generate distinct points to avoid division by zero in slope calculation
+        -- Avoid x1 = x2
+        gen = do
+          p1 <- genAffinePoint pg
+          p2 <- genAffinePoint pg `suchThat` \p ->
+            let
+              (AffinePoint { x: x1, y: y1 }) = p1
+              (AffinePoint { x: x2, y: y2 }) = p
+            in
+              x1 /= x2 && y1 /= negate y2
+          pure $ Tuple p1 p2
+      in
+        circuitSpec' constraints solver f gen

@@ -6,7 +6,8 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (FieldElem(..), assertEqual, assertNonZero)
+import Snarky.Circuit.DSL (FieldElem(..), assertEqual, assertNonZero, assertSquare)
+import Snarky.Circuit.DSL.Assert (assertNotEqual)
 import Snarky.Circuit.TestUtils (AssertionExpectation(..), ConstraintSystem, assertionSpec', expectDivideByZero)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -50,3 +51,41 @@ spec _ = describe "Assertion Circuit Specs" do
       do
         assertionSpec' constraints solver (const Unsatisfied) distinct
         assertionSpec' constraints solver (const Satisfied) same
+
+  it "assertNotEqual Circuit is Valid" $
+    let
+      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertNotEqual)
+      { constraints } = un Identity $
+        compile
+          (Proxy @(Tuple (FieldElem f) (FieldElem f)))
+          (Proxy @Unit)
+          (uncurry assertNotEqual)
+      same = arbitrary <#> \a -> Tuple a a
+      distinct = do
+        a <- arbitrary
+        b <- arbitrary `suchThat` \x -> x /= a
+        pure $ Tuple (FieldElem a) (FieldElem b)
+    in
+      do
+        assertionSpec' constraints solver expectDivideByZero same
+        assertionSpec' constraints solver (const Satisfied) distinct
+
+  it "assertSquare Circuit is Valid" $
+    let
+      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertSquare)
+      { constraints } = un Identity $
+        compile
+          (Proxy @(Tuple (FieldElem f) (FieldElem f)))
+          (Proxy @Unit)
+          (uncurry assertSquare)
+      squares = do
+        x <- arbitrary
+        pure $ Tuple (FieldElem x) (FieldElem (x * x))
+      nonSquares = do
+        x <- arbitrary
+        y <- arbitrary `suchThat` \y -> y /= x * x
+        pure $ Tuple (FieldElem x) (FieldElem y)
+    in
+      do
+        assertionSpec' constraints solver (const Satisfied) squares
+        assertionSpec' constraints solver (const Unsatisfied) nonSquares
