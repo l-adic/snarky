@@ -2,7 +2,7 @@ module Snarky.Circuit.DSL.Boolean
   ( true_
   , false_
   , not_
-  , ifThenElse_
+  , if_
   , and_
   , or_
   , xor_
@@ -37,14 +37,14 @@ not_
   -> CVar f (Bool Variable)
 not_ a = const_ one `CVar.sub_` a
 
-ifThenElse_
+if_
   :: forall f c t m
    . CircuitM f c t m
   => CVar f (Bool Variable)
   -> CVar f Variable
   -> CVar f Variable
   -> t m (CVar f Variable)
-ifThenElse_ b thenBranch elseBranch = case b of
+if_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
     Const t, Const e -> pure $

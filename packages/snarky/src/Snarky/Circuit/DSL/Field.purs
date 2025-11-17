@@ -6,6 +6,7 @@ module Snarky.Circuit.DSL.Field
   , inv_
   , div_
   , sum_
+  , negate_
   ) where
 
 import Prelude
@@ -114,3 +115,10 @@ sum_
   => Array (CVar f Variable)
   -> CVar f Variable
 sum_ = foldl CVar.add_ (Const zero)
+
+negate_
+  :: forall f
+   . PrimeField f
+  => CVar f Variable
+  -> CVar f Variable
+negate_ = CVar.negate_

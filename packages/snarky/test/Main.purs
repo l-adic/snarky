@@ -8,7 +8,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Test.Circuit.CVar as CVarTests
 import Test.Snarky.Circuit.Assert as AssertTest
 import Test.Snarky.Circuit.Bits as BitsTest
-import Test.Snarky.Circuit.Bool as BoolTest
+import Test.Snarky.Circuit.Boolean as BoolTest
 import Test.Snarky.Circuit.Factors as Factors
 import Test.Snarky.Circuit.Field as FieldTest
 import Test.Spec (Spec)

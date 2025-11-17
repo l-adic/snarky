@@ -10,10 +10,10 @@ import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
 import Snarky.Circuit.Constraint (evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, CVar, exists, read, assert, all_, eq_, mul_, neq_, FieldElem(..), Variable, const_)
+import Snarky.Circuit.TestUtils (AssertionExpectation(..), ConstraintSystem, makeAssertionSpec)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result, arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
-import Snarky.Circuit.TestUtils (ConstraintSystem, makeAssertionSpec)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
@@ -58,12 +58,14 @@ spec _ = describe "Factors Specs" do
         (Proxy @Unit)
         factorsCircuit
     let solver = makeSolver (Proxy @(ConstraintSystem f)) factorsCircuit
-    quickCheck $ arbitrary >>= \a ->
-      ( makeAssertionSpec
-          { constraints
-          , solver
-          , evalConstraint: evalR1CSConstraint
-          , isValid: \(FieldElem _) -> true
-          }
-          a :: Gen Result
-      )
+    let gen = arbitrary `suchThat` \(FieldElem a) -> a /= zero && a /= one
+    quickCheck $
+      gen >>= \a ->
+        ( makeAssertionSpec
+            { constraints
+            , solver
+            , evalConstraint: evalR1CSConstraint
+            , isValid: \(FieldElem _) -> Satisfied
+            }
+            a :: Gen Result
+        )

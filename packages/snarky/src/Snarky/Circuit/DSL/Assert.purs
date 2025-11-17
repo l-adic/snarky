@@ -1,6 +1,8 @@
 module Snarky.Circuit.DSL.Assert
   ( assertNonZero
   , assertEqual
+  , assertNotEqual
+  , assertSquare
   , assert
   ) where
 
@@ -10,8 +12,8 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.DSL.Field (inv_, square_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint)
-import Snarky.Circuit.DSL.Field (inv_)
 import Snarky.Circuit.Types (Bool(..), Variable)
 
 assertNonZero
@@ -33,6 +35,24 @@ assertEqual x y = case x, y of
     else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
     addConstraint $ r1cs { left: x `sub_` y, right: Const one, output: Const zero }
+
+assertNotEqual
+  :: forall f c t m
+   . CircuitM f c t m
+  => CVar f Variable
+  -> CVar f Variable
+  -> t m Unit
+assertNotEqual x y = assertNonZero (x `sub_` y)
+
+assertSquare
+  :: forall f c t m
+   . CircuitM f c t m
+  => CVar f Variable
+  -> CVar f Variable
+  -> t m Unit
+assertSquare x y = do
+  xSquared <- square_ x
+  assertEqual xSquared y
 
 assert
   :: forall f c t m

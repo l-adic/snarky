@@ -7,7 +7,8 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (div_, eq_, inv_, mul_, square_, sum_, FieldElem(..))
+import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, negate_, square_, sum_)
+import Snarky.Circuit.Types (FieldElem(..))
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
@@ -53,8 +54,17 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(Tuple (FieldElem f) (FieldElem f)))
           (Proxy @Boolean)
           (uncurry eq_)
+      same = do
+        a <- arbitrary
+        pure $ Tuple (FieldElem a) (FieldElem a)
+      distinct = do
+        a <- arbitrary
+        b <- arbitrary
+        pure $ Tuple (FieldElem a) (FieldElem b)
     in
-      circuitSpec constraints solver f
+      do
+        circuitSpec' constraints solver f same
+        circuitSpec' constraints solver f distinct
 
   it "inv Circuit is Valid" $
     let
@@ -96,3 +106,15 @@ spec _ = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< unVector)
     in
       circuitSpec' constraints solver f (Vector.generator (Proxy @10) arbitrary)
+
+  it "negate Circuit is Valid" $
+    let
+      f (FieldElem a) = FieldElem (negate a)
+      solver = makeSolver (Proxy @(ConstraintSystem f)) (pure <<< negate_)
+      { constraints } = un Identity $
+        compile
+          (Proxy @(FieldElem f))
+          (Proxy @(FieldElem f))
+          (pure <<< negate_)
+    in
+      circuitSpec constraints solver f
