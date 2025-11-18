@@ -2,6 +2,7 @@ module Snarky.Circuit.Compile
   ( Checker
   , Solver
   , SolverT
+  , compilePure
   , compile
   , makeSolver
   , makeChecker
@@ -25,12 +26,24 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL.Monad (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.DSL.Assert (assertEqual)
+import Snarky.Circuit.DSL.Monad (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
+
+compilePure
+  :: forall f c a b avar bvar
+   . PrimeField f
+  => ConstrainedType f a c avar
+  => ConstrainedType f b c bvar
+  => R1CSSystem (CVar f Variable) c
+  => Proxy a
+  -> Proxy b
+  -> (forall t. CircuitM f c t Identity => avar -> t Identity bvar)
+  -> CircuitBuilderState c
+compilePure pa pb circuit = un Identity $ compile pa pb circuit
 
 compile
   :: forall f c m a b avar bvar
