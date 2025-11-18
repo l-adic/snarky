@@ -17,9 +17,11 @@ import Prelude
 
 import Data.Array (foldMap)
 import Data.Array as Array
+import Data.Generic.Rep (class Generic)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
@@ -132,6 +134,11 @@ newtype FieldElem f = FieldElem f
 derive instance Newtype (FieldElem f) _
 derive instance Eq f => Eq (FieldElem f)
 derive newtype instance Arbitrary f => Arbitrary (FieldElem f)
+
+derive instance Generic (FieldElem f) _
+
+instance Show f => Show (FieldElem f) where
+  show x = genericShow x
 
 instance FieldEncoded f (FieldElem f) where
   valueToFields = Array.singleton <<< coerce

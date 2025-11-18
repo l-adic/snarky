@@ -15,6 +15,7 @@ import Type.Proxy (Proxy(..))
 newtype AffinePoint f = AffinePoint { x :: f, y :: f }
 
 derive instance Eq f => Eq (AffinePoint f)
+derive newtype instance Show f => Show (AffinePoint f)
 
 genAffinePoint :: forall g f. Arbitrary g => WeierstrassCurve f g => Proxy g -> Gen (AffinePoint f)
 genAffinePoint _ = AffinePoint <$> do

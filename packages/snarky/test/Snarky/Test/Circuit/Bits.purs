@@ -5,21 +5,19 @@ import Prelude
 import Control.Monad.Gen as Gen
 import Data.Array (foldl)
 import Data.Array as Array
-import Data.Identity (Identity(..))
 import Data.Int (pow)
-import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Circuit.Compile (compile, makeSolver)
+import Snarky.Circuit.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, CVar, pack, unpack, FieldElem(..), Variable)
+import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
 import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt)
-import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpec')
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -69,22 +67,22 @@ spec _ = describe "Bits Circuit Specs" do
         in
           generate (toBit <<< getFinite)
       solver = makeSolver (Proxy @(ConstraintSystem f)) (unpack)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(FieldElem f))
           (Proxy @(Vector n Boolean))
           (unpack)
     in
-      circuitSpec' constraints solver f (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
       f = identity
       solver = makeSolver (Proxy @(ConstraintSystem f)) (packUnpackCircuit)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(FieldElem f))
           (Proxy @(FieldElem f))
           (packUnpackCircuit)
     in
-      circuitSpec' constraints solver f (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
