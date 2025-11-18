@@ -82,7 +82,7 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
             makeChecker (evalConstraint lookup)
       in
         case runExcept $ checker constraints of
-          Left e -> withHelp false ("Encountered unexpected  error when checking circuit: " <> show e)
+          Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
           Right isSatisfied -> case isValid inputs of
             Satisfied expected | isSatisfied == true ->
               withHelp (expected == b) ("Circuit disagrees with test function, got " <> show b <> " expected " <> show expected)
