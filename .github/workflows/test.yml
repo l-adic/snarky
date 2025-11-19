@@ -61,12 +61,9 @@ jobs:
     
     - name: Check PureScript formatting
       run: npx purs-tidy check "packages/**/*.purs"
-<<<<<<< HEAD
-=======
     
     - name: Check Rust formatting
       run: cargo fmt --all --check
     
     - name: Run Rust clippy
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings
->>>>>>> 27dbef7 (added cargo workspace)

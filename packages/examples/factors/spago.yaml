@@ -1,0 +1,10 @@
+package:
+  name: factors-example
+  dependencies:
+    - prelude
+    - snarky
+    - curves
+    - maybe
+    - tuples
+    - transformers
+    - effect
