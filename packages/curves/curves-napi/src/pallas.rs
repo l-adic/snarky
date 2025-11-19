@@ -210,8 +210,8 @@ pub mod base_field {
 
 pub mod group {
     use super::*;
-    use ark_pallas::Projective;
     use ark_ec::AffineRepr;
+    use ark_pallas::Projective;
 
     type G = External<Affine>;
     type BaseFieldExternal = External<VestaFr>;

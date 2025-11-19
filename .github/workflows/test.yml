@@ -24,6 +24,18 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
     
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          packages/curves/curves-napi/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+    
     - name: Install dependencies
       run: npm install
     
@@ -41,8 +53,20 @@ jobs:
       with:
         node-version: '18'
     
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+    
     - name: Install dependencies
       run: npm install
     
     - name: Check PureScript formatting
       run: npx purs-tidy check "packages/**/*.purs"
+<<<<<<< HEAD
+=======
+    
+    - name: Check Rust formatting
+      run: cargo fmt --all --check
+    
+    - name: Run Rust clippy
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+>>>>>>> 27dbef7 (added cargo workspace)
