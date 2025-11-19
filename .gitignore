@@ -4,6 +4,7 @@ output/
 .pulp-cache/
 bower_components/
 node_modules/
+.psci_modules/
 
 # Native binaries
 *.node
@@ -13,7 +14,6 @@ node_modules/
 
 # Cargo/Rust
 target/
-Cargo.lock
 
 # Package manager files
 spago.lock
