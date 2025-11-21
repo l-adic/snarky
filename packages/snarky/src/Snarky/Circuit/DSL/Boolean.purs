@@ -93,7 +93,7 @@ xor_ a b = case a, b of
     | bVal == zero -> pure a
     | bVal == one -> pure $ not_ a
   _, _ -> do
-    res <- exists do
+    UnChecked res <- exists do
       F aVal <- read (coerce a :: CVar f Variable)
       F bVal <- read (coerce b :: CVar f Variable)
       pure $ UnChecked (aVal /= bVal)

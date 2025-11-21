@@ -11,12 +11,13 @@ import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (assertOnCurve, assertEqual, if_, unsafeAdd, double)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..), genAffinePoint)
+import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, genAffinePoint)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
-import Test.QuickCheck.Gen (frequency)
+import Test.QuickCheck.Gen (Gen, frequency)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -40,31 +41,33 @@ spec pg =
 
     it "assertOnCurve Circuit is Valid" $
       let
+        { a, b } = curveParams pg
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
                 @( Tuple
-                    (CurveParams f)
-                    (AffinePoint f)
+                    (CurveParams (F f))
+                    (AffinePoint (F f))
                 )
             )
             (Proxy @Unit)
             (uncurry assertOnCurve)
 
         onCurve = do
-          p :: AffinePoint f <- genAffinePoint pg
-          pure $ Tuple (CurveParams $ curveParams pg) p
+          p :: AffinePoint (F f) <- genAffinePoint pg
+          pure $ Tuple { a: F a, b: F b } p
+
+        offCurve :: Gen (Tuple (CurveParams (F f)) (AffinePoint (F f)))
         offCurve = do
           let { a, b } = curveParams pg
           x <- arbitrary
-          y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + a * x + b
-          pure $ Tuple (CurveParams $ curveParams pg) (AffinePoint { x, y })
-
+          y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + F a * x + F b
+          pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints solver satisfied_ onCurve
           circuitSpecPure' constraints solver unsatisfied offCurve
+          circuitSpecPure' constraints solver satisfied_ onCurve
 
     it "assertEqual Circuit is Valid" $
       let
@@ -73,18 +76,18 @@ spec pg =
           compilePure
             ( Proxy
                 @( Tuple
-                    (AffinePoint f)
-                    (AffinePoint f)
+                    (AffinePoint (F f))
+                    (AffinePoint (F f))
                 )
             )
             (Proxy @Unit)
             (uncurry assertEqual)
 
         same = do
-          p :: AffinePoint f <- genAffinePoint pg
+          p :: AffinePoint (F f) <- genAffinePoint pg
           pure $ Tuple p p
         distinct = do
-          p1 :: AffinePoint f <- genAffinePoint pg
+          p1 :: AffinePoint (F f) <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p -> p /= p1
           pure $ Tuple p1 p2
       in
@@ -94,13 +97,13 @@ spec pg =
 
     it "negate Circuit is Valid" $
       let
-        pureNegate :: AffinePoint f -> AffinePoint f
-        pureNegate (AffinePoint { x, y }) = AffinePoint { x, y: negate y }
+        pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
+        pureNegate { x, y } = { x, y: negate y }
         solver = makeSolver (Proxy @(ConstraintSystem f)) Curves.negate
         { constraints } =
           compilePure
-            (Proxy @(AffinePoint f))
-            (Proxy @(AffinePoint f))
+            (Proxy @(AffinePoint (F f)))
+            (Proxy @(AffinePoint (F f)))
             Curves.negate
         gen = genAffinePoint pg
       in
@@ -108,13 +111,13 @@ spec pg =
 
     it "if_ Circuit is Valid" $
       let
-        pureIf :: Tuple3 Boolean (AffinePoint f) (AffinePoint f) -> AffinePoint f
+        pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
         { constraints } =
           compilePure
-            (Proxy @(Tuple3 Boolean (AffinePoint f) (AffinePoint f)))
-            (Proxy @(AffinePoint f))
+            (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
+            (Proxy @(AffinePoint (F f)))
             (uncurry3 if_)
         gen = do
           b <- arbitrary
@@ -133,20 +136,20 @@ spec pg =
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
-        f :: Tuple (AffinePoint f) (AffinePoint f) -> AffinePoint f
-        f (Tuple (AffinePoint { x: x1, y: y1 }) (AffinePoint { x: x2, y: y2 })) =
+        f :: Tuple (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
+        f (Tuple { x: x1, y: y1 } { x: x2, y: y2 }) =
           let
             lambda = (y2 - y1) / (x2 - x1) -- Assumes x1 ≠ x2
             x3 = (lambda * lambda) - x1 - x2
             y3 = lambda * (x1 - x3) - y1
           in
-            AffinePoint { x: x3, y: y3 }
+            { x: x3, y: y3 }
 
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry unsafeAdd)
         { constraints } =
           compilePure
-            (Proxy @(Tuple (AffinePoint f) (AffinePoint f)))
-            (Proxy @(AffinePoint f))
+            (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
+            (Proxy @(AffinePoint (F f)))
             (uncurry unsafeAdd)
 
         -- Generate distinct points to avoid division by zero in slope calculation
@@ -155,8 +158,8 @@ spec pg =
           p1 <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p ->
             let
-              (AffinePoint { x: x1, y: y1 }) = p1
-              (AffinePoint { x: x2, y: y2 }) = p
+              { x: x1, y: y1 } = p1
+              { x: x2, y: y2 } = p
             in
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
@@ -165,26 +168,26 @@ spec pg =
 
     it "double Circuit is Valid" $
       let
-        pureDouble :: AffinePoint f -> AffinePoint f
-        pureDouble (AffinePoint { x, y }) =
+        pureDouble :: AffinePoint (F f) -> AffinePoint (F f)
+        pureDouble { x, y } =
           let
             { a } = curveParams pg
-            lambda = (three * x * x + a) / (two * y)
+            lambda = (three * x * x + F a) / (two * y)
             x' = lambda * lambda - two * x
             y' = lambda * (x - x') - y
-            two = one + one :: f
-            three = one + one + one :: f
+            two = F (one + one)
+            three = F (one + one + one)
           in
-            AffinePoint { x: x', y: y' }
+            { x: x', y: y' }
 
         solver = makeSolver (Proxy @(ConstraintSystem f)) (double pg)
         { constraints } =
           compilePure
-            (Proxy @(AffinePoint f))
-            (Proxy @(AffinePoint f))
+            (Proxy @(AffinePoint (F f)))
+            (Proxy @(AffinePoint (F f)))
             (double pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
-        gen = genAffinePoint pg `suchThat` \(AffinePoint { y }) -> y /= zero
+        gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
         circuitSpecPure' constraints solver (satisfied pureDouble) gen

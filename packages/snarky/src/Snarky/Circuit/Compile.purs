@@ -60,8 +60,8 @@ compile _ _ circuit = do
   Tuple _ s <-
     flip runCircuitBuilderT emptyCircuitBuilderState do
       let
-        n = sizeInFields @f (Proxy @a)
-        m = sizeInFields @f (Proxy @b)
+        n = sizeInFields (Proxy @f) (Proxy @a)
+        m = sizeInFields (Proxy @f) (Proxy @b)
       vars <- replicateA (n + m) fresh
       let { before: avars, after: bvars } = Array.splitAt n vars
       setPublicInputVars vars
@@ -73,7 +73,7 @@ compile _ _ circuit = do
   pure s
 
 makeSolver
-  :: forall f c m a b avar bvar
+  :: forall f a b c m avar bvar
    . PrimeField f
   => ConstrainedType f a c avar
   => ConstrainedType f b c bvar
@@ -84,8 +84,8 @@ makeSolver
   -> SolverT f m a b
 makeSolver _ circuit = \inputs -> do
   eres <- lift $ flip runProverT emptyProverState do
-    let n = sizeInFields @f (Proxy @a)
-    let m = sizeInFields @f (Proxy @b)
+    let n = sizeInFields (Proxy @f) (Proxy @a)
+    let m = sizeInFields (Proxy @f) (Proxy @b)
     vars <- replicateA (n + m) fresh
     let { before: avars, after: bvars } = Array.splitAt n vars
     setAssignments $ zip avars (valueToFields inputs)

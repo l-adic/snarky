@@ -105,7 +105,7 @@ circuitSpecPure constraints solver f =
   circuitSpecPure' constraints solver f arbitrary
 
 circuitSpecPure'
-  :: forall a avar b bvar f
+  :: forall a b avar bvar f
    . ConstrainedType f a (R1CS f Variable) avar
   => ConstrainedType f b (R1CS f Variable) bvar
   => PrimeField f

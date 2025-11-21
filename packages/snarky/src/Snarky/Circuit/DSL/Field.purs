@@ -49,7 +49,7 @@ square_
 square_ = case _ of
   Const f -> pure $ Const (f * f)
   a -> do
-    z :: CVar f Variable <- exists @f @c do
+    z :: CVar f Variable <- exists do
       aVal <- readCVar a
       pure $ F (aVal * aVal)
     addConstraint $ r1cs { left: a, right: a, output: z }
