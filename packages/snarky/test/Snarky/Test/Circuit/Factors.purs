@@ -3,12 +3,11 @@ module Test.Snarky.Circuit.Factors (spec) where
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, CVar, exists, read, assert, all_, eq_, mul_, neq_, F(..), Variable, const_)
+import Snarky.Circuit.DSL (class CircuitM, CVar, F, Variable, all_, assert, const_, eq_, exists, mul_, neq_, read)
 import Snarky.Circuit.TestUtils (ConstraintSystem, satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -17,7 +16,7 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 class Monad m <= FactorM f m where
-  factor :: f -> m (Tuple f f)
+  factor :: F f -> m { a :: F f, b :: F f }
 
 factorsCircuit
   :: forall t m f
@@ -26,10 +25,9 @@ factorsCircuit
   => CVar f Variable
   -> t m Unit
 factorsCircuit n = do
-  Tuple a b <- exists do
-    F nVal <- read n
-    Tuple a b <- lift $ factor @f nVal
-    pure $ Tuple (F a) (F b)
+  { a, b } <- exists do
+    nVal <- read n
+    lift $ factor @f nVal
   c1 <- mul_ a b >>= eq_ n
   c2 <- neq_ a (const_ one)
   c3 <- neq_ b (const_ one)
@@ -37,10 +35,10 @@ factorsCircuit n = do
 
 instance (Arbitrary f, PrimeField f) => FactorM f Gen where
   factor n = do
-    a <- arbitrary @f `suchThat` \a ->
+    a <- arbitrary @(F f) `suchThat` \a ->
       a /= one && a /= n
     let b = n / a
-    pure $ Tuple a b
+    pure $ { a, b }
 
 instance FactorM f Effect where
   factor _ = do
@@ -56,5 +54,7 @@ spec _ = describe "Factors Specs" do
         (Proxy @Unit)
         factorsCircuit
     let solver = makeSolver (Proxy @(ConstraintSystem f)) factorsCircuit
-    let gen = arbitrary `suchThat` \(F a) -> a /= zero && a /= one
+    let
+      gen :: Gen (F f)
+      gen = arbitrary `suchThat` \a -> a /= zero && a /= one
     circuitSpec' randomSampleOne constraints solver satisfied_ gen
