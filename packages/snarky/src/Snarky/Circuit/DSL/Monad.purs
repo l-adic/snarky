@@ -58,7 +58,7 @@ readCVar v = AsProverT do
 
 read
   :: forall f var a m c
-   . ConstrainedType f a c var
+   . ConstrainedType f a var
   => PrimeField f
   => Monad m
   => var
@@ -83,7 +83,7 @@ class Monad m <= MonadFresh m where
   fresh :: m Variable
 
 class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c t m | t -> c f, c -> f where
-  exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> t m var
+  exists :: forall a var. ConstrainedType f a var => AsProverT f m a -> t m var
   addConstraint :: c -> t m Unit
 
 throwAsProver :: forall f m a. Monad m => EvaluationError f Variable -> AsProverT f m a

@@ -50,7 +50,7 @@ expectDivideByZero _ = ProverError \e -> case e of
 
 makeCircuitSpec
   :: forall f c a avar m b
-   . ConstrainedType f a c avar
+   . ConstrainedType f a avar
   => Monad m
   => Eq b
   => Show b
@@ -91,8 +91,8 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
 
 circuitSpecPure
   :: forall a avar b bvar f
-   . ConstrainedType f a (R1CS f Variable) avar
-  => ConstrainedType f b (R1CS f Variable) bvar
+   . ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -106,8 +106,8 @@ circuitSpecPure constraints solver f =
 
 circuitSpecPure'
   :: forall a b avar bvar f
-   . ConstrainedType f a (R1CS f Variable) avar
-  => ConstrainedType f b (R1CS f Variable) bvar
+   . ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -128,8 +128,8 @@ circuitSpecPure' constraints solver isValid g = liftEffect
 -- to run their effects layer, use with caution
 circuitSpec
   :: forall a avar b bvar f m
-   . ConstrainedType f a (R1CS f Variable) avar
-  => ConstrainedType f b (R1CS f Variable) bvar
+   . ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -145,8 +145,8 @@ circuitSpec nat constraints solver f =
 
 circuitSpec'
   :: forall a avar b bvar f m
-   . ConstrainedType f a (R1CS f Variable) avar
-  => ConstrainedType f b (R1CS f Variable) bvar
+   . ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => PrimeField f
   => Eq b
   => Show b

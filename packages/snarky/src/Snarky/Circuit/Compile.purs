@@ -36,8 +36,8 @@ import Type.Proxy (Proxy(..))
 compilePure
   :: forall f c a b avar bvar
    . PrimeField f
-  => ConstrainedType f a c avar
-  => ConstrainedType f b c bvar
+  => ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => R1CSSystem (CVar f Variable) c
   => Proxy a
   -> Proxy b
@@ -48,8 +48,8 @@ compilePure pa pb circuit = un Identity $ compile pa pb circuit
 compile
   :: forall f c m a b avar bvar
    . PrimeField f
-  => ConstrainedType f a c avar
-  => ConstrainedType f b c bvar
+  => ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => Monad m
   => R1CSSystem (CVar f Variable) c
   => Proxy a
@@ -75,8 +75,8 @@ compile _ _ circuit = do
 makeSolver
   :: forall f a b c m avar bvar
    . PrimeField f
-  => ConstrainedType f a c avar
-  => ConstrainedType f b c bvar
+  => ConstrainedType f a avar
+  => ConstrainedType f b bvar
   => Monad m
   => R1CSSystem (CVar f Variable) c
   => Proxy c
