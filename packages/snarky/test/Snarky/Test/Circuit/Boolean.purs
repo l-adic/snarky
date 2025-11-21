@@ -10,7 +10,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (FieldElem, all_, and_, any_, if_, not_, or_, xor_)
+import Snarky.Circuit.DSL (F, all_, and_, any_, if_, not_, or_, xor_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
@@ -77,14 +77,14 @@ spec _ = describe "Boolean Circuit Specs" do
 
   it "if Circuit is Valid" $
     let
-      f :: Tuple3 Boolean (FieldElem f) (FieldElem f) -> FieldElem f
+      f :: Tuple3 Boolean (F f) (F f) -> F f
       f = uncurry3 \b t e ->
         if b then t else e
       solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
       { constraints } = un Identity $
         compile
-          (Proxy @(Tuple3 Boolean (FieldElem f) (FieldElem f)))
-          (Proxy @(FieldElem f))
+          (Proxy @(Tuple3 Boolean (F f) (F f)))
+          (Proxy @(F f))
           (uncurry3 if_)
     in
       circuitSpecPure constraints solver (satisfied f)

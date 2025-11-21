@@ -19,7 +19,7 @@ import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), const_,
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar, throwAsProver)
-import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
+import Snarky.Circuit.Types (Bool(..), F(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField)
 
 mul_
@@ -37,7 +37,7 @@ mul_ a b =
       z <- exists do
         aVal <- readCVar a
         bVal <- readCVar b
-        pure $ FieldElem $ aVal * bVal
+        pure $ F $ aVal * bVal
       addConstraint $ r1cs { left: a, right: b, output: z }
       pure z
 
@@ -49,9 +49,9 @@ square_
 square_ = case _ of
   Const f -> pure $ Const (f * f)
   a -> do
-    z <- exists do
+    z :: CVar f Variable <- exists @f @c do
       aVal <- readCVar a
-      pure $ FieldElem (aVal * aVal)
+      pure $ F (aVal * aVal)
     addConstraint $ r1cs { left: a, right: a, output: z }
     pure z
 
@@ -68,8 +68,8 @@ eq_ a b = case a `CVar.sub_` b of
     Tuple r zInv <- exists do
       zVal <- readCVar z
       pure $
-        if zVal == zero then Tuple (FieldElem (one :: f)) (FieldElem zero)
-        else Tuple (FieldElem zero) (FieldElem $ recip zVal)
+        if zVal == zero then Tuple (F (one :: f)) (F zero)
+        else Tuple (F zero) (F $ recip zVal)
     addConstraint $ r1cs { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ r1cs { left: r, right: z, output: Const zero }
     pure $ coerce r
@@ -97,7 +97,7 @@ inv_ = case _ of
     aInv <- exists do
       aVal <- readCVar a
       if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
-      else pure $ FieldElem $ if aVal == zero then zero else recip aVal
+      else pure $ F $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 

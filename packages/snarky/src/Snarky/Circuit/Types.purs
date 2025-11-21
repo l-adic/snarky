@@ -1,28 +1,4 @@
-module Snarky.Circuit.Types
-  --( Bool(..)
-  --, F(..)
-  --, UnChecked(..)
-  --, Variable(..)
-  --, class CircuitType
-  --, class GCircuitType
-  --, class RCircuitType
-  --, fieldsToValue
-  --, gFieldsToValue
-  --, gSizeInFields
-  --, gValueToFields
-  --, genericFieldsToValue
-  --, genericSizeInFields
-  --, genericValueToFields
-  --, rFieldsToValue
-  --, rSizeInFields
-  --, rValueToFields
-  --, sizeInFields
-  --, valueToFields
-  --, class ConstrainedType
-  --, class CheckType
-  --, check
-  --)
-  where
+module Snarky.Circuit.Types where
 
 import Prelude
 
@@ -42,6 +18,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem, boolean)
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
@@ -78,7 +55,7 @@ derive instance Newtype (UnChecked a) _
 --------------------------------------------------------------------------------
 
 
-class (CircuitType f a var, CheckType var c) <= ConstrainedType f a c var | c -> f var
+class (CircuitType f a var, CheckType var c) <= ConstrainedType f a c var | c -> f, f a -> var c
 
 --------------------------------------------------------------------------------
 
@@ -104,7 +81,7 @@ instance CircuitType f (F f) (CVar f Variable) where
   varToFields = Array.singleton
   fieldsToVar a = unsafePartial fromJust $ Array.head a
 
-instance (Eq f, Semiring f) => CircuitType f Boolean (CVar f (Bool Variable)) where
+instance PrimeField f => CircuitType f Boolean (CVar f (Bool Variable)) where
   valueToFields b = Array.singleton $ if b then one @f else zero
   fieldsToValue a =
     let

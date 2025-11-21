@@ -10,7 +10,7 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.Constraint.Class (class R1CSSystem, r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), Variable(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
@@ -26,7 +26,7 @@ unpack
   => CVar f Variable
   -> t m (Vector n (CVar f (Bool Variable)))
 unpack v = do
-  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists do
+  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists @f @c do
     vVal <- readCVar v
     let
       bit =

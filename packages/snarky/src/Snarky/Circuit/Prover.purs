@@ -68,7 +68,7 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
     a <- ExceptT $ lift $ runAsProverT m assignments
     vars <- do
       { nextVar } <- get
-      let n = sizeInFields @f (Proxy @a)
+      let n = sizeInFields (Proxy @f) (Proxy @a)
       let vars = Variable <$> (nextVar .. (nextVar + n - 1))
       modify_
         _

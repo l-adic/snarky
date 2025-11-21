@@ -6,7 +6,7 @@ import Data.Maybe (fromJust, isJust)
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.CVar (CVar)
-import Snarky.Circuit.Types (Variable, FieldElem(..), class FieldEncoded, class ConstrainedType, valueToFields, fieldsToValue, sizeInFields, varToFields, fieldsToVar)
+import Snarky.Circuit.Types (Variable, F(..), class FieldEncoded, class ConstrainedType, valueToFields, fieldsToValue, sizeInFields, varToFields, fieldsToVar)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
@@ -28,39 +28,39 @@ newtype CurveParams f = CurveParams { a :: f, b :: f }
 derive instance Eq f => Eq (CurveParams f)
 
 instance PrimeField f => FieldEncoded f (AffinePoint f) where
-  valueToFields (AffinePoint { x, y }) = valueToFields (Tuple (FieldElem x) (FieldElem (y)))
+  valueToFields (AffinePoint { x, y }) = valueToFields (Tuple (F x) (F (y)))
   fieldsToValue fs =
     let
-      (Tuple (FieldElem x) (FieldElem y)) = fieldsToValue fs
+      (Tuple (F x) (F y)) = fieldsToValue fs
     in
       AffinePoint { x, y }
-  sizeInFields _ = sizeInFields @f (Proxy :: Proxy (Tuple (FieldElem f) (FieldElem f)))
+  sizeInFields _ = sizeInFields @f (Proxy :: Proxy (Tuple (F f) (F f)))
 
 instance PrimeField f => ConstrainedType f (AffinePoint f) c (AffinePoint (CVar f Variable)) where
   varToFields (AffinePoint { x, y }) =
-    varToFields @f @(Tuple (FieldElem f) (FieldElem f)) (Tuple x y)
+    varToFields @f @(Tuple (F f) (F f)) (Tuple x y)
   fieldsToVar vs =
     let
-      (Tuple x y) = fieldsToVar @f @(Tuple (FieldElem f) (FieldElem f)) vs
+      (Tuple x y) = fieldsToVar @f @(Tuple (F f) (F f)) vs
     in
       AffinePoint { x, y }
   check _ = mempty
 
 instance PrimeField f => FieldEncoded f (CurveParams f) where
-  valueToFields (CurveParams { a, b }) = valueToFields (Tuple (FieldElem a) (FieldElem b))
+  valueToFields (CurveParams { a, b }) = valueToFields (Tuple (F a) (F b))
   fieldsToValue fs =
     let
-      (Tuple (FieldElem a) (FieldElem b)) = fieldsToValue fs
+      (Tuple (F a) (F b)) = fieldsToValue fs
     in
       CurveParams { a, b }
-  sizeInFields _ = sizeInFields @f (Proxy :: Proxy (Tuple (FieldElem f) (FieldElem f)))
+  sizeInFields _ = sizeInFields @f (Proxy :: Proxy (Tuple (F f) (F f)))
 
 instance PrimeField f => ConstrainedType f (CurveParams f) c (CurveParams (CVar f Variable)) where
   varToFields (CurveParams { a, b }) =
-    varToFields @f @(Tuple (FieldElem f) (FieldElem f)) (Tuple a b)
+    varToFields @f @(Tuple (F f) (F f)) (Tuple a b)
   fieldsToVar vs =
     let
-      (Tuple a b) = fieldsToVar @f @(Tuple (FieldElem f) (FieldElem f)) vs
+      (Tuple a b) = fieldsToVar @f @(Tuple (F f) (F f)) vs
     in
       CurveParams { a, b }
   check _ = mempty

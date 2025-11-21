@@ -70,10 +70,10 @@ instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c
     s { constraints = s.constraints `snoc` c }
   exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> CircuitBuilderT c m var
   exists _ = do
-    let n = sizeInFields @f (Proxy @a)
+    let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh
     let v = fieldsToVar @f @a (map Var vars)
-    traverse_ (addConstraint @f) (check @f @a v)
+    traverse_ (addConstraint @f) (check @var v)
     pure v
 
 setPublicInputVars :: forall f m. Monad m => Array Variable -> CircuitBuilderT f m Unit

@@ -11,7 +11,7 @@ import Prelude
 
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.Curves.Types (AffinePoint(..), CurveParams(..))
-import Snarky.Circuit.DSL (class CircuitM, Bool, CVar, FieldElem(..), UnChecked(..), Variable, assertSquare, exists, readCVar, addConstraint)
+import Snarky.Circuit.DSL (class CircuitM, Bool, CVar, F(..), UnChecked(..), Variable, assertSquare, exists, readCVar, addConstraint)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Type.Proxy (Proxy)
@@ -80,7 +80,7 @@ unsafeAdd (AffinePoint { x: ax, y: ay }) (AffinePoint { x: bx, y: by }) = do
     axVal <- readCVar ax
     bxVal <- readCVar bx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ FieldElem $ (lambdaVal * lambdaVal) - (axVal + bxVal)
+    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + bxVal)
 
   assertSquare lambda (Snarky.add_ (Snarky.add_ cx ax) bx)
 
@@ -89,7 +89,7 @@ unsafeAdd (AffinePoint { x: ax, y: ay }) (AffinePoint { x: bx, y: by }) = do
     ayVal <- readCVar ay
     cxVal <- readCVar cx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ FieldElem $ (lambdaVal * (axVal - cxVal)) - ayVal
+    pure $ UnChecked $ F $ (lambdaVal * (axVal - cxVal)) - ayVal
 
   Snarky.addConstraint $ r1cs
     { left: lambda
@@ -114,19 +114,19 @@ double pg (AffinePoint { x: ax, y: ay }) = do
     xSquaredVal <- readCVar xSquared
     ayVal <- readCVar ay
     let { a } = curveParams pg
-    pure $ FieldElem $ (xSquaredVal + xSquaredVal + xSquaredVal + a) / (ayVal + ayVal)
+    pure $ F $ (xSquaredVal + xSquaredVal + xSquaredVal + a) / (ayVal + ayVal)
 
   UnChecked bx <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
-    pure $ UnChecked $ FieldElem $ (lambdaVal * lambdaVal) - (axVal + axVal)
+    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + axVal)
 
   UnChecked by <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
     ayVal <- readCVar ay
     bxVal <- readCVar bx
-    pure $ UnChecked $ FieldElem $ (lambdaVal * (axVal - bxVal)) - ayVal
+    pure $ UnChecked $ F $ (lambdaVal * (axVal - bxVal)) - ayVal
 
   let { a } = curveParams pg
   let aConst = Snarky.const_ a
