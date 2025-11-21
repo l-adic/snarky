@@ -26,7 +26,7 @@ unpack
   => CVar f Variable
   -> t m (Vector n (CVar f (Bool Variable)))
 unpack v = do
-  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists @f @c do
+  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists do
     vVal <- readCVar v
     let
       bit =

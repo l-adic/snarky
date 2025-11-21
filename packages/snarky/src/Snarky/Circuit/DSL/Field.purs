@@ -12,7 +12,6 @@ module Snarky.Circuit.DSL.Field
 import Prelude
 
 import Data.Array (foldl)
-import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), const_, sub_)
@@ -49,7 +48,7 @@ square_
 square_ = case _ of
   Const f -> pure $ Const (f * f)
   a -> do
-    z :: CVar f Variable <- exists do
+    z <- exists do
       aVal <- readCVar a
       pure $ F (aVal * aVal)
     addConstraint $ r1cs { left: a, right: a, output: z }
@@ -65,11 +64,11 @@ eq_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
     let z = a `CVar.sub_` b
-    Tuple r zInv <- exists do
+    { r, zInv } <- exists do
       zVal <- readCVar z
       pure $
-        if zVal == zero then Tuple (F (one :: f)) (F zero)
-        else Tuple (F zero) (F $ recip zVal)
+        if zVal == zero then { r: F (one :: f), zInv: F zero }
+        else { r: F zero, zInv: F $ recip zVal }
     addConstraint $ r1cs { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ r1cs { left: r, right: z, output: Const zero }
     pure $ coerce r
@@ -81,7 +80,7 @@ neq_
   -> CVar f Variable
   -> t m (CVar f (Bool Variable))
 neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
-  c :: CVar f (Bool Variable) <- eq_ (a :: CVar f Variable) b
+  c <- eq_ (a :: CVar f Variable) b
   pure $ const_ (one :: f) `sub_` c
 
 inv_

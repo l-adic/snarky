@@ -1,12 +1,11 @@
 module Snarky.Circuit.Curves
-  --  ( assertOnCurve
-  --  , assertEqual
-  --  , negate
-  --  , if_
-  --  , unsafeAdd
-  --  , double
-  --  ) 
-  where
+  ( assertOnCurve
+  , assertEqual
+  , negate
+  , if_
+  , unsafeAdd
+  , double
+  ) where
 
 import Prelude
 
