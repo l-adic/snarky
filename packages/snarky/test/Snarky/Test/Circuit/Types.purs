@@ -2,13 +2,15 @@ module Test.Snarky.Circuit.Types (spec) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
-import Snarky.Circuit.CVar (CVar)
+import Snarky.Circuit.Constraint.Class (class R1CSSystem)
+import Snarky.Circuit.CVar (CVar, const_)
 import Snarky.Circuit.TestUtils (ConstraintSystem)
-import Snarky.Circuit.Types (class CircuitType, Bool, F, UnChecked, Variable, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked(..), Variable, check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -39,6 +41,9 @@ instance CircuitType f (Point (F f)) (Point (CVar f Variable)) where
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields (Proxy @(Point (F f)))
   fieldsToVar = genericFieldsToVar (Proxy @(Point (F f)))
+
+instance CheckedType (Point (CVar f Variable)) c where
+  check = genericCheck
 
 -- Another custom type with more complex structure
 data MyRecord f bool = MyRecord
@@ -71,6 +76,9 @@ instance
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
   fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
+
+instance (PrimeField f, R1CSSystem (CVar f Variable) c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+  check = genericCheck
 
 -- Generic test suite for any CircuitType
 testCircuitType
@@ -217,3 +225,70 @@ spec pf = describe "CircuitType Round Trip Tests" do
         z <- arbitrary
         pure { point, vec, nested: { x, y, data: { z } } }
     )
+
+  -- CheckedType constraint accumulation tests
+  describe "CheckedType constraint tests" do
+
+    it "F type has no constraints" $
+      quickCheck' 10 \(value :: f) ->
+        let
+          cvar = const_ value :: CVar f Variable
+          constraints = check @(CVar f Variable) @(ConstraintSystem f) cvar
+        in
+          Array.null constraints === true
+
+    it "Boolean type has exactly one constraint" $
+      quickCheck' 10 \(_ :: Unit) ->
+        let
+          cvar = const_ (zero @f) :: CVar f (Bool Variable)
+          constraints = check @(CVar f (Bool Variable)) @(ConstraintSystem f) cvar
+        in
+          Array.length constraints === 1
+
+    it "Unit type has no constraints" $
+      quickCheck' 10 \(_ :: Unit) ->
+        let
+          constraints = check @Unit @(ConstraintSystem f) unit
+        in
+          Array.null constraints === true
+
+    it "UnChecked F has no constraints" $
+      quickCheck' 10 \(value :: f) ->
+        let
+          uncheckedVar = UnChecked (const_ value :: CVar f Variable)
+          constraints = check @(UnChecked (CVar f Variable)) @(ConstraintSystem f) uncheckedVar
+        in
+          Array.null constraints === true
+
+    it "UnChecked Boolean has no constraints" $
+      quickCheck' 10 \(_ :: Unit) ->
+        let
+          uncheckedVar = UnChecked (const_ (zero @f) :: CVar f (Bool Variable))
+          constraints = check @(UnChecked (CVar f (Bool Variable))) @(ConstraintSystem f) uncheckedVar
+        in
+          Array.null constraints === true
+
+    -- Compound type constraint tests
+    it "Record with F and Boolean accumulates constraints correctly" $
+      quickCheck' 10 \(fval :: f) ->
+        let
+          record = { a: const_ fval :: CVar f Variable, b: const_ (zero @f) :: CVar f (Bool Variable) }
+          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+        in
+          Array.length constraints === 1 -- Only the Boolean should contribute a constraint
+
+    it "Point with F fields has no constraints" $
+      quickCheck' 10 \(x :: f) (y :: f) ->
+        let
+          point = Point (const_ x) (const_ y) :: Point (CVar f Variable)
+          constraints = check @(Point (CVar f Variable)) @(ConstraintSystem f) point
+        in
+          Array.null constraints === true
+
+    it "Record with multiple Booleans accumulates all constraints" $
+      quickCheck' 10 \(_ :: Unit) ->
+        let
+          record = { flag1: const_ (zero @f) :: CVar f (Bool Variable), flag2: const_ (one @f) :: CVar f (Bool Variable) }
+          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+        in
+          Array.length constraints === 2 -- Both Booleans should contribute constraints
