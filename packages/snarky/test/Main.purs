@@ -11,6 +11,7 @@ import Test.Snarky.Circuit.Bits as BitsTest
 import Test.Snarky.Circuit.Boolean as BoolTest
 import Test.Snarky.Circuit.Factors as Factors
 import Test.Snarky.Circuit.Field as FieldTest
+import Test.Snarky.Circuit.Types as TypesTest
 import Test.Spec (Spec)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -28,3 +29,4 @@ circuitSpec = do
   BoolTest.spec $ Proxy @Vesta.BaseField
   AssertTest.spec $ Proxy @BN254.ScalarField
   BitsTest.spec $ Proxy @Vesta.ScalarField
+  TypesTest.spec $ Proxy @Vesta.ScalarField

@@ -12,14 +12,13 @@ module Snarky.Circuit.DSL.Field
 import Prelude
 
 import Data.Array (foldl)
-import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar, throwAsProver)
-import Snarky.Circuit.Types (Bool(..), FieldElem(..), Variable(..))
+import Snarky.Circuit.Types (Bool(..), F(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField)
 
 mul_
@@ -37,7 +36,7 @@ mul_ a b =
       z <- exists do
         aVal <- readCVar a
         bVal <- readCVar b
-        pure $ FieldElem $ aVal * bVal
+        pure $ F $ aVal * bVal
       addConstraint $ r1cs { left: a, right: b, output: z }
       pure z
 
@@ -51,7 +50,7 @@ square_ = case _ of
   a -> do
     z <- exists do
       aVal <- readCVar a
-      pure $ FieldElem (aVal * aVal)
+      pure $ F (aVal * aVal)
     addConstraint $ r1cs { left: a, right: a, output: z }
     pure z
 
@@ -65,11 +64,11 @@ eq_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
     let z = a `CVar.sub_` b
-    Tuple r zInv <- exists do
+    { r, zInv } <- exists do
       zVal <- readCVar z
       pure $
-        if zVal == zero then Tuple (FieldElem (one :: f)) (FieldElem zero)
-        else Tuple (FieldElem zero) (FieldElem $ recip zVal)
+        if zVal == zero then { r: F (one :: f), zInv: F zero }
+        else { r: F zero, zInv: F $ recip zVal }
     addConstraint $ r1cs { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ r1cs { left: r, right: z, output: Const zero }
     pure $ coerce r
@@ -81,7 +80,7 @@ neq_
   -> CVar f Variable
   -> t m (CVar f (Bool Variable))
 neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
-  c :: CVar f (Bool Variable) <- eq_ (a :: CVar f Variable) b
+  c <- eq_ (a :: CVar f Variable) b
   pure $ const_ (one :: f) `sub_` c
 
 inv_
@@ -97,7 +96,7 @@ inv_ = case _ of
     aInv <- exists do
       aVal <- readCVar a
       if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
-      else pure $ FieldElem $ if aVal == zero then zero else recip aVal
+      else pure $ F $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 

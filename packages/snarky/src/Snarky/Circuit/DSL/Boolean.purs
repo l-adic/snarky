@@ -21,7 +21,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, read, readCVar)
 import Snarky.Circuit.DSL.Field (eq_, mul_, sum_)
-import Snarky.Circuit.Types (Bool(..), FieldElem(..), UnChecked(..), Variable(..))
+import Snarky.Circuit.Types (Bool(..), F(..), UnChecked(..), Variable(..))
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 
 true_ :: forall f. PrimeField f => CVar f (Bool Variable)
@@ -52,7 +52,7 @@ if_ b thenBranch elseBranch = case b of
     _, _ -> do
       r <- exists do
         bVal <- readCVar $ coerce b
-        FieldElem <$> if bVal == one then readCVar thenBranch else readCVar elseBranch
+        F <$> if bVal == one then readCVar thenBranch else readCVar elseBranch
       addConstraint $ r1cs
         { left: coerce b
         , right: thenBranch `CVar.sub_` elseBranch
@@ -94,8 +94,8 @@ xor_ a b = case a, b of
     | bVal == one -> pure $ not_ a
   _, _ -> do
     UnChecked res <- exists do
-      FieldElem aVal <- read $ coerce a
-      FieldElem bVal <- read $ coerce b
+      F aVal <- read (coerce a :: CVar f Variable)
+      F bVal <- read (coerce b :: CVar f Variable)
       pure $ UnChecked (aVal /= bVal)
     addConstraint $
       r1cs

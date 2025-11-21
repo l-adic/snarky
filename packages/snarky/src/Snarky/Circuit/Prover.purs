@@ -25,7 +25,7 @@ import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, runAsProverT)
-import Snarky.Circuit.Types (class ConstrainedType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
+import Snarky.Circuit.Types (class CircuitType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -62,13 +62,13 @@ runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
 instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (ProverT f) m where
   addConstraint _ = pure unit
-  exists :: forall a var. ConstrainedType f a c var => AsProverT f m a -> ProverT f m var
+  exists :: forall a var. CircuitType f a var => AsProverT f m a -> ProverT f m var
   exists m = ProverT do
     { assignments } <- get
     a <- ExceptT $ lift $ runAsProverT m assignments
     vars <- do
       { nextVar } <- get
-      let n = sizeInFields @f (Proxy @a)
+      let n = sizeInFields (Proxy @f) (Proxy @a)
       let vars = Variable <$> (nextVar .. (nextVar + n - 1))
       modify_
         _

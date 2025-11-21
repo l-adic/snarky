@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (FieldElem(..), assertEqual, assertNonZero, assertSquare)
+import Snarky.Circuit.DSL (F(..), assertEqual, assertNonZero, assertSquare)
 import Snarky.Circuit.DSL.Assert (assertNotEqual)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)
@@ -21,30 +21,30 @@ spec _ = describe "Assertion Circuit Specs" do
       solver = makeSolver (Proxy @(ConstraintSystem f)) assertNonZero
       { constraints } =
         compilePure
-          (Proxy @(FieldElem f))
+          (Proxy @(F f))
           (Proxy @Unit)
           assertNonZero
       gen = do
         a <- arbitrary `suchThat` (_ /= zero)
-        pure $ FieldElem a
+        pure $ F a
     in
       do
         circuitSpecPure' constraints solver satisfied_ gen
-        circuitSpecPure' constraints solver expectDivideByZero (pure $ FieldElem zero)
+        circuitSpecPure' constraints solver expectDivideByZero (pure $ F zero)
 
   it "assertEqual Circuit is Valid" $
     let
       solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertEqual)
       { constraints } =
         compilePure
-          (Proxy @(Tuple (FieldElem f) (FieldElem f)))
+          (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
           (uncurry assertEqual)
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
         a <- arbitrary
         b <- arbitrary `suchThat` \x -> x /= a
-        pure $ Tuple (FieldElem a) (FieldElem b)
+        pure $ Tuple (F a) (F b)
     in
       do
         circuitSpecPure' constraints solver unsatisfied distinct
@@ -55,14 +55,14 @@ spec _ = describe "Assertion Circuit Specs" do
       solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertNotEqual)
       { constraints } =
         compilePure
-          (Proxy @(Tuple (FieldElem f) (FieldElem f)))
+          (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
           (uncurry assertNotEqual)
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
         a <- arbitrary
         b <- arbitrary `suchThat` \x -> x /= a
-        pure $ Tuple (FieldElem a) (FieldElem b)
+        pure $ Tuple (F a) (F b)
     in
       do
         circuitSpecPure' constraints solver expectDivideByZero same
@@ -73,16 +73,16 @@ spec _ = describe "Assertion Circuit Specs" do
       solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertSquare)
       { constraints } =
         compilePure
-          (Proxy @(Tuple (FieldElem f) (FieldElem f)))
+          (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
           (uncurry assertSquare)
       squares = do
         x <- arbitrary
-        pure $ Tuple (FieldElem x) (FieldElem (x * x))
+        pure $ Tuple (F x) (F (x * x))
       nonSquares = do
         x <- arbitrary
         y <- arbitrary `suchThat` \y -> y /= x * x
-        pure $ Tuple (FieldElem x) (FieldElem y)
+        pure $ Tuple (F x) (F y)
     in
       do
         circuitSpecPure' constraints solver satisfied_ squares

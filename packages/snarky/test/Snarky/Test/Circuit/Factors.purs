@@ -8,7 +8,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, CVar, exists, read, assert, all_, eq_, mul_, neq_, FieldElem(..), Variable, const_)
+import Snarky.Circuit.DSL (class CircuitM, CVar, exists, read, assert, all_, eq_, mul_, neq_, F(..), Variable, const_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -27,9 +27,9 @@ factorsCircuit
   -> t m Unit
 factorsCircuit n = do
   Tuple a b <- exists do
-    FieldElem nVal <- read n
+    F nVal <- read n
     Tuple a b <- lift $ factor @f nVal
-    pure $ Tuple (FieldElem a) (FieldElem b)
+    pure $ Tuple (F a) (F b)
   c1 <- mul_ a b >>= eq_ n
   c2 <- neq_ a (const_ one)
   c3 <- neq_ b (const_ one)
@@ -52,9 +52,9 @@ spec _ = describe "Factors Specs" do
   it "factors Circuit is Valid" $ do
     { constraints } <- liftEffect $
       compile
-        (Proxy @(FieldElem f))
+        (Proxy @(F f))
         (Proxy @Unit)
         factorsCircuit
     let solver = makeSolver (Proxy @(ConstraintSystem f)) factorsCircuit
-    let gen = arbitrary `suchThat` \(FieldElem a) -> a /= zero && a /= one
+    let gen = arbitrary `suchThat` \(F a) -> a /= zero && a /= one
     circuitSpec' randomSampleOne constraints solver satisfied_ gen
