@@ -9,13 +9,14 @@ module Snarky.Circuit.Types
   , sizeInFields
   , varToFields
   , fieldsToVar
-  --, check
+  , class CheckedType
+  , check
   , genericValueToFields
   , genericFieldsToValue
   , genericSizeInFields
   , genericVarToFields
   , genericFieldsToVar
-  --, genericCheck
+  , genericCheck
 
   -- Obligatory exports
   , class GCircuitType
@@ -24,7 +25,8 @@ module Snarky.Circuit.Types
   , gSizeInFields
   , gVarToFields
   , gFieldsToVar
-  --, gCheck
+  , class GCheckedType
+  , gCheck
 
   , class RCircuitType
   , rValueToFields
@@ -32,7 +34,8 @@ module Snarky.Circuit.Types
   , rSizeInFields
   , rVarToFields
   , rFieldsToVar
-  --, rCheck
+  , class RCheckedType
+  , rCheck
   ) where
 
 import Prelude
@@ -95,14 +98,16 @@ derive instance Generic (UnChecked f) _
 
 --------------------------------------------------------------------------------
 
-class CircuitType :: Type -> Type -> Type  -> Constraint
-class CircuitType f a var |  f a -> var, var -> f where
+class CircuitType :: Type -> Type -> Type -> Constraint
+class CircuitType f a var | f a -> var, var -> f where
   valueToFields :: a -> Array f
   fieldsToValue :: Array f -> a
   sizeInFields :: Proxy f -> Proxy a -> Int
   varToFields :: var -> Array (CVar f Variable)
   fieldsToVar :: Array (CVar f Variable) -> var
---  check :: var -> Array c
+
+class CheckedType var c where
+  check :: var -> Array c
 
 instance CircuitType f Unit Unit where
   valueToFields _ = mempty
@@ -110,7 +115,9 @@ instance CircuitType f Unit Unit where
   sizeInFields _ _ = 0
   varToFields _ = mempty
   fieldsToVar _ = unit
---  check _ = mempty
+
+instance CheckedType Unit c where
+  check _ = mempty
 
 instance CircuitType f (F f) (CVar f Variable) where
   valueToFields = Array.singleton <<< coerce
@@ -118,7 +125,9 @@ instance CircuitType f (F f) (CVar f Variable) where
   sizeInFields _ _ = 1
   varToFields = Array.singleton
   fieldsToVar a = unsafePartial fromJust $ Array.head a
---  check _ = mempty
+
+instance CheckedType (CVar f Variable) c where
+  check _ = mempty
 
 instance (PrimeField f) => CircuitType f Boolean (CVar f (Bool Variable)) where
   valueToFields b = Array.singleton $ if b then one @f else zero
@@ -130,7 +139,9 @@ instance (PrimeField f) => CircuitType f Boolean (CVar f (Bool Variable)) where
   sizeInFields _ _ = 1
   fieldsToVar x = coerce $ unsafePartial $ fromJust $ Array.head x
   varToFields = Array.singleton <<< coerce
-  --check var = Array.singleton $ boolean (coerce var :: CVar f Variable)
+
+instance (PrimeField f, R1CSSystem (CVar f Variable) c) => CheckedType (CVar f (Bool Variable)) c where
+  check var = Array.singleton $ boolean (coerce var :: CVar f Variable)
 
 instance
   ( CircuitType f a avar
@@ -142,7 +153,9 @@ instance
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields (Proxy @(Tuple a b))
   fieldsToVar = genericFieldsToVar (Proxy @(Tuple a b))
-  --check = genericCheck (Proxy @(Tuple a b))
+
+instance (CheckedType avar c, CheckedType bvar c) => CheckedType (Tuple avar bvar) c where
+  check = genericCheck
 
 instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
   valueToFields as = foldMap valueToFields (unVector as)
@@ -160,7 +173,9 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
       vals = fieldsToVar @f @a <$> chunks
     in
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
-  --check var = foldMap (check @f @a) (unVector var)
+
+instance CheckedType var c => CheckedType (Vector n var) c where
+  check var = foldMap check (unVector var)
 
 instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) where
   valueToFields (UnChecked a) = valueToFields @f @a a
@@ -168,7 +183,9 @@ instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) wher
   sizeInFields pf _ = sizeInFields pf (Proxy @a)
   varToFields (UnChecked a) = varToFields @f @a a
   fieldsToVar a = UnChecked $ fieldsToVar @f @a a
-  --check _ = mempty
+
+instance CheckedType (UnChecked var) c where
+  check _ = mempty
 
 instance (RowToList r rl, RowToList var rlvar, RCircuitType f rl rlvar r var) => CircuitType f (Record r) (Record var) where
   fieldsToValue = rFieldsToValue @f @rl @rlvar @r (Proxy @rl)
@@ -176,18 +193,22 @@ instance (RowToList r rl, RowToList var rlvar, RCircuitType f rl rlvar r var) =>
   sizeInFields pf _ = rSizeInFields @f @rl @rlvar @r pf (Proxy @rl) (Proxy @rlvar)
   fieldsToVar = rFieldsToVar @f @rl @rlvar @r (Proxy @rlvar)
   varToFields = rVarToFields @f @rl @rlvar @r (Proxy @rlvar)
-  --check = rCheck @f @rl @rlvar @r @c (Proxy @rl)
+
+instance (RowToList var rlvar, RCheckedType rlvar var c) => CheckedType (Record var) c where
+  check = rCheck (Proxy @rlvar)
 
 --------------------------------------------------------------------------------
 
-class GCircuitType :: Type -> Type -> Type  -> Constraint
+class GCircuitType :: Type -> Type -> Type -> Constraint
 class GCircuitType f a var | f a -> var, var -> f where
   gValueToFields :: a -> Array f
   gFieldsToValue :: Array f -> a
   gSizeInFields :: Proxy f -> Proxy a -> Int
   gVarToFields :: var -> Array (CVar f Variable)
   gFieldsToVar :: Array (CVar f Variable) -> var
-  --gCheck :: var -> Array c
+
+class GCheckedType var c where
+  gCheck :: var -> Array c
 
 instance GCircuitType f NoArguments NoArguments where
   gValueToFields _ = mempty
@@ -195,7 +216,9 @@ instance GCircuitType f NoArguments NoArguments where
   gSizeInFields _ _ = 0
   gVarToFields _ = mempty
   gFieldsToVar _ = NoArguments
-  --gCheck _ = mempty
+
+instance GCheckedType NoArguments c where
+  gCheck _ = mempty
 
 instance CircuitType f a var => GCircuitType f (Argument a) (Argument var) where
   gValueToFields (Argument a) = valueToFields @f @a a
@@ -203,7 +226,9 @@ instance CircuitType f a var => GCircuitType f (Argument a) (Argument var) where
   gSizeInFields pf _ = sizeInFields pf (Proxy @a)
   gVarToFields (Argument a) = varToFields @f @a a
   gFieldsToVar as = Argument $ fieldsToVar @f @a as
-  --gCheck (Argument a) = check @f @a a
+
+instance CheckedType a c => GCheckedType (Argument a) c where
+  gCheck (Argument a) = check a
 
 instance (GCircuitType f a avar, GCircuitType f b bvar) => GCircuitType f (Product a b) (Product avar bvar) where
   gValueToFields (Product a b) = gValueToFields @f @a a <> gValueToFields @f @b b
@@ -219,7 +244,9 @@ instance (GCircuitType f a avar, GCircuitType f b bvar) => GCircuitType f (Produ
       { before: as, after: bs } = Array.splitAt (gSizeInFields (Proxy @f) (Proxy @a)) fs
     in
       Product (gFieldsToVar @f @a as) (gFieldsToVar @f @b bs)
-  --gCheck (Product a b) = gCheck @f @a a <> gCheck @f @b b
+
+instance (GCheckedType avar c, GCheckedType bvar c) => GCheckedType (Product avar bvar) c where
+  gCheck (Product a b) = gCheck a <> gCheck b
 
 instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Constructor name avar) where
   gValueToFields (Constructor a) = gValueToFields @f @a a
@@ -227,7 +254,9 @@ instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Construct
   gSizeInFields pf _ = gSizeInFields @f @a pf (Proxy @a)
   gVarToFields (Constructor a) = gVarToFields @f @a a
   gFieldsToVar fs = Constructor $ gFieldsToVar @f @a fs
-  --gCheck (Constructor a) = gCheck @f @a a
+
+instance GCheckedType var c => GCheckedType (Constructor name var) c where
+  gCheck (Constructor a) = gCheck a
 
 genericValueToFields :: forall f a var rep. Generic a rep => GCircuitType f rep var => a -> Array f
 genericValueToFields = gValueToFields @f @rep <<< from
@@ -258,28 +287,27 @@ genericFieldsToVar
   -> var
 genericFieldsToVar _ fs = to $ gFieldsToVar @f @rep fs
 
-{-
 genericCheck
-  :: forall f a c rep var var'
-   . Generic var var'
-  => Generic a rep
-  => GCircuitType f rep c var'
-  => Proxy a
-  -> var
+  :: forall var rep c
+   . Generic var rep
+  => GCheckedType rep c
+  => var
   -> Array c
-genericCheck _ var = gCheck @f @rep @c $ from var
--}
+genericCheck var = gCheck $ from var
 
 --------------------------------------------------------------------------------
 
-class RCircuitType :: Type -> RL.RowList Type -> RL.RowList Type -> Row Type  -> Row Type -> Constraint
+class RCircuitType :: Type -> RL.RowList Type -> RL.RowList Type -> Row Type -> Row Type -> Constraint
 class RCircuitType f rl rlvar r var | rl -> r, rlvar -> var, var -> f, f r -> var, rl -> rlvar where
   rValueToFields :: Proxy rl -> Record r -> Array f
   rFieldsToValue :: Proxy rl -> Array f -> Record r
   rSizeInFields :: Proxy f -> Proxy rl -> Proxy rlvar -> Int
   rVarToFields :: Proxy rlvar -> Record var -> Array (CVar f Variable)
   rFieldsToVar :: Proxy rlvar -> Array (CVar f Variable) -> Record var
---  rCheck :: Proxy rl -> Record var -> Array c
+
+class RCheckedType :: RL.RowList Type -> Row Type -> Type -> Constraint
+class RCheckedType rlvar var c | rlvar -> var where
+  rCheck :: Proxy rlvar -> Record var -> Array c
 
 instance RCircuitType f RL.Nil RL.Nil () () where
   rValueToFields _ _ = mempty
@@ -287,7 +315,9 @@ instance RCircuitType f RL.Nil RL.Nil () () where
   rSizeInFields _ _ _ = 0
   rVarToFields _ _ = mempty
   rFieldsToVar _ _ = {}
- -- rCheck _ _ = mempty
+
+instance RCheckedType RL.Nil () c where
+  rCheck _ _ = mempty
 
 instance
   ( IsSymbol s
@@ -326,14 +356,21 @@ instance
       as = rFieldsToVar @f @tail @tailvars @rest (Proxy @tailvars) after
     in
       Record.insert (Proxy @s) a as
-  {-
+
+instance
+  ( IsSymbol s
+  , Row.Cons s avar restvars vars
+  , Row.Lacks s restvars
+  , CheckedType avar c
+  , RCheckedType tailvars restvars c
+  ) =>
+  RCheckedType (RL.Cons s avar tailvars) vars c where
   rCheck _ r =
     let
-      afs = check @f @a $ Record.get (Proxy @s) r
-      asfs = rCheck @f @tail @tailvars @rest @c (Proxy @tail) $ Record.delete (Proxy @s) r
+      afs = check $ Record.get (Proxy @s) r
+      asfs = rCheck (Proxy @tailvars) $ Record.delete (Proxy @s) r
     in
       afs <> asfs
-  -}
 
 chunk :: forall a. Int -> Array a -> Array (Array a)
 chunk n arr
