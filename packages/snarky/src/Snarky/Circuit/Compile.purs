@@ -29,15 +29,15 @@ import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL.Assert (assertEqual)
 import Snarky.Circuit.DSL.Monad (class CircuitM, fresh, read, runAsProverT)
 import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
-import Snarky.Circuit.Types (class ConstrainedType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CircuitType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 compilePure
   :: forall f c a b avar bvar
    . PrimeField f
-  => ConstrainedType f a avar
-  => ConstrainedType f b bvar
+  => CircuitType f a avar
+  => CircuitType f b bvar
   => R1CSSystem (CVar f Variable) c
   => Proxy a
   -> Proxy b
@@ -48,8 +48,8 @@ compilePure pa pb circuit = un Identity $ compile pa pb circuit
 compile
   :: forall f c m a b avar bvar
    . PrimeField f
-  => ConstrainedType f a avar
-  => ConstrainedType f b bvar
+  => CircuitType f a avar
+  => CircuitType f b bvar
   => Monad m
   => R1CSSystem (CVar f Variable) c
   => Proxy a
@@ -75,8 +75,8 @@ compile _ _ circuit = do
 makeSolver
   :: forall f a b c m avar bvar
    . PrimeField f
-  => ConstrainedType f a avar
-  => ConstrainedType f b bvar
+  => CircuitType f a avar
+  => CircuitType f b bvar
   => Monad m
   => R1CSSystem (CVar f Variable) c
   => Proxy c

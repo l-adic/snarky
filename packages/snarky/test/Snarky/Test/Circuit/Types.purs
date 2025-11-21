@@ -8,7 +8,7 @@ import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
 import Snarky.Circuit.CVar (CVar)
 import Snarky.Circuit.TestUtils (ConstraintSystem)
-import Snarky.Circuit.Types (class ConstrainedType, Bool, F, UnChecked, Variable, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CircuitType, Bool, F, UnChecked, Variable, fieldsToValue, fieldsToVar, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -33,7 +33,7 @@ instance Arbitrary f => Arbitrary (Point f) where
   arbitrary = Point <$> arbitrary <*> arbitrary
 
 -- Generic instance using the generic functions
-instance ConstrainedType f (Point (F f)) (Point (CVar f Variable)) where
+instance CircuitType f (Point (F f)) (Point (CVar f Variable)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
@@ -65,17 +65,17 @@ instance (Arbitrary f, Arbitrary bool) => Arbitrary (MyRecord f bool) where
 
 instance
   PrimeField f =>
-  ConstrainedType f (MyRecord (F f) Boolean) (MyRecord (CVar f Variable) (CVar f (Bool Variable))) where
+  CircuitType f (MyRecord (F f) Boolean) (MyRecord (CVar f Variable) (CVar f (Bool Variable))) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
   fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
 
--- Generic test suite for any ConstrainedType
-testConstrainedType
+-- Generic test suite for any CircuitType
+testCircuitType
   :: forall f a avar
-   . ConstrainedType f a avar
+   . CircuitType f a avar
   => Arbitrary a
   => Arbitrary avar
   => Eq a
@@ -87,7 +87,7 @@ testConstrainedType
   -> Proxy f
   -> Proxy a
   -> Spec Unit
-testConstrainedType typeName _ _ =
+testCircuitType typeName _ _ =
   describe typeName do
     it "valueToFields/fieldsToValue round trip" $
       quickCheck' 10 \(value :: a) ->
@@ -106,9 +106,9 @@ testConstrainedType typeName _ _ =
           restored === var
 
 -- Generic test suite with custom generators
-testConstrainedTypeGen
+testCircuitTypeGen
   :: forall f a avar
-   . ConstrainedType f a avar
+   . CircuitType f a avar
   => Eq a
   => Eq avar
   => Show a
@@ -120,7 +120,7 @@ testConstrainedTypeGen
   -> Gen a
   -> Gen avar
   -> Spec Unit
-testConstrainedTypeGen typeName _ _ genA genAVar =
+testCircuitTypeGen typeName _ _ genA genAVar =
   describe typeName do
     it "valueToFields/fieldsToValue round trip" $
       quickCheck' 10 \(_ :: Unit) -> do
@@ -143,58 +143,58 @@ testConstrainedTypeGen typeName _ _ genA genAVar =
             restored === var
 
 spec :: forall f. Arbitrary f => PrimeField f => Proxy f -> Spec Unit
-spec pf = describe "ConstrainedType Round Trip Tests" do
+spec pf = describe "CircuitType Round Trip Tests" do
 
-  testConstrainedType "F type" pf (Proxy @(F f))
+  testCircuitType "F type" pf (Proxy @(F f))
 
-  testConstrainedType "Boolean type" pf (Proxy @Boolean)
+  testCircuitType "Boolean type" pf (Proxy @Boolean)
 
-  testConstrainedType "UnChecked F" pf (Proxy @(UnChecked (F f)))
+  testCircuitType "UnChecked F" pf (Proxy @(UnChecked (F f)))
 
-  testConstrainedType "UnChecked Boolean" pf (Proxy @(UnChecked Boolean))
+  testCircuitType "UnChecked Boolean" pf (Proxy @(UnChecked Boolean))
 
-  testConstrainedType "Tuple (F f) (F f)" pf (Proxy @(Tuple (F f) (F f)))
+  testCircuitType "Tuple (F f) (F f)" pf (Proxy @(Tuple (F f) (F f)))
 
-  testConstrainedType "Tuple Boolean Boolean" pf (Proxy @(Tuple Boolean Boolean))
+  testCircuitType "Tuple Boolean Boolean" pf (Proxy @(Tuple Boolean Boolean))
 
-  testConstrainedType "Tuple (F f) Boolean" pf (Proxy @(Tuple (F f) Boolean))
+  testCircuitType "Tuple (F f) Boolean" pf (Proxy @(Tuple (F f) Boolean))
 
-  testConstrainedType "Tuple (Tuple 3 (F f) (F f) Boolean" pf (Proxy @(Tuple3 (F f) (F f) Boolean))
+  testCircuitType "Tuple (Tuple 3 (F f) (F f) Boolean" pf (Proxy @(Tuple3 (F f) (F f) Boolean))
 
   -- Vector types (using custom generators)
-  testConstrainedTypeGen "Vector 3 (F f)" pf (Proxy @(Vector 3 (F f)))
+  testCircuitTypeGen "Vector 3 (F f)" pf (Proxy @(Vector 3 (F f)))
     (Vector.generator (Proxy @3) arbitrary)
     (Vector.generator (Proxy @3) arbitrary)
 
-  testConstrainedTypeGen "Vector 2 Boolean" pf (Proxy @(Vector 2 Boolean))
+  testCircuitTypeGen "Vector 2 Boolean" pf (Proxy @(Vector 2 Boolean))
     (Vector.generator (Proxy @2) arbitrary)
     (Vector.generator (Proxy @2) arbitrary)
 
-  testConstrainedTypeGen "Vector 4 (UnChecked (F f))" pf (Proxy @(Vector 4 (UnChecked (F f))))
+  testCircuitTypeGen "Vector 4 (UnChecked (F f))" pf (Proxy @(Vector 4 (UnChecked (F f))))
     (Vector.generator (Proxy @4) arbitrary)
     (Vector.generator (Proxy @4) arbitrary)
 
-  testConstrainedType "Point (custom type)" pf (Proxy @(Point (F f)))
+  testCircuitType "Point (custom type)" pf (Proxy @(Point (F f)))
 
-  testConstrainedType "MyRecord (complex custom type)" pf (Proxy @(MyRecord (F f) Boolean))
+  testCircuitType "MyRecord (complex custom type)" pf (Proxy @(MyRecord (F f) Boolean))
 
-  testConstrainedType "Plain record { a :: F f, b :: Boolean }" pf
+  testCircuitType "Plain record { a :: F f, b :: Boolean }" pf
     (Proxy @{ a :: F f, b :: Boolean })
 
-  testConstrainedType "Complex record with Point" pf
+  testCircuitType "Complex record with Point" pf
     (Proxy @{ point :: Point (F f), value :: F f })
 
   -- Record with vector field (needs custom generator for Vector)
-  testConstrainedTypeGen "Record with vector" pf
+  testCircuitTypeGen "Record with vector" pf
     (Proxy @{ values :: Vector 3 (F f), flag :: Boolean })
     ({ values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*> arbitrary)
     ({ values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*> arbitrary)
 
-  testConstrainedType "Nested record" pf
+  testCircuitType "Nested record" pf
     (Proxy @{ outer :: { inner :: F f, flag :: Boolean }, value :: F f })
 
   -- Very complex nested record (needs custom generator for Vector)
-  testConstrainedTypeGen "Complex nested record" pf
+  testCircuitTypeGen "Complex nested record" pf
     ( Proxy
         @{ point :: Point (F f)
         , vec :: Vector 2 Boolean

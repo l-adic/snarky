@@ -16,7 +16,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Compile (Solver, SolverT, makeChecker, runSolverT)
 import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
-import Snarky.Circuit.Types (class ConstrainedType, Variable)
+import Snarky.Circuit.Types (class CircuitType, Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
 import Test.QuickCheck.Gen (Gen)
@@ -50,7 +50,7 @@ expectDivideByZero _ = ProverError \e -> case e of
 
 makeCircuitSpec
   :: forall f c a avar m b
-   . ConstrainedType f a avar
+   . CircuitType f a avar
   => Monad m
   => Eq b
   => Show b
@@ -91,8 +91,8 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
 
 circuitSpecPure
   :: forall a avar b bvar f
-   . ConstrainedType f a avar
-  => ConstrainedType f b bvar
+   . CircuitType f a avar
+  => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -106,8 +106,8 @@ circuitSpecPure constraints solver f =
 
 circuitSpecPure'
   :: forall a b avar bvar f
-   . ConstrainedType f a avar
-  => ConstrainedType f b bvar
+   . CircuitType f a avar
+  => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -128,8 +128,8 @@ circuitSpecPure' constraints solver isValid g = liftEffect
 -- to run their effects layer, use with caution
 circuitSpec
   :: forall a avar b bvar f m
-   . ConstrainedType f a avar
-  => ConstrainedType f b bvar
+   . CircuitType f a avar
+  => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
@@ -145,8 +145,8 @@ circuitSpec nat constraints solver f =
 
 circuitSpec'
   :: forall a avar b bvar f m
-   . ConstrainedType f a avar
-  => ConstrainedType f b bvar
+   . CircuitType f a avar
+  => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
