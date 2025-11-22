@@ -2,7 +2,7 @@ module Snarky.Circuit.DSL
   ( module ReExports
   ) where
 
-import Snarky.Circuit.CVar (CVar, add_, sub_, scale_, const_, negate_) as ReExports
+import Snarky.Circuit.CVar (add_, sub_, scale_, const_, negate_) as ReExports
 import Snarky.Circuit.Types (Variable, F(..), Bool(..), UnChecked(..)) as ReExports
 import Snarky.Circuit.DSL.Monad (Snarky, class CircuitM, AsProver, AsProverT, addConstraint, exists, read, readCVar, runAsProver, runAsProverT, throwAsProver, and_, not_, or_, mul_, inv_, div_) as ReExports
 import Snarky.Circuit.DSL.Assert (assert_, assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_) as ReExports
