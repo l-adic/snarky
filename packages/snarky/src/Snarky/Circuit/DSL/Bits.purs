@@ -8,25 +8,25 @@ import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar, const_)
+import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar)
-import Snarky.Circuit.Types (Bool(..), Variable(..))
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, Variable(..), FVar)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generateA)
 
 -- NB: LSB first
-unpack
+unpack_
   :: forall f c t m n
    . CircuitM f c t m
   => PrimeField f
   => FieldSizeInBits f n
-  => CVar f Variable
-  -> t m (Vector n (CVar f (Bool Variable)))
-unpack v = do
-  bits :: Vector n (CVar f (Bool Variable)) <- generateA \i -> exists do
+  => FVar f
+  -> Snarky t m (Vector n (BoolVar f))
+unpack_ v = do
+  bits :: Vector n (BoolVar f) <- generateA \i -> exists do
     vVal <- readCVar v
     let
       bit =
@@ -41,7 +41,7 @@ unpack v = do
           let
             coeff = pow two (BigInt.fromInt $ getFinite i)
           in
-            acc `CVar.add_` CVar.scale_ coeff (coerce bit :: CVar f Variable)
+            acc `CVar.add_` CVar.scale_ coeff (coerce bit :: FVar f)
       )
       (const_ zero)
       (mapWithIndex Tuple bits)
@@ -49,13 +49,13 @@ unpack v = do
   addConstraint $ r1cs { left: packingSum, right: const_ one, output: v }
   pure bits
 
-pack
+pack_
   :: forall f n
    . PrimeField f
   => Reflectable n Int
-  => Vector n (CVar f (Bool Variable))
-  -> CVar f Variable
-pack bits =
+  => Vector n (BoolVar f)
+  -> FVar f
+pack_ bits =
   let
     two = fromBigInt (BigInt.fromInt 2) :: f
   in
@@ -64,7 +64,7 @@ pack bits =
           let
             coeff = pow two (BigInt.fromInt $ getFinite i)
           in
-            acc `CVar.add_` CVar.scale_ coeff (coerce bit :: CVar f Variable)
+            acc `CVar.add_` CVar.scale_ coeff (coerce bit :: FVar f)
       )
       (const_ zero)
       (mapWithIndex Tuple bits)
