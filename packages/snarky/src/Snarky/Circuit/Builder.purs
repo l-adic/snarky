@@ -21,7 +21,7 @@ import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, addConstraint, fresh)
+import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), addConstraint, fresh)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Variable(..), check, fieldsToVar, sizeInFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -66,9 +66,9 @@ instance Monad m => MonadFresh (CircuitBuilderT c m) where
     pure $ Variable nextVar
 
 instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (CircuitBuilderT c) m where
-  addConstraint c = CircuitBuilderT $ modify_ \s ->
+  addConstraint c = Snarky $ CircuitBuilderT $ modify_ \s ->
     s { constraints = s.constraints `snoc` c }
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> CircuitBuilderT c m var
+  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky (CircuitBuilderT c) m var
   exists _ = do
     let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh

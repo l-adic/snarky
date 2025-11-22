@@ -12,6 +12,7 @@ import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, CVar, pack, unpack, F(..), Variable)
+import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
@@ -47,7 +48,7 @@ packUnpackCircuit
    . CircuitM f (ConstraintSystem f) t m
   => FieldSizeInBits f n
   => CVar f Variable
-  -> t m (CVar f Variable)
+  -> Snarky t m (CVar f Variable)
 packUnpackCircuit value = do
   unpack value >>= \bits ->
     pure $ pack bits

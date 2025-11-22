@@ -11,8 +11,9 @@ import Prelude
 
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
-import Snarky.Circuit.DSL (class CircuitM, Bool, CVar, F(..), UnChecked(..), Variable, assertSquare, exists, readCVar, addConstraint)
+import Snarky.Circuit.DSL (class CircuitM, Bool, CVar, F(..), UnChecked(..), Variable, addConstraint, assertSquare, exists, mul_, pow_, readCVar)
 import Snarky.Circuit.DSL as Snarky
+import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Type.Proxy (Proxy)
 
@@ -22,14 +23,10 @@ assertOnCurve
   => PrimeField f
   => CurveParams (CVar f Variable)
   -> AffinePoint (CVar f Variable)
-  -> t m Unit
+  -> Snarky t m Unit
 assertOnCurve { a, b } { x, y } = do
-  x2 <- Snarky.square_ x
-  x3 <- Snarky.mul_ x2 x
-  ax <- Snarky.mul_ a x
-  y2 <- Snarky.square_ y
-  let x3_plus_ax = Snarky.add_ x3 ax
-  let rhs = Snarky.add_ x3_plus_ax b
+  rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
+  y2 <- mul_ y y
   Snarky.assertEqual y2 rhs
 
 assertEqual
@@ -37,7 +34,7 @@ assertEqual
    . CircuitM f c t m
   => AffinePoint (CVar f Variable)
   -> AffinePoint (CVar f Variable)
-  -> t m Unit
+  -> Snarky t m Unit
 assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
   Snarky.assertEqual x1 x2
   Snarky.assertEqual y1 y2
@@ -46,7 +43,7 @@ negate
   :: forall f c t m
    . CircuitM f c t m
   => AffinePoint (CVar f Variable)
-  -> t m (AffinePoint (CVar f Variable))
+  -> Snarky t m (AffinePoint (CVar f Variable))
 negate { x, y } = do
   pure { x, y: Snarky.negate_ y }
 
@@ -56,7 +53,7 @@ if_
   => CVar f (Bool Variable)
   -> AffinePoint (CVar f Variable)
   -> AffinePoint (CVar f Variable)
-  -> t m (AffinePoint (CVar f Variable))
+  -> Snarky t m (AffinePoint (CVar f Variable))
 if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
   x <- Snarky.if_ b x1 x2
   y <- Snarky.if_ b y1 y2
@@ -72,7 +69,7 @@ unsafeAdd
   => CircuitM f c t m
   => AffinePoint (CVar f Variable)
   -> AffinePoint (CVar f Variable)
-  -> t m (AffinePoint (CVar f Variable))
+  -> Snarky t m (AffinePoint (CVar f Variable))
 unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
   lambda <- Snarky.div_ (Snarky.sub_ by ay) (Snarky.sub_ bx ax)
 
@@ -106,9 +103,9 @@ double
   => WeierstrassCurve f g
   => Proxy g
   -> AffinePoint (CVar f Variable)
-  -> t m (AffinePoint (CVar f Variable))
+  -> Snarky t m (AffinePoint (CVar f Variable))
 double pg { x: ax, y: ay } = do
-  xSquared <- Snarky.square_ ax
+  xSquared <- mul_ ax ax
 
   lambda <- exists do
     xSquaredVal <- readCVar xSquared
@@ -132,7 +129,7 @@ double pg { x: ax, y: ay } = do
   let aConst = Snarky.const_ a
 
   addConstraint $ r1cs
-    { left: Snarky.scale_ (one + one :: f) lambda -- lambda * 2
+    { left: Snarky.scale_ (one + one :: f) lambda
     , right: ay
     , output: Snarky.add_ (Snarky.scale_ (one + one + one :: f) xSquared) aConst -- 3*x² + a
     }

@@ -6,7 +6,7 @@ import Data.Foldable (sum)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL.Field (div_, eq_, inv_, mul_, negate_, square_, sum_)
+import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, sum_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class PrimeField)
@@ -31,28 +31,16 @@ spec _ = describe "Field Circuit Specs" do
     in
       circuitSpecPure constraints solver (satisfied f)
 
-  it "square Circuit is Valid" $
-    let
-      f (F a) = F (a * a)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) square_
-      { constraints } =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(F f))
-          square_
-    in
-      circuitSpecPure constraints solver (satisfied f)
-
   it "eq Circuit is Valid" $
     let
       f :: Tuple (F f) (F f) -> Boolean
       f = uncurry (==)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry eq_)
+      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry equals_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Boolean)
-          (uncurry eq_)
+          (uncurry equals_)
       same = do
         a <- arbitrary
         pure $ Tuple (F a) (F a)
