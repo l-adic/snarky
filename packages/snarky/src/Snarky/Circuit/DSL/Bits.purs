@@ -18,14 +18,14 @@ import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generateA)
 
 -- NB: LSB first
-unpack
+unpack_
   :: forall f c t m n
    . CircuitM f c t m
   => PrimeField f
   => FieldSizeInBits f n
   => FVar f
   -> Snarky t m (Vector n (BoolVar f))
-unpack v = do
+unpack_ v = do
   bits :: Vector n (BoolVar f) <- generateA \i -> exists do
     vVal <- readCVar v
     let
@@ -49,13 +49,13 @@ unpack v = do
   addConstraint $ r1cs { left: packingSum, right: const_ one, output: v }
   pure bits
 
-pack
+pack_
   :: forall f n
    . PrimeField f
   => Reflectable n Int
   => Vector n (BoolVar f)
   -> FVar f
-pack bits =
+pack_ bits =
   let
     two = fromBigInt (BigInt.fromInt 2) :: f
   in

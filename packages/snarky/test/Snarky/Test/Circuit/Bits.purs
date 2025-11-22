@@ -11,8 +11,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, CVar, pack, unpack, F(..), Variable)
-import Snarky.Circuit.DSL.Monad (Snarky)
+import Snarky.Circuit.DSL (class CircuitM, CVar, pack_, unpack_, F(..), Variable, Snarky)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
@@ -50,8 +49,8 @@ packUnpackCircuit
   => CVar f Variable
   -> Snarky t m (CVar f Variable)
 packUnpackCircuit value = do
-  unpack value >>= \bits ->
-    pure $ pack bits
+  unpack_ value >>= \bits ->
+    pure $ pack_ bits
 
 bitSizes :: Int -> Gen Int
 bitSizes mx = Gen.chooseInt 1 mx
@@ -67,12 +66,12 @@ spec _ = describe "Bits Circuit Specs" do
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (unpack)
+      solver = makeSolver (Proxy @(ConstraintSystem f)) unpack_
       { constraints } =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
-          (unpack)
+          unpack_
     in
       circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 

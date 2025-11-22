@@ -26,7 +26,7 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL.Assert (assertEqual)
+import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class CircuitType, Variable, FVar, fieldsToVar, sizeInFields, valueToFields, varToFields)
@@ -69,7 +69,7 @@ compile _ _ circuit = do
       out <- runSnarky $ do
         out <- circuit avar
         for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
-          assertEqual v1 v2
+          assertEqual_ v1 v2
       pure out
   pure s
 

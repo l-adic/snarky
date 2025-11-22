@@ -1,9 +1,9 @@
 module Snarky.Circuit.DSL.Assert
-  ( assertNonZero
-  , assertEqual
-  , assertNotEqual
-  , assertSquare
-  , assert
+  ( assertNonZero_
+  , assertEqual_
+  , assertNotEqual_
+  , assertSquare_
+  , assert_
   ) where
 
 import Prelude
@@ -15,47 +15,47 @@ import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, inv_, mul_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 
-assertNonZero
+assertNonZero_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
   -> Snarky t m Unit
-assertNonZero v = void $ inv_ v
+assertNonZero_ v = void $ inv_ v
 
-assertEqual
+assertEqual_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
   -> FVar f
   -> Snarky t m Unit
-assertEqual x y = case x, y of
+assertEqual_ x y = case x, y of
   Const f, Const g ->
     if f == g then pure unit
     else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
     addConstraint $ r1cs { left: x `sub_` y, right: Const one, output: Const zero }
 
-assertNotEqual
+assertNotEqual_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
   -> FVar f
   -> Snarky t m Unit
-assertNotEqual x y = assertNonZero (x `sub_` y)
+assertNotEqual_ x y = assertNonZero_ (x `sub_` y)
 
-assertSquare
+assertSquare_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
   -> FVar f
   -> Snarky t m Unit
-assertSquare x y = do
+assertSquare_ x y = do
   xSquared <- mul_ x x
-  assertEqual xSquared y
+  assertEqual_ xSquared y
 
-assert
+assert_
   :: forall f c t m
    . CircuitM f c t m
   => BoolVar f
   -> Snarky t m Unit
-assert v = assertEqual (coerce v) (const_ $ one @f)
+assert_ v = assertEqual_ (coerce v) (const_ $ one @f)

@@ -4,7 +4,6 @@ module Snarky.Circuit.DSL.Field
   , neq_
   , sum_
   , negate_
-  , pow
   , pow_
   ) where
 
@@ -68,14 +67,6 @@ negate_
   => FVar f
   -> FVar f
 negate_ = CVar.negate_
-
-pow
-  :: forall f c t m
-   . CircuitM f c t m
-  => Snarky t m (FVar f)
-  -> Int
-  -> Snarky t m (FVar f)
-pow x n = x >>= flip pow_ n
 
 pow_
   :: forall f c t m
