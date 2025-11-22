@@ -39,7 +39,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (class R1CSSystem, r1cs)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), Variable, fieldsToValue, varToFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, Variable, BoolVar, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 
 newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError f Variable) (ReaderT (Map Variable f) m) a)
@@ -61,7 +61,7 @@ runAsProver
   -> Either (EvaluationError f Variable) a
 runAsProver m e = un Identity $ runAsProverT m e
 
-readCVar :: forall f m. PrimeField f => Monad m => CVar f Variable -> AsProverT f m f
+readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m f
 readCVar v = AsProverT do
   m <- ask
   let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
@@ -107,39 +107,39 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
 runSnarky :: forall t m a. Snarky t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (CVar f Variable) c) <= CircuitM f c t m | t -> c f, c -> f where
+class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (FVar f) c) <= CircuitM f c t m | t -> c f, c -> f where
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
   addConstraint :: c -> Snarky t m Unit
 
 throwAsProver :: forall f m a. Monad m => EvaluationError f Variable -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
 
-instance (CircuitM f c t m) => Semigroup (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => Semigroup (Snarky t m (FVar f)) where
   append a b = lift2 (<>) a b
 
-instance (CircuitM f c t m) => Monoid (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => Monoid (Snarky t m (FVar f)) where
   mempty = pure mempty
 
-instance (CircuitM f c t m) => Semiring (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => Semiring (Snarky t m (FVar f)) where
   one = pure $ const_ one
   zero = pure $ const_ zero
   add a b = lift2 add_ a b
   mul a b = join $ lift2 mul_ a b
 
-instance (CircuitM f c t m) => Ring (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => Ring (Snarky t m (FVar f)) where
   sub a b = sub_ <$> a <*> b
 
-instance (CircuitM f c t m) => CommutativeRing (Snarky t m (CVar f Variable))
+instance (CircuitM f c t m) => CommutativeRing (Snarky t m (FVar f))
 
-instance (CircuitM f c t m) => DivisionRing (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => DivisionRing (Snarky t m (FVar f)) where
   recip a = a >>= inv_
 
-instance (CircuitM f c t m) => EuclideanRing (Snarky t m (CVar f Variable)) where
+instance (CircuitM f c t m) => EuclideanRing (Snarky t m (FVar f)) where
   degree _ = 1
   div a b = join $ lift2 div_ a b
   mod _ _ = pure $ const_ zero
 
-instance (CircuitM f c t m) => HeytingAlgebra (Snarky t m (CVar f (Bool Variable))) where
+instance (CircuitM f c t m) => HeytingAlgebra (Snarky t m (BoolVar f)) where
   tt = pure $ const_ (one :: f)
   ff = pure $ const_ (zero :: f)
   not a = not_ <$> a
@@ -150,32 +150,32 @@ instance (CircuitM f c t m) => HeytingAlgebra (Snarky t m (CVar f (Bool Variable
 not_
   :: forall f
    . PrimeField f
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
+  => BoolVar f
+  -> BoolVar f
 not_ a = const_ one `CVar.sub_` a
 
 or_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> Snarky t m (CVar f (Bool Variable))
+  => BoolVar f
+  -> BoolVar f
+  -> Snarky t m (BoolVar f)
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 and_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> Snarky t m (CVar f (Bool Variable))
+  => BoolVar f
+  -> BoolVar f
+  -> Snarky t m (BoolVar f)
 and_ a b = do
-  coerce <$> mul_ (coerce a :: CVar f Variable) (coerce b)
+  coerce <$> mul_ (coerce a :: FVar f) (coerce b)
 
 inv_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> Snarky t m (CVar f Variable)
+  => FVar f
+  -> Snarky t m (FVar f)
 inv_ = case _ of
   Const a -> pure
     if a == zero then unsafeCrashWith "inv: expected nonzero arg"
@@ -191,9 +191,9 @@ inv_ = case _ of
 mul_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> Snarky t m (CVar f Variable)
+  => FVar f
+  -> FVar f
+  -> Snarky t m (FVar f)
 mul_ a b =
   case a, b of
     Const f, Const f' -> pure $ Const (f * f')
@@ -210,7 +210,7 @@ mul_ a b =
 div_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> Snarky t m (CVar f Variable)
+  => FVar f
+  -> FVar f
+  -> Snarky t m (FVar f)
 div_ a b = mul_ a =<< inv_ b

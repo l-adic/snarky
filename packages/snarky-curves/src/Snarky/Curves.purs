@@ -21,8 +21,8 @@ assertOnCurve
   :: forall f c t m
    . CircuitM f c t m
   => PrimeField f
-  => CurveParams (CVar f Variable)
-  -> AffinePoint (CVar f Variable)
+  => CurveParams (FVar f)
+  -> AffinePoint (FVar f)
   -> Snarky t m Unit
 assertOnCurve { a, b } { x, y } = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
@@ -32,8 +32,8 @@ assertOnCurve { a, b } { x, y } = do
 assertEqual
   :: forall f c t m
    . CircuitM f c t m
-  => AffinePoint (CVar f Variable)
-  -> AffinePoint (CVar f Variable)
+  => AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
   -> Snarky t m Unit
 assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
   Snarky.assertEqual x1 x2
@@ -42,18 +42,18 @@ assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
 negate
   :: forall f c t m
    . CircuitM f c t m
-  => AffinePoint (CVar f Variable)
-  -> Snarky t m (AffinePoint (CVar f Variable))
+  => AffinePoint (FVar f)
+  -> Snarky t m (AffinePoint (FVar f))
 negate { x, y } = do
   pure { x, y: Snarky.negate_ y }
 
 if_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> AffinePoint (CVar f Variable)
-  -> AffinePoint (CVar f Variable)
-  -> Snarky t m (AffinePoint (CVar f Variable))
+  => BoolVar f
+  -> AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
+  -> Snarky t m (AffinePoint (FVar f))
 if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
   x <- Snarky.if_ b x1 x2
   y <- Snarky.if_ b y1 y2
@@ -67,9 +67,9 @@ unsafeAdd
   :: forall f c t m
    . Partial
   => CircuitM f c t m
-  => AffinePoint (CVar f Variable)
-  -> AffinePoint (CVar f Variable)
-  -> Snarky t m (AffinePoint (CVar f Variable))
+  => AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
+  -> Snarky t m (AffinePoint (FVar f))
 unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
   lambda <- Snarky.div_ (Snarky.sub_ by ay) (Snarky.sub_ bx ax)
 
@@ -102,8 +102,8 @@ double
   => PrimeField f
   => WeierstrassCurve f g
   => Proxy g
-  -> AffinePoint (CVar f Variable)
-  -> Snarky t m (AffinePoint (CVar f Variable))
+  -> AffinePoint (FVar f)
+  -> Snarky t m (AffinePoint (FVar f))
 double pg { x: ax, y: ay } = do
   xSquared <- mul_ ax ax
 

@@ -17,16 +17,16 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
-import Snarky.Circuit.Types (Bool(..), F(..), UnChecked(..), Variable(..))
+import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), Variable(..), FVar)
 import Snarky.Curves.Class (fromBigInt)
 
 if_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f Variable
-  -> CVar f Variable
-  -> Snarky t m (CVar f Variable)
+  => BoolVar f
+  -> FVar f
+  -> FVar f
+  -> Snarky t m (FVar f)
 if_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
@@ -46,9 +46,9 @@ if_ b thenBranch elseBranch = case b of
 xor_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> Snarky t m (CVar f (Bool Variable))
+  => BoolVar f
+  -> BoolVar f
+  -> Snarky t m (BoolVar f)
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
   Const aVal, _
@@ -59,8 +59,8 @@ xor_ a b = case a, b of
     | bVal == one -> pure $ not_ a
   _, _ -> do
     UnChecked res <- exists do
-      F aVal <- read (coerce a :: CVar f Variable)
-      F bVal <- read (coerce b :: CVar f Variable)
+      F aVal <- read (coerce a :: FVar f)
+      F bVal <- read (coerce b :: FVar f)
       pure $ UnChecked (aVal /= bVal)
     addConstraint $
       r1cs
@@ -73,8 +73,8 @@ xor_ a b = case a, b of
 any_
   :: forall f c t m
    . CircuitM f c t m
-  => Array (CVar f (Bool Variable))
-  -> Snarky t m (CVar f (Bool Variable))
+  => Array (BoolVar f)
+  -> Snarky t m (BoolVar f)
 any_ as =
   case Array.uncons as of
     Nothing -> ff
@@ -87,8 +87,8 @@ any_ as =
 all_
   :: forall f c t m
    . CircuitM f c t m
-  => Array (CVar f (Bool Variable))
-  -> Snarky t m (CVar f (Bool Variable))
+  => Array (BoolVar f)
+  -> Snarky t m (BoolVar f)
 all_ as =
   case Array.uncons as of
     Nothing -> tt

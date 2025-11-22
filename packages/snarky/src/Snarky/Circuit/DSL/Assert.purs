@@ -13,20 +13,20 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, inv_, mul_)
-import Snarky.Circuit.Types (Bool(..), Variable)
+import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 
 assertNonZero
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
+  => FVar f
   -> Snarky t m Unit
 assertNonZero v = void $ inv_ v
 
 assertEqual
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
+  => FVar f
+  -> FVar f
   -> Snarky t m Unit
 assertEqual x y = case x, y of
   Const f, Const g ->
@@ -38,16 +38,16 @@ assertEqual x y = case x, y of
 assertNotEqual
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
+  => FVar f
+  -> FVar f
   -> Snarky t m Unit
 assertNotEqual x y = assertNonZero (x `sub_` y)
 
 assertSquare
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
+  => FVar f
+  -> FVar f
   -> Snarky t m Unit
 assertSquare x y = do
   xSquared <- mul_ x x
@@ -56,6 +56,6 @@ assertSquare x y = do
 assert
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
+  => BoolVar f
   -> Snarky t m Unit
 assert v = assertEqual (coerce v) (const_ $ one @f)
