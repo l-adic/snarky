@@ -11,9 +11,8 @@ import Prelude
 
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
-import Snarky.Circuit.DSL (class CircuitM, Bool, CVar, F(..), UnChecked(..), Variable, addConstraint, assertSquare, exists, mul_, pow_, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, add_, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Type.Proxy (Proxy)
 
@@ -27,7 +26,7 @@ assertOnCurve
 assertOnCurve { a, b } { x, y } = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
   y2 <- mul_ y y
-  Snarky.assertEqual y2 rhs
+  assertEqual_ y2 rhs
 
 assertEqual
   :: forall f c t m
@@ -36,8 +35,8 @@ assertEqual
   -> AffinePoint (FVar f)
   -> Snarky t m Unit
 assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
-  Snarky.assertEqual x1 x2
-  Snarky.assertEqual y1 y2
+  assertEqual_ x1 x2
+  assertEqual_ y1 y2
 
 negate
   :: forall f c t m
@@ -45,7 +44,7 @@ negate
   => AffinePoint (FVar f)
   -> Snarky t m (AffinePoint (FVar f))
 negate { x, y } = do
-  pure { x, y: Snarky.negate_ y }
+  pure { x, y: negate_ y }
 
 if_
   :: forall f c t m
@@ -71,7 +70,7 @@ unsafeAdd
   -> AffinePoint (FVar f)
   -> Snarky t m (AffinePoint (FVar f))
 unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
-  lambda <- Snarky.div_ (Snarky.sub_ by ay) (Snarky.sub_ bx ax)
+  lambda <- div_ (sub_ by ay) (sub_ bx ax)
 
   UnChecked cx <- exists do
     axVal <- readCVar ax
@@ -79,7 +78,7 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
     lambdaVal <- readCVar lambda
     pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + bxVal)
 
-  assertSquare lambda (Snarky.add_ (Snarky.add_ cx ax) bx)
+  assertSquare_ lambda (add_ (add_ cx ax) bx)
 
   UnChecked cy <- exists do
     axVal <- readCVar ax
@@ -88,10 +87,10 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
     lambdaVal <- readCVar lambda
     pure $ UnChecked $ F $ (lambdaVal * (axVal - cxVal)) - ayVal
 
-  Snarky.addConstraint $ r1cs
+  addConstraint $ r1cs
     { left: lambda
-    , right: Snarky.sub_ ax cx
-    , output: Snarky.add_ cy ay
+    , right: sub_ ax cx
+    , output: add_ cy ay
     }
 
   pure { x: cx, y: cy }
@@ -126,20 +125,20 @@ double pg { x: ax, y: ay } = do
     pure $ UnChecked $ F $ (lambdaVal * (axVal - bxVal)) - ayVal
 
   let { a } = curveParams pg
-  let aConst = Snarky.const_ a
+  let aConst = const_ a
 
   addConstraint $ r1cs
-    { left: Snarky.scale_ (one + one :: f) lambda
+    { left: scale_ (one + one :: f) lambda
     , right: ay
-    , output: Snarky.add_ (Snarky.scale_ (one + one + one :: f) xSquared) aConst -- 3*x² + a
+    , output: add_ (scale_ (one + one + one :: f) xSquared) aConst -- 3*x² + a
     }
 
-  assertSquare lambda (Snarky.add_ bx (Snarky.scale_ (one + one :: f) ax))
+  assertSquare_ lambda (add_ bx (scale_ (one + one :: f) ax))
 
   addConstraint $ r1cs
     { left: lambda
-    , right: Snarky.sub_ ax bx
-    , output: Snarky.add_ by ay
+    , right: sub_ ax bx
+    , output: add_ by ay
     }
 
   pure { x: bx, y: by }
