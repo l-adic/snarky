@@ -85,14 +85,16 @@ spec _ = describe "Field Circuit Specs" do
     let
       f :: Vector 10 (F f) -> F f
       f as = F $ sum (un F <$> as)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (pure <<< sum_ <<< unVector)
+      solver = makeSolver (Proxy @(ConstraintSystem f))
+        (pure <<< sum_ <<< unVector)
       { constraints } =
         compilePure
           (Proxy @(Vector 10 (F f)))
           (Proxy @(F f))
           (pure <<< sum_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints solver (satisfied f)
+        (Vector.generator (Proxy @10) arbitrary)
 
   it "negate Circuit is Valid" $
     let

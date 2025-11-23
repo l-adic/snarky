@@ -55,10 +55,14 @@ instance (Reflectable n Int) => FoldableWithIndex (Finite n) (Vector n) where
     foldMapWithIndex (\i a -> f (unsafeFinite i) a) as
 
 instance (Reflectable n Int) => FunctorWithIndex (Finite n) (Vector n) where
-  mapWithIndex f (Vector as) = Vector $ mapWithIndex (\i a -> f (unsafeFinite i) a) as
+  mapWithIndex f (Vector as) = Vector $ mapWithIndex
+    (\i a -> f (unsafeFinite i) a)
+    as
 
 instance Reflectable n Int => TraversableWithIndex (Finite n) (Vector n) where
-  traverseWithIndex f (Vector as) = Vector <$> traverseWithIndex (\i a -> f (unsafeFinite i) a) as
+  traverseWithIndex f (Vector as) = Vector <$> traverseWithIndex
+    (\i a -> f (unsafeFinite i) a)
+    as
 
 generator
   :: forall n m proxy a
@@ -83,7 +87,12 @@ infixr 6 vCons as :<
 vectorLength :: forall a n. Reflectable n Int => Vector n a -> Int
 vectorLength _ = reflectType (Proxy @n)
 
-toVector :: forall a (n :: Int) proxy. Reflectable n Int => proxy n -> Array a -> Maybe (Vector n a)
+toVector
+  :: forall a (n :: Int) proxy
+   . Reflectable n Int
+  => proxy n
+  -> Array a
+  -> Maybe (Vector n a)
 toVector _ as =
   if reflectType (Proxy @n) /= A.length as then
     Nothing
@@ -126,5 +135,10 @@ infixl 8 index as !!
 generate :: forall n a. Reflectable n Int => (Finite n -> a) -> Vector n a
 generate f = Vector $ map f (finites $ Proxy @n)
 
-generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
+generateA
+  :: forall n a f
+   . Reflectable n Int
+  => Applicative f
+  => (Finite n -> f a)
+  -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites $ Proxy @n)

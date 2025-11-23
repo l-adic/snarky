@@ -39,10 +39,11 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (class R1CSSystem, r1cs)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, Variable, BoolVar, fieldsToValue, varToFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, Variable, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 
-newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError f Variable) (ReaderT (Map Variable f) m) a)
+newtype AsProverT f m a = AsProverT
+  (ExceptT (EvaluationError f Variable) (ReaderT (Map Variable f) m) a)
 
 runAsProverT
   :: forall f a m
@@ -64,7 +65,9 @@ runAsProver m e = un Identity $ runAsProverT m e
 readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m f
 readCVar v = AsProverT do
   m <- ask
-  let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
+  let
+    _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var
+      m
   CVar.eval _lookup v
 
 read
@@ -93,7 +96,8 @@ instance MonadTrans (AsProverT f) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-newtype Snarky :: ((Type -> Type) -> (Type -> Type)) -> (Type -> Type) -> Type -> Type
+newtype Snarky
+  :: ((Type -> Type) -> (Type -> Type)) -> (Type -> Type) -> Type -> Type
 newtype Snarky t m a = Snarky (t m a)
 
 derive newtype instance (Functor (t m)) => Functor (Snarky t m)
@@ -107,11 +111,25 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
 runSnarky :: forall t m a. Snarky t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (FVar f) c) <= CircuitM f c t m | t -> c f, c -> f where
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
+class
+  ( Monad m
+  , MonadFresh (t m)
+  , PrimeField f
+  , R1CSSystem (FVar f) c
+  ) <=
+  CircuitM f c t m
+  | t -> c f
+  , c -> f where
+  exists
+    :: forall a var
+     . CheckedType var c
+    => CircuitType f a var
+    => AsProverT f m a
+    -> Snarky t m var
   addConstraint :: c -> Snarky t m Unit
 
-throwAsProver :: forall f m a. Monad m => EvaluationError f Variable -> AsProverT f m a
+throwAsProver
+  :: forall f m a. Monad m => EvaluationError f Variable -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
 
 instance (CircuitM f c t m) => Semigroup (Snarky t m (FVar f)) where
@@ -183,7 +201,8 @@ inv_ = case _ of
   a -> do
     aInv <- exists do
       aVal <- readCVar a
-      if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
+      if aVal == zero then throwAsProver $ DivisionByZero
+        { numerator: Const one, denominator: a }
       else pure $ F $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv

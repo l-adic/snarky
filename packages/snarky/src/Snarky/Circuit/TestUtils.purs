@@ -70,7 +70,8 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
     Left e ->
       case isValid inputs of
         ProverError f -> withHelp (f e) ("Prover exited with error " <> show e)
-        _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
+        _ -> withHelp false
+          ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple b assignments) ->
       let
         checker =
@@ -82,12 +83,21 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
             makeChecker (evalConstraint lookup)
       in
         case runExcept $ checker constraints of
-          Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
+          Left e -> withHelp false
+            ("Encountered unexpected error when checking circuit: " <> show e)
           Right isSatisfied -> case isValid inputs of
             Satisfied expected | isSatisfied == true ->
-              withHelp (expected == b) ("Circuit disagrees with test function, got " <> show b <> " expected " <> show expected)
+              withHelp (expected == b)
+                ( "Circuit disagrees with test function, got " <> show b
+                    <> " expected "
+                    <> show expected
+                )
             Unsatisfied | isSatisfied == false -> Success
-            res -> withHelp false ("Circuit satisfiability: " <> show isSatisfied <> ", checker exited with " <> show res)
+            res -> withHelp false
+              ( "Circuit satisfiability: " <> show isSatisfied
+                  <> ", checker exited with "
+                  <> show res
+              )
 
 circuitSpecPure
   :: forall a avar b bvar f
@@ -119,7 +129,8 @@ circuitSpecPure'
 circuitSpecPure' constraints solver isValid g = liftEffect
   let
     spc = un Identity <<<
-      makeCircuitSpec { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
+      makeCircuitSpec
+        { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
   in
     quickCheck $
       g <#> spc
@@ -159,6 +170,7 @@ circuitSpec'
   -> Aff Unit
 circuitSpec' nat constraints solver isValid g =
   let
-    spc = makeCircuitSpec { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
+    spc = makeCircuitSpec
+      { constraints, solver, evalConstraint: evalR1CSConstraint, isValid }
   in
     liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)

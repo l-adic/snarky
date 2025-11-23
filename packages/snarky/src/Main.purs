@@ -4,9 +4,9 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Console (log)
+import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Curves.BN254 as BN254
 
 main :: Effect Unit
 main = do

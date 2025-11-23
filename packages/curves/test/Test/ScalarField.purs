@@ -6,11 +6,11 @@ import Data.Array (replicate)
 import Data.Foldable (foldr)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Snarky.Curves.Class (class PrimeField, fromBigInt, toBigInt, pow)
-import Test.Snarky.Curves.BigInt (bigIntHomomorphismSpec)
+import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (chooseInt)
 import Test.QuickCheck.Laws.Data as Laws
+import Test.Snarky.Curves.BigInt (bigIntHomomorphismSpec)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 

@@ -4,13 +4,13 @@ import Prelude
 
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Snarky.Curves.Class (class PrimeField, fromBigInt, toBigInt, pow)
-import Test.QuickCheck (class Arbitrary, arbitrary, (===), quickCheck, quickCheckGen)
+import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
+import Test.QuickCheck (class Arbitrary, arbitrary, quickCheck, quickCheckGen, (===))
 import Test.QuickCheck.Gen (chooseInt)
 import Test.QuickCheck.Laws (checkLaws)
 import Test.QuickCheck.Laws.Data as Data
-import Test.Spec (Spec, describe, it)
 import Test.Snarky.Curves.BigInt (bigIntHomomorphismSpec)
+import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
 spec :: forall f. PrimeField f => Arbitrary f => Show f => Proxy f -> Spec Unit

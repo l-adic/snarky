@@ -100,7 +100,8 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (all_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints solver (satisfied f)
+        (Vector.generator (Proxy @10) arbitrary)
 
   it "any Circuit is Valid" $
     let
@@ -113,4 +114,5 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (any_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints solver (satisfied f)
+        (Vector.generator (Proxy @10) arbitrary)

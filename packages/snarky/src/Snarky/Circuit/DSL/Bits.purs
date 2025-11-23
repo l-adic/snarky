@@ -12,7 +12,7 @@ import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
-import Snarky.Circuit.Types (Bool(..), BoolVar, Variable(..), FVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, FVar, Variable(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generateA)
@@ -30,7 +30,10 @@ unpack_ v = do
     vVal <- readCVar v
     let
       bit =
-        if (toBigInt vVal `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then zero
+        if
+          ( toBigInt vVal `BigInt.and`
+              (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))
+          ) == BigInt.fromInt 0 then zero
         else one :: f
     pure $ bit == one
 

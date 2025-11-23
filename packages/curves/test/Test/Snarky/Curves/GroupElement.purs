@@ -5,6 +5,7 @@ module Test.Snarky.Curves.GroupElement
 import Prelude
 
 import Data.Array (fold)
+import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
@@ -13,7 +14,6 @@ import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class FrModule, class WeierstrassCurve, curveParams, fromBigInt, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Maybe (Maybe(..))
 import Test.QuickCheck (class Arbitrary, Result, arbitrary, quickCheck', (===))
 import Test.QuickCheck.Gen (suchThat)
 import Test.QuickCheck.Laws (checkLaws)
@@ -57,7 +57,9 @@ frModuleLaws _ proxyG = do
   quickCheck' 1000 $ scalarMulByOne <$> arbitrary
 
   log "Checking 'scalar mul distributes'"
-  quickCheck' 1000 $ scalarMulDistributes <$> arbitrary <*> arbitrary <*> arbitrary <*> arbitrary
+  quickCheck' 1000 $ scalarMulDistributes <$> arbitrary <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
 
   where
   negationIsInvolutive :: g -> Result
@@ -100,7 +102,8 @@ toAffineLaws _ proxyG = do
   (toAffine (mempty :: g)) `shouldEqual` (Nothing :: Maybe { x :: f, y :: f })
 
   log "Checking 'non-identity points satisfy Weierstrass equation'"
-  quickCheck' 100 $ nonIdentityOnCurve <$> suchThat arbitrary (_ /= (mempty :: g))
+  quickCheck' 100 $ nonIdentityOnCurve <$> suchThat arbitrary
+    (_ /= (mempty :: g))
   where
   nonIdentityOnCurve :: g -> Result
   nonIdentityOnCurve g =

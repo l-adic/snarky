@@ -7,8 +7,8 @@ import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
-import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.CVar (CVar, const_)
+import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.TestUtils (ConstraintSystem)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked(..), Variable, check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
@@ -70,14 +70,20 @@ instance (Arbitrary f, Arbitrary bool) => Arbitrary (MyRecord f bool) where
 
 instance
   PrimeField f =>
-  CircuitType f (MyRecord (F f) Boolean) (MyRecord (CVar f Variable) (CVar f (Bool Variable))) where
+  CircuitType f
+    (MyRecord (F f) Boolean)
+    (MyRecord (CVar f Variable) (CVar f (Bool Variable))) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
   fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
 
-instance (PrimeField f, R1CSSystem (CVar f Variable) c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+instance
+  ( PrimeField f
+  , R1CSSystem (CVar f Variable) c
+  ) =>
+  CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
   check = genericCheck
 
 -- Generic test suite for any CircuitType
@@ -167,7 +173,8 @@ spec pf = describe "CircuitType Round Trip Tests" do
 
   testCircuitType "Tuple (F f) Boolean" pf (Proxy @(Tuple (F f) Boolean))
 
-  testCircuitType "Tuple (Tuple 3 (F f) (F f) Boolean" pf (Proxy @(Tuple3 (F f) (F f) Boolean))
+  testCircuitType "Tuple (Tuple 3 (F f) (F f) Boolean" pf
+    (Proxy @(Tuple3 (F f) (F f) Boolean))
 
   -- Vector types (using custom generators)
   testCircuitTypeGen "Vector 3 (F f)" pf (Proxy @(Vector 3 (F f)))
@@ -178,13 +185,15 @@ spec pf = describe "CircuitType Round Trip Tests" do
     (Vector.generator (Proxy @2) arbitrary)
     (Vector.generator (Proxy @2) arbitrary)
 
-  testCircuitTypeGen "Vector 4 (UnChecked (F f))" pf (Proxy @(Vector 4 (UnChecked (F f))))
+  testCircuitTypeGen "Vector 4 (UnChecked (F f))" pf
+    (Proxy @(Vector 4 (UnChecked (F f))))
     (Vector.generator (Proxy @4) arbitrary)
     (Vector.generator (Proxy @4) arbitrary)
 
   testCircuitType "Point (custom type)" pf (Proxy @(Point (F f)))
 
-  testCircuitType "MyRecord (complex custom type)" pf (Proxy @(MyRecord (F f) Boolean))
+  testCircuitType "MyRecord (complex custom type)" pf
+    (Proxy @(MyRecord (F f) Boolean))
 
   testCircuitType "Plain record { a :: F f, b :: Boolean }" pf
     (Proxy @{ a :: F f, b :: Boolean })
@@ -195,8 +204,12 @@ spec pf = describe "CircuitType Round Trip Tests" do
   -- Record with vector field (needs custom generator for Vector)
   testCircuitTypeGen "Record with vector" pf
     (Proxy @{ values :: Vector 3 (F f), flag :: Boolean })
-    ({ values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*> arbitrary)
-    ({ values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*> arbitrary)
+    ( { values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*>
+        arbitrary
+    )
+    ( { values: _, flag: _ } <$> Vector.generator (Proxy @3) arbitrary <*>
+        arbitrary
+    )
 
   testCircuitType "Nested record" pf
     (Proxy @{ outer :: { inner :: F f, flag :: Boolean }, value :: F f })
@@ -241,7 +254,8 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           cvar = const_ (zero @f) :: CVar f (Bool Variable)
-          constraints = check @(CVar f (Bool Variable)) @(ConstraintSystem f) cvar
+          constraints = check @(CVar f (Bool Variable)) @(ConstraintSystem f)
+            cvar
         in
           Array.length constraints === 1
 
@@ -256,7 +270,9 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(value :: f) ->
         let
           uncheckedVar = UnChecked (const_ value :: CVar f Variable)
-          constraints = check @(UnChecked (CVar f Variable)) @(ConstraintSystem f) uncheckedVar
+          constraints = check @(UnChecked (CVar f Variable))
+            @(ConstraintSystem f)
+            uncheckedVar
         in
           Array.null constraints === true
 
@@ -264,7 +280,9 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           uncheckedVar = UnChecked (const_ (zero @f) :: CVar f (Bool Variable))
-          constraints = check @(UnChecked (CVar f (Bool Variable))) @(ConstraintSystem f) uncheckedVar
+          constraints = check @(UnChecked (CVar f (Bool Variable)))
+            @(ConstraintSystem f)
+            uncheckedVar
         in
           Array.null constraints === true
 
@@ -272,8 +290,14 @@ spec pf = describe "CircuitType Round Trip Tests" do
     it "Record with F and Boolean accumulates constraints correctly" $
       quickCheck' 10 \(fval :: f) ->
         let
-          record = { a: const_ fval :: CVar f Variable, b: const_ (zero @f) :: CVar f (Bool Variable) }
-          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+          record =
+            { a: const_ fval :: CVar f Variable
+            , b: const_ (zero @f) :: CVar f (Bool Variable)
+            }
+          constraints = check
+            @{ a :: CVar f Variable, b :: CVar f (Bool Variable) }
+            @(ConstraintSystem f)
+            record
         in
           Array.length constraints === 1 -- Only the Boolean should contribute a constraint
 
@@ -281,14 +305,23 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(x :: f) (y :: f) ->
         let
           point = Point (const_ x) (const_ y) :: Point (CVar f Variable)
-          constraints = check @(Point (CVar f Variable)) @(ConstraintSystem f) point
+          constraints = check @(Point (CVar f Variable)) @(ConstraintSystem f)
+            point
         in
           Array.null constraints === true
 
     it "Record with multiple Booleans accumulates all constraints" $
       quickCheck' 10 \(_ :: Unit) ->
         let
-          record = { flag1: const_ (zero @f) :: CVar f (Bool Variable), flag2: const_ (one @f) :: CVar f (Bool Variable) }
-          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+          record =
+            { flag1: const_ (zero @f) :: CVar f (Bool Variable)
+            , flag2: const_ (one @f) :: CVar f (Bool Variable)
+            }
+          constraints = check
+            @{ flag1 :: CVar f (Bool Variable)
+            , flag2 :: CVar f (Bool Variable)
+            }
+            @(ConstraintSystem f)
+            record
         in
           Array.length constraints === 2 -- Both Booleans should contribute constraints

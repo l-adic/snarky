@@ -2,6 +2,7 @@ module Snarky.Data.Fin where
 
 import Prelude
 
+import Data.Array ((..))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
@@ -9,7 +10,6 @@ import Data.Show.Generic (genericShow)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Type.Proxy (Proxy(..))
-import Data.Array ((..))
 
 newtype Finite (n :: Int) = Finite Int
 
@@ -40,7 +40,8 @@ unsafeFinite k =
       let
         n = reflectType (Proxy @n)
       in
-        unsafeThrowException (error ("Attempted to coerce " <> show k <> " to Finite " <> show n))
+        unsafeThrowException
+          (error ("Attempted to coerce " <> show k <> " to Finite " <> show n))
 
 finites :: forall n. Reflectable n Int => Proxy n -> Array (Finite n)
 finites p =

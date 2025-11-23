@@ -22,7 +22,7 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var))
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), addConstraint, fresh)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Variable(..), FVar, check, fieldsToVar, sizeInFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, Variable(..), check, fieldsToVar, sizeInFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -39,7 +39,8 @@ emptyCircuitBuilderState =
   , publicInputs: mempty
   }
 
-newtype CircuitBuilderT c m a = CircuitBuilderT (StateT (CircuitBuilderState c) m a)
+newtype CircuitBuilderT c m a = CircuitBuilderT
+  (StateT (CircuitBuilderState c) m a)
 
 derive newtype instance Functor m => Functor (CircuitBuilderT c m)
 derive newtype instance Monad m => Apply (CircuitBuilderT c m)
@@ -48,15 +49,29 @@ derive newtype instance Monad m => Applicative (CircuitBuilderT c m)
 derive newtype instance Monad m => Monad (CircuitBuilderT c m)
 derive newtype instance MonadTrans (CircuitBuilderT c)
 
-runCircuitBuilderT :: forall c m a. Monad m => CircuitBuilderT c m a -> CircuitBuilderState c -> m (Tuple a (CircuitBuilderState c))
+runCircuitBuilderT
+  :: forall c m a
+   . Monad m
+  => CircuitBuilderT c m a
+  -> CircuitBuilderState c
+  -> m (Tuple a (CircuitBuilderState c))
 runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s
 
-execCircuitBuilderT :: forall c m a. Monad m => CircuitBuilderT c m a -> CircuitBuilderState c -> m (CircuitBuilderState c)
+execCircuitBuilderT
+  :: forall c m a
+   . Monad m
+  => CircuitBuilderT c m a
+  -> CircuitBuilderState c
+  -> m (CircuitBuilderState c)
 execCircuitBuilderT (CircuitBuilderT m) s = execStateT m s
 
 type CircuitBuilder c = CircuitBuilderT c Identity
 
-runCircuitBuilder :: forall c a. CircuitBuilder c a -> CircuitBuilderState c -> Tuple a (CircuitBuilderState c)
+runCircuitBuilder
+  :: forall c a
+   . CircuitBuilder c a
+  -> CircuitBuilderState c
+  -> Tuple a (CircuitBuilderState c)
 runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
 instance Monad m => MonadFresh (CircuitBuilderT c m) where
@@ -65,10 +80,20 @@ instance Monad m => MonadFresh (CircuitBuilderT c m) where
     modify_ _ { nextVar = nextVar + 1 }
     pure $ Variable nextVar
 
-instance (Monad m, PrimeField f, R1CSSystem (FVar f) c) => CircuitM f c (CircuitBuilderT c) m where
+instance
+  ( Monad m
+  , PrimeField f
+  , R1CSSystem (FVar f) c
+  ) =>
+  CircuitM f c (CircuitBuilderT c) m where
   addConstraint c = Snarky $ CircuitBuilderT $ modify_ \s ->
     s { constraints = s.constraints `snoc` c }
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky (CircuitBuilderT c) m var
+  exists
+    :: forall a var
+     . CheckedType var c
+    => CircuitType f a var
+    => AsProverT f m a
+    -> Snarky (CircuitBuilderT c) m var
   exists _ = do
     let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh
@@ -76,6 +101,7 @@ instance (Monad m, PrimeField f, R1CSSystem (FVar f) c) => CircuitM f c (Circuit
     traverse_ (addConstraint @f) (check v)
     pure v
 
-setPublicInputVars :: forall f m. Monad m => Array Variable -> CircuitBuilderT f m Unit
+setPublicInputVars
+  :: forall f m. Monad m => Array Variable -> CircuitBuilderT f m Unit
 setPublicInputVars vars = CircuitBuilderT $ modify_ \s ->
   s { publicInputs = vars }

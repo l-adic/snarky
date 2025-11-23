@@ -26,12 +26,14 @@ instance Arbitrary TestBigInt where
 
 -- Generic ring homomorphism test functions
 -- Test that fromBigInt preserves addition: f(a) + f(b) = f(a + b)
-testAdditionHomomorphism :: forall f. PrimeField f => Proxy f -> TestBigInt -> TestBigInt -> Result
+testAdditionHomomorphism
+  :: forall f. PrimeField f => Proxy f -> TestBigInt -> TestBigInt -> Result
 testAdditionHomomorphism _ (TestBigInt a) (TestBigInt b) =
   (fromBigInt a + fromBigInt b) === fromBigInt @f (a + b)
 
 -- Test that fromBigInt preserves multiplication: f(a) * f(b) = f(a * b)
-testMultiplicationHomomorphism :: forall f. PrimeField f => Proxy f -> TestBigInt -> TestBigInt -> Result
+testMultiplicationHomomorphism
+  :: forall f. PrimeField f => Proxy f -> TestBigInt -> TestBigInt -> Result
 testMultiplicationHomomorphism _ (TestBigInt a) (TestBigInt b) =
   (fromBigInt a * fromBigInt b) === fromBigInt @f (a * b)
 
@@ -48,11 +50,16 @@ testOneHomomorphism _ =
 -- Reusable spec for testing ring homomorphism properties
 bigIntHomomorphismSpec :: forall f. PrimeField f => Proxy f -> Spec Unit
 bigIntHomomorphismSpec proxy = describe "BigInt algebra" do
-  it "preserves addition: fromBigInt a + fromBigInt b == fromBigInt (a + b)" $ liftEffect $
-    quickCheck (testAdditionHomomorphism proxy)
+  it "preserves addition: fromBigInt a + fromBigInt b == fromBigInt (a + b)"
+    $ liftEffect
+    $
+      quickCheck (testAdditionHomomorphism proxy)
 
-  it "preserves multiplication: fromBigInt a * fromBigInt b == fromBigInt (a * b)" $ liftEffect $
-    quickCheck (testMultiplicationHomomorphism proxy)
+  it
+    "preserves multiplication: fromBigInt a * fromBigInt b == fromBigInt (a * b)"
+    $ liftEffect
+    $
+      quickCheck (testMultiplicationHomomorphism proxy)
 
   it "maps zero correctly: fromBigInt zero == zero" $ liftEffect $
     quickCheck (testZeroHomomorphism proxy)

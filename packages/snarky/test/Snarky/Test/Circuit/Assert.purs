@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
+import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -51,7 +51,8 @@ spec _ = describe "Assertion Circuit Specs" do
 
   it "assertNotEqual Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertNotEqual_)
+      solver = makeSolver (Proxy @(ConstraintSystem f))
+        (uncurry assertNotEqual_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))

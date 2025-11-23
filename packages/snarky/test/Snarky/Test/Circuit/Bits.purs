@@ -11,7 +11,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, pack_, unpack_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
@@ -35,11 +35,13 @@ smallFieldElem bitCount = do
     let
       combined = foldl
         ( \acc (Tuple i val) ->
-            acc `BigInt.or` (BigInt.fromInt val `BigInt.shl` BigInt.fromInt (i * 32))
+            acc `BigInt.or`
+              (BigInt.fromInt val `BigInt.shl` BigInt.fromInt (i * 32))
         )
         zero
         (Array.mapWithIndex Tuple values)
-      mask = (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt bitCount) - BigInt.fromInt 1
+      mask = (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt bitCount) -
+        BigInt.fromInt 1
     pure $ F $ fromBigInt $ combined `BigInt.and` mask
 
 packUnpackCircuit
@@ -63,7 +65,10 @@ spec _ = describe "Bits Circuit Specs" do
       f :: forall k. Reflectable k Int => F f -> Vector k Boolean
       f (F v) =
         let
-          toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
+          toBit i =
+            ( toBigInt v `BigInt.and`
+                (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)
+            ) /= zero
         in
           generate (toBit <<< getFinite)
       solver = makeSolver (Proxy @(ConstraintSystem f)) unpack_
@@ -73,7 +78,8 @@ spec _ = describe "Bits Circuit Specs" do
           (Proxy @(Vector n Boolean))
           unpack_
     in
-      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints solver (satisfied f)
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
@@ -85,4 +91,5 @@ spec _ = describe "Bits Circuit Specs" do
           (Proxy @(F f))
           (packUnpackCircuit)
     in
-      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints solver (satisfied f)
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

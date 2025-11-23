@@ -9,7 +9,7 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Curves (assertOnCurve, assertEqual, if_, unsafeAdd, double)
+import Snarky.Circuit.Curves (assertEqual, assertOnCurve, double, if_, unsafeAdd)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, genAffinePoint)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied, satisfied_, unsatisfied)
@@ -42,7 +42,8 @@ spec pg =
     it "assertOnCurve Circuit is Valid" $
       let
         { a, b } = curveParams pg
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertOnCurve)
+        solver = makeSolver (Proxy @(ConstraintSystem f))
+          (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
@@ -111,7 +112,9 @@ spec pg =
 
     it "if_ Circuit is Valid" $
       let
-        pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
+        pureIf
+          :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))
+          -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
         solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
         { constraints } =

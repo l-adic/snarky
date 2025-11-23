@@ -159,10 +159,18 @@ instance
   varToFields = genericVarToFields (Proxy @(Tuple a b))
   fieldsToVar = genericFieldsToVar (Proxy @(Tuple a b))
 
-instance (CheckedType avar c, CheckedType bvar c) => CheckedType (Tuple avar bvar) c where
+instance
+  ( CheckedType avar c
+  , CheckedType bvar c
+  ) =>
+  CheckedType (Tuple avar bvar) c where
   check = genericCheck
 
-instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
+instance
+  ( CircuitType f a var
+  , Reflectable n Int
+  ) =>
+  CircuitType f (Vector n a) (Vector n var) where
   valueToFields as = foldMap valueToFields (unVector as)
   fieldsToValue as =
     let
@@ -192,14 +200,24 @@ instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) wher
 instance CheckedType (UnChecked var) c where
   check _ = mempty
 
-instance (RowToList r rl, RowToList var rlvar, RCircuitType f rl rlvar r var) => CircuitType f (Record r) (Record var) where
+instance
+  ( RowToList r rl
+  , RowToList var rlvar
+  , RCircuitType f rl rlvar r var
+  ) =>
+  CircuitType f (Record r) (Record var) where
   fieldsToValue = rFieldsToValue @f @rl @rlvar @r (Proxy @rl)
   valueToFields = rValueToFields @f @rl @rlvar @r (Proxy @rl)
-  sizeInFields pf _ = rSizeInFields @f @rl @rlvar @r pf (Proxy @rl) (Proxy @rlvar)
+  sizeInFields pf _ = rSizeInFields @f @rl @rlvar @r pf (Proxy @rl)
+    (Proxy @rlvar)
   fieldsToVar = rFieldsToVar @f @rl @rlvar @r (Proxy @rlvar)
   varToFields = rVarToFields @f @rl @rlvar @r (Proxy @rlvar)
 
-instance (RowToList var rlvar, RCheckedType rlvar var c) => CheckedType (Record var) c where
+instance
+  ( RowToList var rlvar
+  , RCheckedType rlvar var c
+  ) =>
+  CheckedType (Record var) c where
   check = rCheck (Proxy @rlvar)
 
 --------------------------------------------------------------------------------
@@ -235,25 +253,40 @@ instance CircuitType f a var => GCircuitType f (Argument a) (Argument var) where
 instance CheckedType a c => GCheckedType (Argument a) c where
   gCheck (Argument a) = check a
 
-instance (GCircuitType f a avar, GCircuitType f b bvar) => GCircuitType f (Product a b) (Product avar bvar) where
-  gValueToFields (Product a b) = gValueToFields @f @a a <> gValueToFields @f @b b
+instance
+  ( GCircuitType f a avar
+  , GCircuitType f b bvar
+  ) =>
+  GCircuitType f (Product a b) (Product avar bvar) where
+  gValueToFields (Product a b) = gValueToFields @f @a a <> gValueToFields @f @b
+    b
   gFieldsToValue fs =
     let
-      { before: as, after: bs } = Array.splitAt (gSizeInFields (Proxy @f) (Proxy @a)) fs
+      { before: as, after: bs } = Array.splitAt
+        (gSizeInFields (Proxy @f) (Proxy @a))
+        fs
     in
       Product (gFieldsToValue @f @a as) (gFieldsToValue @f @b bs)
   gSizeInFields pf _ = gSizeInFields pf (Proxy @a) + gSizeInFields pf (Proxy @b)
   gVarToFields (Product a b) = gVarToFields @f @a a <> gVarToFields @f @b b
   gFieldsToVar fs =
     let
-      { before: as, after: bs } = Array.splitAt (gSizeInFields (Proxy @f) (Proxy @a)) fs
+      { before: as, after: bs } = Array.splitAt
+        (gSizeInFields (Proxy @f) (Proxy @a))
+        fs
     in
       Product (gFieldsToVar @f @a as) (gFieldsToVar @f @b bs)
 
-instance (GCheckedType avar c, GCheckedType bvar c) => GCheckedType (Product avar bvar) c where
+instance
+  ( GCheckedType avar c
+  , GCheckedType bvar c
+  ) =>
+  GCheckedType (Product avar bvar) c where
   gCheck (Product a b) = gCheck a <> gCheck b
 
-instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Constructor name avar) where
+instance
+  GCircuitType f a avar =>
+  GCircuitType f (Constructor name a) (Constructor name avar) where
   gValueToFields (Constructor a) = gValueToFields @f @a a
   gFieldsToValue as = Constructor $ gFieldsToValue @f @a as
   gSizeInFields pf _ = gSizeInFields @f @a pf (Proxy @a)
@@ -263,13 +296,21 @@ instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Construct
 instance GCheckedType var c => GCheckedType (Constructor name var) c where
   gCheck (Constructor a) = gCheck a
 
-genericValueToFields :: forall f a var rep. Generic a rep => GCircuitType f rep var => a -> Array f
+genericValueToFields
+  :: forall f a var rep. Generic a rep => GCircuitType f rep var => a -> Array f
 genericValueToFields = gValueToFields @f @rep <<< from
 
-genericFieldsToValue :: forall f a var rep. Generic a rep => GCircuitType f rep var => Array f -> a
+genericFieldsToValue
+  :: forall f a var rep. Generic a rep => GCircuitType f rep var => Array f -> a
 genericFieldsToValue = to <<< gFieldsToValue @f @rep
 
-genericSizeInFields :: forall f a b rep. Generic a rep => GCircuitType f rep b => Proxy f -> Proxy a -> Int
+genericSizeInFields
+  :: forall f a b rep
+   . Generic a rep
+  => GCircuitType f rep b
+  => Proxy f
+  -> Proxy a
+  -> Int
 genericSizeInFields pf pa = gSizeInFields @f @rep @b pf (repOf pa)
 
 genericVarToFields
@@ -302,8 +343,20 @@ genericCheck var = gCheck $ from var
 
 --------------------------------------------------------------------------------
 
-class RCircuitType :: Type -> RL.RowList Type -> RL.RowList Type -> Row Type -> Row Type -> Constraint
-class RCircuitType f rl rlvar r var | rl -> r, rlvar -> var, var -> f, f r -> var, rl -> rlvar where
+class RCircuitType
+  :: Type
+  -> RL.RowList Type
+  -> RL.RowList Type
+  -> Row Type
+  -> Row Type
+  -> Constraint
+class
+  RCircuitType f rl rlvar r var
+  | rl -> r
+  , rlvar -> var
+  , var -> f
+  , f r -> var
+  , rl -> rlvar where
   rValueToFields :: Proxy rl -> Record r -> Array f
   rFieldsToValue :: Proxy rl -> Array f -> Record r
   rSizeInFields :: Proxy f -> Proxy rl -> Proxy rlvar -> Int
@@ -337,7 +390,8 @@ instance
   rValueToFields _ r =
     let
       afs = valueToFields @f @a $ Record.get (Proxy @s) r
-      asfs = rValueToFields @f @tail @tailvars @rest (Proxy @tail) $ Record.delete (Proxy @s) r
+      asfs = rValueToFields @f @tail @tailvars @rest (Proxy @tail) $
+        Record.delete (Proxy @s) r
     in
       afs <> asfs
   rFieldsToValue _ fs =
@@ -347,11 +401,17 @@ instance
       as = rFieldsToValue @f @tail @tailvars @rest (Proxy @tail) after
     in
       Record.insert (Proxy @s) a as
-  rSizeInFields pf _ _ = sizeInFields pf (Proxy @a) + rSizeInFields @f @tail @tailvars @rest pf (Proxy @tail) (Proxy @tailvars)
+  rSizeInFields pf _ _ = sizeInFields pf (Proxy @a) + rSizeInFields @f @tail
+    @tailvars
+    @rest
+    pf
+    (Proxy @tail)
+    (Proxy @tailvars)
   rVarToFields _ r =
     let
       afs = varToFields @f @a $ Record.get (Proxy @s) r
-      asfs = rVarToFields @f @tail @tailvars @rest (Proxy @tailvars) $ Record.delete (Proxy @s) r
+      asfs = rVarToFields @f @tail @tailvars @rest (Proxy @tailvars) $
+        Record.delete (Proxy @s) r
     in
       afs <> asfs
   rFieldsToVar _ fs =

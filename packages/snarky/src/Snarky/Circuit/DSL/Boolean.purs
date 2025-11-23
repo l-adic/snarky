@@ -17,7 +17,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
-import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), Variable(..), FVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), FVar, UnChecked(..), Variable(..))
 import Snarky.Curves.Class (fromBigInt)
 
 if_
@@ -31,7 +31,8 @@ if_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
     Const t, Const e -> pure $
-      ScalarMul t (coerce b) `CVar.add_` (CVar.scale_ e (Const one `CVar.sub_` coerce b))
+      ScalarMul t (coerce b) `CVar.add_`
+        (CVar.scale_ e (Const one `CVar.sub_` coerce b))
     _, _ -> do
       r <- exists do
         bVal <- readCVar $ coerce b

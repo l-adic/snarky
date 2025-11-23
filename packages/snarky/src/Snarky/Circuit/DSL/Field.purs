@@ -15,7 +15,7 @@ import Snarky.Circuit.CVar (CVar(Const))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
-import Snarky.Circuit.Types (Bool(..), F(..), FVar, Variable(..), BoolVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), FVar, Variable(..))
 import Snarky.Curves.Class (class PrimeField)
 
 equals
@@ -41,7 +41,8 @@ equals_ a b = case a `CVar.sub_` b of
       pure $
         if zVal == zero then { r: F (one :: f), zInv: F zero }
         else { r: F zero, zInv: F $ recip zVal }
-    addConstraint $ r1cs { left: zInv, right: z, output: Const one `CVar.sub_` r }
+    addConstraint $ r1cs
+      { left: zInv, right: z, output: Const one `CVar.sub_` r }
     addConstraint $ r1cs { left: r, right: z, output: Const zero }
     pure $ coerce r
 
