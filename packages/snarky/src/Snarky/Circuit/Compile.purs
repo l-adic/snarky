@@ -26,10 +26,10 @@ import Data.Unfoldable (replicateA)
 import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL.Assert (assertEqual)
-import Snarky.Circuit.DSL.Monad (class CircuitM, fresh, read, runAsProverT)
+import Snarky.Circuit.DSL.Assert (assertEqual_)
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
-import Snarky.Circuit.Types (class CircuitType, Variable, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CircuitType, Variable, FVar, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -38,10 +38,10 @@ compilePure
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
-  => R1CSSystem (CVar f Variable) c
+  => R1CSSystem (FVar f) c
   => Proxy a
   -> Proxy b
-  -> (forall t. CircuitM f c t Identity => avar -> t Identity bvar)
+  -> (forall t. CircuitM f c t Identity => avar -> Snarky t Identity bvar)
   -> CircuitBuilderState c
 compilePure pa pb circuit = un Identity $ compile pa pb circuit
 
@@ -51,10 +51,10 @@ compile
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem (CVar f Variable) c
+  => R1CSSystem (FVar f) c
   => Proxy a
   -> Proxy b
-  -> (forall t. CircuitM f c t m => avar -> t m bvar)
+  -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
   -> m (CircuitBuilderState c)
 compile _ _ circuit = do
   Tuple _ s <-
@@ -66,9 +66,10 @@ compile _ _ circuit = do
       let { before: avars, after: bvars } = Array.splitAt n vars
       setPublicInputVars vars
       let avar = fieldsToVar @f @a (map Var avars)
-      out <- circuit avar
-      for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
-        assertEqual v1 v2
+      out <- runSnarky $ do
+        out <- circuit avar
+        for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
+          assertEqual_ v1 v2
       pure out
   pure s
 
@@ -78,9 +79,9 @@ makeSolver
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem (CVar f Variable) c
+  => R1CSSystem (FVar f) c
   => Proxy c
-  -> (forall t. CircuitM f c t m => avar -> t m bvar)
+  -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
   -> SolverT f m a b
 makeSolver _ circuit = \inputs -> do
   eres <- lift $ flip runProverT emptyProverState do
@@ -89,7 +90,7 @@ makeSolver _ circuit = \inputs -> do
     vars <- replicateA (n + m) fresh
     let { before: avars, after: bvars } = Array.splitAt n vars
     setAssignments $ zip avars (valueToFields inputs)
-    outVar <- circuit (fieldsToVar @f @a (map Var avars))
+    outVar <- runSnarky $ circuit (fieldsToVar @f @a (map Var avars))
     eres <- getAssignments >>= runAsProverT (read outVar)
     either throwProverError
       ( \output -> do

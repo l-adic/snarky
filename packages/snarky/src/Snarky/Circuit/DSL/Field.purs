@@ -1,66 +1,38 @@
 module Snarky.Circuit.DSL.Field
-  ( mul_
-  , square_
-  , eq_
+  ( equals
+  , equals_
   , neq_
-  , inv_
-  , div_
   , sum_
-  , negate_
+  , pow_
   ) where
 
 import Prelude
 
+import Control.Apply (lift2)
 import Data.Array (foldl)
-import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const, ScalarMul), EvaluationError(..), const_, sub_)
+import Snarky.Circuit.CVar (CVar(Const))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, readCVar, throwAsProver)
-import Snarky.Circuit.Types (Bool(..), F(..), Variable(..))
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.Types (Bool(..), F(..), FVar, Variable(..), BoolVar)
 import Snarky.Curves.Class (class PrimeField)
 
-mul_
+equals
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> t m (CVar f Variable)
-mul_ a b =
-  case a, b of
-    Const f, Const f' -> pure $ Const (f * f')
-    Const f, c -> pure $ ScalarMul f c
-    c, Const f -> pure $ ScalarMul f c
-    _, _ -> do
-      z <- exists do
-        aVal <- readCVar a
-        bVal <- readCVar b
-        pure $ F $ aVal * bVal
-      addConstraint $ r1cs { left: a, right: b, output: z }
-      pure z
+  => Snarky t m (FVar f)
+  -> Snarky t m (FVar f)
+  -> Snarky t m (BoolVar f)
+equals a b = join $ lift2 equals_ a b
 
-square_
-  :: forall t f m c
-   . CircuitM f c t m
-  => CVar f Variable
-  -> t m (CVar f Variable)
-square_ = case _ of
-  Const f -> pure $ Const (f * f)
-  a -> do
-    z <- exists do
-      aVal <- readCVar a
-      pure $ F (aVal * aVal)
-    addConstraint $ r1cs { left: a, right: a, output: z }
-    pure z
-
-eq_
+equals_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> t m (CVar f (Bool Variable))
-eq_ a b = case a `CVar.sub_` b of
+  => FVar f
+  -> FVar f
+  -> Snarky t m (BoolVar f)
+equals_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
     let z = a `CVar.sub_` b
@@ -76,48 +48,25 @@ eq_ a b = case a `CVar.sub_` b of
 neq_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> t m (CVar f (Bool Variable))
-neq_ (a :: CVar f Variable) (b :: CVar f Variable) = do
-  c <- eq_ (a :: CVar f Variable) b
-  pure $ const_ (one :: f) `sub_` c
-
-inv_
-  :: forall f c t m
-   . CircuitM f c t m
-  => CVar f Variable
-  -> t m (CVar f Variable)
-inv_ = case _ of
-  Const a -> pure
-    if a == zero then unsafeCrashWith "inv: expected nonzero arg"
-    else Const (recip a)
-  a -> do
-    aInv <- exists do
-      aVal <- readCVar a
-      if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
-      else pure $ F $ if aVal == zero then zero else recip aVal
-    addConstraint $ r1cs { left: a, right: aInv, output: Const one }
-    pure aInv
-
-div_
-  :: forall t f m c
-   . CircuitM f c t m
-  => CVar f Variable
-  -> CVar f Variable
-  -> t m (CVar f Variable)
-div_ a b = inv_ b >>= mul_ a
+  => FVar f
+  -> FVar f
+  -> Snarky t m (BoolVar f)
+neq_ (a :: FVar f) (b :: FVar f) = not $ equals_ a b
 
 sum_
   :: forall f
    . PrimeField f
-  => Array (CVar f Variable)
-  -> CVar f Variable
+  => Array (FVar f)
+  -> FVar f
 sum_ = foldl CVar.add_ (Const zero)
 
-negate_
-  :: forall f
-   . PrimeField f
-  => CVar f Variable
-  -> CVar f Variable
-negate_ = CVar.negate_
+pow_
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Int
+  -> Snarky t m (FVar f)
+pow_ x n
+  | n == 0 = one
+  | n == 1 = pure x
+  | otherwise = pure x * pow_ x (n - 1)

@@ -1,10 +1,5 @@
 module Snarky.Circuit.DSL.Boolean
-  ( true_
-  , false_
-  , not_
-  , if_
-  , and_
-  , or_
+  ( if_
   , xor_
   , all_
   , any_
@@ -13,37 +8,25 @@ module Snarky.Circuit.DSL.Boolean
 import Prelude
 
 import Data.Array as Array
+import Data.HeytingAlgebra (ff, tt)
 import Data.Maybe (Maybe(..))
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const, ScalarMul), const_)
+import Snarky.Circuit.CVar (CVar(Const, ScalarMul))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
-import Snarky.Circuit.DSL.Monad (class CircuitM, addConstraint, exists, read, readCVar)
-import Snarky.Circuit.DSL.Field (eq_, mul_, sum_)
-import Snarky.Circuit.Types (Bool(..), F(..), UnChecked(..), Variable(..))
-import Snarky.Curves.Class (class PrimeField, fromBigInt)
-
-true_ :: forall f. PrimeField f => CVar f (Bool Variable)
-true_ = const_ (one :: f)
-
-false_ :: forall f. PrimeField f => CVar f (Bool Variable)
-false_ = const_ (one :: f)
-
-not_
-  :: forall f
-   . PrimeField f
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-not_ a = const_ one `CVar.sub_` a
+import Snarky.Circuit.DSL.Field (equals_, sum_)
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), Variable(..), FVar)
+import Snarky.Curves.Class (fromBigInt)
 
 if_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f Variable
-  -> CVar f Variable
-  -> t m (CVar f Variable)
+  => BoolVar f
+  -> FVar f
+  -> FVar f
+  -> Snarky t m (FVar f)
 if_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
@@ -60,30 +43,12 @@ if_ b thenBranch elseBranch = case b of
         }
       pure r
 
-and_
-  :: forall f c t m
-   . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> t m (CVar f (Bool Variable))
-and_ a b = do
-  conj <- mul_ (coerce a :: CVar f Variable) (coerce b)
-  pure $ coerce conj
-
-or_
-  :: forall f c t m
-   . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> t m (CVar f (Bool Variable))
-or_ a b = not_ <$> (not_ a) `and_` (not_ b)
-
 xor_
   :: forall f c t m
    . CircuitM f c t m
-  => CVar f (Bool Variable)
-  -> CVar f (Bool Variable)
-  -> t m (CVar f (Bool Variable))
+  => BoolVar f
+  -> BoolVar f
+  -> Snarky t m (BoolVar f)
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
   Const aVal, _
@@ -94,8 +59,8 @@ xor_ a b = case a, b of
     | bVal == one -> pure $ not_ a
   _, _ -> do
     UnChecked res <- exists do
-      F aVal <- read (coerce a :: CVar f Variable)
-      F bVal <- read (coerce b :: CVar f Variable)
+      F aVal <- read (coerce a :: FVar f)
+      F bVal <- read (coerce b :: FVar f)
       pure $ UnChecked (aVal /= bVal)
     addConstraint $
       r1cs
@@ -108,25 +73,25 @@ xor_ a b = case a, b of
 any_
   :: forall f c t m
    . CircuitM f c t m
-  => Array (CVar f (Bool Variable))
-  -> t m (CVar f (Bool Variable))
+  => Array (BoolVar f)
+  -> Snarky t m (BoolVar f)
 any_ as =
   case Array.uncons as of
-    Nothing -> pure false_
+    Nothing -> ff
     Just { head: a0, tail } -> case Array.uncons tail of
       Nothing -> pure a0
       Just { head: a1, tail: rest } ->
         if Array.null rest then a0 `or_` a1
-        else not_ <$> eq_ (sum_ (coerce as)) (Const zero)
+        else not $ equals_ (sum_ (coerce as)) (Const zero)
 
 all_
   :: forall f c t m
    . CircuitM f c t m
-  => Array (CVar f (Bool Variable))
-  -> t m (CVar f (Bool Variable))
+  => Array (BoolVar f)
+  -> Snarky t m (BoolVar f)
 all_ as =
   case Array.uncons as of
-    Nothing -> pure true_
+    Nothing -> tt
     Just { head: a0, tail } -> case Array.uncons tail of
       Nothing -> pure a0
       Just { head: a1, tail: rest } ->
@@ -135,4 +100,4 @@ all_ as =
           let
             n = fromBigInt $ BigInt.fromInt $ Array.length as
           in
-            eq_ (sum_ (coerce as)) (Const n)
+            equals_ (sum_ (coerce as)) (Const n)

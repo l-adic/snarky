@@ -7,7 +7,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, CVar, F, Variable, all_, assert, const_, eq_, exists, mul_, neq_, read)
+import Snarky.Circuit.DSL (class CircuitM, FVar, F, all_, assert_, const_, equals_, exists, mul_, neq_, read, Snarky)
 import Snarky.Circuit.TestUtils (ConstraintSystem, satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -22,16 +22,16 @@ factorsCircuit
   :: forall t m f
    . FactorM f m
   => CircuitM f (ConstraintSystem f) t m
-  => CVar f Variable
-  -> t m Unit
+  => FVar f
+  -> Snarky t m Unit
 factorsCircuit n = do
   { a, b } <- exists do
     nVal <- read n
     lift $ factor @f nVal
-  c1 <- mul_ a b >>= eq_ n
+  c1 <- equals_ n =<< mul_ a b
   c2 <- neq_ a (const_ one)
   c3 <- neq_ b (const_ one)
-  assert =<< all_ [ c1, c2, c3 ]
+  assert_ =<< all_ [ c1, c2, c3 ]
 
 instance (Arbitrary f, PrimeField f) => FactorM f Gen where
   factor n = do

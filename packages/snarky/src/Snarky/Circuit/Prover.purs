@@ -24,8 +24,8 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError)
 import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, runAsProverT)
-import Snarky.Circuit.Types (class CircuitType, Variable(..), fieldsToVar, sizeInFields, valueToFields)
+import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), runAsProverT)
+import Snarky.Circuit.Types (class CircuitType, Variable(..), FVar, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -60,10 +60,10 @@ type Prover f = ProverT f Identity
 runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either (EvaluationError f Variable) a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
-instance (Monad m, PrimeField f, R1CSSystem (CVar f Variable) c) => CircuitM f c (ProverT f) m where
+instance (Monad m, PrimeField f, R1CSSystem (FVar f) c) => CircuitM f c (ProverT f) m where
   addConstraint _ = pure unit
-  exists :: forall a var. CircuitType f a var => AsProverT f m a -> ProverT f m var
-  exists m = ProverT do
+  exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky (ProverT f) m var
+  exists m = Snarky $ ProverT do
     { assignments } <- get
     a <- ExceptT $ lift $ runAsProverT m assignments
     vars <- do

@@ -3,6 +3,8 @@ module Snarky.Circuit.Types
   , F(..)
   , Bool(..)
   , UnChecked(..)
+  , FVar
+  , BoolVar
   , class CircuitType
   , valueToFields
   , fieldsToValue
@@ -96,6 +98,9 @@ derive newtype instance Arbitrary a => Arbitrary (UnChecked a)
 derive instance Newtype (UnChecked a) _
 derive instance Generic (UnChecked f) _
 
+type BoolVar f = CVar f (Bool Variable)
+type FVar f = CVar f Variable
+
 --------------------------------------------------------------------------------
 
 class CircuitType :: Type -> Type -> Type -> Constraint
@@ -103,8 +108,8 @@ class CircuitType f a var | f a -> var, var -> f where
   valueToFields :: a -> Array f
   fieldsToValue :: Array f -> a
   sizeInFields :: Proxy f -> Proxy a -> Int
-  varToFields :: var -> Array (CVar f Variable)
-  fieldsToVar :: Array (CVar f Variable) -> var
+  varToFields :: var -> Array (FVar f)
+  fieldsToVar :: Array (FVar f) -> var
 
 class CheckedType var c where
   check :: var -> Array c
@@ -119,17 +124,17 @@ instance CircuitType f Unit Unit where
 instance CheckedType Unit c where
   check _ = mempty
 
-instance CircuitType f (F f) (CVar f Variable) where
+instance CircuitType f (F f) (FVar f) where
   valueToFields = Array.singleton <<< coerce
   fieldsToValue a = coerce $ unsafePartial fromJust $ Array.head a
   sizeInFields _ _ = 1
   varToFields = Array.singleton
   fieldsToVar a = unsafePartial fromJust $ Array.head a
 
-instance CheckedType (CVar f Variable) c where
+instance CheckedType (FVar f) c where
   check _ = mempty
 
-instance (PrimeField f) => CircuitType f Boolean (CVar f (Bool Variable)) where
+instance (PrimeField f) => CircuitType f Boolean (BoolVar f) where
   valueToFields b = Array.singleton $ if b then one @f else zero
   fieldsToValue a =
     let
@@ -140,8 +145,8 @@ instance (PrimeField f) => CircuitType f Boolean (CVar f (Bool Variable)) where
   fieldsToVar x = coerce $ unsafePartial $ fromJust $ Array.head x
   varToFields = Array.singleton <<< coerce
 
-instance (PrimeField f, R1CSSystem (CVar f Variable) c) => CheckedType (CVar f (Bool Variable)) c where
-  check var = Array.singleton $ boolean (coerce var :: CVar f Variable)
+instance (PrimeField f, R1CSSystem (FVar f) c) => CheckedType (BoolVar f) c where
+  check var = Array.singleton $ boolean (coerce var :: FVar f)
 
 instance
   ( CircuitType f a avar
@@ -204,8 +209,8 @@ class GCircuitType f a var | f a -> var, var -> f where
   gValueToFields :: a -> Array f
   gFieldsToValue :: Array f -> a
   gSizeInFields :: Proxy f -> Proxy a -> Int
-  gVarToFields :: var -> Array (CVar f Variable)
-  gFieldsToVar :: Array (CVar f Variable) -> var
+  gVarToFields :: var -> Array (FVar f)
+  gFieldsToVar :: Array (FVar f) -> var
 
 class GCheckedType var c where
   gCheck :: var -> Array c
@@ -274,7 +279,7 @@ genericVarToFields
   => GCircuitType f rep var'
   => Proxy a
   -> var
-  -> Array (CVar f Variable)
+  -> Array (FVar f)
 genericVarToFields _ var = gVarToFields @f @rep $ from var
 
 genericFieldsToVar
@@ -283,7 +288,7 @@ genericFieldsToVar
   => Generic a rep
   => GCircuitType f rep var'
   => Proxy a
-  -> Array (CVar f Variable)
+  -> Array (FVar f)
   -> var
 genericFieldsToVar _ fs = to $ gFieldsToVar @f @rep fs
 
@@ -302,8 +307,8 @@ class RCircuitType f rl rlvar r var | rl -> r, rlvar -> var, var -> f, f r -> va
   rValueToFields :: Proxy rl -> Record r -> Array f
   rFieldsToValue :: Proxy rl -> Array f -> Record r
   rSizeInFields :: Proxy f -> Proxy rl -> Proxy rlvar -> Int
-  rVarToFields :: Proxy rlvar -> Record var -> Array (CVar f Variable)
-  rFieldsToVar :: Proxy rlvar -> Array (CVar f Variable) -> Record var
+  rVarToFields :: Proxy rlvar -> Record var -> Array (FVar f)
+  rFieldsToVar :: Proxy rlvar -> Array (FVar f) -> Record var
 
 class RCheckedType :: RL.RowList Type -> Row Type -> Type -> Constraint
 class RCheckedType rlvar var c | rlvar -> var where
