@@ -13,11 +13,9 @@ node_modules/
 
 # Cargo/Rust
 target/
-Cargo.lock
 
 # Package manager files
 spago.lock
-package-lock.json
 yarn.lock
 
 # IDE files
