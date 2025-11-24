@@ -82,7 +82,7 @@ add_ { x: ax, y: ay } { x: bx, y: by } = do
     axVal <- readCVar ax
     bxVal <- readCVar bx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + bxVal)
+    pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + bxVal)
 
   assertSquare_ lambda (Snarky.add_ (Snarky.add_ cx ax) bx)
 
@@ -91,7 +91,7 @@ add_ { x: ax, y: ay } { x: bx, y: by } = do
     ayVal <- readCVar ay
     cxVal <- readCVar cx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ F $ (lambdaVal * (axVal - cxVal)) - ayVal
+    pure $ UnChecked $ (lambdaVal * (axVal - cxVal)) - ayVal
 
   addConstraint $ r1cs
     { left: lambda
@@ -116,30 +116,30 @@ double pg { x: ax, y: ay } = do
     xSquaredVal <- readCVar xSquared
     ayVal <- readCVar ay
     let { a } = curveParams pg
-    pure $ F $ (xSquaredVal + xSquaredVal + xSquaredVal + a) / (ayVal + ayVal)
+    pure $ (xSquaredVal + xSquaredVal + xSquaredVal + F a) / (ayVal + ayVal)
 
   UnChecked bx <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
-    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + axVal)
+    pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + axVal)
 
   UnChecked by <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
     ayVal <- readCVar ay
     bxVal <- readCVar bx
-    pure $ UnChecked $ F $ (lambdaVal * (axVal - bxVal)) - ayVal
+    pure $ UnChecked $ (lambdaVal * (axVal - bxVal)) - ayVal
 
   let { a } = curveParams pg
   let aConst = const_ a
 
   addConstraint $ r1cs
-    { left: scale_ (one + one :: f) lambda
+    { left: scale_ (fromInt 2) lambda
     , right: ay
-    , output: Snarky.add_ (scale_ (one + one + one :: f) xSquared) aConst -- 3*x² + a
+    , output: Snarky.add_ (scale_ (fromInt 3) xSquared) aConst
     }
 
-  assertSquare_ lambda (Snarky.add_ bx (scale_ (one + one :: f) ax))
+  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
 
   addConstraint $ r1cs
     { left: lambda
@@ -179,26 +179,26 @@ addComplete _p1 _p2 = do
       if _ then zero
       else
         read sameX >>=
-          if _ then F <$> recip (readCVar p2.y - readCVar p1.y)
+          if _ then recip (readCVar p2.y - readCVar p1.y)
           else zero
   x21Inv <- exists do
     read sameX >>=
       if _ then zero
-      else F <$> recip (readCVar p2.x - readCVar p1.x)
+      else recip (readCVar p2.x - readCVar p1.x)
   s <- exists $
     read sameX >>=
       if _ then do
-        x1Squared <- readCVar p1.x <#> \a -> a * a
+        x1 <- readCVar p1.x
         y1 <- readCVar p1.y
-        pure $ F $ (fromInt 3 * x1Squared) / (fromInt 2 * y1)
+        pure $ (fromInt 3 * x1 * x1) / (fromInt 2 * y1)
       else
-        F <$> (readCVar p2.y - readCVar p1.y) / (readCVar p2.x - readCVar p1.x)
-  x3 <- exists $
-    readCVar s >>= \sVal -> F <$>
-      pure (sVal * sVal) - (readCVar p1.x + readCVar p2.x)
-  y3 <- exists $
-    readCVar s >>= \sVal -> F <$>
-      pure sVal * (readCVar p1.x - readCVar x3) - readCVar p1.y
+        (readCVar p2.y - readCVar p1.y) / (readCVar p2.x - readCVar p1.x)
+  x3 <- exists do
+    sVal <- readCVar s
+    pure (sVal * sVal) - (readCVar p1.x + readCVar p2.x)
+  y3 <- exists do
+    sVal <- readCVar s
+    pure sVal * (readCVar p1.x - readCVar x3) - readCVar p1.y
   addConstraint $ ecAddComplete
     { p1, p2, sameX: coerce sameX, inf: coerce inf, infZ, x21Inv, s, p3: { x: x3, y: y3 } }
   pure { x: x3, y: y3, z: coerce (not_ inf) }

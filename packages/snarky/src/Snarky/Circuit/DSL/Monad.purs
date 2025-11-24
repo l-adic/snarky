@@ -62,11 +62,11 @@ runAsProver
   -> Either (EvaluationError f Variable) a
 runAsProver m e = un Identity $ runAsProverT m e
 
-readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m f
+readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m (F f)
 readCVar v = AsProverT do
   m <- ask
   let _lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var m
-  CVar.eval _lookup v
+  F <$> CVar.eval _lookup v
 
 read
   :: forall f var a m
@@ -218,7 +218,7 @@ inv_ = case _ of
     aInv <- exists do
       aVal <- readCVar a
       if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
-      else pure $ F $ if aVal == zero then zero else recip aVal
+      else pure $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 
@@ -237,7 +237,7 @@ mul_ a b =
       z <- exists do
         aVal <- readCVar a
         bVal <- readCVar b
-        pure $ F $ aVal * bVal
+        pure $ aVal * bVal
       addConstraint $ r1cs { left: a, right: b, output: z }
       pure z
 

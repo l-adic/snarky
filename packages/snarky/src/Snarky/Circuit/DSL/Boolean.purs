@@ -35,7 +35,7 @@ if_ b thenBranch elseBranch = case b of
     _, _ -> do
       r <- exists do
         bVal <- readCVar $ coerce b
-        F <$> if bVal == one then readCVar thenBranch else readCVar elseBranch
+        if bVal == one then readCVar thenBranch else readCVar elseBranch
       addConstraint $ r1cs
         { left: coerce b
         , right: thenBranch `CVar.sub_` elseBranch

@@ -9,7 +9,7 @@ import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (AffineExpression(..), CVar(..), reduce, const_)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, exists, readCVar)
-import Snarky.Circuit.Types (F(..), FVar)
+import Snarky.Circuit.Types (FVar)
 
 seal
   :: forall f c t m
@@ -24,6 +24,6 @@ seal x =
       Nothing, Cons (Tuple v coeff) Nil | coeff == one -> pure $ Var v
       Just c, Nil -> pure $ const_ c
       _, _ -> do
-        y <- exists (F <$> readCVar x)
+        y <- exists (readCVar x)
         assertEqual_ x y
         pure y
