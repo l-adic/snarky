@@ -14,10 +14,10 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul))
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.Constraint (r1cs)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
-import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), Variable(..), FVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), FVar)
 import Snarky.Curves.Class (fromBigInt)
 
 if_
@@ -35,7 +35,7 @@ if_ b thenBranch elseBranch = case b of
     _, _ -> do
       r <- exists do
         bVal <- readCVar $ coerce b
-        F <$> if bVal == one then readCVar thenBranch else readCVar elseBranch
+        if bVal == one then readCVar thenBranch else readCVar elseBranch
       addConstraint $ r1cs
         { left: coerce b
         , right: thenBranch `CVar.sub_` elseBranch

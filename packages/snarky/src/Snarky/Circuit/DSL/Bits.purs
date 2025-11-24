@@ -10,9 +10,9 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.Constraint (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
-import Snarky.Circuit.Types (Bool(..), BoolVar, Variable(..), FVar)
+import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generateA)

@@ -9,10 +9,11 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.Curves (assertOnCurve, assertEqual, if_, unsafeAdd, double)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, genAffinePoint)
-import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
@@ -42,7 +43,7 @@ spec pg =
     it "assertOnCurve Circuit is Valid" $
       let
         { a, b } = curveParams pg
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertOnCurve)
+        solver = makeSolver (Proxy @(R1CS f)) (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
@@ -66,12 +67,12 @@ spec pg =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints solver unsatisfied offCurve
-          circuitSpecPure' constraints solver satisfied_ onCurve
+          circuitSpecPure' constraints evalR1CSConstraint solver unsatisfied offCurve
+          circuitSpecPure' constraints evalR1CSConstraint solver satisfied_ onCurve
 
     it "assertEqual Circuit is Valid" $
       let
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertEqual)
+        solver = makeSolver (Proxy @(R1CS f)) (uncurry assertEqual)
         { constraints } =
           compilePure
             ( Proxy
@@ -92,14 +93,14 @@ spec pg =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints solver satisfied_ same
-          circuitSpecPure' constraints solver unsatisfied distinct
+          circuitSpecPure' constraints evalR1CSConstraint solver satisfied_ same
+          circuitSpecPure' constraints evalR1CSConstraint solver unsatisfied distinct
 
     it "negate Circuit is Valid" $
       let
         pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
         pureNegate { x, y } = { x, y: negate y }
-        solver = makeSolver (Proxy @(ConstraintSystem f)) Curves.negate
+        solver = makeSolver (Proxy @(R1CS f)) Curves.negate
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
@@ -107,13 +108,13 @@ spec pg =
             Curves.negate
         gen = genAffinePoint pg
       in
-        circuitSpecPure' constraints solver (satisfied pureNegate) gen
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied pureNegate) gen
 
     it "if_ Circuit is Valid" $
       let
         pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
+        solver = makeSolver (Proxy @(R1CS f)) (uncurry3 if_)
         { constraints } =
           compilePure
             (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
@@ -132,7 +133,7 @@ spec pg =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' constraints solver (satisfied pureIf) gen
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied pureIf) gen
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
@@ -145,7 +146,7 @@ spec pg =
           in
             { x: x3, y: y3 }
 
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry unsafeAdd)
+        solver = makeSolver (Proxy @(R1CS f)) (uncurry unsafeAdd)
         { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
@@ -164,7 +165,7 @@ spec pg =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' constraints solver (satisfied f) gen
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) gen
 
     it "double Circuit is Valid" $
       let
@@ -180,7 +181,7 @@ spec pg =
           in
             { x: x', y: y' }
 
-        solver = makeSolver (Proxy @(ConstraintSystem f)) (double pg)
+        solver = makeSolver (Proxy @(R1CS f)) (double pg)
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
@@ -190,4 +191,4 @@ spec pg =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' constraints solver (satisfied pureDouble) gen
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied pureDouble) gen

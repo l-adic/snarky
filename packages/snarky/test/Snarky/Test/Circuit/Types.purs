@@ -7,10 +7,9 @@ import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
-import Snarky.Circuit.Constraint.Class (class R1CSSystem)
-import Snarky.Circuit.CVar (CVar, const_)
-import Snarky.Circuit.TestUtils (ConstraintSystem)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked(..), Variable, check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
+import Snarky.Circuit.CVar (CVar, Variable, const_)
+import Snarky.Circuit.Constraint (R1CS, class R1CSSystem)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked(..), check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -19,8 +18,6 @@ import Test.QuickCheck.Gen (Gen)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy(..))
-
-type C f = ConstraintSystem f
 
 -- Custom datatype to test generic deriving
 data Point f = Point f f
@@ -77,7 +74,7 @@ instance
   varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
   fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
 
-instance (PrimeField f, R1CSSystem (CVar f Variable) c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+instance (PrimeField f, R1CSSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
   check = genericCheck
 
 -- Generic test suite for any CircuitType
@@ -233,7 +230,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(value :: f) ->
         let
           cvar = const_ value :: CVar f Variable
-          constraints = check @(CVar f Variable) @(ConstraintSystem f) cvar
+          constraints = check @(CVar f Variable) @(R1CS f) cvar
         in
           Array.null constraints === true
 
@@ -241,14 +238,14 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           cvar = const_ (zero @f) :: CVar f (Bool Variable)
-          constraints = check @(CVar f (Bool Variable)) @(ConstraintSystem f) cvar
+          constraints = check @(CVar f (Bool Variable)) @(R1CS f) cvar
         in
           Array.length constraints === 1
 
     it "Unit type has no constraints" $
       quickCheck' 10 \(_ :: Unit) ->
         let
-          constraints = check @Unit @(ConstraintSystem f) unit
+          constraints = check @Unit @(R1CS f) unit
         in
           Array.null constraints === true
 
@@ -256,7 +253,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(value :: f) ->
         let
           uncheckedVar = UnChecked (const_ value :: CVar f Variable)
-          constraints = check @(UnChecked (CVar f Variable)) @(ConstraintSystem f) uncheckedVar
+          constraints = check @(UnChecked (CVar f Variable)) @(R1CS f) uncheckedVar
         in
           Array.null constraints === true
 
@@ -264,7 +261,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           uncheckedVar = UnChecked (const_ (zero @f) :: CVar f (Bool Variable))
-          constraints = check @(UnChecked (CVar f (Bool Variable))) @(ConstraintSystem f) uncheckedVar
+          constraints = check @(UnChecked (CVar f (Bool Variable))) @(R1CS f) uncheckedVar
         in
           Array.null constraints === true
 
@@ -273,7 +270,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(fval :: f) ->
         let
           record = { a: const_ fval :: CVar f Variable, b: const_ (zero @f) :: CVar f (Bool Variable) }
-          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(R1CS f) record
         in
           Array.length constraints === 1 -- Only the Boolean should contribute a constraint
 
@@ -281,7 +278,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(x :: f) (y :: f) ->
         let
           point = Point (const_ x) (const_ y) :: Point (CVar f Variable)
-          constraints = check @(Point (CVar f Variable)) @(ConstraintSystem f) point
+          constraints = check @(Point (CVar f Variable)) @(R1CS f) point
         in
           Array.null constraints === true
 
@@ -289,6 +286,6 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           record = { flag1: const_ (zero @f) :: CVar f (Bool Variable), flag2: const_ (one @f) :: CVar f (Bool Variable) }
-          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(ConstraintSystem f) record
+          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(R1CS f) record
         in
           Array.length constraints === 2 -- Both Booleans should contribute constraints
