@@ -14,20 +14,17 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Snarky.Circuit.CVar (EvaluationError(..))
+import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.Compile (Solver, SolverT, Checker, runSolverT)
-import Snarky.Circuit.Constraint (R1CS)
-import Snarky.Circuit.Types (class CircuitType, Variable)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
 import Test.QuickCheck.Gen (Gen)
 
-type ConstraintSystem f = R1CS f Variable
-
 data Expectation f a
   = Satisfied a
   | Unsatisfied
-  | ProverError (EvaluationError f Variable -> Boolean)
+  | ProverError (EvaluationError f -> Boolean)
 
 instance Show a => Show (Expectation f a) where
   show = case _ of
@@ -59,9 +56,9 @@ makeCircuitSpec
   => { constraints :: Array c
      , solver :: SolverT f m a b
      , evalConstraint ::
-         (Variable -> Except (EvaluationError f Variable) f)
+         (Variable -> Except (EvaluationError f) f)
          -> c
-         -> Except (EvaluationError f Variable) Boolean
+         -> Except (EvaluationError f) Boolean
      , isValid :: a -> Expectation f b
      }
   -> a
@@ -74,7 +71,7 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
         _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple b assignments) ->
       let
-        checker :: Array c -> Except (EvaluationError f Variable) Boolean
+        checker :: Array c -> Except (EvaluationError f) Boolean
         checker =
           let
             lookup v = case Map.lookup v assignments of

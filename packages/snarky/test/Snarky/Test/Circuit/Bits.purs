@@ -11,9 +11,9 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint (evalR1CSConstraint)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
-import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
+import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
@@ -45,7 +45,7 @@ smallFieldElem bitCount = do
 
 packUnpackCircuit
   :: forall t m n f
-   . CircuitM f (ConstraintSystem f) t m
+   . CircuitM f (R1CS f) t m
   => FieldSizeInBits f n
   => FVar f
   -> Snarky t m (FVar f)
@@ -67,7 +67,7 @@ spec _ = describe "Bits Circuit Specs" do
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) unpack_
+      solver = makeSolver (Proxy @(R1CS f)) unpack_
       { constraints } =
         compilePure
           (Proxy @(F f))
@@ -79,7 +79,7 @@ spec _ = describe "Bits Circuit Specs" do
   it "pack/unpack round trip is Valid" $
     let
       f = identity
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (packUnpackCircuit)
+      solver = makeSolver (Proxy @(R1CS f)) (packUnpackCircuit)
       { constraints } =
         compilePure
           (Proxy @(F f))

@@ -3,36 +3,36 @@ module Snarky.Circuit.Curves.Constraint where
 import Prelude
 
 import Data.Foldable (and)
-import Snarky.Circuit.CVar (CVar)
+import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Curves.Types (AffinePoint)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 
-type AddComplete i =
-  { p1 :: AffinePoint i
-  , p2 :: AffinePoint i
-  , p3 :: AffinePoint i
-  , inf :: i
-  , sameX :: i
-  , s :: i
-  , infZ :: i
-  , x21Inv :: i
+type AddComplete f =
+  { p1 :: AffinePoint (CVar f Variable)
+  , p2 :: AffinePoint (CVar f Variable)
+  , p3 :: AffinePoint (CVar f Variable)
+  , inf :: (CVar f Variable)
+  , sameX :: (CVar f Variable)
+  , s :: (CVar f Variable)
+  , infZ :: (CVar f Variable)
+  , x21Inv :: (CVar f Variable)
   }
 
-data ECConstraint f i = ECAddComplete (AddComplete (CVar f i))
+data ECConstraint f = ECAddComplete (AddComplete f)
 
-class ECSystem i c | c -> i where
-  ecAddComplete :: AddComplete i -> c
+class ECSystem f c | c -> f where
+  ecAddComplete :: AddComplete f -> c
 
-instance ECSystem (CVar f i) (ECConstraint f i) where
+instance ECSystem f (ECConstraint f) where
   ecAddComplete = ECAddComplete
 
 evalECConstraint
-  :: forall f i m
+  :: forall f m
    . PrimeField f
   => Monad m
-  => (i -> m f)
-  -> ECConstraint f i
+  => (Variable -> m f)
+  -> ECConstraint f
   -> m Boolean
 evalECConstraint lookup gate = do
   case gate of

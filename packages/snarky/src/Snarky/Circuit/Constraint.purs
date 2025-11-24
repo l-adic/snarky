@@ -3,42 +3,38 @@ module Snarky.Circuit.Constraint
   , evalR1CSConstraint
   , R1CSCircuit(..)
   , evalR1CSCircuit
+  , class R1CSSystem
+  , r1cs
+  , boolean
   ) where
 
 import Prelude
 
 import Data.Array (foldM)
-import Data.Bifunctor (class Bifunctor)
 import Data.Generic.Rep (class Generic)
 import Data.Monoid.Conj (Conj(..))
 import Data.Newtype (un)
-import Data.Traversable (class Foldable, class Traversable)
-import Snarky.Circuit.CVar (CVar)
+import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Class (class R1CSSystem)
 import Snarky.Curves.Class (class PrimeField)
 
-data R1CS f i
+data R1CS f
   = R1CS
-      { left :: CVar f i
-      , right :: CVar f i
-      , output :: CVar f i
+      { left :: CVar f Variable
+      , right :: CVar f Variable
+      , output :: CVar f Variable
       }
-  | Boolean (CVar f i)
+  | Boolean (CVar f Variable)
 
-derive instance Functor (R1CS f)
-derive instance Foldable (R1CS f)
-derive instance Traversable (R1CS f)
-derive instance Bifunctor R1CS
-
-derive instance Generic (R1CS f i) _
+derive instance Functor R1CS
+derive instance Generic (R1CS f) _
 
 evalR1CSConstraint
-  :: forall f i m
+  :: forall f m
    . PrimeField f
   => Monad m
-  => (i -> m f)
-  -> R1CS f i
+  => (Variable -> m f)
+  -> R1CS f
   -> m Boolean
 evalR1CSConstraint lookup gate = do
   case gate of
@@ -51,14 +47,14 @@ evalR1CSConstraint lookup gate = do
       inp <- CVar.eval lookup i
       pure $ inp == zero || inp == one
 
-newtype R1CSCircuit f i = R1CSCircuit (Array (R1CS f i))
+newtype R1CSCircuit f = R1CSCircuit (Array (R1CS f))
 
 evalR1CSCircuit
-  :: forall i f m
+  :: forall f m
    . PrimeField f
   => Monad m
-  => (i -> m f)
-  -> R1CSCircuit f i
+  => (Variable -> m f)
+  -> R1CSCircuit f
   -> m Boolean
 evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
   foldM
@@ -69,6 +65,10 @@ evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
     mempty
     gates
 
-instance R1CSSystem (CVar f i) (R1CS f i) where
+class R1CSSystem f c | c -> f where
+  r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
+  boolean :: CVar f Variable -> c
+
+instance R1CSSystem f (R1CS f) where
   r1cs = R1CS
   boolean = Boolean

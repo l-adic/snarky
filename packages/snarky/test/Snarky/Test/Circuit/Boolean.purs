@@ -10,9 +10,9 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.Constraint (evalR1CSConstraint)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.DSL (F, all_, and_, any_, if_, not_, or_, xor_)
-import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure, circuitSpecPure', satisfied)
+import Snarky.Circuit.TestUtils (circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, unVector)
 import Snarky.Data.Vector as Vector
@@ -28,7 +28,7 @@ spec _ = describe "Boolean Circuit Specs" do
 
       f :: Boolean -> Boolean
       f = not
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (pure <<< not_)
+      solver = makeSolver (Proxy @(R1CS f)) (pure <<< not_)
       { constraints } = un Identity $
         compile
           (Proxy @Boolean)
@@ -41,7 +41,7 @@ spec _ = describe "Boolean Circuit Specs" do
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (&&)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry and_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry and_)
       { constraints } = un Identity $
         compile
           (Proxy @(Tuple Boolean Boolean))
@@ -54,7 +54,7 @@ spec _ = describe "Boolean Circuit Specs" do
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (||)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry or_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry or_)
       { constraints } = un Identity $
         compile
           (Proxy @(Tuple Boolean Boolean))
@@ -67,7 +67,7 @@ spec _ = describe "Boolean Circuit Specs" do
     let
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry xor_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry xor_)
       { constraints } = un Identity $
         compile
           (Proxy @(Tuple Boolean Boolean))
@@ -81,7 +81,7 @@ spec _ = describe "Boolean Circuit Specs" do
       f :: Tuple3 Boolean (F f) (F f) -> F f
       f = uncurry3 \b t e ->
         if b then t else e
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry3 if_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry3 if_)
       { constraints } = un Identity $
         compile
           (Proxy @(Tuple3 Boolean (F f) (F f)))
@@ -94,7 +94,7 @@ spec _ = describe "Boolean Circuit Specs" do
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Conj <<< foldMap Conj <<< unVector
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (all_ <<< unVector)
+      solver = makeSolver (Proxy @(R1CS f)) (all_ <<< unVector)
       { constraints } = un Identity $
         compile
           (Proxy @(Vector 10 Boolean))
@@ -107,7 +107,7 @@ spec _ = describe "Boolean Circuit Specs" do
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Disj <<< foldMap Disj <<< unVector
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (any_ <<< unVector)
+      solver = makeSolver (Proxy @(R1CS f)) (any_ <<< unVector)
       { constraints } = un Identity $
         compile
           (Proxy @(Vector 10 Boolean))

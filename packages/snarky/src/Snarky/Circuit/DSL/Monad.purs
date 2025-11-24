@@ -37,20 +37,20 @@ import Data.Newtype (un)
 import Data.Traversable (traverse)
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), add_, const_, sub_)
+import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Class (class R1CSSystem, r1cs)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, Variable, BoolVar, fieldsToValue, varToFields)
+import Snarky.Circuit.Constraint (class R1CSSystem, r1cs)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, BoolVar, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 
-newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError f Variable) (ReaderT (Map Variable f) m) a)
+newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError f) (ReaderT (Map Variable f) m) a)
 
 runAsProverT
   :: forall f a m
    . Monad m
   => AsProverT f m a
   -> Map Variable f
-  -> m (Either (EvaluationError f Variable) a)
+  -> m (Either (EvaluationError f) a)
 runAsProverT (AsProverT m) env = runReaderT (runExceptT m) env
 
 type AsProver f = AsProverT f Identity
@@ -59,7 +59,7 @@ runAsProver
   :: forall f a
    . AsProver f a
   -> Map Variable f
-  -> Either (EvaluationError f Variable) a
+  -> Either (EvaluationError f) a
 runAsProver m e = un Identity $ runAsProverT m e
 
 readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m (F f)
@@ -141,11 +141,11 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
 runSnarky :: forall t m a. Snarky t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem (FVar f) c) <= CircuitM f c t m | t -> c f, c -> f where
+class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem f c) <= CircuitM f c t m | t -> c f, c -> f where
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
   addConstraint :: c -> Snarky t m Unit
 
-throwAsProver :: forall f m a. Monad m => EvaluationError f Variable -> AsProverT f m a
+throwAsProver :: forall f m a. Monad m => EvaluationError f -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
 
 instance (CircuitM f c t m) => Semigroup (Snarky t m (FVar f)) where

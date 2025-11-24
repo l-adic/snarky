@@ -12,13 +12,11 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar)
-import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.Constraint (r1cs)
 import Snarky.Circuit.Curves.Constraint (class ECSystem, ecAddComplete)
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, Point)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, not_, pow_, read, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Circuit.Types (Variable(..))
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams, fromInt)
 import Type.Proxy (Proxy)
 
@@ -162,7 +160,7 @@ seal { x, y } = do
 addComplete
   :: forall f c t m
    . CircuitM f c t m
-  => ECSystem (CVar f Variable) c
+  => ECSystem f c
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky t m (Point (FVar f))

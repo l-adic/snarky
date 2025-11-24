@@ -4,9 +4,9 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint (evalR1CSConstraint)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
-import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
+import Snarky.Circuit.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (suchThat)
@@ -18,7 +18,7 @@ spec _ = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(ConstraintSystem f)) assertNonZero_
+      solver = makeSolver (Proxy @(R1CS f)) assertNonZero_
       { constraints } =
         compilePure
           (Proxy @(F f))
@@ -34,7 +34,7 @@ spec _ = describe "Assertion Circuit Specs" do
 
   it "assertEqual Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertEqual_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry assertEqual_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
@@ -52,7 +52,7 @@ spec _ = describe "Assertion Circuit Specs" do
 
   it "assertNotEqual Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertNotEqual_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry assertNotEqual_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
@@ -70,7 +70,7 @@ spec _ = describe "Assertion Circuit Specs" do
 
   it "assertSquare Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(ConstraintSystem f)) (uncurry assertSquare_)
+      solver = makeSolver (Proxy @(R1CS f)) (uncurry assertSquare_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))

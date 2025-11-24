@@ -19,22 +19,22 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.CVar (CVar(Var))
-import Snarky.Circuit.Constraint.Class (class R1CSSystem)
+import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
+import Snarky.Circuit.Constraint (class R1CSSystem)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), addConstraint, fresh)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Variable(..), FVar, check, fieldsToVar, sizeInFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToVar, sizeInFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type CircuitBuilderState c =
-  { nextVar :: Int
+  { nextVar :: Variable
   , constraints :: Array c
   , publicInputs :: Array Variable
   }
 
 emptyCircuitBuilderState :: forall c. CircuitBuilderState c
 emptyCircuitBuilderState =
-  { nextVar: 0
+  { nextVar: v0
   , constraints: mempty
   , publicInputs: mempty
   }
@@ -62,10 +62,10 @@ runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 instance Monad m => MonadFresh (CircuitBuilderT c m) where
   fresh = CircuitBuilderT do
     { nextVar } <- get
-    modify_ _ { nextVar = nextVar + 1 }
-    pure $ Variable nextVar
+    modify_ _ { nextVar = incrementVariable nextVar }
+    pure nextVar
 
-instance (Monad m, PrimeField f, R1CSSystem (FVar f) c) => CircuitM f c (CircuitBuilderT c) m where
+instance (Monad m, PrimeField f, R1CSSystem f c) => CircuitM f c (CircuitBuilderT c) m where
   addConstraint c = Snarky $ CircuitBuilderT $ modify_ \s ->
     s { constraints = s.constraints `snoc` c }
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky (CircuitBuilderT c) m var

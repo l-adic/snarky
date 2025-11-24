@@ -1,5 +1,8 @@
 module Snarky.Circuit.CVar
-  ( CVar(..)
+  ( Variable
+  , incrementVariable
+  , v0
+  , CVar(..)
   , add_
   , const_
   , sub_
@@ -28,6 +31,19 @@ import Data.Tuple (Tuple(..))
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (frequency, sized)
+
+newtype Variable = Variable Int
+
+derive newtype instance Eq Variable
+derive newtype instance Show Variable
+derive newtype instance Ord Variable
+derive newtype instance Arbitrary Variable
+
+incrementVariable :: Variable -> Variable
+incrementVariable (Variable n) = Variable (n + 1)
+
+v0 :: Variable
+v0 = Variable zero
 
 -- An CVar is an expression that can be reduced to
 -- c + \sum a_i * x_i. This is the most generic formulation.
@@ -95,24 +111,24 @@ const_ = Const
 negate_ :: forall f i. PrimeField f => CVar f i -> CVar f i
 negate_ = scale_ (negate one)
 
-data EvaluationError f i
-  = MissingVariable i
-  | DivisionByZero { numerator :: CVar f i, denominator :: CVar f i }
+data EvaluationError f
+  = MissingVariable Variable
+  | DivisionByZero { numerator :: CVar f Variable, denominator :: CVar f Variable }
 
-derive instance (Eq f, Eq i) => Eq (EvaluationError f i)
-derive instance Generic (EvaluationError f i) _
+derive instance Eq f => Eq (EvaluationError f)
+derive instance Generic (EvaluationError f) _
 
-instance (Show f, Show i) => Show (EvaluationError f i) where
+instance Show f => Show (EvaluationError f) where
   show x = genericShow x
 
 -- Given a way of looking up variable assignmetns 'i -> vars -> Maybe f', 
 -- recursively evaluate the CVar
 eval
-  :: forall f i m
+  :: forall f m
    . PrimeField f
   => Monad m
-  => (i -> m f)
-  -> CVar f i
+  => (Variable -> m f)
+  -> CVar f Variable
   -> m f
 eval lookup c = case c of
   Const f -> pure f

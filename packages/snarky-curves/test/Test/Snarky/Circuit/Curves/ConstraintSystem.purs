@@ -2,21 +2,20 @@ module Test.Snarky.Circuit.Curves.ConstraintSystem where
 
 import Prelude
 
-import Snarky.Circuit.Constraint (R1CS(..), evalR1CSConstraint)
-import Snarky.Circuit.Constraint.Class (class R1CSSystem)
+import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.Constraint (class R1CSSystem, R1CS(..), evalR1CSConstraint)
 import Snarky.Circuit.Curves.Constraint (class ECSystem, ECConstraint(..), evalECConstraint)
-import Snarky.Circuit.Types (FVar, Variable)
 import Snarky.Curves.Class (class PrimeField)
 
 data TestConstraintSystem f
-  = CSR1CS (R1CS f Variable)
-  | CSECS (ECConstraint f Variable)
+  = CSR1CS (R1CS f)
+  | CSECS (ECConstraint f)
 
-instance R1CSSystem (FVar f) (TestConstraintSystem f) where
+instance R1CSSystem f (TestConstraintSystem f) where
   r1cs = CSR1CS <<< R1CS
   boolean = CSR1CS <<< Boolean
 
-instance ECSystem (FVar f) (TestConstraintSystem f) where
+instance ECSystem f (TestConstraintSystem f) where
   ecAddComplete = CSECS <<< ECAddComplete
 
 evalTestConstraint
