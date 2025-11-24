@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
@@ -11,7 +12,9 @@ import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (addComplete, add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, Point, genAffinePoint)
+import Snarky.Circuit.Curves.Types (CurveParams, Point, AffinePoint, genAffinePoint)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
+import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
@@ -187,13 +190,28 @@ spec pg =
 
     it "addComplete Circuit is Valid" $
       let
-        f = uncurry ecAddComplete
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry addComplete)
+        f = uncurry (ecAddComplete pg)
+        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry circuit)
+
+        -- if the result is at infinity, ecAddComplete actually produces garbage 
+        -- for the x and y values, they should be 0, 1 respectively
+        circuit
+          :: forall t
+           . CircuitM f (TestConstraintSystem f) t Identity
+          => AffinePoint (FVar f)
+          -> AffinePoint (FVar f)
+          -> Snarky t Identity (Point (FVar f))
+        circuit p1 p2 = do
+          { isInfinity, p } <- addComplete p1 p2
+          x <- Snarky.if_ isInfinity (const_ zero) p.x
+          y <- Snarky.if_ isInfinity (const_ one) p.y
+          z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
+          pure { x, y, z }
         { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(Point (F f)))
-            (uncurry addComplete)
+            (uncurry circuit)
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2
@@ -206,8 +224,15 @@ spec pg =
             in
               x1 /= x2 || y1 /= negate y2
           pure $ Tuple p1 p2
+        genInverse = do
+          p1 <- genAffinePoint pg
+          let p2 = p1 { y = -p1.y }
+          pure $ Tuple p1 p2
+
       in
-        circuitSpecPure' constraints evalTestConstraint solver (satisfied f) gen
+        do
+          circuitSpecPure' constraints evalTestConstraint solver (satisfied f) gen
+          circuitSpecPure' constraints evalTestConstraint solver (satisfied f) genInverse
 
 ecAdd
   :: forall f
@@ -225,13 +250,14 @@ ecAdd { x: x1, y: y1 } { x: x2, y: y2 } =
     { x: x3, y: y3 }
 
 ecAddComplete
-  :: forall f
-   . PrimeField f
-  => AffinePoint (F f)
+  :: forall f g
+   . WeierstrassCurve f g
+  => Proxy g
+  -> AffinePoint (F f)
   -> AffinePoint (F f)
   -> Point (F f)
-ecAddComplete p1 p2 =
-  if p1.x == p2.x && p1.y == negate p2.y then { x: zero, y: zero, z: one }
+ecAddComplete _ p1 p2 =
+  if p1.x == p2.x && p1.y == negate p2.y then { x: zero, y: one, z: zero }
   else
     let
       { x, y } = unsafePartial $ ecAdd p1 p2
