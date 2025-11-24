@@ -11,6 +11,7 @@ module Snarky.Curves.Class
   , curveParams
   , toAffine
   , class FieldSizeInBits
+  , fromInt
   ) where
 
 import Prelude
@@ -18,6 +19,7 @@ import Prelude
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
 import JS.BigInt (BigInt)
+import JS.BigInt as JS.BigInt
 import Type.Proxy (Proxy)
 
 class PrimeField :: Type -> Constraint
@@ -26,6 +28,9 @@ class (Eq f, Show f, Field f) <= PrimeField f where
   toBigInt :: f -> BigInt
   modulus :: BigInt
   pow :: f -> BigInt -> f
+
+fromInt :: forall f. PrimeField f => Int -> f
+fromInt x = fromBigInt $ JS.BigInt.fromInt x
 
 class FrModule :: Type -> Type -> Constraint
 class (PrimeField f, Monoid g) <= FrModule f g | g -> f where

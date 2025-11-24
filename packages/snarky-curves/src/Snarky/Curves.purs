@@ -3,17 +3,21 @@ module Snarky.Circuit.Curves
   , assertEqual
   , negate
   , if_
-  , unsafeAdd
+  , add_
   , double
+  , addComplete
   ) where
 
 import Prelude
 
+import Control.Apply (lift2)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.Constraint (r1cs)
+import Snarky.Circuit.Curves.Constraint (class ECSystem, ecAddComplete)
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, add_, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, readCVar, scale_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, read, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams, fromInt)
 import Type.Proxy (Proxy)
 
 assertOnCurve
@@ -62,14 +66,14 @@ if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
 -- bad things can happen, i.e.
 --   1. If the points are equal 
 --   2. If the points are mutual inverses
-unsafeAdd
+add_
   :: forall f c t m
    . Partial
   => CircuitM f c t m
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky t m (AffinePoint (FVar f))
-unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
+add_ { x: ax, y: ay } { x: bx, y: by } = do
   lambda <- div_ (sub_ by ay) (sub_ bx ax)
 
   UnChecked cx <- exists do
@@ -78,7 +82,7 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
     lambdaVal <- readCVar lambda
     pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + bxVal)
 
-  assertSquare_ lambda (add_ (add_ cx ax) bx)
+  assertSquare_ lambda (Snarky.add_ (Snarky.add_ cx ax) bx)
 
   UnChecked cy <- exists do
     axVal <- readCVar ax
@@ -90,7 +94,7 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
   addConstraint $ r1cs
     { left: lambda
     , right: sub_ ax cx
-    , output: add_ cy ay
+    , output: Snarky.add_ cy ay
     }
 
   pure { x: cx, y: cy }
@@ -128,17 +132,80 @@ double pg { x: ax, y: ay } = do
   let aConst = const_ a
 
   addConstraint $ r1cs
-    { left: scale_ (one + one :: f) lambda
+    { left: scale_ (fromInt 2) lambda
     , right: ay
-    , output: add_ (scale_ (one + one + one :: f) xSquared) aConst -- 3*x² + a
+    , output: Snarky.add_ (scale_ (fromInt 3) xSquared) aConst
     }
 
-  assertSquare_ lambda (add_ bx (scale_ (one + one :: f) ax))
+  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
 
   addConstraint $ r1cs
     { left: lambda
     , right: sub_ ax bx
-    , output: add_ by ay
+    , output: Snarky.add_ by ay
     }
 
   pure { x: bx, y: by }
+
+seal
+  :: forall f c t m
+   . CircuitM f c t m
+  => AffinePoint (FVar f)
+  -> Snarky t m (AffinePoint (FVar f))
+seal { x, y } = do
+  x' <- Snarky.seal x
+  y' <- Snarky.seal y
+  pure { x: x', y: y' }
+
+addComplete
+  :: forall f c t m
+   . CircuitM f c t m
+  => ECSystem f c
+  => AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
+  -> Snarky t m
+       { p :: AffinePoint (FVar f)
+       , isInfinity :: BoolVar f
+       }
+addComplete _p1 _p2 = do
+  p1 <- seal _p1
+  p2 <- seal _p2
+  sameX <- exists $
+    lift2 eq (readCVar p1.x) (readCVar p2.x)
+  inf <- exists
+    let
+      sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
+    in
+      read sameX && not sameY
+  infZ <- exists $
+    lift2 eq (readCVar p1.y) (readCVar p2.y) >>=
+      if _ then zero
+      else
+        read sameX >>=
+          if _ then recip (readCVar p2.y - readCVar p1.y)
+          else zero
+  x21Inv <- exists $
+    read sameX >>=
+      if _ then zero
+      else recip (readCVar p2.x - readCVar p1.x)
+  s <- exists $
+    read sameX >>=
+      if _ then do
+        x1 <- readCVar p1.x
+        y1 <- readCVar p1.y
+        pure $ (fromInt 3 * x1 * x1) / (fromInt 2 * y1)
+      else
+        (readCVar p2.y - readCVar p1.y) / (readCVar p2.x - readCVar p1.x)
+  x3 <- exists
+    let
+      sVal = readCVar s
+    in
+      sVal * sVal - (readCVar p1.x + readCVar p2.x)
+  y3 <- exists $
+    readCVar s * (readCVar p1.x - readCVar x3) - readCVar p1.y
+  addConstraint $ ecAddComplete
+    { p1, p2, sameX: coerce sameX, inf: coerce inf, infZ, x21Inv, s, p3: { x: x3, y: y3 } }
+  pure
+    { p: { x: x3, y: y3 }
+    , isInfinity: inf
+    }
