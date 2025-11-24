@@ -9,7 +9,7 @@ module Snarky.Circuit.Curves
 
 import Prelude
 
-import Snarky.Circuit.Constraint.Class (r1cs)
+import Snarky.Circuit.Constraint (r1cs)
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, add_, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
@@ -76,7 +76,7 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
     axVal <- readCVar ax
     bxVal <- readCVar bx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + bxVal)
+    pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + bxVal)
 
   assertSquare_ lambda (add_ (add_ cx ax) bx)
 
@@ -85,7 +85,7 @@ unsafeAdd { x: ax, y: ay } { x: bx, y: by } = do
     ayVal <- readCVar ay
     cxVal <- readCVar cx
     lambdaVal <- readCVar lambda
-    pure $ UnChecked $ F $ (lambdaVal * (axVal - cxVal)) - ayVal
+    pure $ UnChecked $ (lambdaVal * (axVal - cxVal)) - ayVal
 
   addConstraint $ r1cs
     { left: lambda
@@ -110,19 +110,19 @@ double pg { x: ax, y: ay } = do
     xSquaredVal <- readCVar xSquared
     ayVal <- readCVar ay
     let { a } = curveParams pg
-    pure $ F $ (xSquaredVal + xSquaredVal + xSquaredVal + a) / (ayVal + ayVal)
+    pure $ (xSquaredVal + xSquaredVal + xSquaredVal + F a) / (ayVal + ayVal)
 
   UnChecked bx <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
-    pure $ UnChecked $ F $ (lambdaVal * lambdaVal) - (axVal + axVal)
+    pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + axVal)
 
   UnChecked by <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
     ayVal <- readCVar ay
     bxVal <- readCVar bx
-    pure $ UnChecked $ F $ (lambdaVal * (axVal - bxVal)) - ayVal
+    pure $ UnChecked $ (lambdaVal * (axVal - bxVal)) - ayVal
 
   let { a } = curveParams pg
   let aConst = const_ a

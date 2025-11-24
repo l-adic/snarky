@@ -1,6 +1,5 @@
 module Snarky.Circuit.Types
-  ( Variable(..)
-  , F(..)
+  ( F(..)
   , Bool(..)
   , UnChecked(..)
   , FVar
@@ -56,19 +55,12 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar)
-import Snarky.Circuit.Constraint.Class (class R1CSSystem, boolean)
-import Snarky.Curves.Class (class PrimeField)
+import Snarky.Circuit.CVar (CVar, Variable)
+import Snarky.Circuit.Constraint (class R1CSSystem, boolean)
+import Snarky.Curves.Class (class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
-
-newtype Variable = Variable Int
-
-derive newtype instance Eq Variable
-derive newtype instance Show Variable
-derive newtype instance Ord Variable
-derive newtype instance Arbitrary Variable
 
 newtype Bool a = Bool a
 
@@ -87,8 +79,16 @@ derive newtype instance Semiring f => Semiring (F f)
 derive newtype instance Ring f => Ring (F f)
 derive newtype instance EuclideanRing f => EuclideanRing (F f)
 derive newtype instance CommutativeRing f => CommutativeRing (F f)
+derive newtype instance DivisionRing f => DivisionRing (F f)
+
 derive instance Newtype (F f) _
 derive instance Generic (F f) _
+
+instance PrimeField f => PrimeField (F f) where
+  fromBigInt x = F $ fromBigInt x
+  toBigInt (F x) = toBigInt x
+  modulus = modulus @f
+  pow (F f) n = F $ pow @f f n
 
 newtype UnChecked a = UnChecked a
 
@@ -145,7 +145,7 @@ instance (PrimeField f) => CircuitType f Boolean (BoolVar f) where
   fieldsToVar x = coerce $ unsafePartial $ fromJust $ Array.head x
   varToFields = Array.singleton <<< coerce
 
-instance (PrimeField f, R1CSSystem (FVar f) c) => CheckedType (BoolVar f) c where
+instance (PrimeField f, R1CSSystem f c) => CheckedType (BoolVar f) c where
   check var = Array.singleton $ boolean (coerce var :: FVar f)
 
 instance

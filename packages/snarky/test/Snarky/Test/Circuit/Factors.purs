@@ -7,8 +7,9 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
+import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, F, all_, assert_, const_, equals_, exists, mul_, neq_, read, Snarky)
-import Snarky.Circuit.TestUtils (ConstraintSystem, satisfied_, circuitSpec')
+import Snarky.Circuit.TestUtils (satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
@@ -21,7 +22,7 @@ class Monad m <= FactorM f m where
 factorsCircuit
   :: forall t m f
    . FactorM f m
-  => CircuitM f (ConstraintSystem f) t m
+  => CircuitM f (R1CS f) t m
   => FVar f
   -> Snarky t m Unit
 factorsCircuit n = do
@@ -53,8 +54,8 @@ spec _ = describe "Factors Specs" do
         (Proxy @(F f))
         (Proxy @Unit)
         factorsCircuit
-    let solver = makeSolver (Proxy @(ConstraintSystem f)) factorsCircuit
+    let solver = makeSolver (Proxy @(R1CS f)) factorsCircuit
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne constraints solver satisfied_ gen
+    circuitSpec' randomSampleOne constraints evalR1CSConstraint solver satisfied_ gen
