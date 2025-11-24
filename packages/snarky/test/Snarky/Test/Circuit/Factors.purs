@@ -7,6 +7,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Circuit.Compile (compile, makeSolver)
+import Snarky.Circuit.Constraint (evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, F, all_, assert_, const_, equals_, exists, mul_, neq_, read, Snarky)
 import Snarky.Circuit.TestUtils (ConstraintSystem, satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
@@ -57,4 +58,4 @@ spec _ = describe "Factors Specs" do
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne constraints solver satisfied_ gen
+    circuitSpec' randomSampleOne constraints evalR1CSConstraint solver satisfied_ gen

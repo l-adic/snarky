@@ -10,6 +10,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
 import Snarky.Circuit.Compile (compile, makeSolver)
+import Snarky.Circuit.Constraint (evalR1CSConstraint)
 import Snarky.Circuit.DSL (F, all_, and_, any_, if_, not_, or_, xor_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class PrimeField)
@@ -34,7 +35,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (pure <<< not_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "and Circuit is Valid" $
     let
@@ -47,7 +48,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (uncurry and_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "or Circuit is Valid" $
     let
@@ -60,7 +61,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (uncurry or_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "xor Circuit is Valid" $
     let
@@ -73,7 +74,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (uncurry xor_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "if Circuit is Valid" $
     let
@@ -87,7 +88,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @(F f))
           (uncurry3 if_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "all Circuit is Valid" $
     let
@@ -100,7 +101,7 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (all_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
 
   it "any Circuit is Valid" $
     let
@@ -113,4 +114,4 @@ spec _ = describe "Boolean Circuit Specs" do
           (Proxy @Boolean)
           (any_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)

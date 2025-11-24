@@ -28,6 +28,7 @@ import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
 import Data.Either (Either)
+import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
@@ -89,6 +90,39 @@ derive newtype instance Monad m => Monad (AsProverT f m)
 
 instance MonadTrans (AsProverT f) where
   lift m = AsProverT $ lift $ lift m
+
+instance (Monad m, Semigroup a) => Semigroup (AsProverT f m a) where
+  append a b = lift2 (<>) a b
+
+instance (Monad m, Monoid a) => Monoid (AsProverT f m a) where
+  mempty = pure mempty
+
+instance (Monad m, Semiring a) => Semiring (AsProverT f m a) where
+  one = pure one
+  zero = pure zero
+  add = lift2 add
+  mul = lift2 mul
+
+instance (Monad m, Ring a) => Ring (AsProverT f m a) where
+  sub = lift2 sub
+
+instance (Monad m, CommutativeRing a) => CommutativeRing (AsProverT f m a)
+
+instance (Monad m, DivisionRing a) => DivisionRing (AsProverT f m a) where
+  recip = map recip
+
+instance (Monad m, EuclideanRing a) => EuclideanRing (AsProverT f m a) where
+  degree _ = 1
+  div = lift2 div
+  mod _ _ = pure zero
+
+instance (Monad m) => HeytingAlgebra (AsProverT f m Boolean) where
+  tt = pure tt
+  ff = pure ff
+  not = map not
+  conj = lift2 conj
+  disj = lift2 disj
+  implies = lift2 implies
 
 class Monad m <= MonadFresh m where
   fresh :: m Variable

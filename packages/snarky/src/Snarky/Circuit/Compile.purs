@@ -5,7 +5,6 @@ module Snarky.Circuit.Compile
   , compilePure
   , compile
   , makeSolver
-  , makeChecker
   , runSolver
   , runSolverT
   ) where
@@ -17,7 +16,7 @@ import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
 import Data.Array (zip)
 import Data.Array as Array
 import Data.Either (Either(..), either)
-import Data.Foldable (foldM, for_)
+import Data.Foldable (for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Newtype (un)
@@ -117,7 +116,7 @@ type Solver f a b = SolverT f Identity a b
 runSolver :: forall f a b. Solver f a b -> a -> Either (EvaluationError f Variable) (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
-type Checker f c = Array c -> Except ((EvaluationError f Variable)) Boolean
-
-makeChecker :: forall f c. (c -> Except (EvaluationError f Variable) Boolean) -> Checker f c
-makeChecker f = foldM (\acc c -> f c <#> \a -> acc && a) true
+type Checker f c =
+  (Variable -> Except (EvaluationError f Variable) f)
+  -> c
+  -> Except (EvaluationError f Variable) Boolean

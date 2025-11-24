@@ -11,6 +11,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Constraint (evalR1CSConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
@@ -73,7 +74,7 @@ spec _ = describe "Bits Circuit Specs" do
           (Proxy @(Vector n Boolean))
           unpack_
     in
-      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
@@ -85,4 +86,4 @@ spec _ = describe "Bits Circuit Specs" do
           (Proxy @(F f))
           (packUnpackCircuit)
     in
-      circuitSpecPure' constraints solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

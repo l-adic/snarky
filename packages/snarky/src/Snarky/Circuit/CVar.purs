@@ -7,7 +7,7 @@ module Snarky.Circuit.CVar
   , scale_
   , eval
   , reduce
-  , AffineExpression
+  , AffineExpression(..)
   , evalAffineExpression
   , EvaluationError(..)
   ) where
@@ -21,6 +21,7 @@ import Data.FoldableWithIndex (foldWithIndexM)
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map)
 import Data.Map as Map
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..))
@@ -119,7 +120,7 @@ eval lookup c = case c of
   Add l r -> add <$> eval lookup l <*> eval lookup r
   ScalarMul scalar expr -> mul scalar <$> eval lookup expr
 
-newtype AffineExpression f i = AffineExpression { constant :: f, terms :: Map i f }
+newtype AffineExpression f i = AffineExpression { constant :: Maybe f, terms :: Map i f }
 
 -- Reduce the affine circuit to the unique form \sum_{i} a_i * x_i + c,
 -- which we represent as {constant: c, terms: Map [(x_i, a_i)]}
@@ -132,7 +133,7 @@ reduce
   -> AffineExpression f i
 reduce c = case c of
   Var i -> AffineExpression
-    { constant: zero
+    { constant: Nothing
     , terms: Map.singleton i one
     }
   Add l r -> AffineExpression
@@ -146,8 +147,8 @@ reduce c = case c of
     let
       AffineExpression { constant, terms } = reduce e
     in
-      AffineExpression { constant: scalar * constant, terms: map (mul scalar) terms }
-  Const f -> AffineExpression { constant: f, terms: Map.empty }
+      AffineExpression { constant: mul scalar <$> constant, terms: map (mul scalar) terms }
+  Const f -> AffineExpression { constant: Just f, terms: Map.empty }
 
 -- Evaluate the reduced form
 evalAffineExpression
@@ -163,5 +164,5 @@ evalAffineExpression (AffineExpression { constant, terms }) lookup =
     ( \var acc coeff ->
         lookup var >>= \val -> pure $ acc + (coeff * val)
     )
-    constant
+    (fromMaybe zero constant)
     terms

@@ -6,7 +6,8 @@ import Data.Foldable (sum)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, sum_)
+import Snarky.Circuit.Constraint (evalR1CSConstraint)
+import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Snarky.Circuit.TestUtils (ConstraintSystem, circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class PrimeField)
@@ -29,7 +30,7 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(F f))
           (uncurry mul_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "eq Circuit is Valid" $
     let
@@ -50,8 +51,8 @@ spec _ = describe "Field Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints solver (satisfied f) same
-        circuitSpecPure' constraints solver (satisfied f) distinct
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) same
+        circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) distinct
 
   it "inv Circuit is Valid" $
     let
@@ -65,7 +66,7 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(F f))
           inv_
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "div Circuit is Valid" $
     let
@@ -79,7 +80,7 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(F f))
           (uncurry div_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
 
   it "sum Circuit is Valid" $
     let
@@ -92,7 +93,7 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(F f))
           (pure <<< sum_ <<< unVector)
     in
-      circuitSpecPure' constraints solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
 
   it "negate Circuit is Valid" $
     let
@@ -104,4 +105,17 @@ spec _ = describe "Field Circuit Specs" do
           (Proxy @(F f))
           (pure <<< negate_)
     in
-      circuitSpecPure constraints solver (satisfied f)
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)
+
+  it "seal Circuit is Valid" $
+    let
+      f :: F f -> F f
+      f = identity
+      solver = makeSolver (Proxy @(ConstraintSystem f)) seal
+      { constraints } =
+        compilePure
+          (Proxy @(F f))
+          (Proxy @(F f))
+          seal
+    in
+      circuitSpecPure constraints evalR1CSConstraint solver (satisfied f)

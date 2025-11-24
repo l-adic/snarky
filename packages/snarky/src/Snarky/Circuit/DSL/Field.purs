@@ -11,7 +11,7 @@ import Prelude
 import Control.Apply (lift2)
 import Data.Array (foldl)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const))
+import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Constraint.Class (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
