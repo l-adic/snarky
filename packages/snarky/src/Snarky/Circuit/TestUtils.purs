@@ -87,7 +87,7 @@ makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
           Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
           Right isSatisfied -> case isValid inputs of
             Satisfied expected | isSatisfied == true ->
-              withHelp (expected == b) ("Circuit disagrees with test function, got " <> show b <> " expected " <> show expected)
+              withHelp (expected == b) ("Circuit disagrees with test function, cirvuit got " <> show b <> " expected " <> show expected <> " from test function")
             Unsatisfied | isSatisfied == false -> Success
             res -> withHelp false ("Circuit satisfiability: " <> show isSatisfied <> ", checker exited with " <> show res)
 

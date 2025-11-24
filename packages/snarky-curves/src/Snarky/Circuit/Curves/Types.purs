@@ -24,4 +24,6 @@ genAffinePoint _ = do
   let { x, y } = unsafePartial $ fromJust mp
   pure { x: F x, y: F y }
 
+type Point f = { x :: f, y :: f, z :: f }
+
 type CurveParams f = { a :: f, b :: f }
