@@ -1,0 +1,222 @@
+module Snarky.Circuit.Plonk
+  ( GenericPlonkConstraint
+  , evalPlonkConstraint
+  , reduceToPlonkGates
+  , class PlonkReductionM
+  , createInternalVariable
+  , addGenericPlonkConstraint
+  , BuilderReductionState
+  , reduceAsBuilder
+  , ProverReductionState
+  , reduceAsProver
+  ) where
+
+import Prelude
+
+import Control.Monad.Except (ExceptT, runExceptT, throwError)
+import Control.Monad.State (State, execState, get, modify_, runState)
+import Data.Array as A
+import Data.Bifunctor (lmap)
+import Data.Either (Either(..))
+import Data.Foldable (foldM, traverse_)
+import Data.List.NonEmpty (fromFoldable)
+import Data.List.Types (List(..), NonEmptyList(..))
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.NonEmpty (NonEmpty(..))
+import Data.Tuple (Tuple(..))
+import Effect.Exception (error)
+import Effect.Exception.Unsafe (unsafeThrowException)
+import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.Constraint (R1CS(..))
+import Snarky.Curves.Class (class PrimeField)
+
+--------------------------------------------------------------------------------
+
+type GenericPlonkConstraint f =
+  { cl :: f
+  , vl :: Variable
+  , cr :: f
+  , vr :: Variable
+  , co :: f
+  , vo :: Variable
+  , m :: f
+  , c :: f
+  }
+
+evalPlonkConstraint
+  :: forall f m
+   . PrimeField f
+  => Monad m
+  => (Variable -> m f)
+  -> GenericPlonkConstraint f
+  -> m Boolean
+evalPlonkConstraint lookup x = do
+  vl <- lookup x.vl
+  vr <- lookup x.vr
+  vo <- lookup x.vo
+  pure $ x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
+
+class PlonkSystem f c | c -> f where
+  plonk :: GenericPlonkConstraint f -> c
+
+class Monad m <= PlonkReductionM m f | m -> f where
+  createInternalVariable
+    :: AffineExpression f
+    -> m Variable
+  addGenericPlonkConstraint
+    :: GenericPlonkConstraint f
+    -> m Unit
+
+freshUnconstrainedVariable
+  :: forall m f
+   . PlonkReductionM m f
+  => m Variable
+freshUnconstrainedVariable =
+  createInternalVariable $ AffineExpression { constant: Nothing, terms: mempty }
+
+reduceAffineExpression
+  :: forall f m
+   . PrimeField f
+  => PlonkReductionM m f
+  => AffineExpression f
+  -> m (Tuple (Maybe Variable) f)
+reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldable terms of
+  Nothing -> pure $ Tuple Nothing (fromMaybe zero constant)
+  Just (NonEmptyList (NonEmpty head tail)) -> case tail of
+    Nil -> case constant of
+      Nothing -> pure $ lmap Just head
+      Just c -> do
+        vo <- createInternalVariable $ AffineExpression { constant, terms: [ head ] }
+        vr <- freshUnconstrainedVariable
+        let Tuple vl cl = head
+        addGenericPlonkConstraint { vl, cl, vr, cr: zero, vo, co: -one, m: zero, c }
+        pure $ Tuple (Just vo) one
+    Cons (Tuple vr cr) Nil -> do
+      let Tuple vl cl = head
+      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
+      addGenericPlonkConstraint { vl, cl, vr, cr, vo, co: -one, m: zero, c: fromMaybe zero constant }
+      pure $ Tuple (Just vo) one
+    Cons head' tail' -> do
+      Tuple vr cr <-
+        foldM
+          ( \(Tuple vr cr) (Tuple vl cl) -> do
+              vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple vl cl, Tuple vr cr ] }
+              addGenericPlonkConstraint { cl, vl, cr, vr, co: -one, vo, m: zero, c: zero }
+              pure $ Tuple vo one
+          )
+          head'
+          tail'
+      let Tuple vl cl = head
+      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
+      addGenericPlonkConstraint { vl, cl, vr, cr, vo, co: -one, m: zero, c: fromMaybe zero constant }
+      pure $ Tuple (Just vo) one
+
+reduceToPlonkGates
+  :: forall f m
+   . PrimeField f
+  => PlonkReductionM m f
+  => R1CS f
+  -> m Unit
+reduceToPlonkGates g = case g of
+  R1CS { left, right, output } -> do
+    Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
+    Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
+    Tuple mvo co <- reduceAffineExpression $ reduceToAffineExpression output
+    case mvl, mvr, mvo of
+      -- (cl * vl) * (cr * vr) = (co * vo)
+      Just vl, Just vr, Just vo ->
+        addGenericPlonkConstraint { cl, vl, cr, vr, co, vo, m: -(cl * cr), c: zero }
+      -- (cl * vl) * (cr * vr) = co
+      Just vl, Just vr, Nothing -> do
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co: zero, vo, m: -(cl * cr), c: zero }
+      -- (cl * vl) * cr = (co * vo)
+      Just vl, Nothing, Just vo -> do
+        vr <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: cl * cr, vr, cr: zero, vo, co: -co, m: zero, c: zero }
+      -- cl * (cr * vr) = (co * vo)
+      Nothing, Just vr, Just vo -> do
+        vl <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cl * cr, vo, co: -co, m: zero, c: zero }
+      -- (cl * vl) cr = co
+      Just vl, Nothing, Nothing -> do
+        vr <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: cl * cr, vr, cr: zero, vo, co: zero, m: zero, c: -co }
+      -- cl * (cr * vr) = co
+      Nothing, Just vr, Nothing -> do
+        vl <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cl * cr, vo, co: zero, m: zero, c: -co }
+      -- cl * cr = (co * vo)
+      Nothing, Nothing, Just vo -> do
+        vl <- freshUnconstrainedVariable
+        vr <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: zero, vr, cr: zero, co, vo, m: zero, c: -(cl * cr) }
+      -- cl * cr = co
+      Nothing, Nothing, Nothing -> unless (cl * cr == co)
+        $ unsafeThrowException
+        $ error
+        $ "Contradiction while reducing r1cs to plonk gates: "
+            <> show (cl * cr)
+            <> " /= "
+            <> show co
+  Boolean b -> do
+    Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
+    case mv of
+      Nothing -> unless (c * c == c)
+        $ unsafeThrowException
+        $ error
+        $ "Contradiction while reducing bool to plonk gates: "
+            <> show c
+            <> " /= "
+            <> "{0,1}"
+      Just v ->
+        addGenericPlonkConstraint { vl: v, cl: zero, vr: v, cr: zero, co: one, vo: v, m: one, c: zero }
+
+newtype BuilderReductionState f = BuilderReductionState
+  { cs :: Array (GenericPlonkConstraint f)
+  , nextVariable :: Variable
+  }
+
+instance PlonkReductionM (State (BuilderReductionState f)) f where
+  addGenericPlonkConstraint c = modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { cs = s.cs `A.snoc` c }
+  createInternalVariable _ = do
+    BuilderReductionState { nextVariable } <- get
+    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
+    pure nextVariable
+
+reduceAsBuilder :: forall f. PrimeField f => Array (R1CS f) -> Variable -> BuilderReductionState f
+reduceAsBuilder r1css nextVariable =
+  let
+    initState = BuilderReductionState { nextVariable, cs: mempty }
+  in
+    execState (traverse_ reduceToPlonkGates r1css) initState
+
+newtype ProverReductionState f = ProverReductionState
+  { nextVariable :: Variable
+  , assignments :: Map Variable f
+  }
+
+instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (ProverReductionState f))) f where
+  addGenericPlonkConstraint _ = pure unit
+  createInternalVariable e = do
+    ProverReductionState { nextVariable, assignments } <- get
+    let
+      _lookup v = case Map.lookup v assignments of
+        Nothing -> throwError $ MissingVariable v
+        Just a -> pure a
+    a <- evalAffineExpression e _lookup
+    modify_ \(ProverReductionState s) -> ProverReductionState $
+      s
+        { nextVariable = incrementVariable nextVariable
+        , assignments = Map.insert nextVariable a assignments
+        }
+    pure nextVariable
+
+reduceAsProver :: forall f. PrimeField f => Array (R1CS f) -> ProverReductionState f -> Either (EvaluationError f) (ProverReductionState f)
+reduceAsProver r1css s = case runState (runExceptT (traverse_ reduceToPlonkGates r1css)) s of
+  Tuple (Left e) _ -> Left e
+  Tuple (Right _) s' -> Right s'
