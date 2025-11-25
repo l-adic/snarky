@@ -1,0 +1,16 @@
+package:
+  name: union-find
+  dependencies:
+    - prelude
+    - maybe
+    - ordered-collections
+    - transformers
+  test:
+    main: Test.Data.UnionFind
+    dependencies:
+      - aff
+      - spec
+      - spec-node
+      - quickcheck
+      - spec-quickcheck
+      - arrays
