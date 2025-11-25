@@ -2,8 +2,8 @@ module Test.Data.UnionFind where
 
 import Prelude
 
-import Control.Monad.State (State, evalState)
-import Data.UnionFind (connected, find, union, emptyUnionFind, UnionFindData)
+import Control.Monad.State (State, evalState, execState)
+import Data.UnionFind (connected, find, union, equivalenceClasses, emptyUnionFind, UnionFindData)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse, traverse_)
@@ -300,3 +300,59 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         result.comp1 `shouldEqual` [ true, true, true ]
         result.comp2 `shouldEqual` [ true, true, true ]
         result.between `shouldEqual` [ true, true, true ]
+
+    describe "Equivalence classes enumeration" do
+      it "returns all equivalence classes" do
+        let
+          finalState = execState
+            ( do
+                -- Create components: {1,2,3}, {4,5}, {6}
+                union 1 2
+                union 2 3
+                union 4 5
+                _ <- find 6 -- Make sure 6 is in the structure
+                pure unit
+            )
+            { unionFind: emptyUnionFind }
+
+          classes = equivalenceClasses finalState.unionFind
+
+        -- Should have 3 classes total
+        Array.length classes `shouldEqual` 3
+
+        -- Check that all elements appear exactly once across all classes
+        let allElements = Array.concatMap identity classes
+        Array.sort allElements `shouldEqual` [ 1, 2, 3, 4, 5, 6 ]
+
+        -- Check specific groupings (arrays may be in different order)
+        let hasClass123 = Array.any (\cls -> Array.sort cls == [ 1, 2, 3 ]) classes
+        let hasClass45 = Array.any (\cls -> Array.sort cls == [ 4, 5 ]) classes
+        let hasClass6 = Array.any (\cls -> Array.sort cls == [ 6 ]) classes
+
+        hasClass123 `shouldEqual` true
+        hasClass45 `shouldEqual` true
+        hasClass6 `shouldEqual` true
+
+      it "returns empty array for empty union-find" do
+        let classes = equivalenceClasses (emptyUnionFind :: UnionFindData Int)
+        classes `shouldEqual` []
+
+      it "returns singleton classes for disconnected elements" do
+        let
+          finalState = execState
+            ( do
+                _ <- find 1
+                _ <- find 2
+                _ <- find 3
+                pure unit
+            )
+            { unionFind: emptyUnionFind }
+
+          classes = equivalenceClasses finalState.unionFind
+
+        Array.length classes `shouldEqual` 3
+        let allElements = Array.concatMap identity classes
+        Array.sort allElements `shouldEqual` [ 1, 2, 3 ]
+        -- Each class should have exactly one element
+        let allSingletons = Array.all (\cls -> Array.length cls == 1) classes
+        allSingletons `shouldEqual` true

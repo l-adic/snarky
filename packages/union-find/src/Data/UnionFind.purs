@@ -3,6 +3,7 @@ module Data.UnionFind
   , find
   , union
   , connected
+  , equivalenceClasses
   , UnionFindData
   , emptyUnionFind
   ) where
@@ -10,6 +11,8 @@ module Data.UnionFind
 import Prelude
 
 import Control.Monad.State.Class (class MonadState, get, modify_)
+import Data.Array as Array
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -28,6 +31,32 @@ connected x y = do
   rootX <- find x
   rootY <- find y
   pure (rootX == rootY)
+
+-- | Pure function to find root without path compression
+findRootPure :: forall a. Ord a => Map a a -> a -> a
+findRootPure parentMap element =
+  case Map.lookup element parentMap of
+    Nothing -> element -- Element is its own root if not in map
+    Just parent ->
+      if parent == element then element -- Found root
+      else findRootPure parentMap parent -- Recurse
+
+-- | Get all equivalence classes as an array of arrays (pure function)
+equivalenceClasses :: forall a. Ord a => UnionFindData a -> Array (Array a)
+equivalenceClasses { parent } =
+  let
+    -- Group elements by their root
+    rootGroups = foldlWithIndex
+      ( \element acc _ ->
+          let
+            root = findRootPure parent element
+          in
+            Map.insertWith (<>) root [ element ] acc
+      )
+      Map.empty
+      parent
+  in
+    Array.fromFoldable (Map.values rootGroups)
 
 -- | The Union-Find data structure
 type UnionFindData a =
