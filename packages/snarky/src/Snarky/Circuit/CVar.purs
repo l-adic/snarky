@@ -9,7 +9,7 @@ module Snarky.Circuit.CVar
   , negate_
   , scale_
   , eval
-  , reduce
+  , reduceToAffineExpression
   , AffineExpression(..)
   , evalAffineExpression
   , EvaluationError(..)
@@ -19,10 +19,8 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
-import Data.Foldable (class Foldable)
-import Data.FoldableWithIndex (foldWithIndexM)
+import Data.Foldable (class Foldable, foldM)
 import Data.Generic.Rep (class Generic)
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Show.Generic (genericShow)
@@ -136,49 +134,52 @@ eval lookup c = case c of
   Add l r -> add <$> eval lookup l <*> eval lookup r
   ScalarMul scalar expr -> mul scalar <$> eval lookup expr
 
-newtype AffineExpression f i = AffineExpression { constant :: Maybe f, terms :: Map i f }
+newtype AffineExpression f = AffineExpression { constant :: Maybe f, terms :: Array (Tuple Variable f) }
 
 -- Reduce the affine circuit to the unique form \sum_{i} a_i * x_i + c,
 -- which we represent as {constant: c, terms: Map [(x_i, a_i)]}
-reduce
-  :: forall f i
+reduceToAffineExpression
+  :: forall f
    . PrimeField f
-  => Show i
-  => Ord i
-  => CVar f i
-  -> AffineExpression f i
-reduce c = case c of
-  Var i -> AffineExpression
-    { constant: Nothing
-    , terms: Map.singleton i one
-    }
-  Add l r -> AffineExpression
-    { constant: constLeft + constRight
-    , terms: Map.unionWith (+) termsLeft termsRight
-    }
-    where
-    AffineExpression { constant: constLeft, terms: termsLeft } = reduce l
-    AffineExpression { constant: constRight, terms: termsRight } = reduce r
-  ScalarMul scalar e ->
-    let
-      AffineExpression { constant, terms } = reduce e
-    in
-      AffineExpression { constant: mul scalar <$> constant, terms: map (mul scalar) terms }
-  Const f -> AffineExpression { constant: Just f, terms: Map.empty }
+  => CVar f Variable
+  -> AffineExpression f
+reduceToAffineExpression c =
+  let
+    { terms, constant } = reduce' c
+  in
+    AffineExpression { terms: Map.toUnfoldable terms, constant }
+  where
+  reduce' a = case a of
+    Var i ->
+      { constant: Nothing
+      , terms: Map.singleton i one
+      }
+    Add l r ->
+      { constant: constLeft + constRight
+      , terms: Map.unionWith (+) termsLeft termsRight
+      }
+      where
+      { constant: constLeft, terms: termsLeft } = reduce' l
+      { constant: constRight, terms: termsRight } = reduce' r
+    ScalarMul scalar e ->
+      let
+        { constant, terms } = reduce' e
+      in
+        { constant: mul scalar <$> constant, terms: map (mul scalar) terms }
+    Const f -> { constant: Just f, terms: Map.empty }
 
 -- Evaluate the reduced form
 evalAffineExpression
-  :: forall f i m
+  :: forall f m
    . PrimeField f
   => Monad m
-  => Ord i
-  => AffineExpression f i
-  -> (i -> m f)
+  => AffineExpression f
+  -> (Variable -> m f)
   -> m f
 evalAffineExpression (AffineExpression { constant, terms }) lookup =
-  foldWithIndexM
-    ( \var acc coeff ->
-        lookup var >>= \val -> pure $ acc + (coeff * val)
+  foldM
+    ( \acc (Tuple var coeff) ->
+        lookup var <#> \val -> acc + (coeff * val)
     )
     (fromMaybe zero constant)
     terms
