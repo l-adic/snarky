@@ -5,9 +5,7 @@ module Snarky.Circuit.Plonk
   , class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
-  , BuilderReductionState
   , reduceAsBuilder
-  , ProverReductionState
   , reduceAsProver
   ) where
 
@@ -127,11 +125,11 @@ reduceToPlonkGates g = case g of
     case mvl, mvr, mvo of
       -- (cl * vl) * (cr * vr) = (co * vo)
       Just vl, Just vr, Just vo ->
-        addGenericPlonkConstraint { cl, vl, cr, vr, co, vo, m: -(cl * cr), c: zero }
+        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co, vo, m: -(cl * cr), c: zero }
       -- (cl * vl) * (cr * vr) = co
       Just vl, Just vr, Nothing -> do
         vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co: zero, vo, m: -(cl * cr), c: zero }
+        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co: zero, vo, m: (cl * cr), c: -co }
       -- (cl * vl) * cr = (co * vo)
       Just vl, Nothing, Just vo -> do
         vr <- freshUnconstrainedVariable
@@ -156,44 +154,59 @@ reduceToPlonkGates g = case g of
         vr <- freshUnconstrainedVariable
         addGenericPlonkConstraint { vl, cl: zero, vr, cr: zero, co, vo, m: zero, c: -(cl * cr) }
       -- cl * cr = co
-      Nothing, Nothing, Nothing -> unless (cl * cr == co)
-        $ unsafeThrowException
-        $ error
-        $ "Contradiction while reducing r1cs to plonk gates: "
-            <> show (cl * cr)
-            <> " /= "
-            <> show co
+      Nothing, Nothing, Nothing ->
+        if ((cl * cr) /= co) then
+          ( unsafeThrowException
+              $ error
+              $ "Contradiction while reducing r1cs to plonk gates: "
+                  <> show (cl * cr)
+                  <> " /= "
+                  <> show co
+          )
+        else pure unit
   Boolean b -> do
     Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
     case mv of
-      Nothing -> unless (c * c == c)
-        $ unsafeThrowException
-        $ error
-        $ "Contradiction while reducing bool to plonk gates: "
-            <> show c
-            <> " /= "
-            <> "{0,1}"
+      Nothing ->
+        if (c * c /= c) then
+          ( unsafeThrowException
+              $ error
+              $ "Contradiction while reducing bool to plonk gates: "
+                  <> show c
+                  <> " /= "
+                  <> "{0,1}"
+          )
+        else pure unit
       Just v ->
         addGenericPlonkConstraint { vl: v, cl: zero, vr: v, cr: zero, co: one, vo: v, m: one, c: zero }
 
 newtype BuilderReductionState f = BuilderReductionState
-  { cs :: Array (GenericPlonkConstraint f)
+  { constraints :: Array (GenericPlonkConstraint f)
   , nextVariable :: Variable
   }
 
 instance PlonkReductionM (State (BuilderReductionState f)) f where
-  addGenericPlonkConstraint c = modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { cs = s.cs `A.snoc` c }
+  addGenericPlonkConstraint c = modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` c }
   createInternalVariable _ = do
     BuilderReductionState { nextVariable } <- get
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
     pure nextVariable
 
-reduceAsBuilder :: forall f. PrimeField f => Array (R1CS f) -> Variable -> BuilderReductionState f
-reduceAsBuilder r1css nextVariable =
+reduceAsBuilder
+  :: forall f
+   . PrimeField f
+  => { nextVariable :: Variable
+     , constraints :: Array (R1CS f)
+     }
+  -> { nextVariable :: Variable
+     , constraints :: Array (GenericPlonkConstraint f)
+     }
+reduceAsBuilder { nextVariable, constraints: r1css } =
   let
-    initState = BuilderReductionState { nextVariable, cs: mempty }
+    initState = BuilderReductionState { nextVariable, constraints: mempty }
+    BuilderReductionState s = execState (traverse_ reduceToPlonkGates r1css) initState
   in
-    execState (traverse_ reduceToPlonkGates r1css) initState
+    s
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -216,7 +229,18 @@ instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (Pr
         }
     pure nextVariable
 
-reduceAsProver :: forall f. PrimeField f => Array (R1CS f) -> ProverReductionState f -> Either (EvaluationError f) (ProverReductionState f)
-reduceAsProver r1css s = case runState (runExceptT (traverse_ reduceToPlonkGates r1css)) s of
+reduceAsProver
+  :: forall f
+   . PrimeField f
+  => Array (R1CS f)
+  -> { nextVariable :: Variable
+     , assignments :: Map Variable f
+     }
+  -> Either
+       (EvaluationError f)
+       { nextVariable :: Variable
+       , assignments :: Map Variable f
+       }
+reduceAsProver r1css s = case runState (runExceptT (traverse_ reduceToPlonkGates r1css)) (ProverReductionState s) of
   Tuple (Left e) _ -> Left e
-  Tuple (Right _) s' -> Right s'
+  Tuple (Right _) (ProverReductionState s') -> Right s'
