@@ -83,6 +83,29 @@ genBasicWithAssignments pf =
             else Add cvar (ScalarMul (-one) cvar)
       pure { basic: Boolean cvar', assignments }
 
+    genEqual = do
+      { cvar: left, assignments: a1 } <- genCVarWithAssignments pf
+      { cvar: right, assignments: a2 } <- genCVarWithAssignments pf
+      let
+        assignments = Map.unions [ a1, a2 ]
+        lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just a -> pure a
+        eres = runExcept do
+          l <- CVar.eval lookup left
+          r <- CVar.eval lookup right
+          pure
+            if l == r then right
+            else if l == zero then (ScalarMul zero right)
+            else (ScalarMul (l / r) right)
+      case eres of
+        Left (e :: EvaluationError f) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
+        Right right' ->
+          pure
+            { basic: Equal left right'
+            , assignments
+            }
+
     genR1CS = do
       { cvar: left, assignments: a1 } <- genCVarWithAssignments pf
       { cvar: right, assignments: a2 } <- genCVarWithAssignments pf
@@ -111,6 +134,7 @@ genBasicWithAssignments pf =
       ( Tuple 10.0 genR1CS
       )
       [ Tuple 1.0 genBool
+      , Tuple 4.0 genEqual
       ]
 
 spec :: forall f. PrimeField f => Proxy f -> Spec Unit

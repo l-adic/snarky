@@ -43,6 +43,9 @@ type GenericPlonkConstraint f =
   , c :: f
   }
 
+data PlonkConstraint f
+  = PlonkGeneric (GenericPlonkConstraint f)
+
 evalPlonkConstraint
   :: forall f m
    . PrimeField f
@@ -162,6 +165,34 @@ reduceToPlonkGates g = case g of
                   <> show (cl * cr)
                   <> " /= "
                   <> show co
+          )
+        else pure unit
+  Equal a b -> do
+    Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
+    Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
+    case mvl, mvr of
+      -- cl * vl = cr * vr
+      Just vl, Just vr -> do
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl, vr, cr: -cr, co: zero, vo, m: zero, c: zero }
+      -- cl * vl = cr
+      Just vl, Nothing -> do
+        vr <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl, vr, cr: zero, co: zero, vo, m: zero, c: -cr }
+      -- cl = cr * vr
+      Nothing, Just vr -> do
+        vl <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cr, co: zero, vo, m: zero, c: -cl }
+      Nothing, Nothing ->
+        if (cl /= cr) then
+          ( unsafeThrowException
+              $ error
+              $ "Contradiction while reducing equal to plonk gates: "
+                  <> show cl
+                  <> " /= "
+                  <> show cr
           )
         else pure unit
   Boolean b -> do
