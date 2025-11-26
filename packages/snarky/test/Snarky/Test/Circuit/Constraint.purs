@@ -19,7 +19,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, eval, evalAffineExpression, incrementVariable, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (R1CS(..), evalR1CSConstraint)
+import Snarky.Circuit.Constraint (Basic(..), evalBasicConstraint)
 import Snarky.Circuit.Plonk as Plonk
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
@@ -51,16 +51,16 @@ genCVarWithAssignments _ = do
     assignments <- traverse (\_ -> arbitrary @f) varArray
     pure $ Map.fromFoldable $ Array.zip varArray assignments
 
-genR1CSWithAssignments
+genBasicWithAssignments
   :: forall f
    . PrimeField f
   => Show f
   => Proxy f
   -> Gen
-       { r1cs :: R1CS f
+       { basic :: Basic f
        , assignments :: Map Variable f
        }
-genR1CSWithAssignments pf =
+genBasicWithAssignments pf =
   let
     genBool = do
       { cvar, assignments } <- genCVarWithAssignments pf
@@ -81,7 +81,7 @@ genR1CSWithAssignments pf =
           pure
             if b' then (ScalarMul (recip b) cvar)
             else Add cvar (ScalarMul (-one) cvar)
-      pure { r1cs: Boolean cvar', assignments }
+      pure { basic: Boolean cvar', assignments }
 
     genR1CS = do
       { cvar: left, assignments: a1 } <- genCVarWithAssignments pf
@@ -103,7 +103,7 @@ genR1CSWithAssignments pf =
         Left (e :: EvaluationError f) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
         Right output' ->
           pure
-            { r1cs: R1CS { left, right, output: output' }
+            { basic: R1CS { left, right, output: output' }
             , assignments
             }
   in
@@ -129,33 +129,33 @@ spec pf = describe "Constraint Spec" do
       let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs
 
-  it "r1cs gen is valid" do
+  it "basic constraint gen is valid" do
     liftEffect $ quickCheckGen do
-      { r1cs, assignments } <- genR1CSWithAssignments pf
+      { basic, assignments } <- genBasicWithAssignments pf
       let
         lookup v = case Map.lookup v assignments of
           Nothing -> except $ Left $ MissingVariable v
           Just a -> pure a
 
         res :: Either (EvaluationError (BN254.ScalarField)) Boolean
-        res = runExcept $ evalR1CSConstraint lookup r1cs
+        res = runExcept $ evalBasicConstraint lookup basic
       pure $ res == Right true
 
-  it "reduces r1cs constraints to plonk constraints" do
+  it "reduces basic constraints to plonk constraints" do
     liftEffect $ quickCheckGen' 10000 do
-      { r1cs, assignments } <- genR1CSWithAssignments pf
+      { basic, assignments } <- genBasicWithAssignments pf
       let
         nextVariable = maybe v0 incrementVariable $ maximum (Map.keys assignments)
-        plonkConstraints = Plonk.reduceAsBuilder { nextVariable, constraints: [ r1cs ] }
-        finalAssignments = case Plonk.reduceAsProver [ r1cs ] { nextVariable, assignments } of
+        plonkConstraints = Plonk.reduceAsBuilder { nextVariable, constraints: [ basic ] }
+        finalAssignments = case Plonk.reduceAsProver [ basic ] { nextVariable, assignments } of
           Left e -> unsafeCrashWith $ "Unexpected error in Plonk reduce as Prover: " <> show e
           Right { assignments: assignments' } -> assignments'
         lookup v = case Map.lookup v finalAssignments of
           Nothing -> except $ Left $ MissingVariable v
           Just a -> pure a
 
-        r1csEval :: Either (EvaluationError (BN254.ScalarField)) Boolean
-        r1csEval = runExcept $ evalR1CSConstraint lookup r1cs
+        basicEval :: Either (EvaluationError (BN254.ScalarField)) Boolean
+        basicEval = runExcept $ evalBasicConstraint lookup basic
         plonkEval = runExcept $
           foldM
             ( \acc c ->
@@ -163,4 +163,4 @@ spec pf = describe "Constraint Spec" do
             )
             true
             plonkConstraints.constraints
-      pure $ plonkEval === r1csEval
+      pure $ plonkEval === basicEval

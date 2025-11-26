@@ -56,7 +56,7 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
-import Snarky.Circuit.Constraint (class R1CSSystem, boolean)
+import Snarky.Circuit.Constraint (class BasicSystem, boolean)
 import Snarky.Curves.Class (class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)
@@ -145,7 +145,7 @@ instance (PrimeField f) => CircuitType f Boolean (BoolVar f) where
   fieldsToVar x = coerce $ unsafePartial $ fromJust $ Array.head x
   varToFields = Array.singleton <<< coerce
 
-instance (PrimeField f, R1CSSystem f c) => CheckedType (BoolVar f) c where
+instance (PrimeField f, BasicSystem f c) => CheckedType (BoolVar f) c where
   check var = Array.singleton $ boolean (coerce var :: FVar f)
 
 instance

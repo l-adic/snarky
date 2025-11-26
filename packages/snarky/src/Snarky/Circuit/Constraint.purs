@@ -1,9 +1,9 @@
 module Snarky.Circuit.Constraint
-  ( R1CS(..)
-  , evalR1CSConstraint
-  , R1CSCircuit(..)
-  , evalR1CSCircuit
-  , class R1CSSystem
+  ( Basic(..)
+  , evalBasicConstraint
+  , BasicCircuit(..)
+  , evalBasicCircuit
+  , class BasicSystem
   , r1cs
   , boolean
   ) where
@@ -18,7 +18,7 @@ import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Curves.Class (class PrimeField)
 
-data R1CS f
+data Basic f
   = R1CS
       { left :: CVar f Variable
       , right :: CVar f Variable
@@ -26,17 +26,17 @@ data R1CS f
       }
   | Boolean (CVar f Variable)
 
-derive instance Functor R1CS
-derive instance Generic (R1CS f) _
+derive instance Functor Basic
+derive instance Generic (Basic f) _
 
-evalR1CSConstraint
+evalBasicConstraint
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
-  -> R1CS f
+  -> Basic f
   -> m Boolean
-evalR1CSConstraint lookup gate = do
+evalBasicConstraint lookup gate = do
   case gate of
     R1CS { left, right, output } -> do
       lval <- CVar.eval lookup left
@@ -47,28 +47,28 @@ evalR1CSConstraint lookup gate = do
       inp <- CVar.eval lookup i
       pure $ inp == zero || inp == one
 
-newtype R1CSCircuit f = R1CSCircuit (Array (R1CS f))
+newtype BasicCircuit f = BasicCircuit (Array (Basic f))
 
-evalR1CSCircuit
+evalBasicCircuit
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
-  -> R1CSCircuit f
+  -> BasicCircuit f
   -> m Boolean
-evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
+evalBasicCircuit lookup (BasicCircuit gates) = un Conj <$>
   foldM
     ( \acc c ->
-        evalR1CSConstraint lookup c <#> \cVal ->
+        evalBasicConstraint lookup c <#> \cVal ->
           acc <> Conj cVal
     )
     mempty
     gates
 
-class R1CSSystem f c | c -> f where
+class BasicSystem f c | c -> f where
   r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
   boolean :: CVar f Variable -> c
 
-instance R1CSSystem f (R1CS f) where
+instance BasicSystem f (Basic f) where
   r1cs = R1CS
   boolean = Boolean
