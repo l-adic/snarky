@@ -27,7 +27,7 @@ import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
-import Snarky.Circuit.Constraint (R1CS(..))
+import Snarky.Circuit.Constraint (Basic(..))
 import Snarky.Curves.Class (class PrimeField)
 
 --------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ reduceToPlonkGates
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => R1CS f
+  => Basic f
   -> m Unit
 reduceToPlonkGates g = case g of
   R1CS { left, right, output } -> do
@@ -197,15 +197,15 @@ reduceAsBuilder
   :: forall f
    . PrimeField f
   => { nextVariable :: Variable
-     , constraints :: Array (R1CS f)
+     , constraints :: Array (Basic f)
      }
   -> { nextVariable :: Variable
      , constraints :: Array (GenericPlonkConstraint f)
      }
-reduceAsBuilder { nextVariable, constraints: r1css } =
+reduceAsBuilder { nextVariable, constraints: cs } =
   let
     initState = BuilderReductionState { nextVariable, constraints: mempty }
-    BuilderReductionState s = execState (traverse_ reduceToPlonkGates r1css) initState
+    BuilderReductionState s = execState (traverse_ reduceToPlonkGates cs) initState
   in
     s
 
@@ -233,7 +233,7 @@ instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (Pr
 reduceAsProver
   :: forall f
    . PrimeField f
-  => Array (R1CS f)
+  => Array (Basic f)
   -> { nextVariable :: Variable
      , assignments :: Map Variable f
      }
@@ -242,6 +242,6 @@ reduceAsProver
        { nextVariable :: Variable
        , assignments :: Map Variable f
        }
-reduceAsProver r1css s = case runState (runExceptT (traverse_ reduceToPlonkGates r1css)) (ProverReductionState s) of
+reduceAsProver cs s = case runState (runExceptT (traverse_ reduceToPlonkGates cs)) (ProverReductionState s) of
   Tuple (Left e) _ -> Left e
   Tuple (Right _) (ProverReductionState s') -> Right s'

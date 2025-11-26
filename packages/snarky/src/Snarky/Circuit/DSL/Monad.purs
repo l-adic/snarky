@@ -39,7 +39,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (class R1CSSystem, r1cs)
+import Snarky.Circuit.Constraint (class BasicSystem, r1cs)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, BoolVar, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -141,7 +141,7 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
 runSnarky :: forall t m a. Snarky t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem f c) <= CircuitM f c t m | t -> c f, c -> f where
+class (Monad m, MonadFresh (t m), PrimeField f, BasicSystem f c) <= CircuitM f c t m | t -> c f, c -> f where
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
   addConstraint :: c -> Snarky t m Unit
 
