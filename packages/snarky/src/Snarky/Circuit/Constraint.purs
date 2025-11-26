@@ -10,6 +10,7 @@ module Snarky.Circuit.Constraint
 
 import Prelude
 
+import Control.Apply (lift2)
 import Data.Array (foldM)
 import Data.Generic.Rep (class Generic)
 import Data.Monoid.Conj (Conj(..))
@@ -24,6 +25,7 @@ data Basic f
       , right :: CVar f Variable
       , output :: CVar f Variable
       }
+  | Equal (CVar f Variable) (CVar f Variable)
   | Boolean (CVar f Variable)
 
 derive instance Functor Basic
@@ -43,9 +45,11 @@ evalBasicConstraint lookup gate = do
       rval <- CVar.eval lookup right
       oval <- CVar.eval lookup output
       pure $ lval * rval == oval
+    Equal a b ->
+      lift2 eq (CVar.eval lookup a) (CVar.eval lookup b)
     Boolean i -> do
-      inp <- CVar.eval lookup i
-      pure $ inp == zero || inp == one
+      CVar.eval lookup i <#> \inp ->
+        inp == zero || inp == one
 
 newtype BasicCircuit f = BasicCircuit (Array (Basic f))
 
