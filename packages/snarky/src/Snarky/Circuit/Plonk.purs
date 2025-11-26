@@ -177,8 +177,9 @@ reduceToPlonkGates g = case g of
                   <> "{0,1}"
           )
         else pure unit
-      Just v ->
-        addGenericPlonkConstraint { vl: v, cl: zero, vr: v, cr: zero, co: one, vo: v, m: one, c: zero }
+      -- v * v = v
+      Just v -> do
+        addGenericPlonkConstraint { vl: v, cl: -c, vr: v, cr: zero, co: zero, vo: v, m: c * c, c: zero }
 
 newtype BuilderReductionState f = BuilderReductionState
   { constraints :: Array (GenericPlonkConstraint f)
