@@ -65,10 +65,10 @@ evalR1CSCircuit lookup (R1CSCircuit gates) = un Conj <$>
     mempty
     gates
 
-class R1CSSystem f c | c -> f where
-  r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
-  boolean :: CVar f Variable -> c
+class Monad m <= R1CSSystem f m c | c -> f where
+  r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> m c
+  boolean :: CVar f Variable -> m c
 
-instance R1CSSystem f (R1CS f) where
-  r1cs = R1CS
-  boolean = Boolean
+instance Monad m => R1CSSystem f m (R1CS f) where
+  r1cs = pure <<< R1CS
+  boolean = pure <<< Boolean

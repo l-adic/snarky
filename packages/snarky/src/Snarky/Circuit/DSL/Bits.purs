@@ -46,7 +46,7 @@ unpack_ v = do
       (const_ zero)
       (mapWithIndex Tuple bits)
 
-  addConstraint $ r1cs { left: packingSum, right: const_ one, output: v }
+  addConstraint =<< r1cs { left: packingSum, right: const_ one, output: v }
   pure bits
 
 pack_

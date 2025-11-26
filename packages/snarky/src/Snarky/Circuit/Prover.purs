@@ -61,7 +61,7 @@ type Prover f = ProverT f Identity
 runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either (EvaluationError f) a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
-instance (Monad m, PrimeField f, R1CSSystem f c) => CircuitM f c (ProverT f) m where
+instance (Monad m, PrimeField f, R1CSSystem f (Snarky (ProverT f) m) c) => CircuitM f c (ProverT f) m where
   addConstraint _ = pure unit
   exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky (ProverT f) m var
   exists m = Snarky do

@@ -141,8 +141,8 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
 runSnarky :: forall t m a. Snarky t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem f c) <= CircuitM f c t m | t -> c f, c -> f where
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
+class (Monad m, MonadFresh (t m), PrimeField f, R1CSSystem f (Snarky t m) c) <= CircuitM f c t m | t -> c f, c -> f where
+  exists :: forall a var. CheckedType var (Snarky t m) c => CircuitType f a var => AsProverT f m a -> Snarky t m var
   addConstraint :: c -> Snarky t m Unit
 
 throwAsProver :: forall f m a. Monad m => EvaluationError f -> AsProverT f m a
@@ -219,7 +219,7 @@ inv_ = case _ of
       aVal <- readCVar a
       if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
       else pure $ if aVal == zero then zero else recip aVal
-    addConstraint $ r1cs { left: a, right: aInv, output: Const one }
+    addConstraint =<< r1cs { left: a, right: aInv, output: Const one }
     pure aInv
 
 mul_
@@ -238,7 +238,7 @@ mul_ a b =
         aVal <- readCVar a
         bVal <- readCVar b
         pure $ aVal * bVal
-      addConstraint $ r1cs { left: a, right: b, output: z }
+      addConstraint =<< r1cs { left: a, right: b, output: z }
       pure z
 
 div_

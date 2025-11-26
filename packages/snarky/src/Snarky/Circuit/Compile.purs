@@ -22,12 +22,12 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Circuit.Builder (CircuitBuilderState, CircuitBuilderT, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.Constraint (class R1CSSystem)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
-import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Circuit.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -37,7 +37,7 @@ compilePure
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
-  => R1CSSystem f c
+  => R1CSSystem f (Snarky (CircuitBuilderT c) Identity) c
   => Proxy a
   -> Proxy b
   -> (forall t. CircuitM f c t Identity => avar -> Snarky t Identity bvar)
@@ -50,7 +50,7 @@ compile
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem f c
+  => R1CSSystem f (Snarky (CircuitBuilderT c) m) c
   => Proxy a
   -> Proxy b
   -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
@@ -78,7 +78,7 @@ makeSolver
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem f c
+  => R1CSSystem f (Snarky (ProverT f) m) c
   => Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
   -> SolverT f m a b

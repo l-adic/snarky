@@ -20,8 +20,9 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
-import Snarky.Circuit.Constraint (class R1CSSystem)
+import Snarky.Circuit.Constraint (class R1CSSystem, R1CS(..))
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), addConstraint, fresh)
+import Snarky.Circuit.Plonk (class PlonkReductionM, BuilderReductionState(..), GenericPlonkConstraint, PlonkConstraint(..), reduceAsBuilder)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToVar, sizeInFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -65,17 +66,35 @@ instance Monad m => MonadFresh (CircuitBuilderT c m) where
     modify_ _ { nextVar = incrementVariable nextVar }
     pure nextVar
 
-instance (Monad m, PrimeField f, R1CSSystem f c) => CircuitM f c (CircuitBuilderT c) m where
+instance (Monad m, PrimeField f, R1CSSystem f (Snarky (CircuitBuilderT c) m) c) => CircuitM f c (CircuitBuilderT c) m where
   addConstraint c = Snarky $ CircuitBuilderT $ modify_ \s ->
     s { constraints = s.constraints `snoc` c }
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky (CircuitBuilderT c) m var
+  exists :: forall a var. CheckedType var (Snarky (CircuitBuilderT c) m) c => CircuitType f a var => AsProverT f m a -> Snarky (CircuitBuilderT c) m var
   exists _ = do
     let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh
     let v = fieldsToVar @f @a (map Var vars)
-    traverse_ (addConstraint @f) (check v)
+    traverse_ (addConstraint @f) =<< check v
     pure v
 
 setPublicInputVars :: forall f m. Monad m => Array Variable -> CircuitBuilderT f m Unit
 setPublicInputVars vars = CircuitBuilderT $ modify_ \s ->
   s { publicInputs = vars }
+
+instance Monad m => PlonkReductionM (CircuitBuilderT (PlonkConstraint f) m) f where
+  addGenericPlonkConstraint c = CircuitBuilderT $ modify_ \s -> s { constraints = s.constraints `snoc` Basic c }
+  createInternalVariable _ = fresh
+
+instance Monad m => R1CSSystem f (CircuitBuilderT (PlonkConstraint f) m) (PlonkConstraint f) where
+  r1cs c = CircuitBuilderT do
+    { nextVariable } <- get
+    let BuilderReductionState s' = reduceAsBuilder [ R1CS c ] nextVariable
+    modify_ \st ->
+      st { nextVariable = s'.nextVariable }
+    pure s'.cs
+  boolean c = do
+    { nextVariable } <- CircuitBuilderT get
+    let BuilderReductionState s' = reduceAsBuilder [ Boolean c ] nextVariable
+    modify_ \st ->
+      st { nextVariable = s'.nextVariable }
+    pure s'.cs

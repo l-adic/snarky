@@ -4,6 +4,8 @@ import Prelude
 
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
+import Data.Identity (Identity(..))
+import Data.Newtype (un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
@@ -39,7 +41,7 @@ instance CircuitType f (Point (F f)) (Point (CVar f Variable)) where
   varToFields = genericVarToFields (Proxy @(Point (F f)))
   fieldsToVar = genericFieldsToVar (Proxy @(Point (F f)))
 
-instance CheckedType (Point (CVar f Variable)) c where
+instance CheckedType (Point (CVar f Variable)) Identity c where
   check = genericCheck
 
 -- Another custom type with more complex structure
@@ -74,7 +76,7 @@ instance
   varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
   fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
 
-instance (PrimeField f, R1CSSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+instance (PrimeField f, R1CSSystem f Identity c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) Identity c where
   check = genericCheck
 
 -- Generic test suite for any CircuitType
@@ -230,7 +232,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(value :: f) ->
         let
           cvar = const_ value :: CVar f Variable
-          constraints = check @(CVar f Variable) @(R1CS f) cvar
+          constraints = un Identity $ check @(CVar f Variable) @Identity @(R1CS f) cvar
         in
           Array.null constraints === true
 
@@ -238,14 +240,14 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           cvar = const_ (zero @f) :: CVar f (Bool Variable)
-          constraints = check @(CVar f (Bool Variable)) @(R1CS f) cvar
+          constraints = un Identity $ check @(CVar f (Bool Variable)) @Identity @(R1CS f) cvar
         in
           Array.length constraints === 1
 
     it "Unit type has no constraints" $
       quickCheck' 10 \(_ :: Unit) ->
         let
-          constraints = check @Unit @(R1CS f) unit
+          constraints = un Identity $ check @Unit @Identity @(R1CS f) unit
         in
           Array.null constraints === true
 
@@ -253,7 +255,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(value :: f) ->
         let
           uncheckedVar = UnChecked (const_ value :: CVar f Variable)
-          constraints = check @(UnChecked (CVar f Variable)) @(R1CS f) uncheckedVar
+          constraints = un Identity $ check @(UnChecked (CVar f Variable)) @Identity @(R1CS f) uncheckedVar
         in
           Array.null constraints === true
 
@@ -261,7 +263,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           uncheckedVar = UnChecked (const_ (zero @f) :: CVar f (Bool Variable))
-          constraints = check @(UnChecked (CVar f (Bool Variable))) @(R1CS f) uncheckedVar
+          constraints = un Identity $ check @(UnChecked (CVar f (Bool Variable))) @Identity @(R1CS f) uncheckedVar
         in
           Array.null constraints === true
 
@@ -270,7 +272,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(fval :: f) ->
         let
           record = { a: const_ fval :: CVar f Variable, b: const_ (zero @f) :: CVar f (Bool Variable) }
-          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(R1CS f) record
+          constraints = un Identity $ check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @Identity @(R1CS f) record
         in
           Array.length constraints === 1 -- Only the Boolean should contribute a constraint
 
@@ -278,7 +280,7 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(x :: f) (y :: f) ->
         let
           point = Point (const_ x) (const_ y) :: Point (CVar f Variable)
-          constraints = check @(Point (CVar f Variable)) @(R1CS f) point
+          constraints = un Identity $ check @(Point (CVar f Variable)) @Identity @(R1CS f) point
         in
           Array.null constraints === true
 
@@ -286,6 +288,6 @@ spec pf = describe "CircuitType Round Trip Tests" do
       quickCheck' 10 \(_ :: Unit) ->
         let
           record = { flag1: const_ (zero @f) :: CVar f (Bool Variable), flag2: const_ (one @f) :: CVar f (Bool Variable) }
-          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(R1CS f) record
+          constraints = un Identity $ check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @Identity @(R1CS f) record
         in
           Array.length constraints === 2 -- Both Booleans should contribute constraints

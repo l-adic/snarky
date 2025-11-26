@@ -1,13 +1,14 @@
 module Snarky.Circuit.Plonk
-  ( GenericPlonkConstraint
+  ( PlonkConstraint(..)
+  , GenericPlonkConstraint
   , evalPlonkConstraint
   , reduceToPlonkGates
   , class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
-  , BuilderReductionState
+  , BuilderReductionState(..)
   , reduceAsBuilder
-  , ProverReductionState
+  , ProverReductionState(..)
   , reduceAsProver
   ) where
 
@@ -45,21 +46,27 @@ type GenericPlonkConstraint f =
   , c :: f
   }
 
+data PlonkConstraint f = Basic (GenericPlonkConstraint f)
+
 evalPlonkConstraint
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
-  -> GenericPlonkConstraint f
+  -> PlonkConstraint f
   -> m Boolean
-evalPlonkConstraint lookup x = do
-  vl <- lookup x.vl
-  vr <- lookup x.vr
-  vo <- lookup x.vo
-  pure $ x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
+evalPlonkConstraint lookup = case _ of
+  Basic x -> do
+    vl <- lookup x.vl
+    vr <- lookup x.vr
+    vo <- lookup x.vo
+    pure $ x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
 
 class PlonkSystem f c | c -> f where
   plonk :: GenericPlonkConstraint f -> c
+
+instance PlonkSystem f (PlonkConstraint f) where
+  plonk = Basic
 
 class Monad m <= PlonkReductionM m f | m -> f where
   createInternalVariable

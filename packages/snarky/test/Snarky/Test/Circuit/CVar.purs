@@ -13,7 +13,7 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (foldl, traverse)
 import Effect.Class (liftEffect)
-import Snarky.Circuit.CVar (CVar, EvaluationError(..), Variable, eval, evalAffineExpression, reduce)
+import Snarky.Circuit.CVar (CVar, EvaluationError(..), Variable, eval, evalAffineExpression, reduceToAffineExpression)
 import Snarky.Curves.BN254 (ScalarField)
 import Snarky.Curves.BN254 as BN254
 import Test.QuickCheck (arbitrary, quickCheckGen)
@@ -43,6 +43,6 @@ spec = describe "AffineCircuit" do
           Just a -> pure a
       let
         lhs :: Either (EvaluationError BN254.ScalarField) BN254.ScalarField
-        lhs = runExcept $ evalAffineExpression (reduce cvar) _lookup
+        lhs = runExcept $ evalAffineExpression (reduceToAffineExpression cvar) _lookup
       let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs

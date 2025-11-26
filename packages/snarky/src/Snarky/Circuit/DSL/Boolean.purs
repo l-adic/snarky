@@ -36,7 +36,7 @@ if_ b thenBranch elseBranch = case b of
       r <- exists do
         bVal <- readCVar $ coerce b
         if bVal == one then readCVar thenBranch else readCVar elseBranch
-      addConstraint $ r1cs
+      addConstraint =<< r1cs
         { left: coerce b
         , right: thenBranch `CVar.sub_` elseBranch
         , output: r `CVar.sub_` elseBranch
@@ -62,7 +62,7 @@ xor_ a b = case a, b of
       F aVal <- read (coerce a :: FVar f)
       F bVal <- read (coerce b :: FVar f)
       pure $ UnChecked (aVal /= bVal)
-    addConstraint $
+    addConstraint =<<
       r1cs
         { left: coerce a `CVar.add_` coerce a
         , right: coerce b

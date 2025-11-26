@@ -33,7 +33,7 @@ assertEqual_ x y = case x, y of
     if f == g then pure unit
     else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
-    addConstraint $ r1cs { left: x `sub_` y, right: Const one, output: Const zero }
+    addConstraint =<< r1cs { left: x `sub_` y, right: Const one, output: Const zero }
 
 assertNotEqual_
   :: forall f c t m
