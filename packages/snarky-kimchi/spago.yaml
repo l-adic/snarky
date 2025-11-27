@@ -1,0 +1,15 @@
+package:
+  name: snarky-kimchi
+  dependencies:
+    - prelude
+    - curves
+    - snarky
+    - quickcheck
+  test:
+    main: Test.Snarky.Circuit.Kimchi.Main
+    dependencies:
+      - aff
+      - debug
+      - spec
+      - spec-node
+      - spec-quickcheck

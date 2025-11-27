@@ -12,7 +12,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.Curves.Constraint (class ECSystem, ecAddComplete)
+import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, read, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
@@ -157,9 +157,8 @@ seal { x, y } = do
   pure { x: x', y: y' }
 
 addComplete
-  :: forall f c t m
-   . CircuitM f c t m
-  => ECSystem f c
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky t m
@@ -202,7 +201,7 @@ addComplete _p1 _p2 = do
       sVal * sVal - (readCVar p1.x + readCVar p2.x)
   y3 <- exists $
     readCVar s * (readCVar p1.x - readCVar x3) - readCVar p1.y
-  addConstraint $ ecAddComplete
+  addConstraint $ KimchiAddComplete
     { p1, p2, sameX: coerce sameX, inf: coerce inf, infZ, x21Inv, s, p3: { x: x3, y: y3 } }
   pure
     { p: { x: x3, y: y3 }

@@ -10,18 +10,19 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Circuit.Constraint.Kimchi as KimchiConstraint
 import Snarky.Circuit.Curves (addComplete, add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, Point, genAffinePoint)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
-import Test.Snarky.Circuit.Curves.ConstraintSystem (TestConstraintSystem, evalTestConstraint)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -46,7 +47,7 @@ spec pg =
     it "assertOnCurve Circuit is Valid" $
       let
         { a, b } = curveParams pg
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry assertOnCurve)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
@@ -70,12 +71,12 @@ spec pg =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints evalTestConstraint solver unsatisfied offCurve
-          circuitSpecPure' constraints evalTestConstraint solver satisfied_ onCurve
+          circuitSpecPure' constraints KimchiConstraint.eval solver unsatisfied offCurve
+          circuitSpecPure' constraints KimchiConstraint.eval solver satisfied_ onCurve
 
     it "assertEqual Circuit is Valid" $
       let
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry assertEqual)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry assertEqual)
         { constraints } =
           compilePure
             ( Proxy
@@ -96,14 +97,14 @@ spec pg =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints evalTestConstraint solver satisfied_ same
-          circuitSpecPure' constraints evalTestConstraint solver unsatisfied distinct
+          circuitSpecPure' constraints KimchiConstraint.eval solver satisfied_ same
+          circuitSpecPure' constraints KimchiConstraint.eval solver unsatisfied distinct
 
     it "negate Circuit is Valid" $
       let
         pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
         pureNegate { x, y } = { x, y: negate y }
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) Curves.negate
+        solver = makeSolver (Proxy @(KimchiConstraint f)) Curves.negate
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
@@ -111,13 +112,13 @@ spec pg =
             Curves.negate
         gen = genAffinePoint pg
       in
-        circuitSpecPure' constraints evalTestConstraint solver (satisfied pureNegate) gen
+        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureNegate) gen
 
     it "if_ Circuit is Valid" $
       let
         pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry3 if_)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry3 if_)
         { constraints } =
           compilePure
             (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
@@ -136,12 +137,12 @@ spec pg =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' constraints evalTestConstraint solver (satisfied pureIf) gen
+        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureIf) gen
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
         f = uncurry ecAdd
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry add_)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry add_)
         { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
@@ -160,7 +161,7 @@ spec pg =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' constraints evalTestConstraint solver (satisfied f) gen
+        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
 
     it "double Circuit is Valid" $
       let
@@ -176,7 +177,7 @@ spec pg =
           in
             { x: x', y: y' }
 
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (double pg)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (double pg)
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
@@ -186,18 +187,18 @@ spec pg =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' constraints evalTestConstraint solver (satisfied pureDouble) gen
+        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureDouble) gen
 
     it "addComplete Circuit is Valid" $
       let
         f = uncurry (ecAddComplete pg)
-        solver = makeSolver (Proxy @(TestConstraintSystem f)) (uncurry circuit)
+        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry circuit)
 
         -- if the result is at infinity, ecAddComplete actually produces garbage 
         -- for the x and y values, they should be 0, 1 respectively
         circuit
           :: forall t
-           . CircuitM f (TestConstraintSystem f) t Identity
+           . CircuitM f (KimchiConstraint f) t Identity
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
           -> Snarky t Identity (Point (FVar f))
@@ -231,8 +232,8 @@ spec pg =
 
       in
         do
-          circuitSpecPure' constraints evalTestConstraint solver (satisfied f) gen
-          circuitSpecPure' constraints evalTestConstraint solver (satisfied f) genInverse
+          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
+          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
 
 ecAdd
   :: forall f

@@ -4,7 +4,8 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic)
+import Snarky.Circuit.Constraint.Basic as Basic
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
 import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)
@@ -29,8 +30,8 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ F a
     in
       do
-        circuitSpecPure' constraints evalBasicConstraint solver satisfied_ gen
-        circuitSpecPure' constraints evalBasicConstraint solver expectDivideByZero (pure $ F zero)
+        circuitSpecPure' constraints Basic.eval solver satisfied_ gen
+        circuitSpecPure' constraints Basic.eval solver expectDivideByZero (pure $ F zero)
 
   it "assertEqual Circuit is Valid" $
     let
@@ -47,8 +48,8 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints evalBasicConstraint solver unsatisfied distinct
-        circuitSpecPure' constraints evalBasicConstraint solver satisfied_ same
+        circuitSpecPure' constraints Basic.eval solver unsatisfied distinct
+        circuitSpecPure' constraints Basic.eval solver satisfied_ same
 
   it "assertNotEqual Circuit is Valid" $
     let
@@ -65,8 +66,8 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints evalBasicConstraint solver expectDivideByZero same
-        circuitSpecPure' constraints evalBasicConstraint solver satisfied_ distinct
+        circuitSpecPure' constraints Basic.eval solver expectDivideByZero same
+        circuitSpecPure' constraints Basic.eval solver satisfied_ distinct
 
   it "assertSquare Circuit is Valid" $
     let
@@ -85,5 +86,5 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure' constraints evalBasicConstraint solver satisfied_ squares
-        circuitSpecPure' constraints evalBasicConstraint solver unsatisfied nonSquares
+        circuitSpecPure' constraints Basic.eval solver satisfied_ squares
+        circuitSpecPure' constraints Basic.eval solver unsatisfied nonSquares

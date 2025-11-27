@@ -9,6 +9,7 @@ module Snarky.Circuit.CVar
   , negate_
   , scale_
   , eval
+  , genWithAssignments
   , reduceToAffineExpression
   , AffineExpression(..)
   , evalAffineExpression
@@ -17,18 +18,22 @@ module Snarky.Circuit.CVar
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Bifunctor (class Bifunctor)
-import Data.Foldable (class Foldable, foldM)
+import Data.Foldable (class Foldable, foldM, foldl)
 import Data.Generic.Rep (class Generic)
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Data.Traversable (class Traversable)
+import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..))
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
-import Test.QuickCheck.Gen (frequency, sized)
+import Test.QuickCheck.Gen (Gen, frequency, sized)
+import Type.Proxy (Proxy)
 
 newtype Variable = Variable Int
 
@@ -183,3 +188,25 @@ evalAffineExpression (AffineExpression { constant, terms }) lookup =
     )
     (fromMaybe zero constant)
     terms
+
+genWithAssignments
+  :: forall f
+   . PrimeField f
+  => Proxy f
+  -> Gen
+       { cvar :: CVar f Variable
+       , assignments :: Map Variable f
+       }
+genWithAssignments _ = do
+  cvar <- arbitrary @(CVar f Variable)
+  assignments <- genAssignments $ collectVariables cvar
+  pure
+    { cvar
+    , assignments
+    }
+  where
+  collectVariables = foldl (flip Set.insert) Set.empty
+  genAssignments vars = do
+    let varArray = Set.toUnfoldable vars :: Array Variable
+    assignments <- traverse (\_ -> arbitrary @f) varArray
+    pure $ Map.fromFoldable $ Array.zip varArray assignments

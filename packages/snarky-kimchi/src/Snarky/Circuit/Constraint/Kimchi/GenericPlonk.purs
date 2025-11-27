@@ -1,32 +1,24 @@
-module Snarky.Circuit.Constraint.Plonk
+module Snarky.Circuit.Constraint.Kimchi.GenericPlonk
   ( GenericPlonkConstraint
-  , evalPlonkConstraint
-  , reduceToPlonkGates
+  , eval
   , class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
-  , reduceAsBuilder
-  , reduceAsProver
+  , reduceBasic
   ) where
 
 import Prelude
 
-import Control.Monad.Except (ExceptT, runExceptT, throwError)
-import Control.Monad.State (State, execState, get, modify_, runState)
-import Data.Array as A
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
-import Data.Foldable (foldM, traverse_)
+import Data.Foldable (foldM)
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
-import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.Constraint (Basic(..))
 import Snarky.Curves.Class (class PrimeField)
 
@@ -43,21 +35,18 @@ type GenericPlonkConstraint f =
   , c :: f
   }
 
-evalPlonkConstraint
+eval
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
   -> GenericPlonkConstraint f
   -> m Boolean
-evalPlonkConstraint lookup x = do
+eval lookup x = do
   vl <- lookup x.vl
   vr <- lookup x.vr
   vo <- lookup x.vo
   pure $ x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
-
-class PlonkSystem f c | c -> f where
-  plonk :: GenericPlonkConstraint f -> c
 
 class Monad m <= PlonkReductionM m f | m -> f where
   createInternalVariable
@@ -111,13 +100,13 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
       addGenericPlonkConstraint { vl, cl, vr, cr, vo, co: -one, m: zero, c: fromMaybe zero constant }
       pure $ Tuple (Just vo) one
 
-reduceToPlonkGates
+reduceBasic
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => Basic f
   -> m Unit
-reduceToPlonkGates g = case g of
+reduceBasic g = case g of
   R1CS { left, right, output } -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
@@ -208,73 +197,3 @@ reduceToPlonkGates g = case g of
       -- v * v = v
       Just v -> do
         addGenericPlonkConstraint { vl: v, cl: -c, vr: v, cr: zero, co: zero, vo: v, m: c * c, c: zero }
-
-reduceAsBuilder
-  :: forall f
-   . PrimeField f
-  => { nextVariable :: Variable
-     , constraints :: Array (Basic f)
-     }
-  -> { nextVariable :: Variable
-     , constraints :: Array (GenericPlonkConstraint f)
-     }
-reduceAsBuilder { nextVariable, constraints: cs } =
-  let
-    initState = BuilderReductionState { nextVariable, constraints: mempty }
-    BuilderReductionState s = execState (traverse_ reduceToPlonkGates cs) initState
-  in
-    s
-
-reduceAsProver
-  :: forall f
-   . PrimeField f
-  => Array (Basic f)
-  -> { nextVariable :: Variable
-     , assignments :: Map Variable f
-     }
-  -> Either
-       (EvaluationError f)
-       { nextVariable :: Variable
-       , assignments :: Map Variable f
-       }
-reduceAsProver cs s = case runState (runExceptT (traverse_ reduceToPlonkGates cs)) (ProverReductionState s) of
-  Tuple (Left e) _ -> Left e
-  Tuple (Right _) (ProverReductionState s') -> Right s'
-
---------------------------------------------------------------------------------
-
-newtype BuilderReductionState f = BuilderReductionState
-  { constraints :: Array (GenericPlonkConstraint f)
-  , nextVariable :: Variable
-  }
-
-instance PlonkReductionM (State (BuilderReductionState f)) f where
-  addGenericPlonkConstraint c =
-    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` c }
-  createInternalVariable _ = do
-    BuilderReductionState { nextVariable } <- get
-    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
-    pure nextVariable
-
-newtype ProverReductionState f = ProverReductionState
-  { nextVariable :: Variable
-  , assignments :: Map Variable f
-  }
-
-instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (ProverReductionState f))) f where
-  addGenericPlonkConstraint _ = pure unit
-  createInternalVariable e = do
-    ProverReductionState { nextVariable, assignments } <- get
-    let
-      _lookup v = case Map.lookup v assignments of
-        Nothing ->
-          throwError $ MissingVariable v
-        Just a -> pure a
-    a <- evalAffineExpression e _lookup
-    modify_ \(ProverReductionState s) -> ProverReductionState $
-      s
-        { nextVariable = incrementVariable nextVariable
-        , assignments = Map.insert nextVariable a assignments
-
-        }
-    pure nextVariable
