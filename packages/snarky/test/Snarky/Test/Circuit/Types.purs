@@ -2,19 +2,23 @@ module Test.Snarky.Circuit.Types (spec) where
 
 import Prelude
 
+import Control.Apply (lift2)
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
+import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
-import Snarky.Circuit.CVar (CVar, Variable, const_)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar (CVar(..), Variable, const_)
 import Snarky.Circuit.Constraint (Basic, class BasicSystem)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked(..), check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, BoolVar, F, UnChecked(..), FVar, check, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
-import Test.QuickCheck.Gen (Gen)
+import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy(..))
@@ -147,6 +151,25 @@ testCircuitTypeGen typeName _ _ genA genAVar =
           in
             restored === var
 
+newtype ValidBVar f = ValidBVar (BoolVar f)
+
+derive instance Newtype (ValidBVar f) _
+
+instance PrimeField f => Arbitrary (ValidBVar f) where
+  arbitrary = ValidBVar <$>
+
+    let
+      g :: CVar f (Bool Variable) -> Maybe f
+      g = case _ of
+        (Const x) -> Just x
+        ScalarMul c v -> g v <#> \x -> x * c
+        Add x y -> lift2 add (g x) (g y)
+        (Var _) -> Nothing
+    in
+      arbitrary @(CVar f (Bool Variable)) `suchThat` \x -> case g x of
+        Nothing -> true
+        Just f -> f == zero || f == one
+
 spec :: forall f. Arbitrary f => PrimeField f => Proxy f -> Spec Unit
 spec pf = describe "CircuitType Round Trip Tests" do
 
@@ -235,10 +258,9 @@ spec pf = describe "CircuitType Round Trip Tests" do
           Array.null constraints === true
 
     it "Boolean type has exactly one constraint" $
-      quickCheck' 10 \(_ :: Unit) ->
+      quickCheck' 10 \(cvar :: ValidBVar f) ->
         let
-          cvar = const_ (zero @f) :: CVar f (Bool Variable)
-          constraints = check @(CVar f (Bool Variable)) @(Basic f) cvar
+          constraints = check @(CVar f (Bool Variable)) @(Basic f) (un ValidBVar cvar)
         in
           Array.length constraints === 1
 
@@ -258,19 +280,17 @@ spec pf = describe "CircuitType Round Trip Tests" do
           Array.null constraints === true
 
     it "UnChecked Boolean has no constraints" $
-      quickCheck' 10 \(_ :: Unit) ->
+      quickCheck' 10 \(x :: UnChecked (BoolVar f)) ->
         let
-          uncheckedVar = UnChecked (const_ (zero @f) :: CVar f (Bool Variable))
-          constraints = check @(UnChecked (CVar f (Bool Variable))) @(Basic f) uncheckedVar
+          constraints = check x
         in
           Array.null constraints === true
 
     -- Compound type constraint tests
     it "Record with F and Boolean accumulates constraints correctly" $
-      quickCheck' 10 \(fval :: f) ->
+      quickCheck' 10 \(x :: { a :: FVar f, b :: ValidBVar f }) ->
         let
-          record = { a: const_ fval :: CVar f Variable, b: const_ (zero @f) :: CVar f (Bool Variable) }
-          constraints = check @{ a :: CVar f Variable, b :: CVar f (Bool Variable) } @(Basic f) record
+          constraints = check @_ @(Basic f) (coerce x :: { a :: FVar f, b :: BoolVar f })
         in
           Array.length constraints === 1 -- Only the Boolean should contribute a constraint
 
@@ -283,9 +303,10 @@ spec pf = describe "CircuitType Round Trip Tests" do
           Array.null constraints === true
 
     it "Record with multiple Booleans accumulates all constraints" $
-      quickCheck' 10 \(_ :: Unit) ->
+      quickCheck' 10 \(x :: { flag1 :: ValidBVar f, flag2 :: ValidBVar f }) ->
         let
-          record = { flag1: const_ (zero @f) :: CVar f (Bool Variable), flag2: const_ (one @f) :: CVar f (Bool Variable) }
-          constraints = check @{ flag1 :: CVar f (Bool Variable), flag2 :: CVar f (Bool Variable) } @(Basic f) record
+          record :: { flag1 :: BoolVar f, flag2 :: BoolVar f }
+          record = coerce x
+          constraints = check @_ @(Basic f) record
         in
           Array.length constraints === 2 -- Both Booleans should contribute constraints
