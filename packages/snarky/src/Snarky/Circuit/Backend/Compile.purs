@@ -1,4 +1,4 @@
-module Snarky.Circuit.Compile
+module Snarky.Circuit.Backend.Compile
   ( Checker
   , Solver
   , SolverT
@@ -22,12 +22,12 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Circuit.Backend.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
-import Snarky.Circuit.Constraint (class R1CSSystem)
+import Snarky.Circuit.Constraint (class BasicSystem)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
-import Snarky.Circuit.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Circuit.Backend.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -37,7 +37,7 @@ compilePure
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
-  => R1CSSystem f c
+  => BasicSystem f c
   => Proxy a
   -> Proxy b
   -> (forall t. CircuitM f c t Identity => avar -> Snarky t Identity bvar)
@@ -50,7 +50,7 @@ compile
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem f c
+  => BasicSystem f c
   => Proxy a
   -> Proxy b
   -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
@@ -78,10 +78,10 @@ makeSolver
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => R1CSSystem f c
+  => BasicSystem f c
   => Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
-  -> SolverT f m a b
+  -> SolverT f c m a b
 makeSolver _ circuit = \inputs -> do
   eres <- lift $ flip runProverT emptyProverState do
     let n = sizeInFields (Proxy @f) (Proxy @a)
@@ -106,14 +106,15 @@ type SolverResult f a =
   , assignments :: Map Variable f
   }
 
-type SolverT f m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
+type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
+type SolverT f c m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
 
-runSolverT :: forall f m a b. SolverT f m a b -> a -> m (Either (EvaluationError f) (Tuple b (Map Variable f)))
+runSolverT :: forall f c m a b. SolverT f c m a b -> a -> m (Either (EvaluationError f) (Tuple b (Map Variable f)))
 runSolverT f a = runExceptT (f a)
 
-type Solver f a b = SolverT f Identity a b
+type Solver f c a b = SolverT f c Identity a b
 
-runSolver :: forall f a b. Solver f a b -> a -> Either (EvaluationError f) (Tuple b (Map Variable f))
+runSolver :: forall f c a b. Solver f c a b -> a -> Either (EvaluationError f) (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
 type Checker f c =

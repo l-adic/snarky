@@ -1,4 +1,4 @@
-module Snarky.Circuit.TestUtils where
+module Snarky.Circuit.Backend.TestUtils where
 
 import Prelude
 
@@ -15,7 +15,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
-import Snarky.Circuit.Compile (Solver, SolverT, Checker, runSolverT)
+import Snarky.Circuit.Backend.Compile (Solver, SolverT, Checker, runSolverT)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
@@ -54,7 +54,7 @@ makeCircuitSpec
   => Show b
   => PrimeField f
   => { constraints :: Array c
-     , solver :: SolverT f m a b
+     , solver :: SolverT f c m a b
      , evalConstraint ::
          (Variable -> Except (EvaluationError f) f)
          -> c
@@ -98,7 +98,7 @@ circuitSpecPure
   => Arbitrary a
   => Array c
   -> Checker f c
-  -> Solver f a b
+  -> Solver f c a b
   -> (a -> Expectation f b)
   -> Aff Unit
 circuitSpecPure constraints evalConstraint solver f =
@@ -113,7 +113,7 @@ circuitSpecPure'
   => Show b
   => Array c
   -> Checker f c
-  -> Solver f a b
+  -> Solver f c a b
   -> (a -> Expectation f b)
   -> Gen a
   -> Aff Unit
@@ -139,7 +139,7 @@ circuitSpec
   => (m ~> Effect)
   -> Array c
   -> Checker f c
-  -> SolverT f m a b
+  -> SolverT f c m a b
   -> (a -> Expectation f b)
   -> Aff Unit
 circuitSpec nat constraints evalConstraint solver f =
@@ -156,7 +156,7 @@ circuitSpec'
   => (m ~> Effect)
   -> Array c
   -> Checker f c
-  -> SolverT f m a b
+  -> SolverT f c m a b
   -> (a -> Expectation f b)
   -> Gen a
   -> Aff Unit

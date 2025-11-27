@@ -1,4 +1,4 @@
-module Snarky.Circuit.Plonk
+module Snarky.Circuit.Constraint.Plonk
   ( GenericPlonkConstraint
   , evalPlonkConstraint
   , reduceToPlonkGates
@@ -27,7 +27,7 @@ import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
-import Snarky.Circuit.Constraint (R1CS(..))
+import Snarky.Circuit.Constraint (Basic(..))
 import Snarky.Curves.Class (class PrimeField)
 
 --------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ reduceToPlonkGates
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => R1CS f
+  => Basic f
   -> m Unit
 reduceToPlonkGates g = case g of
   R1CS { left, right, output } -> do
@@ -124,7 +124,7 @@ reduceToPlonkGates g = case g of
     Tuple mvo co <- reduceAffineExpression $ reduceToAffineExpression output
     case mvl, mvr, mvo of
       -- (cl * vl) * (cr * vr) = (co * vo)
-      Just vl, Just vr, Just vo ->
+      Just vl, Just vr, Just vo -> do
         addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co, vo, m: -(cl * cr), c: zero }
       -- (cl * vl) * (cr * vr) = co
       Just vl, Just vr, Nothing -> do
@@ -164,6 +164,34 @@ reduceToPlonkGates g = case g of
                   <> show co
           )
         else pure unit
+  Equal a b -> do
+    Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
+    Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
+    case mvl, mvr of
+      -- cl * vl = cr * vr
+      Just vl, Just vr -> do
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl, vr, cr: -cr, co: zero, vo, m: zero, c: zero }
+      -- cl * vl = cr
+      Just vl, Nothing -> do
+        vr <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl, vr, cr: zero, co: zero, vo, m: zero, c: -cr }
+      -- cl = cr * vr
+      Nothing, Just vr -> do
+        vl <- freshUnconstrainedVariable
+        vo <- freshUnconstrainedVariable
+        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cr, co: zero, vo, m: zero, c: -cl }
+      Nothing, Nothing ->
+        if (cl /= cr) then
+          ( unsafeThrowException
+              $ error
+              $ "Contradiction while reducing equal to plonk gates: "
+                  <> show cl
+                  <> " /= "
+                  <> show cr
+          )
+        else pure unit
   Boolean b -> do
     Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
     case mv of
@@ -181,33 +209,52 @@ reduceToPlonkGates g = case g of
       Just v -> do
         addGenericPlonkConstraint { vl: v, cl: -c, vr: v, cr: zero, co: zero, vo: v, m: c * c, c: zero }
 
+reduceAsBuilder
+  :: forall f
+   . PrimeField f
+  => { nextVariable :: Variable
+     , constraints :: Array (Basic f)
+     }
+  -> { nextVariable :: Variable
+     , constraints :: Array (GenericPlonkConstraint f)
+     }
+reduceAsBuilder { nextVariable, constraints: cs } =
+  let
+    initState = BuilderReductionState { nextVariable, constraints: mempty }
+    BuilderReductionState s = execState (traverse_ reduceToPlonkGates cs) initState
+  in
+    s
+
+reduceAsProver
+  :: forall f
+   . PrimeField f
+  => Array (Basic f)
+  -> { nextVariable :: Variable
+     , assignments :: Map Variable f
+     }
+  -> Either
+       (EvaluationError f)
+       { nextVariable :: Variable
+       , assignments :: Map Variable f
+       }
+reduceAsProver cs s = case runState (runExceptT (traverse_ reduceToPlonkGates cs)) (ProverReductionState s) of
+  Tuple (Left e) _ -> Left e
+  Tuple (Right _) (ProverReductionState s') -> Right s'
+
+--------------------------------------------------------------------------------
+
 newtype BuilderReductionState f = BuilderReductionState
   { constraints :: Array (GenericPlonkConstraint f)
   , nextVariable :: Variable
   }
 
 instance PlonkReductionM (State (BuilderReductionState f)) f where
-  addGenericPlonkConstraint c = modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` c }
+  addGenericPlonkConstraint c =
+    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` c }
   createInternalVariable _ = do
     BuilderReductionState { nextVariable } <- get
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
     pure nextVariable
-
-reduceAsBuilder
-  :: forall f
-   . PrimeField f
-  => { nextVariable :: Variable
-     , constraints :: Array (R1CS f)
-     }
-  -> { nextVariable :: Variable
-     , constraints :: Array (GenericPlonkConstraint f)
-     }
-reduceAsBuilder { nextVariable, constraints: r1css } =
-  let
-    initState = BuilderReductionState { nextVariable, constraints: mempty }
-    BuilderReductionState s = execState (traverse_ reduceToPlonkGates r1css) initState
-  in
-    s
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -220,28 +267,14 @@ instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (Pr
     ProverReductionState { nextVariable, assignments } <- get
     let
       _lookup v = case Map.lookup v assignments of
-        Nothing -> throwError $ MissingVariable v
+        Nothing ->
+          throwError $ MissingVariable v
         Just a -> pure a
     a <- evalAffineExpression e _lookup
     modify_ \(ProverReductionState s) -> ProverReductionState $
       s
         { nextVariable = incrementVariable nextVariable
         , assignments = Map.insert nextVariable a assignments
+
         }
     pure nextVariable
-
-reduceAsProver
-  :: forall f
-   . PrimeField f
-  => Array (R1CS f)
-  -> { nextVariable :: Variable
-     , assignments :: Map Variable f
-     }
-  -> Either
-       (EvaluationError f)
-       { nextVariable :: Variable
-       , assignments :: Map Variable f
-       }
-reduceAsProver r1css s = case runState (runExceptT (traverse_ reduceToPlonkGates r1css)) (ProverReductionState s) of
-  Tuple (Left e) _ -> Left e
-  Tuple (Right _) (ProverReductionState s') -> Right s'

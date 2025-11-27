@@ -6,10 +6,10 @@ import Control.Monad.Trans.Class (lift)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Circuit.Compile (compile, makeSolver)
-import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
+import Snarky.Circuit.Backend.Compile (compile, makeSolver)
+import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, F, all_, assert_, const_, equals_, exists, mul_, neq_, read, Snarky)
-import Snarky.Circuit.TestUtils (satisfied_, circuitSpec')
+import Snarky.Circuit.Backend.TestUtils (satisfied_, circuitSpec')
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
@@ -22,7 +22,7 @@ class Monad m <= FactorM f m where
 factorsCircuit
   :: forall t m f
    . FactorM f m
-  => CircuitM f (R1CS f) t m
+  => CircuitM f (Basic f) t m
   => FVar f
   -> Snarky t m Unit
 factorsCircuit n = do
@@ -54,8 +54,8 @@ spec _ = describe "Factors Specs" do
         (Proxy @(F f))
         (Proxy @Unit)
         factorsCircuit
-    let solver = makeSolver (Proxy @(R1CS f)) factorsCircuit
+    let solver = makeSolver (Proxy @(Basic f)) factorsCircuit
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne constraints evalR1CSConstraint solver satisfied_ gen
+    circuitSpec' randomSampleOne constraints evalBasicConstraint solver satisfied_ gen

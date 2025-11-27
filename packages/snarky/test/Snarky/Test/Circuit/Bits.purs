@@ -10,10 +10,10 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint (R1CS, evalR1CSConstraint)
+import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
-import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied)
+import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
@@ -45,7 +45,7 @@ smallFieldElem bitCount = do
 
 packUnpackCircuit
   :: forall t m n f
-   . CircuitM f (R1CS f) t m
+   . CircuitM f (Basic f) t m
   => FieldSizeInBits f n
   => FVar f
   -> Snarky t m (FVar f)
@@ -67,23 +67,23 @@ spec _ = describe "Bits Circuit Specs" do
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver (Proxy @(R1CS f)) unpack_
+      solver = makeSolver (Proxy @(Basic f)) unpack_
       { constraints } =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
           unpack_
     in
-      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints evalBasicConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
       f = identity
-      solver = makeSolver (Proxy @(R1CS f)) (packUnpackCircuit)
+      solver = makeSolver (Proxy @(Basic f)) (packUnpackCircuit)
       { constraints } =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
           (packUnpackCircuit)
     in
-      circuitSpecPure' constraints evalR1CSConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints evalBasicConstraint solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

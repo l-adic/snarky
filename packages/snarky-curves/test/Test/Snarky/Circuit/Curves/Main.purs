@@ -9,13 +9,13 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (addComplete, add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, Point, genAffinePoint)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
