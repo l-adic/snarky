@@ -1,6 +1,6 @@
 module Snarky.Circuit.Constraint.Basic
   ( Basic(..)
-  , evalBasicConstraint
+  , eval
   ) where
 
 import Prelude
@@ -23,14 +23,14 @@ data Basic f
 derive instance Functor Basic
 derive instance Generic (Basic f) _
 
-evalBasicConstraint
+eval
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
   -> Basic f
   -> m Boolean
-evalBasicConstraint lookup gate = do
+eval lookup gate = do
   case gate of
     R1CS { left, right, output } -> do
       lval <- CVar.eval lookup left

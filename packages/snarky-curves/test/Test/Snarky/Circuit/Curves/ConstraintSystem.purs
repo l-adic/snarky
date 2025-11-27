@@ -4,7 +4,8 @@ import Prelude
 
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Constraint (class BasicSystem)
-import Snarky.Circuit.Constraint.Basic (Basic(..), evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic(..))
+import Snarky.Circuit.Constraint.Basic as Basic
 import Snarky.Circuit.Curves.Constraint (class ECSystem, ECConstraint(..), evalECConstraint)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -29,5 +30,5 @@ evalTestConstraint
   -> m Boolean
 evalTestConstraint lookup c =
   case c of
-    CSBasic c' -> evalBasicConstraint lookup c'
+    CSBasic c' -> Basic.eval lookup c'
     CSECS c' -> evalECConstraint lookup c'

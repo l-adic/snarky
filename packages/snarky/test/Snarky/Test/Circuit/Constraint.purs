@@ -19,7 +19,8 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, eval, evalAffineExpression, incrementVariable, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Basic (Basic(..), evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic(..))
+import Snarky.Circuit.Constraint.Basic as Basic
 import Snarky.Circuit.Constraint.Plonk as Plonk
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
@@ -162,7 +163,7 @@ spec pf = describe "Constraint Spec" do
           Just a -> pure a
 
         res :: Either (EvaluationError (BN254.ScalarField)) Boolean
-        res = runExcept $ evalBasicConstraint lookup basic
+        res = runExcept $ Basic.eval lookup basic
       pure $ res == Right true
 
   it "reduces basic constraints to plonk constraints" do
@@ -179,7 +180,7 @@ spec pf = describe "Constraint Spec" do
           Just a -> pure a
 
         basicEval :: Either (EvaluationError (BN254.ScalarField)) Boolean
-        basicEval = runExcept $ evalBasicConstraint lookup basic
+        basicEval = runExcept $ Basic.eval lookup basic
         plonkEval = runExcept $
           foldM
             ( \acc c ->
