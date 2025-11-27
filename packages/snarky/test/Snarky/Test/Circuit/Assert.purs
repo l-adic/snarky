@@ -3,10 +3,10 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Circuit.Compile (compilePure, makeSolver)
+import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
-import Snarky.Circuit.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
+import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (suchThat)

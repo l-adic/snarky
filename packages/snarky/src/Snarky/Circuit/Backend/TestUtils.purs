@@ -1,4 +1,4 @@
-module Snarky.Circuit.TestUtils where
+module Snarky.Circuit.Backend.TestUtils where
 
 import Prelude
 
@@ -15,7 +15,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
-import Snarky.Circuit.Compile (Solver, SolverT, Checker, runSolverT)
+import Snarky.Circuit.Backend.Compile (Solver, SolverT, Checker, runSolverT)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)

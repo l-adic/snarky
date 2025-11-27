@@ -1,4 +1,4 @@
-module Snarky.Circuit.Builder
+module Snarky.Circuit.Backend.Builder
   ( CircuitBuilderT
   , runCircuitBuilderT
   , execCircuitBuilderT

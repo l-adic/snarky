@@ -1,4 +1,4 @@
-module Snarky.Circuit.Prover
+module Snarky.Circuit.Backend.Prover
   ( ProverT
   , runProverT
   , ProverState

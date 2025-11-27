@@ -3,20 +3,20 @@ module Snarky.Circuit.Curves.Constraint where
 import Prelude
 
 import Data.Foldable (and)
-import Snarky.Circuit.CVar (CVar, Variable)
+import Snarky.Circuit.DSL (FVar, Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Curves.Types (AffinePoint)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 
 type AddComplete f =
-  { p1 :: AffinePoint (CVar f Variable)
-  , p2 :: AffinePoint (CVar f Variable)
-  , p3 :: AffinePoint (CVar f Variable)
-  , inf :: (CVar f Variable)
-  , sameX :: (CVar f Variable)
-  , s :: (CVar f Variable)
-  , infZ :: (CVar f Variable)
-  , x21Inv :: (CVar f Variable)
+  { p1 :: AffinePoint (FVar f)
+  , p2 :: AffinePoint (FVar f)
+  , p3 :: AffinePoint (FVar f)
+  , inf :: (FVar f)
+  , sameX :: (FVar f)
+  , s :: (FVar f)
+  , infZ :: (FVar f)
+  , x21Inv :: (FVar f)
   }
 
 data ECConstraint f = ECAddComplete (AddComplete f)
