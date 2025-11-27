@@ -29,7 +29,6 @@ import Type.Proxy (Proxy)
 spec :: forall f. PrimeField f => Proxy f -> Spec Unit
 spec pf = describe "Constraint Spec" do
 
-
   it "reduces basic constraints to plonk constraints" do
     liftEffect $ quickCheckGen' 10000 do
       { basic, assignments } <- Basic.genWithAssignments pf
@@ -53,7 +52,6 @@ spec pf = describe "Constraint Spec" do
             true
             plonkConstraints.constraints
       pure $ plonkEval === basicEval
-
 
 --------------------------------------------------------------------------------
 
@@ -98,7 +96,7 @@ newtype BuilderReductionState f = BuilderReductionState
 
 newtype PlonkBuilder f a = PlonkBuilder (State (BuilderReductionState f) a)
 
-derive newtype instance  Functor (PlonkBuilder f)
+derive newtype instance Functor (PlonkBuilder f)
 derive newtype instance Apply (PlonkBuilder f)
 derive newtype instance Applicative (PlonkBuilder f)
 derive newtype instance Bind (PlonkBuilder f)

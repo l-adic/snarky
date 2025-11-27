@@ -3,7 +3,8 @@ module Snarky.Circuit.Constraint.Kimchi where
 import Prelude
 
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.Constraint.Basic (Basic)
+import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Circuit.Constraint.Basic (Basic(..))
 import Snarky.Circuit.Constraint.Basic as Basic
 import Snarky.Circuit.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Circuit.Constraint.Kimchi.AddComplete as AddComplete
@@ -27,3 +28,8 @@ eval lookup = case _ of
   KimchiBasic c -> Basic.eval lookup c
   KimchiPlonk c -> GenericPlonk.eval lookup c
   KimchiAddComplete c -> AddComplete.eval lookup c
+
+instance BasicSystem f (KimchiConstraint f) where
+  r1cs = KimchiBasic <<< R1CS
+  equal a b = KimchiBasic $ Equal a b
+  boolean = KimchiBasic <<< Boolean

@@ -4,7 +4,7 @@ import Prelude
 
 import Effect (Effect)
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.Constraint.Kimchi.GenericPlonk  as GenericPlonkSpec
+import Test.Snarky.Circuit.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Spec (Spec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
