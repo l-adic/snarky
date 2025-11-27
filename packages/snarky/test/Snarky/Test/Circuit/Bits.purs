@@ -11,7 +11,7 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint (Basic, evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
 import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
 import Snarky.Circuit.TestUtils (circuitSpecPure', satisfied)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)

@@ -81,7 +81,7 @@ makeSolver
   => BasicSystem f c
   => Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
-  -> SolverT f m a b
+  -> SolverT f c m a b
 makeSolver _ circuit = \inputs -> do
   eres <- lift $ flip runProverT emptyProverState do
     let n = sizeInFields (Proxy @f) (Proxy @a)
@@ -106,14 +106,15 @@ type SolverResult f a =
   , assignments :: Map Variable f
   }
 
-type SolverT f m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
+type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
+type SolverT f c m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
 
-runSolverT :: forall f m a b. SolverT f m a b -> a -> m (Either (EvaluationError f) (Tuple b (Map Variable f)))
+runSolverT :: forall f c m a b. SolverT f c m a b -> a -> m (Either (EvaluationError f) (Tuple b (Map Variable f)))
 runSolverT f a = runExceptT (f a)
 
-type Solver f a b = SolverT f Identity a b
+type Solver f c a b = SolverT f c Identity a b
 
-runSolver :: forall f a b. Solver f a b -> a -> Either (EvaluationError f) (Tuple b (Map Variable f))
+runSolver :: forall f c a b. Solver f c a b -> a -> Either (EvaluationError f) (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
 type Checker f c =

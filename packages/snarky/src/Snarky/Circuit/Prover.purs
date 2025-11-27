@@ -24,7 +24,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError, Variable, incrementVariable, v0)
-import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Circuit.Constraint (class BasicSystem, class ConstraintM)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, AsProverT, Snarky(..), fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Curves.Class (class PrimeField)
@@ -61,8 +61,10 @@ type Prover f = ProverT f Identity
 runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either (EvaluationError f) a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
+instance Monad m => ConstraintM (ProverT f m) c where
+  addConstraint' _ = pure unit
+
 instance (Monad m, PrimeField f, BasicSystem f c) => CircuitM f c (ProverT f) m where
-  addConstraint _ = pure unit
   exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky (ProverT f) m var
   exists m = Snarky do
     assignments <- getAssignments
@@ -90,3 +92,4 @@ setAssignments vs = ProverT $
 
 getAssignments :: forall f m. Monad m => ProverT f m (Map Variable f)
 getAssignments = ProverT $ gets _.assignments
+

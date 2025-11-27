@@ -19,7 +19,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, eval, evalAffineExpression, incrementVariable, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (Basic(..), evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic(..), evalBasicConstraint)
 import Snarky.Circuit.Constraint.Plonk as Plonk
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)

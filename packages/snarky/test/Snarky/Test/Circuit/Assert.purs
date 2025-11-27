@@ -4,7 +4,7 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint (Basic, evalBasicConstraint)
+import Snarky.Circuit.Constraint.Basic (Basic, evalBasicConstraint)
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
 import Snarky.Circuit.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Curves.Class (class PrimeField)

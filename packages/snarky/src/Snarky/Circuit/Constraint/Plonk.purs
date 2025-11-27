@@ -1,6 +1,5 @@
 module Snarky.Circuit.Constraint.Plonk
-  ( PlonkConstraint(..)
-  , GenericPlonkConstraint
+  ( GenericPlonkConstraint
   , evalPlonkConstraint
   , reduceToPlonkGates
   , class PlonkReductionM
@@ -18,14 +17,12 @@ import Data.Array as A
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (foldM, traverse_)
-import Data.Generic.Rep (class Generic)
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.NonEmpty (NonEmpty(..))
-import Data.Show.Generic (genericShow)
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
@@ -46,21 +43,14 @@ type GenericPlonkConstraint f =
   , c :: f
   }
 
-data PlonkConstraint f = PlonkGeneric (GenericPlonkConstraint f)
-
-derive instance Generic (PlonkConstraint f) _
-
-instance Show f => Show (PlonkConstraint f) where
-  show x = genericShow x
-
 evalPlonkConstraint
   :: forall f m
    . PrimeField f
   => Monad m
   => (Variable -> m f)
-  -> PlonkConstraint f
+  -> GenericPlonkConstraint f
   -> m Boolean
-evalPlonkConstraint lookup (PlonkGeneric x) = do
+evalPlonkConstraint lookup x = do
   vl <- lookup x.vl
   vr <- lookup x.vr
   vo <- lookup x.vo
@@ -219,19 +209,6 @@ reduceToPlonkGates g = case g of
       Just v -> do
         addGenericPlonkConstraint { vl: v, cl: -c, vr: v, cr: zero, co: zero, vo: v, m: c * c, c: zero }
 
-newtype BuilderReductionState f = BuilderReductionState
-  { constraints :: Array (PlonkConstraint f)
-  , nextVariable :: Variable
-  }
-
-instance PlonkReductionM (State (BuilderReductionState f)) f where
-  addGenericPlonkConstraint c =
-    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` PlonkGeneric c }
-  createInternalVariable _ = do
-    BuilderReductionState { nextVariable } <- get
-    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
-    pure nextVariable
-
 reduceAsBuilder
   :: forall f
    . PrimeField f
@@ -239,7 +216,7 @@ reduceAsBuilder
      , constraints :: Array (Basic f)
      }
   -> { nextVariable :: Variable
-     , constraints :: Array (PlonkConstraint f)
+     , constraints :: Array (GenericPlonkConstraint f)
      }
 reduceAsBuilder { nextVariable, constraints: cs } =
   let
@@ -247,6 +224,37 @@ reduceAsBuilder { nextVariable, constraints: cs } =
     BuilderReductionState s = execState (traverse_ reduceToPlonkGates cs) initState
   in
     s
+
+reduceAsProver
+  :: forall f
+   . PrimeField f
+  => Array (Basic f)
+  -> { nextVariable :: Variable
+     , assignments :: Map Variable f
+     }
+  -> Either
+       (EvaluationError f)
+       { nextVariable :: Variable
+       , assignments :: Map Variable f
+       }
+reduceAsProver cs s = case runState (runExceptT (traverse_ reduceToPlonkGates cs)) (ProverReductionState s) of
+  Tuple (Left e) _ -> Left e
+  Tuple (Right _) (ProverReductionState s') -> Right s'
+
+--------------------------------------------------------------------------------
+
+newtype BuilderReductionState f = BuilderReductionState
+  { constraints :: Array (GenericPlonkConstraint f)
+  , nextVariable :: Variable
+  }
+
+instance PlonkReductionM (State (BuilderReductionState f)) f where
+  addGenericPlonkConstraint c =
+    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { constraints = s.constraints `A.snoc` c }
+  createInternalVariable _ = do
+    BuilderReductionState { nextVariable } <- get
+    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
+    pure nextVariable
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -270,19 +278,3 @@ instance PrimeField f => PlonkReductionM (ExceptT (EvaluationError f) (State (Pr
 
         }
     pure nextVariable
-
-reduceAsProver
-  :: forall f
-   . PrimeField f
-  => Array (Basic f)
-  -> { nextVariable :: Variable
-     , assignments :: Map Variable f
-     }
-  -> Either
-       (EvaluationError f)
-       { nextVariable :: Variable
-       , assignments :: Map Variable f
-       }
-reduceAsProver cs s = case runState (runExceptT (traverse_ reduceToPlonkGates cs)) (ProverReductionState s) of
-  Tuple (Left e) _ -> Left e
-  Tuple (Right _) (ProverReductionState s') -> Right s'
