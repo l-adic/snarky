@@ -11,7 +11,7 @@ import Prelude
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
-import Snarky.Circuit.Constraint (r1cs)
+import Snarky.Circuit.Constraint (equal)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, inv_, mul_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 
@@ -33,7 +33,7 @@ assertEqual_ x y = case x, y of
     if f == g then pure unit
     else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
-    addConstraint $ r1cs { left: x `sub_` y, right: Const one, output: Const zero }
+    addConstraint $ equal x y
 
 assertNotEqual_
   :: forall f c t m

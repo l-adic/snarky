@@ -1,0 +1,7 @@
+package:
+  name: snarky-test-utils
+  dependencies:
+    - prelude
+    - snarky
+    - spec
+    - spec-quickcheck

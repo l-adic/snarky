@@ -20,7 +20,7 @@ data KimchiConstraint f
 eval
   :: forall f m
    . PrimeField f
-  => Monad m
+  => Applicative m
   => (Variable -> m f)
   -> KimchiConstraint f
   -> m Boolean

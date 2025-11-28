@@ -1,12 +1,12 @@
 package:
-  name: snarky-kimchi
+  name: snarky-r1cs
   dependencies:
     - prelude
     - curves
     - snarky
     - quickcheck
   test:
-    main: Test.Snarky.Circuit.Kimchi.Main
+    main: Test.Snarky.Circuit.R1CS.Main
     dependencies:
       - snarky-test-utils
       - spec

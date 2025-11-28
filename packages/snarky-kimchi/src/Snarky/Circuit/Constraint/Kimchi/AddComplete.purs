@@ -25,11 +25,11 @@ type AddComplete f =
 eval
   :: forall f m
    . PrimeField f
-  => Monad m
+  => Applicative m
   => (Variable -> m f)
   -> AddComplete f
   -> m Boolean
-eval lookup c = do
+eval lookup c = ado
   x1 <- CVar.eval lookup c.p1.x
   y1 <- CVar.eval lookup c.p1.y
   x2 <- CVar.eval lookup c.p2.x
@@ -67,4 +67,4 @@ eval lookup c = do
     c7 =
       if x1 == x2 then x21Inv == zero
       else x21Inv == recip (x2 - x1)
-  pure $ and [ c1, c2, c3, c4, c5, c6, c7 ]
+  in and [ c1, c2, c3, c4, c5, c6, c7 ]

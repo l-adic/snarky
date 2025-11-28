@@ -10,7 +10,7 @@ import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Circuit.Constraint.Kimchi as KimchiConstraint
 import Snarky.Circuit.Curves (addComplete, add_, assertEqual, assertOnCurve, double, if_)

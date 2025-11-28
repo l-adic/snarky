@@ -11,14 +11,12 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint.Basic (Basic)
-import Snarky.Circuit.Constraint.Basic as Basic
-import Snarky.Circuit.DSL (class CircuitM, FVar, pack_, unpack_, F(..), Snarky)
-import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, Variable, pack_, unpack_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
-import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -45,8 +43,8 @@ smallFieldElem bitCount = do
     pure $ F $ fromBigInt $ combined `BigInt.and` mask
 
 packUnpackCircuit
-  :: forall t m n f
-   . CircuitM f (Basic f) t m
+  :: forall t m n f c
+   . CircuitM f c t m
   => FieldSizeInBits f n
   => FVar f
   -> Snarky t m (FVar f)
@@ -57,8 +55,21 @@ packUnpackCircuit value = do
 bitSizes :: Int -> Gen Int
 bitSizes mx = Gen.chooseInt 1 mx
 
-spec :: forall f n. FieldSizeInBits f n => Arbitrary f => Proxy f -> Spec Unit
-spec _ = describe "Bits Circuit Specs" do
+spec
+  :: forall f n c
+   . FieldSizeInBits f n
+  => PrimeField f
+  => BasicSystem f c
+  => Proxy f
+  -> Proxy c
+  -> ( forall m
+        . Applicative m
+       => (Variable -> m f)
+       -> c
+       -> m Boolean
+     )
+  -> Spec Unit
+spec _ pc eval = describe "Bits Circuit Specs" do
   it "unpack Circuit is Valid" $
     let
 
@@ -68,23 +79,23 @@ spec _ = describe "Bits Circuit Specs" do
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver (Proxy @(Basic f)) unpack_
+      solver = makeSolver pc unpack_
       { constraints } =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
           unpack_
     in
-      circuitSpecPure' constraints Basic.eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
       f = identity
-      solver = makeSolver (Proxy @(Basic f)) (packUnpackCircuit)
+      solver = makeSolver pc (packUnpackCircuit)
       { constraints } =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
           (packUnpackCircuit)
     in
-      circuitSpecPure' constraints Basic.eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

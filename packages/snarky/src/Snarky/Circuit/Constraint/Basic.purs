@@ -39,17 +39,17 @@ derive instance Generic (Basic f) _
 eval
   :: forall f m
    . PrimeField f
-  => Monad m
+  => Applicative m
   => (Variable -> m f)
   -> Basic f
   -> m Boolean
-eval lookup gate = do
+eval lookup gate =
   case gate of
-    R1CS { left, right, output } -> do
+    R1CS { left, right, output } -> ado
       lval <- CVar.eval lookup left
       rval <- CVar.eval lookup right
       oval <- CVar.eval lookup output
-      pure $ lval * rval == oval
+      in lval * rval == oval
     Equal a b ->
       lift2 eq (CVar.eval lookup a) (CVar.eval lookup b)
     Boolean i -> do

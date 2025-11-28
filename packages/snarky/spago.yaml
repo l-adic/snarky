@@ -14,8 +14,7 @@ package:
   test:
     main: Test.Snarky.Circuit.Main
     dependencies:
-      - aff
-      - debug
+      - snarky-test-utils
       - spec
       - spec-node
       - spec-quickcheck

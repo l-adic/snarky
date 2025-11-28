@@ -1,12 +1,11 @@
-module Test.Snarky.Circuit.Kimchi.Main where
+module Test.Snarky.Circuit.R1CS.Main where
 
 import Prelude
 
 import Effect (Effect)
-import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint, eval)
+import Snarky.Circuit.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
-import Test.Snarky.Circuit.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Spec (Spec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -19,5 +18,4 @@ main =
 
 spec :: Spec Unit
 spec = do
-  GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval
+  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
