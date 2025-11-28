@@ -4,22 +4,33 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.Constraint.Basic (Basic)
-import Snarky.Circuit.Constraint.Basic as Basic
-import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertSquare_, assertNotEqual_)
-import Snarky.Circuit.Backend.TestUtils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
+import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, arbitrary)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec :: forall f. PrimeField f => Arbitrary f => Proxy f -> Spec Unit
-spec _ = describe "Assertion Circuit Specs" do
+spec
+  :: forall f c
+   . PrimeField f
+  => BasicSystem f c
+  => Proxy f
+  -> Proxy c
+  -> ( forall m
+        . Applicative m
+       => (Variable -> m f)
+       -> c
+       -> m Boolean
+     )
+  -> Spec Unit
+spec _ pc eval = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(Basic f)) assertNonZero_
+      solver = makeSolver pc assertNonZero_
       { constraints } =
         compilePure
           (Proxy @(F f))
@@ -30,12 +41,12 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ F a
     in
       do
-        circuitSpecPure' constraints Basic.eval solver satisfied_ gen
-        circuitSpecPure' constraints Basic.eval solver expectDivideByZero (pure $ F zero)
+        circuitSpecPure' constraints eval solver satisfied_ gen
+        circuitSpecPure' constraints eval solver expectDivideByZero (pure $ F zero)
 
   it "assertEqual Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(Basic f)) (uncurry assertEqual_)
+      solver = makeSolver pc (uncurry assertEqual_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
@@ -48,12 +59,12 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints Basic.eval solver unsatisfied distinct
-        circuitSpecPure' constraints Basic.eval solver satisfied_ same
+        circuitSpecPure' constraints eval solver unsatisfied distinct
+        circuitSpecPure' constraints eval solver satisfied_ same
 
   it "assertNotEqual Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(Basic f)) (uncurry assertNotEqual_)
+      solver = makeSolver pc (uncurry assertNotEqual_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
@@ -66,12 +77,12 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints Basic.eval solver expectDivideByZero same
-        circuitSpecPure' constraints Basic.eval solver satisfied_ distinct
+        circuitSpecPure' constraints eval solver expectDivideByZero same
+        circuitSpecPure' constraints eval solver satisfied_ distinct
 
   it "assertSquare Circuit is Valid" $
     let
-      solver = makeSolver (Proxy @(Basic f)) (uncurry assertSquare_)
+      solver = makeSolver pc (uncurry assertSquare_)
       { constraints } =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
@@ -86,5 +97,5 @@ spec _ = describe "Assertion Circuit Specs" do
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure' constraints Basic.eval solver satisfied_ squares
-        circuitSpecPure' constraints Basic.eval solver unsatisfied nonSquares
+        circuitSpecPure' constraints eval solver satisfied_ squares
+        circuitSpecPure' constraints eval solver unsatisfied nonSquares

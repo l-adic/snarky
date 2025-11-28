@@ -38,15 +38,15 @@ type GenericPlonkConstraint f =
 eval
   :: forall f m
    . PrimeField f
-  => Monad m
+  => Applicative m
   => (Variable -> m f)
   -> GenericPlonkConstraint f
   -> m Boolean
-eval lookup x = do
+eval lookup x = ado
   vl <- lookup x.vl
   vr <- lookup x.vr
   vo <- lookup x.vo
-  pure $ x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
+  in x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
 
 class Monad m <= PlonkReductionM m f | m -> f where
   createInternalVariable

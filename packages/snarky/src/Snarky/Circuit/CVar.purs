@@ -129,7 +129,7 @@ instance Show f => Show (EvaluationError f) where
 eval
   :: forall f m
    . PrimeField f
-  => Monad m
+  => Applicative m
   => (Variable -> m f)
   -> CVar f Variable
   -> m f

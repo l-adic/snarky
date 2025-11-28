@@ -1,4 +1,4 @@
-module Snarky.Test.Circuit.Constraint (spec) where
+module Test.Snarky.Constraint (spec) where
 
 import Prelude
 

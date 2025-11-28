@@ -1,4 +1,4 @@
-module Snarky.Circuit.Backend.TestUtils where
+module Test.Snarky.Circuit.Utils where
 
 import Prelude
 
