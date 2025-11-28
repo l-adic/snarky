@@ -10,4 +10,4 @@ import Snarky.Circuit.DSL.Field (equals, equals_, neq_, sum_, pow_) as ReExports
 import Snarky.Circuit.DSL.Boolean (all_, any_, if_, xor_) as ReExports
 import Snarky.Circuit.DSL.Bits (pack_, unpack_) as ReExports
 import Snarky.Circuit.DSL.Utils (seal) as ReExports
-import Snarky.Circuit.Constraint (r1cs, boolean, equal) as ReExports
+import Snarky.Constraint.Basic (r1cs, boolean, equal) as ReExports

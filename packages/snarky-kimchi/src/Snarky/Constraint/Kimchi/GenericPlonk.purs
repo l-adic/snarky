@@ -1,4 +1,4 @@
-module Snarky.Circuit.Constraint.Kimchi.GenericPlonk
+module Snarky.Constraint.Kimchi.GenericPlonk
   ( GenericPlonkConstraint
   , eval
   , class PlonkReductionM
@@ -19,7 +19,7 @@ import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (AffineExpression(..), Variable, reduceToAffineExpression)
-import Snarky.Circuit.Constraint (Basic(..))
+import Snarky.Constraint.Basic (Basic(..))
 import Snarky.Curves.Class (class PrimeField)
 
 --------------------------------------------------------------------------------

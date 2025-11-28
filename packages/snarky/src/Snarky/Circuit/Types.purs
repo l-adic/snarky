@@ -56,7 +56,7 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
-import Snarky.Circuit.Constraint (class BasicSystem, boolean)
+import Snarky.Constraint.Basic (class BasicSystem, boolean)
 import Snarky.Curves.Class (class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Data.Vector (Vector, toVector, unVector)
 import Test.QuickCheck (class Arbitrary)

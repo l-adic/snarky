@@ -2,6 +2,8 @@ module Snarky.Circuit.DSL.Monad
   ( AsProver
   , AsProverT
   , Snarky(..)
+  , class ConstraintM
+  , addConstraint'
   , addConstraint
   , class CircuitM
   , class MonadFresh
@@ -39,9 +41,12 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (class BasicSystem, r1cs, class ConstraintM, addConstraint')
+import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, BoolVar, fieldsToValue, varToFields)
 import Snarky.Curves.Class (class PrimeField)
+
+class Monad m <= ConstraintM m c | m -> c where
+  addConstraint' :: c -> m Unit
 
 addConstraint :: forall f c t m. CircuitM f c t m => c -> Snarky t m Unit
 addConstraint c = Snarky $ addConstraint' c

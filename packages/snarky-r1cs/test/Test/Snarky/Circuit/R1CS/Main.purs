@@ -3,7 +3,7 @@ module Test.Snarky.Circuit.R1CS.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Circuit.Constraint.R1CS (R1CS, eval)
+import Snarky.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
 import Test.Spec (Spec)

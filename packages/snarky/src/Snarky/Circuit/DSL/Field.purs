@@ -13,7 +13,7 @@ import Data.Array (foldl)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (r1cs)
+import Snarky.Constraint.Basic (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F, FVar)
 import Snarky.Curves.Class (class PrimeField)
