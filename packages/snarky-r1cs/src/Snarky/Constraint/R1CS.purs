@@ -1,10 +1,10 @@
-module Snarky.Circuit.Constraint.R1CS where
+module Snarky.Constraint.R1CS where
 
 import Prelude
 
 import Snarky.Circuit.CVar (CVar, Variable, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 
 data R1CS f = R1CS (CVar f Variable) (CVar f Variable) (CVar f Variable)

@@ -10,7 +10,7 @@ import Data.Maybe (Maybe(..))
 import Effect.Class (liftEffect)
 import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint.Basic as Basic
+import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen)

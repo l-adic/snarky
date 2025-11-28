@@ -1,4 +1,4 @@
-module Test.Snarky.Circuit.Constraint.Kimchi.GenericPlonk (spec) where
+module Test.Snarky.Constraint.Kimchi.GenericPlonk (spec) where
 
 import Prelude
 
@@ -17,10 +17,10 @@ import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, evalAffineExpression, incrementVariable, v0)
-import Snarky.Circuit.Constraint.Basic (Basic)
-import Snarky.Circuit.Constraint.Basic as Basic
-import Snarky.Circuit.Constraint.Kimchi.GenericPlonk (class PlonkReductionM, GenericPlonkConstraint, reduceBasic)
-import Snarky.Circuit.Constraint.Kimchi.GenericPlonk as Plonk
+import Snarky.Constraint.Basic (Basic)
+import Snarky.Constraint.Basic as Basic
+import Snarky.Constraint.Kimchi.GenericPlonk (class PlonkReductionM, GenericPlonkConstraint, reduceBasic)
+import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', (===))
 import Test.Spec (Spec, describe, it)

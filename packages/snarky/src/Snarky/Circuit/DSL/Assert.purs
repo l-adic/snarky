@@ -11,7 +11,7 @@ import Prelude
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
-import Snarky.Circuit.Constraint (equal)
+import Snarky.Constraint.Basic (equal)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, inv_, mul_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 

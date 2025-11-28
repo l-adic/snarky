@@ -1,15 +1,15 @@
-module Snarky.Circuit.Constraint.Kimchi where
+module Snarky.Constraint.Kimchi where
 
 import Prelude
 
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.Constraint (class BasicSystem)
-import Snarky.Circuit.Constraint.Basic (Basic(..))
-import Snarky.Circuit.Constraint.Basic as Basic
-import Snarky.Circuit.Constraint.Kimchi.AddComplete (AddComplete)
-import Snarky.Circuit.Constraint.Kimchi.AddComplete as AddComplete
-import Snarky.Circuit.Constraint.Kimchi.GenericPlonk (GenericPlonkConstraint)
-import Snarky.Circuit.Constraint.Kimchi.GenericPlonk as GenericPlonk
+import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Constraint.Basic (Basic(..))
+import Snarky.Constraint.Basic as Basic
+import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
+import Snarky.Constraint.Kimchi.AddComplete as AddComplete
+import Snarky.Constraint.Kimchi.GenericPlonk (GenericPlonkConstraint)
+import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Curves.Class (class PrimeField)
 
 data KimchiConstraint f

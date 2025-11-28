@@ -3,7 +3,7 @@ module Test.Snarky.Circuit (spec) where
 import Prelude
 
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.Constraint (class BasicSystem)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.Snarky.Circuit.Assert as AssertTest
 import Test.Snarky.Circuit.Bits as BitsTest

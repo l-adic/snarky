@@ -3,10 +3,10 @@ module Test.Snarky.Circuit.Kimchi.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint, eval)
+import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
-import Test.Snarky.Circuit.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
+import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Spec (Spec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)

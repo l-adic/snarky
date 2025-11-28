@@ -14,7 +14,7 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const, ScalarMul))
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Constraint (r1cs)
+import Snarky.Constraint.Basic (r1cs)
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), UnChecked(..), FVar)

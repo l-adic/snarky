@@ -3,8 +3,8 @@ module Test.Snarky.Circuit.Main where
 import Prelude
 
 import Effect (Effect)
-import Snarky.Circuit.Constraint.Basic (Basic)
-import Snarky.Circuit.Constraint.Basic as Basic
+import Snarky.Constraint.Basic (Basic)
+import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests

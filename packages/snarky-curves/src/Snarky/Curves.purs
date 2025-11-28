@@ -12,7 +12,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.Constraint.Kimchi (KimchiConstraint(..))
+import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, read, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky

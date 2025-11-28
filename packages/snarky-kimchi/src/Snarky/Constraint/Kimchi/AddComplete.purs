@@ -1,4 +1,4 @@
-module Snarky.Circuit.Constraint.Kimchi.AddComplete
+module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
   , eval
   ) where
