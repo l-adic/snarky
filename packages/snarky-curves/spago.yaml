@@ -8,7 +8,6 @@ package:
   test:
     main: Test.Snarky.Circuit.Curves.Main
     dependencies:
-      - aff
       - spec
       - spec-node
       - spec-quickcheck

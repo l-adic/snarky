@@ -361,7 +361,6 @@
         },
         "test": {
           "dependencies": [
-            "aff",
             "quickcheck",
             "spec",
             "spec-node",

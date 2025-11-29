@@ -1,5 +1,6 @@
 module Snarky.Data.EllipticCurve
-  ( AffinePoint
+  ( CurveParams
+  , AffinePoint
   , genAffinePoint
   , Point(..)
   , addAffine

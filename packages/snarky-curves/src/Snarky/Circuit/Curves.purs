@@ -5,16 +5,12 @@ module Snarky.Circuit.Curves
   , if_
   , add_
   , double
-  , addComplete
   ) where
 
 import Prelude
 
-import Control.Apply (lift2)
-import Safe.Coerce (coerce)
-import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, read, readCVar, scale_, sub_)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams, fromInt)
 import Type.Proxy (Proxy)
@@ -145,65 +141,3 @@ double pg { x: ax, y: ay } = do
     }
 
   pure { x: bx, y: by }
-
-seal
-  :: forall f c t m
-   . CircuitM f c t m
-  => AffinePoint (FVar f)
-  -> Snarky t m (AffinePoint (FVar f))
-seal { x, y } = do
-  x' <- Snarky.seal x
-  y' <- Snarky.seal y
-  pure { x: x', y: y' }
-
-addComplete
-  :: forall f t m
-   . CircuitM f (KimchiConstraint f) t m
-  => AffinePoint (FVar f)
-  -> AffinePoint (FVar f)
-  -> Snarky t m
-       { p :: AffinePoint (FVar f)
-       , isInfinity :: BoolVar f
-       }
-addComplete _p1 _p2 = do
-  p1 <- seal _p1
-  p2 <- seal _p2
-  sameX <- exists $
-    lift2 eq (readCVar p1.x) (readCVar p2.x)
-  inf <- exists
-    let
-      sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
-    in
-      read sameX && not sameY
-  infZ <- exists $
-    lift2 eq (readCVar p1.y) (readCVar p2.y) >>=
-      if _ then zero
-      else
-        read sameX >>=
-          if _ then recip (readCVar p2.y - readCVar p1.y)
-          else zero
-  x21Inv <- exists $
-    read sameX >>=
-      if _ then zero
-      else recip (readCVar p2.x - readCVar p1.x)
-  s <- exists $
-    read sameX >>=
-      if _ then do
-        x1 <- readCVar p1.x
-        y1 <- readCVar p1.y
-        pure $ (fromInt 3 * x1 * x1) / (fromInt 2 * y1)
-      else
-        (readCVar p2.y - readCVar p1.y) / (readCVar p2.x - readCVar p1.x)
-  x3 <- exists
-    let
-      sVal = readCVar s
-    in
-      sVal * sVal - (readCVar p1.x + readCVar p2.x)
-  y3 <- exists $
-    readCVar s * (readCVar p1.x - readCVar x3) - readCVar p1.y
-  addConstraint $ KimchiAddComplete
-    { p1, p2, sameX: coerce sameX, inf: coerce inf, infZ, x21Inv, s, p3: { x: x3, y: y3 } }
-  pure
-    { p: { x: x3, y: y3 }
-    , isInfinity: inf
-    }
