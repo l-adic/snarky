@@ -4,25 +4,23 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
-import Data.Identity (Identity)
+import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
+import Snarky.Circuit.Curves as Curves
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
+import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Circuit.Curves (addComplete, add_, assertEqual, assertOnCurve, double, if_)
-import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.Curves.Types (AffinePoint, CurveParams, Point, genAffinePoint)
-import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
-import Snarky.Circuit.DSL as Snarky
-import Snarky.Circuit.Types (F(..), FVar)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
+import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -141,7 +139,7 @@ spec pg =
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
-        f = uncurry ecAdd
+        f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
         solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry add_)
         { constraints } =
           compilePure
@@ -188,79 +186,3 @@ spec pg =
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
         circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureDouble) gen
-
-    it "addComplete Circuit is Valid" $
-      let
-        f = uncurry (ecAddComplete pg)
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry circuit)
-
-        -- if the result is at infinity, ecAddComplete actually produces garbage 
-        -- for the x and y values, they should be 0, 1 respectively
-        circuit
-          :: forall t
-           . CircuitM f (KimchiConstraint f) t Identity
-          => AffinePoint (FVar f)
-          -> AffinePoint (FVar f)
-          -> Snarky t Identity (Point (FVar f))
-        circuit p1 p2 = do
-          { isInfinity, p } <- addComplete p1 p2
-          x <- Snarky.if_ isInfinity (const_ zero) p.x
-          y <- Snarky.if_ isInfinity (const_ one) p.y
-          z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
-          pure { x, y, z }
-        { constraints } =
-          compilePure
-            (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
-            (Proxy @(Point (F f)))
-            (uncurry circuit)
-
-        -- Generate distinct points to avoid division by zero in slope calculation
-        -- Avoid x1 = x2
-        gen = do
-          p1 <- genAffinePoint pg
-          p2 <- genAffinePoint pg `suchThat` \p ->
-            let
-              { x: x1, y: y1 } = p1
-              { x: x2, y: y2 } = p
-            in
-              x1 /= x2 || y1 /= negate y2
-          pure $ Tuple p1 p2
-        genInverse = do
-          p1 <- genAffinePoint pg
-          let p2 = p1 { y = -p1.y }
-          pure $ Tuple p1 p2
-
-      in
-        do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
-
-ecAdd
-  :: forall f
-   . PrimeField f
-  => Partial
-  => AffinePoint (F f)
-  -> AffinePoint (F f)
-  -> AffinePoint (F f)
-ecAdd { x: x1, y: y1 } { x: x2, y: y2 } =
-  let
-    lambda = (y2 - y1) / (x2 - x1) -- Assumes x1 ≠ x2
-    x3 = (lambda * lambda) - x1 - x2
-    y3 = lambda * (x1 - x3) - y1
-  in
-    { x: x3, y: y3 }
-
-ecAddComplete
-  :: forall f g
-   . WeierstrassCurve f g
-  => Proxy g
-  -> AffinePoint (F f)
-  -> AffinePoint (F f)
-  -> Point (F f)
-ecAddComplete _ p1 p2 =
-  if p1.x == p2.x && p1.y == negate p2.y then { x: zero, y: one, z: zero }
-  else
-    let
-      { x, y } = unsafePartial $ ecAdd p1 p2
-    in
-      { x, y, z: one }

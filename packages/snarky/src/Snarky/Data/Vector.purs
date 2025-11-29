@@ -19,7 +19,7 @@ module Snarky.Data.Vector
 import Prelude
 
 import Control.Monad.Gen (class MonadGen)
-import Data.Array ((:))
+import Data.Array (foldMap, (:))
 import Data.Array as A
 import Data.Array as Array
 import Data.Foldable (class Foldable)
@@ -33,6 +33,7 @@ import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Type.Proxy (Proxy(..))
 
@@ -128,3 +129,34 @@ generate f = Vector $ map f (finites $ Proxy @n)
 
 generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites $ Proxy @n)
+
+instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
+  valueToFields as = foldMap valueToFields (unVector as)
+  fieldsToValue as =
+    let
+      chunks = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToValue <$> chunks
+    in
+      unsafePartial $ fromJust $ toVector (Proxy @n) vals
+  sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
+  varToFields as = foldMap (varToFields @f @a) (unVector as)
+  fieldsToVar as =
+    let
+      chunks = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToVar @f @a <$> chunks
+    in
+      unsafePartial $ fromJust $ toVector (Proxy @n) vals
+
+instance CheckedType var c => CheckedType (Vector n var) c where
+  check (Vector var) = foldMap check var
+
+chunk :: forall a. Int -> Array a -> Array (Array a)
+chunk n arr
+  | n <= 0 = []
+  | Array.null arr = []
+  | otherwise =
+      let
+        current = Array.take n arr
+        rest = Array.drop n arr
+      in
+        [ current ] <> chunk n rest

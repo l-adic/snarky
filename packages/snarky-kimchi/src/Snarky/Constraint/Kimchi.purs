@@ -3,8 +3,7 @@ module Snarky.Constraint.Kimchi where
 import Prelude
 
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Constraint.Basic (Basic(..))
+import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
