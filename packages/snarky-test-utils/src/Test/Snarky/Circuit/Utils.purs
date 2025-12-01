@@ -32,6 +32,8 @@ instance Show a => Show (Expectation f a) where
     Satisfied a -> "Satisfied " <> show a
     ProverError _ -> "[ProverError]"
 
+derive instance Functor (Expectation f)
+
 satisfied :: forall f a b. (a -> b) -> a -> Expectation f b
 satisfied f a = Satisfied (f a)
 
@@ -46,24 +48,28 @@ expectDivideByZero _ = ProverError \e -> case e of
   DivisionByZero _ -> true
   _ -> false
 
-makeCircuitSpec
-  :: forall f c a avar m b
+newtype CircuitSpec :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type -> Type
+newtype CircuitSpec f c m a avar b = CircuitSpec
+  { constraints :: Array c
+  , solver :: SolverT f c m a b
+  , evalConstraint ::
+      (Variable -> Except (EvaluationError f) f)
+      -> c
+      -> Except (EvaluationError f) Boolean
+  , isValid :: a -> Expectation f b
+  }
+
+runCircuitSpec
+  :: forall f c m a avar b
    . CircuitType f a avar
   => Monad m
   => Eq b
   => Show b
   => PrimeField f
-  => { constraints :: Array c
-     , solver :: SolverT f c m a b
-     , evalConstraint ::
-         (Variable -> Except (EvaluationError f) f)
-         -> c
-         -> Except (EvaluationError f) Boolean
-     , isValid :: a -> Expectation f b
-     }
+  => CircuitSpec f c m a avar b
   -> a
   -> m Result
-makeCircuitSpec { constraints, solver, evalConstraint, isValid } inputs = do
+runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) inputs = do
   runSolverT solver inputs <#> case _ of
     Left e ->
       case isValid inputs of
@@ -120,7 +126,7 @@ circuitSpecPure'
 circuitSpecPure' constraints evalConstraint solver isValid g = liftEffect
   let
     spc = un Identity <<<
-      makeCircuitSpec { constraints, solver, evalConstraint, isValid }
+      runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid })
   in
     quickCheck $
       g <#> spc
@@ -162,6 +168,6 @@ circuitSpec'
   -> Aff Unit
 circuitSpec' nat constraints evalConstraint solver isValid g =
   let
-    spc = makeCircuitSpec { constraints, solver, evalConstraint, isValid }
+    spc = runCircuitSpec $ CircuitSpec { constraints, solver, evalConstraint, isValid }
   in
     liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
