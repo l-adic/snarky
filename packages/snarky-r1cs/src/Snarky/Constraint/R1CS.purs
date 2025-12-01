@@ -8,16 +8,19 @@ module Snarky.Constraint.R1CS
   , evalGates
   , Witness
   , makeWitness
+  , Instance
+  , makeInstance
   ) where
 
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (Except)
-import Data.Array (fold, foldMap, mapWithIndex, zipWith)
+import Data.Array (zipWith)
 import Data.Array as Array
 import Data.Bifunctor (lmap, rmap)
-import Data.Foldable (foldM)
+import Data.Foldable (fold, foldM, foldMap)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (fromJust, fromMaybe, maybe)
@@ -94,18 +97,22 @@ type Gates f =
   { wl :: Matrix f
   , wr :: Matrix f
   , wo :: Matrix f
-  , wv :: Matrix f
+  , wvPrivate :: Matrix f
+  , wvPublic :: Matrix f
   , c :: Array f
   }
 
 makeGates
   :: forall f
    . PrimeField f
-  => Array (R1CS f)
+  => { nPublicInputs :: Int
+     , constraints :: Array (R1CS f)
+     }
   -> Gates f
-makeGates _cs =
+makeGates { nPublicInputs, constraints } =
   let
-    cs = map r1csToGateConstraint _cs
+    cs = map r1csToGateConstraint constraints
+
     Tuple mulGates linearGates =
       Array.foldl
         ( \acc g ->
@@ -117,14 +124,31 @@ makeGates _cs =
         cs
     nMuls = Array.length mulGates
     zeroRow = Array.replicate nMuls (zero @f)
+
     addMulGate index { l: AffineExpression l, r: AffineExpression r, o: AffineExpression o } =
       let
         oneHot = unsafePartial $ fromJust $ Array.updateAt index one $ Array.replicate nMuls zero
+
+        -- Generate full row then split
+        rowL = toDenseRow l.terms
+        rowR = toDenseRow r.terms
+        rowO = toDenseRow o.terms
+
+        splitRow row =
+          let
+            { before, after } = Array.splitAt nPublicInputs row
+          in
+            Tuple before after
+
+        Tuple lPub lPriv = splitRow rowL
+        Tuple rPub rPriv = splitRow rowR
+        Tuple oPub oPriv = splitRow rowO
       in
         { wl: [ oneHot, zeroRow, zeroRow ]
         , wr: [ zeroRow, oneHot, zeroRow ]
         , wo: [ zeroRow, zeroRow, oneHot ]
-        , wv: [ toDenseRow l.terms, toDenseRow r.terms, toDenseRow o.terms ]
+        , wvPrivate: [ lPriv, rPriv, oPriv ]
+        , wvPublic: [ lPub, rPub, oPub ]
         , c:
             let
               orZero = fromMaybe zero
@@ -133,14 +157,22 @@ makeGates _cs =
         }
 
     addLinearGate (AffineExpression e) =
-      { wl: [ zeroRow ]
-      , wr: [ zeroRow ]
-      , wo: [ zeroRow ]
-      , wv: [ toDenseRow e.terms ]
-      , c: [ fromMaybe zero e.constant ]
-      }
+      let
+        fullRow = toDenseRow e.terms
+        { before, after } = Array.splitAt nPublicInputs fullRow
+      in
+        { wl: [ zeroRow ]
+        , wr: [ zeroRow ]
+        , wo: [ zeroRow ]
+        , wvPrivate: [ after ]
+        , wvPublic: [ before ]
+        , c: [ fromMaybe zero e.constant ]
+        }
+
+    processedMuls = mapWithIndex addMulGate mulGates
+    processedLins = map addLinearGate linearGates
   in
-    fold $ mapWithIndex addMulGate mulGates <> map addLinearGate linearGates
+    fold $ processedMuls <> processedLins
   where
   vars :: Set Variable
   vars =
@@ -152,7 +184,7 @@ makeGates _cs =
         ( \(R1CS l r o) ->
             foldMap collectVariables [ l, r, o ]
         )
-        _cs
+        constraints
   nVars = Set.size vars
 
   toDenseRow :: Array (Tuple Variable f) -> Array f
@@ -170,10 +202,11 @@ type Witness f =
 makeWitness
   :: forall f
    . PrimeField f
-  => Map Variable f
-  -> Array (R1CS f)
+  => { assignments :: Map Variable f
+     , constraints :: Array (R1CS f)
+     }
   -> Except (EvaluationError Variable) (Witness f)
-makeWitness assignments cs =
+makeWitness { assignments, constraints: cs } =
   let
     mulGates =
       foldl
@@ -189,22 +222,31 @@ makeWitness assignments cs =
       ar <- evalAffineExpression r lookup
       ao <- evalAffineExpression o lookup
       pure { al, ar, ao }
-
     v = snd <$> Map.toUnfoldable assignments
-
   in
-    foldM
-      ( \acc m ->
-          makeWire m <#> \wire ->
-            acc
-              { al = acc.al `Array.snoc` wire.al
-              , ar = acc.ar `Array.snoc` wire.ar
-              , ao = acc.ao `Array.snoc` wire.ao
-              }
-      )
-      { al: mempty, ar: mempty, ao: mempty }
-      mulGates
-      <#> \{ al, ar, ao } -> { al, ar, ao, v }
+    ( foldM
+        ( \acc m ->
+            makeWire m <#> \wire ->
+              acc
+                { al = acc.al `Array.snoc` wire.al
+                , ar = acc.ar `Array.snoc` wire.ar
+                , ao = acc.ao `Array.snoc` wire.ao
+                }
+        )
+        { al: mempty, ar: mempty, ao: mempty }
+        mulGates
+    ) <#> \{ al, ar, ao } ->
+      { al, ar, ao, v }
+
+type Instance f = Array f
+
+makeInstance
+  :: forall f
+   . { nPublicInputs :: Int
+     , witness :: Witness f
+     }
+  -> Instance f
+makeInstance { nPublicInputs, witness } = Array.drop nPublicInputs witness.v
 
 evalGates
   :: forall f
@@ -215,15 +257,21 @@ evalGates
 evalGates { al, ar, ao, v } g =
   let
     c1 = al `hadamard` ar == ao
-    c2 =
-      let
-        lhs = (innerProduct al <$> g.wl)
-          `addVec` (innerProduct ar <$> g.wr)
-          `addVec` (innerProduct ao <$> g.wo)
 
-        rhs = (innerProduct v <$> g.wv) `addVec` g.c
-      in
-        lhs == rhs
+    lhs = (innerProduct al <$> g.wl)
+      `addVec` (innerProduct ar <$> g.wr)
+      `addVec` (innerProduct ao <$> g.wo)
+
+    nPublic = Array.length (fromMaybe [] (Array.head g.wvPublic))
+
+    { before: v_pub, after: v_priv } = Array.splitAt nPublic v
+
+    privatePart = (innerProduct v_priv <$> g.wvPrivate)
+    publicPart = (innerProduct v_pub <$> g.wvPublic)
+
+    rhs = privatePart `addVec` publicPart `addVec` g.c
+
+    c2 = lhs == rhs
   in
     c1 && c2
   where

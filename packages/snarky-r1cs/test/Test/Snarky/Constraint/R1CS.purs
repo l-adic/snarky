@@ -13,6 +13,7 @@ import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.R1CS (evalGates, makeGates, makeWitness)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', withHelp)
+import Test.QuickCheck.Gen (chooseInt)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
@@ -22,6 +23,7 @@ spec pf = describe "Constraint Spec" do
   it "reduces basic constraints to r1cs constraints" do
     liftEffect $ quickCheckGen' 1000 do
       { basic, assignments } <- Basic.genWithAssignments pf
+      nPublicInputs <- chooseInt 0 (Map.size assignments - 1)
       let
         lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var assignments
       case runExcept $ Basic.eval lookup basic of
@@ -29,7 +31,7 @@ spec pf = describe "Constraint Spec" do
         Right b -> if b then pure unit else unsafeCrashWith "Basic eval was false"
       let
         r1cs = Basic.fromBasic basic
-        gates = makeGates [ r1cs ]
-      pure case runExcept $ makeWitness assignments [ r1cs ] of
+        gates = makeGates { constraints: [ r1cs ], nPublicInputs }
+      pure case runExcept $ makeWitness { assignments, constraints: [ r1cs ] } of
         Left e -> withHelp false $ "Shit " <> show e
-        Right w -> withHelp (evalGates { al: w.al, ar: w.ar, ao: w.ao, v: w.v } gates) "gate eval failed"
+        Right w -> withHelp (evalGates w gates) "gate eval failed"
