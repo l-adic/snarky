@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "packages/curves/curves-napi",
-    "prover/groth16",
+    "prover/r1cs",
 ]
 
 [workspace.dependencies]
@@ -20,6 +20,7 @@ num-integer = "0.1"
 napi = { version = "3.4.0", features = ["napi6"] }
 napi-derive = "3.3.0"
 napi-build = "2.2.4"
+bulletproofs = { git = "https://github.com/l-adic/bulletproofs", rev = "bb38a6ef1892fc05415e971546eeefd7321697b7"}
 
 [workspace.dependencies.proptest]
 version = "1.0"

@@ -2,6 +2,7 @@ module Snarky.Circuit.CVar
   ( Variable
   , incrementVariable
   , v0
+  , getVariable
   , CVar(..)
   , add_
   , const_
@@ -12,30 +13,32 @@ module Snarky.Circuit.CVar
   , genWithAssignments
   , reduceToAffineExpression
   , AffineExpression(..)
+  , scaleAffineExpression
+  , subAffineExpression
   , evalAffineExpression
   , EvaluationError(..)
   ) where
 
 import Prelude
 
+import Data.Array ((..))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Bifunctor (class Bifunctor)
+import Data.Bifunctor (class Bifunctor, rmap)
 import Data.Foldable (class Foldable, foldM, foldl)
 import Data.Generic.Rep (class Generic)
-import Data.Map (Map)
+import Data.Map (Map, toUnfoldable)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
-import Data.Traversable (class Traversable, traverse)
+import Data.Traversable (class Traversable, for)
 import Data.Tuple (Tuple(..))
+import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency, sized)
 import Type.Proxy (Proxy)
-
-newtype Variable = Variable Int
 
 derive newtype instance Eq Variable
 derive newtype instance Show Variable
@@ -47,6 +50,11 @@ incrementVariable (Variable n) = Variable (n + 1)
 
 v0 :: Variable
 v0 = Variable zero
+
+newtype Variable = Variable Int
+
+getVariable :: Variable -> Int
+getVariable (Variable i) = i
 
 -- An CVar is an expression that can be reduced to
 -- c + \sum a_i * x_i. This is the most generic formulation.
@@ -141,6 +149,47 @@ eval lookup c = case c of
 
 newtype AffineExpression f = AffineExpression { constant :: Maybe f, terms :: Array (Tuple Variable f) }
 
+instance PrimeField f => Semigroup (AffineExpression f) where
+  append (AffineExpression e1) (AffineExpression e2) =
+    AffineExpression
+      { constant:
+          case e1.constant, e2.constant of
+            Nothing, Nothing -> Nothing
+            Just a, Nothing -> Just a
+            Nothing, Just a -> Just a
+            Just a, Just b -> Just $ a + b
+      , terms: toUnfoldable $
+          foldl
+            ( \acc (Tuple var coeff) ->
+                Map.insertWith add var coeff acc
+            )
+            Map.empty
+            (e1.terms <> e2.terms)
+      }
+
+instance PrimeField f => Monoid (AffineExpression f) where
+  mempty = AffineExpression { constant: Nothing, terms: mempty }
+
+scaleAffineExpression
+  :: forall f
+   . PrimeField f
+  => f
+  -> AffineExpression f
+  -> AffineExpression f
+scaleAffineExpression f (AffineExpression { constant, terms }) =
+  AffineExpression
+    { constant: mul f <$> constant
+    , terms: rmap (mul f) <$> terms
+    }
+
+subAffineExpression
+  :: forall f
+   . PrimeField f
+  => AffineExpression f
+  -> AffineExpression f
+  -> AffineExpression f
+subAffineExpression a b = a <> scaleAffineExpression (-one) b
+
 -- Reduce the affine circuit to the unique form \sum_{i} a_i * x_i + c,
 -- which we represent as {constant: c, terms: Map [(x_i, a_i)]}
 reduceToAffineExpression
@@ -193,20 +242,25 @@ genWithAssignments
   :: forall f
    . PrimeField f
   => Proxy f
+  -> Variable
   -> Gen
        { cvar :: CVar f Variable
        , assignments :: Map Variable f
+       , nextVariable :: Variable
        }
-genWithAssignments _ = do
-  cvar <- arbitrary @(CVar f Variable)
-  assignments <- genAssignments $ collectVariables cvar
-  pure
-    { cvar
-    , assignments
-    }
-  where
-  collectVariables = foldl (flip Set.insert) Set.empty
-  genAssignments vars = do
-    let varArray = Set.toUnfoldable vars :: Array Variable
-    assignments <- traverse (\_ -> arbitrary @f) varArray
-    pure $ Map.fromFoldable $ Array.zip varArray assignments
+genWithAssignments _ nextVariable@(Variable i) = do
+  _cvar <- arbitrary @(CVar f Variable)
+  let
+    collectVariables = foldl (flip Set.insert) mempty
+    vars = Set.toUnfoldable $ collectVariables _cvar
+  if Array.null vars then pure { cvar: _cvar, assignments: Map.empty, nextVariable }
+  else do
+    let
+      lastVariableInt = i + Array.length vars - 1
+      vars' = Variable <$> i .. lastVariableInt
+      varMapping = Map.fromFoldable $ Array.zip vars vars'
+      cvar = _cvar <#> \var ->
+        unsafePartial $ fromJust $ Map.lookup var varMapping
+    assignments <- Map.fromFoldable <$> for vars' \v ->
+      Tuple v <$> arbitrary @f
+    pure $ { assignments, cvar, nextVariable: Variable $ 1 + lastVariableInt }

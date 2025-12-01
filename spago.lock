@@ -383,6 +383,7 @@
             "snarky-kimchi"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -390,6 +391,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -413,6 +415,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -683,6 +686,7 @@
             "snarky"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -690,6 +694,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -713,6 +718,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -734,6 +740,7 @@
         },
         "test": {
           "dependencies": [
+            "debug",
             "snarky-test-utils",
             "spec",
             "spec-node",
@@ -755,6 +762,7 @@
             "control",
             "curves",
             "datetime",
+            "debug",
             "distributive",
             "effect",
             "either",
@@ -1790,6 +1798,15 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "debug": {
+      "type": "registry",
+      "version": "6.0.2",
+      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
+      "dependencies": [
+        "functions",
+        "prelude"
       ]
     },
     "distributive": {
