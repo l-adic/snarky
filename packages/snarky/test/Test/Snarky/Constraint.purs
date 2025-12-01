@@ -8,7 +8,7 @@ import Data.Either (Either(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Effect.Class (liftEffect)
-import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, reduceToAffineExpression)
+import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.BN254 as BN254
@@ -22,7 +22,7 @@ spec pf = describe "Constraint Spec" do
 
   it "CVar.eval equals evalAffineExpression after reduction" do
     liftEffect $ quickCheckGen do
-      { cvar, assignments } <- CVar.genWithAssignments pf
+      { cvar, assignments } <- CVar.genWithAssignments pf v0
       let
         _lookup v = case Map.lookup v assignments of
           Nothing -> throwError $ MissingVariable v

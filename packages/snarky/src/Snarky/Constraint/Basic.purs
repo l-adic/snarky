@@ -3,6 +3,7 @@ module Snarky.Constraint.Basic
   , eval
   , genWithAssignments
   , class BasicSystem
+  , fromBasic
   , r1cs
   , boolean
   , equal
@@ -21,7 +22,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Circuit.CVar (CVar, EvaluationError(..), Variable, add_, scale_)
+import Snarky.Circuit.CVar (CVar, EvaluationError(..), Variable, add_, scale_, v0)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
@@ -72,7 +73,7 @@ genWithAssignments
 genWithAssignments pf =
   let
     genBool = do
-      { cvar, assignments } <- CVar.genWithAssignments pf
+      { cvar, assignments } <- CVar.genWithAssignments pf v0
       let
         lookup v = case Map.lookup v assignments of
           Nothing -> throwError $ MissingVariable v
@@ -93,8 +94,8 @@ genWithAssignments pf =
       pure { basic: Boolean cvar', assignments }
 
     genEqual = do
-      { cvar: left, assignments: a1 } <- CVar.genWithAssignments pf
-      { cvar: right, assignments: a2 } <- CVar.genWithAssignments pf
+      { cvar: left, assignments: a1, nextVariable } <- CVar.genWithAssignments pf v0
+      { cvar: right, assignments: a2 } <- CVar.genWithAssignments pf nextVariable
       let
         assignments = Map.unions [ a1, a2 ]
         lookup v = case Map.lookup v assignments of
@@ -116,9 +117,9 @@ genWithAssignments pf =
             }
 
     genR1CS = do
-      { cvar: left, assignments: a1 } <- CVar.genWithAssignments pf
-      { cvar: right, assignments: a2 } <- CVar.genWithAssignments pf
-      { cvar: output, assignments: a3 } <- CVar.genWithAssignments pf
+      { cvar: left, assignments: a1, nextVariable: v1 } <- CVar.genWithAssignments pf v0
+      { cvar: right, assignments: a2, nextVariable: v2 } <- CVar.genWithAssignments pf v1
+      { cvar: output, assignments: a3 } <- CVar.genWithAssignments pf v2
       let
         assignments = Map.unions [ a1, a2, a3 ]
         lookup v = case Map.lookup v assignments of
@@ -150,6 +151,12 @@ class BasicSystem f c | c -> f where
   r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
   equal :: CVar f Variable -> CVar f Variable -> c
   boolean :: CVar f Variable -> c
+
+fromBasic :: forall f c. BasicSystem f c => Basic f -> c
+fromBasic = case _ of
+  R1CS r -> r1cs r
+  Boolean b -> boolean b
+  Equal a b -> equal a b
 
 instance BasicSystem f (Basic f) where
   r1cs = R1CS
