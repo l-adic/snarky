@@ -9,7 +9,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)

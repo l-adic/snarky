@@ -10,7 +10,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, Variable, pack_, unpack_)

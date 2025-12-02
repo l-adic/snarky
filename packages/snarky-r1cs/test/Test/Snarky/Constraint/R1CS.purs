@@ -10,7 +10,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Constraint.Basic as Basic
-import Snarky.Backend.Bulletproof.Gate (eval, makeGates, makeMulGates, makeWitness)
+import Snarky.Backend.Bulletproof.Gate (satisfies, makeGates, makeMulGates, makeWitness)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', withHelp)
 import Test.Spec (Spec, describe, it)
@@ -34,4 +34,4 @@ spec pf = describe "Constraint Spec" do
         mulGates = makeMulGates [ r1cs ]
       pure case runExcept $ makeWitness { assignments, mulGates } of
         Left e -> withHelp false $ "Shit " <> show e
-        Right w -> withHelp (eval w gates) "gate eval failed"
+        Right w -> withHelp (satisfies w gates) "gate eval failed"

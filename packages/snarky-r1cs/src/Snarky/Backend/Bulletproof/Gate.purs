@@ -2,11 +2,11 @@ module Snarky.Backend.Bulletproof.Gate
   ( Gates
   , Matrix
   , makeGates
-  , eval
   , MulGate
   , makeMulGates
   , Witness
   , makeWitness
+  , satisfies
   ) where
 
 import Prelude
@@ -184,13 +184,13 @@ makeWitness { assignments, mulGates } =
     ) <#> \{ al, ar, ao } ->
       { al, ar, ao, v }
 
-eval
+satisfies
   :: forall f
    . PrimeField f
   => Witness f
   -> Gates f
   -> Boolean
-eval { al, ar, ao, v } g =
+satisfies { al, ar, ao, v } g =
   let
     c1 = al `hadamard` ar == ao
 

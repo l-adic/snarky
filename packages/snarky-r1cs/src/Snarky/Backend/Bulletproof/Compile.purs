@@ -10,8 +10,8 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Snarky.Backend.Bulletproof.Gate (Gates, Witness, makeGates, makeMulGates, makeWitness)
-import Snarky.Circuit.Backend.Compile (SolverT)
-import Snarky.Circuit.Backend.Compile as Compile
+import Snarky.Backend.Compile (SolverT)
+import Snarky.Backend.Compile as Compile
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.R1CS (R1CS)

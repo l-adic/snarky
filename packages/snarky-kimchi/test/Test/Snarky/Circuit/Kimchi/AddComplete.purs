@@ -5,7 +5,7 @@ import Prelude
 import Control.Monad.Gen (suchThat)
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)

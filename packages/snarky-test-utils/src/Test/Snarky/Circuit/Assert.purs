@@ -3,7 +3,7 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
