@@ -9,11 +9,10 @@ module Snarky.Circuit.Curves
 
 import Prelude
 
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams, fromInt)
-import Type.Proxy (Proxy)
+import Snarky.Curves.Class (class PrimeField, fromInt)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 assertOnCurve
   :: forall f c t m
@@ -95,20 +94,18 @@ add_ { x: ax, y: ay } { x: bx, y: by } = do
   pure { x: cx, y: cy }
 
 double
-  :: forall f g c t m
+  :: forall f c t m
    . CircuitM f c t m
   => PrimeField f
-  => WeierstrassCurve f g
-  => Proxy g
+  => CurveParams f
   -> AffinePoint (FVar f)
   -> Snarky t m (AffinePoint (FVar f))
-double pg { x: ax, y: ay } = do
+double { a } { x: ax, y: ay } = do
   xSquared <- mul_ ax ax
 
   lambda <- exists do
     xSquaredVal <- readCVar xSquared
     ayVal <- readCVar ay
-    let { a } = curveParams pg
     pure $ (xSquaredVal + xSquaredVal + xSquaredVal + F a) / (ayVal + ayVal)
 
   UnChecked bx <- exists do
@@ -123,7 +120,6 @@ double pg { x: ax, y: ay } = do
     bxVal <- readCVar bx
     pure $ UnChecked $ (lambdaVal * (axVal - bxVal)) - ayVal
 
-  let { a } = curveParams pg
   let aConst = const_ a
 
   addConstraint $ r1cs

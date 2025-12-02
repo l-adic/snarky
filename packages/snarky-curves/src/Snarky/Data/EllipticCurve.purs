@@ -8,6 +8,7 @@ module Snarky.Data.EllipticCurve
   , genPoint
   , mkPoint
   , toAffine
+  , double
   ) where
 
 import Prelude
@@ -16,7 +17,6 @@ import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..), fromJust, isJust)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Curves.Class as Snarky.Curves.Class
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -55,7 +55,7 @@ instance CircuitType f (Point (F f)) (Point (FVar f)) where
   varToFields = genericVarToFields (Proxy @(Point (F f)))
   fieldsToVar = genericFieldsToVar (Proxy @(Point (F f)))
 
-instance CheckedType (Point (FVar f)) (KimchiConstraint f) where
+instance CheckedType (Point (FVar f)) c where
   check = genericCheck
 
 genPoint
@@ -112,24 +112,35 @@ instance PrimeField f => Semigroup (Point f) where
 instance PrimeField f => Monoid (Point f) where
   mempty = Point { x: zero, y: one, z: zero }
 
+double :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> AffinePoint (F f)
+double { a } { x, y } =
+  let
+    lambda = (three * x * x + F a) / (two * y)
+    x' = lambda * lambda - two * x
+    y' = lambda * (x - x') - y
+    two = F (one + one)
+    three = F (one + one + one)
+  in
+    { x: x', y: y' }
+
 addAffine
   :: forall f
    . PrimeField f
   => AffinePoint f
   -> AffinePoint f
   -> Point f
-addAffine p1 p2 =
-  if p1.x == p2.x && p1.y == negate p2.y then mempty
-  else
-    let
-      { x, y } = unsafeAdd p1 p2
-    in
-      Point { x, y, z: one }
-  where
-  unsafeAdd { x: x1, y: y1 } { x: x2, y: y2 } =
-    let
-      lambda = (y2 - y1) / (x2 - x1)
-      x3 = (lambda * lambda) - x1 - x2
-      y3 = lambda * (x1 - x3) - y1
-    in
-      { x: x3, y: y3 }
+addAffine p1 p2
+  | p1.x == p2.x && p1.y == negate p2.y = mempty
+  | otherwise =
+      let
+        { x, y } = unsafeAdd p1 p2
+      in
+        Point { x, y, z: one }
+      where
+      unsafeAdd { x: x1, y: y1 } { x: x2, y: y2 } =
+        let
+          lambda = (y2 - y1) / (x2 - x1)
+          x3 = (lambda * lambda) - x1 - x2
+          y3 = lambda * (x1 - x3) - y1
+        in
+          { x: x3, y: y3 }
