@@ -68,7 +68,7 @@ genPoint _ =
   arbitrary @g <#> \g ->
     case Snarky.Curves.Class.toAffine g of
       Just { x, y } -> Point { x: F x, y: F y, z: one }
-      Nothing -> mempty
+      Nothing -> infinity_
 
 mkPoint
   :: forall f
@@ -80,7 +80,7 @@ mkPoint
      }
   -> Maybe (Point f)
 mkPoint { a, b } p@{ x, y, z }
-  | z == zero && x == zero && y == one = Just mempty
+  | z == zero && x == zero && y == one = Just infinity_
   | z /= zero && y * y == x * x * x + a * x + b = Just (Point p)
   | otherwise = Nothing
 
@@ -100,17 +100,8 @@ instance PrimeField f => Eq (Point f) where
     | otherwise = (p1.x / p1.z) == (p2.x / p2.z) &&
         (p2.x / p2.z) == (p2.y / p2.z)
 
-instance PrimeField f => Semigroup (Point f) where
-  append (Point p1) (Point p2)
-    | p1.z == zero = Point p2
-    | p2.z == zero = Point p1
-    | otherwise =
-        addAffine
-          { x: p1.x, y: p1.y }
-          { x: p2.x, y: p2.y }
-
-instance PrimeField f => Monoid (Point f) where
-  mempty = Point { x: zero, y: one, z: zero }
+infinity_ :: forall f. PrimeField f => Point f
+infinity_ = Point { x: zero, y: one, z: zero }
 
 double :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> AffinePoint (F f)
 double { a } { x, y } =
@@ -125,12 +116,13 @@ double { a } { x, y } =
 
 addAffine
   :: forall f
-   . PrimeField f
+   . Partial
+  => PrimeField f
   => AffinePoint f
   -> AffinePoint f
   -> Point f
 addAffine p1 p2
-  | p1.x == p2.x && p1.y == negate p2.y = mempty
+  | p1.x == p2.x && p1.y == negate p2.y = infinity_
   | otherwise =
       let
         { x, y } = unsafeAdd p1 p2
