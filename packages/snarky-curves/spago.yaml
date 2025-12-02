@@ -3,11 +3,11 @@ package:
   dependencies:
     - prelude
     - snarky
-    - snarky-kimchi
     - curves
   test:
     main: Test.Snarky.Circuit.Curves.Main
     dependencies:
+      - snarky-test-utils
       - spec
       - spec-node
       - spec-quickcheck

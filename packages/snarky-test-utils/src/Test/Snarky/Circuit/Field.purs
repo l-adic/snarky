@@ -5,7 +5,7 @@ import Prelude
 import Data.Foldable (sum)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Test.Snarky.Circuit.Utils (circuitSpecPure, circuitSpecPure', satisfied)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL (Variable, div_, equals_, inv_, mul_, negate_, seal, sum_)

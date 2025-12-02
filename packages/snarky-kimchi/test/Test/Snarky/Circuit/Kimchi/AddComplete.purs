@@ -5,7 +5,8 @@ import Prelude
 import Control.Monad.Gen (suchThat)
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Partial.Unsafe (unsafePartial)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -31,7 +32,7 @@ spec
 spec pg =
   describe "Kimchi AddComplete" do
 
-    it "addComplete Circuit is Valid" $
+    it "addComplete Circuit is Valid" $ unsafePartial $
       let
         f = uncurry EC.addAffine
         solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry circuit)
