@@ -1,4 +1,4 @@
-module Snarky.Circuit.Backend.Compile
+module Snarky.Backend.Compile
   ( Checker
   , Solver
   , SolverT
@@ -22,12 +22,12 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.Backend.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
-import Snarky.Circuit.Backend.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Backend.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))

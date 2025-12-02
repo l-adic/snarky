@@ -4,6 +4,7 @@ package:
     - prelude
     - curves
     - snarky
+    - snarky-curves
     - quickcheck
   test:
     main: Test.Snarky.Circuit.Kimchi.Main

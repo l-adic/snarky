@@ -6,8 +6,10 @@ package:
     - snarky
     - quickcheck
   test:
-    main: Test.Snarky.Circuit.R1CS.Main
+    main: Test.Snarky.R1CS.Main
     dependencies:
+      - debug
+      - snarky-curves
       - snarky-test-utils
       - spec
       - spec-node

@@ -4,9 +4,10 @@ module Snarky.Data.Vector
   , nilVector
   , vCons
   , (:<)
-  , vectorLength
+  , length
   , toVector
   , generator
+  , concat
   , zip
   , zipWith
   , unzip
@@ -81,8 +82,8 @@ vCons a (Vector as) = Vector (a : as)
 
 infixr 6 vCons as :<
 
-vectorLength :: forall a n. Reflectable n Int => Vector n a -> Int
-vectorLength _ = reflectType (Proxy @n)
+length :: forall a n. Reflectable n Int => Vector n a -> Int
+length _ = reflectType (Proxy @n)
 
 toVector :: forall a (n :: Int) proxy. Reflectable n Int => proxy n -> Array a -> Maybe (Vector n a)
 toVector _ as =
@@ -90,6 +91,14 @@ toVector _ as =
     Nothing
   else
     Just (Vector as)
+
+concat
+  :: forall n m k a
+   . Add n m k
+  => Vector n a
+  -> Vector m a
+  -> Vector k a
+concat (Vector as) (Vector as') = Vector (as <> as')
 
 zip
   :: forall a b n

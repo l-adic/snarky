@@ -1,12 +1,11 @@
-module Test.Snarky.Circuit.R1CS.Main where
+module Test.Snarky.R1CS.Main where
 
 import Prelude
 
 import Effect (Effect)
-import Snarky.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit as CircuitTests
-import Test.Spec (Spec)
+import Test.Snarky.Circuit.R1CS as Circuit
+import Test.Snarky.Constraint.R1CS as Constraint
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -14,8 +13,5 @@ import Type.Proxy (Proxy(..))
 main :: Effect Unit
 main =
   runSpecAndExitProcess [ consoleReporter ] do
-    spec
-
-spec :: Spec Unit
-spec = do
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
+    Circuit.spec
+    Constraint.spec (Proxy @Vesta.ScalarField)

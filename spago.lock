@@ -148,6 +148,7 @@
         "path": "packages/snarky",
         "core": {
           "dependencies": [
+            "aff",
             "arrays",
             "curves",
             "foldable-traversable",
@@ -160,6 +161,7 @@
             "tuples"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -167,6 +169,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -190,6 +193,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -305,10 +309,10 @@
           "dependencies": [
             "curves",
             "prelude",
-            "snarky",
-            "snarky-kimchi"
+            "snarky"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -316,6 +320,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -339,6 +344,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -348,7 +354,6 @@
             "refs",
             "safe-coerce",
             "snarky",
-            "snarky-kimchi",
             "st",
             "strings",
             "tailrec",
@@ -362,6 +367,7 @@
         "test": {
           "dependencies": [
             "quickcheck",
+            "snarky-test-utils",
             "spec",
             "spec-node",
             "spec-quickcheck"
@@ -380,6 +386,7 @@
             "const",
             "contravariant",
             "control",
+            "curves",
             "datetime",
             "distributive",
             "effect",
@@ -399,6 +406,7 @@
             "identity",
             "integers",
             "invariant",
+            "js-bigints",
             "js-date",
             "lazy",
             "lcg",
@@ -431,6 +439,8 @@
             "record",
             "refs",
             "safe-coerce",
+            "snarky",
+            "snarky-test-utils",
             "spec",
             "spec-node",
             "spec-quickcheck",
@@ -453,9 +463,11 @@
             "curves",
             "prelude",
             "quickcheck",
-            "snarky"
+            "snarky",
+            "snarky-curves"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -463,6 +475,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -486,6 +499,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -495,6 +509,7 @@
             "refs",
             "safe-coerce",
             "snarky",
+            "snarky-curves",
             "st",
             "strings",
             "tailrec",
@@ -606,6 +621,7 @@
             "snarky"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -613,6 +629,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -636,6 +653,7 @@
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -657,6 +675,8 @@
         },
         "test": {
           "dependencies": [
+            "debug",
+            "snarky-curves",
             "snarky-test-utils",
             "spec",
             "spec-node",
@@ -678,6 +698,7 @@
             "control",
             "curves",
             "datetime",
+            "debug",
             "distributive",
             "effect",
             "either",
@@ -730,6 +751,7 @@
             "refs",
             "safe-coerce",
             "snarky",
+            "snarky-curves",
             "snarky-test-utils",
             "spec",
             "spec-node",
@@ -1713,6 +1735,15 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "debug": {
+      "type": "registry",
+      "version": "6.0.2",
+      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
+      "dependencies": [
+        "functions",
+        "prelude"
       ]
     },
     "distributive": {

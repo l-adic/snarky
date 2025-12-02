@@ -70,6 +70,7 @@ derive instance Generic (Bool f) _
 newtype F f = F f
 
 derive newtype instance Eq f => Eq (F f)
+derive newtype instance Ord f => Ord (F f)
 derive newtype instance Arbitrary f => Arbitrary (F f)
 derive newtype instance Show f => Show (F f)
 derive newtype instance Semiring f => Semiring (F f)

@@ -9,15 +9,15 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
 import Snarky.Circuit.Types (F(..))
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as KimchiConstraint
+import Snarky.Constraint.Basic (Basic)
+import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
@@ -45,7 +45,7 @@ spec pg =
     it "assertOnCurve Circuit is Valid" $
       let
         { a, b } = curveParams pg
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry assertOnCurve)
+        solver = makeSolver (Proxy @(Basic f)) (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
@@ -69,12 +69,12 @@ spec pg =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver unsatisfied offCurve
-          circuitSpecPure' constraints KimchiConstraint.eval solver satisfied_ onCurve
+          circuitSpecPure' constraints Basic.eval solver unsatisfied offCurve
+          circuitSpecPure' constraints Basic.eval solver satisfied_ onCurve
 
     it "assertEqual Circuit is Valid" $
       let
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry assertEqual)
+        solver = makeSolver (Proxy @(Basic f)) (uncurry assertEqual)
         { constraints } =
           compilePure
             ( Proxy
@@ -95,14 +95,14 @@ spec pg =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver satisfied_ same
-          circuitSpecPure' constraints KimchiConstraint.eval solver unsatisfied distinct
+          circuitSpecPure' constraints Basic.eval solver satisfied_ same
+          circuitSpecPure' constraints Basic.eval solver unsatisfied distinct
 
     it "negate Circuit is Valid" $
       let
         pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
         pureNegate { x, y } = { x, y: negate y }
-        solver = makeSolver (Proxy @(KimchiConstraint f)) Curves.negate
+        solver = makeSolver (Proxy @(Basic f)) Curves.negate
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
@@ -110,13 +110,13 @@ spec pg =
             Curves.negate
         gen = genAffinePoint pg
       in
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureNegate) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureNegate) gen
 
     it "if_ Circuit is Valid" $
       let
         pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry3 if_)
+        solver = makeSolver (Proxy @(Basic f)) (uncurry3 if_)
         { constraints } =
           compilePure
             (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
@@ -135,12 +135,12 @@ spec pg =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureIf) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureIf) gen
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry add_)
+        solver = makeSolver (Proxy @(Basic f)) (uncurry add_)
         { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
@@ -159,7 +159,7 @@ spec pg =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied f) gen
 
     it "double Circuit is Valid" $
       let
@@ -175,14 +175,14 @@ spec pg =
           in
             { x: x', y: y' }
 
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (double pg)
+        solver = makeSolver (Proxy @(Basic f)) (double $ curveParams pg)
         { constraints } =
           compilePure
             (Proxy @(AffinePoint (F f)))
             (Proxy @(AffinePoint (F f)))
-            (double pg)
+            (double $ curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied pureDouble) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureDouble) gen
