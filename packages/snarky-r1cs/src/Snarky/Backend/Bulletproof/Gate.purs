@@ -1,32 +1,34 @@
-module Snarky.Backend.Bulletproof.Gate where
-
---  ( GateConstraint(..)
---  , Matrix
---  , MulGate
---  , Witness
---  , makeGates
---  , makeMulGate
---  , r1csToGateConstraint
---  )
---  where
+module Snarky.Backend.Bulletproof.Gate
+  ( Matrix
+  , Gates
+  , makeGates
+  , emptyGates
+  , gatesInfo
+  , SortedR1CS
+  , sortR1CS
+  , Witness
+  , makeWitness
+  , satisfies
+  ) where
 
 import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Control.Monad.State (State, evalState, get, modify_, put)
-import Data.Array (fold, mapWithIndex, replicate, zipWith)
+import Control.Monad.State (State, evalState, get, modify_)
+import Data.Array (all, catMaybes, fold, mapWithIndex, replicate, zipWith)
 import Data.Array as Array
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe)
-import Data.Newtype (class Newtype, over, un)
+import Data.Maybe (Maybe(..), fromMaybe, isNothing, maybe)
+import Data.Newtype (class Newtype, un)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
-import Data.Tuple (Tuple(..))
-import Debug (trace, traceM)
+import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
@@ -41,19 +43,21 @@ derive instance Newtype GateIndex _
 
 data Placement = L | R | O | V | C
 
+instance Show Placement where
+  show = case _ of
+    L -> "L"
+    R -> "R"
+    O -> "O"
+    V -> "V"
+    C -> "C"
+
 type S f =
   { currentIndex :: GateIndex
-  , oMap :: Map Variable { index :: GateIndex, placement :: Placement, coeff :: f }
+  , varPlacements :: Map Variable { index :: GateIndex, placement :: Placement, coeff :: f }
   }
 
 initS :: forall f. S f
-initS = { currentIndex: GateIndex 0, oMap: Map.empty }
-
-freshGateIndex :: forall f. State (S f) GateIndex
-freshGateIndex = do
-  s@{ currentIndex } <- get
-  put s { currentIndex = over GateIndex (add 1) currentIndex }
-  pure currentIndex
+initS = { currentIndex: GateIndex 0, varPlacements: Map.empty }
 
 newtype GateExpression f = GateExpression (Array { index :: GateIndex, coeff :: f, placement :: Placement })
 
@@ -66,47 +70,43 @@ makeGateExpression
   => GateIndex
   -> R1CS f
   -> State (S f) (Array (GateExpression f))
-makeGateExpression baseIndex c@(R1CS { left, right, output }) = do
-  traceM $ "makeGateExpression: " <> show baseIndex
-  traceM $ show  c
+makeGateExpression index (R1CS { left, right, output }) = do
   let
-    g :: Int -> Placement -> CVar f Variable -> State (S f) (GateExpression f)
-    g offset placement cvar = do
+    g placement cvar = do
       let
-        AffineExpression { constant, terms } = reduceToAffineExpression cvar
-        index = over GateIndex (add offset) baseIndex
+        (AffineExpression { constant, terms }) = reduceToAffineExpression cvar
         constantTerm = constant <#> \c -> GateExpression [ { index, placement: C, coeff: c } ]
       xs <- case List.fromFoldable terms of
         List.Nil -> pure $
           GateExpression
-            [ { index, placement, coeff: one } ]
+            [ { index, placement, coeff: -one } ]
         List.Cons (Tuple _ f) List.Nil | f == zero -> pure $
           GateExpression
-            [ { index, placement, coeff: one }
+            [ { index, placement, coeff: -one }
             ]
-        List.Cons (Tuple v f) List.Nil | f /= zero -> do
-          { oMap } <- get
-          case Map.lookup v oMap of
+        List.Cons (Tuple v f) List.Nil -> do
+          { varPlacements } <- get
+          case Map.lookup v varPlacements of
             Nothing -> do
               modify_ \s ->
-                s { oMap = Map.insert v { index, placement, coeff: recip f } s.oMap }
+                s { varPlacements = Map.insert v { index, placement, coeff: recip f } s.varPlacements }
               pure $ GateExpression []
             Just x -> pure $
               GateExpression
-                [ { index, placement, coeff: f }
-                , x {coeff = -x.coeff}
+                [ { index, placement, coeff: -one }
+                , x { coeff = f * x.coeff }
                 ]
         _ -> GateExpression <$> do
-          { oMap } <- get
+          { varPlacements } <- get
           prev <- for terms \(Tuple v f) -> do
-            case Map.lookup v oMap of
-              Nothing -> unsafeCrashWith "Shit"
-              Just x -> pure x { coeff = -f * x.coeff }
-          pure $ Array.cons { index, placement, coeff: one } prev
+            case Map.lookup v varPlacements of
+              Nothing -> unsafeCrashWith $ "The impossible happened, missing variable " <> show v
+              Just x -> pure x { coeff = f * x.coeff }
+          pure $ Array.cons { index, placement, coeff: -one } prev
       pure $ maybe xs (\x -> x <> xs) constantTerm
-  l <- g 0 L left
-  r <- g 1 R right
-  o <- g 2 O output
+  l <- g L left
+  r <- g R right
+  o <- g O output
   pure [ l, r, o ]
 
 gateExpressionToRow
@@ -114,22 +114,18 @@ gateExpressionToRow
    . PrimeField f
   => GateExpression f
   -> R f
-gateExpressionToRow (GateExpression terms) = trace ("get expression to row") \_ -> trace terms \_ ->
-  let
-    r = 
-      foldl
-        ( \acc term ->
-            case term.placement of
-              L -> acc { wl = Map.insertWith add (un GateIndex term.index) term.coeff acc.wl }
-              R -> acc { wr = Map.insertWith add (un GateIndex term.index) term.coeff acc.wr }
-              O -> acc { wo = Map.insertWith add (un GateIndex term.index) term.coeff acc.wo }
-              V -> acc { wv = Map.insertWith add (un GateIndex term.index) term.coeff acc.wv }
-              C -> acc { c = acc.c + term.coeff }
-        )
-        defaultRow
-        terms
-  in
-    r { wv = map negate r.wv, c = negate r.c }
+gateExpressionToRow (GateExpression terms) =
+  foldl
+    ( \acc term ->
+        case term.placement of
+          L -> acc { wl = Map.insertWith add (un GateIndex term.index) term.coeff acc.wl }
+          R -> acc { wr = Map.insertWith add (un GateIndex term.index) term.coeff acc.wr }
+          O -> acc { wo = Map.insertWith add (un GateIndex term.index) term.coeff acc.wo }
+          V -> acc { wv = Map.insertWith add (un GateIndex term.index) term.coeff acc.wv }
+          C -> acc { c = acc.c + term.coeff }
+    )
+    defaultRow
+    terms
 
 type R f =
   { wl :: Map Int f
@@ -158,6 +154,30 @@ type Gates f =
   , c :: Array f
   }
 
+dim :: forall f. Matrix f -> Tuple Int Int
+dim m =
+  let
+    nCols =
+      case Array.uncons m of
+        Just { head } -> Array.length head
+        Nothing -> 0
+    nRows = Array.length m
+  in
+    Tuple nRows nCols
+
+gatesInfo :: forall f. Gates f -> String
+gatesInfo gs = Array.intercalate "\n"
+  [ "dim W_l: " <> formatDim (dim gs.wl)
+  , "dim W_r: " <> formatDim (dim gs.wr)
+  , "dim W_o: " <> formatDim (dim gs.wo)
+  , "dim W_v: " <> formatDim (dim gs.wv)
+  , "dim c: " <> (show $ Array.length gs.c) <> " x 1"
+
+  ]
+  where
+  formatDim :: Tuple Int Int -> String
+  formatDim (Tuple r c) = show r <> " x " <> show c
+
 emptyGates :: forall f. Gates f
 emptyGates =
   { wl: mempty
@@ -171,26 +191,29 @@ makeGates
   :: forall f
    . PrimeField f
   => { publicInputs :: Array Variable
-     , constraints :: Array (R1CS f)
+     , constraints :: SortedR1CS f
      }
   -> Gates f
 makeGates { publicInputs, constraints } =
-    let
+  let
 
-      publicInputIndices = Map.fromFoldable $ 
-        mapWithIndex 
-          ( \i var -> 
-            Tuple var {index: GateIndex i, placement: V, coeff: one}
-          ) 
-          publicInputs
+    publicInputIndices = Map.fromFoldable $
+      mapWithIndex
+        ( \i var ->
+            Tuple var { index: GateIndex i, placement: V, coeff: one }
+        )
+        publicInputs
 
-      f :: Int -> R1CS f -> State (S f) (Array (R f))
-      f i c = map gateExpressionToRow <$> makeGateExpression (GateIndex i) c 
+    f :: Int -> R1CS f -> State (S f) (Array (R f))
+    f i c = do
+      expr <- makeGateExpression (GateIndex i) c
+      pure $ map gateExpressionToRow expr
 
-      rows :: Array (R f)
-      rows = fold $ evalState (traverseWithIndex f constraints) (initS {oMap = publicInputIndices})
-    in
-    trace (show rows) \_ ->
+    SortedR1CS cs = constraints
+
+    rows :: Array (R f)
+    rows = fold $ evalState (traverseWithIndex f cs) (initS { varPlacements = publicInputIndices })
+  in
     let
 
       toMatrixRow :: Int -> Map Int f -> Array f
@@ -213,7 +236,6 @@ makeGates { publicInputs, constraints } =
         emptyGates
         rows
 
-
 type Witness f =
   { al :: Array f
   , ar :: Array f
@@ -226,12 +248,11 @@ makeWitness
    . PrimeField f
   => MonadThrow (EvaluationError f) m
   => { assignments :: Map Variable f
-     , constraints :: Array (R1CS f)
+     , constraints :: SortedR1CS f
      , publicInputs :: Array Variable
      }
   -> m (Witness f)
-makeWitness { assignments, constraints, publicInputs } = do
-  -- 1. Construct v (Public Inputs)
+makeWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
   v <- for publicInputs \var ->
     case Map.lookup var assignments of
       Nothing -> throwError $ MissingVariable var
@@ -239,16 +260,12 @@ makeWitness { assignments, constraints, publicInputs } = do
 
   let lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var assignments
 
-  -- 2. Construct Gate Wires (al, ar, ao)
-  gateWires <- for constraints \(R1CS { left, right, output }) -> do
+  gateWires <- for cs \(R1CS { left, right, output }) -> do
     lVal <- CVar.eval lookup left
     rVal <- CVar.eval lookup right
 
-    -- In Bulletproofs, ao is DEFINED as al * ar.
     let oValCalculated = lVal * rVal
 
-    -- However, we must ensure this matches the assignment provided 
-    -- for the output variable/expression to ensure consistency.
     oValExpected <- CVar.eval lookup output
 
     when (oValCalculated /= oValExpected)
@@ -277,13 +294,88 @@ satisfies { al, ar, ao, v } g =
     lhs = (innerProduct al <$> g.wl)
       `addVec` (innerProduct ar <$> g.wr)
       `addVec` (innerProduct ao <$> g.wo)
+      `addVec` (innerProduct v <$> g.wv)
+      `addVec` g.c
 
-    rhs = (innerProduct v <$> g.wv) `addVec` g.c
-
-    c2 = lhs == rhs
+    c2 = all (eq zero) lhs
   in
     c1 && c2
   where
   innerProduct as bs = Array.foldl (\acc (Tuple a b) -> acc + a * b) zero (Array.zip as bs)
   hadamard = Array.zipWith mul
   addVec = zipWith add
+
+--------------------------------------------------------------------------------
+
+newtype SortedR1CS f = SortedR1CS (Array (R1CS f))
+
+sortR1CS :: forall f. PrimeField f => Array (R1CS f) -> SortedR1CS f
+sortR1CS constraints =
+  let
+    toAffine (R1CS { left, right, output }) =
+      { left: reduceToAffineExpression left
+      , right: reduceToAffineExpression right
+      , output: reduceToAffineExpression output
+      }
+    indexed = Array.mapWithIndex (\i c -> Tuple i (toAffine c)) constraints
+
+    introducerOf :: Map Variable Int
+    introducerOf = Map.fromFoldable $ do
+      Tuple idx gate <- indexed
+      var <- Set.toUnfoldable (introducedVars gate)
+      pure (Tuple var idx)
+
+    dependencies :: Array (Tuple Int (Set Int))
+    dependencies = indexed <#> \(Tuple idx gate) ->
+      let
+        deps = Set.fromFoldable $ catMaybes $
+          Set.toUnfoldable (neededVars gate) <#> \v -> Map.lookup v introducerOf
+      in
+        Tuple idx (Set.delete idx deps)
+
+    order = topoSortIndices dependencies
+  in
+    SortedR1CS $ Array.mapMaybe (\idx -> Array.index constraints idx) order
+  where
+  topoSortIndices dependencies =
+    let
+      depsMap = Map.fromFoldable dependencies
+
+      visit :: Set Int -> Int -> { visited :: Set Int, order :: Array Int } -> { visited :: Set Int, order :: Array Int }
+      visit localVisited idx acc
+        | Set.member idx acc.visited || Set.member idx localVisited = acc
+        | otherwise =
+            let
+              deps = fromMaybe Set.empty (Map.lookup idx depsMap)
+              localVisited' = Set.insert idx localVisited
+              acc' = Array.foldl (\a d -> visit localVisited' d a) acc (Set.toUnfoldable deps)
+            in
+              { visited: Set.insert idx acc'.visited, order: Array.snoc acc'.order idx }
+
+      result = foldl
+        (\acc (Tuple idx _) -> visit Set.empty idx acc)
+        { visited: Set.empty, order: [] }
+        dependencies
+    in
+      result.order
+
+  neededVars { left, right, output } =
+    varsIfNonTrivial left <> varsIfNonTrivial right <> varsIfNonTrivial output
+    where
+    varsIfNonTrivial expr@(AffineExpression { terms })
+      | isTrivial expr = Set.empty
+      | otherwise = Set.fromFoldable (fst <$> terms)
+
+  introducedVars { left, right, output } =
+    Set.fromFoldable $ catMaybes
+      [ trivialVar left
+      , trivialVar right
+      , trivialVar output
+      ]
+    where
+    trivialVar expr@(AffineExpression { terms })
+      | isTrivial expr = fst <$> Array.head terms
+      | otherwise = Nothing
+
+  isTrivial (AffineExpression { constant, terms }) =
+    (isNothing constant || constant == Just zero) && Array.length terms == 1

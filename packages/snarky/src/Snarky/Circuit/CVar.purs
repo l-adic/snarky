@@ -108,7 +108,7 @@ add_ a b = case a, b of
 sub_ :: forall f i. PrimeField f => CVar f i -> CVar f i -> CVar f i
 sub_ a b = case a, b of
   Const f, Const f' -> Const (f - f')
-  _, _ -> a <> (scale_ (negate one) b)
+  _, _ -> add_ a (scale_ (negate one) b)
 
 scale_ :: forall f i. PrimeField f => f -> CVar f i -> CVar f i
 scale_ f c

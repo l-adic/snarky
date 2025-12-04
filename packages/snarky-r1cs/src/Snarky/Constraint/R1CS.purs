@@ -12,7 +12,7 @@ import Data.Foldable (foldMap, foldl)
 import Data.Map (Map)
 import Data.Set (Set)
 import Data.Set as Set
-import Snarky.Circuit.CVar (CVar, Variable, const_, sub_)
+import Snarky.Circuit.CVar (CVar, Variable, const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
@@ -60,7 +60,8 @@ eval lookup (R1CS c) = ado
 instance PrimeField f => Basic.BasicSystem f (R1CS f) where
   r1cs { left, right, output } = R1CS { left, right, output }
   boolean v = R1CS { left: v, right: v, output: v }
-  equal a b = R1CS { left: const_ one, right: sub_ a b, output: const_ zero }
+  -- NB: DO NOT CHANGE THIS TO 1 * (a - b) = zero
+  equal a b = R1CS { left: a, right: const_ one, output: b }
 
 classifyVariables
   :: forall f
