@@ -3,7 +3,6 @@ module Snarky.Backend.Bulletproof.Gate
   , Gates
   , makeGates
   , emptyGates
-  , gatesInfo
   , SortedR1CS
   , sortR1CS
   , Witness
@@ -15,8 +14,9 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.State (State, evalState, get, modify_)
-import Data.Array (all, catMaybes, fold, mapWithIndex, replicate, zipWith)
+import Data.Array (all, catMaybes, fold, mapWithIndex, zipWith)
 import Data.Array as Array
+import Data.FoldableWithIndex as Arrat
 import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
@@ -90,7 +90,7 @@ makeGateExpression index (R1CS { left, right, output }) = do
             Nothing -> do
               modify_ \s ->
                 s { varPlacements = Map.insert v { index, placement, coeff: recip f } s.varPlacements }
-              pure $ GateExpression []
+              pure mempty
             Just x -> pure $
               GateExpression
                 [ { index, placement, coeff: -one }
@@ -144,8 +144,6 @@ defaultRow =
   , c: zero
   }
 
-type Matrix f = Array (Array f)
-
 type Gates f =
   { wl :: Matrix f
   , wr :: Matrix f
@@ -153,30 +151,6 @@ type Gates f =
   , wv :: Matrix f
   , c :: Array f
   }
-
-dim :: forall f. Matrix f -> Tuple Int Int
-dim m =
-  let
-    nCols =
-      case Array.uncons m of
-        Just { head } -> Array.length head
-        Nothing -> 0
-    nRows = Array.length m
-  in
-    Tuple nRows nCols
-
-gatesInfo :: forall f. Gates f -> String
-gatesInfo gs = Array.intercalate "\n"
-  [ "dim W_l: " <> formatDim (dim gs.wl)
-  , "dim W_r: " <> formatDim (dim gs.wr)
-  , "dim W_o: " <> formatDim (dim gs.wo)
-  , "dim W_v: " <> formatDim (dim gs.wv)
-  , "dim c: " <> (show $ Array.length gs.c) <> " x 1"
-
-  ]
-  where
-  formatDim :: Tuple Int Int -> String
-  formatDim (Tuple r c) = show r <> " x " <> show c
 
 emptyGates :: forall f. Gates f
 emptyGates =
@@ -213,28 +187,22 @@ makeGates { publicInputs, constraints } =
 
     rows :: Array (R f)
     rows = fold $ evalState (traverseWithIndex f cs) (initS { varPlacements = publicInputIndices })
-  in
-    let
 
-      toMatrixRow :: Int -> Map Int f -> Array f
-      toMatrixRow nCols m =
-        Array.updateAtIndices (Map.toUnfoldable m :: Array (Tuple Int f))
-          (replicate nCols zero)
-      q = Array.length rows
-      _m = Array.length publicInputs
-    in
-      foldl
-        ( \acc r ->
+  in
+    foldl
+      ( \acc r ->
+          if Map.isEmpty r.wl && Map.isEmpty r.wr && Map.isEmpty r.wo && Map.isEmpty r.wv && r.c == zero then acc
+          else
             acc
-              { wl = acc.wl `Array.snoc` toMatrixRow q r.wl
-              , wr = acc.wr `Array.snoc` toMatrixRow q r.wr
-              , wo = acc.wo `Array.snoc` toMatrixRow q r.wo
-              , wv = acc.wv `Array.snoc` toMatrixRow _m r.wv
+              { wl = acc.wl `Array.snoc` r.wl
+              , wr = acc.wr `Array.snoc` r.wr
+              , wo = acc.wo `Array.snoc` r.wo
+              , wv = acc.wv `Array.snoc` r.wv
               , c = acc.c `Array.snoc` r.c
               }
-        )
-        emptyGates
-        rows
+      )
+      emptyGates
+      rows
 
 type Witness f =
   { al :: Array f
@@ -301,7 +269,13 @@ satisfies { al, ar, ao, v } g =
   in
     c1 && c2
   where
-  innerProduct as bs = Array.foldl (\acc (Tuple a b) -> acc + a * b) zero (Array.zip as bs)
+  innerProduct :: Array f -> Map Int f -> f
+  innerProduct as bs =
+    Arrat.foldlWithIndex
+      ( \i acc a -> maybe acc (\b -> acc + mul a b) (Map.lookup i bs)
+      )
+      zero
+      as
   hadamard = Array.zipWith mul
   addVec = zipWith add
 
@@ -379,3 +353,11 @@ sortR1CS constraints =
 
   isTrivial (AffineExpression { constant, terms }) =
     (isNothing constant || constant == Just zero) && Array.length terms == 1
+
+type Matrix f = Array (Map Int f)
+
+type SparseMatrix f =
+  { entries :: Array { row :: Int, col :: Int, val :: f }
+  , nRows :: Int
+  , nCols :: Int
+  }
