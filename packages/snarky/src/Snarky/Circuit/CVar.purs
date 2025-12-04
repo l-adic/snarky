@@ -125,6 +125,7 @@ negate_ = scale_ (negate one)
 data EvaluationError f
   = MissingVariable Variable
   | DivisionByZero { numerator :: CVar f Variable, denominator :: CVar f Variable }
+  | FailedAssertion String
 
 derive instance Eq f => Eq (EvaluationError f)
 derive instance Generic (EvaluationError f) _
@@ -148,6 +149,8 @@ eval lookup c = case c of
   ScalarMul scalar expr -> mul scalar <$> eval lookup expr
 
 newtype AffineExpression f = AffineExpression { constant :: Maybe f, terms :: Array (Tuple Variable f) }
+
+derive newtype instance Show f => Show (AffineExpression f)
 
 instance PrimeField f => Semigroup (AffineExpression f) where
   append (AffineExpression e1) (AffineExpression e2) =

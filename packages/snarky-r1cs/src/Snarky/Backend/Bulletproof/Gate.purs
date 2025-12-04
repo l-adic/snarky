@@ -1,55 +1,153 @@
-module Snarky.Backend.Bulletproof.Gate
-  ( Gates
-  , Matrix
-  , makeGates
-  , MulGate
-  , makeMulGates
-  , Witness
-  , makeWitness
-  , satisfies
-  ) where
+module Snarky.Backend.Bulletproof.Gate where
+
+--  ( GateConstraint(..)
+--  , Matrix
+--  , MulGate
+--  , Witness
+--  , makeGates
+--  , makeMulGate
+--  , r1csToGateConstraint
+--  )
+--  where
 
 import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
-import Data.Array (zipWith)
+import Control.Monad.State (State, evalState, get, modify_, put)
+import Data.Array (fold, mapWithIndex, replicate, zipWith)
 import Data.Array as Array
-import Data.Bifunctor (lmap, rmap)
-import Data.Foldable (fold, foldM, foldMap)
-import Data.FunctorWithIndex (mapWithIndex)
+import Data.List as List
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (fromJust, fromMaybe, maybe)
-import Data.Set (Set)
-import Data.Set as Set
-import Data.Traversable (foldl)
-import Data.Tuple (Tuple(..), snd)
-import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, getVariable, reduceToAffineExpression, scaleAffineExpression, subAffineExpression)
+import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (class Newtype, over, un)
+import Data.Traversable (foldl, for)
+import Data.TraversableWithIndex (traverseWithIndex)
+import Data.Tuple (Tuple(..))
+import Debug (trace, traceM)
+import Partial.Unsafe (unsafeCrashWith)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, reduceToAffineExpression)
+import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
 
-data GateConstraint f
-  = Mul (AffineExpression f) (AffineExpression f) (AffineExpression f)
-  | Linear (AffineExpression f)
+newtype GateIndex = GateIndex Int
 
-r1csToGateConstraint
+derive instance Eq GateIndex
+derive instance Ord GateIndex
+derive newtype instance Show GateIndex
+
+derive instance Newtype GateIndex _
+
+data Placement = L | R | O | V | C
+
+type S f =
+  { currentIndex :: GateIndex
+  , oMap :: Map Variable { index :: GateIndex, placement :: Placement, coeff :: f }
+  }
+
+initS :: forall f. S f
+initS = { currentIndex: GateIndex 0, oMap: Map.empty }
+
+freshGateIndex :: forall f. State (S f) GateIndex
+freshGateIndex = do
+  s@{ currentIndex } <- get
+  put s { currentIndex = over GateIndex (add 1) currentIndex }
+  pure currentIndex
+
+newtype GateExpression f = GateExpression (Array { index :: GateIndex, coeff :: f, placement :: Placement })
+
+derive newtype instance Semigroup (GateExpression f)
+derive newtype instance Monoid (GateExpression f)
+
+makeGateExpression
   :: forall f
    . PrimeField f
-  => R1CS f
-  -> GateConstraint f
-r1csToGateConstraint (R1CS _l _r _o) =
+  => GateIndex
+  -> R1CS f
+  -> State (S f) (Array (GateExpression f))
+makeGateExpression baseIndex c@(R1CS { left, right, output }) = do
+  traceM $ "makeGateExpression: " <> show baseIndex
+  traceM $ show  c
   let
-    l@(AffineExpression { constant: constantL, terms: termsL }) = reduceToAffineExpression _l
-    r@(AffineExpression { constant: constantR, terms: termsR }) = reduceToAffineExpression _r
-    o = reduceToAffineExpression _o
-  in
-    if Array.null termsL then Linear $ (scaleAffineExpression (fromMaybe zero constantL) r) `subAffineExpression` o
-    else if Array.null termsR then Linear $ (scaleAffineExpression (fromMaybe zero constantR) l) `subAffineExpression` o
-    else Mul l r o
+    g :: Int -> Placement -> CVar f Variable -> State (S f) (GateExpression f)
+    g offset placement cvar = do
+      let
+        AffineExpression { constant, terms } = reduceToAffineExpression cvar
+        index = over GateIndex (add offset) baseIndex
+        constantTerm = constant <#> \c -> GateExpression [ { index, placement: C, coeff: c } ]
+      xs <- case List.fromFoldable terms of
+        List.Nil -> pure $
+          GateExpression
+            [ { index, placement, coeff: one } ]
+        List.Cons (Tuple _ f) List.Nil | f == zero -> pure $
+          GateExpression
+            [ { index, placement, coeff: one }
+            ]
+        List.Cons (Tuple v f) List.Nil | f /= zero -> do
+          { oMap } <- get
+          case Map.lookup v oMap of
+            Nothing -> do
+              modify_ \s ->
+                s { oMap = Map.insert v { index, placement, coeff: recip f } s.oMap }
+              pure $ GateExpression []
+            Just x -> pure $
+              GateExpression
+                [ { index, placement, coeff: f }
+                , x {coeff = -x.coeff}
+                ]
+        _ -> GateExpression <$> do
+          { oMap } <- get
+          prev <- for terms \(Tuple v f) -> do
+            case Map.lookup v oMap of
+              Nothing -> unsafeCrashWith "Shit"
+              Just x -> pure x { coeff = -f * x.coeff }
+          pure $ Array.cons { index, placement, coeff: one } prev
+      pure $ maybe xs (\x -> x <> xs) constantTerm
+  l <- g 0 L left
+  r <- g 1 R right
+  o <- g 2 O output
+  pure [ l, r, o ]
 
--- m_{i,j} = m !! i !! j
--- so a matrix is an array of rows
+gateExpressionToRow
+  :: forall f
+   . PrimeField f
+  => GateExpression f
+  -> R f
+gateExpressionToRow (GateExpression terms) = trace ("get expression to row") \_ -> trace terms \_ ->
+  let
+    r = 
+      foldl
+        ( \acc term ->
+            case term.placement of
+              L -> acc { wl = Map.insertWith add (un GateIndex term.index) term.coeff acc.wl }
+              R -> acc { wr = Map.insertWith add (un GateIndex term.index) term.coeff acc.wr }
+              O -> acc { wo = Map.insertWith add (un GateIndex term.index) term.coeff acc.wo }
+              V -> acc { wv = Map.insertWith add (un GateIndex term.index) term.coeff acc.wv }
+              C -> acc { c = acc.c + term.coeff }
+        )
+        defaultRow
+        terms
+  in
+    r { wv = map negate r.wv, c = negate r.c }
+
+type R f =
+  { wl :: Map Int f
+  , wr :: Map Int f
+  , wo :: Map Int f
+  , wv :: Map Int f
+  , c :: f
+  }
+
+defaultRow :: forall f. PrimeField f => R f
+defaultRow =
+  { wl: Map.empty
+  , wr: Map.empty
+  , wo: Map.empty
+  , wv: Map.empty
+  , c: zero
+  }
+
 type Matrix f = Array (Array f)
 
 type Gates f =
@@ -60,70 +158,61 @@ type Gates f =
   , c :: Array f
   }
 
+emptyGates :: forall f. Gates f
+emptyGates =
+  { wl: mempty
+  , wr: mempty
+  , wo: mempty
+  , wv: mempty
+  , c: mempty
+  }
+
 makeGates
   :: forall f
    . PrimeField f
-  => Array (R1CS f)
+  => { publicInputs :: Array Variable
+     , constraints :: Array (R1CS f)
+     }
   -> Gates f
-makeGates constraints =
-  let
-    cs = map r1csToGateConstraint constraints
-
-    Tuple mulGates linearGates =
-      Array.foldl
-        ( \acc g ->
-            case g of
-              Linear c -> rmap (flip Array.snoc c) acc
-              Mul l r o -> lmap (flip Array.snoc { l, r, o }) acc
-        )
-        mempty
-        cs
-    nMuls = Array.length mulGates
-    zeroRow = Array.replicate nMuls (zero @f)
-
-    addMulGate index { l: AffineExpression l, r: AffineExpression r, o: AffineExpression o } =
-      let
-        oneHot = unsafePartial $ fromJust $ Array.updateAt index one $ Array.replicate nMuls zero
-      in
-        { wl: [ oneHot, zeroRow, zeroRow ]
-        , wr: [ zeroRow, oneHot, zeroRow ]
-        , wo: [ zeroRow, zeroRow, oneHot ]
-        , wv: [ toDenseRow l.terms, toDenseRow r.terms, toDenseRow o.terms ]
-        , c:
-            let
-              orZero = fromMaybe zero
-            in
-              [ orZero l.constant, orZero r.constant, orZero o.constant ]
-        }
-
-    addLinearGate (AffineExpression e) =
-      { wl: [ zeroRow ]
-      , wr: [ zeroRow ]
-      , wo: [ zeroRow ]
-      , wv: [ toDenseRow e.terms ]
-      , c: [ fromMaybe zero e.constant ]
-      }
-  in
-    fold $ mapWithIndex addMulGate mulGates <> map addLinearGate linearGates
-
-  where
-  vars :: Set Variable
-  vars =
+makeGates { publicInputs, constraints } =
     let
-      collectVariables :: CVar f Variable -> Set Variable
-      collectVariables = foldl (flip Set.insert) Set.empty
-    in
-      foldMap
-        ( \(R1CS l r o) ->
-            foldMap collectVariables [ l, r, o ]
-        )
-        constraints
-  nVars = Set.size vars
 
-  toDenseRow :: Array (Tuple Variable f) -> Array f
-  toDenseRow as =
-    Array.updateAtIndices (map (lmap getVariable) as) $
-      Array.replicate nVars zero
+      publicInputIndices = Map.fromFoldable $ 
+        mapWithIndex 
+          ( \i var -> 
+            Tuple var {index: GateIndex i, placement: V, coeff: one}
+          ) 
+          publicInputs
+
+      f :: Int -> R1CS f -> State (S f) (Array (R f))
+      f i c = map gateExpressionToRow <$> makeGateExpression (GateIndex i) c 
+
+      rows :: Array (R f)
+      rows = fold $ evalState (traverseWithIndex f constraints) (initS {oMap = publicInputIndices})
+    in
+    trace (show rows) \_ ->
+    let
+
+      toMatrixRow :: Int -> Map Int f -> Array f
+      toMatrixRow nCols m =
+        Array.updateAtIndices (Map.toUnfoldable m :: Array (Tuple Int f))
+          (replicate nCols zero)
+      q = Array.length rows
+      _m = Array.length publicInputs
+    in
+      foldl
+        ( \acc r ->
+            acc
+              { wl = acc.wl `Array.snoc` toMatrixRow q r.wl
+              , wr = acc.wr `Array.snoc` toMatrixRow q r.wr
+              , wo = acc.wo `Array.snoc` toMatrixRow q r.wo
+              , wv = acc.wv `Array.snoc` toMatrixRow _m r.wv
+              , c = acc.c `Array.snoc` r.c
+              }
+        )
+        emptyGates
+        rows
+
 
 type Witness f =
   { al :: Array f
@@ -132,57 +221,48 @@ type Witness f =
   , v :: Array f
   }
 
-type MulGate f =
-  { l :: AffineExpression f
-  , r :: AffineExpression f
-  , o :: AffineExpression f
-  }
-
-makeMulGates
-  :: forall f
-   . PrimeField f
-  => Array (R1CS f)
-  -> Array (MulGate f)
-makeMulGates cs =
-  foldl
-    ( \acc r1cs -> case r1csToGateConstraint r1cs of
-        Linear _ -> acc
-        Mul l r o -> acc `Array.snoc` { l, r, o }
-    )
-    mempty
-    cs
-
 makeWitness
   :: forall f m
    . PrimeField f
   => MonadThrow (EvaluationError f) m
   => { assignments :: Map Variable f
-     , mulGates :: Array (MulGate f)
+     , constraints :: Array (R1CS f)
+     , publicInputs :: Array Variable
      }
   -> m (Witness f)
-makeWitness { assignments, mulGates } =
-  let
-    lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var assignments
-    makeWire { l, r, o } = do
-      al <- evalAffineExpression l lookup
-      ar <- evalAffineExpression r lookup
-      ao <- evalAffineExpression o lookup
-      pure { al, ar, ao }
-    v = snd <$> Map.toUnfoldable assignments
-  in
-    ( foldM
-        ( \acc m ->
-            makeWire m <#> \wire ->
-              acc
-                { al = acc.al `Array.snoc` wire.al
-                , ar = acc.ar `Array.snoc` wire.ar
-                , ao = acc.ao `Array.snoc` wire.ao
-                }
-        )
-        { al: mempty, ar: mempty, ao: mempty }
-        mulGates
-    ) <#> \{ al, ar, ao } ->
-      { al, ar, ao, v }
+makeWitness { assignments, constraints, publicInputs } = do
+  -- 1. Construct v (Public Inputs)
+  v <- for publicInputs \var ->
+    case Map.lookup var assignments of
+      Nothing -> throwError $ MissingVariable var
+      Just val -> pure val
+
+  let lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var assignments
+
+  -- 2. Construct Gate Wires (al, ar, ao)
+  gateWires <- for constraints \(R1CS { left, right, output }) -> do
+    lVal <- CVar.eval lookup left
+    rVal <- CVar.eval lookup right
+
+    -- In Bulletproofs, ao is DEFINED as al * ar.
+    let oValCalculated = lVal * rVal
+
+    -- However, we must ensure this matches the assignment provided 
+    -- for the output variable/expression to ensure consistency.
+    oValExpected <- CVar.eval lookup output
+
+    when (oValCalculated /= oValExpected)
+      $ throwError
+      $ FailedAssertion "Multiplication mismatch"
+
+    pure { l: lVal, r: rVal, o: oValCalculated }
+
+  pure
+    { al: map _.l gateWires
+    , ar: map _.r gateWires
+    , ao: map _.o gateWires
+    , v
+    }
 
 satisfies
   :: forall f
