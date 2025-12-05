@@ -113,6 +113,8 @@ double { a } { x: ax, y: ay } = do
     axVal <- readCVar ax
     pure $ UnChecked $ (lambdaVal * lambdaVal) - (axVal + axVal)
 
+  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
+
   UnChecked by <- exists do
     lambdaVal <- readCVar lambda
     axVal <- readCVar ax
@@ -127,8 +129,6 @@ double { a } { x: ax, y: ay } = do
     , right: ay
     , output: Snarky.add_ (scale_ (fromInt 3) xSquared) aConst
     }
-
-  assertSquare_ lambda (Snarky.add_ bx (scale_ (fromInt 2) ax))
 
   addConstraint $ r1cs
     { left: lambda

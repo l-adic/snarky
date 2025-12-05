@@ -41,8 +41,8 @@ equals_ a b = case a `CVar.sub_` b of
       pure $
         if zVal == zero then { r: one @(F f), zInv: zero }
         else { r: zero, zInv: recip zVal }
-    addConstraint $ r1cs { left: zInv, right: z, output: const_ one `CVar.sub_` r }
     addConstraint $ r1cs { left: r, right: z, output: const_ zero }
+    addConstraint $ r1cs { left: zInv, right: z, output: const_ one `CVar.sub_` r }
     pure $ coerce r
 
 neq_

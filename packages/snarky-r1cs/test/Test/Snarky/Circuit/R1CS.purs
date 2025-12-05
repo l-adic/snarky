@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeMulGates, makeWitness, satisfies)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
@@ -74,14 +74,14 @@ factorsSpec
 factorsSpec _ = describe "Factors Spec" do
 
   it "factors Circuit is Valid" $ liftEffect $ do
-    { constraints } <-
+    { constraints: cs, publicInputs } <-
       compile
         (Proxy @(F f))
         (Proxy @Unit)
         factorsCircuit
     let
-      gates = makeGates constraints
-      mulGates = makeMulGates constraints
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit
       solver = makeSolver (Proxy @(R1CS f)) factorsCircuit
@@ -90,7 +90,7 @@ factorsSpec _ = describe "Factors Spec" do
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
       solve n = do
         Tuple _ assignments <- solver n
-        makeWitness { assignments, mulGates }
+        makeWitness { assignments, constraints, publicInputs }
     ns <- randomSample gen
     for_ ns \n -> do
       runExceptT (mapExceptT randomSampleOne $ solve n) >>= case _ of
@@ -145,14 +145,14 @@ dlogSpec
 dlogSpec pg _ = describe "DLog Spec" do
   let cp = curveParams pg
   it "dlog Circuit is Valid" $ liftEffect $ do
-    { constraints } <-
+    { constraints: cs, publicInputs } <-
       compile
         (Proxy @(AffinePoint (F f)))
         (Proxy @Unit)
         (dlog16Circuit cp)
     let
-      gates = makeGates constraints
-      mulGates = makeMulGates constraints
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) (ReaderT (Env f) Effect) (AffinePoint (F f)) Unit
       solver = makeSolver (Proxy @(R1CS f)) (dlog16Circuit cp)
@@ -171,7 +171,7 @@ dlogSpec pg _ = describe "DLog Spec" do
         pure $ Tuple (f p) p
       solve p = do
         Tuple _ assignments <- solver p
-        makeWitness { assignments, mulGates }
+        makeWitness { assignments, constraints, publicInputs }
     kvs <- randomSample gen
     let nat kv m = runReaderT m (Env [ kv ])
     for_ kvs \kv@(Tuple p _) -> do
