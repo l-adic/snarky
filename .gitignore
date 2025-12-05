@@ -4,6 +4,7 @@ output/
 .pulp-cache/
 bower_components/
 node_modules/
+.psci_modules/
 
 # Native binaries
 *.node
