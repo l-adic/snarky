@@ -5,19 +5,14 @@ use napi_derive::napi;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
-// Use field types from curves-napi (as rlib dependency, not cross-module)
 use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
 
-// CRS types - opaque handles
 pub type PallasCrsExternal = External<CRS<Projective>>;
 
-// Witness types - opaque handles
 pub type PallasWitnessExternal = External<Witness<PallasFr>>;
 
-// Statement types - opaque handles
 pub type PallasStatementExternal = External<Statement<Projective>>;
 
-// Circuit types - opaque handles
 pub type PallasCircuitExternal = External<Circuit<PallasFr>>;
 
 // CRS Functions for Pallas
@@ -33,12 +28,10 @@ pub fn pallas_crs_size(crs: &PallasCrsExternal) -> u32 {
     crs.size() as u32
 }
 
-// Helper to convert JS array of field element External references to Vec<Fr>
 fn external_array_to_field_vec(arr: Vec<&PallasFieldExternal>) -> Vec<PallasFr> {
     arr.into_iter().map(|ext| **ext).collect()
 }
 
-// Helper to convert JS array of arrays to Vec<Vec<Fr>>
 fn external_matrix_to_field_matrix(matrix: Vec<Vec<&PallasFieldExternal>>) -> Vec<Vec<PallasFr>> {
     matrix
         .into_iter()
@@ -46,7 +39,7 @@ fn external_matrix_to_field_matrix(matrix: Vec<Vec<&PallasFieldExternal>>) -> Ve
         .collect()
 }
 
-// Witness Functions for Pallas
+
 #[napi]
 pub fn pallas_witness_create(
     a_l: Vec<&PallasFieldExternal>,

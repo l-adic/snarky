@@ -43,3 +43,6 @@ Thumbs.db
 
 # Purescript Spec
 .spec-results
+
+# Crypto provider symlink
+packages/crypto-provider

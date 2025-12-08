@@ -1,6 +1,6 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const napi = require('curves-napi');
+const napi = require('snarky-crypto');
 
 export function _zero() {
     return napi.vestaScalarfieldZero();

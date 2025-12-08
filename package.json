@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/l-adic/snarky#readme",
   "dependencies": {
-    "curves-napi": "file:./packages/curves/curves-napi"
+    "snarky-crypto": "file:./packages/crypto-provider"
   },
   "devDependencies": {
     "purescript": "^0.15.15",
