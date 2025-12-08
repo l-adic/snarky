@@ -7,14 +7,16 @@ module Snarky.Constraint.R1CS
 import Prelude
 
 import Data.Map (Map)
-import Snarky.Circuit.CVar (CVar, Variable, const_, sub_)
+import Snarky.Circuit.CVar (CVar, Variable, const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck.Gen (Gen)
 import Type.Proxy (Proxy)
 
-data R1CS f = R1CS (CVar f Variable) (CVar f Variable) (CVar f Variable)
+newtype R1CS f = R1CS { left :: (CVar f Variable), right :: (CVar f Variable), output :: (CVar f Variable) }
+
+derive newtype instance Show f => Show (R1CS f)
 
 genWithAssignments
   :: forall f
@@ -37,13 +39,14 @@ eval
   => (Variable -> m f)
   -> R1CS f
   -> m Boolean
-eval lookup (R1CS l r o) = ado
-  left <- CVar.eval lookup l
-  right <- CVar.eval lookup r
-  output <- CVar.eval lookup o
+eval lookup (R1CS c) = ado
+  left <- CVar.eval lookup c.left
+  right <- CVar.eval lookup c.right
+  output <- CVar.eval lookup c.output
   in left * right == output
 
 instance PrimeField f => Basic.BasicSystem f (R1CS f) where
-  r1cs { left, right, output } = R1CS left right output
-  boolean v = R1CS v v v
-  equal a b = R1CS (const_ one) (sub_ a b) (const_ zero)
+  r1cs { left, right, output } = R1CS { left, right, output }
+  boolean v = R1CS { left: v, right: v, output: v }
+  -- NB: DO NOT CHANGE THIS TO 1 * (a - b) = zero
+  equal a b = R1CS { left: a, right: const_ one, output: b }

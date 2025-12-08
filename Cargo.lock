@@ -228,7 +228,6 @@ dependencies = [
 [[package]]
 name = "bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/l-adic/bulletproofs?rev=bb38a6ef1892fc05415e971546eeefd7321697b7#bb38a6ef1892fc05415e971546eeefd7321697b7"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -940,6 +939,7 @@ dependencies = [
  "napi-derive",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
+ "spongefish",
 ]
 
 [[package]]

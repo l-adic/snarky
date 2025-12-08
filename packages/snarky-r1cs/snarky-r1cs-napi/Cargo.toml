@@ -25,6 +25,7 @@ rand_chacha = { workspace = true }
 
 # bulletproofs
 bulletproofs = { workspace = true }
+spongefish = { workspace = true }
 
 # curves-napi for field element types
 curves-napi = { workspace = true }

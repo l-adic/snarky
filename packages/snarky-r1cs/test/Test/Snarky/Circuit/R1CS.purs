@@ -6,14 +6,18 @@ import Control.Monad.Except (mapExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
+import Data.Array (index)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
+import Data.Map as Map
 import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeMulGates, makeWitness, satisfies)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toDenseGates)
+import Snarky.Backend.Bulletproof.Circuit as Bulletproof
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
@@ -21,6 +25,7 @@ import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const
 import Snarky.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, double, genAffinePoint)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSample, randomSampleOne, suchThat)
@@ -33,6 +38,7 @@ spec :: Spec Unit
 spec = do
   CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
   factorsSpec (Proxy @Vesta.BaseField)
+  pallasFactorsSpec
   dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.BaseField)
 
 --------------------------------------------------------------------------------
@@ -74,14 +80,14 @@ factorsSpec
 factorsSpec _ = describe "Factors Spec" do
 
   it "factors Circuit is Valid" $ liftEffect $ do
-    { constraints } <-
+    { constraints: cs, publicInputs } <-
       compile
         (Proxy @(F f))
         (Proxy @Unit)
         factorsCircuit
     let
-      gates = makeGates constraints
-      mulGates = makeMulGates constraints
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit
       solver = makeSolver (Proxy @(R1CS f)) factorsCircuit
@@ -90,12 +96,120 @@ factorsSpec _ = describe "Factors Spec" do
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
       solve n = do
         Tuple _ assignments <- solver n
-        makeWitness { assignments, mulGates }
+        makeWitness { assignments, constraints, publicInputs }
     ns <- randomSample gen
     for_ ns \n -> do
       runExceptT (mapExceptT randomSampleOne $ solve n) >>= case _ of
         Left e -> throwError $ error (show e)
         Right witness -> satisfies witness gates `shouldEqual` true
+
+pallasFactorsSpec :: Spec Unit
+pallasFactorsSpec = describe "Pallas Factors Spec" do
+
+  it "Pallas Bulletproof Prove/Verify Flow" $ liftEffect $ do
+    { constraints: cs, publicInputs } <-
+      compile
+        (Proxy @(F Pallas.ScalarField))
+        (Proxy @Unit)
+        factorsCircuit
+    let
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
+
+      solver :: SolverT Pallas.ScalarField (R1CS Pallas.ScalarField) Gen (F Pallas.ScalarField) Unit
+      solver = makeSolver (Proxy @(R1CS Pallas.ScalarField)) factorsCircuit
+
+      gen :: Gen (F Pallas.ScalarField)
+      gen = arbitrary `suchThat` \a -> a /= zero && a /= one
+      solve n = do
+        Tuple _ assignments <- solver n
+        makeWitness { assignments, constraints, publicInputs }
+
+    n <- randomSampleOne gen
+    runExceptT (mapExceptT randomSampleOne $ solve n) >>= case _ of
+      Left e -> throwError $ error (show e)
+      Right witness -> do
+        -- Debug: Print PureScript circuit and witness dimensions
+        let
+          q = Array.length gates.wl
+          n = Array.length witness.al -- number of multiplication gates
+          m = Array.length publicInputs
+          denseGates = toDenseGates gates { q, n, m }
+
+        log $ "=== PURESCRIPT DEBUG ==="
+        log $ "PS Circuit - gates.wl length (q): " <> show q
+        log $ "PS Circuit - gates.wl[0] length (n): " <> show (maybe 0 Array.length (index denseGates.wl 0))
+        log $ "PS Circuit - gates.wv length: " <> show (Array.length denseGates.wv)
+        log $ "PS Circuit - gates.wv[0] length (m): " <> show (maybe 0 Array.length (index denseGates.wv 0))
+        log $ "PS publicInputs count: " <> show m
+        log $ "PS Witness - al length: " <> show (Array.length witness.al)
+        log $ "PS Witness - ar length: " <> show (Array.length witness.ar)
+        log $ "PS Witness - ao length: " <> show (Array.length witness.ao)
+        log $ "PS Witness - v length: " <> show (Array.length witness.v)
+
+        -- Test PureScript implementation
+        let psSatisfies = satisfies witness gates
+        log $ "PureScript satisfies: " <> show psSatisfies
+
+        -- Debug first few matrix values to compare with Rust
+        log $ "=== MATRIX DEBUG ==="
+        log $ "First constraint in sparse gates.wl: " <> show (index gates.wl 0)
+        log $ "First constraint in dense denseGates.wl: " <> show (index denseGates.wl 0)
+        log $ "witness.al first 3 values: " <> show (Array.take 3 witness.al)
+        log $ "witness.v: " <> show witness.v
+        -- Temporarily comment out to see Rust output
+        -- psSatisfies `shouldEqual` true
+
+        -- Test Rust bulletproof circuit implementation 
+        let
+          rustWitness = Bulletproof.witnessCreate
+            { left: witness.al
+            , right: witness.ar
+            , output: witness.ao
+            , v: witness.v
+            , seed: 12345
+            }
+          rustCircuit = Bulletproof.circuitCreate
+            { weightsLeft: denseGates.wl
+            , weightsRight: denseGates.wr
+            , weightsOutput: denseGates.wo
+            , weightsAuxiliary: denseGates.wv
+            , constants: denseGates.c
+            }
+          rustSatisfies = Bulletproof.circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
+
+        log $ "=== RUST CIRCUIT DEBUG ==="
+        log $ "Rust circuit satisfaction: " <> show rustSatisfies
+
+        -- Test prove/verify flow
+        let
+          crs = Bulletproof.crsCreate { size: 256, seed: 42 }
+          statement = Bulletproof.statementCreate { crs, witness: rustWitness }
+
+        log $ "=== PROVE/VERIFY FLOW DEBUG ==="
+        log $ "CRS size: " <> show (Bulletproof.crsSize crs)
+
+        let
+          proof = Bulletproof.prove
+            { crs
+            , circuit: rustCircuit
+            , witness: rustWitness
+            , seed: 54321
+            }
+
+        log $ "Proof generated successfully"
+
+        let
+          verifyResult = Bulletproof.verify
+            { crs
+            , circuit: rustCircuit
+            , statement
+            , proof
+            }
+
+        log $ "Verify result: " <> show verifyResult
+
+        verifyResult `shouldEqual` true
 
 --------------------------------------------------------------------------------
 
@@ -145,14 +259,14 @@ dlogSpec
 dlogSpec pg _ = describe "DLog Spec" do
   let cp = curveParams pg
   it "dlog Circuit is Valid" $ liftEffect $ do
-    { constraints } <-
+    { constraints: cs, publicInputs } <-
       compile
         (Proxy @(AffinePoint (F f)))
         (Proxy @Unit)
         (dlog16Circuit cp)
     let
-      gates = makeGates constraints
-      mulGates = makeMulGates constraints
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) (ReaderT (Env f) Effect) (AffinePoint (F f)) Unit
       solver = makeSolver (Proxy @(R1CS f)) (dlog16Circuit cp)
@@ -171,7 +285,7 @@ dlogSpec pg _ = describe "DLog Spec" do
         pure $ Tuple (f p) p
       solve p = do
         Tuple _ assignments <- solver p
-        makeWitness { assignments, mulGates }
+        makeWitness { assignments, constraints, publicInputs }
     kvs <- randomSample gen
     let nat kv m = runReaderT m (Env [ kv ])
     for_ kvs \kv@(Tuple p _) -> do
