@@ -9,6 +9,19 @@ use rand_chacha::ChaCha8Rng;
 
 use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
 
+// Helper function to find next power of 2
+fn next_power_of_2(n: usize) -> usize {
+    if n <= 1 {
+        1
+    } else {
+        let mut power = 1;
+        while power < n {
+            power *= 2;
+        }
+        power
+    }
+}
+
 pub type PallasCrsExternal = External<CRS<Projective>>;
 
 pub type PallasWitnessExternal = External<Witness<PallasFr>>;
@@ -54,10 +67,21 @@ pub fn pallas_witness_create(
 ) -> Result<PallasWitnessExternal> {
     let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
     
-    let a_l = external_array_to_field_vec(a_l);
-    let a_r = external_array_to_field_vec(a_r);
-    let a_o = external_array_to_field_vec(a_o);
+    let mut a_l = external_array_to_field_vec(a_l);
+    let mut a_r = external_array_to_field_vec(a_r);
+    let mut a_o = external_array_to_field_vec(a_o);
     let v = external_array_to_field_vec(v);
+    
+    // Pad witness vectors to next power of 2 for bulletproof compatibility
+    let current_len = a_l.len();
+    let padded_len = next_power_of_2(current_len);
+    
+    if current_len < padded_len {
+        println!("Padding witness from {} to {}", current_len, padded_len);
+        a_l.resize(padded_len, PallasFr::from(0u64));
+        a_r.resize(padded_len, PallasFr::from(0u64));
+        a_o.resize(padded_len, PallasFr::from(0u64));
+    }
     
     // Debug: Print Rust witness dimensions
     println!("=== RUST WITNESS DEBUG ===");
@@ -158,7 +182,7 @@ pub fn pallas_prove(
     witness: &PallasWitnessExternal,
     seed: u32,
 ) -> PallasProofExternal {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+    let mut rng = rand::rngs::OsRng; // Use OsRng like bulletproof tests
     println!("=== RUST PROVE DEBUG ===");
     println!("Rust Prove - circuit q: {}", circuit.q());
     println!("Rust Prove - circuit n: {}", circuit.n());
@@ -167,13 +191,18 @@ pub fn pallas_prove(
     // Create statement from witness and CRS
     let statement = Statement::new(&**crs, &**witness);
     
-    // Create domain separator and prover state using spongefish
+    // Debug statement values
+    println!("Rust Prove - statement.v length: {}", statement.v.len());
+    println!("Rust Prove - statement.v values: {:?}", statement.v);
+    
+    // Create domain separator and prover state using spongefish (like bulletproof tests)
     use spongefish::domain_separator;
     let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
     let mut prover_state = domain_separator.std_prover();
     
     let proof = prove(&mut prover_state, &**crs, &**circuit, &**witness, &mut rng);
     println!("Rust Prove - success, proof size: {}", proof.len());
+    println!("Rust Prove - proof bytes (first 10): {:?}", &proof[..std::cmp::min(10, proof.len())]);
     External::new(proof)
 }
 
@@ -189,11 +218,18 @@ pub fn pallas_verify(
     println!("Rust Verify - circuit q: {}", circuit.q());
     println!("Rust Verify - circuit n: {}", circuit.n());
     println!("Rust Verify - proof size: {}", proof.len());
+    println!("Rust Verify - proof bytes (first 10): {:?}", &proof[..std::cmp::min(10, proof.len())]);
     
-    // Create domain separator and verifier state with proof
+    // Debug statement values in verify
+    println!("Rust Verify - statement.v length: {}", statement.v.len());
+    println!("Rust Verify - statement.v values: {:?}", statement.v);
+    
+    // Create domain separator and verifier state with proof (like bulletproof tests)
     use spongefish::domain_separator;
     let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
     let mut verifier_state = domain_separator.std_verifier(&**proof);
+    
+    println!("Rust Verify - domain separator created, starting verification...");
     
     match verify(&mut verifier_state, &**crs, &**circuit, &**statement) {
         Ok(_) => {
@@ -205,4 +241,58 @@ pub fn pallas_verify(
             false
         }
     }
+}
+
+// Export function for debugging - writes circuit and witness data to files
+#[napi]
+pub fn pallas_export_debug_data(
+    circuit: &PallasCircuitExternal,
+    witness: &PallasWitnessExternal,
+    file_prefix: String,
+) -> Result<()> {
+    use std::fs::File;
+    use std::io::Write;
+    
+    // Export circuit data
+    let circuit_data = format!(
+        "// Circuit Debug Data\n\
+         // q = {}, n = {}\n\
+         \n\
+         use ark_pallas::Fr;\n\
+         use bulletproofs::circuit::types::{{Circuit, Witness}};\n\
+         \n\
+         pub fn get_debug_circuit() -> Circuit<Fr> {{\n\
+         \tlet w_l = vec!{:?};\n\
+         \tlet w_r = vec!{:?};\n\
+         \tlet w_o = vec!{:?};\n\
+         \tlet w_v = vec!{:?};\n\
+         \tlet c = {:?};\n\
+         \tCircuit::new(w_l, w_r, w_o, w_v, c)\n\
+         }}\n\
+         \n\
+         pub fn get_debug_witness() -> Witness<Fr> {{\n\
+         \tlet a_l = {:?};\n\
+         \tlet a_r = {:?};\n\
+         \tlet a_o = {:?};\n\
+         \tlet v = {:?};\n\
+         \tWitness::new(a_l, a_r, a_o, v, &mut rand::thread_rng())\n\
+         }}\n",
+        circuit.q(),
+        circuit.n(),
+        circuit.w_l,
+        circuit.w_r,
+        circuit.w_o,
+        circuit.w_v,
+        circuit.c,
+        witness.a_l,
+        witness.a_r,
+        witness.a_o,
+        witness.v
+    );
+    
+    let mut file = File::create(format!("{}_debug.rs", file_prefix))?;
+    file.write_all(circuit_data.as_bytes())?;
+    
+    println!("Debug data exported to {}_debug.rs", file_prefix);
+    Ok(())
 }

@@ -231,6 +231,7 @@ version = "0.1.0"
 dependencies = [
  "ark-ec",
  "ark-ff",
+ "ark-pallas",
  "ark-poly",
  "ark-secp256k1",
  "ark-std",

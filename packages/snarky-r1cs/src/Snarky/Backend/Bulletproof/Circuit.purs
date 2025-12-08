@@ -17,11 +17,13 @@ module Snarky.Backend.Bulletproof.Circuit
   , verify
   , circuitToRecord
   , witnessToRecord
+  , exportDebugData
   ) where
 
 import Prelude
 
-import Data.Function.Uncurried (Fn2, Fn4, Fn5, runFn2, runFn4, runFn5)
+import Data.Function.Uncurried (Fn2, Fn3, Fn4, Fn5, runFn2, runFn3, runFn4, runFn5)
+import Effect (Effect)
 import Snarky.Curves.Pallas (ScalarField)
 
 -- Opaque types for circuit components
@@ -54,6 +56,7 @@ foreign import pallasWitnessGetLeft :: Witness -> Array ScalarField
 foreign import pallasWitnessGetRight :: Witness -> Array ScalarField
 foreign import pallasWitnessGetOutput :: Witness -> Array ScalarField
 foreign import pallasWitnessGetAuxiliary :: Witness -> Array ScalarField
+foreign import pallasExportDebugData :: Fn3 Circuit Witness String (Effect Unit)
 
 -- Exported functions with record arguments
 
@@ -168,3 +171,8 @@ witnessToRecord witness =
   , auxiliary: pallasWitnessGetAuxiliary witness
   , size: witnessSize witness
   }
+
+-- | Export circuit and witness data for Rust testing
+exportDebugData :: { circuit :: Circuit, witness :: Witness, filePrefix :: String } -> Effect Unit
+exportDebugData { circuit, witness, filePrefix } =
+  runFn3 pallasExportDebugData circuit witness filePrefix

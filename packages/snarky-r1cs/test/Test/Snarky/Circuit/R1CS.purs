@@ -33,6 +33,25 @@ import Test.Snarky.Circuit as CircuitTests
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+import Partial.Unsafe (unsafePartial)
+
+-- Helper functions for padding
+nextPowerOf2 :: Int -> Int
+nextPowerOf2 n =
+  let
+    go acc
+      | acc >= n = acc
+      | otherwise = go (acc * 2)
+  in
+    if n <= 1 then 1 else go 1
+
+padArrayWithZero :: Array (F Pallas.ScalarField) -> Int -> Array (F Pallas.ScalarField)
+padArrayWithZero arr targetLength =
+  let
+    currentLength = Array.length arr
+  in
+    if currentLength >= targetLength then arr
+    else arr <> Array.replicate (targetLength - currentLength) zero
 
 spec :: Spec Unit
 spec = do
@@ -134,7 +153,9 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
           q = Array.length gates.wl
           n = Array.length witness.al -- number of multiplication gates
           m = Array.length publicInputs
-          denseGates = toDenseGates gates { q, n, m }
+          -- Pad n to next power of 2 for bulletproof circuit matrix compatibility
+          paddedN = nextPowerOf2 n
+          denseGates = toDenseGates gates { q, n: paddedN, m }
 
         log $ "=== PURESCRIPT DEBUG ==="
         log $ "PS Circuit - gates.wl length (q): " <> show q
@@ -143,6 +164,7 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
         log $ "PS Circuit - gates.wv[0] length (m): " <> show (maybe 0 Array.length (index denseGates.wv 0))
         log $ "PS publicInputs count: " <> show m
         log $ "PS Witness - al length: " <> show (Array.length witness.al)
+        log $ "PS Circuit - padding n from " <> show n <> " to " <> show paddedN
         log $ "PS Witness - ar length: " <> show (Array.length witness.ar)
         log $ "PS Witness - ao length: " <> show (Array.length witness.ao)
         log $ "PS Witness - v length: " <> show (Array.length witness.v)
@@ -155,6 +177,15 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
         log $ "=== MATRIX DEBUG ==="
         log $ "First constraint in sparse gates.wl: " <> show (index gates.wl 0)
         log $ "First constraint in dense denseGates.wl: " <> show (index denseGates.wl 0)
+        log $ "First constraint in dense denseGates.wr: " <> show (index denseGates.wr 0)
+        log $ "First constraint in dense denseGates.wo: " <> show (index denseGates.wo 0)
+        log $ "First constraint in dense denseGates.wv: " <> show (index denseGates.wv 0)
+        log $ "First constraint c value: " <> show (index denseGates.c 0)
+        log $ "Second constraint in dense denseGates.wl: " <> show (index denseGates.wl 1)
+        log $ "Second constraint in dense denseGates.wr: " <> show (index denseGates.wr 1)
+        log $ "Second constraint in dense denseGates.wo: " <> show (index denseGates.wo 1)
+        log $ "Second constraint in dense denseGates.wv: " <> show (index denseGates.wv 1)
+        log $ "Second constraint c value: " <> show (index denseGates.c 1)
         log $ "witness.al first 3 values: " <> show (Array.take 3 witness.al)
         log $ "witness.v: " <> show witness.v
         -- Temporarily comment out to see Rust output
@@ -180,6 +211,14 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
 
         log $ "=== RUST CIRCUIT DEBUG ==="
         log $ "Rust circuit satisfaction: " <> show rustSatisfies
+
+        -- Export debug data for Rust testing (disabled for now)
+        -- Bulletproof.exportDebugData 
+        --   { circuit: rustCircuit
+        --   , witness: rustWitness
+        --   , filePrefix: "factors_circuit"
+        --   }
+        -- log $ "Debug data exported to factors_circuit_debug.rs"
 
         -- Test prove/verify flow
         let

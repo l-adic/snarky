@@ -302,13 +302,28 @@ toDenseGates
   -> { q :: Int, n :: Int, m :: Int } -- q = constraints, n = multiplication gates, m = public inputs
   -> DenseGates f
 toDenseGates gates { q, n, m } =
-  { wl: map (toDenseRow' n) gates.wl
-  , wr: map (toDenseRow' n) gates.wr
-  , wo: map (toDenseRow' n) gates.wo
-  , wv: map (toDenseRowNeg' m) gates.wv -- negate for bulletproof format
-  , c: map negate gates.c -- negate for bulletproof format
-  }
+  let
+    -- Pad n to next power of 2 for bulletproof compatibility
+    paddedN = nextPowerOf2 n
+  in
+    { wl: map (toDenseRow' paddedN) gates.wl
+    , wr: map (toDenseRow' paddedN) gates.wr
+    , wo: map (toDenseRow' paddedN) gates.wo
+    , wv: map (toDenseRowNeg' m) gates.wv -- negate for bulletproof format
+    , c: map negate gates.c -- negate for bulletproof format
+    }
   where
+  -- Find next power of 2 greater than or equal to n
+  nextPowerOf2 :: Int -> Int
+  nextPowerOf2 n =
+    let
+      powerOf2 = 1
+      go power acc
+        | acc >= n = acc
+        | otherwise = go (power + 1) (acc * 2)
+    in
+      if n <= 1 then 1 else go 1 1
+
   -- Convert sparse row to dense row
   toDenseRow' :: Int -> Map Int f -> Array f
   toDenseRow' nCols sparseRow =
