@@ -4,6 +4,7 @@ output/
 .pulp-cache/
 bower_components/
 node_modules/
+.psci_modules/
 
 # Native binaries
 *.node
@@ -42,3 +43,6 @@ Thumbs.db
 
 # Purescript Spec
 .spec-results
+
+# Crypto provider symlink
+packages/crypto-provider

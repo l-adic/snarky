@@ -1,0 +1,386 @@
+use ark_ff::Zero;
+use ark_pallas::{Fr as PallasFr, Projective as PallasProjective};
+use ark_vesta::{Fr as VestaFr, Projective as VestaProjective};
+use bulletproofs::circuit::types::{Circuit, Statement, Witness, CRS};
+use bulletproofs::circuit::{prove, verify};
+use napi::bindgen_prelude::*;
+use napi_derive::napi;
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
+use spongefish::domain_separator;
+
+use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
+use curves_napi::vesta::scalar_field::FieldExternal as VestaFieldExternal;
+
+fn next_power_of_2(n: usize) -> usize {
+    if n <= 1 {
+        1
+    } else {
+        let mut power = 1;
+        while power < n {
+            power *= 2;
+        }
+        power
+    }
+}
+
+pub type PallasCrsExternal = External<CRS<PallasProjective>>;
+pub type PallasWitnessExternal = External<Witness<PallasFr>>;
+pub type PallasStatementExternal = External<Statement<PallasProjective>>;
+pub type PallasCircuitExternal = External<Circuit<PallasFr>>;
+pub type PallasProofExternal = External<Vec<u8>>;
+
+pub type VestaCrsExternal = External<CRS<VestaProjective>>;
+pub type VestaWitnessExternal = External<Witness<VestaFr>>;
+pub type VestaStatementExternal = External<Statement<VestaProjective>>;
+pub type VestaCircuitExternal = External<Circuit<VestaFr>>;
+pub type VestaProofExternal = External<Vec<u8>>;
+
+// Sparse circuit representation types
+#[napi(object)]
+pub struct CircuitDimensions {
+    pub n: u32, // multiplication gates (will be padded to power of 2)
+    pub m: u32, // public inputs
+    pub q: u32, // constraints
+}
+
+#[napi]
+pub fn pallas_crs_create(n: u32, seed: u32) -> PallasCrsExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+    let crs = CRS::rand(n as usize, &mut rng);
+    External::new(crs)
+}
+
+#[napi]
+pub fn pallas_crs_size(crs: &PallasCrsExternal) -> u32 {
+    crs.size() as u32
+}
+
+fn external_array_to_field_vec(arr: Vec<&PallasFieldExternal>) -> Vec<PallasFr> {
+    arr.into_iter().map(|ext| **ext).collect()
+}
+
+// Convert sparse matrix (tuples as 2-element arrays) to dense matrix with specified dimensions
+fn sparse_to_dense_matrix(
+    sparse_matrix: &Vec<Vec<(u32, &PallasFieldExternal)>>,
+    rows: usize,
+    cols: usize,
+) -> Vec<Vec<PallasFr>> {
+    let mut dense_matrix = vec![vec![PallasFr::from(0u64); cols]; rows];
+
+    for (row_idx, sparse_row) in sparse_matrix.iter().enumerate() {
+        if row_idx >= rows {
+            break;
+        }
+        for (idx, val) in sparse_row.iter() {
+            if (*idx as usize) < cols {
+                dense_matrix[row_idx][*idx as usize] = ***val;
+            }
+        }
+    }
+
+    dense_matrix
+}
+
+// Convert sparse vector (tuples as 2-element arrays) to dense vector
+fn sparse_to_dense_vector(
+    sparse_vector: &Vec<(u32, &PallasFieldExternal)>,
+    size: usize,
+) -> Vec<PallasFr> {
+    let mut dense_vector = vec![PallasFr::from(0u64); size];
+
+    for (idx, val) in sparse_vector.iter() {
+        if (*idx as usize) < size {
+            dense_vector[*idx as usize] = ***val;
+        }
+    }
+
+    dense_vector
+}
+
+#[napi]
+pub fn pallas_witness_create(
+    a_l: Vec<&PallasFieldExternal>,
+    a_r: Vec<&PallasFieldExternal>,
+    a_o: Vec<&PallasFieldExternal>,
+    v: Vec<&PallasFieldExternal>,
+    seed: u32,
+) -> PallasWitnessExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+
+    let mut a_l = external_array_to_field_vec(a_l);
+    let mut a_r = external_array_to_field_vec(a_r);
+    let mut a_o = external_array_to_field_vec(a_o);
+    let v = external_array_to_field_vec(v);
+
+    let current_len = a_l.len();
+    let padded_len = next_power_of_2(current_len);
+
+    if current_len < padded_len {
+        a_l.resize(padded_len, PallasFr::from(0u64));
+        a_r.resize(padded_len, PallasFr::from(0u64));
+        a_o.resize(padded_len, PallasFr::from(0u64));
+    }
+
+    let witness = Witness::new(a_l, a_r, a_o, v, &mut rng);
+    External::new(witness)
+}
+
+#[napi]
+pub fn pallas_witness_size(witness: &PallasWitnessExternal) -> u32 {
+    witness.size() as u32
+}
+
+#[napi]
+pub fn pallas_statement_create(
+    crs: &PallasCrsExternal,
+    witness: &PallasWitnessExternal,
+) -> PallasStatementExternal {
+    let statement = Statement::new(crs, witness);
+    External::new(statement)
+}
+
+// Circuit creation function using tuples (represented as 2-element arrays)
+#[napi]
+pub fn pallas_circuit_create(
+    dimensions: CircuitDimensions,
+    sparse_w_l: Vec<Vec<(u32, &PallasFieldExternal)>>, // q constraints × sparse entries
+    sparse_w_r: Vec<Vec<(u32, &PallasFieldExternal)>>,
+    sparse_w_o: Vec<Vec<(u32, &PallasFieldExternal)>>,
+    sparse_w_v: Vec<Vec<(u32, &PallasFieldExternal)>>,
+    sparse_c: Vec<(u32, &PallasFieldExternal)>, // sparse vector
+) -> PallasCircuitExternal {
+    // Pad n to next power of 2 for bulletproof compatibility
+    let padded_n = next_power_of_2(dimensions.n as usize);
+
+    println!(
+        "Creating circuit with dimensions: n={} (padded to {}), m={}, q={}",
+        dimensions.n, padded_n, dimensions.m, dimensions.q
+    );
+
+    // Convert sparse format to dense matrices with padding
+    let w_l = sparse_to_dense_matrix(&sparse_w_l, dimensions.q as usize, padded_n);
+    let w_r = sparse_to_dense_matrix(&sparse_w_r, dimensions.q as usize, padded_n);
+    let w_o = sparse_to_dense_matrix(&sparse_w_o, dimensions.q as usize, padded_n);
+    let w_v = sparse_to_dense_matrix(&sparse_w_v, dimensions.q as usize, dimensions.m as usize);
+    let c = sparse_to_dense_vector(&sparse_c, dimensions.q as usize);
+
+    let circuit = Circuit::new(w_l, w_r, w_o, w_v, c);
+    External::new(circuit)
+}
+
+#[napi]
+pub fn pallas_circuit_n(circuit: &PallasCircuitExternal) -> u32 {
+    circuit.n() as u32
+}
+
+#[napi]
+pub fn pallas_circuit_q(circuit: &PallasCircuitExternal) -> u32 {
+    circuit.q() as u32
+}
+
+#[napi]
+pub fn pallas_circuit_is_satisfied_by(
+    circuit: &PallasCircuitExternal,
+    witness: &PallasWitnessExternal,
+) -> bool {
+    circuit.is_satisfied_by(witness)
+}
+
+#[napi]
+pub fn pallas_prove(
+    crs: &PallasCrsExternal,
+    circuit: &PallasCircuitExternal,
+    witness: &PallasWitnessExternal,
+    seed: u32,
+) -> PallasProofExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+    let statement = Statement::new(crs, witness);
+    let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
+    let mut prover_state = domain_separator.std_prover();
+    let proof = prove(&mut prover_state, crs, circuit, witness, &mut rng);
+    External::new(proof)
+}
+
+#[napi]
+pub fn pallas_verify(
+    crs: &PallasCrsExternal,
+    circuit: &PallasCircuitExternal,
+    statement: &PallasStatementExternal,
+    proof: &PallasProofExternal,
+) -> bool {
+    let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
+    let mut verifier_state = domain_separator.std_verifier(proof);
+    let result = verify(&mut verifier_state, crs, circuit, statement);
+    result.is_ok()
+}
+
+// Vesta curve functions
+
+#[napi]
+pub fn vesta_crs_create(n: u32, seed: u32) -> VestaCrsExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+    let crs = CRS::rand(n as usize, &mut rng);
+    External::new(crs)
+}
+
+#[napi]
+pub fn vesta_crs_size(crs: &VestaCrsExternal) -> u32 {
+    crs.size() as u32
+}
+
+fn external_array_to_vesta_field_vec(arr: Vec<&VestaFieldExternal>) -> Vec<VestaFr> {
+    arr.into_iter().map(|f| **f).collect()
+}
+
+#[napi]
+pub fn vesta_witness_create(
+    a_l: Vec<&VestaFieldExternal>,
+    a_r: Vec<&VestaFieldExternal>,
+    a_o: Vec<&VestaFieldExternal>,
+    v: Vec<&VestaFieldExternal>,
+    seed: u32,
+) -> VestaWitnessExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+
+    let a_l = external_array_to_vesta_field_vec(a_l);
+    let a_r = external_array_to_vesta_field_vec(a_r);
+    let a_o = external_array_to_vesta_field_vec(a_o);
+    let v = external_array_to_vesta_field_vec(v);
+
+    // Pad witness vectors to power of 2 to match circuit dimensions
+    let n = a_l.len().max(a_r.len()).max(a_o.len());
+    let padded_n = next_power_of_2(n);
+
+    let mut padded_a_l = a_l;
+    let mut padded_a_r = a_r;
+    let mut padded_a_o = a_o;
+
+    padded_a_l.resize(padded_n, VestaFr::zero());
+    padded_a_r.resize(padded_n, VestaFr::zero());
+    padded_a_o.resize(padded_n, VestaFr::zero());
+
+    let witness = Witness::new(padded_a_l, padded_a_r, padded_a_o, v, &mut rng);
+    External::new(witness)
+}
+
+#[napi]
+pub fn vesta_witness_size(witness: &VestaWitnessExternal) -> u32 {
+    witness.a_l.len() as u32
+}
+
+#[napi]
+pub fn vesta_statement_create(
+    crs: &VestaCrsExternal,
+    witness: &VestaWitnessExternal,
+) -> VestaStatementExternal {
+    let statement = Statement::new(crs, witness);
+    External::new(statement)
+}
+
+// Circuit creation function using tuples (represented as 2-element arrays)
+#[napi]
+pub fn vesta_circuit_create(
+    dimensions: CircuitDimensions,
+    sparse_w_l: Vec<Vec<(u32, &VestaFieldExternal)>>, // q constraints × sparse entries
+    sparse_w_r: Vec<Vec<(u32, &VestaFieldExternal)>>,
+    sparse_w_o: Vec<Vec<(u32, &VestaFieldExternal)>>,
+    sparse_w_v: Vec<Vec<(u32, &VestaFieldExternal)>>, // auxiliary weights
+    sparse_c: Vec<(u32, &VestaFieldExternal)>,        // sparse vector
+) -> VestaCircuitExternal {
+    let n = dimensions.n as usize;
+    let q = dimensions.q as usize;
+    let m = dimensions.m as usize;
+
+    // Pad n to next power of 2 for bulletproof compatibility
+    let padded_n = next_power_of_2(n);
+
+    // Helper function to convert sparse representation to dense matrix
+    let sparse_to_dense = |sparse_matrix: Vec<Vec<(u32, &VestaFieldExternal)>>,
+                           rows: usize,
+                           cols: usize|
+     -> Vec<Vec<VestaFr>> {
+        let mut dense = vec![vec![VestaFr::zero(); cols]; rows];
+        for (row_idx, sparse_row) in sparse_matrix.into_iter().enumerate() {
+            if row_idx < rows {
+                for (col_idx, field_ref) in sparse_row {
+                    let col = col_idx as usize;
+                    if col < cols {
+                        dense[row_idx][col] = **field_ref;
+                    }
+                }
+            }
+        }
+        dense
+    };
+
+    // Helper function to convert sparse vector to dense vector
+    let sparse_vec_to_dense =
+        |sparse_vec: Vec<(u32, &VestaFieldExternal)>, size: usize| -> Vec<VestaFr> {
+            let mut dense = vec![VestaFr::zero(); size];
+            for (idx, field_ref) in sparse_vec {
+                let i = idx as usize;
+                if i < size {
+                    dense[i] = **field_ref;
+                }
+            }
+            dense
+        };
+
+    // Convert sparse matrices to dense format for bulletproof library
+    let w_l = sparse_to_dense(sparse_w_l, q, padded_n);
+    let w_r = sparse_to_dense(sparse_w_r, q, padded_n);
+    let w_o = sparse_to_dense(sparse_w_o, q, padded_n);
+    let w_v = sparse_to_dense(sparse_w_v, q, m);
+    let c = sparse_vec_to_dense(sparse_c, q);
+
+    let circuit = Circuit::new(w_l, w_r, w_o, w_v, c);
+    External::new(circuit)
+}
+
+#[napi]
+pub fn vesta_circuit_n(circuit: &VestaCircuitExternal) -> u32 {
+    circuit.w_l.first().map(|row| row.len()).unwrap_or(0) as u32
+}
+
+#[napi]
+pub fn vesta_circuit_q(circuit: &VestaCircuitExternal) -> u32 {
+    circuit.w_l.len() as u32
+}
+
+#[napi]
+pub fn vesta_circuit_is_satisfied_by(
+    circuit: &VestaCircuitExternal,
+    witness: &VestaWitnessExternal,
+) -> bool {
+    circuit.is_satisfied_by(witness)
+}
+
+#[napi]
+pub fn vesta_prove(
+    crs: &VestaCrsExternal,
+    circuit: &VestaCircuitExternal,
+    witness: &VestaWitnessExternal,
+    seed: u32,
+) -> VestaProofExternal {
+    let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
+    let statement = Statement::new(crs, witness);
+    let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
+    let mut prover_state = domain_separator.std_prover();
+    let proof = prove(&mut prover_state, crs, circuit, witness, &mut rng);
+
+    External::new(proof)
+}
+
+#[napi]
+pub fn vesta_verify(
+    crs: &VestaCrsExternal,
+    circuit: &VestaCircuitExternal,
+    statement: &VestaStatementExternal,
+    proof: &VestaProofExternal,
+) -> bool {
+    let domain_separator = domain_separator!("snarky-circuit-proof").instance(&statement.v);
+    let mut verifier_state = domain_separator.std_verifier(proof);
+    let result = verify(&mut verifier_state, crs, circuit, statement);
+    result.is_ok()
+}

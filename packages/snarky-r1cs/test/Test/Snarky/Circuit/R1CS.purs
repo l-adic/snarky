@@ -13,7 +13,9 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toGates)
+import Snarky.Backend.Bulletproof.Pallas as PallasBulletproof
+import Snarky.Backend.Bulletproof.Vesta as VestaBulletproof
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
@@ -21,6 +23,7 @@ import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const
 import Snarky.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, double, genAffinePoint)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSample, randomSampleOne, suchThat)
@@ -33,6 +36,8 @@ spec :: Spec Unit
 spec = do
   CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
   factorsSpec (Proxy @Vesta.BaseField)
+  pallasFactorsSpec
+  vestaFactorsSpec
   dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.BaseField)
 
 --------------------------------------------------------------------------------
@@ -96,6 +101,152 @@ factorsSpec _ = describe "Factors Spec" do
       runExceptT (mapExceptT randomSampleOne $ solve n) >>= case _ of
         Left e -> throwError $ error (show e)
         Right witness -> satisfies witness gates `shouldEqual` true
+
+pallasFactorsSpec :: Spec Unit
+pallasFactorsSpec = describe "Pallas Factors Spec" do
+
+  it "Pallas Bulletproof Prove/Verify Flow" $ liftEffect $ do
+    { constraints: cs, publicInputs } <-
+      compile
+        (Proxy @(F Pallas.ScalarField))
+        (Proxy @Unit)
+        factorsCircuit
+    let
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
+
+      solver :: SolverT Pallas.ScalarField (R1CS Pallas.ScalarField) Gen (F Pallas.ScalarField) Unit
+      solver = makeSolver (Proxy @(R1CS Pallas.ScalarField)) factorsCircuit
+
+      gen :: Gen (F Pallas.ScalarField)
+      gen = arbitrary `suchThat` \a -> a /= zero && a /= one
+      solve n = do
+        Tuple _ assignments <- solver n
+        makeWitness { assignments, constraints, publicInputs }
+
+    k <- randomSampleOne gen
+    runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
+      Left e -> throwError $ error (show e)
+      Right witness -> do
+        -- Debug: Print PureScript circuit and witness dimensions
+        let
+          q = Array.length gates.wl
+          n = Array.length witness.al -- number of multiplication gates
+          m = Array.length publicInputs
+          -- Use sparse format for efficient FFI transfer
+          gates' = toGates gates { q, n, m }
+
+        -- Test PureScript implementation
+        let psSatisfies = satisfies witness gates
+        psSatisfies `shouldEqual` true
+
+        -- Test Rust bulletproof circuit implementation 
+        let
+          rustWitness = PallasBulletproof.witnessCreate
+            { left: witness.al
+            , right: witness.ar
+            , output: witness.ao
+            , v: witness.v
+            , seed: 12345
+            }
+          rustCircuit = PallasBulletproof.circuitCreate gates'
+          rustSatisfies = PallasBulletproof.circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
+
+        rustSatisfies `shouldEqual` true
+
+        -- Test prove/verify flow
+        let
+          crs = PallasBulletproof.crsCreate { size: 256, seed: 42 }
+          statement = PallasBulletproof.statementCreate { crs, witness: rustWitness }
+
+        let
+          proof = PallasBulletproof.prove
+            { crs
+            , circuit: rustCircuit
+            , witness: rustWitness
+            , seed: 54321
+            }
+          verifyResult = PallasBulletproof.verify
+            { crs
+            , circuit: rustCircuit
+            , statement
+            , proof
+            }
+
+        verifyResult `shouldEqual` true
+
+vestaFactorsSpec :: Spec Unit
+vestaFactorsSpec = describe "Vesta Factors Spec" do
+
+  it "Vesta Bulletproof Prove/Verify Flow" $ liftEffect $ do
+    { constraints: cs, publicInputs } <-
+      compile
+        (Proxy @(F Vesta.ScalarField))
+        (Proxy @Unit)
+        factorsCircuit
+    let
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
+
+      solver :: SolverT Vesta.ScalarField (R1CS Vesta.ScalarField) Gen (F Vesta.ScalarField) Unit
+      solver = makeSolver (Proxy @(R1CS Vesta.ScalarField)) factorsCircuit
+
+      gen :: Gen (F Vesta.ScalarField)
+      gen = arbitrary `suchThat` \a -> a /= zero && a /= one
+      solve n = do
+        Tuple _ assignments <- solver n
+        makeWitness { assignments, constraints, publicInputs }
+
+    k <- randomSampleOne gen
+    runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
+      Left e -> throwError $ error (show e)
+      Right witness -> do
+        -- Debug: Print PureScript circuit and witness dimensions
+        let
+          q = Array.length gates.wl
+          n = Array.length witness.al -- number of multiplication gates
+          m = Array.length publicInputs
+          -- Use sparse format for efficient FFI transfer
+          gates' = toGates gates { q, n, m }
+
+        -- Test PureScript implementation
+        let psSatisfies = satisfies witness gates
+        psSatisfies `shouldEqual` true
+
+        -- Test Rust bulletproof circuit implementation 
+        let
+          rustWitness = VestaBulletproof.witnessCreate
+            { left: witness.al
+            , right: witness.ar
+            , output: witness.ao
+            , v: witness.v
+            , seed: 12345
+            }
+          rustCircuit = VestaBulletproof.circuitCreate gates'
+          rustSatisfies = VestaBulletproof.circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
+
+        rustSatisfies `shouldEqual` true
+
+        -- Test prove/verify flow
+        let
+          crs = VestaBulletproof.crsCreate { size: 256, seed: 42 }
+          statement = VestaBulletproof.statementCreate { crs, witness: rustWitness }
+
+        let
+          proof = VestaBulletproof.prove
+            { crs
+            , circuit: rustCircuit
+            , witness: rustWitness
+            , seed: 54321
+            }
+          verifyResult = VestaBulletproof.verify
+            { crs
+            , circuit: rustCircuit
+            , statement
+            , proof
+            }
+
+        verifyResult `shouldEqual` true
 
 --------------------------------------------------------------------------------
 
