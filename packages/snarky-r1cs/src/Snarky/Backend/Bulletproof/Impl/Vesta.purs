@@ -1,13 +1,9 @@
-module Snarky.Backend.Bulletproof.Vesta
+module Snarky.Backend.Bulletproof.Impl.Vesta
   ( module Snarky.Backend.Bulletproof.Types
   , crsCreate
-  , crsSize
   , witnessCreate
-  , witnessSize
   , statementCreate
   , circuitCreate
-  , circuitN
-  , circuitQ
   , circuitIsSatisfiedBy
   , prove
   , verify
@@ -17,13 +13,10 @@ import Data.Function.Uncurried (Fn2, Fn4, Fn5, Fn6, runFn2, runFn4, runFn5, runF
 import Foreign (Foreign)
 import Simple.JSON (write)
 import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, CircuitMatrix, CircuitVector)
-import Snarky.Curves.Vesta (ScalarField)
+import Snarky.Curves.Vesta (ScalarField, G)
 
-crsCreate :: { size :: Int, seed :: Int } -> CRS
+crsCreate :: { size :: Int, seed :: Int } -> CRS G
 crsCreate { size, seed } = runFn2 vestaCrsCreate size seed
-
-crsSize :: CRS -> Int
-crsSize = vestaCrsSize
 
 witnessCreate
   :: { left :: Array ScalarField
@@ -32,14 +25,11 @@ witnessCreate
      , v :: Array ScalarField
      , seed :: Int
      }
-  -> Witness
+  -> Witness G
 witnessCreate { left, right, output, v, seed } =
   runFn5 vestaWitnessCreate left right output v seed
 
-witnessSize :: Witness -> Int
-witnessSize = vestaWitnessSize
-
-statementCreate :: { crs :: CRS, witness :: Witness } -> Statement
+statementCreate :: { crs :: CRS G, witness :: Witness G } -> Statement G
 statementCreate { crs, witness } = runFn2 vestaStatementCreate crs witness
 
 circuitCreate
@@ -50,7 +40,7 @@ circuitCreate
      , weightsAuxiliary :: CircuitMatrix ScalarField
      , constants :: CircuitVector ScalarField
      }
-  -> Circuit
+  -> Circuit G
 circuitCreate { dimensions, weightsLeft, weightsRight, weightsOutput, weightsAuxiliary, constants } =
   runFn6 vestaCircuitCreate dimensions
     (write weightsLeft)
@@ -59,43 +49,33 @@ circuitCreate { dimensions, weightsLeft, weightsRight, weightsOutput, weightsAux
     (write weightsAuxiliary)
     (write constants)
 
-circuitN :: Circuit -> Int
-circuitN = vestaCircuitN
-
-circuitQ :: Circuit -> Int
-circuitQ = vestaCircuitQ
-
-circuitIsSatisfiedBy :: { circuit :: Circuit, witness :: Witness } -> Boolean
+circuitIsSatisfiedBy :: { circuit :: Circuit G, witness :: Witness G } -> Boolean
 circuitIsSatisfiedBy { circuit, witness } = runFn2 vestaCircuitIsSatisfiedBy circuit witness
 
 prove
-  :: { crs :: CRS
-     , circuit :: Circuit
-     , witness :: Witness
+  :: { crs :: CRS G
+     , circuit :: Circuit G
+     , witness :: Witness G
      , seed :: Int
      }
-  -> Proof
+  -> Proof G
 prove { crs, circuit, witness, seed } =
   runFn4 vestaProve crs circuit witness seed
 
 verify
-  :: { crs :: CRS
-     , circuit :: Circuit
-     , statement :: Statement
-     , proof :: Proof
+  :: { crs :: CRS G
+     , circuit :: Circuit G
+     , statement :: Statement G
+     , proof :: Proof G
      }
   -> Boolean
 verify { crs, circuit, statement, proof } =
   runFn4 vestaVerify crs circuit statement proof
 
-foreign import vestaCrsCreate :: Fn2 Int Int CRS
-foreign import vestaCrsSize :: CRS -> Int
-foreign import vestaWitnessCreate :: Fn5 (Array ScalarField) (Array ScalarField) (Array ScalarField) (Array ScalarField) Int Witness
-foreign import vestaWitnessSize :: Witness -> Int
-foreign import vestaStatementCreate :: Fn2 CRS Witness Statement
-foreign import vestaCircuitCreate :: Fn6 CircuitDimensions Foreign Foreign Foreign Foreign Foreign Circuit
-foreign import vestaCircuitN :: Circuit -> Int
-foreign import vestaCircuitQ :: Circuit -> Int
-foreign import vestaCircuitIsSatisfiedBy :: Fn2 Circuit Witness Boolean
-foreign import vestaProve :: Fn4 CRS Circuit Witness Int Proof
-foreign import vestaVerify :: Fn4 CRS Circuit Statement Proof Boolean
+foreign import vestaCrsCreate :: Fn2 Int Int (CRS G)
+foreign import vestaWitnessCreate :: Fn5 (Array ScalarField) (Array ScalarField) (Array ScalarField) (Array ScalarField) Int (Witness G)
+foreign import vestaStatementCreate :: Fn2 (CRS G) (Witness G) (Statement G)
+foreign import vestaCircuitCreate :: Fn6 CircuitDimensions Foreign Foreign Foreign Foreign Foreign (Circuit G)
+foreign import vestaCircuitIsSatisfiedBy :: Fn2 (Circuit G) (Witness G) Boolean
+foreign import vestaProve :: Fn4 (CRS G) (Circuit G) (Witness G) Int (Proof G)
+foreign import vestaVerify :: Fn4 (CRS G) (Circuit G) (Statement G) (Proof G) Boolean

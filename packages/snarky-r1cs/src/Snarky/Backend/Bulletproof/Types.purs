@@ -19,11 +19,11 @@ import Data.Tuple (Tuple(..))
 import Foreign (unsafeToForeign)
 import Simple.JSON (class WriteForeign)
 
-foreign import data CRS :: Type
-foreign import data Witness :: Type
-foreign import data Statement :: Type
-foreign import data Circuit :: Type
-foreign import data Proof :: Type
+foreign import data CRS :: Type -> Type
+foreign import data Witness :: Type -> Type
+foreign import data Statement :: Type -> Type
+foreign import data Circuit :: Type -> Type
+foreign import data Proof :: Type -> Type
 
 type Vector f = Map Int f
 type Matrix f = Array (Vector f)
