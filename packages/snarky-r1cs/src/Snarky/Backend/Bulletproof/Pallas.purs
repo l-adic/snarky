@@ -1,4 +1,4 @@
-module Snarky.Backend.Bulletproof.Circuit
+module Snarky.Backend.Bulletproof.Pallas
   ( module Snarky.Backend.Bulletproof.Types
   , crsCreate
   , crsSize
@@ -11,13 +11,11 @@ module Snarky.Backend.Bulletproof.Circuit
   , circuitIsSatisfiedBy
   , prove
   , verify
-  , exportDebugData
   ) where
 
 import Prelude
 
-import Data.Function.Uncurried (Fn2, Fn3, Fn4, Fn5, Fn6, runFn2, runFn3, runFn4, runFn5, runFn6)
-import Effect (Effect)
+import Data.Function.Uncurried (Fn2, Fn4, Fn5, Fn6, runFn2, runFn4, runFn5, runFn6)
 import Foreign (Foreign)
 import Simple.JSON (write)
 import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, Matrix, Vector)
@@ -35,8 +33,6 @@ foreign import pallasCircuitQ :: Circuit -> Int
 foreign import pallasCircuitIsSatisfiedBy :: Fn2 Circuit Witness Boolean
 foreign import pallasProve :: Fn4 CRS Circuit Witness Int Proof
 foreign import pallasVerify :: Fn4 CRS Circuit Statement Proof Boolean
-
-foreign import pallasExportDebugData :: Fn3 Circuit Witness String (Effect Unit)
 
 -- Exported functions with record arguments
 
@@ -120,7 +116,3 @@ verify
 verify { crs, circuit, statement, proof } =
   runFn4 pallasVerify crs circuit statement proof
 
--- | Export circuit and witness data for Rust testing
-exportDebugData :: { circuit :: Circuit, witness :: Witness, filePrefix :: String } -> Effect Unit
-exportDebugData { circuit, witness, filePrefix } =
-  runFn3 pallasExportDebugData circuit witness filePrefix
