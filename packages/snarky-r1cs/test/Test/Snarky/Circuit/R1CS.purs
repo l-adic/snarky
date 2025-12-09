@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toGates)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toCircuitGates)
 import Snarky.Backend.Bulletproof.Pallas as PallasBulletproof
 import Snarky.Backend.Bulletproof.Vesta as VestaBulletproof
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
@@ -128,19 +128,15 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
     runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
       Left e -> throwError $ error (show e)
       Right witness -> do
-        -- Debug: Print PureScript circuit and witness dimensions
         let
           q = Array.length gates.wl
-          n = Array.length witness.al -- number of multiplication gates
+          n = Array.length witness.al
           m = Array.length publicInputs
-          -- Use sparse format for efficient FFI transfer
-          gates' = toGates gates { q, n, m }
+          gates' = toCircuitGates gates { q, n, m }
 
-        -- Test PureScript implementation
         let psSatisfies = satisfies witness gates
         psSatisfies `shouldEqual` true
 
-        -- Test Rust bulletproof circuit implementation 
         let
           rustWitness = PallasBulletproof.witnessCreate
             { left: witness.al
@@ -154,7 +150,6 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
 
         rustSatisfies `shouldEqual` true
 
-        -- Test prove/verify flow
         let
           crs = PallasBulletproof.crsCreate { size: 256, seed: 42 }
           statement = PallasBulletproof.statementCreate { crs, witness: rustWitness }
@@ -201,19 +196,15 @@ vestaFactorsSpec = describe "Vesta Factors Spec" do
     runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
       Left e -> throwError $ error (show e)
       Right witness -> do
-        -- Debug: Print PureScript circuit and witness dimensions
         let
           q = Array.length gates.wl
-          n = Array.length witness.al -- number of multiplication gates
+          n = Array.length witness.al
           m = Array.length publicInputs
-          -- Use sparse format for efficient FFI transfer
-          gates' = toGates gates { q, n, m }
+          gates' = toCircuitGates gates { q, n, m }
 
-        -- Test PureScript implementation
         let psSatisfies = satisfies witness gates
         psSatisfies `shouldEqual` true
 
-        -- Test Rust bulletproof circuit implementation 
         let
           rustWitness = VestaBulletproof.witnessCreate
             { left: witness.al
@@ -227,7 +218,6 @@ vestaFactorsSpec = describe "Vesta Factors Spec" do
 
         rustSatisfies `shouldEqual` true
 
-        -- Test prove/verify flow
         let
           crs = VestaBulletproof.crsCreate { size: 256, seed: 42 }
           statement = VestaBulletproof.statementCreate { crs, witness: rustWitness }

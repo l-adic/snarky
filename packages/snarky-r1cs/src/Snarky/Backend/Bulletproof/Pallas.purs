@@ -16,33 +16,15 @@ module Snarky.Backend.Bulletproof.Pallas
 import Data.Function.Uncurried (Fn2, Fn4, Fn5, Fn6, runFn2, runFn4, runFn5, runFn6)
 import Foreign (Foreign)
 import Simple.JSON (write)
-import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, Matrix, Vector)
+import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, CircuitMatrix, CircuitVector)
 import Snarky.Curves.Pallas (ScalarField)
 
--- FFI imports
-foreign import pallasCrsCreate :: Fn2 Int Int CRS
-foreign import pallasCrsSize :: CRS -> Int
-foreign import pallasWitnessCreate :: Fn5 (Array ScalarField) (Array ScalarField) (Array ScalarField) (Array ScalarField) Int Witness
-foreign import pallasWitnessSize :: Witness -> Int
-foreign import pallasStatementCreate :: Fn2 CRS Witness Statement
-foreign import pallasCircuitCreate :: Fn6 CircuitDimensions Foreign Foreign Foreign Foreign Foreign Circuit
-foreign import pallasCircuitN :: Circuit -> Int
-foreign import pallasCircuitQ :: Circuit -> Int
-foreign import pallasCircuitIsSatisfiedBy :: Fn2 Circuit Witness Boolean
-foreign import pallasProve :: Fn4 CRS Circuit Witness Int Proof
-foreign import pallasVerify :: Fn4 CRS Circuit Statement Proof Boolean
-
--- Exported functions with record arguments
-
--- | Create a new CRS (Common Reference String) for circuits of size n
 crsCreate :: { size :: Int, seed :: Int } -> CRS
 crsCreate { size, seed } = runFn2 pallasCrsCreate size seed
 
--- | Get the size of a CRS
 crsSize :: CRS -> Int
 crsSize = pallasCrsSize
 
--- | Create a witness from field arrays and random seed
 witnessCreate
   :: { left :: Array ScalarField
      , right :: Array ScalarField
@@ -54,22 +36,19 @@ witnessCreate
 witnessCreate { left, right, output, v, seed } =
   runFn5 pallasWitnessCreate left right output v seed
 
--- | Get the size of a witness
 witnessSize :: Witness -> Int
 witnessSize = pallasWitnessSize
 
--- | Create a statement from a CRS and witness
 statementCreate :: { crs :: CRS, witness :: Witness } -> Statement
 statementCreate { crs, witness } = runFn2 pallasStatementCreate crs witness
 
--- | Create a circuit from weight matrices and constants
 circuitCreate
   :: { dimensions :: CircuitDimensions
-     , weightsLeft :: Matrix ScalarField
-     , weightsRight :: Matrix ScalarField
-     , weightsOutput :: Matrix ScalarField
-     , weightsAuxiliary :: Matrix ScalarField
-     , constants :: Vector ScalarField
+     , weightsLeft :: CircuitMatrix ScalarField
+     , weightsRight :: CircuitMatrix ScalarField
+     , weightsOutput :: CircuitMatrix ScalarField
+     , weightsAuxiliary :: CircuitMatrix ScalarField
+     , constants :: CircuitVector ScalarField
      }
   -> Circuit
 circuitCreate { dimensions, weightsLeft, weightsRight, weightsOutput, weightsAuxiliary, constants } =
@@ -80,19 +59,15 @@ circuitCreate { dimensions, weightsLeft, weightsRight, weightsOutput, weightsAux
     (write weightsAuxiliary)
     (write constants)
 
--- | Get the number of variables (n) in a circuit
 circuitN :: Circuit -> Int
 circuitN = pallasCircuitN
 
--- | Get the number of constraints (q) in a circuit  
 circuitQ :: Circuit -> Int
 circuitQ = pallasCircuitQ
 
--- | Check if a witness satisfies a circuit
 circuitIsSatisfiedBy :: { circuit :: Circuit, witness :: Witness } -> Boolean
 circuitIsSatisfiedBy { circuit, witness } = runFn2 pallasCircuitIsSatisfiedBy circuit witness
 
--- | Generate a proof for a circuit
 prove
   :: { crs :: CRS
      , circuit :: Circuit
@@ -103,7 +78,6 @@ prove
 prove { crs, circuit, witness, seed } =
   runFn4 pallasProve crs circuit witness seed
 
--- | Verify a proof  
 verify
   :: { crs :: CRS
      , circuit :: Circuit
@@ -114,3 +88,14 @@ verify
 verify { crs, circuit, statement, proof } =
   runFn4 pallasVerify crs circuit statement proof
 
+foreign import pallasCrsCreate :: Fn2 Int Int CRS
+foreign import pallasCrsSize :: CRS -> Int
+foreign import pallasWitnessCreate :: Fn5 (Array ScalarField) (Array ScalarField) (Array ScalarField) (Array ScalarField) Int Witness
+foreign import pallasWitnessSize :: Witness -> Int
+foreign import pallasStatementCreate :: Fn2 CRS Witness Statement
+foreign import pallasCircuitCreate :: Fn6 CircuitDimensions Foreign Foreign Foreign Foreign Foreign Circuit
+foreign import pallasCircuitN :: Circuit -> Int
+foreign import pallasCircuitQ :: Circuit -> Int
+foreign import pallasCircuitIsSatisfiedBy :: Fn2 Circuit Witness Boolean
+foreign import pallasProve :: Fn4 CRS Circuit Witness Int Proof
+foreign import pallasVerify :: Fn4 CRS Circuit Statement Proof Boolean

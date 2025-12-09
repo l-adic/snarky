@@ -1,14 +1,15 @@
 module Snarky.Backend.Bulletproof.Gate
   ( Gates
-  , SparseMatrix
+  , Matrix
   , SortedR1CS
+  , Vector
   , Witness
   , emptyGates
   , makeGates
+  , toCircuitGates
   , makeWitness
   , satisfies
   , sortR1CS
-  , toGates
   ) where
 
 import Prelude
@@ -29,7 +30,7 @@ import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Bulletproof.Types (Matrix, Vector, Entry(..))
+import Snarky.Backend.Bulletproof.Types (CircuitGates, Entry(..))
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
@@ -131,10 +132,10 @@ gateExpressionToRow (GateExpression terms) =
     terms
 
 type R f =
-  { wl :: Map Int f
-  , wr :: Map Int f
-  , wo :: Map Int f
-  , wv :: Map Int f
+  { wl :: Vector f
+  , wr :: Vector f
+  , wo :: Vector f
+  , wv :: Vector f
   , c :: f
   }
 
@@ -147,11 +148,15 @@ defaultRow =
   , c: zero
   }
 
+type Vector f = Map Int f
+
+type Matrix f = Array (Vector f)
+
 type Gates f =
-  { wl :: SparseMatrix f
-  , wr :: SparseMatrix f
-  , wo :: SparseMatrix f
-  , wv :: SparseMatrix f
+  { wl :: Matrix f
+  , wr :: Matrix f
+  , wo :: Matrix f
+  , wv :: Matrix f
   , c :: Array f
   }
 
@@ -282,20 +287,13 @@ satisfies { al, ar, ao, v } g =
   hadamard = Array.zipWith mul
   addVec = zipWith add
 
--- | Convert Gates to tuple format for efficient FFI transfer
-toGates
+toCircuitGates
   :: forall f
    . PrimeField f
   => Gates f
-  -> { q :: Int, n :: Int, m :: Int } -- q = constraints, n = multiplication gates, m = public inputs
-  -> { dimensions :: { n :: Int, m :: Int, q :: Int }
-     , weightsLeft :: Matrix f
-     , weightsRight :: Matrix f
-     , weightsOutput :: Matrix f
-     , weightsAuxiliary :: Matrix f
-     , constants :: Vector f
-     }
-toGates gates { q, n, m } =
+  -> { q :: Int, n :: Int, m :: Int }
+  -> CircuitGates f
+toCircuitGates gates { q, n, m } =
   let
     paddedN = nextPowerOf2 n
 
@@ -401,5 +399,3 @@ sortR1CS constraints =
 
   isTrivial (AffineExpression { constant, terms }) =
     (isNothing constant || constant == Just zero) && Array.length terms == 1
-
-type SparseMatrix f = Array (Map Int f)

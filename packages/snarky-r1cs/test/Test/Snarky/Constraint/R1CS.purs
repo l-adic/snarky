@@ -19,8 +19,6 @@ import Type.Proxy (Proxy)
 
 spec :: forall f. PrimeField f => Proxy f -> Spec Unit
 spec pf = describe "Constraint Spec" do
-  pure unit
-
   it "reduces basic constraints to r1cs constraints" do
     liftEffect $ quickCheckGen' 1000 do
       { basic, assignments } <- Basic.genWithAssignments pf
