@@ -7,6 +7,7 @@ module Snarky.Backend.Bulletproof.Gate
   , emptyGates
   , makeGates
   , toCircuitGates
+  , toCircuitWitness
   , makeWitness
   , satisfies
   , sortR1CS
@@ -35,6 +36,15 @@ import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable,
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
+
+nextPowerOf2 :: Int -> Int
+nextPowerOf2 k =
+  let
+    go power acc
+      | acc >= k = acc
+      | otherwise = go (power + 1) (acc * 2)
+  in
+    if k <= 1 then 1 else go 1 1
 
 newtype GateIndex = GateIndex Int
 
@@ -315,15 +325,29 @@ toCircuitGates gates { q, n, m } =
         Array.filter (\(Entry (Tuple _ f)) -> f /= zero) $
           Array.mapWithIndex (\i c -> Entry (Tuple i (negate c))) gates.c
     }
-  where
-  nextPowerOf2 :: Int -> Int
-  nextPowerOf2 k =
-    let
-      go power acc
-        | acc >= n = acc
-        | otherwise = go (power + 1) (acc * 2)
-    in
-      if k <= 1 then 1 else go 1 1
+
+toCircuitWitness
+  :: forall f
+   . PrimeField f
+  => Witness f
+  -> Int
+  -> Witness f
+toCircuitWitness witness n =
+  let
+    paddedN = nextPowerOf2 n
+    padArray arr =
+      let
+        currentLength = Array.length arr
+        paddingNeeded = paddedN - currentLength
+      in
+        if paddingNeeded > 0 then arr <> Array.replicate paddingNeeded zero
+        else arr
+  in
+    { al: padArray witness.al
+    , ar: padArray witness.ar
+    , ao: padArray witness.ao
+    , v: witness.v -- Don't pad public inputs
+    }
 
 --------------------------------------------------------------------------------
 

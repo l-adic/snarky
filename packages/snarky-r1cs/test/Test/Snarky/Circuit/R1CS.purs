@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toCircuitGates)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toCircuitGates, toCircuitWitness)
 import Snarky.Backend.Bulletproof.Class (class Bulletproof, crsCreate, witnessCreate, statementCreate, circuitCreate, circuitIsSatisfiedBy, prove, verify)
 import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit)
 import Type.Proxy (Proxy(..))
@@ -114,11 +114,12 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spe
         psSatisfies `shouldEqual` true
 
         let
+          paddedWitness = toCircuitWitness witness n
           rustWitness = (witnessCreate :: { left :: Array f, right :: Array f, output :: Array f, v :: Array f, seed :: Int } -> Witness g)
-            { left: witness.al
-            , right: witness.ar
-            , output: witness.ao
-            , v: witness.v
+            { left: paddedWitness.al
+            , right: paddedWitness.ar
+            , output: paddedWitness.ao
+            , v: paddedWitness.v
             , seed: 12345
             }
           rustCircuit = (circuitCreate :: _ -> Circuit g) gates'
@@ -240,11 +241,12 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg name = describe (name <> " DLog Sp
           psSatisfies `shouldEqual` true
 
           let
+            paddedWitness = toCircuitWitness witness n
             rustWitness = (witnessCreate :: { left :: Array f, right :: Array f, output :: Array f, v :: Array f, seed :: Int } -> Witness curve)
-              { left: witness.al
-              , right: witness.ar
-              , output: witness.ao
-              , v: witness.v
+              { left: paddedWitness.al
+              , right: paddedWitness.ar
+              , output: paddedWitness.ao
+              , v: paddedWitness.v
               , seed: 12345
               }
             rustCircuit = (circuitCreate :: _ -> Circuit curve) gates'
