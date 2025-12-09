@@ -944,22 +944,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "r1cs-prover"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-pallas",
- "ark-std",
- "ark-vesta",
- "bulletproofs",
- "proptest",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
-]
-
-[[package]]
 name = "rand"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

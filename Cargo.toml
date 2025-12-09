@@ -3,7 +3,6 @@ resolver = "2"
 
 members = [
     "packages/curves/curves-napi",
-    "prover/r1cs",
     "packages/snarky-r1cs/snarky-r1cs-napi",
 ]
 
