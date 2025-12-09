@@ -12,7 +12,6 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (error, throw)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toGates)
 import Snarky.Backend.Bulletproof.Pallas as PallasBulletproof

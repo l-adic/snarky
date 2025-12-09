@@ -13,8 +13,6 @@ module Snarky.Backend.Bulletproof.Pallas
   , verify
   ) where
 
-import Prelude
-
 import Data.Function.Uncurried (Fn2, Fn4, Fn5, Fn6, runFn2, runFn4, runFn5, runFn6)
 import Foreign (Foreign)
 import Simple.JSON (write)

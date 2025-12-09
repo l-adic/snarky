@@ -25,7 +25,8 @@ test-snarky: build-snarky ## Test snarky
 run-snarky: build-snarky ## Run snarky main
 	cd packages/snarky && npx spago run
 
-test: test-curves test-snarky ## Test everything
+test: crypto-full ## Test everything
+	npx spago test
 
 # Crypto Provider Targets
 crypto-lightweight: ## Set up lightweight crypto provider (curves only)
