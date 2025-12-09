@@ -12,15 +12,13 @@ use spongefish::domain_separator;
 use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
 use curves_napi::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 
-fn next_power_of_2(n: usize) -> usize {
-    if n <= 1 {
-        1
-    } else {
-        let mut power = 1;
-        while power < n {
-            power *= 2;
-        }
-        power
+fn is_power_of_2(n: usize) -> bool {
+    n > 0 && (n & (n - 1)) == 0
+}
+
+fn validate_power_of_2(n: usize, context: &str) {
+    if !is_power_of_2(n) {
+        panic!("{context}: expected power of 2, got {n}");
     }
 }
 
@@ -39,7 +37,7 @@ pub type VestaProofExternal = External<Vec<u8>>;
 // Sparse circuit representation types
 #[napi(object)]
 pub struct CircuitDimensions {
-    pub n: u32, // multiplication gates (will be padded to power of 2)
+    pub n: u32, // multiplication gates (must be power of 2)
     pub m: u32, // public inputs
     pub q: u32, // constraints
 }
@@ -108,19 +106,13 @@ pub fn pallas_witness_create(
 ) -> PallasWitnessExternal {
     let mut rng = ChaCha8Rng::seed_from_u64(seed as u64);
 
-    let mut a_l = external_array_to_field_vec(a_l);
-    let mut a_r = external_array_to_field_vec(a_r);
-    let mut a_o = external_array_to_field_vec(a_o);
+    let a_l = external_array_to_field_vec(a_l);
+    let a_r = external_array_to_field_vec(a_r);
+    let a_o = external_array_to_field_vec(a_o);
     let v = external_array_to_field_vec(v);
 
-    let current_len = a_l.len();
-    let padded_len = next_power_of_2(current_len);
-
-    if current_len < padded_len {
-        a_l.resize(padded_len, PallasFr::from(0u64));
-        a_r.resize(padded_len, PallasFr::from(0u64));
-        a_o.resize(padded_len, PallasFr::from(0u64));
-    }
+    let witness_len = a_l.len();
+    validate_power_of_2(witness_len, "Pallas witness length");
 
     let witness = Witness::new(a_l, a_r, a_o, v, &mut rng);
     External::new(witness)
@@ -150,18 +142,14 @@ pub fn pallas_circuit_create(
     sparse_w_v: Vec<Vec<(u32, &PallasFieldExternal)>>,
     sparse_c: Vec<(u32, &PallasFieldExternal)>, // sparse vector
 ) -> PallasCircuitExternal {
-    // Pad n to next power of 2 for bulletproof compatibility
-    let padded_n = next_power_of_2(dimensions.n as usize);
+    // Validate that n is already a power of 2
+    let n = dimensions.n as usize;
+    validate_power_of_2(n, "Pallas circuit dimension n");
 
-    println!(
-        "Creating circuit with dimensions: n={} (padded to {}), m={}, q={}",
-        dimensions.n, padded_n, dimensions.m, dimensions.q
-    );
-
-    // Convert sparse format to dense matrices with padding
-    let w_l = sparse_to_dense_matrix(&sparse_w_l, dimensions.q as usize, padded_n);
-    let w_r = sparse_to_dense_matrix(&sparse_w_r, dimensions.q as usize, padded_n);
-    let w_o = sparse_to_dense_matrix(&sparse_w_o, dimensions.q as usize, padded_n);
+    // Convert sparse format to dense matrices
+    let w_l = sparse_to_dense_matrix(&sparse_w_l, dimensions.q as usize, n);
+    let w_r = sparse_to_dense_matrix(&sparse_w_r, dimensions.q as usize, n);
+    let w_o = sparse_to_dense_matrix(&sparse_w_o, dimensions.q as usize, n);
     let w_v = sparse_to_dense_matrix(&sparse_w_v, dimensions.q as usize, dimensions.m as usize);
     let c = sparse_to_dense_vector(&sparse_c, dimensions.q as usize);
 
@@ -248,19 +236,20 @@ pub fn vesta_witness_create(
     let a_o = external_array_to_vesta_field_vec(a_o);
     let v = external_array_to_vesta_field_vec(v);
 
-    // Pad witness vectors to power of 2 to match circuit dimensions
-    let n = a_l.len().max(a_r.len()).max(a_o.len());
-    let padded_n = next_power_of_2(n);
+    // Validate witness vectors are already power of 2 and same length
+    let witness_len = a_l.len();
+    validate_power_of_2(witness_len, "Vesta witness length");
 
-    let mut padded_a_l = a_l;
-    let mut padded_a_r = a_r;
-    let mut padded_a_o = a_o;
+    if a_r.len() != witness_len || a_o.len() != witness_len {
+        panic!(
+            "Vesta witness vectors must be same length: a_l={}, a_r={}, a_o={}",
+            a_l.len(),
+            a_r.len(),
+            a_o.len()
+        );
+    }
 
-    padded_a_l.resize(padded_n, VestaFr::zero());
-    padded_a_r.resize(padded_n, VestaFr::zero());
-    padded_a_o.resize(padded_n, VestaFr::zero());
-
-    let witness = Witness::new(padded_a_l, padded_a_r, padded_a_o, v, &mut rng);
+    let witness = Witness::new(a_l, a_r, a_o, v, &mut rng);
     External::new(witness)
 }
 
@@ -292,8 +281,8 @@ pub fn vesta_circuit_create(
     let q = dimensions.q as usize;
     let m = dimensions.m as usize;
 
-    // Pad n to next power of 2 for bulletproof compatibility
-    let padded_n = next_power_of_2(n);
+    // Validate that n is already a power of 2
+    validate_power_of_2(n, "Vesta circuit dimension n");
 
     // Helper function to convert sparse representation to dense matrix
     let sparse_to_dense = |sparse_matrix: Vec<Vec<(u32, &VestaFieldExternal)>>,
@@ -328,9 +317,9 @@ pub fn vesta_circuit_create(
         };
 
     // Convert sparse matrices to dense format for bulletproof library
-    let w_l = sparse_to_dense(sparse_w_l, q, padded_n);
-    let w_r = sparse_to_dense(sparse_w_r, q, padded_n);
-    let w_o = sparse_to_dense(sparse_w_o, q, padded_n);
+    let w_l = sparse_to_dense(sparse_w_l, q, n);
+    let w_r = sparse_to_dense(sparse_w_r, q, n);
+    let w_o = sparse_to_dense(sparse_w_o, q, n);
     let w_v = sparse_to_dense(sparse_w_v, q, m);
     let c = sparse_vec_to_dense(sparse_c, q);
 

@@ -1,14 +1,14 @@
 module Snarky.Backend.Bulletproof.Gate
   ( Gates
-  , SparseMatrix
+  , Matrix
   , SortedR1CS
-  , Witness
+  , Vector
+  , GatesWitness
   , emptyGates
   , makeGates
-  , makeWitness
+  , makeGatesWitness
   , satisfies
   , sortR1CS
-  , toGates
   ) where
 
 import Prelude
@@ -29,7 +29,6 @@ import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Bulletproof.Types (Matrix, Vector, Entry(..))
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
@@ -131,10 +130,10 @@ gateExpressionToRow (GateExpression terms) =
     terms
 
 type R f =
-  { wl :: Map Int f
-  , wr :: Map Int f
-  , wo :: Map Int f
-  , wv :: Map Int f
+  { wl :: Vector f
+  , wr :: Vector f
+  , wo :: Vector f
+  , wv :: Vector f
   , c :: f
   }
 
@@ -147,11 +146,15 @@ defaultRow =
   , c: zero
   }
 
+type Vector f = Map Int f
+
+type Matrix f = Array (Vector f)
+
 type Gates f =
-  { wl :: SparseMatrix f
-  , wr :: SparseMatrix f
-  , wo :: SparseMatrix f
-  , wv :: SparseMatrix f
+  { wl :: Matrix f
+  , wr :: Matrix f
+  , wo :: Matrix f
+  , wv :: Matrix f
   , c :: Array f
   }
 
@@ -207,14 +210,14 @@ makeGates { publicInputs, constraints } =
       emptyGates
       rows
 
-type Witness f =
+type GatesWitness f =
   { al :: Array f
   , ar :: Array f
   , ao :: Array f
   , v :: Array f
   }
 
-makeWitness
+makeGatesWitness
   :: forall f m
    . PrimeField f
   => MonadThrow (EvaluationError f) m
@@ -222,8 +225,8 @@ makeWitness
      , constraints :: SortedR1CS f
      , publicInputs :: Array Variable
      }
-  -> m (Witness f)
-makeWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
+  -> m (GatesWitness f)
+makeGatesWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
   v <- for publicInputs \var ->
     case Map.lookup var assignments of
       Nothing -> throwError $ MissingVariable var
@@ -255,7 +258,7 @@ makeWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
 satisfies
   :: forall f
    . PrimeField f
-  => Witness f
+  => GatesWitness f
   -> Gates f
   -> Boolean
 satisfies { al, ar, ao, v } g =
@@ -281,51 +284,6 @@ satisfies { al, ar, ao, v } g =
       as
   hadamard = Array.zipWith mul
   addVec = zipWith add
-
--- | Convert Gates to tuple format for efficient FFI transfer
-toGates
-  :: forall f
-   . PrimeField f
-  => Gates f
-  -> { q :: Int, n :: Int, m :: Int } -- q = constraints, n = multiplication gates, m = public inputs
-  -> { dimensions :: { n :: Int, m :: Int, q :: Int }
-     , weightsLeft :: Matrix f
-     , weightsRight :: Matrix f
-     , weightsOutput :: Matrix f
-     , weightsAuxiliary :: Matrix f
-     , constants :: Vector f
-     }
-toGates gates { q, n, m } =
-  let
-    paddedN = nextPowerOf2 n
-
-    mapToEntries :: Map Int f -> Array (Entry f)
-    mapToEntries sparseMap =
-      map (\(Tuple i v) -> Entry (Tuple i v)) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
-
-    mapToEntriesNeg :: Map Int f -> Array (Entry f)
-    mapToEntriesNeg sparseMap =
-      map (\(Tuple i v) -> Entry (Tuple i (negate v))) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
-
-  in
-    { dimensions: { n: paddedN, m, q }
-    , weightsLeft: map mapToEntries gates.wl
-    , weightsRight: map mapToEntries gates.wr
-    , weightsOutput: map mapToEntries gates.wo
-    , weightsAuxiliary: map mapToEntriesNeg gates.wv
-    , constants:
-        Array.filter (\(Entry (Tuple _ f)) -> f /= zero) $
-          Array.mapWithIndex (\i c -> Entry (Tuple i (negate c))) gates.c
-    }
-  where
-  nextPowerOf2 :: Int -> Int
-  nextPowerOf2 k =
-    let
-      go power acc
-        | acc >= n = acc
-        | otherwise = go (power + 1) (acc * 2)
-    in
-      if k <= 1 then 1 else go 1 1
 
 --------------------------------------------------------------------------------
 
@@ -401,5 +359,3 @@ sortR1CS constraints =
 
   isTrivial (AffineExpression { constant, terms }) =
     (isNothing constant || constant == Just zero) && Array.length terms == 1
-
-type SparseMatrix f = Array (Map Int f)
