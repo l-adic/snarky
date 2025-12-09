@@ -3,12 +3,10 @@ module Snarky.Backend.Bulletproof.Gate
   , Matrix
   , SortedR1CS
   , Vector
-  , Witness
+  , GatesWitness
   , emptyGates
   , makeGates
-  , toCircuitGates
-  , toCircuitWitness
-  , makeWitness
+  , makeGatesWitness
   , satisfies
   , sortR1CS
   ) where
@@ -31,20 +29,10 @@ import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Bulletproof.Types (CircuitGates, Entry(..))
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
-
-nextPowerOf2 :: Int -> Int
-nextPowerOf2 k =
-  let
-    go power acc
-      | acc >= k = acc
-      | otherwise = go (power + 1) (acc * 2)
-  in
-    if k <= 1 then 1 else go 1 1
 
 newtype GateIndex = GateIndex Int
 
@@ -222,14 +210,14 @@ makeGates { publicInputs, constraints } =
       emptyGates
       rows
 
-type Witness f =
+type GatesWitness f =
   { al :: Array f
   , ar :: Array f
   , ao :: Array f
   , v :: Array f
   }
 
-makeWitness
+makeGatesWitness
   :: forall f m
    . PrimeField f
   => MonadThrow (EvaluationError f) m
@@ -237,8 +225,8 @@ makeWitness
      , constraints :: SortedR1CS f
      , publicInputs :: Array Variable
      }
-  -> m (Witness f)
-makeWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
+  -> m (GatesWitness f)
+makeGatesWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
   v <- for publicInputs \var ->
     case Map.lookup var assignments of
       Nothing -> throwError $ MissingVariable var
@@ -270,7 +258,7 @@ makeWitness { assignments, constraints: SortedR1CS cs, publicInputs } = do
 satisfies
   :: forall f
    . PrimeField f
-  => Witness f
+  => GatesWitness f
   -> Gates f
   -> Boolean
 satisfies { al, ar, ao, v } g =
@@ -296,58 +284,6 @@ satisfies { al, ar, ao, v } g =
       as
   hadamard = Array.zipWith mul
   addVec = zipWith add
-
-toCircuitGates
-  :: forall f
-   . PrimeField f
-  => Gates f
-  -> { q :: Int, n :: Int, m :: Int }
-  -> CircuitGates f
-toCircuitGates gates { q, n, m } =
-  let
-    paddedN = nextPowerOf2 n
-
-    mapToEntries :: Map Int f -> Array (Entry f)
-    mapToEntries sparseMap =
-      map (\(Tuple i v) -> Entry (Tuple i v)) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
-
-    mapToEntriesNeg :: Map Int f -> Array (Entry f)
-    mapToEntriesNeg sparseMap =
-      map (\(Tuple i v) -> Entry (Tuple i (negate v))) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
-
-  in
-    { dimensions: { n: paddedN, m, q }
-    , weightsLeft: map mapToEntries gates.wl
-    , weightsRight: map mapToEntries gates.wr
-    , weightsOutput: map mapToEntries gates.wo
-    , weightsAuxiliary: map mapToEntriesNeg gates.wv
-    , constants:
-        Array.filter (\(Entry (Tuple _ f)) -> f /= zero) $
-          Array.mapWithIndex (\i c -> Entry (Tuple i (negate c))) gates.c
-    }
-
-toCircuitWitness
-  :: forall f
-   . PrimeField f
-  => Witness f
-  -> Int
-  -> Witness f
-toCircuitWitness witness n =
-  let
-    paddedN = nextPowerOf2 n
-    padArray arr =
-      let
-        currentLength = Array.length arr
-        paddingNeeded = paddedN - currentLength
-      in
-        if paddingNeeded > 0 then arr <> Array.replicate paddingNeeded zero
-        else arr
-  in
-    { al: padArray witness.al
-    , ar: padArray witness.ar
-    , ao: padArray witness.ao
-    , v: witness.v -- Don't pad public inputs
-    }
 
 --------------------------------------------------------------------------------
 

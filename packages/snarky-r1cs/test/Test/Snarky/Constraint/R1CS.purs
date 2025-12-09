@@ -9,7 +9,7 @@ import Data.Map as Map
 import Data.Maybe (maybe)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
@@ -34,6 +34,6 @@ spec pf = describe "Constraint Spec" do
         -- about the order/expressions in which you would first encounter variables
         publicInputs = Array.fromFoldable (Map.keys assignments)
         gates = makeGates { constraints, publicInputs }
-      pure case runExcept $ makeWitness { assignments, constraints, publicInputs } of
+      pure case runExcept $ makeGatesWitness { assignments, constraints, publicInputs } of
         Left e -> withHelp false $ "Shit " <> show e
         Right w -> withHelp (satisfies w gates) "gate eval failed"

@@ -13,9 +13,9 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toCircuitGates, toCircuitWitness)
-import Snarky.Backend.Bulletproof.Class (class Bulletproof, crsCreate, witnessCreate, statementCreate, circuitCreate, circuitIsSatisfiedBy, prove, verify)
-import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
+import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
+import Snarky.Backend.Bulletproof.Class (class Bulletproof, createCrs, createWitness, createCircuit, createStatement, circuitIsSatisfiedBy, createProof, verify)
 import Type.Proxy (Proxy(..))
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
@@ -98,7 +98,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spe
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
       solve n = do
         Tuple _ assignments <- solver n
-        makeWitness { assignments, constraints, publicInputs }
+        makeGatesWitness { assignments, constraints, publicInputs }
 
     k <- randomSampleOne gen
     runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
@@ -108,31 +108,23 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spe
           q = Array.length gates.wl
           n = Array.length witness.al
           m = Array.length publicInputs
-          gates' = toCircuitGates gates { q, n, m }
 
         let psSatisfies = satisfies witness gates
         psSatisfies `shouldEqual` true
 
         let
-          paddedWitness = toCircuitWitness witness n
-          rustWitness = (witnessCreate :: { left :: Array f, right :: Array f, output :: Array f, v :: Array f, seed :: Int } -> Witness g)
-            { left: paddedWitness.al
-            , right: paddedWitness.ar
-            , output: paddedWitness.ao
-            , v: paddedWitness.v
-            , seed: 12345
-            }
-          rustCircuit = (circuitCreate :: _ -> Circuit g) gates'
+          rustWitness = (createWitness :: _ -> Witness g) { witness, seed: 12345 }
+          rustCircuit = (createCircuit :: _ -> Circuit g) { gates, dimensions: { q, n, m } }
           rustSatisfies = circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
 
         rustSatisfies `shouldEqual` true
 
         let
-          crs = (crsCreate :: { size :: Int, seed :: Int } -> CRS g) { size: 256, seed: 42 }
-          statement = (statementCreate :: { crs :: CRS g, witness :: Witness g } -> Statement g) { crs, witness: rustWitness }
+          crs = createCrs { size: 256, seed: 42 }
+          statement = createStatement { crs, witness: rustWitness }
 
         let
-          proof = prove
+          proof = createProof
             { crs
             , circuit: rustCircuit
             , witness: rustWitness
@@ -224,7 +216,7 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg name = describe (name <> " DLog Sp
         pure $ Tuple (f p) p
       solve p = do
         Tuple _ assignments <- solver p
-        makeWitness { assignments, constraints, publicInputs }
+        makeGatesWitness { assignments, constraints, publicInputs }
     kvs <- randomSample gen
     let nat kv m = runReaderT m (Env [ kv ])
     for_ kvs \kv@(Tuple p _) -> do
@@ -235,31 +227,23 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg name = describe (name <> " DLog Sp
             q = Array.length gates.wl
             n = Array.length witness.al
             m = Array.length publicInputs
-            gates' = toCircuitGates gates { q, n, m }
 
           let psSatisfies = satisfies witness gates
           psSatisfies `shouldEqual` true
 
           let
-            paddedWitness = toCircuitWitness witness n
-            rustWitness = (witnessCreate :: { left :: Array f, right :: Array f, output :: Array f, v :: Array f, seed :: Int } -> Witness curve)
-              { left: paddedWitness.al
-              , right: paddedWitness.ar
-              , output: paddedWitness.ao
-              , v: paddedWitness.v
-              , seed: 12345
-              }
-            rustCircuit = (circuitCreate :: _ -> Circuit curve) gates'
+            rustWitness = (createWitness :: _ -> Witness curve) { witness, seed: 12345 }
+            rustCircuit = (createCircuit :: _ -> Circuit curve) { gates, dimensions: { q, n, m } }
             rustSatisfies = circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
 
           rustSatisfies `shouldEqual` true
 
           let
-            crs = (crsCreate :: { size :: Int, seed :: Int } -> CRS curve) { size: 256, seed: 42 }
-            statement = (statementCreate :: { crs :: CRS curve, witness :: Witness curve } -> Statement curve) { crs, witness: rustWitness }
+            crs = createCrs { size: 256, seed: 42 }
+            statement = createStatement { crs, witness: rustWitness }
 
           let
-            proof = prove
+            proof = createProof
               { crs
               , circuit: rustCircuit
               , witness: rustWitness

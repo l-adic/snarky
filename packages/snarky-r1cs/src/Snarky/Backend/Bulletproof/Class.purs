@@ -1,27 +1,21 @@
 module Snarky.Backend.Bulletproof.Class where
 
+import Prelude
+
+import Data.Array as Array
+import Data.Newtype (unwrap)
 import Snarky.Backend.Bulletproof.Impl.Pallas as Pallas
 import Snarky.Backend.Bulletproof.Impl.Vesta as Vesta
-import Snarky.Backend.Bulletproof.Types (CRS, Circuit, CircuitDimensions, CircuitMatrix, CircuitVector, Proof, Statement, Witness, CircuitGates)
+import Snarky.Backend.Bulletproof.Types (CRS, Circuit, GatesWitness, Gates, Proof, Statement, Witness, toCircuitGates, toCircuitWitness)
 import Snarky.Curves.Pallas as PallasC
 import Snarky.Curves.Vesta as VestaC
 
 class Bulletproof g f | g -> f where
-  crsCreate :: { size :: Int, seed :: Int } -> CRS g
-  witnessCreate
-    :: { left :: Array f
-       , right :: Array f
-       , output :: Array f
-       , v :: Array f
-       , seed :: Int
-       }
-    -> Witness g
-  statementCreate :: { crs :: CRS g, witness :: Witness g } -> Statement g
-  circuitCreate
-    :: CircuitGates f
-    -> Circuit g
-  circuitIsSatisfiedBy :: { circuit :: Circuit g, witness :: Witness g } -> Boolean
-  prove
+  createWitness :: { witness :: GatesWitness f, seed :: Int } -> Witness g
+  createCircuit :: { gates :: Gates f, dimensions :: { q :: Int, n :: Int, m :: Int } } -> Circuit g
+  createCrs :: { size :: Int, seed :: Int } -> CRS g
+  createStatement :: { crs :: CRS g, witness :: Witness g } -> Statement g
+  createProof
     :: { crs :: CRS g
        , circuit :: Circuit g
        , witness :: Witness g
@@ -35,21 +29,46 @@ class Bulletproof g f | g -> f where
        , proof :: Proof g
        }
     -> Boolean
+  circuitIsSatisfiedBy :: { circuit :: Circuit g, witness :: Witness g } -> Boolean
 
 instance Bulletproof PallasC.G PallasC.ScalarField where
-  crsCreate = Pallas.crsCreate
-  witnessCreate = Pallas.witnessCreate
-  statementCreate = Pallas.statementCreate
-  circuitCreate = Pallas.circuitCreate
-  circuitIsSatisfiedBy = Pallas.circuitIsSatisfiedBy
-  prove = Pallas.prove
+  createWitness { witness, seed } =
+    let
+      n = Array.length witness.al
+      paddedWitness = unwrap $ toCircuitWitness witness n
+    in
+      Pallas.witnessCreate
+        { left: paddedWitness.al
+        , right: paddedWitness.ar
+        , output: paddedWitness.ao
+        , v: paddedWitness.v
+        , seed
+        }
+  createCircuit { gates, dimensions } =
+    Pallas.circuitCreate (unwrap $ toCircuitGates gates dimensions)
+  createCrs = Pallas.crsCreate
+  createStatement = Pallas.statementCreate
+  createProof = Pallas.prove
   verify = Pallas.verify
+  circuitIsSatisfiedBy = Pallas.circuitIsSatisfiedBy
 
 instance Bulletproof VestaC.G VestaC.ScalarField where
-  crsCreate = Vesta.crsCreate
-  witnessCreate = Vesta.witnessCreate
-  statementCreate = Vesta.statementCreate
-  circuitCreate = Vesta.circuitCreate
-  circuitIsSatisfiedBy = Vesta.circuitIsSatisfiedBy
-  prove = Vesta.prove
+  createWitness { witness, seed } =
+    let
+      n = Array.length witness.al
+      paddedWitness = unwrap $ toCircuitWitness witness n
+    in
+      Vesta.witnessCreate
+        { left: paddedWitness.al
+        , right: paddedWitness.ar
+        , output: paddedWitness.ao
+        , v: paddedWitness.v
+        , seed
+        }
+  createCircuit { gates, dimensions } =
+    Vesta.circuitCreate (unwrap $ toCircuitGates gates dimensions)
+  createCrs = Vesta.crsCreate
+  createStatement = Vesta.statementCreate
+  createProof = Vesta.prove
   verify = Vesta.verify
+  circuitIsSatisfiedBy = Vesta.circuitIsSatisfiedBy
