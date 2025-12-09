@@ -153,11 +153,6 @@ pub fn pallas_circuit_create(
     // Pad n to next power of 2 for bulletproof compatibility
     let padded_n = next_power_of_2(dimensions.n as usize);
 
-    println!(
-        "Creating circuit with dimensions: n={} (padded to {}), m={}, q={}",
-        dimensions.n, padded_n, dimensions.m, dimensions.q
-    );
-
     // Convert sparse format to dense matrices with padding
     let w_l = sparse_to_dense_matrix(&sparse_w_l, dimensions.q as usize, padded_n);
     let w_r = sparse_to_dense_matrix(&sparse_w_r, dimensions.q as usize, padded_n);

@@ -22,8 +22,8 @@ import Snarky.Circuit.Curves as EC
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
 import Snarky.Constraint.R1CS (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, double, genAffinePoint)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSample, randomSampleOne, suchThat)
@@ -39,6 +39,7 @@ spec = do
   pallasFactorsSpec
   vestaFactorsSpec
   dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.BaseField)
+  pallasdlogSpec
 
 --------------------------------------------------------------------------------
 
@@ -319,3 +320,83 @@ dlogSpec pg _ = describe "DLog Spec" do
       runExceptT (mapExceptT (nat kv) $ solve p) >>= case _ of
         Left e -> throwError $ error (show e)
         Right witness -> satisfies witness gates `shouldEqual` true
+
+pallasdlogSpec
+  :: Spec Unit
+pallasdlogSpec = describe "Pallas DLog Spec" do
+  let cp = curveParams (Proxy @Vesta.G)
+  it "dlog Circuit is Valid" $ liftEffect $ do
+    { constraints: cs, publicInputs } <-
+      compile
+        (Proxy @(AffinePoint (F Vesta.BaseField)))
+        (Proxy @Unit)
+        (dlog16Circuit cp)
+    let
+      constraints = sortR1CS cs
+      gates = makeGates { publicInputs, constraints }
+
+      solver :: SolverT Vesta.BaseField (R1CS Vesta.BaseField) (ReaderT (Env Vesta.BaseField) Effect) (AffinePoint (F Vesta.BaseField)) Unit
+      solver = makeSolver (Proxy @(R1CS Vesta.BaseField)) (dlog16Circuit cp)
+
+      gen :: Gen (Tuple (AffinePoint (F Vesta.BaseField)) (AffinePoint (F Vesta.BaseField)))
+      gen = do
+        p <- genAffinePoint (Proxy @Vesta.G)
+        let
+          f x =
+            let
+              x2 = double cp x
+              x4 = double cp x2
+              x8 = double cp x4
+            in
+              double cp x8
+        pure $ Tuple (f p) p
+      solve p = do
+        Tuple _ assignments <- solver p
+        makeWitness { assignments, constraints, publicInputs }
+    kvs <- randomSample gen
+    let nat kv m = runReaderT m (Env [ kv ])
+    for_ kvs \kv@(Tuple p _) -> do
+      runExceptT (mapExceptT (nat kv) $ solve p) >>= case _ of
+        Left e -> throwError $ error (show e)
+        Right witness -> do
+          let
+            q = Array.length gates.wl
+            n = Array.length witness.al
+            m = Array.length publicInputs
+            gates' = toCircuitGates gates { q, n, m }
+
+          let psSatisfies = satisfies witness gates
+          psSatisfies `shouldEqual` true
+
+          let
+            rustWitness = PallasBulletproof.witnessCreate
+              { left: witness.al
+              , right: witness.ar
+              , output: witness.ao
+              , v: witness.v
+              , seed: 12345
+              }
+            rustCircuit = PallasBulletproof.circuitCreate gates'
+            rustSatisfies = PallasBulletproof.circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
+
+          rustSatisfies `shouldEqual` true
+
+          let
+            crs = PallasBulletproof.crsCreate { size: 256, seed: 42 }
+            statement = PallasBulletproof.statementCreate { crs, witness: rustWitness }
+
+          let
+            proof = PallasBulletproof.prove
+              { crs
+              , circuit: rustCircuit
+              , witness: rustWitness
+              , seed: 54321
+              }
+            verifyResult = PallasBulletproof.verify
+              { crs
+              , circuit: rustCircuit
+              , statement
+              , proof
+              }
+
+          verifyResult `shouldEqual` true
