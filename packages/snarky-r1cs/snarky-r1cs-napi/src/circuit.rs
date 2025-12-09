@@ -18,7 +18,7 @@ fn is_power_of_2(n: usize) -> bool {
 
 fn validate_power_of_2(n: usize, context: &str) {
     if !is_power_of_2(n) {
-        panic!("{}: expected power of 2, got {}", context, n);
+        panic!("{context}: expected power of 2, got {n}");
     }
 }
 
@@ -239,10 +239,14 @@ pub fn vesta_witness_create(
     // Validate witness vectors are already power of 2 and same length
     let witness_len = a_l.len();
     validate_power_of_2(witness_len, "Vesta witness length");
-    
+
     if a_r.len() != witness_len || a_o.len() != witness_len {
-        panic!("Vesta witness vectors must be same length: a_l={}, a_r={}, a_o={}", 
-               a_l.len(), a_r.len(), a_o.len());
+        panic!(
+            "Vesta witness vectors must be same length: a_l={}, a_r={}, a_o={}",
+            a_l.len(),
+            a_r.len(),
+            a_o.len()
+        );
     }
 
     let witness = Witness::new(a_l, a_r, a_o, v, &mut rng);
