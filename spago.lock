@@ -688,7 +688,9 @@
             "curves",
             "prelude",
             "quickcheck",
-            "snarky"
+            "simple-json",
+            "snarky",
+            "tuples"
           ],
           "build_plan": [
             "aff",
@@ -707,6 +709,8 @@
             "exceptions",
             "exists",
             "foldable-traversable",
+            "foreign",
+            "foreign-object",
             "functions",
             "functors",
             "gen",
@@ -720,6 +724,7 @@
             "maybe",
             "newtype",
             "nonempty",
+            "nullable",
             "numbers",
             "ordered-collections",
             "orders",
@@ -732,6 +737,7 @@
             "record",
             "refs",
             "safe-coerce",
+            "simple-json",
             "snarky",
             "st",
             "strings",
@@ -739,8 +745,10 @@
             "transformers",
             "tuples",
             "type-equality",
+            "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "variant"
           ]
         },
         "test": {
@@ -2508,6 +2516,22 @@
         "unsafe-coerce"
       ]
     },
+    "simple-json": {
+      "type": "registry",
+      "version": "9.0.0",
+      "integrity": "sha256-K3RJaThqsszTd+TEklzZmAdDqvIHWgXIfKqlsoykU1c=",
+      "dependencies": [
+        "arrays",
+        "exceptions",
+        "foreign",
+        "foreign-object",
+        "nullable",
+        "prelude",
+        "record",
+        "typelevel-prelude",
+        "variant"
+      ]
+    },
     "spec": {
       "type": "registry",
       "version": "8.1.1",
@@ -2703,6 +2727,21 @@
       "version": "6.0.0",
       "integrity": "sha256-IqIYW4Vkevn8sI+6aUwRGvd87tVL36BBeOr0cGAE7t0=",
       "dependencies": []
+    },
+    "variant": {
+      "type": "registry",
+      "version": "8.0.0",
+      "integrity": "sha256-SR//zQDg2dnbB8ZHslcxieUkCeNlbMToapvmh9onTtw=",
+      "dependencies": [
+        "enums",
+        "lists",
+        "maybe",
+        "partial",
+        "prelude",
+        "record",
+        "tuples",
+        "unsafe-coerce"
+      ]
     }
   }
 }

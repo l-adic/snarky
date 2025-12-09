@@ -1,9 +1,5 @@
 module Snarky.Backend.Bulletproof.Circuit
-  ( CRS
-  , Witness
-  , Statement
-  , Circuit
-  , Proof
+  ( module Snarky.Backend.Bulletproof.Types
   , crsCreate
   , crsSize
   , witnessCreate
@@ -15,23 +11,17 @@ module Snarky.Backend.Bulletproof.Circuit
   , circuitIsSatisfiedBy
   , prove
   , verify
-  , circuitToRecord
-  , witnessToRecord
   , exportDebugData
   ) where
 
 import Prelude
 
-import Data.Function.Uncurried (Fn2, Fn3, Fn4, Fn5, runFn2, runFn3, runFn4, runFn5)
+import Data.Function.Uncurried (Fn2, Fn3, Fn4, Fn5, Fn6, runFn2, runFn3, runFn4, runFn5, runFn6)
 import Effect (Effect)
+import Foreign (Foreign)
+import Simple.JSON (write)
+import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, Matrix, Vector)
 import Snarky.Curves.Pallas (ScalarField)
-
--- Opaque types for circuit components
-foreign import data CRS :: Type
-foreign import data Witness :: Type
-foreign import data Statement :: Type
-foreign import data Circuit :: Type
-foreign import data Proof :: Type
 
 -- FFI imports
 foreign import pallasCrsCreate :: Fn2 Int Int CRS
@@ -39,23 +29,13 @@ foreign import pallasCrsSize :: CRS -> Int
 foreign import pallasWitnessCreate :: Fn5 (Array ScalarField) (Array ScalarField) (Array ScalarField) (Array ScalarField) Int Witness
 foreign import pallasWitnessSize :: Witness -> Int
 foreign import pallasStatementCreate :: Fn2 CRS Witness Statement
-foreign import pallasCircuitCreate :: Fn5 (Array (Array ScalarField)) (Array (Array ScalarField)) (Array (Array ScalarField)) (Array (Array ScalarField)) (Array ScalarField) Circuit
+foreign import pallasCircuitCreate :: Fn6 CircuitDimensions Foreign Foreign Foreign Foreign Foreign Circuit
 foreign import pallasCircuitN :: Circuit -> Int
 foreign import pallasCircuitQ :: Circuit -> Int
 foreign import pallasCircuitIsSatisfiedBy :: Fn2 Circuit Witness Boolean
 foreign import pallasProve :: Fn4 CRS Circuit Witness Int Proof
 foreign import pallasVerify :: Fn4 CRS Circuit Statement Proof Boolean
 
--- Getter functions for round-trip testing
-foreign import pallasCircuitGetWeightsLeft :: Circuit -> Array (Array ScalarField)
-foreign import pallasCircuitGetWeightsRight :: Circuit -> Array (Array ScalarField)
-foreign import pallasCircuitGetWeightsOutput :: Circuit -> Array (Array ScalarField)
-foreign import pallasCircuitGetWeightsAuxiliary :: Circuit -> Array (Array ScalarField)
-foreign import pallasCircuitGetConstants :: Circuit -> Array ScalarField
-foreign import pallasWitnessGetLeft :: Witness -> Array ScalarField
-foreign import pallasWitnessGetRight :: Witness -> Array ScalarField
-foreign import pallasWitnessGetOutput :: Witness -> Array ScalarField
-foreign import pallasWitnessGetAuxiliary :: Witness -> Array ScalarField
 foreign import pallasExportDebugData :: Fn3 Circuit Witness String (Effect Unit)
 
 -- Exported functions with record arguments
@@ -90,15 +70,21 @@ statementCreate { crs, witness } = runFn2 pallasStatementCreate crs witness
 
 -- | Create a circuit from weight matrices and constants
 circuitCreate
-  :: { weightsLeft :: Array (Array ScalarField)
-     , weightsRight :: Array (Array ScalarField)
-     , weightsOutput :: Array (Array ScalarField)
-     , weightsAuxiliary :: Array (Array ScalarField)
-     , constants :: Array ScalarField
+  :: { dimensions :: CircuitDimensions
+     , weightsLeft :: Matrix ScalarField
+     , weightsRight :: Matrix ScalarField
+     , weightsOutput :: Matrix ScalarField
+     , weightsAuxiliary :: Matrix ScalarField
+     , constants :: Vector ScalarField
      }
   -> Circuit
-circuitCreate { weightsLeft, weightsRight, weightsOutput, weightsAuxiliary, constants } =
-  runFn5 pallasCircuitCreate weightsLeft weightsRight weightsOutput weightsAuxiliary constants
+circuitCreate { dimensions, weightsLeft, weightsRight, weightsOutput, weightsAuxiliary, constants } =
+  runFn6 pallasCircuitCreate dimensions
+    (write weightsLeft)
+    (write weightsRight)
+    (write weightsOutput)
+    (write weightsAuxiliary)
+    (write constants)
 
 -- | Get the number of variables (n) in a circuit
 circuitN :: Circuit -> Int
@@ -133,44 +119,6 @@ verify
   -> Boolean
 verify { crs, circuit, statement, proof } =
   runFn4 pallasVerify crs circuit statement proof
-
--- | Convert a Rust Circuit back to PureScript record for testing
-circuitToRecord
-  :: Circuit
-  -> { weightsLeft :: Array (Array ScalarField)
-     , weightsRight :: Array (Array ScalarField)
-     , weightsOutput :: Array (Array ScalarField)
-     , weightsAuxiliary :: Array (Array ScalarField)
-     , constants :: Array ScalarField
-     , n :: Int
-     , q :: Int
-     }
-circuitToRecord circuit =
-  { weightsLeft: pallasCircuitGetWeightsLeft circuit
-  , weightsRight: pallasCircuitGetWeightsRight circuit
-  , weightsOutput: pallasCircuitGetWeightsOutput circuit
-  , weightsAuxiliary: pallasCircuitGetWeightsAuxiliary circuit
-  , constants: pallasCircuitGetConstants circuit
-  , n: circuitN circuit
-  , q: circuitQ circuit
-  }
-
--- | Convert a Rust Witness back to PureScript record for testing  
-witnessToRecord
-  :: Witness
-  -> { left :: Array ScalarField
-     , right :: Array ScalarField
-     , output :: Array ScalarField
-     , auxiliary :: Array ScalarField
-     , size :: Int
-     }
-witnessToRecord witness =
-  { left: pallasWitnessGetLeft witness
-  , right: pallasWitnessGetRight witness
-  , output: pallasWitnessGetOutput witness
-  , auxiliary: pallasWitnessGetAuxiliary witness
-  , size: witnessSize witness
-  }
 
 -- | Export circuit and witness data for Rust testing
 exportDebugData :: { circuit :: Circuit, witness :: Witness, filePrefix :: String } -> Effect Unit

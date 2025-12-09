@@ -15,6 +15,7 @@ export const pallasStatementCreate = crypto.pallasStatementCreate;
 
 // Circuit functions
 export const pallasCircuitCreate = crypto.pallasCircuitCreate;
+export const pallasCircuitCreateSparse = crypto.pallasCircuitCreateSparse;
 export const pallasCircuitN = crypto.pallasCircuitN;
 export const pallasCircuitQ = crypto.pallasCircuitQ;
 export const pallasCircuitIsSatisfiedBy = crypto.pallasCircuitIsSatisfiedBy;

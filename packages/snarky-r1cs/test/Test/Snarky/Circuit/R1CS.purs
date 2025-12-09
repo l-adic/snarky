@@ -6,17 +6,14 @@ import Control.Monad.Except (mapExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
-import Data.Array (index)
 import Data.Either (Either(..))
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..), maybe)
-import Data.Map as Map
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toDenseGates)
+import Snarky.Backend.Bulletproof.Gate (makeGates, makeWitness, satisfies, sortR1CS, toGates)
 import Snarky.Backend.Bulletproof.Circuit as Bulletproof
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
@@ -33,25 +30,6 @@ import Test.Snarky.Circuit as CircuitTests
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
-import Partial.Unsafe (unsafePartial)
-
--- Helper functions for padding
-nextPowerOf2 :: Int -> Int
-nextPowerOf2 n =
-  let
-    go acc
-      | acc >= n = acc
-      | otherwise = go (acc * 2)
-  in
-    if n <= 1 then 1 else go 1
-
-padArrayWithZero :: Array (F Pallas.ScalarField) -> Int -> Array (F Pallas.ScalarField)
-padArrayWithZero arr targetLength =
-  let
-    currentLength = Array.length arr
-  in
-    if currentLength >= targetLength then arr
-    else arr <> Array.replicate (targetLength - currentLength) zero
 
 spec :: Spec Unit
 spec = do
@@ -153,43 +131,12 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
           q = Array.length gates.wl
           n = Array.length witness.al -- number of multiplication gates
           m = Array.length publicInputs
-          -- Pad n to next power of 2 for bulletproof circuit matrix compatibility
-          paddedN = nextPowerOf2 n
-          denseGates = toDenseGates gates { q, n: paddedN, m }
-
-        log $ "=== PURESCRIPT DEBUG ==="
-        log $ "PS Circuit - gates.wl length (q): " <> show q
-        log $ "PS Circuit - gates.wl[0] length (n): " <> show (maybe 0 Array.length (index denseGates.wl 0))
-        log $ "PS Circuit - gates.wv length: " <> show (Array.length denseGates.wv)
-        log $ "PS Circuit - gates.wv[0] length (m): " <> show (maybe 0 Array.length (index denseGates.wv 0))
-        log $ "PS publicInputs count: " <> show m
-        log $ "PS Witness - al length: " <> show (Array.length witness.al)
-        log $ "PS Circuit - padding n from " <> show n <> " to " <> show paddedN
-        log $ "PS Witness - ar length: " <> show (Array.length witness.ar)
-        log $ "PS Witness - ao length: " <> show (Array.length witness.ao)
-        log $ "PS Witness - v length: " <> show (Array.length witness.v)
+          -- Use sparse format for efficient FFI transfer
+          gates' = toGates gates { q, n, m }
 
         -- Test PureScript implementation
         let psSatisfies = satisfies witness gates
-        log $ "PureScript satisfies: " <> show psSatisfies
-
-        -- Debug first few matrix values to compare with Rust
-        log $ "=== MATRIX DEBUG ==="
-        log $ "First constraint in sparse gates.wl: " <> show (index gates.wl 0)
-        log $ "First constraint in dense denseGates.wl: " <> show (index denseGates.wl 0)
-        log $ "First constraint in dense denseGates.wr: " <> show (index denseGates.wr 0)
-        log $ "First constraint in dense denseGates.wo: " <> show (index denseGates.wo 0)
-        log $ "First constraint in dense denseGates.wv: " <> show (index denseGates.wv 0)
-        log $ "First constraint c value: " <> show (index denseGates.c 0)
-        log $ "Second constraint in dense denseGates.wl: " <> show (index denseGates.wl 1)
-        log $ "Second constraint in dense denseGates.wr: " <> show (index denseGates.wr 1)
-        log $ "Second constraint in dense denseGates.wo: " <> show (index denseGates.wo 1)
-        log $ "Second constraint in dense denseGates.wv: " <> show (index denseGates.wv 1)
-        log $ "Second constraint c value: " <> show (index denseGates.c 1)
-        log $ "witness.al first 3 values: " <> show (Array.take 3 witness.al)
-        log $ "witness.v: " <> show witness.v
-        -- Temporarily comment out to see Rust output
-        -- psSatisfies `shouldEqual` true
+        psSatisfies `shouldEqual` true
 
         -- Test Rust bulletproof circuit implementation 
         let
@@ -200,33 +147,15 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
             , v: witness.v
             , seed: 12345
             }
-          rustCircuit = Bulletproof.circuitCreate
-            { weightsLeft: denseGates.wl
-            , weightsRight: denseGates.wr
-            , weightsOutput: denseGates.wo
-            , weightsAuxiliary: denseGates.wv
-            , constants: denseGates.c
-            }
+          rustCircuit = Bulletproof.circuitCreate gates'
           rustSatisfies = Bulletproof.circuitIsSatisfiedBy { circuit: rustCircuit, witness: rustWitness }
 
-        log $ "=== RUST CIRCUIT DEBUG ==="
-        log $ "Rust circuit satisfaction: " <> show rustSatisfies
-
-        -- Export debug data for Rust testing (disabled for now)
-        -- Bulletproof.exportDebugData 
-        --   { circuit: rustCircuit
-        --   , witness: rustWitness
-        --   , filePrefix: "factors_circuit"
-        --   }
-        -- log $ "Debug data exported to factors_circuit_debug.rs"
+        rustSatisfies `shouldEqual` true
 
         -- Test prove/verify flow
         let
           crs = Bulletproof.crsCreate { size: 256, seed: 42 }
           statement = Bulletproof.statementCreate { crs, witness: rustWitness }
-
-        log $ "=== PROVE/VERIFY FLOW DEBUG ==="
-        log $ "CRS size: " <> show (Bulletproof.crsSize crs)
 
         let
           proof = Bulletproof.prove
@@ -235,18 +164,12 @@ pallasFactorsSpec = describe "Pallas Factors Spec" do
             , witness: rustWitness
             , seed: 54321
             }
-
-        log $ "Proof generated successfully"
-
-        let
           verifyResult = Bulletproof.verify
             { crs
             , circuit: rustCircuit
             , statement
             , proof
             }
-
-        log $ "Verify result: " <> show verifyResult
 
         verifyResult `shouldEqual` true
 

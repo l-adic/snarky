@@ -5,6 +5,8 @@ package:
     - curves
     - snarky
     - quickcheck
+    - simple-json
+    - tuples
   test:
     main: Test.Snarky.R1CS.Main
     dependencies:

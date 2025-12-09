@@ -1,16 +1,14 @@
 module Snarky.Backend.Bulletproof.Gate
-  ( Matrix
-  , Gates
-  , makeGates
-  , emptyGates
-  , DenseMatrix
-  , DenseGates
-  , toDenseGates
+  ( Gates
+  , SparseMatrix
   , SortedR1CS
-  , sortR1CS
   , Witness
+  , emptyGates
+  , makeGates
   , makeWitness
   , satisfies
+  , sortR1CS
+  , toGates
   ) where
 
 import Prelude
@@ -31,6 +29,7 @@ import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
+import Snarky.Backend.Bulletproof.Types (Matrix, Vector, Entry(..))
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.R1CS (R1CS(..))
@@ -120,7 +119,8 @@ gateExpressionToRow
 gateExpressionToRow (GateExpression terms) =
   foldl
     ( \acc term ->
-        case term.placement of
+        if term.coeff == zero then acc
+        else case term.placement of
           L -> acc { wl = Map.insertWith add (un GateIndex term.index) term.coeff acc.wl }
           R -> acc { wr = Map.insertWith add (un GateIndex term.index) term.coeff acc.wr }
           O -> acc { wo = Map.insertWith add (un GateIndex term.index) term.coeff acc.wo }
@@ -148,22 +148,10 @@ defaultRow =
   }
 
 type Gates f =
-  { wl :: Matrix f
-  , wr :: Matrix f
-  , wo :: Matrix f
-  , wv :: Matrix f
-  , c :: Array f
-  }
-
--- Dense matrix type - Array of Arrays for easy indexing
-type DenseMatrix f = Array (Array f)
-
--- Dense gates type for easy conversion to bulletproof format
-type DenseGates f =
-  { wl :: DenseMatrix f
-  , wr :: DenseMatrix f
-  , wo :: DenseMatrix f
-  , wv :: DenseMatrix f
+  { wl :: SparseMatrix f
+  , wr :: SparseMatrix f
+  , wo :: SparseMatrix f
+  , wv :: SparseMatrix f
   , c :: Array f
   }
 
@@ -294,45 +282,50 @@ satisfies { al, ar, ao, v } g =
   hadamard = Array.zipWith mul
   addVec = zipWith add
 
--- | Convert sparse Gates to dense DenseGates format
-toDenseGates
+-- | Convert Gates to tuple format for efficient FFI transfer
+toGates
   :: forall f
    . PrimeField f
   => Gates f
   -> { q :: Int, n :: Int, m :: Int } -- q = constraints, n = multiplication gates, m = public inputs
-  -> DenseGates f
-toDenseGates gates { q, n, m } =
+  -> { dimensions :: { n :: Int, m :: Int, q :: Int }
+     , weightsLeft :: Matrix f
+     , weightsRight :: Matrix f
+     , weightsOutput :: Matrix f
+     , weightsAuxiliary :: Matrix f
+     , constants :: Vector f
+     }
+toGates gates { q, n, m } =
   let
-    -- Pad n to next power of 2 for bulletproof compatibility
     paddedN = nextPowerOf2 n
+
+    mapToEntries :: Map Int f -> Array (Entry f)
+    mapToEntries sparseMap =
+      map (\(Tuple i v) -> Entry (Tuple i v)) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
+
+    mapToEntriesNeg :: Map Int f -> Array (Entry f)
+    mapToEntriesNeg sparseMap =
+      map (\(Tuple i v) -> Entry (Tuple i (negate v))) (Map.toUnfoldable $ Map.filter (\x -> x /= zero) sparseMap)
+
   in
-    { wl: map (toDenseRow' paddedN) gates.wl
-    , wr: map (toDenseRow' paddedN) gates.wr
-    , wo: map (toDenseRow' paddedN) gates.wo
-    , wv: map (toDenseRowNeg' m) gates.wv -- negate for bulletproof format
-    , c: map negate gates.c -- negate for bulletproof format
+    { dimensions: { n: paddedN, m, q }
+    , weightsLeft: map mapToEntries gates.wl
+    , weightsRight: map mapToEntries gates.wr
+    , weightsOutput: map mapToEntries gates.wo
+    , weightsAuxiliary: map mapToEntriesNeg gates.wv
+    , constants:
+        Array.filter (\(Entry (Tuple _ f)) -> f /= zero) $
+          Array.mapWithIndex (\i c -> Entry (Tuple i (negate c))) gates.c
     }
   where
-  -- Find next power of 2 greater than or equal to n
   nextPowerOf2 :: Int -> Int
-  nextPowerOf2 n =
+  nextPowerOf2 k =
     let
-      powerOf2 = 1
       go power acc
         | acc >= n = acc
         | otherwise = go (power + 1) (acc * 2)
     in
-      if n <= 1 then 1 else go 1 1
-
-  -- Convert sparse row to dense row
-  toDenseRow' :: Int -> Map Int f -> Array f
-  toDenseRow' nCols sparseRow =
-    Array.updateAtIndices (Map.toUnfoldable sparseRow :: Array (Tuple Int f)) (Array.replicate nCols zero)
-
-  -- Convert sparse row to dense row and negate values
-  toDenseRowNeg' :: Int -> Map Int f -> Array f
-  toDenseRowNeg' nCols sparseRow =
-    Array.updateAtIndices (map (\(Tuple i v) -> Tuple i (negate v)) (Map.toUnfoldable sparseRow :: Array (Tuple Int f))) (Array.replicate nCols zero)
+      if k <= 1 then 1 else go 1 1
 
 --------------------------------------------------------------------------------
 
@@ -409,10 +402,4 @@ sortR1CS constraints =
   isTrivial (AffineExpression { constant, terms }) =
     (isNothing constant || constant == Just zero) && Array.length terms == 1
 
-type Matrix f = Array (Map Int f)
-
-type SparseMatrix f =
-  { entries :: Array { row :: Int, col :: Int, val :: f }
-  , nRows :: Int
-  , nCols :: Int
-  }
+type SparseMatrix f = Array (Map Int f)
