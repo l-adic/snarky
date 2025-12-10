@@ -1,11 +1,11 @@
-module Test.Snarky.R1CS.Main where
+module Test.Snarky.Bulletproofs.Main where
 
 import Prelude
 
 import Effect (Effect)
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.R1CS as Circuit
-import Test.Snarky.Constraint.R1CS as Constraint
+import Test.Snarky.Circuit.Bulletproofs as Circuit
+import Test.Snarky.Constraint.Bulletproofs as Constraint
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))

@@ -1,4 +1,4 @@
-module Test.Snarky.Circuit.R1CS (spec) where
+module Test.Snarky.Circuit.Bulletproofs (spec) where
 
 import Prelude
 
@@ -21,7 +21,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
-import Snarky.Constraint.R1CS (R1CS, eval)
+import Snarky.Constraint.Bulletproofs (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta

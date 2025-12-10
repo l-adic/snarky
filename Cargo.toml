@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "packages/curves/curves-napi",
-    "packages/snarky-r1cs/snarky-r1cs-napi",
+    "packages/snarky-bulletproofs/snarky-bulletproofs-napi",
 ]
 
 [workspace.dependencies]

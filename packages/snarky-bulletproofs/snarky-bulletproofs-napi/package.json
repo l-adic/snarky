@@ -1,9 +1,9 @@
 {
-  "name": "snarky-r1cs-napi",
+  "name": "snarky-bulletproofs-napi",
   "version": "0.1.0",
-  "main": "snarky-r1cs-napi.node",
+  "main": "snarky-bulletproofs-napi.node",
   "napi": {
-    "binaryName": "snarky-r1cs-napi",
+    "binaryName": "snarky-bulletproofs-napi",
     "triples": {}
   },
   "devDependencies": {
@@ -14,6 +14,6 @@
     "prepublish": "npm run build"
   },
   "files": [
-    "snarky-r1cs-napi.node"
+    "snarky-bulletproofs-napi.node"
   ]
 }
