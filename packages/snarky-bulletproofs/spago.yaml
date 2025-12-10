@@ -1,5 +1,5 @@
 package:
-  name: snarky-r1cs
+  name: snarky-bulletproofs
   dependencies:
     - prelude
     - curves
@@ -8,7 +8,7 @@ package:
     - simple-json
     - tuples
   test:
-    main: Test.Snarky.R1CS.Main
+    main: Test.Snarky.Bulletproofs.Main
     dependencies:
       - debug
       - snarky-curves

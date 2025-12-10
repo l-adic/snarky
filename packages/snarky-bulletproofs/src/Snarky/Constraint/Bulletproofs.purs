@@ -1,4 +1,4 @@
-module Snarky.Constraint.R1CS
+module Snarky.Constraint.Bulletproofs
   ( R1CS(..)
   , genWithAssignments
   , eval

@@ -31,7 +31,7 @@ import Data.Tuple (Tuple(..), fst)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Constraint.R1CS (R1CS(..))
+import Snarky.Constraint.Bulletproofs (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
 
 newtype GateIndex = GateIndex Int

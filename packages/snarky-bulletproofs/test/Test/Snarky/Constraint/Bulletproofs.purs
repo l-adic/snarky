@@ -1,4 +1,4 @@
-module Test.Snarky.Constraint.R1CS where
+module Test.Snarky.Constraint.Bulletproofs where
 
 import Prelude
 

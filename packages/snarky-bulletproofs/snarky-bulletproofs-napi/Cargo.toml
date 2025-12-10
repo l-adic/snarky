@@ -1,5 +1,5 @@
 [package]
-name = "r1cs-napi"
+name = "bulletproofs-napi"
 version = "0.1.0"
 edition = "2021"
 
