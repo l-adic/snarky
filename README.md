@@ -28,5 +28,20 @@ make test
 
 ## Structure
 
-- `packages/curves/` - Elliptic curve field operations (Pallas, Vesta, BN254)
-- `packages/snarky/` - Circuit DSL
+### Core Libraries
+- `packages/curves/` - Elliptic curve field operations (Pallas, Vesta, BN254) with Rust N-API backend
+- `packages/snarky/` - Circuit DSL for building zero-knowledge circuits
+
+### Proof System Backends
+- `packages/snarky-kimchi/` - Kimchi proof system backend
+- `packages/snarky-bulletproofs/` - Bulletproof backend with Rust implementation
+
+### Circuit Libraries
+- `packages/snarky-curves/` - Elliptic curve arithmetic circuits using the DSL
+
+### Utilities
+- `packages/snarky-test-utils/` - Testing utilities for circuit development
+- `packages/union-find/` - Union-find data structure
+
+### Reference Implementation
+- `mina/` - OCaml Snarky source (Git submodule) used as translation reference
