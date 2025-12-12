@@ -6,7 +6,7 @@ module Snarky.Backend.Groth16.Impl.BN254
   , circuitIsSatisfiedBy
   ) where
 
-import Data.Function.Uncurried (Fn3, Fn5, Fn6, Fn8, runFn3, runFn5, runFn6, runFn8)
+import Data.Function.Uncurried (Fn1, Fn2, Fn3, Fn4, Fn5, runFn1, runFn2, runFn3, runFn4, runFn5)
 import Data.Tuple (Tuple(..))
 import Foreign (Foreign)
 import Simple.JSON (write)
@@ -18,16 +18,19 @@ setup
      , matrixA :: CircuitMatrix ScalarField
      , matrixB :: CircuitMatrix ScalarField
      , matrixC :: CircuitMatrix ScalarField
+     , publicInputIndices :: Array Int
      }
   -> Int
   -> { provingKey :: ProvingKey G, verifyingKey :: VerifyingKey G }
-setup { dimensions, matrixA, matrixB, matrixC } seed =
+setup { dimensions, matrixA, matrixB, matrixC, publicInputIndices } seed =
   let
-    Tuple provingKey verifyingKey = runFn5 bn254Setup dimensions
+    circuit = runFn5 bn254CircuitCreate dimensions
       (write matrixA)
       (write matrixB)
       (write matrixC)
-      seed
+      publicInputIndices
+
+    Tuple provingKey verifyingKey = runFn2 bn254Setup circuit seed
   in
     { provingKey, verifyingKey }
 
@@ -38,23 +41,23 @@ prove
          , matrixA :: CircuitMatrix ScalarField
          , matrixB :: CircuitMatrix ScalarField
          , matrixC :: CircuitMatrix ScalarField
+         , publicInputIndices :: Array Int
          }
-     , witness ::
-         { witness :: Array ScalarField
-         , publicInputs :: Array ScalarField
-         }
+     , witness :: Array ScalarField
      , seed :: Int
      }
   -> Proof G
 prove { provingKey, gates, witness, seed } =
-  runFn8 bn254Prove provingKey
-    gates.dimensions
-    (write gates.matrixA)
-    (write gates.matrixB)
-    (write gates.matrixC)
-    witness.witness
-    witness.publicInputs
-    seed
+  let
+    circuit = runFn5 bn254CircuitCreate gates.dimensions
+      (write gates.matrixA)
+      (write gates.matrixB)
+      (write gates.matrixC)
+      gates.publicInputIndices
+
+    witnessObj = runFn1 bn254WitnessCreate witness
+  in
+    runFn4 bn254Prove provingKey circuit witnessObj seed
 
 verify
   :: { verifyingKey :: VerifyingKey G
@@ -71,23 +74,26 @@ circuitIsSatisfiedBy
          , matrixA :: CircuitMatrix ScalarField
          , matrixB :: CircuitMatrix ScalarField
          , matrixC :: CircuitMatrix ScalarField
+         , publicInputIndices :: Array Int
          }
-     , witness ::
-         { witness :: Array ScalarField
-         , publicInputs :: Array ScalarField
-         }
+     , witness :: Array ScalarField
      }
   -> Boolean
 circuitIsSatisfiedBy { gates, witness } =
-  runFn6 bn254CircuitCheckSatisfaction
-    gates.dimensions
-    (write gates.matrixA)
-    (write gates.matrixB)
-    (write gates.matrixC)
-    witness.witness
-    witness.publicInputs
+  let
+    circuit = runFn5 bn254CircuitCreate gates.dimensions
+      (write gates.matrixA)
+      (write gates.matrixB)
+      (write gates.matrixC)
+      gates.publicInputIndices
 
-foreign import bn254Setup :: Fn5 R1CSDimensions Foreign Foreign Foreign Int (Tuple (ProvingKey G) (VerifyingKey G))
-foreign import bn254Prove :: Fn8 (ProvingKey G) R1CSDimensions Foreign Foreign Foreign (Array ScalarField) (Array ScalarField) Int (Proof G)
+    witnessObj = runFn1 bn254WitnessCreate witness
+  in
+    runFn2 bn254CircuitIsSatisfiedBy circuit witnessObj
+
+foreign import bn254CircuitCreate :: Fn5 R1CSDimensions Foreign Foreign Foreign (Array Int) Foreign
+foreign import bn254WitnessCreate :: Fn1 (Array ScalarField) Foreign
+foreign import bn254Setup :: Fn2 Foreign Int (Tuple (ProvingKey G) (VerifyingKey G))
+foreign import bn254Prove :: Fn4 (ProvingKey G) Foreign Foreign Int (Proof G)
 foreign import bn254Verify :: Fn3 (VerifyingKey G) (Proof G) (Array ScalarField) Boolean
-foreign import bn254CircuitCheckSatisfaction :: Fn6 R1CSDimensions Foreign Foreign Foreign (Array ScalarField) (Array ScalarField) Boolean
+foreign import bn254CircuitIsSatisfiedBy :: Fn2 Foreign Foreign Boolean

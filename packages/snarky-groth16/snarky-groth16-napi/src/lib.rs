@@ -19,10 +19,11 @@ use rand_chacha::ChaCha20Rng;
 
 use curves_napi::bn254::scalar_field::FieldExternal as Bn254FieldExternal;
 
-// External types following bulletproofs pattern
+// External types for NAPI
 pub type Bn254ProvingKeyExternal = External<(ProvingKey<ark_bn254::Bn254>, R1CSDimensions)>;
 pub type Bn254VerifyingKeyExternal = External<VerifyingKey<ark_bn254::Bn254>>;
 pub type Bn254ProofExternal = External<Vec<u8>>;
+// Re-add these for the bulletproofs pattern
 pub type Bn254CircuitExternal = External<R1CSConstraints>;
 pub type Bn254WitnessExternal = External<R1CSWitness>;
 
@@ -37,19 +38,17 @@ pub struct R1CSDimensions {
     pub num_inputs: u32,
 }
 
-// R1CS constraint system (circuit structure only)
 pub struct R1CSConstraints {
     dimensions: R1CSDimensions,
     matrix_a: Vec<Vec<(u32, Fr)>>,
     matrix_b: Vec<Vec<(u32, Fr)>>,
     matrix_c: Vec<Vec<(u32, Fr)>>,
+    public_input_indices: Vec<u32>,
 }
 
-// Witness data separate from circuit
 #[derive(Clone)]
 pub struct R1CSWitness {
     witness: Vec<Fr>,
-    public_inputs: Vec<Fr>,
 }
 
 impl R1CSConstraints {
@@ -58,20 +57,19 @@ impl R1CSConstraints {
         matrix_a: Vec<Vec<(u32, Fr)>>,
         matrix_b: Vec<Vec<(u32, Fr)>>,
         matrix_c: Vec<Vec<(u32, Fr)>>,
+        public_input_indices: Vec<u32>,
     ) -> Self {
         Self {
             dimensions,
             matrix_a,
             matrix_b,
             matrix_c,
+            public_input_indices,
         }
     }
 
     fn is_satisfied_by(&self, witness: &R1CSWitness) -> bool {
-        // Manual satisfaction check like in the original code
-        let mut assignment = vec![Fr::from(1u32)]; // constant 1
-        assignment.extend_from_slice(&witness.public_inputs);
-        assignment.extend_from_slice(&witness.witness);
+        let assignment = &witness.witness;
 
         for constraint_idx in 0..self.dimensions.num_constraints as usize {
             let mut a_val = Fr::from(0u32);
@@ -105,7 +103,6 @@ impl R1CSConstraints {
                 }
             }
 
-            // Check if A * B = C
             if a_val * b_val != c_val {
                 return false;
             }
@@ -115,24 +112,14 @@ impl R1CSConstraints {
     }
 }
 
-impl R1CSWitness {
-    fn new(witness: Vec<Fr>, public_inputs: Vec<Fr>) -> Self {
-        Self {
-            witness,
-            public_inputs,
-        }
-    }
-}
-
-// Single R1CS circuit that can work with or without witness values
 #[derive(Clone)]
 pub struct R1CSCircuit {
     dimensions: R1CSDimensions,
     matrix_a: Vec<Vec<(u32, Fr)>>,
     matrix_b: Vec<Vec<(u32, Fr)>>,
     matrix_c: Vec<Vec<(u32, Fr)>>,
-    // Optional witness - None during setup, Some during proving
-    witness_values: Option<R1CSWitness>,
+    public_input_indices: Vec<u32>,
+    witness: Option<Vec<Fr>>,
 }
 
 impl R1CSCircuit {
@@ -142,7 +129,8 @@ impl R1CSCircuit {
             matrix_a: constraints.matrix_a.clone(),
             matrix_b: constraints.matrix_b.clone(),
             matrix_c: constraints.matrix_c.clone(),
-            witness_values: None,
+            public_input_indices: constraints.public_input_indices.clone(),
+            witness: None,
         }
     }
 
@@ -152,7 +140,8 @@ impl R1CSCircuit {
             matrix_a: constraints.matrix_a.clone(),
             matrix_b: constraints.matrix_b.clone(),
             matrix_c: constraints.matrix_c.clone(),
-            witness_values: Some(witness.clone()),
+            public_input_indices: constraints.public_input_indices.clone(),
+            witness: Some(witness.witness.clone()),
         }
     }
 }
@@ -162,44 +151,35 @@ impl ConstraintSynthesizer<Fr> for R1CSCircuit {
         self,
         cs: ConstraintSystemRef<Fr>,
     ) -> std::result::Result<(), SynthesisError> {
-        // Allocate variables - same structure regardless of setup vs proving
+        if let Some(ref witness) = self.witness {
+            if witness.len() != self.dimensions.num_variables as usize {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+            if witness[0] != Fr::from(1u32) {
+                return Err(SynthesisError::Unsatisfiable);
+            }
+        }
+
         let mut variables: Vec<Variable> = Vec::new();
-
-        // Variable 0 is always the constant 1
         variables.push(Variable::One);
-
-        // Allocate public input variables
-        for i in 0..self.dimensions.num_inputs {
-            let value = if let Some(ref witness) = self.witness_values {
-                if i < witness.public_inputs.len() as u32 {
-                    witness.public_inputs[i as usize]
-                } else {
-                    Fr::from(0u32)
-                }
+        for i in 1..self.dimensions.num_variables {
+            let value = if let Some(ref witness) = self.witness {
+                witness[i as usize]
             } else {
-                Fr::from(0u32) // Dummy value for setup
+                Fr::from(0u32)
             };
-            let var = cs.new_input_variable(|| Ok(value))?;
+            let var = if self.public_input_indices.contains(&i) {
+                cs.new_input_variable(|| Ok(value))?
+            } else {
+                cs.new_witness_variable(|| Ok(value))?
+            };
             variables.push(var);
         }
 
-        // Allocate witness variables
-        let remaining_vars = self.dimensions.num_variables as usize - variables.len();
-        for i in 0..remaining_vars {
-            let value = if let Some(ref witness) = self.witness_values {
-                if i < witness.witness.len() {
-                    witness.witness[i]
-                } else {
-                    Fr::from(0u32)
-                }
-            } else {
-                Fr::from(0u32) // Dummy value for setup
-            };
-            let var = cs.new_witness_variable(|| Ok(value))?;
-            variables.push(var);
+        if variables.len() != self.dimensions.num_variables as usize {
+            return Err(SynthesisError::Unsatisfiable);
         }
 
-        // Generate R1CS constraints from sparse matrices - same regardless of witness values
         for constraint_idx in 0..self.dimensions.num_constraints as usize {
             let mut lc_a = lc!();
             let mut lc_b = lc!();
@@ -236,7 +216,6 @@ impl ConstraintSynthesizer<Fr> for R1CSCircuit {
     }
 }
 
-// Convert sparse matrix from external types to internal Fr types
 fn convert_sparse_matrix(sparse: Vec<Vec<(u32, &Bn254FieldExternal)>>) -> Vec<Vec<(u32, Fr)>> {
     sparse
         .into_iter()
@@ -248,60 +227,78 @@ fn convert_sparse_matrix(sparse: Vec<Vec<(u32, &Bn254FieldExternal)>>) -> Vec<Ve
         .collect()
 }
 
-// Following bulletproofs pattern: create circuit (constraints only)
 #[napi]
 pub fn bn254_circuit_create(
     dimensions: R1CSDimensions,
     sparse_a: Vec<Vec<(u32, &Bn254FieldExternal)>>,
     sparse_b: Vec<Vec<(u32, &Bn254FieldExternal)>>,
     sparse_c: Vec<Vec<(u32, &Bn254FieldExternal)>>,
-) -> Bn254CircuitExternal {
+    public_input_indices: Vec<u32>,
+) -> Result<External<R1CSConstraints>> {
+    if sparse_a.len() != sparse_b.len() || sparse_b.len() != sparse_c.len() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "Matrix dimension mismatch: A={}, B={}, C={}, expected all equal",
+                sparse_a.len(),
+                sparse_b.len(),
+                sparse_c.len()
+            ),
+        ));
+    }
+
+    if dimensions.num_constraints as usize != sparse_a.len() {
+        return Err(Error::new(
+            Status::InvalidArg,
+            format!(
+                "numConstraints {} doesn't match matrix length {}",
+                dimensions.num_constraints,
+                sparse_a.len()
+            ),
+        ));
+    }
+
     let matrix_a = convert_sparse_matrix(sparse_a);
     let matrix_b = convert_sparse_matrix(sparse_b);
     let matrix_c = convert_sparse_matrix(sparse_c);
 
-    let constraints = R1CSConstraints::new(dimensions, matrix_a, matrix_b, matrix_c);
-    External::new(constraints)
+    let constraints = R1CSConstraints::new(
+        dimensions,
+        matrix_a,
+        matrix_b,
+        matrix_c,
+        public_input_indices,
+    );
+    Ok(External::new(constraints))
 }
 
-// Following bulletproofs pattern: create witness separately
 #[napi]
 pub fn bn254_witness_create(
     witness: Vec<&Bn254FieldExternal>,
-    public_inputs: Vec<&Bn254FieldExternal>,
-) -> Bn254WitnessExternal {
+) -> External<R1CSWitness> {
     let witness_fr: Vec<Fr> = witness.into_iter().map(|field_ext| **field_ext).collect();
-    let public_inputs_fr: Vec<Fr> = public_inputs
-        .into_iter()
-        .map(|field_ext| **field_ext)
-        .collect();
 
-    let r1cs_witness = R1CSWitness::new(witness_fr, public_inputs_fr);
+    let r1cs_witness = R1CSWitness {
+        witness: witness_fr,
+    };
     External::new(r1cs_witness)
 }
 
-// Following bulletproofs pattern: check satisfaction
 #[napi]
 pub fn bn254_circuit_is_satisfied_by(
-    circuit: &Bn254CircuitExternal,
-    witness: &Bn254WitnessExternal,
+    circuit: &External<R1CSConstraints>,
+    witness: &External<R1CSWitness>,
 ) -> bool {
     circuit.is_satisfied_by(witness)
 }
 
-// Setup: create proving and verifying keys from circuit only
 #[napi]
 pub fn bn254_setup(
-    circuit: &Bn254CircuitExternal,
+    circuit: &External<R1CSConstraints>,
     seed: u32,
 ) -> Result<(Bn254ProvingKeyExternal, Bn254VerifyingKeyExternal)> {
-    // Setup RNG
     let mut rng = ChaCha20Rng::seed_from_u64(seed as u64);
-
-    // Create circuit for setup (no witness values needed)
     let arkworks_circuit = R1CSCircuit::new_for_setup(circuit);
-
-    // Generate proving and verifying keys
     let (pk, vk) = Groth16::<ark_bn254::Bn254>::circuit_specific_setup(arkworks_circuit, &mut rng)
         .map_err(|e| Error::new(Status::GenericFailure, format!("Setup failed: {e}")))?;
 
@@ -311,25 +308,18 @@ pub fn bn254_setup(
     ))
 }
 
-// Prove: create proof using circuit + witness
 #[napi]
 pub fn bn254_prove(
     pk: &Bn254ProvingKeyExternal,
-    circuit: &Bn254CircuitExternal,
-    witness: &Bn254WitnessExternal,
+    circuit: &External<R1CSConstraints>,
+    witness: &External<R1CSWitness>,
     seed: u32,
 ) -> Result<Bn254ProofExternal> {
-    // Setup RNG
     let mut rng = ChaCha20Rng::seed_from_u64(seed as u64);
-
-    // Create circuit for proving (with witness values)
     let arkworks_circuit = R1CSCircuit::new_for_proving(circuit, witness);
-
-    // Generate proof
     let proof = Groth16::<ark_bn254::Bn254>::prove(&pk.0, arkworks_circuit, &mut rng)
         .map_err(|e| Error::new(Status::GenericFailure, format!("Prove failed: {e}")))?;
 
-    // Serialize proof
     let mut proof_bytes = Vec::new();
     proof.serialize_compressed(&mut proof_bytes).map_err(|e| {
         Error::new(
@@ -341,25 +331,21 @@ pub fn bn254_prove(
     Ok(External::new(proof_bytes))
 }
 
-// Verify: check proof against verifying key and public inputs
 #[napi]
 pub fn bn254_verify(
     vk: &Bn254VerifyingKeyExternal,
     proof: &Bn254ProofExternal,
     public_inputs: Vec<&Bn254FieldExternal>,
 ) -> bool {
-    // Convert public inputs
     let public_inputs_fr: Vec<Fr> = public_inputs
         .into_iter()
         .map(|field_ext| **field_ext)
         .collect();
 
-    // Deserialize proof
     let proof_result = Proof::<ark_bn254::Bn254>::deserialize_compressed(proof as &[u8]);
 
     match proof_result {
         Ok(proof) => {
-            // Verify proof, return false on error
             Groth16::<ark_bn254::Bn254>::verify(vk, &public_inputs_fr, &proof).unwrap_or_default()
         }
         _ => false,

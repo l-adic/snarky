@@ -54,24 +54,18 @@ type CircuitVector f = Array (Entry f)
 
 type CircuitMatrix f = Array (CircuitVector f)
 
-type GatesWitness f =
-  { witness :: Array f -- private witness values
-  , publicInputs :: Array f -- public input values
-  }
+type GatesWitness f = Array f -- Full witness: [1, public..., private...]
 
 type Gates f =
   { a :: Matrix f -- A matrix for R1CS constraints
   , b :: Matrix f -- B matrix for R1CS constraints  
   , c :: Matrix f -- C matrix for R1CS constraints
+  , publicInputIndices :: Array Int -- Which positions in witness are public
   }
 
 -- FFI-ready types for witness data
-newtype CircuitWitness f = CircuitWitness
-  { witness :: Array f
-  , publicInputs :: Array f
-  }
+newtype CircuitWitness f = CircuitWitness (Array f) -- Full witness array
 
-derive instance Functor CircuitWitness
 derive instance Newtype (CircuitWitness f) _
 
 -- FFI-ready types for R1CS circuit data
@@ -80,9 +74,9 @@ newtype CircuitGates f = CircuitGates
   , matrixA :: CircuitMatrix f
   , matrixB :: CircuitMatrix f
   , matrixC :: CircuitMatrix f
+  , publicInputIndices :: Array Int
   }
 
-derive instance Functor CircuitGates
 derive instance Newtype (CircuitGates f) _
 
 toCircuitWitness
@@ -90,11 +84,7 @@ toCircuitWitness
    . PrimeField f
   => GatesWitness f
   -> CircuitWitness f
-toCircuitWitness gatesWitness =
-  CircuitWitness
-    { witness: gatesWitness.witness
-    , publicInputs: gatesWitness.publicInputs
-    }
+toCircuitWitness gatesWitness = CircuitWitness gatesWitness
 
 toCircuitGates
   :: forall f
@@ -114,4 +104,5 @@ toCircuitGates gates dimensions =
       , matrixA: map mapToEntries gates.a
       , matrixB: map mapToEntries gates.b
       , matrixC: map mapToEntries gates.c
+      , publicInputIndices: gates.publicInputIndices
       }

@@ -14,13 +14,16 @@ import Prelude
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Data.Array (all, mapWithIndex)
 import Data.Array as Array
+import Data.Foldable (foldl)
 import Data.FoldableWithIndex as ArrayWithIndex
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe, fromMaybe)
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
-import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (EvaluationError(..), Variable, reduceToAffineExpression, AffineExpression(..), CVar(..))
 import Snarky.Constraint.Groth16 (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
 
@@ -32,6 +35,7 @@ type Gates f =
   { a :: Matrix f -- A matrix for constraints (A·z) * (B·z) = (C·z)
   , b :: Matrix f -- B matrix 
   , c :: Matrix f -- C matrix
+  , publicInputIndices :: Array Int -- Which positions in witness are public
   }
 
 emptyGates :: forall f. Gates f
@@ -39,13 +43,11 @@ emptyGates =
   { a: mempty
   , b: mempty
   , c: mempty
+  , publicInputIndices: mempty
   }
 
--- For Groth16, witness contains private inputs and public inputs separately
-type GatesWitness f =
-  { witness :: Array f -- private witness values
-  , publicInputs :: Array f -- public input values
-  }
+-- For Groth16, unified witness array following bulletproofs pattern
+type GatesWitness f = Array f -- Full witness: [1, public..., private...]
 
 -- Convert R1CS constraints directly to A, B, C matrices
 -- This is simpler than bulletproofs because no preprocessing is needed
@@ -58,25 +60,73 @@ makeGates
   -> Gates f
 makeGates { publicInputs, constraints } =
   let
-    -- For Groth16, we need to map variables to their positions in z = [1, public_inputs, witness]
+    -- Collect all variables from a CVar using fold
+    collectVariables :: CVar f Variable -> Set Variable
+    collectVariables = foldl (flip Set.insert) mempty
+
+    -- Get all variables from all constraints
+    allVariables = Set.unions $ Array.concatMap
+      ( \(R1CS { left, right, output }) ->
+          [ collectVariables left, collectVariables right, collectVariables output ]
+      )
+      constraints
+    publicInputSet = Set.fromFoldable publicInputs
+    witnessVariables = Set.difference allVariables publicInputSet
+
+    -- Create complete variable mapping: z = [1, public_inputs, witness]
     -- Position 0 is constant 1, positions 1..m are public inputs, rest are witness
-    _publicInputMap = Map.fromFoldable $
+    publicInputMap = Map.fromFoldable $
       mapWithIndex (\i var -> Tuple var (i + 1)) publicInputs -- +1 because position 0 is constant
+
+    -- Get witness variables in ascending order (Set.toUnfoldable returns sorted order)
+    witnessVariablesOrdered = Set.toUnfoldable witnessVariables
+
+    witnessMap = Map.fromFoldable $
+      mapWithIndex (\i var -> Tuple var (i + 1 + Array.length publicInputs)) witnessVariablesOrdered
+
+    variableMap = Map.union publicInputMap witnessMap
+
+    -- Convert affine expression to coefficient vector
+    affineToVector :: AffineExpression f -> Vector f
+    affineToVector (AffineExpression { constant, terms }) =
+      let
+        -- Add constant term at position 0 (if present)
+        constantMap = case constant of
+          Nothing -> Map.empty
+          Just c -> Map.singleton 0 c
+
+        -- Add variable terms at their mapped positions
+        variableCoeffs = Map.fromFoldable $ Array.mapMaybe
+          ( \(Tuple var coeff) ->
+              case Map.lookup var variableMap of
+                Just pos -> Just (Tuple pos coeff)
+                Nothing -> Nothing -- This shouldn't happen if we collected all variables correctly
+          )
+          terms
+      in
+        Map.union constantMap variableCoeffs
 
     -- Process each constraint to extract A, B, C matrix rows
     processConstraint :: R1CS f -> { a :: Vector f, b :: Vector f, c :: Vector f }
-    processConstraint (R1CS { left: _left, right: _right, output: _output }) =
-      -- For simplicity, this is a placeholder implementation
-      -- In practice, you would need to extract coefficients from the CVar expressions
-      -- and map them to the correct positions in the constraint matrices
-      { a: Map.empty, b: Map.empty, c: Map.empty }
+    processConstraint (R1CS { left, right, output }) =
+      let
+        -- Reduce each CVar to affine form and convert to coefficient vectors
+        aVec = affineToVector $ reduceToAffineExpression left
+        bVec = affineToVector $ reduceToAffineExpression right
+        cVec = affineToVector $ reduceToAffineExpression output
+      in
+        { a: aVec, b: bVec, c: cVec }
 
     rows = map processConstraint constraints
+
+    -- Generate public input indices: positions 1 to (length publicInputs)
+    publicIndices = Array.mapWithIndex (\i _ -> i + 1) publicInputs
 
   in
     { a: map _.a rows
     , b: map _.b rows
     , c: map _.c rows
+    , publicInputIndices: publicIndices
     }
 
 makeGatesWitness
@@ -88,24 +138,42 @@ makeGatesWitness
      , publicInputs :: Array Variable
      }
   -> m (GatesWitness f)
-makeGatesWitness { assignments, constraints: _constraints, publicInputs } = do
+makeGatesWitness { assignments, constraints, publicInputs } = do
   -- Extract public input values
   publicInputValues <- for publicInputs \var ->
     case Map.lookup var assignments of
       Nothing -> throwError (MissingVariable var :: EvaluationError f)
       Just val -> pure val
 
-  -- For private witness, we need to extract the private variables used in constraints
-  -- This is a simplified implementation - in practice you'd need to determine
-  -- which variables are private vs public and extract their values
+  -- Extract witness variables (same logic as in makeGates)
+  let
+    -- Collect all variables from a CVar using fold
+    collectVariables :: CVar f Variable -> Set Variable
+    collectVariables = foldl (flip Set.insert) mempty
 
-  -- For now, create empty witness array - this would need proper implementation
-  let witnessValues = []
+    -- Get all variables from all constraints
+    allVariables = Set.unions $ Array.concatMap
+      ( \(R1CS { left, right, output }) ->
+          [ collectVariables left, collectVariables right, collectVariables output ]
+      )
+      constraints
+    publicInputSet = Set.fromFoldable publicInputs
+    witnessVariables = Set.difference allVariables publicInputSet
 
-  pure
-    { witness: witnessValues
-    , publicInputs: publicInputValues
-    }
+    -- Get witness variables in ascending order (Set.toUnfoldable returns sorted order)
+    witnessVariablesOrdered = Set.toUnfoldable witnessVariables
+
+  -- Extract witness values in consistent order
+  witnessValues <- for witnessVariablesOrdered \var ->
+    case Map.lookup var assignments of
+      Nothing -> throwError (MissingVariable var :: EvaluationError f)
+      Just val -> pure val
+
+  -- Create unified witness: [1, public..., private...]
+  let
+    fullWitness = [ one ] <> publicInputValues <> witnessValues
+
+  pure fullWitness
 
 -- Check if witness satisfies the gates (R1CS constraints)
 satisfies
@@ -117,11 +185,11 @@ satisfies
 satisfies witness gates =
   -- For Groth16, we need to check that for each constraint i:
   -- (A_i · z) * (B_i · z) = (C_i · z)
-  -- where z = [1, public_inputs, private_witness]
+  -- where z is the full witness array: [1, public_inputs, private_witness]
 
   let
-    -- Combine constant 1, public inputs, and private witness into full assignment vector
-    fullAssignment = [ one ] <> witness.publicInputs <> witness.witness
+    -- witness is already the full assignment vector
+    fullAssignment = witness
 
     -- Check each constraint
     checkConstraint :: Int -> Boolean

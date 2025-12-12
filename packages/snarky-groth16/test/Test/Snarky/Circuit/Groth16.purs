@@ -92,32 +92,28 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spe
     runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
       Left e -> throwError $ error (show e)
       Right gatesWitness -> do
-        let
-          numConstraints = Array.length cs
-          numVariables = Array.length gatesWitness.witness + Array.length gatesWitness.publicInputs + 1 -- +1 for constant
-          numInputs = Array.length gatesWitness.publicInputs
-          dimensions = { numConstraints, numVariables, numInputs }
-
         let psSatisfies = satisfies gatesWitness gates
         psSatisfies `shouldEqual` true
 
-        let rustSatisfies = circuitIsSatisfiedBy @g @f { gates, dimensions, witness: gatesWitness }
+        let rustSatisfies = circuitIsSatisfiedBy @g @f { gates, witness: gatesWitness }
         rustSatisfies `shouldEqual` true
 
-        let { provingKey, verifyingKey } = setup @g @f { gates, dimensions, seed: 42 }
+        let { provingKey, verifyingKey } = setup @g @f { gates, seed: 42 }
 
         let
           proof = prove @g @f
             { provingKey
             , gates
-            , dimensions
             , witness: gatesWitness
             , seed: 54321
             }
+
+          publicInputValues = Array.mapMaybe (\i -> Array.index gatesWitness i) gates.publicInputIndices
+
           verifyResult = verify @g @f
             { verifyingKey
             , proof
-            , publicInputs: gatesWitness.publicInputs
+            , publicInputs: publicInputValues
             }
 
         verifyResult `shouldEqual` true
