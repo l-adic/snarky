@@ -1,4 +1,4 @@
-.PHONY: help all clean build-curves build-snarky build-snarky-bulletproofs build-groth16 test-curves test-snarky run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy crypto-lightweight crypto-full build-bulletproofs
+.PHONY: help all clean build-curves build-snarky build-snarky-bulletproofs build-snarky-groth16 build-groth16 test-curves test-snarky run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy crypto-lightweight crypto-full crypto-groth16 build-bulletproofs build-groth16-napi
 
 .DEFAULT_GOAL := help
 
@@ -15,6 +15,9 @@ build-snarky: build-curves ## Build snarky package (depends on curves being buil
 
 build-snarky-bulletproofs: crypto-full ## Build snarky-bulletproofs package with full crypto
 	cd packages/snarky-bulletproofs && npx spago build
+
+build-snarky-groth16: crypto-groth16 ## Build snarky-groth16 package with groth16 crypto
+	cd packages/snarky-groth16 && npx spago build
 
 test-curves: build-curves ## Test curves
 	cd packages/curves && npx spago test
@@ -42,6 +45,14 @@ crypto-full: build-bulletproofs ## Set up full crypto provider (curves + bulletp
 build-bulletproofs: ## Build bulletproofs NAPI module
 	cd packages/snarky-bulletproofs/snarky-bulletproofs-napi && npm install && npm run build
 
+build-groth16-napi: ## Build groth16 NAPI module
+	cd packages/snarky-groth16/snarky-groth16-napi && npm install && npm run build
+
+crypto-groth16: build-groth16-napi ## Set up groth16 crypto provider
+	rm -f packages/crypto-provider
+	ln -sf snarky-groth16/snarky-groth16-napi packages/crypto-provider
+	npm install
+
 build-groth16: cargo-build ## Build groth16 package
 	cd prover/groth16 && cargo build
 
@@ -66,5 +77,7 @@ clean: ## Clean everything
 	cd packages/snarky && rm -rf output
 	-cd packages/snarky-bulletproofs && rm -rf output
 	-cd packages/snarky-bulletproofs/snarky-bulletproofs-napi && cargo clean && rm -f *.node
+	-cd packages/snarky-groth16 && rm -rf output
+	-cd packages/snarky-groth16/snarky-groth16-napi && cargo clean && rm -f *.node
 	rm -rf output node_modules target
 	rm -f package-lock.json packages/crypto-provider

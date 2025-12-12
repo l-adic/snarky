@@ -1,0 +1,19 @@
+{
+  "name": "snarky-groth16-napi",
+  "version": "0.1.0",
+  "main": "snarky-groth16-napi.node",
+  "napi": {
+    "binaryName": "snarky-groth16-napi",
+    "triples": {}
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.4.1"
+  },
+  "scripts": {
+    "build": "napi build --release",
+    "prepublish": "npm run build"
+  },
+  "files": [
+    "snarky-groth16-napi.node"
+  ]
+}

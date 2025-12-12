@@ -1,0 +1,33 @@
+[package]
+name = "groth16-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# arkworks
+ark-ff = { workspace = true }
+ark-ec = { workspace = true }
+ark-bn254 = { workspace = true }
+ark-std = { workspace = true }
+ark-groth16 = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-relations = { workspace = true }
+ark-serialize = { workspace = true }
+ark-snark = { workspace = true }
+
+# napi
+napi = { workspace = true }
+napi-derive = { workspace = true }
+
+# random
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+# curves-napi for field element types
+curves-napi = { workspace = true }
+
+[build-dependencies]
+napi-build = { workspace = true }

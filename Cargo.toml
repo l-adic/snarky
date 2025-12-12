@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "packages/curves/curves-napi",
     "packages/snarky-bulletproofs/snarky-bulletproofs-napi",
+    "packages/snarky-groth16/snarky-groth16-napi",
 ]
 
 [workspace.dependencies]
@@ -13,6 +14,11 @@ ark-pallas = "0.5.0"
 ark-vesta = "0.5.0"
 ark-bn254 = "0.5.0"
 ark-std = "0.5.0"
+ark-groth16 = "0.5.0"
+ark-r1cs-std = "0.5.0"
+ark-relations = "0.5.0"
+ark-serialize = "0.5.0"
+ark-snark = "0.5.0"
 rand = { version = "0.8", features = ["std_rng"] }
 rand_chacha = "0.3"
 num-bigint = "0.4.4"
