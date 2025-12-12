@@ -8,7 +8,7 @@ install-deps:
 	cd ../.. && npm install
 
 build-napi:
-	cd $(NAPI_DIR) && npm run build
+	cd ../.. && npm run build:curves
 
 build: install-deps build-napi
 	npx spago build
@@ -19,4 +19,3 @@ test: build
 clean:
 	rm -rf output ../../node_modules
 	cd $(NAPI_DIR) && cargo clean && rm -f *.node
-	rm -f ../../package-lock.json

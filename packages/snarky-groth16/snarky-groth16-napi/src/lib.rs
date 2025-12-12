@@ -273,9 +273,7 @@ pub fn bn254_circuit_create(
 }
 
 #[napi]
-pub fn bn254_witness_create(
-    witness: Vec<&Bn254FieldExternal>,
-) -> External<R1CSWitness> {
+pub fn bn254_witness_create(witness: Vec<&Bn254FieldExternal>) -> External<R1CSWitness> {
     let witness_fr: Vec<Fr> = witness.into_iter().map(|field_ext| **field_ext).collect();
 
     let r1cs_witness = R1CSWitness {
