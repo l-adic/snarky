@@ -1,0 +1,18 @@
+This repository implements a PureScript zk dsl called snarky. THe DSL itself is seaparated from any particular snark proving backend in the sense its possible to write circuits without knowing the target proving system. Then we have particular libraries dedicated to particular proving systems that take care of this part.
+
+For example, snarky-bulletproofs contains
+ - snarky-bulletproofs-napi: a rust crate (for our workspace) which provides napi bindings to a bulletproofs implementation
+ - the Impl directory which contians 
+   1. Pallas bindings to a Pallas instantiation of bulletproofs (see the .js module and .purs modulee))
+   2. Vesta bindings to a Vallas instantiation of bulletproofs (see the .js module and .purs modulee)) 
+ - The types and class modules which provide a clean separate interface between the rust/js/purs bindigns
+ - The constrain module, which in this case is just r1cs
+ - the gates module which speficies how to translate r1cs consgtrains into the weird format required by the arithmetic circuits protocol in the bulletproofs paper
+
+
+I want to do the same thing for a pure arkworks groth16 prover instantiated over the BN254 curve (Which we already have access to). In this case it should be a lot simpler
+because the r1cs constraint system is the same as in bulletproofs, but theres no weird pre-processing phase to put it in the right statement format -- the constraint system should map exactly to what the arkworks groth16 prover is expecting.
+
+Other than that, the format should match how things were done in the snarky-bulletproofs package pretty closesly (ie the rust + js + purs bindings, the types and class module, but in this case the gates module is gonna be trivial). Then i want you to write the tests, but honestly you can mimic the tests that were written for bulletproofs like exactly.
+
+The only thing to watch out for is that because of how napi works, you're going to have to re-export the napi-curves stuff and link it to this crypto-providers "virtual module", see the makefile/build plan for the bulletproofs to understand what i mean.
