@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -134,15 +136,31 @@ impl R1CSCircuit {
         }
     }
 
-    fn new_for_proving(constraints: &R1CSConstraints, witness: &R1CSWitness) -> Self {
-        Self {
+    fn new_for_proving(constraints: &R1CSConstraints, witness: &R1CSWitness) -> Result<Self> {
+        if witness.witness.len() != constraints.dimensions.num_variables as usize {
+            return Err(Error::new(
+                Status::InvalidArg,
+                format!(
+                    "Expected witness of size {}, got {}",
+                    constraints.dimensions.num_variables,
+                    witness.witness.len()
+                ),
+            ));
+        }
+        if witness.witness[0] != Fr::from(1u32) {
+            return Err(Error::new(
+                Status::InvalidArg,
+                "Expected witness[0] to be 1",
+            ));
+        }
+        Ok(Self {
             dimensions: constraints.dimensions.clone(),
             matrix_a: constraints.matrix_a.clone(),
             matrix_b: constraints.matrix_b.clone(),
             matrix_c: constraints.matrix_c.clone(),
             public_input_indices: constraints.public_input_indices.clone(),
             witness: Some(witness.witness.clone()),
-        }
+        })
     }
 }
 
@@ -151,15 +169,11 @@ impl ConstraintSynthesizer<Fr> for R1CSCircuit {
         self,
         cs: ConstraintSystemRef<Fr>,
     ) -> std::result::Result<(), SynthesisError> {
-        if let Some(ref witness) = self.witness {
-            if witness.len() != self.dimensions.num_variables as usize {
-                return Err(SynthesisError::Unsatisfiable);
-            }
-            if witness[0] != Fr::from(1u32) {
-                return Err(SynthesisError::Unsatisfiable);
-            }
-        }
-
+        let public_input_indices = self
+            .public_input_indices
+            .iter()
+            .copied()
+            .collect::<HashSet<u32>>();
         let mut variables: Vec<Variable> = Vec::new();
         variables.push(Variable::One);
         for i in 1..self.dimensions.num_variables {
@@ -168,7 +182,7 @@ impl ConstraintSynthesizer<Fr> for R1CSCircuit {
             } else {
                 Fr::from(0u32)
             };
-            let var = if self.public_input_indices.contains(&i) {
+            let var = if public_input_indices.contains(&i) {
                 cs.new_input_variable(|| Ok(value))?
             } else {
                 cs.new_witness_variable(|| Ok(value))?
@@ -314,7 +328,7 @@ pub fn bn254_prove(
     seed: u32,
 ) -> Result<Bn254ProofExternal> {
     let mut rng = ChaCha20Rng::seed_from_u64(seed as u64);
-    let arkworks_circuit = R1CSCircuit::new_for_proving(circuit, witness);
+    let arkworks_circuit = R1CSCircuit::new_for_proving(circuit, witness)?;
     let proof = Groth16::<ark_bn254::Bn254>::prove(&pk.0, arkworks_circuit, &mut rng)
         .map_err(|e| Error::new(Status::GenericFailure, format!("Prove failed: {e}")))?;
 

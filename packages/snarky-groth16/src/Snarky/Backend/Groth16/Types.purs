@@ -26,7 +26,6 @@ import Foreign (unsafeToForeign)
 import Simple.JSON (class WriteForeign)
 import Snarky.Curves.Class (class PrimeField)
 
--- Foreign data types for Groth16 components
 foreign import data ProvingKey :: Type -> Type
 foreign import data VerifyingKey :: Type -> Type
 foreign import data Proof :: Type -> Type
@@ -35,9 +34,9 @@ type Vector f = Map Int f
 type Matrix f = Array (Vector f)
 
 type R1CSDimensions =
-  { numConstraints :: Int -- Number of R1CS constraints
-  , numVariables :: Int -- Total variables (instance + witness) 
-  , numInputs :: Int -- Number of public instance variables
+  { numConstraints :: Int
+  , numVariables :: Int
+  , numInputs :: Int
   }
 
 newtype Entry f = Entry (Tuple Int f)
@@ -54,21 +53,19 @@ type CircuitVector f = Array (Entry f)
 
 type CircuitMatrix f = Array (CircuitVector f)
 
-type GatesWitness f = Array f -- Full witness: [1, public..., private...]
+type GatesWitness f = Array f
 
 type Gates f =
-  { a :: Matrix f -- A matrix for R1CS constraints
-  , b :: Matrix f -- B matrix for R1CS constraints  
-  , c :: Matrix f -- C matrix for R1CS constraints
-  , publicInputIndices :: Array Int -- Which positions in witness are public
+  { a :: Matrix f
+  , b :: Matrix f
+  , c :: Matrix f
+  , publicInputIndices :: Array Int
   }
 
--- FFI-ready types for witness data
-newtype CircuitWitness f = CircuitWitness (Array f) -- Full witness array
+newtype CircuitWitness f = CircuitWitness (Array f)
 
 derive instance Newtype (CircuitWitness f) _
 
--- FFI-ready types for R1CS circuit data
 newtype CircuitGates f = CircuitGates
   { dimensions :: R1CSDimensions
   , matrixA :: CircuitMatrix f

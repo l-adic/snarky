@@ -30,12 +30,11 @@ import Snarky.Curves.Class (class PrimeField)
 type Vector f = Map Int f
 type Matrix f = Array (Vector f)
 
--- For Groth16, Gates represent the A, B, C matrices of R1CS constraints
 type Gates f =
-  { a :: Matrix f -- A matrix for constraints (A·z) * (B·z) = (C·z)
-  , b :: Matrix f -- B matrix 
-  , c :: Matrix f -- C matrix
-  , publicInputIndices :: Array Int -- Which positions in witness are public
+  { a :: Matrix f
+  , b :: Matrix f
+  , c :: Matrix f
+  , publicInputIndices :: Array Int
   }
 
 emptyGates :: forall f. Gates f
@@ -46,11 +45,8 @@ emptyGates =
   , publicInputIndices: mempty
   }
 
--- For Groth16, unified witness array following bulletproofs pattern
-type GatesWitness f = Array f -- Full witness: [1, public..., private...]
+type GatesWitness f = Array f
 
--- Convert R1CS constraints directly to A, B, C matrices
--- This is simpler than bulletproofs because no preprocessing is needed
 makeGates
   :: forall f
    . PrimeField f
@@ -60,11 +56,9 @@ makeGates
   -> Gates f
 makeGates { publicInputs, constraints } =
   let
-    -- Collect all variables from a CVar using fold
     collectVariables :: CVar f Variable -> Set Variable
     collectVariables = foldl (flip Set.insert) mempty
 
-    -- Get all variables from all constraints
     allVariables = Set.unions $ Array.concatMap
       ( \(R1CS { left, right, output }) ->
           [ collectVariables left, collectVariables right, collectVariables output ]
@@ -76,9 +70,8 @@ makeGates { publicInputs, constraints } =
     -- Create complete variable mapping: z = [1, public_inputs, witness]
     -- Position 0 is constant 1, positions 1..m are public inputs, rest are witness
     publicInputMap = Map.fromFoldable $
-      mapWithIndex (\i var -> Tuple var (i + 1)) publicInputs -- +1 because position 0 is constant
+      mapWithIndex (\i var -> Tuple var (i + 1)) publicInputs
 
-    -- Get witness variables in ascending order (Set.toUnfoldable returns sorted order)
     witnessVariablesOrdered = Set.toUnfoldable witnessVariables
 
     witnessMap = Map.fromFoldable $
@@ -86,16 +79,13 @@ makeGates { publicInputs, constraints } =
 
     variableMap = Map.union publicInputMap witnessMap
 
-    -- Convert affine expression to coefficient vector
     affineToVector :: AffineExpression f -> Vector f
     affineToVector (AffineExpression { constant, terms }) =
       let
-        -- Add constant term at position 0 (if present)
         constantMap = case constant of
           Nothing -> Map.empty
           Just c -> Map.singleton 0 c
 
-        -- Add variable terms at their mapped positions
         variableCoeffs = Map.fromFoldable $ Array.mapMaybe
           ( \(Tuple var coeff) ->
               case Map.lookup var variableMap of
@@ -106,11 +96,9 @@ makeGates { publicInputs, constraints } =
       in
         Map.union constantMap variableCoeffs
 
-    -- Process each constraint to extract A, B, C matrix rows
     processConstraint :: R1CS f -> { a :: Vector f, b :: Vector f, c :: Vector f }
     processConstraint (R1CS { left, right, output }) =
       let
-        -- Reduce each CVar to affine form and convert to coefficient vectors
         aVec = affineToVector $ reduceToAffineExpression left
         bVec = affineToVector $ reduceToAffineExpression right
         cVec = affineToVector $ reduceToAffineExpression output
@@ -119,7 +107,6 @@ makeGates { publicInputs, constraints } =
 
     rows = map processConstraint constraints
 
-    -- Generate public input indices: positions 1 to (length publicInputs)
     publicIndices = Array.mapWithIndex (\i _ -> i + 1) publicInputs
 
   in
@@ -139,19 +126,15 @@ makeGatesWitness
      }
   -> m (GatesWitness f)
 makeGatesWitness { assignments, constraints, publicInputs } = do
-  -- Extract public input values
   publicInputValues <- for publicInputs \var ->
     case Map.lookup var assignments of
       Nothing -> throwError (MissingVariable var :: EvaluationError f)
       Just val -> pure val
 
-  -- Extract witness variables (same logic as in makeGates)
   let
-    -- Collect all variables from a CVar using fold
     collectVariables :: CVar f Variable -> Set Variable
     collectVariables = foldl (flip Set.insert) mempty
 
-    -- Get all variables from all constraints
     allVariables = Set.unions $ Array.concatMap
       ( \(R1CS { left, right, output }) ->
           [ collectVariables left, collectVariables right, collectVariables output ]
@@ -160,18 +143,15 @@ makeGatesWitness { assignments, constraints, publicInputs } = do
     publicInputSet = Set.fromFoldable publicInputs
     witnessVariables = Set.difference allVariables publicInputSet
 
-    -- Get witness variables in ascending order (Set.toUnfoldable returns sorted order)
     witnessVariablesOrdered = Set.toUnfoldable witnessVariables
 
-  -- Extract witness values in consistent order
   witnessValues <- for witnessVariablesOrdered \var ->
     case Map.lookup var assignments of
       Nothing -> throwError (MissingVariable var :: EvaluationError f)
       Just val -> pure val
 
-  -- Create unified witness: [1, public..., private...]
   let
-    fullWitness = [ one ] <> publicInputValues <> witnessValues
+    fullWitness = Array.cons one $ publicInputValues <> witnessValues
 
   pure fullWitness
 
@@ -183,15 +163,8 @@ satisfies
   -> Gates f
   -> Boolean
 satisfies witness gates =
-  -- For Groth16, we need to check that for each constraint i:
-  -- (A_i · z) * (B_i · z) = (C_i · z)
-  -- where z is the full witness array: [1, public_inputs, private_witness]
-
   let
-    -- witness is already the full assignment vector
-    fullAssignment = witness
 
-    -- Check each constraint
     checkConstraint :: Int -> Boolean
     checkConstraint i =
       let
@@ -199,12 +172,9 @@ satisfies witness gates =
         bRow = fromMaybe Map.empty $ Array.index gates.b i
         cRow = fromMaybe Map.empty $ Array.index gates.c i
 
-        -- Compute A_i · z
-        aVal = innerProduct fullAssignment aRow
-        -- Compute B_i · z  
-        bVal = innerProduct fullAssignment bRow
-        -- Compute C_i · z
-        cVal = innerProduct fullAssignment cRow
+        aVal = innerProduct witness aRow
+        bVal = innerProduct witness bRow
+        cVal = innerProduct witness cRow
 
       in
         aVal * bVal == cVal
