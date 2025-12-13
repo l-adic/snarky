@@ -1,0 +1,27 @@
+package:
+  name: snarky-groth16
+  dependencies:
+    - prelude
+    - curves
+    - snarky
+    - quickcheck
+    - simple-json
+    - tuples
+    - arrays
+    - foldable-traversable
+    - foreign
+    - functions
+    - maybe
+    - newtype
+    - ordered-collections
+    - transformers
+  test:
+    main: Test.Snarky.Groth16.Main
+    dependencies:
+      - snarky-test-utils
+      - spec
+      - spec-node
+      - effect
+      - either
+      - exceptions
+      - partial

@@ -3,8 +3,18 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "workspaces": [
+    "packages/curves/curves-napi",
+    "packages/snarky-bulletproofs/snarky-bulletproofs-napi", 
+    "packages/snarky-groth16/snarky-groth16-napi"
+  ],
   "scripts": {
-    "test": "make test"
+    "test": "make test",
+    "build:napi": "npm run build --workspaces",
+    "build:curves": "npm run build -w curves-napi",
+    "build:bulletproofs": "npm run build -w snarky-bulletproofs-napi",
+    "build:groth16": "npm run build -w snarky-groth16-napi",
+    "clean:napi": "npm run clean --workspaces --if-present"
   },
   "repository": {
     "type": "git",
@@ -22,6 +32,7 @@
     "snarky-crypto": "file:./packages/crypto-provider"
   },
   "devDependencies": {
+    "@napi-rs/cli": "^3.4.1",
     "purescript": "^0.15.15",
     "purs-tidy": "^0.11.1",
     "spago": "^0.93.42"

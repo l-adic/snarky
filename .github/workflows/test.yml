@@ -34,7 +34,8 @@ jobs:
           ~/.cargo/git/db/
           target/
           packages/curves/curves-napi/target/
-          packages/snarky-r1cs/snarky-r1cs-napi/target/
+          packages/snarky-bulletproofs/snarky-bulletproofs-napi/target/
+          packages/snarky-groth16/snarky-groth16-napi/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
     
     - name: Install dependencies

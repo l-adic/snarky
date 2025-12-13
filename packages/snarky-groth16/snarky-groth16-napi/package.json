@@ -1,9 +1,9 @@
 {
-  "name": "snarky-bulletproofs-napi",
+  "name": "snarky-groth16-napi",
   "version": "0.1.0",
-  "main": "snarky-bulletproofs-napi.node",
+  "main": "snarky-groth16-napi.node",
   "napi": {
-    "binaryName": "snarky-bulletproofs-napi",
+    "binaryName": "snarky-groth16-napi",
     "triples": {}
   },
   "scripts": {
@@ -11,6 +11,6 @@
     "prepublish": "npm run build"
   },
   "files": [
-    "snarky-bulletproofs-napi.node"
+    "snarky-groth16-napi.node"
   ]
 }
