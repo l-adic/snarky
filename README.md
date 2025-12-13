@@ -33,8 +33,9 @@ make test
 - `packages/snarky/` - Circuit DSL for building zero-knowledge circuits
 
 ### Proof System Backends
-- `packages/snarky-kimchi/` - Kimchi proof system backend
-- `packages/snarky-bulletproofs/` - Bulletproof backend with Rust implementation
+- `packages/snarky-kimchi/` - o1Labs [Kimchi](https://github.com/o1-labs/proof-systems) plonk backend
+- `packages/snarky-bulletproofs/` - l-adic [bulletproof](https://github.com/l-adic/bulletproofs) R1CS backend
+- `packages/groth16` - arkworks [Groth16](https://github.com/arkworks-rs/groth16) R1CS backend
 
 ### Circuit Libraries
 - `packages/snarky-curves/` - Elliptic curve arithmetic circuits using the DSL
