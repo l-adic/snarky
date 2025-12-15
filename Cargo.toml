@@ -26,10 +26,15 @@ num-integer = "0.1"
 napi = { version = "3.4.0", features = ["napi6"] }
 napi-derive = "3.3.0"
 napi-build = "2.2.4"
-bulletproofs = { git = "https://github.com/l-adic/bulletproofs" , ref = "d96dd83" }
+bulletproofs = { git = "https://github.com/l-adic/bulletproofs" , rev = "6246bdb" }
 spongefish = {git = "https://github.com/arkworks-rs/spongefish" , ref = "cda8c90", features = ["derive", "ark-ff", "ark-ec"] }
 
-curves-napi = { path = "packages/curves/curves-napi" }
+curves-napi = { path = "packages/curves/curves-napi", default-features = false }
+mina-curves = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
 
 [workspace.dependencies.proptest]
 version = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true

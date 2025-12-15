@@ -15,7 +15,7 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
 spec :: forall f. Arbitrary f => PrimeField f => Proxy f -> Spec Unit
-spec proxy = describe "Pallas Field Laws" do
+spec proxy = describe "Field Laws" do
   it "satisfies Eq laws" $ liftEffect $
     Laws.checkEq proxy
 

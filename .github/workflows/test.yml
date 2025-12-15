@@ -41,8 +41,11 @@ jobs:
     - name: Install dependencies
       run: npm install
     
-    - name: Build and test
+    - name: Build and test (default mina-curves backend)
       run: npm test
+    
+    - name: Test curves package with arkworks backend
+      run: PASTA_CURVES_BACKEND=arkworks make test-curves
 
   format-check:
     runs-on: ubuntu-latest

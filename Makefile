@@ -13,6 +13,12 @@ help: ## Show available commands and their descriptions
 	@echo "  - Bulletproofs: Use crypto-bulletproofs (builds + links bulletproofs NAPI)"
 	@echo "  - Groth16: Use crypto-groth16 (builds + links groth16 NAPI)"
 	@echo ""
+	@echo "Pasta Curves Backend Selection:"
+	@echo "  Set PASTA_CURVES_BACKEND environment variable to choose field implementation:"
+	@echo "  - PASTA_CURVES_BACKEND=mina-curves (default): Use mina-curves from proof-systems (kimchi ecosystem)"
+	@echo "  - PASTA_CURVES_BACKEND=arkworks: Use ark-pallas/ark-vesta"
+	@echo "  Example: PASTA_CURVES_BACKEND=arkworks make test-bulletproofs"
+	@echo ""
 	@echo "Available commands:"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -61,9 +67,27 @@ test-all-backends: ## Test all backends by switching crypto providers (CI-friend
 
 test: test-all-backends ## Test everything with proper crypto provider switching
 
+# Environment variable for pasta curves backend selection
+PASTA_CURVES_BACKEND ?= mina-curves
+
+# Helper to determine cargo features based on backend
+ifeq ($(PASTA_CURVES_BACKEND),mina-curves)
+CURVES_FEATURES = --no-default-features --features mina-curves-backend
+else ifeq ($(PASTA_CURVES_BACKEND),arkworks)
+CURVES_FEATURES = # Use default features
+else
+$(error Invalid PASTA_CURVES_BACKEND: $(PASTA_CURVES_BACKEND). Must be 'arkworks' or 'mina-curves')
+endif
+
 # Crypto Provider Targets
-build-curves-napi: ## Build curves NAPI module
-	cd packages/curves && $(MAKE) build
+build-curves-napi: ## Build curves NAPI module with backend selection (set PASTA_CURVES_BACKEND=mina-curves|arkworks)
+	@echo "Building curves-napi with backend: $(PASTA_CURVES_BACKEND)"
+ifeq ($(PASTA_CURVES_BACKEND),mina-curves)
+	cd packages/curves/curves-napi && npm run build:mina-curves
+else
+	cd packages/curves/curves-napi && npm run build:arkworks
+endif
+	cd packages/curves && npx spago build
 
 crypto-lightweight: build-curves-napi ## Set up lightweight crypto provider (curves only)
 	rm -f packages/crypto-provider
@@ -75,8 +99,13 @@ crypto-bulletproofs: build-bulletproofs ## Set up bulletproofs crypto provider (
 	ln -sf snarky-bulletproofs/snarky-bulletproofs-napi packages/crypto-provider
 	npm install
 
-build-bulletproofs: ## Build bulletproofs NAPI module
-	npm run build:bulletproofs
+build-bulletproofs: ## Build bulletproofs NAPI module with backend selection  
+	@echo "Building bulletproofs-napi with backend: $(PASTA_CURVES_BACKEND)"
+ifeq ($(PASTA_CURVES_BACKEND),mina-curves)
+	cd packages/snarky-bulletproofs/snarky-bulletproofs-napi && npm run build:mina-curves
+else
+	cd packages/snarky-bulletproofs/snarky-bulletproofs-napi && npm run build:arkworks
+endif
 
 build-groth16-napi: ## Build groth16 NAPI module
 	npm run build:groth16

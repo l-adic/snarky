@@ -13,8 +13,9 @@ napi-build = { workspace = true }
 [dependencies]
 ark-ff = { workspace = true }
 ark-ec = { workspace = true }
-ark-pallas = { workspace = true }
-ark-vesta = { workspace = true }
+ark-pallas = { workspace = true, optional = true }
+ark-vesta = { workspace = true, optional = true }
+mina-curves = { workspace = true, optional = true }
 ark-bn254 = { workspace = true }
 ark-std = { workspace = true }
 rand = { workspace = true }
@@ -24,9 +25,10 @@ napi-derive = { workspace = true }
 num-bigint = { workspace = true }
 num-integer = { workspace = true }
 
+[features]
+default = ["arkworks"]
+arkworks = ["ark-pallas", "ark-vesta"]
+mina-curves-backend = ["mina-curves"]
+
 [dev-dependencies]
 proptest = { workspace = true }
-
-[profile.release]
-opt-level = "s"
-lto = true

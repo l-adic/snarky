@@ -328,7 +328,7 @@ dependencies = [
 [[package]]
 name = "bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/l-adic/bulletproofs#d96dd83e178d24f23ad3b7bfcf40e2db77fb95ea"
+source = "git+https://github.com/l-adic/bulletproofs?rev=6246bdb#6246bdb297e1c401adcfc2ad2b6deadd89553176"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -356,6 +356,7 @@ dependencies = [
  "ark-vesta",
  "bulletproofs",
  "curves-napi",
+ "mina-curves",
  "napi",
  "napi-build",
  "napi-derive",
@@ -455,6 +456,7 @@ dependencies = [
  "ark-pallas",
  "ark-std",
  "ark-vesta",
+ "mina-curves",
  "napi",
  "napi-build",
  "napi-derive",
@@ -782,10 +784,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mina-curves"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "num-bigint",
+]
+
+[[package]]
 name = "napi"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3af30fe8e799dda3a555c496c59e960e4cff1e931b63acbaf3a3b25d9fad22b6"
+checksum = "f27a163b545fd2184d2efdccf3d3df56acdb63465f2fcfebcaee0463c1e91783"
 dependencies = [
  "bitflags",
  "ctor",
@@ -858,6 +871,8 @@ checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
+ "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]
@@ -1164,9 +1179,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.11.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
+checksum = "b418a60154510ca1a002a752ca9714984e21e4241e804d32555251faf8b78ffa"
 dependencies = [
  "either",
  "rayon-core",

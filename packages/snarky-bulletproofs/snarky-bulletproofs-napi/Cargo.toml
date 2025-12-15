@@ -10,10 +10,13 @@ crate-type = ["cdylib"]
 # arkworks
 ark-ff = { workspace = true }
 ark-ec = { workspace = true }
-ark-pallas = { workspace = true }
-ark-vesta = { workspace = true }
+ark-pallas = { workspace = true, optional = true }
+ark-vesta = { workspace = true, optional = true }
 ark-bn254 = { workspace = true }
 ark-std = { workspace = true }
+
+# mina-curves
+mina-curves = { workspace = true, optional = true }
 
 # napi
 napi = { workspace = true }
@@ -30,6 +33,10 @@ spongefish = { workspace = true }
 # curves-napi for field element types
 curves-napi = { workspace = true }
 
+[features]
+default = ["arkworks"]
+arkworks = ["ark-pallas", "ark-vesta", "curves-napi/arkworks"]
+mina-curves-backend = ["mina-curves", "curves-napi/mina-curves-backend"]
 
 [build-dependencies]
 napi-build = { workspace = true }
