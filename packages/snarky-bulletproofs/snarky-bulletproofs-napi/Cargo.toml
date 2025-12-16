@@ -34,7 +34,7 @@ spongefish = { workspace = true }
 curves-napi = { workspace = true }
 
 [features]
-default = ["arkworks"]
+default = ["mina-curves-backend"]
 arkworks = ["ark-pallas", "ark-vesta", "curves-napi/arkworks"]
 mina-curves-backend = ["mina-curves", "curves-napi/mina-curves-backend"]
 

@@ -3,8 +3,16 @@
 //! This module provides the same API regardless of whether we're using
 //! arkworks curves (ark-pallas/ark-vesta) or mina-curves.
 
-#[cfg(feature = "arkworks")]
-mod arkworks_types {
+// Compile-time check to ensure exactly one backend is enabled
+#[cfg(not(any(feature = "arkworks", feature = "mina-curves-backend")))]
+compile_error!("Either 'arkworks' or 'mina-curves-backend' feature must be enabled");
+
+#[cfg(all(feature = "arkworks", feature = "mina-curves-backend"))]
+compile_error!("Cannot enable both 'arkworks' and 'mina-curves-backend' features simultaneously");
+
+// Arkworks backend types
+#[cfg(all(feature = "arkworks", not(feature = "mina-curves-backend")))]
+mod backend {
     // Pallas types from arkworks
     pub use ark_pallas::{
         Affine as PallasGroup,
@@ -24,8 +32,9 @@ mod arkworks_types {
     };
 }
 
-#[cfg(feature = "mina-curves-backend")]
-mod mina_types {
+// Mina-curves backend types
+#[cfg(all(feature = "mina-curves-backend", not(feature = "arkworks")))]
+mod backend {
     // Pallas types from mina-curves
     pub use mina_curves::pasta::{
         Fp as PallasBaseField,   // Pallas base field
@@ -45,16 +54,5 @@ mod mina_types {
     };
 }
 
-// Re-export the appropriate types based on feature flags
-#[cfg(feature = "arkworks")]
-pub use arkworks_types::*;
-
-#[cfg(feature = "mina-curves-backend")]
-pub use mina_types::*;
-
-// Compile-time check to ensure exactly one backend is enabled
-#[cfg(not(any(feature = "arkworks", feature = "mina-curves-backend")))]
-compile_error!("Either 'arkworks' or 'mina-curves-backend' feature must be enabled");
-
-#[cfg(all(feature = "arkworks", feature = "mina-curves-backend"))]
-compile_error!("Cannot enable both 'arkworks' and 'mina-curves-backend' features simultaneously");
+// Re-export all types from the selected backend
+pub use backend::*;

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "napi build --release",
-    "build:arkworks": "napi build --release --features arkworks",
+    "build:arkworks": "napi build --release --no-default-features --features arkworks",
     "build:mina-curves": "napi build --release --no-default-features --features mina-curves-backend",
     "prepublish": "npm run build"
   },

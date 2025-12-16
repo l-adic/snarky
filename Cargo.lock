@@ -328,7 +328,7 @@ dependencies = [
 [[package]]
 name = "bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/l-adic/bulletproofs?rev=6246bdb#6246bdb297e1c401adcfc2ad2b6deadd89553176"
+source = "git+https://github.com/l-adic/bulletproofs?rev=8267344186b388129187f5c78e1a2ced8a4fb30a#8267344186b388129187f5c78e1a2ced8a4fb30a"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1300,7 +1300,7 @@ checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 [[package]]
 name = "spongefish"
 version = "1.0.0-rc1"
-source = "git+https://github.com/arkworks-rs/spongefish#bdc640573a102b536d38a7613c1297b2b067fb1e"
+source = "git+https://github.com/arkworks-rs/spongefish?rev=cda8c90#cda8c9003afe8ab1b97c753023c06b5a5dc39098"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1317,7 +1317,7 @@ dependencies = [
 [[package]]
 name = "spongefish-derive"
 version = "1.0.0-rc1"
-source = "git+https://github.com/arkworks-rs/spongefish#bdc640573a102b536d38a7613c1297b2b067fb1e"
+source = "git+https://github.com/arkworks-rs/spongefish?rev=cda8c90#cda8c9003afe8ab1b97c753023c06b5a5dc39098"
 dependencies = [
  "proc-macro2",
  "quote",

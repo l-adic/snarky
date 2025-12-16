@@ -1,4 +1,4 @@
-.PHONY: help all clean build-curves build-snarky build-snarky-bulletproofs build-snarky-groth16 test-curves test-snarky test-core test-bulletproofs test-groth16 test-all-backends run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy crypto-lightweight crypto-bulletproofs crypto-groth16 build-curves-napi build-bulletproofs build-groth16-napi
+.PHONY: help all clean build-curves build-snarky build-snarky-bulletproofs build-snarky-groth16 test-curves test-snarky test-core test-bulletproofs test-groth16 test-all-backends run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint crypto-lightweight crypto-bulletproofs crypto-groth16 build-curves-napi build-bulletproofs build-groth16-napi
 
 .DEFAULT_GOAL := help
 
@@ -37,7 +37,10 @@ build-snarky-bulletproofs: crypto-bulletproofs ## Build snarky-bulletproofs pack
 build-snarky-groth16: crypto-groth16 ## Build snarky-groth16 package with groth16 crypto
 	cd packages/snarky-groth16 && npx spago build
 
-test-curves: build-curves ## Test curves
+test-curves: build-curves ## Test curves  
+	rm -f packages/crypto-provider
+	ln -sf curves/curves-napi packages/crypto-provider
+	npm install
 	cd packages/curves && npx spago test
 
 test-snarky: build-snarky ## Test snarky
@@ -132,6 +135,11 @@ cargo-fmt: ## Format all Rust code in workspace
 
 cargo-clippy: ## Run clippy lints on workspace
 	cargo clippy --workspace -- -D warnings
+
+lint: ## Format, tidy, and lint all code (Rust + PureScript)
+	cargo fmt --all
+	npx purs-tidy format-in-place 'packages/*/src/**/*.purs' 'packages/*/test/**/*.purs'
+	cargo clippy --all-targets -- -D warnings
 
 clean: ## Clean everything
 	cargo clean

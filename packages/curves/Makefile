@@ -8,7 +8,7 @@ install-deps:
 	cd ../.. && npm install
 
 build-napi:
-	cd ../.. && npm run build:curves
+	cd ../.. && $(MAKE) build-curves-napi
 
 build: install-deps build-napi
 	npx spago build

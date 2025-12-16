@@ -26,7 +26,7 @@ num-bigint = { workspace = true }
 num-integer = { workspace = true }
 
 [features]
-default = ["arkworks"]
+default = ["mina-curves-backend"]
 arkworks = ["ark-pallas", "ark-vesta"]
 mina-curves-backend = ["mina-curves"]
 
