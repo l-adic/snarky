@@ -33,16 +33,17 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
           target/
-          packages/curves/curves-napi/target/
-          packages/snarky-bulletproofs/snarky-bulletproofs-napi/target/
-          packages/snarky-groth16/snarky-groth16-napi/target/
+          packages/crypto-provider/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
     
     - name: Install dependencies
       run: npm install
     
-    - name: Build and test
+    - name: Build and test (default mina-curves backend)
       run: npm test
+    
+    - name: Test curves package with arkworks backend
+      run: PASTA_CURVES_BACKEND=arkworks make test-curves
 
   format-check:
     runs-on: ubuntu-latest
@@ -68,4 +69,4 @@ jobs:
       run: cargo fmt --all --check
     
     - name: Run Rust clippy
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      run: cargo clippy --workspace --all-targets -- -D warnings

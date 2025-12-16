@@ -328,7 +328,7 @@ dependencies = [
 [[package]]
 name = "bulletproofs"
 version = "0.1.0"
-source = "git+https://github.com/l-adic/bulletproofs#d96dd83e178d24f23ad3b7bfcf40e2db77fb95ea"
+source = "git+https://github.com/l-adic/bulletproofs?rev=8267344186b388129187f5c78e1a2ced8a4fb30a#8267344186b388129187f5c78e1a2ced8a4fb30a"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -342,26 +342,6 @@ dependencies = [
  "rayon",
  "spongefish",
  "tracing",
-]
-
-[[package]]
-name = "bulletproofs-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-pallas",
- "ark-std",
- "ark-vesta",
- "bulletproofs",
- "curves-napi",
- "napi",
- "napi-build",
- "napi-derive",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "spongefish",
 ]
 
 [[package]]
@@ -430,6 +410,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-provider"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-pallas",
+ "ark-r1cs-std",
+ "ark-relations",
+ "ark-serialize",
+ "ark-snark",
+ "ark-std",
+ "ark-vesta",
+ "bulletproofs",
+ "mina-curves",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "num-bigint",
+ "num-integer",
+ "proptest",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "spongefish",
+]
+
+[[package]]
 name = "ctor"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -444,26 +452,6 @@ name = "ctor-proc-macro"
 version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
-
-[[package]]
-name = "curves-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-pallas",
- "ark-std",
- "ark-vesta",
- "napi",
- "napi-build",
- "napi-derive",
- "num-bigint",
- "num-integer",
- "proptest",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
-]
 
 [[package]]
 name = "derivative"
@@ -685,27 +673,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "groth16-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-groth16",
- "ark-r1cs-std",
- "ark-relations",
- "ark-serialize",
- "ark-snark",
- "ark-std",
- "curves-napi",
- "napi",
- "napi-build",
- "napi-derive",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -782,10 +749,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mina-curves"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "num-bigint",
+]
+
+[[package]]
 name = "napi"
-version = "3.6.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3af30fe8e799dda3a555c496c59e960e4cff1e931b63acbaf3a3b25d9fad22b6"
+checksum = "f27a163b545fd2184d2efdccf3d3df56acdb63465f2fcfebcaee0463c1e91783"
 dependencies = [
  "bitflags",
  "ctor",
@@ -858,6 +836,8 @@ checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
 dependencies = [
  "num-integer",
  "num-traits",
+ "rand 0.8.5",
+ "serde",
 ]
 
 [[package]]
@@ -1164,9 +1144,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.11.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
+checksum = "b418a60154510ca1a002a752ca9714984e21e4241e804d32555251faf8b78ffa"
 dependencies = [
  "either",
  "rayon-core",
@@ -1285,7 +1265,7 @@ checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 [[package]]
 name = "spongefish"
 version = "1.0.0-rc1"
-source = "git+https://github.com/arkworks-rs/spongefish#bdc640573a102b536d38a7613c1297b2b067fb1e"
+source = "git+https://github.com/arkworks-rs/spongefish?rev=cda8c90#cda8c9003afe8ab1b97c753023c06b5a5dc39098"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1302,7 +1282,7 @@ dependencies = [
 [[package]]
 name = "spongefish-derive"
 version = "1.0.0-rc1"
-source = "git+https://github.com/arkworks-rs/spongefish#bdc640573a102b536d38a7613c1297b2b067fb1e"
+source = "git+https://github.com/arkworks-rs/spongefish?rev=cda8c90#cda8c9003afe8ab1b97c753023c06b5a5dc39098"
 dependencies = [
  "proc-macro2",
  "quote",

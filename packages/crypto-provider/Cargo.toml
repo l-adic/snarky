@@ -1,0 +1,51 @@
+[package]
+name = "crypto-provider"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+napi-build = { workspace = true }
+
+[dependencies]
+# arkworks
+ark-ff = { workspace = true }
+ark-ec = { workspace = true }
+ark-pallas = { workspace = true, optional = true }
+ark-vesta = { workspace = true, optional = true }
+ark-bn254 = { workspace = true }
+ark-std = { workspace = true }
+ark-groth16 = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-relations = { workspace = true }
+ark-serialize = { workspace = true }
+ark-snark = { workspace = true }
+
+# mina-curves
+mina-curves = { workspace = true, optional = true }
+
+# napi
+napi = { workspace = true }
+napi-derive = { workspace = true }
+
+# random
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+# utilities  
+num-bigint = { workspace = true }
+num-integer = { workspace = true }
+
+# bulletproofs
+bulletproofs = { workspace = true }
+spongefish = { workspace = true }
+
+[features]
+default = ["mina-curves-backend"]
+arkworks = ["ark-pallas", "ark-vesta"]
+mina-curves-backend = ["mina-curves"]
+
+[dev-dependencies]
+proptest = { workspace = true }

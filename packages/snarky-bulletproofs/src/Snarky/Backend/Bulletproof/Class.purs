@@ -4,11 +4,11 @@ import Prelude
 
 import Data.Array as Array
 import Data.Newtype (unwrap)
-import Snarky.Backend.Bulletproof.Impl.Pallas as Pallas
-import Snarky.Backend.Bulletproof.Impl.Vesta as Vesta
+import Snarky.Backend.Bulletproof.Impl.Pallas (circuitCreate, circuitIsSatisfiedBy, crsCreate, prove, statementCreate, verify, witnessCreate) as Pallas
+import Snarky.Backend.Bulletproof.Impl.Vesta (circuitCreate, circuitIsSatisfiedBy, crsCreate, prove, statementCreate, verify, witnessCreate) as Vesta
 import Snarky.Backend.Bulletproof.Types (CRS, Circuit, GatesWitness, Gates, Proof, Statement, Witness, toCircuitGates, toCircuitWitness)
-import Snarky.Curves.Pallas as PallasC
-import Snarky.Curves.Vesta as VestaC
+import Snarky.Curves.Pallas (G, ScalarField) as Pallas
+import Snarky.Curves.Vesta (G, ScalarField) as Vesta
 
 class Bulletproof g f | g -> f where
   createWitness :: { witness :: GatesWitness f, seed :: Int } -> Witness g
@@ -31,7 +31,7 @@ class Bulletproof g f | g -> f where
     -> Boolean
   circuitIsSatisfiedBy :: { circuit :: Circuit g, witness :: Witness g } -> Boolean
 
-instance Bulletproof PallasC.G PallasC.ScalarField where
+instance Bulletproof Pallas.G Pallas.ScalarField where
   createWitness { witness, seed } =
     let
       n = Array.length witness.al
@@ -52,7 +52,7 @@ instance Bulletproof PallasC.G PallasC.ScalarField where
   verify = Pallas.verify
   circuitIsSatisfiedBy = Pallas.circuitIsSatisfiedBy
 
-instance Bulletproof VestaC.G VestaC.ScalarField where
+instance Bulletproof Vesta.G Vesta.ScalarField where
   createWitness { witness, seed } =
     let
       n = Array.length witness.al

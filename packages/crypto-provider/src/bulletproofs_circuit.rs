@@ -1,7 +1,4 @@
 use ark_ff::Zero;
-use ark_pallas::{Fr as PallasFr, Projective as PallasProjective};
-use ark_vesta::{Fr as VestaFr, Projective as VestaProjective};
-use bulletproofs::circuit::types::{Circuit, Statement, Witness, CRS};
 use bulletproofs::circuit::{prove, verify};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -9,8 +6,11 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use spongefish::domain_separator;
 
-use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
-use curves_napi::vesta::scalar_field::FieldExternal as VestaFieldExternal;
+use crate::pallas::scalar_field::FieldExternal as PallasFieldExternal;
+use crate::pasta::types::{PallasScalarField, VestaScalarField};
+use crate::vesta::scalar_field::FieldExternal as VestaFieldExternal;
+
+use crate::bulletproofs_types::*;
 
 fn is_power_of_2(n: usize) -> bool {
     n > 0 && (n & (n - 1)) == 0
@@ -21,18 +21,6 @@ fn validate_power_of_2(n: usize, context: &str) {
         panic!("{context}: expected power of 2, got {n}");
     }
 }
-
-pub type PallasCrsExternal = External<CRS<PallasProjective>>;
-pub type PallasWitnessExternal = External<Witness<PallasFr>>;
-pub type PallasStatementExternal = External<Statement<PallasProjective>>;
-pub type PallasCircuitExternal = External<Circuit<PallasFr>>;
-pub type PallasProofExternal = External<Vec<u8>>;
-
-pub type VestaCrsExternal = External<CRS<VestaProjective>>;
-pub type VestaWitnessExternal = External<Witness<VestaFr>>;
-pub type VestaStatementExternal = External<Statement<VestaProjective>>;
-pub type VestaCircuitExternal = External<Circuit<VestaFr>>;
-pub type VestaProofExternal = External<Vec<u8>>;
 
 // Sparse circuit representation types
 #[napi(object)]
@@ -54,7 +42,7 @@ pub fn pallas_crs_size(crs: &PallasCrsExternal) -> u32 {
     crs.size() as u32
 }
 
-fn external_array_to_field_vec(arr: Vec<&PallasFieldExternal>) -> Vec<PallasFr> {
+fn external_array_to_field_vec(arr: Vec<&PallasFieldExternal>) -> Vec<PallasScalarField> {
     arr.into_iter().map(|ext| **ext).collect()
 }
 
@@ -63,8 +51,8 @@ fn sparse_to_dense_matrix(
     sparse_matrix: &Vec<Vec<(u32, &PallasFieldExternal)>>,
     rows: usize,
     cols: usize,
-) -> Vec<Vec<PallasFr>> {
-    let mut dense_matrix = vec![vec![PallasFr::from(0u64); cols]; rows];
+) -> Vec<Vec<PallasScalarField>> {
+    let mut dense_matrix = vec![vec![PallasScalarField::from(0u64); cols]; rows];
 
     for (row_idx, sparse_row) in sparse_matrix.iter().enumerate() {
         if row_idx >= rows {
@@ -84,8 +72,8 @@ fn sparse_to_dense_matrix(
 fn sparse_to_dense_vector(
     sparse_vector: &Vec<(u32, &PallasFieldExternal)>,
     size: usize,
-) -> Vec<PallasFr> {
-    let mut dense_vector = vec![PallasFr::from(0u64); size];
+) -> Vec<PallasScalarField> {
+    let mut dense_vector = vec![PallasScalarField::from(0u64); size];
 
     for (idx, val) in sparse_vector.iter() {
         if (*idx as usize) < size {
@@ -217,7 +205,7 @@ pub fn vesta_crs_size(crs: &VestaCrsExternal) -> u32 {
     crs.size() as u32
 }
 
-fn external_array_to_vesta_field_vec(arr: Vec<&VestaFieldExternal>) -> Vec<VestaFr> {
+fn external_array_to_vesta_field_vec(arr: Vec<&VestaFieldExternal>) -> Vec<VestaScalarField> {
     arr.into_iter().map(|f| **f).collect()
 }
 
@@ -288,8 +276,8 @@ pub fn vesta_circuit_create(
     let sparse_to_dense = |sparse_matrix: Vec<Vec<(u32, &VestaFieldExternal)>>,
                            rows: usize,
                            cols: usize|
-     -> Vec<Vec<VestaFr>> {
-        let mut dense = vec![vec![VestaFr::zero(); cols]; rows];
+     -> Vec<Vec<VestaScalarField>> {
+        let mut dense = vec![vec![VestaScalarField::zero(); cols]; rows];
         for (row_idx, sparse_row) in sparse_matrix.into_iter().enumerate() {
             if row_idx < rows {
                 for (col_idx, field_ref) in sparse_row {
@@ -305,8 +293,8 @@ pub fn vesta_circuit_create(
 
     // Helper function to convert sparse vector to dense vector
     let sparse_vec_to_dense =
-        |sparse_vec: Vec<(u32, &VestaFieldExternal)>, size: usize| -> Vec<VestaFr> {
-            let mut dense = vec![VestaFr::zero(); size];
+        |sparse_vec: Vec<(u32, &VestaFieldExternal)>, size: usize| -> Vec<VestaScalarField> {
+            let mut dense = vec![VestaScalarField::zero(); size];
             for (idx, field_ref) in sparse_vec {
                 let i = idx as usize;
                 if i < size {

@@ -1,4 +1,4 @@
-.PHONY: help all clean build-curves build-snarky build-snarky-bulletproofs build-snarky-groth16 test-curves test-snarky test-core test-bulletproofs test-groth16 test-all-backends run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy crypto-lightweight crypto-bulletproofs crypto-groth16 build-curves-napi build-bulletproofs build-groth16-napi
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint 
 
 .DEFAULT_GOAL := help
 
@@ -7,88 +7,69 @@ help: ## Show available commands and their descriptions
 	@echo "Snarky PureScript Zero-Knowledge Circuit Library"
 	@echo "==============================================="
 	@echo ""
-	@echo "Testing Strategy:"
-	@echo "  Different backends require different crypto providers:"
-	@echo "  - Core packages (curves, snarky): Use crypto-lightweight"
-	@echo "  - Bulletproofs: Use crypto-bulletproofs (builds + links bulletproofs NAPI)"
-	@echo "  - Groth16: Use crypto-groth16 (builds + links groth16 NAPI)"
+	@echo "Unified Crypto Provider:"
+	@echo "  Single crypto-provider crate provides all curve operations,"
+	@echo "  bulletproofs proving, and groth16 proving functionality."
+	@echo ""
+	@echo "Pasta Curves Backend Selection:"
+	@echo "  Set PASTA_CURVES_BACKEND environment variable to choose field implementation:"
+	@echo "  - PASTA_CURVES_BACKEND=mina-curves (default): Use mina-curves from proof-systems (kimchi ecosystem)"
+	@echo "  - PASTA_CURVES_BACKEND=arkworks: Use ark-pallas/ark-vesta"
+	@echo "  Example: PASTA_CURVES_BACKEND=arkworks make test-bulletproofs"
 	@echo ""
 	@echo "Available commands:"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\\n", $$1, $$2}'
 
-all: cargo-build build-curves build-snarky ## Build everything
+all: cargo-build build-crypto ## Build everything
 
-build-curves: ## Build curves package (includes native compilation)
-	cd packages/curves && $(MAKE) all
+# Environment variable for pasta curves backend selection
+PASTA_CURVES_BACKEND ?= mina-curves
 
-build-snarky: build-curves ## Build snarky package (depends on curves being built)
-	cd packages/snarky && npx spago build
+# Helper to determine npm script based on backend
+ifeq ($(PASTA_CURVES_BACKEND),mina-curves)
+CRYPTO_BUILD_SCRIPT = build:mina-curves
+else ifeq ($(PASTA_CURVES_BACKEND),arkworks)
+CRYPTO_BUILD_SCRIPT = build:arkworks
+else
+$(error Invalid PASTA_CURVES_BACKEND: $(PASTA_CURVES_BACKEND). Must be 'arkworks' or 'mina-curves')
+endif
 
-build-snarky-bulletproofs: crypto-bulletproofs ## Build snarky-bulletproofs package with bulletproofs crypto
-	cd packages/snarky-bulletproofs && npx spago build
+# Unified crypto provider build
+build-crypto: ## Build unified crypto-provider with backend selection (set PASTA_CURVES_BACKEND=mina-curves|arkworks)
+	@echo "Building crypto-provider with backend: $(PASTA_CURVES_BACKEND)"
+	cd packages/crypto-provider && npm run $(CRYPTO_BUILD_SCRIPT)
+	npm install
 
-build-snarky-groth16: crypto-groth16 ## Build snarky-groth16 package with groth16 crypto
-	cd packages/snarky-groth16 && npx spago build
-
-test-curves: build-curves ## Test curves
+# PureScript package testing
+test-curves: build-crypto ## Test curves package
 	cd packages/curves && npx spago test
 
-test-snarky: build-snarky ## Test snarky
+test-snarky: build-crypto ## Test snarky core package  
 	cd packages/snarky && npx spago test
 
-run-snarky: build-snarky ## Run snarky main
+run-snarky: build-crypto ## Run snarky main
 	cd packages/snarky && npx spago run
 
-test-core: crypto-lightweight ## Test core packages (curves + snarky) with lightweight crypto
-	npx spago test -p curves
-	npx spago test -p snarky
+test-bulletproofs: build-crypto ## Test snarky-bulletproofs package
+	cd packages/snarky-bulletproofs && npx spago test
 
-test-bulletproofs: crypto-bulletproofs ## Test snarky-bulletproofs with bulletproofs crypto provider
-	npx spago test -p snarky-bulletproofs
+test-groth16: build-crypto ## Test snarky-groth16 package
+	cd packages/snarky-groth16 && npx spago test
 
-test-groth16: crypto-groth16 ## Test snarky-groth16 with groth16 crypto provider 
-	npx spago test -p snarky-groth16
-
-test-all-backends: ## Test all backends by switching crypto providers (CI-friendly)
-	@echo "=== Testing Core Packages (curves + snarky) ===" 
-	$(MAKE) test-core
+test-all: ## Test all packages with proper crypto provider
+	@echo "=== Testing Core Packages (curves + snarky) ====" 
+	$(MAKE) test-curves
+	$(MAKE) test-snarky
 	@echo "=== Testing Bulletproofs Backend ==="
 	$(MAKE) test-bulletproofs  
-	@echo "=== Testing Groth16 Backend ==="
+	@echo "=== Testing Groth16 Backend ===" 
 	$(MAKE) test-groth16
-	@echo "=== All backend tests completed successfully ==="
+	@echo "=== All tests completed successfully ==="
 
-test: test-all-backends ## Test everything with proper crypto provider switching
+test: test-all ## Test everything
 
-# Crypto Provider Targets
-build-curves-napi: ## Build curves NAPI module
-	cd packages/curves && $(MAKE) build
-
-crypto-lightweight: build-curves-napi ## Set up lightweight crypto provider (curves only)
-	rm -f packages/crypto-provider
-	ln -sf curves/curves-napi packages/crypto-provider
-	npm install
-
-crypto-bulletproofs: build-bulletproofs ## Set up bulletproofs crypto provider (curves + bulletproof proving)
-	rm -f packages/crypto-provider
-	ln -sf snarky-bulletproofs/snarky-bulletproofs-napi packages/crypto-provider
-	npm install
-
-build-bulletproofs: ## Build bulletproofs NAPI module
-	npm run build:bulletproofs
-
-build-groth16-napi: ## Build groth16 NAPI module
-	npm run build:groth16
-
-crypto-groth16: build-groth16-napi ## Set up groth16 crypto provider
-	rm -f packages/crypto-provider
-	ln -sf snarky-groth16/snarky-groth16-napi packages/crypto-provider
-	npm install
-
-build-groth16: cargo-build ## Build groth16 package
-	cd prover/groth16 && cargo build
-
+# Rust cargo commands
 cargo-check: ## Check all Rust packages in workspace
 	cargo check --workspace
 
@@ -104,13 +85,17 @@ cargo-fmt: ## Format all Rust code in workspace
 cargo-clippy: ## Run clippy lints on workspace
 	cargo clippy --workspace -- -D warnings
 
+lint: ## Format, tidy, and lint all code (Rust + PureScript)
+	cargo fmt --all
+	npx purs-tidy format-in-place 'packages/*/src/**/*.purs' 'packages/*/test/**/*.purs'
+	cargo clippy --all-targets -- -D warnings
+
 clean: ## Clean everything
 	cargo clean
-	cd packages/curves && $(MAKE) clean  
+	cd packages/crypto-provider && cargo clean && rm -f *.node
+	cd packages/curves && rm -rf output
 	cd packages/snarky && rm -rf output
 	-cd packages/snarky-bulletproofs && rm -rf output
-	-cd packages/snarky-bulletproofs/snarky-bulletproofs-napi && cargo clean && rm -f *.node
 	-cd packages/snarky-groth16 && rm -rf output
-	-cd packages/snarky-groth16/snarky-groth16-napi && cargo clean && rm -f *.node
 	rm -rf output node_modules target
-	rm -f package-lock.json packages/crypto-provider
+	rm -f package-lock.json

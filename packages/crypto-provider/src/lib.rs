@@ -1,12 +1,48 @@
-use std::collections::HashSet;
+// Unified crypto-provider that consolidates curves, bulletproofs, and groth16 functionality
+// This replaces the separate NAPI crates with a single unified crate
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-// Re-export all curves functionality
-pub use curves_napi::*;
+// ============================================================================
+// CURVES MODULE - Basic curve operations and field arithmetic
+// ============================================================================
 
-// Arkworks imports
+pub mod bn254;
+
+mod bigint;
+
+// Pasta curves with conditional backend support
+#[cfg(any(feature = "arkworks", feature = "mina-curves-backend"))]
+pub mod pasta;
+
+// Re-export pasta functions for backward compatibility
+#[cfg(any(feature = "arkworks", feature = "mina-curves-backend"))]
+pub use pasta::*;
+
+// ============================================================================
+// BULLETPROOFS MODULE - Zero-knowledge proofs using bulletproofs
+// ============================================================================
+
+pub mod bulletproofs_circuit;
+pub mod bulletproofs_types;
+
+// Re-export bulletproofs functionality
+pub use bulletproofs_circuit::*;
+pub use bulletproofs_types::*;
+
+#[napi]
+pub fn bulletproofs_init() -> Result<()> {
+    Ok(())
+}
+
+// ============================================================================
+// GROTH16 MODULE - Zero-knowledge proofs using Groth16
+// ============================================================================
+
+use std::collections::HashSet;
+
+// Arkworks imports for Groth16
 use ark_bn254::Fr;
 use ark_groth16::{Groth16, Proof, ProvingKey, VerifyingKey};
 use ark_relations::{
@@ -19,13 +55,12 @@ use ark_std::vec::Vec;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use curves_napi::bn254::scalar_field::FieldExternal as Bn254FieldExternal;
+use crate::bn254::scalar_field::FieldExternal as Bn254FieldExternal;
 
 // External types for NAPI
 pub type Bn254ProvingKeyExternal = External<(ProvingKey<ark_bn254::Bn254>, R1CSDimensions)>;
 pub type Bn254VerifyingKeyExternal = External<VerifyingKey<ark_bn254::Bn254>>;
 pub type Bn254ProofExternal = External<Vec<u8>>;
-// Re-add these for the bulletproofs pattern
 pub type Bn254CircuitExternal = External<R1CSConstraints>;
 pub type Bn254WitnessExternal = External<R1CSWitness>;
 
