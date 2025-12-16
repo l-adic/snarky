@@ -4,11 +4,11 @@ import Prelude
 
 import Data.Array as Array
 import Data.Newtype (unwrap)
-import Snarky.Backend.Bulletproof.Impl.Pallas as Pallas
-import Snarky.Backend.Bulletproof.Impl.Vesta as Vesta
+import Snarky.Backend.Bulletproof.Impl.Pallas (circuitCreate, circuitIsSatisfiedBy, crsCreate, prove, statementCreate, verify, witnessCreate) as Pallas
+import Snarky.Backend.Bulletproof.Impl.Vesta (circuitCreate, circuitIsSatisfiedBy, crsCreate, prove, statementCreate, verify, witnessCreate) as Vesta
 import Snarky.Backend.Bulletproof.Types (CRS, Circuit, GatesWitness, Gates, Proof, Statement, Witness, toCircuitGates, toCircuitWitness)
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
+import Snarky.Curves.Pallas (G, ScalarField) as Pallas
+import Snarky.Curves.Vesta (G, ScalarField) as Vesta
 
 class Bulletproof g f | g -> f where
   createWitness :: { witness :: GatesWitness f, seed :: Int } -> Witness g

@@ -1,0 +1,22 @@
+{
+  "name": "snarky-crypto",
+  "version": "0.1.0",
+  "main": "crypto-provider.node",
+  "scripts": {
+    "build": "napi build --release",
+    "build:arkworks": "napi build --release --no-default-features --features arkworks", 
+    "build:mina-curves": "napi build --release --no-default-features --features mina-curves-backend",
+    "prepublish": "npm run build"
+  },
+  "napi": {
+    "binaryName": "crypto-provider"
+  },
+  "files": [
+    "crypto-provider.node"
+  ],
+  "license": "ISC",
+  "dependencies": {},
+  "devDependencies": {
+    "@napi-rs/cli": "^3.4.1"
+  }
+}

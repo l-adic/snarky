@@ -38,9 +38,9 @@ spec = do
   factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) "Pallas"
   factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) "Vesta"
 
--- Note: Cross-curve dlogSpec tests commented out due to cross-wired field relationships
--- dlogSpec (Proxy @Pasta.PallasG) (Proxy @Pasta.PallasBaseField) (Proxy @Pasta.VestaG) "Pallas"
--- dlogSpec (Proxy @Pasta.VestaG) (Proxy @Pasta.VestaBaseField) (Proxy @Pasta.PallasG) "Vesta"
+  -- Cross-curve dlogSpec tests (using native scalar fields for bulletproof constraints)
+  dlogSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Pallas"
+  dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Vesta"
 
 --------------------------------------------------------------------------------
 

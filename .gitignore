@@ -44,5 +44,4 @@ Thumbs.db
 # Purescript Spec
 .spec-results
 
-# Crypto provider symlink
-packages/crypto-provider
+# Crypto provider symlink (removed - now using real crate)

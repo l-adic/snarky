@@ -345,27 +345,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bulletproofs-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-pallas",
- "ark-std",
- "ark-vesta",
- "bulletproofs",
- "curves-napi",
- "mina-curves",
- "napi",
- "napi-build",
- "napi-derive",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "spongefish",
-]
-
-[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -431,6 +410,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-provider"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-pallas",
+ "ark-r1cs-std",
+ "ark-relations",
+ "ark-serialize",
+ "ark-snark",
+ "ark-std",
+ "ark-vesta",
+ "bulletproofs",
+ "mina-curves",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "num-bigint",
+ "num-integer",
+ "proptest",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "spongefish",
+]
+
+[[package]]
 name = "ctor"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -445,27 +452,6 @@ name = "ctor-proc-macro"
 version = "0.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
-
-[[package]]
-name = "curves-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-pallas",
- "ark-std",
- "ark-vesta",
- "mina-curves",
- "napi",
- "napi-build",
- "napi-derive",
- "num-bigint",
- "num-integer",
- "proptest",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
-]
 
 [[package]]
 name = "derivative"
@@ -684,27 +670,6 @@ dependencies = [
  "libc",
  "r-efi",
  "wasip2",
-]
-
-[[package]]
-name = "groth16-napi"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-ec",
- "ark-ff",
- "ark-groth16",
- "ark-r1cs-std",
- "ark-relations",
- "ark-serialize",
- "ark-snark",
- "ark-std",
- "curves-napi",
- "napi",
- "napi-build",
- "napi-derive",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
 ]
 
 [[package]]

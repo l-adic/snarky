@@ -4,16 +4,14 @@
   "description": "",
   "main": "index.js",
   "workspaces": [
-    "packages/curves/curves-napi",
-    "packages/snarky-bulletproofs/snarky-bulletproofs-napi", 
-    "packages/snarky-groth16/snarky-groth16-napi"
+    "packages/crypto-provider"
   ],
   "scripts": {
     "test": "make test",
     "build:napi": "npm run build --workspaces",
-    "build:curves": "npm run build -w curves-napi",
-    "build:bulletproofs": "npm run build -w snarky-bulletproofs-napi",
-    "build:groth16": "npm run build -w snarky-groth16-napi",
+    "build:crypto": "npm run build -w crypto-provider",
+    "build:crypto:arkworks": "npm run build:arkworks -w crypto-provider",
+    "build:crypto:mina-curves": "npm run build:mina-curves -w crypto-provider",
     "clean:napi": "npm run clean --workspaces --if-present"
   },
   "repository": {

@@ -6,10 +6,11 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use spongefish::domain_separator;
 
-use curves_napi::pallas::scalar_field::FieldExternal as PallasFieldExternal;
-use curves_napi::vesta::scalar_field::FieldExternal as VestaFieldExternal;
+use crate::pallas::scalar_field::FieldExternal as PallasFieldExternal;
+use crate::pasta::types::{PallasScalarField, VestaScalarField};
+use crate::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 
-use crate::types::*;
+use crate::bulletproofs_types::*;
 
 fn is_power_of_2(n: usize) -> bool {
     n > 0 && (n & (n - 1)) == 0

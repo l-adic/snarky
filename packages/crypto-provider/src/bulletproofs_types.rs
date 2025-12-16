@@ -1,26 +1,10 @@
 // Conditional type aliases for backend selection
-// This mirrors the pattern used in curves-napi to support both arkworks and mina-curves
+// This mirrors the pattern used in pasta module to support both arkworks and mina-curves
 
-#[cfg(feature = "arkworks")]
-mod arkworks_types {
-    pub use ark_pallas::{Fr as PallasScalarField, Projective as PallasProjective};
-    pub use ark_vesta::{Fr as VestaScalarField, Projective as VestaProjective};
-}
-
-#[cfg(feature = "mina-curves-backend")]
-mod mina_types {
-    pub use mina_curves::pasta::{
-        Fp as VestaScalarField, Fq as PallasScalarField, ProjectivePallas as PallasProjective,
-        ProjectiveVesta as VestaProjective,
-    };
-}
-
-// Re-export the appropriate types based on feature selection
-#[cfg(feature = "arkworks")]
-pub use arkworks_types::*;
-
-#[cfg(feature = "mina-curves-backend")]
-pub use mina_types::*;
+use crate::pasta::types::{
+    PallasScalarField, ProjectivePallas as PallasProjective, ProjectiveVesta as VestaProjective,
+    VestaScalarField,
+};
 
 // Type aliases for bulletproofs types that depend on field types
 use napi::bindgen_prelude::External;
