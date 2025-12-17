@@ -5,6 +5,7 @@ package:
     - curves
     - snarky
     - snarky-curves
+    - poseidon
     - quickcheck
   test:
     main: Test.Snarky.Circuit.Kimchi.Main

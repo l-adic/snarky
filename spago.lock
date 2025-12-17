@@ -941,6 +941,7 @@
         "core": {
           "dependencies": [
             "curves",
+            "poseidon",
             "prelude",
             "quickcheck",
             "snarky",
@@ -981,6 +982,7 @@
             "orders",
             "parallel",
             "partial",
+            "poseidon",
             "prelude",
             "profunctor",
             "quickcheck",

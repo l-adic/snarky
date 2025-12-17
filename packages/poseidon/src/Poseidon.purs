@@ -1,13 +1,12 @@
 module Poseidon
-  ( -- Pallas Poseidon
-    pallasPoseidonSbox
+  ( module Poseidon.Class
+  , pallasPoseidonSbox
   , pallasPoseidonApplyMds
   , pallasPoseidonFullRound
   , pallasPoseidonGetRoundConstants
   , pallasPoseidonGetNumRounds
   , pallasPoseidonGetMdsMatrix
   , pallasPoseidonHash
-  -- Vesta Poseidon
   , vestaPoseidonSbox
   , vestaPoseidonApplyMds
   , vestaPoseidonFullRound
@@ -18,94 +17,56 @@ module Poseidon
   ) where
 
 import Prelude
-
-import Snarky.Curves.Pasta (PallasBaseField, VestaBaseField)
-
--- ============================================================================
--- PALLAS POSEIDON FFI
--- ============================================================================
-
-foreign import _pallasPoseidonSbox :: PallasBaseField -> PallasBaseField
-foreign import _pallasPoseidonApplyMds :: Array PallasBaseField -> Array PallasBaseField
-foreign import _pallasPoseidonFullRound :: Array PallasBaseField -> Int -> Array PallasBaseField
-foreign import _pallasPoseidonGetRoundConstants :: Int -> Array PallasBaseField
-foreign import _pallasPoseidonGetNumRounds :: Unit -> Int
-foreign import _pallasPoseidonGetMdsMatrix :: Unit -> Array (Array PallasBaseField)
-foreign import _pallasPoseidonHash :: Array PallasBaseField -> PallasBaseField
+import Type.Proxy (Proxy(..))
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Poseidon.Class (class PoseidonField, applyMds, fullRound, getMdsMatrix, getNumRounds, getRoundConstants, hash, sbox)
+import Poseidon.FFI.Pallas as PallasFFI
+import Poseidon.FFI.Vesta as VestaFFI
 
 -- ============================================================================
--- VESTA POSEIDON FFI
+-- CONVENIENCE FUNCTIONS
 -- ============================================================================
 
-foreign import _vestaPoseidonSbox :: VestaBaseField -> VestaBaseField
-foreign import _vestaPoseidonApplyMds :: Array VestaBaseField -> Array VestaBaseField
-foreign import _vestaPoseidonFullRound :: Array VestaBaseField -> Int -> Array VestaBaseField
-foreign import _vestaPoseidonGetRoundConstants :: Int -> Array VestaBaseField
-foreign import _vestaPoseidonGetNumRounds :: Unit -> Int
-foreign import _vestaPoseidonGetMdsMatrix :: Unit -> Array (Array VestaBaseField)
-foreign import _vestaPoseidonHash :: Array VestaBaseField -> VestaBaseField
+pallasPoseidonSbox :: Pallas.BaseField -> Pallas.BaseField
+pallasPoseidonSbox = PallasFFI.sbox
 
--- ============================================================================
--- PALLAS POSEIDON WRAPPERS
--- ============================================================================
+pallasPoseidonApplyMds :: Array Pallas.BaseField -> Array Pallas.BaseField
+pallasPoseidonApplyMds = PallasFFI.applyMds
 
--- | S-box operation for Pallas base field (x^7)
-pallasPoseidonSbox :: PallasBaseField -> PallasBaseField
-pallasPoseidonSbox = _pallasPoseidonSbox
+pallasPoseidonFullRound :: Array Pallas.BaseField -> Int -> Array Pallas.BaseField
+pallasPoseidonFullRound = PallasFFI.fullRound
 
--- | Apply MDS matrix to 3-element state
-pallasPoseidonApplyMds :: Array PallasBaseField -> Array PallasBaseField
-pallasPoseidonApplyMds = _pallasPoseidonApplyMds
+pallasPoseidonGetRoundConstants :: Int -> Array Pallas.BaseField
+pallasPoseidonGetRoundConstants = getRoundConstants (Proxy :: Proxy Pallas.BaseField)
 
--- | Execute one full Poseidon round
-pallasPoseidonFullRound :: Array PallasBaseField -> Int -> Array PallasBaseField
-pallasPoseidonFullRound = _pallasPoseidonFullRound
-
--- | Get round constants for a specific round (0-54 for Kimchi)
-pallasPoseidonGetRoundConstants :: Int -> Array PallasBaseField
-pallasPoseidonGetRoundConstants = _pallasPoseidonGetRoundConstants
-
--- | Get total number of rounds (55 for Kimchi)
 pallasPoseidonGetNumRounds :: Int
-pallasPoseidonGetNumRounds = _pallasPoseidonGetNumRounds unit
+pallasPoseidonGetNumRounds = getNumRounds (Proxy :: Proxy Pallas.BaseField)
 
--- | Get the 3x3 MDS matrix
-pallasPoseidonGetMdsMatrix :: Array (Array PallasBaseField)
-pallasPoseidonGetMdsMatrix = _pallasPoseidonGetMdsMatrix unit
+pallasPoseidonGetMdsMatrix :: Array (Array Pallas.BaseField)
+pallasPoseidonGetMdsMatrix = getMdsMatrix (Proxy :: Proxy Pallas.BaseField)
 
--- | Hash variable-length input
-pallasPoseidonHash :: Array PallasBaseField -> PallasBaseField
-pallasPoseidonHash = _pallasPoseidonHash
+pallasPoseidonHash :: Array Pallas.BaseField -> Pallas.BaseField
+pallasPoseidonHash = PallasFFI.hash
 
--- ============================================================================
--- VESTA POSEIDON WRAPPERS
--- ============================================================================
+vestaPoseidonSbox :: Vesta.BaseField -> Vesta.BaseField
+vestaPoseidonSbox = VestaFFI.sbox
 
--- | S-box operation for Vesta base field (x^7)
-vestaPoseidonSbox :: VestaBaseField -> VestaBaseField
-vestaPoseidonSbox = _vestaPoseidonSbox
+vestaPoseidonApplyMds :: Array Vesta.BaseField -> Array Vesta.BaseField
+vestaPoseidonApplyMds = VestaFFI.applyMds
 
--- | Apply MDS matrix to 3-element state
-vestaPoseidonApplyMds :: Array VestaBaseField -> Array VestaBaseField
-vestaPoseidonApplyMds = _vestaPoseidonApplyMds
+vestaPoseidonFullRound :: Array Vesta.BaseField -> Int -> Array Vesta.BaseField
+vestaPoseidonFullRound = VestaFFI.fullRound
 
--- | Execute one full Poseidon round
-vestaPoseidonFullRound :: Array VestaBaseField -> Int -> Array VestaBaseField
-vestaPoseidonFullRound = _vestaPoseidonFullRound
+vestaPoseidonGetRoundConstants :: Int -> Array Vesta.BaseField
+vestaPoseidonGetRoundConstants = getRoundConstants (Proxy :: Proxy Vesta.BaseField)
 
--- | Get round constants for a specific round (0-54 for Kimchi)
-vestaPoseidonGetRoundConstants :: Int -> Array VestaBaseField
-vestaPoseidonGetRoundConstants = _vestaPoseidonGetRoundConstants
-
--- | Get total number of rounds (55 for Kimchi)
 vestaPoseidonGetNumRounds :: Int
-vestaPoseidonGetNumRounds = _vestaPoseidonGetNumRounds unit
+vestaPoseidonGetNumRounds = getNumRounds (Proxy :: Proxy Vesta.BaseField)
 
--- | Get the 3x3 MDS matrix
-vestaPoseidonGetMdsMatrix :: Array (Array VestaBaseField)
-vestaPoseidonGetMdsMatrix = _vestaPoseidonGetMdsMatrix unit
+vestaPoseidonGetMdsMatrix :: Array (Array Vesta.BaseField)
+vestaPoseidonGetMdsMatrix = getMdsMatrix (Proxy :: Proxy Vesta.BaseField)
 
--- | Hash variable-length input
-vestaPoseidonHash :: Array VestaBaseField -> VestaBaseField
-vestaPoseidonHash = _vestaPoseidonHash
+vestaPoseidonHash :: Array Vesta.BaseField -> Vesta.BaseField
+vestaPoseidonHash = VestaFFI.hash
 

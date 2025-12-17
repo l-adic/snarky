@@ -3,8 +3,6 @@ module Test.Poseidon.Main where
 import Prelude
 
 import Data.Array (length)
-import Data.Maybe (fromJust)
-import Data.Int (hexadecimal)
 import Effect (Effect)
 import Test.Spec (describe, it)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -13,7 +11,7 @@ import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.QuickCheck (quickCheck)
 import Poseidon as Poseidon
 import Snarky.Curves.Pasta (PallasBaseField, VestaBaseField)
-import Test.QuickCheck (Result, (===))
+import Test.QuickCheck ((===))
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
