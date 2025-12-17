@@ -398,3 +398,24 @@ pub fn bn254_verify(
         _ => false,
     }
 }
+
+// ============================================================================
+// KIMCHI MODULE - Poseidon hashing and Kimchi gate functionality
+// ============================================================================
+
+#[cfg(feature = "mina-curves-backend")]
+pub mod kimchi;
+
+#[cfg(feature = "mina-curves-backend")]
+pub use kimchi::poseidon::{
+    pallas::{
+        pallas_poseidon_apply_mds, pallas_poseidon_full_round, pallas_poseidon_get_mds_matrix,
+        pallas_poseidon_get_num_rounds, pallas_poseidon_get_round_constants, pallas_poseidon_hash,
+        pallas_poseidon_sbox,
+    },
+    vesta::{
+        vesta_poseidon_apply_mds, vesta_poseidon_full_round, vesta_poseidon_get_mds_matrix,
+        vesta_poseidon_get_num_rounds, vesta_poseidon_get_round_constants, vesta_poseidon_hash,
+        vesta_poseidon_sbox,
+    },
+};

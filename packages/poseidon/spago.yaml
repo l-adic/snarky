@@ -1,0 +1,13 @@
+package:
+  name: poseidon
+  dependencies:
+    - prelude
+    - arrays
+    - curves
+  test:
+    main: Test.Poseidon.Main
+    dependencies:
+      - spec
+      - spec-node
+      - spec-quickcheck
+      - quickcheck

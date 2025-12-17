@@ -6,6 +6,7 @@
     "build": "napi build --release",
     "build:arkworks": "napi build --release --no-default-features --features arkworks", 
     "build:mina-curves": "napi build --release --no-default-features --features mina-curves-backend",
+    "build:kimchi": "napi build --release --no-default-features --features kimchi",
     "prepublish": "npm run build"
   },
   "napi": {

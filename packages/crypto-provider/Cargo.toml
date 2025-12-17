@@ -23,8 +23,9 @@ ark-relations = { workspace = true }
 ark-serialize = { workspace = true }
 ark-snark = { workspace = true }
 
-# mina-curves
+# mina-curves and poseidon
 mina-curves = { workspace = true, optional = true }
+mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49", optional = true }
 
 # napi
 napi = { workspace = true }
@@ -45,7 +46,7 @@ spongefish = { workspace = true }
 [features]
 default = ["mina-curves-backend"]
 arkworks = ["ark-pallas", "ark-vesta"]
-mina-curves-backend = ["mina-curves"]
+mina-curves-backend = ["mina-curves", "mina-poseidon"]
 
 [dev-dependencies]
 proptest = { workspace = true }

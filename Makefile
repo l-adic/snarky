@@ -57,10 +57,15 @@ test-bulletproofs: build-crypto ## Test snarky-bulletproofs package
 test-groth16: build-crypto ## Test snarky-groth16 package
 	cd packages/snarky-groth16 && npx spago test
 
+test-poseidon: build-crypto ## Test poseidon hash package
+	cd packages/poseidon && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
+	@echo "=== Testing Poseidon Hash Package ==="
+	$(MAKE) test-poseidon
 	@echo "=== Testing Bulletproofs Backend ==="
 	$(MAKE) test-bulletproofs  
 	@echo "=== Testing Groth16 Backend ===" 
