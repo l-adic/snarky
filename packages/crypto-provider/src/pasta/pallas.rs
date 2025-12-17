@@ -115,7 +115,7 @@ pub mod scalar_field {
     }
 }
 
-// Note: Pallas base field operations removed - now handled via Vesta scalar field cross-wiring in JS layer
+// Note: Pallas base field operations handled via Vesta scalar field (curve duality)
 
 pub mod group {
     use super::*;
