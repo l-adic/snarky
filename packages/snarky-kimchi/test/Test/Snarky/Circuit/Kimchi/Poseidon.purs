@@ -23,7 +23,6 @@ spec = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
     let
-      -- Reference function: compute 3-element Poseidon permutation and extract last element
       referenceHash :: Vector 3 (F PallasBaseField) -> F PallasBaseField
       referenceHash inputs =
         let
@@ -31,26 +30,19 @@ spec = describe "Poseidon Circuit Tests" do
           rounds = Array.range 0 54
           finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
         in
-          F (Vector.index finalState (unsafeFinite 2)) -- Extract last element like the circuit does
+          F (Vector.index finalState (unsafeFinite 2))
 
-      -- Circuit solver
       solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonHash
-
-      -- Compile the circuit
-      { constraints } =
-        compilePure
-          (Proxy @(Vector 3 (F PallasBaseField)))
-          (Proxy @(F PallasBaseField))
-          PoseidonCircuit.poseidonHash
-
-      -- Custom generator for Vector 3 (F PallasBaseField)
+      { constraints } = compilePure
+        (Proxy @(Vector 3 (F PallasBaseField)))
+        (Proxy @(F PallasBaseField))
+        PoseidonCircuit.poseidonHash
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
     circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
 
   it "Poseidon constraint circuit matches reference implementation" do
     let
-      -- Reference function: compute full 55-round Poseidon state evolution
       referenceConstraintOutput :: Vector 3 (F PallasBaseField) -> Vector 3 (F PallasBaseField)
       referenceConstraintOutput inputs =
         let
@@ -60,17 +52,11 @@ spec = describe "Poseidon Circuit Tests" do
         in
           map F finalState
 
-      -- Circuit solver for the constraint circuit
       solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonConstraintCircuit
-
-      -- Compile the constraint circuit
-      { constraints } =
-        compilePure
-          (Proxy @(Vector 3 (F PallasBaseField)))
-          (Proxy @(Vector 3 (F PallasBaseField)))
-          PoseidonCircuit.poseidonConstraintCircuit
-
-      -- Custom generator for Vector 3 (F PallasBaseField)
+      { constraints } = compilePure
+        (Proxy @(Vector 3 (F PallasBaseField)))
+        (Proxy @(Vector 3 (F PallasBaseField)))
+        PoseidonCircuit.poseidonConstraintCircuit
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
     circuitSpecPure' constraints eval solver (satisfied referenceConstraintOutput) genInputs

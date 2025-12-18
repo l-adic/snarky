@@ -4,9 +4,6 @@ import Prelude (Unit)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector)
 
--- ============================================================================
--- VESTA POSEIDON FFI
--- ============================================================================
 
 foreign import sbox :: Vesta.BaseField -> Vesta.BaseField
 foreign import applyMds :: Vector 3 Vesta.BaseField -> Vector 3 Vesta.BaseField

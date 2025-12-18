@@ -22,7 +22,6 @@ import Snarky.Circuit.CVar (AffineExpression(..), Variable, reduceToAffineExpres
 import Snarky.Constraint.Basic (Basic(..))
 import Snarky.Curves.Class (class PrimeField)
 
---------------------------------------------------------------------------------
 
 type GenericPlonkConstraint f =
   { cl :: f

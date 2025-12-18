@@ -4,9 +4,6 @@ import Prelude (Unit)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.Vector (Vector)
 
--- ============================================================================
--- PALLAS POSEIDON FFI
--- ============================================================================
 
 foreign import sbox :: Pallas.BaseField -> Pallas.BaseField
 foreign import applyMds :: Vector 3 Pallas.BaseField -> Vector 3 Pallas.BaseField

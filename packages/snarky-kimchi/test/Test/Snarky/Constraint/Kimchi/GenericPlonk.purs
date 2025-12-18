@@ -53,7 +53,6 @@ spec pf = describe "Constraint Spec" do
             plonkConstraints.constraints
       pure $ plonkEval === basicEval
 
---------------------------------------------------------------------------------
 
 reduceAsBuilder
   :: forall f
@@ -87,7 +86,6 @@ reduceAsProver cs s = case runState (runExceptT $ un PlonkProver (traverse_ (red
   Tuple (Left e) _ -> Left e
   Tuple (Right _) (ProverReductionState s') -> Right s'
 
---------------------------------------------------------------------------------
 
 newtype BuilderReductionState f = BuilderReductionState
   { constraints :: Array (GenericPlonkConstraint f)
