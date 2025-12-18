@@ -3,7 +3,7 @@ module Test.Snarky.Circuit.Kimchi.Poseidon (spec) where
 import Prelude
 
 import Data.Newtype (unwrap)
-import Poseidon as Poseidon
+import Poseidon.Class (hash)
 import Snarky.Curves.Pasta (PallasBaseField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
@@ -27,7 +27,7 @@ spec = describe "Poseidon Circuit Tests" do
         let
           inputArray = Vector.unVector inputs
         in
-          F $ Poseidon.pallasPoseidonHash (map unwrap inputArray)
+          F $ hash (map unwrap inputArray)
 
       -- Circuit solver
       solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonHash

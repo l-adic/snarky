@@ -12,6 +12,7 @@ import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Curves.Class (class PrimeField)
+import Poseidon.Class (class PoseidonField)
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
@@ -21,7 +22,8 @@ data KimchiConstraint f
 
 eval
   :: forall f m
-   . PrimeField f
+   . PoseidonField f
+  => PrimeField f
   => Applicative m
   => (Variable -> m f)
   -> KimchiConstraint f

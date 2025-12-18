@@ -14,6 +14,7 @@ import Type.Proxy (Proxy)
 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.Vector (Vector)
 import Poseidon.FFI.Pallas as PallasFFI
 import Poseidon.FFI.Vesta as VestaFFI
 
@@ -27,21 +28,21 @@ class PoseidonField f where
   sbox :: f -> f
 
   -- | Apply MDS matrix to 3-element state
-  applyMds :: Array f -> Array f
+  applyMds :: Vector 3 f -> Vector 3 f
 
   -- | Execute one full Poseidon round
-  fullRound :: Array f -> Int -> Array f
+  fullRound :: Vector 3 f -> Int -> Vector 3 f
 
   -- | Get round constants for a specific round (0-54 for Kimchi)
-  getRoundConstants :: Proxy f -> Int -> Array f
+  getRoundConstants :: Proxy f -> Int -> Vector 3 f
 
   -- | Get total number of rounds (55 for Kimchi)
   getNumRounds :: Proxy f -> Int
 
   -- | Get the 3x3 MDS matrix
-  getMdsMatrix :: Proxy f -> Array (Array f)
+  getMdsMatrix :: Proxy f -> Vector 3 (Vector 3 f)
 
-  -- | Hash variable-length input
+  -- | Hash variable-length input (still uses Array for flexibility)
   hash :: Array f -> f
 
 -- ============================================================================

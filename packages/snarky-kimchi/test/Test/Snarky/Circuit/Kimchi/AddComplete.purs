@@ -6,6 +6,7 @@ import Control.Monad.Gen (suchThat)
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Partial.Unsafe (unsafePartial)
+import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
@@ -13,7 +14,7 @@ import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
@@ -23,9 +24,9 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f
-   . Arbitrary f
+   . PrimeField f
+  => PoseidonField f
   => Arbitrary g
-  => Eq f
   => WeierstrassCurve f g
   => Proxy g
   -> Spec Unit

@@ -150,9 +150,11 @@
           "dependencies": [
             "arrays",
             "curves",
-            "prelude"
+            "prelude",
+            "snarky"
           ],
           "build_plan": [
+            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -160,6 +162,7 @@
             "contravariant",
             "control",
             "curves",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -181,7 +184,9 @@
             "newtype",
             "nonempty",
             "numbers",
+            "ordered-collections",
             "orders",
+            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -190,6 +195,7 @@
             "record",
             "refs",
             "safe-coerce",
+            "snarky",
             "st",
             "strings",
             "tailrec",

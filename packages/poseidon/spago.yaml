@@ -4,6 +4,7 @@ package:
     - prelude
     - arrays
     - curves
+    - snarky
   test:
     main: Test.Poseidon.Main
     dependencies:
