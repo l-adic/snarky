@@ -66,18 +66,18 @@ witnessAllRounds initialState = do
     m = do
       initialValues <- traverse readCVar initialState
       let
-        
+
         -- Create vector of 55 round functions (0 through 54)
         rounds = Vector.generate (\i -> \state -> fullRound state (getFinite i))
-        
+
         -- Vector.scanl produces 55 states (after each round)
         roundOutputs = Vector.scanl (\state roundFn -> roundFn state) (coerce initialValues) rounds
-        
+
         -- Prepend initial state to get 56 total states: [initial, after_round_0, ..., after_round_54]
         allStates = (coerce initialValues) Vector.:< roundOutputs
-        
+
       pure (map (map F) allStates)
-        
+
   -- Compute all round states using Vector.scanl
   allStates <- exists m
   pure @(Snarky t m) allStates -- Convert to circuit variables
