@@ -18,7 +18,6 @@ import Snarky.Data.Vector (Vector)
 import Poseidon.FFI.Pallas as PallasFFI
 import Poseidon.FFI.Vesta as VestaFFI
 
-
 -- | Type class for fields that support Poseidon operations
 class PoseidonField f where
   -- | S-box operation (x^7)
@@ -42,7 +41,6 @@ class PoseidonField f where
   -- | Hash variable-length input (still uses Array for flexibility)
   hash :: Array f -> f
 
-
 instance PoseidonField Pallas.BaseField where
   sbox = PallasFFI.sbox
   applyMds = PallasFFI.applyMds
@@ -51,7 +49,6 @@ instance PoseidonField Pallas.BaseField where
   getNumRounds _ = PallasFFI.getNumRounds unit
   getMdsMatrix _ = PallasFFI.getMdsMatrix unit
   hash = PallasFFI.hash
-
 
 instance PoseidonField Vesta.BaseField where
   sbox = VestaFFI.sbox
