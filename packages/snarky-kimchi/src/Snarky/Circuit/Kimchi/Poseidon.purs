@@ -5,16 +5,15 @@ module Snarky.Circuit.Kimchi.Poseidon
 
 import Prelude
 
-import Data.Array as Array
-import Data.Newtype (unwrap)
 import Data.Traversable (traverse)
 import Poseidon.Class (class PoseidonField, fullRound)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (AsProverT, Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
+import Snarky.Data.Fin (getFinite, unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 
@@ -65,23 +64,20 @@ witnessAllRounds initialState = do
   let
     m :: AsProverT f m (Vector 56 (Vector 3 (F f)))
     m = do
-      initialValuesF <- traverse readCVar initialState
+      initialValues <- traverse readCVar initialState
       let
-        initialValues = map unwrap initialValuesF
-
-        -- Compute state at position i: state[0] = initial, state[i] = after i rounds
-        computeState :: Finite 56 -> Vector 3 (F f)
-        computeState i =
-          if getFinite i == 0 then initialValuesF -- Initial state (already F-wrapped)
-          else
-            let
-              rounds = Array.range 0 (getFinite i - 1)
-              finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
-            in
-              map F finalState
-
-      pure (Vector.generate computeState)
-
+        
+        -- Create vector of 55 round functions (0 through 54)
+        rounds = Vector.generate (\i -> \state -> fullRound state (getFinite i))
+        
+        -- Vector.scanl produces 55 states (after each round)
+        roundOutputs = Vector.scanl (\state roundFn -> roundFn state) (coerce initialValues) rounds
+        
+        -- Prepend initial state to get 56 total states: [initial, after_round_0, ..., after_round_54]
+        allStates = (coerce initialValues) Vector.:< roundOutputs
+        
+      pure (map (map F) allStates)
+        
   -- Compute all round states using Vector.scanl
   allStates <- exists m
   pure @(Snarky t m) allStates -- Convert to circuit variables
