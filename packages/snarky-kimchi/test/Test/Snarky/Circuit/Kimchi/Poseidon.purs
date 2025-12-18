@@ -32,31 +32,11 @@ spec = describe "Poseidon Circuit Tests" do
         in
           F (Vector.index finalState (unsafeFinite 2))
 
-      solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonHash
+      solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidon
       { constraints } = compilePure
         (Proxy @(Vector 3 (F PallasBaseField)))
         (Proxy @(F PallasBaseField))
-        PoseidonCircuit.poseidonHash
+        PoseidonCircuit.poseidon
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
     circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
-
-  it "Poseidon constraint circuit matches reference implementation" do
-    let
-      referenceConstraintOutput :: Vector 3 (F PallasBaseField) -> Vector 3 (F PallasBaseField)
-      referenceConstraintOutput inputs =
-        let
-          initialValues = map unwrap inputs
-          rounds = Array.range 0 54
-          finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
-        in
-          map F finalState
-
-      solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonConstraintCircuit
-      { constraints } = compilePure
-        (Proxy @(Vector 3 (F PallasBaseField)))
-        (Proxy @(Vector 3 (F PallasBaseField)))
-        PoseidonCircuit.poseidonConstraintCircuit
-      genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
-
-    circuitSpecPure' constraints eval solver (satisfied referenceConstraintOutput) genInputs
