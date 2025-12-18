@@ -2,8 +2,9 @@ module Test.Snarky.Circuit.Kimchi.Poseidon (spec) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Newtype (unwrap)
-import Poseidon.Class (hash)
+import Poseidon.Class (hash, fullRound)
 import Snarky.Curves.Pasta (PallasBaseField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
@@ -43,3 +44,30 @@ spec = describe "Poseidon Circuit Tests" do
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
     circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
+
+  it "Poseidon constraint circuit matches reference implementation" do
+    let
+      -- Reference function: compute full 55-round Poseidon state evolution
+      referenceConstraintOutput :: Vector 3 (F PallasBaseField) -> Vector 3 (F PallasBaseField)
+      referenceConstraintOutput inputs =
+        let
+          initialValues = map unwrap inputs
+          rounds = Array.range 0 54
+          finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
+        in
+          map F finalState
+
+      -- Circuit solver for the constraint circuit
+      solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidonConstraintCircuit
+
+      -- Compile the constraint circuit
+      { constraints } =
+        compilePure
+          (Proxy @(Vector 3 (F PallasBaseField)))
+          (Proxy @(Vector 3 (F PallasBaseField)))
+          PoseidonCircuit.poseidonConstraintCircuit
+
+      -- Custom generator for Vector 3 (F PallasBaseField)
+      genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
+
+    circuitSpecPure' constraints eval solver (satisfied referenceConstraintOutput) genInputs

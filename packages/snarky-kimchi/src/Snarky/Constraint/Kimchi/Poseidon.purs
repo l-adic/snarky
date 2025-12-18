@@ -7,7 +7,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (and, foldl)
-import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Type.Proxy (Proxy(..))
