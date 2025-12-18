@@ -15,6 +15,7 @@ module Snarky.Data.Vector
   , (!!)
   , generate
   , generateA
+  , scanl
   ) where
 
 import Prelude
@@ -169,3 +170,6 @@ chunk n arr
         rest = Array.drop n arr
       in
         [ current ] <> chunk n rest
+
+scanl :: forall a b n. (b -> a -> b) -> b -> Vector n a -> Vector n b
+scanl f init (Vector as) = Vector $ Array.scanl f init as

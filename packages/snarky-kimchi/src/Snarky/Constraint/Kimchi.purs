@@ -9,16 +9,21 @@ import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.GenericPlonk (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
+import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
+import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Curves.Class (class PrimeField)
+import Poseidon.Class (class PoseidonField)
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
   | KimchiPlonk (GenericPlonkConstraint f)
   | KimchiAddComplete (AddComplete f)
+  | KimchiPoseidon (PoseidonConstraint f)
 
 eval
   :: forall f m
-   . PrimeField f
+   . PoseidonField f
+  => PrimeField f
   => Applicative m
   => (Variable -> m f)
   -> KimchiConstraint f
@@ -27,6 +32,7 @@ eval lookup = case _ of
   KimchiBasic c -> Basic.eval lookup c
   KimchiPlonk c -> GenericPlonk.eval lookup c
   KimchiAddComplete c -> AddComplete.eval lookup c
+  KimchiPoseidon c -> Poseidon.eval lookup c
 
 instance BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS
