@@ -283,10 +283,7 @@ derive newtype instance MonadThrow (EvaluationError f) (PlonkProver f)
 derive instance Newtype (PlonkProver f a) _
 
 instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
-  addGenericPlonkConstraint c = do
-    -- Don't check constraints during reduction phase
-    -- Constraints will be checked later during circuit evaluation
-    pure unit
+  addGenericPlonkConstraint _ = pure unit
   createInternalVariable e = do
     ProverReductionState { nextVariable, assignments } <- get
     let
