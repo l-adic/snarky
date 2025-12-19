@@ -29,7 +29,7 @@ import Type.Proxy (Proxy(..))
 main :: Effect Unit
 main =
   runSpecAndExitProcess [ consoleReporter ] do
-    spec (Proxy @Vesta.G)
+    spec (Proxy @Vesta.G) (Proxy @(Basic Vesta.BaseField))
 
 spec
   :: forall g f
@@ -38,14 +38,15 @@ spec
   => Eq f
   => WeierstrassCurve f g
   => Proxy g
+  -> Proxy (Basic f)
   -> Spec Unit
-spec pg =
+spec pg pc =
   describe "Snarky.Circuit.Curves" do
 
     it "assertOnCurve Circuit is Valid" $
       let
         { a, b } = curveParams pg
-        solver = makeSolver (Proxy @(Basic f)) (uncurry assertOnCurve)
+        solver = makeSolver pc (uncurry assertOnCurve)
         { constraints } =
           compilePure
             ( Proxy
@@ -55,6 +56,7 @@ spec pg =
                 )
             )
             (Proxy @Unit)
+            pc
             (uncurry assertOnCurve)
 
         onCurve = do
@@ -84,6 +86,7 @@ spec pg =
                 )
             )
             (Proxy @Unit)
+            pc
             (uncurry assertEqual)
 
         same = do
@@ -107,6 +110,7 @@ spec pg =
           compilePure
             (Proxy @(AffinePoint (F f)))
             (Proxy @(AffinePoint (F f)))
+            pc
             Curves.negate
         gen = genAffinePoint pg
       in
@@ -121,6 +125,7 @@ spec pg =
           compilePure
             (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
+            pc
             (uncurry3 if_)
         gen = do
           b <- arbitrary
@@ -145,6 +150,7 @@ spec pg =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
+            pc
             (uncurry add_)
 
         -- Generate distinct points to avoid division by zero in slope calculation
@@ -180,6 +186,7 @@ spec pg =
           compilePure
             (Proxy @(AffinePoint (F f)))
             (Proxy @(AffinePoint (F f)))
+            pc
             (double $ curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
