@@ -6,13 +6,16 @@ import Control.Monad.Trans.Class (lift)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
+import Snarky.Backend.Builder (CircuitBuilderT)
 import Snarky.Backend.Compile (compile, makeSolver)
-import Test.Snarky.Circuit.Utils (satisfied_, circuitSpec')
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, Variable, all_, assert_, const_, equals_, exists, mul_, neq_, read)
+import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
+import Test.Snarky.Circuit.Utils (satisfied_, circuitSpec')
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -24,7 +27,7 @@ factorsCircuit
    . FactorM f m
   => CircuitM f c t m
   => FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 factorsCircuit n = do
   { a, b } <- exists do
     nVal <- read n
@@ -46,11 +49,13 @@ instance FactorM f Effect where
     throw "unhandled request: Factor"
 
 spec
-  :: forall f c
+  :: forall f c c'
    . PrimeField f
-  => BasicSystem f c
+  => BasicSystem f c'
+  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (ProverT f) c'
   => Proxy f
-  -> Proxy c
+  -> Proxy c'
   -> ( forall m
         . Applicative m
        => (Variable -> m f)
@@ -65,6 +70,7 @@ spec _ pc eval = describe "Factors Specs" do
       compile
         (Proxy @(F f))
         (Proxy @Unit)
+        pc
         factorsCircuit
     let solver = makeSolver pc factorsCircuit
     let

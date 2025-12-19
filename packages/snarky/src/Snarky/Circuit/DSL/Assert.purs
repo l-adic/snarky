@@ -19,7 +19,7 @@ assertNonZero_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertNonZero_ v = void $ inv_ v
 
 assertEqual_
@@ -27,7 +27,7 @@ assertEqual_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertEqual_ x y = case x, y of
   Const f, Const g ->
     if f == g then pure unit
@@ -40,7 +40,7 @@ assertNotEqual_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertNotEqual_ x y = assertNonZero_ (x `sub_` y)
 
 assertSquare_
@@ -48,7 +48,7 @@ assertSquare_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertSquare_ x y = do
   xSquared <- mul_ x x
   assertEqual_ xSquared y
@@ -57,5 +57,5 @@ assert_
   :: forall f c t m
    . CircuitM f c t m
   => BoolVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assert_ v = assertEqual_ (coerce v) (const_ $ one @f)

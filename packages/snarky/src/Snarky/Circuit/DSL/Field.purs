@@ -21,9 +21,9 @@ import Snarky.Curves.Class (class PrimeField)
 equals
   :: forall f c t m
    . CircuitM f c t m
-  => Snarky t m (FVar f)
-  -> Snarky t m (FVar f)
-  -> Snarky t m (BoolVar f)
+  => Snarky c t m (FVar f)
+  -> Snarky c t m (FVar f)
+  -> Snarky c t m (BoolVar f)
 equals a b = join $ lift2 equals_ a b
 
 equals_
@@ -31,7 +31,7 @@ equals_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 equals_ a b = case a `CVar.sub_` b of
   Const f -> pure $ Const $ if f == zero then one else zero
   _ -> do
@@ -50,7 +50,7 @@ neq_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 neq_ (a :: FVar f) (b :: FVar f) = not $ equals_ a b
 
 sum_
@@ -65,7 +65,7 @@ pow_
    . CircuitM f c t m
   => FVar f
   -> Int
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 pow_ x n
   | n == 0 = one
   | n == 1 = pure x

@@ -20,7 +20,7 @@ assertOnCurve
   => PrimeField f
   => CurveParams (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertOnCurve { a, b } { x, y } = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
   y2 <- mul_ y y
@@ -31,7 +31,7 @@ assertEqual
    . CircuitM f c t m
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
   assertEqual_ x1 x2
   assertEqual_ y1 y2
@@ -40,7 +40,7 @@ negate
   :: forall f c t m
    . CircuitM f c t m
   => AffinePoint (FVar f)
-  -> Snarky t m (AffinePoint (FVar f))
+  -> Snarky c t m (AffinePoint (FVar f))
 negate { x, y } = do
   pure { x, y: negate_ y }
 
@@ -50,7 +50,7 @@ if_
   => BoolVar f
   -> AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky t m (AffinePoint (FVar f))
+  -> Snarky c t m (AffinePoint (FVar f))
 if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
   x <- Snarky.if_ b x1 x2
   y <- Snarky.if_ b y1 y2
@@ -66,7 +66,7 @@ add_
   => CircuitM f c t m
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky t m (AffinePoint (FVar f))
+  -> Snarky c t m (AffinePoint (FVar f))
 add_ { x: ax, y: ay } { x: bx, y: by } = do
   lambda <- div_ (sub_ by ay) (sub_ bx ax)
 
@@ -99,7 +99,7 @@ double
   => PrimeField f
   => CurveParams f
   -> AffinePoint (FVar f)
-  -> Snarky t m (AffinePoint (FVar f))
+  -> Snarky c t m (AffinePoint (FVar f))
 double { a } { x: ax, y: ay } = do
   xSquared <- mul_ ax ax
 

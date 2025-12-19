@@ -8,12 +8,14 @@ module Snarky.Backend.Prover
   , throwProverError
   , setAssignments
   , getAssignments
+  , getState
+  , putState
   ) where
 
 import Prelude
 
 import Control.Monad.Except (ExceptT(..), lift, runExceptT, throwError)
-import Control.Monad.State (StateT, get, gets, modify_, runStateT)
+import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (foldl, zip)
 import Data.Either (Either)
@@ -24,9 +26,9 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError, Variable, incrementVariable, v0)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, class ConstraintM, AsProverT, Snarky(..), fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
+import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -61,11 +63,11 @@ type Prover f = ProverT f Identity
 runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either (EvaluationError f) a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
-instance Monad m => ConstraintM (ProverT f m) c where
+instance ConstraintM (ProverT f) (Basic f) where
   addConstraint' _ = pure unit
 
-instance (Monad m, PrimeField f, BasicSystem f c) => CircuitM f c (ProverT f) m where
-  exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky (ProverT f) m var
+instance (Monad m, PrimeField f, BasicSystem f c, ConstraintM (ProverT f) c) => CircuitM f c (ProverT f) m where
+  exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky c (ProverT f) m var
   exists m = Snarky do
     assignments <- getAssignments
     let n = sizeInFields (Proxy @f) (Proxy @a)
@@ -93,3 +95,15 @@ setAssignments vs = ProverT $
 getAssignments :: forall f m. Monad m => ProverT f m (Map Variable f)
 getAssignments = ProverT $ gets _.assignments
 
+getState
+  :: forall f m
+   . Monad m
+  => ProverT f m (ProverState f)
+getState = ProverT $ get
+
+putState
+  :: forall f m
+   . Monad m
+  => ProverState f
+  -> ProverT f m Unit
+putState = ProverT <<< put

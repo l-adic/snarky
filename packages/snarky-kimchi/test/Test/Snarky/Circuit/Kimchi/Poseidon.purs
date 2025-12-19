@@ -5,14 +5,14 @@ import Prelude
 import Data.Array as Array
 import Data.Newtype (unwrap)
 import Poseidon.Class (fullRound)
-import Snarky.Curves.Pasta (PallasBaseField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
+import Snarky.Curves.Pasta (PallasBaseField)
+import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
-import Snarky.Data.Fin (unsafeFinite)
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
@@ -36,6 +36,7 @@ spec = describe "Poseidon Circuit Tests" do
       { constraints } = compilePure
         (Proxy @(Vector 3 (F PallasBaseField)))
         (Proxy @(F PallasBaseField))
+        (Proxy @(KimchiConstraint PallasBaseField))
         PoseidonCircuit.poseidon
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 

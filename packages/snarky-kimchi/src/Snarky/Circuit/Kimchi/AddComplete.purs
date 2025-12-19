@@ -5,16 +5,16 @@ import Prelude
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, addConstraint, exists, read, readCVar)
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (fromInt)
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 addComplete
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
   -> AffinePoint (FVar f)
-  -> Snarky t m
+  -> Snarky (KimchiConstraint f) t m
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }

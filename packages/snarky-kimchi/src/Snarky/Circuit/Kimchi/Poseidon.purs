@@ -22,7 +22,7 @@ poseidon
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
-  -> Snarky t m (FVar f)
+  -> Snarky (KimchiConstraint f) t m (FVar f)
 poseidon initialState = do
   state <- exists do
     initialValues <- traverse readCVar initialState

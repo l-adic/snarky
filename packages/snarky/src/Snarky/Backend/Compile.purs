@@ -15,47 +15,51 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except (Except, ExceptT, lift, runExceptT)
 import Data.Array (zip)
 import Data.Array as Array
-import Data.Either (Either(..), either)
+import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (CircuitBuilderState, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
-import Snarky.Backend.Prover (emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, Snarky, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 compilePure
-  :: forall f c a b avar bvar
+  :: forall f c c' a b avar bvar
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
-  => BasicSystem f c
+  => BasicSystem f c'
+  => ConstraintM (CircuitBuilderT c) c'
   => Proxy a
   -> Proxy b
-  -> (forall t. CircuitM f c t Identity => avar -> Snarky t Identity bvar)
+  -> Proxy c'
+  -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
   -> CircuitBuilderState c
-compilePure pa pb circuit = un Identity $ compile pa pb circuit
+compilePure pa pb pc circuit = un Identity $ compile pa pb pc circuit
 
 compile
-  :: forall f c m a b avar bvar
+  :: forall f c c' m a b avar bvar
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => BasicSystem f c
+  => BasicSystem f c'
+  => ConstraintM (CircuitBuilderT c) c'
   => Proxy a
   -> Proxy b
-  -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
+  -> Proxy c'
+  -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
   -> m (CircuitBuilderState c)
-compile _ _ circuit = do
+compile _ _ _ circuit = do
   Tuple _ s <-
     flip runCircuitBuilderT emptyCircuitBuilderState do
       let
@@ -79,8 +83,9 @@ makeSolver
   => CircuitType f b bvar
   => Monad m
   => BasicSystem f c
+  => ConstraintM (ProverT f) c
   => Proxy c
-  -> (forall t. CircuitM f c t m => avar -> Snarky t m bvar)
+  -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
   -> SolverT f c m a b
 makeSolver _ circuit = \inputs -> do
   eres <- lift $ flip runProverT emptyProverState do
@@ -89,14 +94,18 @@ makeSolver _ circuit = \inputs -> do
     vars <- replicateA (n + m) fresh
     let { before: avars, after: bvars } = Array.splitAt n vars
     setAssignments $ zip avars (valueToFields inputs)
-    outVar <- runSnarky $ circuit (fieldsToVar @f @a (map Var avars))
+    outVar <- runSnarky $ do
+      result <- circuit (fieldsToVar @f @a (map Var avars))
+      pure result
     eres <- getAssignments >>= runAsProverT (read outVar)
-    either throwProverError
-      ( \output -> do
-          setAssignments $ (zip bvars (valueToFields output))
-          pure output
-      )
-      eres
+    case eres of
+      Left e -> throwProverError e
+      Right output -> do
+        setAssignments $ zip bvars (valueToFields output)
+        runSnarky $
+          for_ (zip (varToFields @f @b outVar) (map Var bvars)) \(Tuple v1 v2) -> do
+            assertEqual_ v1 v2 :: Snarky c (ProverT f) m Unit
+        pure output
   case eres of
     Tuple (Left e) _ -> throwError e
     Tuple (Right c) { assignments } -> pure $ Tuple c assignments

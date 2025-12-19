@@ -13,10 +13,9 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
+import Snarky.Backend.Bulletproof.Class (class Bulletproof, createCrs, createWitness, createCircuit, createStatement, circuitIsSatisfiedBy, createProof, verify)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
-import Snarky.Backend.Bulletproof.Class (class Bulletproof, createCrs, createWitness, createCircuit, createStatement, circuitIsSatisfiedBy, createProof, verify)
-import Type.Proxy (Proxy(..))
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
@@ -31,16 +30,17 @@ import Test.QuickCheck.Gen (Gen, randomSample, randomSampleOne, suchThat)
 import Test.Snarky.Circuit as CircuitTests
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
   CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
-  factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) "Pallas"
-  factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) "Vesta"
+  factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
+  factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 
   -- Cross-curve dlogSpec tests (using native scalar fields for bulletproof constraints)
-  dlogSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Pallas"
-  dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Vesta"
+  dlogSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
+  dlogSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 
 --------------------------------------------------------------------------------
 
@@ -52,7 +52,7 @@ factorsCircuit
    . FactorM f m
   => CircuitM f c t m
   => FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 factorsCircuit n = do
   { a, b } <- exists do
     nVal <- read n
@@ -79,15 +79,17 @@ factorsSpec
   => PrimeField f
   => Proxy g
   -> Proxy f
+  -> Proxy (R1CS f)
   -> String
   -> Spec Unit
-factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spec") do
+factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors Spec") do
 
   it (name <> " Bulletproof Prove/Verify Flow") $ liftEffect $ do
     { constraints: cs, publicInputs } <-
       compile
         (Proxy @(F f))
         (Proxy @Unit)
+        pc
         factorsCircuit
     let
       constraints = sortR1CS cs
@@ -160,12 +162,12 @@ instance MonadDLog f Effect where
     throw "unhandled request: getDLog16"
 
 dlog16Circuit
-  :: forall f t m
-   . CircuitM f (R1CS f) t m
+  :: forall f t m c
+   . CircuitM f c t m
   => MonadDLog f m
   => CurveParams f
   -> AffinePoint (FVar f)
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 dlog16Circuit cp p = do
   q <- exists do
     pVal <- read p
@@ -187,15 +189,17 @@ dlogSpec
   => Proxy curve
   -> Proxy f
   -> Proxy g
+  -> Proxy (R1CS f)
   -> String
   -> Spec Unit
-dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg name = describe (name <> " DLog Spec") do
+dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg pc name = describe (name <> " DLog Spec") do
   let cp = curveParams pg
   it "dlog Circuit is Valid" $ liftEffect $ do
     { constraints: cs, publicInputs } <-
       compile
         (Proxy @(AffinePoint (F f)))
         (Proxy @Unit)
+        pc
         (dlog16Circuit cp)
     let
       constraints = sortR1CS cs

@@ -26,7 +26,7 @@ if_
   => BoolVar f
   -> FVar f
   -> FVar f
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 if_ b thenBranch elseBranch = case b of
   Const b_ -> pure $ if b_ == one then thenBranch else elseBranch
   _ -> case thenBranch, elseBranch of
@@ -48,7 +48,7 @@ xor_
    . CircuitM f c t m
   => BoolVar f
   -> BoolVar f
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 xor_ a b = case a, b of
   Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
   Const aVal, _
@@ -74,7 +74,7 @@ any_
   :: forall f c t m
    . CircuitM f c t m
   => Array (BoolVar f)
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 any_ as =
   case Array.uncons as of
     Nothing -> ff
@@ -88,7 +88,7 @@ all_
   :: forall f c t m
    . CircuitM f c t m
   => Array (BoolVar f)
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 all_ as =
   case Array.uncons as of
     Nothing -> tt

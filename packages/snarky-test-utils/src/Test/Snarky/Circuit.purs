@@ -2,25 +2,30 @@ module Test.Snarky.Circuit (spec) where
 
 import Prelude
 
+import Snarky.Backend.Builder (CircuitBuilderT)
+import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.Snarky.Circuit.Assert as AssertTest
 import Test.Snarky.Circuit.Bits as BitsTest
 import Test.Snarky.Circuit.Boolean as BoolTest
+import Test.Snarky.Circuit.CheckedType as CheckedTypeTest
 import Test.Snarky.Circuit.Factors as Factors
 import Test.Snarky.Circuit.Field as FieldTest
-import Test.Snarky.Circuit.CheckedType as CheckedTypeTest
 import Test.Spec (Spec)
 import Type.Proxy (Proxy)
 
 spec
-  :: forall f c n
+  :: forall f c c' n
    . PrimeField f
-  => BasicSystem f c
+  => BasicSystem f c'
+  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (ProverT f) c'
   => FieldSizeInBits f n
   => Proxy f
-  -> Proxy c
+  -> Proxy c'
   -> ( forall m
         . Applicative m
        => (Variable -> m f)
