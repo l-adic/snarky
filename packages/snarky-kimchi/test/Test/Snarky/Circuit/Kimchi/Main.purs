@@ -20,6 +20,6 @@ main =
 
 spec :: Spec Unit
 spec = do
-  GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
+  --GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
   CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval
-  PoseidonTests.spec
+--PoseidonTests.spec

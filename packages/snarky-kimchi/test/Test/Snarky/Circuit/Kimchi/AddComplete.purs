@@ -29,8 +29,9 @@ spec
   => Arbitrary g
   => WeierstrassCurve f g
   => Proxy g
+  -> Proxy (KimchiConstraint f)
   -> Spec Unit
-spec pg =
+spec pg pc =
   describe "Kimchi AddComplete" do
 
     it "addComplete Circuit is Valid" $ unsafePartial $
@@ -43,7 +44,7 @@ spec pg =
            . CircuitM f (KimchiConstraint f) t Identity
           => AffinePoint (FVar f)
           -> AffinePoint (FVar f)
-          -> Snarky t Identity (Point (FVar f))
+          -> Snarky (KimchiConstraint f) t Identity (Point (FVar f))
         circuit p1 p2 = do
           { isInfinity, p } <- addComplete p1 p2
           x <- Snarky.if_ isInfinity (const_ zero) p.x
@@ -54,6 +55,7 @@ spec pg =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(Point (F f)))
+            pc
             (uncurry circuit)
 
         -- Generate distinct points to avoid division by zero in slope calculation
