@@ -954,7 +954,8 @@
             "prelude",
             "quickcheck",
             "snarky",
-            "snarky-curves"
+            "snarky-curves",
+            "union-find"
           ],
           "build_plan": [
             "aff",
@@ -1008,6 +1009,7 @@
             "tuples",
             "type-equality",
             "unfoldable",
+            "union-find",
             "unsafe-coerce"
           ]
         },

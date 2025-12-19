@@ -13,6 +13,7 @@ import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
@@ -57,6 +58,7 @@ spec pg pc =
             (Proxy @(Point (F f)))
             pc
             (uncurry circuit)
+            Kimchi.initialState
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2

@@ -20,7 +20,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
-import Snarky.Constraint.Bulletproofs (R1CS, eval)
+import Snarky.Constraint.Bulletproofs (R1CS, initialState, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -34,7 +34,7 @@ import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
+  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval initialState
   factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
   factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 
@@ -91,6 +91,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         (Proxy @Unit)
         pc
         factorsCircuit
+        initialState
     let
       constraints = sortR1CS cs
       gates = makeGates { publicInputs, constraints }
@@ -201,6 +202,7 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg pc name = describe (name <> " DLog
         (Proxy @Unit)
         pc
         (dlog16Circuit cp)
+        initialState
     let
       constraints = sortR1CS cs
       gates = makeGates { publicInputs, constraints }

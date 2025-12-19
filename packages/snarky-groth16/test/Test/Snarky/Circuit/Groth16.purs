@@ -14,7 +14,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Backend.Groth16.Class (class Groth16, setup, prove, verify, circuitIsSatisfiedBy)
 import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
-import Snarky.Constraint.Groth16 (R1CS, eval)
+import Snarky.Constraint.Groth16 (R1CS, eval, initialState)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -26,7 +26,7 @@ import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) eval
+  CircuitTests.spec (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) eval initialState
   factorsSpec (Proxy @BN254.G) (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) "BN254"
 
 --------------------------------------------------------------------------------
@@ -78,6 +78,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         (Proxy @Unit)
         pc
         factorsCircuit
+        initialState
     let
       gates = makeGates { publicInputs, constraints: cs }
 

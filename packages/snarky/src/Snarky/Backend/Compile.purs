@@ -22,7 +22,7 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT, emptyCircuitBuilderState, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
@@ -33,35 +33,37 @@ import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 compilePure
-  :: forall f c c' a b avar bvar
+  :: forall f c c' a b avar bvar r
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => Proxy a
   -> Proxy b
   -> Proxy c'
   -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
-  -> CircuitBuilderState c
-compilePure pa pb pc circuit = un Identity $ compile pa pb pc circuit
+  -> CircuitBuilderState c r
+  -> CircuitBuilderState c r
+compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
 
 compile
-  :: forall f c c' m a b avar bvar
+  :: forall f c c' m a b avar bvar r
    . PrimeField f
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => Proxy a
   -> Proxy b
   -> Proxy c'
   -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
-  -> m (CircuitBuilderState c)
-compile _ _ _ circuit = do
+  -> CircuitBuilderState c r
+  -> m (CircuitBuilderState c r)
+compile _ _ _ circuit cbs = do
   Tuple _ s <-
-    flip runCircuitBuilderT emptyCircuitBuilderState do
+    flip runCircuitBuilderT cbs do
       let
         n = sizeInFields (Proxy @f) (Proxy @a)
         m = sizeInFields (Proxy @f) (Proxy @b)

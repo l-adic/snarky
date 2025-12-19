@@ -2,17 +2,18 @@ module Snarky.Constraint.Kimchi
   ( KimchiConstraint(..)
   , KimchiGate(..)
   , eval
+  , initialState
   ) where
 
 import Prelude
 
 import Data.Either (Either(..))
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Builder (CircuitBuilderT, appendConstraint)
+import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState, appendConstraint)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
-import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
@@ -34,7 +35,7 @@ data KimchiGate f
   | KimchiGateAddComplete (AddComplete f)
   | KimchiGatePoseidon (PoseidonConstraint f)
 
-instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f)) (KimchiConstraint f) where
+instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) r) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> appendConstraint (KimchiGateAddComplete c)
     KimchiPoseidon c -> appendConstraint (KimchiGatePoseidon c)
@@ -52,6 +53,13 @@ instance PrimeField f => ConstraintM (ProverT f) (KimchiConstraint f) where
         Left e -> throwProverError e
         Right res -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
     _ -> pure unit
+
+initialState :: forall c. CircuitBuilderState c ()
+initialState =
+  { nextVar: v0
+  , constraints: mempty
+  , publicInputs: mempty
+  }
 
 eval
   :: forall f m

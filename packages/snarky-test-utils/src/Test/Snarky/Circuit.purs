@@ -2,7 +2,7 @@ module Test.Snarky.Circuit (spec) where
 
 import Prelude
 
-import Snarky.Backend.Builder (CircuitBuilderT)
+import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
@@ -18,10 +18,10 @@ import Test.Spec (Spec)
 import Type.Proxy (Proxy)
 
 spec
-  :: forall f c c' n
+  :: forall f c c' r n
    . PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => FieldSizeInBits f n
   => Proxy f
@@ -32,11 +32,12 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec pf pc eval = do
-  FieldTest.spec pf pc eval
-  BoolTest.spec pf pc eval
-  AssertTest.spec pf pc eval
-  BitsTest.spec pf pc eval
+spec pf pc eval cbs = do
   CheckedTypeTest.spec pf
-  Factors.spec pf pc eval
+  FieldTest.spec pf pc eval cbs
+  BoolTest.spec pf pc eval cbs
+  AssertTest.spec pf pc eval cbs
+  BitsTest.spec pf pc eval cbs
+  Factors.spec pf pc eval cbs
