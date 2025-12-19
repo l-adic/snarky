@@ -2,7 +2,6 @@ module Snarky.Backend.Groth16.Class where
 
 import Data.Array as Array
 import Data.Foldable (foldl)
-import Data.Map (Map)
 import Data.Map as Map
 import Data.Newtype (unwrap)
 import Data.Set as Set

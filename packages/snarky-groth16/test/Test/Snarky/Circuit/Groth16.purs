@@ -10,24 +10,24 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
-import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
-import Snarky.Backend.Groth16.Class (class Groth16, setup, prove, verify, circuitIsSatisfiedBy)
-import Type.Proxy (Proxy(..))
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
+import Snarky.Backend.Groth16.Class (class Groth16, setup, prove, verify, circuitIsSatisfiedBy)
+import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
 import Snarky.Constraint.Groth16 (R1CS, eval)
-import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.BN254 as BN254
+import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
 import Test.Snarky.Circuit as CircuitTests
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
   CircuitTests.spec (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) eval
-  factorsSpec (Proxy @BN254.G) (Proxy @BN254.ScalarField) "BN254"
+  factorsSpec (Proxy @BN254.G) (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) "BN254"
 
 --------------------------------------------------------------------------------
 
@@ -39,7 +39,7 @@ factorsCircuit
    . FactorM f m
   => CircuitM f c t m
   => FVar f
-  -> Snarky t m Unit
+  -> Snarky c t m Unit
 factorsCircuit n = do
   { a, b } <- exists do
     nVal <- read n
@@ -66,15 +66,17 @@ factorsSpec
   => PrimeField f
   => Proxy g
   -> Proxy f
+  -> Proxy (R1CS f)
   -> String
   -> Spec Unit
-factorsSpec (_ :: Proxy g) (_ :: Proxy f) name = describe (name <> " Factors Spec") do
+factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors Spec") do
 
   it (name <> " Groth16 Prove/Verify Flow") $ liftEffect $ do
     { constraints: cs, publicInputs } <-
       compile
         (Proxy @(F f))
         (Proxy @Unit)
+        pc
         factorsCircuit
     let
       gates = makeGates { publicInputs, constraints: cs }
