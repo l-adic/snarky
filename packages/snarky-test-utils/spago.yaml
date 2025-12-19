@@ -5,3 +5,4 @@ package:
     - snarky
     - spec
     - spec-quickcheck
+    - debug

@@ -15,7 +15,7 @@ seal
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 seal x =
   let
     AffineExpression { constant, terms } = reduceToAffineExpression x

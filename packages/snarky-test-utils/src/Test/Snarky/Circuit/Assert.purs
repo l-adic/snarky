@@ -3,22 +3,27 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
+import Snarky.Backend.Builder (CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
+import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall f c
+  :: forall f c c'
    . PrimeField f
-  => BasicSystem f c
+  => BasicSystem f c'
+  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (ProverT f) c'
   => Proxy f
-  -> Proxy c
+  -> Proxy c'
   -> ( forall m
         . Applicative m
        => (Variable -> m f)
@@ -35,6 +40,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
         compilePure
           (Proxy @(F f))
           (Proxy @Unit)
+          pc
           assertNonZero_
       gen = do
         a <- arbitrary `suchThat` (_ /= zero)
@@ -51,6 +57,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
+          pc
           (uncurry assertEqual_)
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
@@ -69,6 +76,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
+          pc
           (uncurry assertNotEqual_)
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
@@ -87,6 +95,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
+          pc
           (uncurry assertSquare_)
       squares = do
         x <- arbitrary

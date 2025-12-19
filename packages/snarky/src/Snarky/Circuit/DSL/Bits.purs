@@ -24,7 +24,7 @@ unpack_
   => PrimeField f
   => FieldSizeInBits f n
   => FVar f
-  -> Snarky t m (Vector n (BoolVar f))
+  -> Snarky c t m (Vector n (BoolVar f))
 unpack_ v = do
   bits :: Vector n (BoolVar f) <- generateA \i -> exists do
     vVal <- readCVar v

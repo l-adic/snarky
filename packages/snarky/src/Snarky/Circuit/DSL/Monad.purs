@@ -41,14 +41,14 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, BoolVar, fieldsToValue, varToFields)
+import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Curves.Class (class PrimeField)
 
-class Monad m <= ConstraintM m c | m -> c where
-  addConstraint' :: c -> m Unit
+class ConstraintM t c where
+  addConstraint' :: forall m. Monad m => c -> t m Unit
 
-addConstraint :: forall f c t m. CircuitM f c t m => c -> Snarky t m Unit
+addConstraint :: forall f c t m. CircuitM f c t m => c -> Snarky c t m Unit
 addConstraint c = Snarky $ addConstraint' c
 
 --------------------------------------------------------------------------------
@@ -138,54 +138,54 @@ instance (Monad m) => HeytingAlgebra (AsProverT f m Boolean) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
-newtype Snarky :: ((Type -> Type) -> (Type -> Type)) -> (Type -> Type) -> Type -> Type
-newtype Snarky t m a = Snarky (t m a)
+newtype Snarky :: Type -> ((Type -> Type) -> (Type -> Type)) -> (Type -> Type) -> Type -> Type
+newtype Snarky c t m a = Snarky (t m a)
 
-derive newtype instance (Functor (t m)) => Functor (Snarky t m)
-derive newtype instance (Apply (t m)) => Apply (Snarky t m)
-derive newtype instance (Applicative (t m)) => Applicative (Snarky t m)
-derive newtype instance (Bind (t m)) => Bind (Snarky t m)
-derive newtype instance (Monad (t m)) => Monad (Snarky t m)
-derive newtype instance (MonadFresh (t m)) => MonadFresh (Snarky t m)
-derive newtype instance (MonadTrans t) => MonadTrans (Snarky t)
+derive newtype instance (Functor (t m)) => Functor (Snarky c t m)
+derive newtype instance (Apply (t m)) => Apply (Snarky c t m)
+derive newtype instance (Applicative (t m)) => Applicative (Snarky c t m)
+derive newtype instance (Bind (t m)) => Bind (Snarky c t m)
+derive newtype instance (Monad (t m)) => Monad (Snarky c t m)
+derive newtype instance (MonadFresh (t m)) => MonadFresh (Snarky c t m)
+derive newtype instance (MonadTrans t) => MonadTrans (Snarky c t)
 
-runSnarky :: forall t m a. Snarky t m a -> t m a
+runSnarky :: forall c t m a. Snarky c t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, BasicSystem f c, ConstraintM (t m) c) <= CircuitM f c t m | t -> c f, c -> f where
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky t m var
+class (Monad m, MonadFresh (t m), PrimeField f, BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
+  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError f -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
 
 --------------------------------------------------------------------------------
 
-instance (CircuitM f c t m) => Semigroup (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => Semigroup (Snarky c t m (FVar f)) where
   append a b = lift2 (<>) a b
 
-instance (CircuitM f c t m) => Monoid (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => Monoid (Snarky c t m (FVar f)) where
   mempty = pure mempty
 
-instance (CircuitM f c t m) => Semiring (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => Semiring (Snarky c t m (FVar f)) where
   one = pure $ const_ one
   zero = pure $ const_ zero
   add a b = lift2 add_ a b
   mul a b = join $ lift2 mul_ a b
 
-instance (CircuitM f c t m) => Ring (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => Ring (Snarky c t m (FVar f)) where
   sub a b = sub_ <$> a <*> b
 
-instance (CircuitM f c t m) => CommutativeRing (Snarky t m (FVar f))
+instance (CircuitM f c t m) => CommutativeRing (Snarky c t m (FVar f))
 
-instance (CircuitM f c t m) => DivisionRing (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => DivisionRing (Snarky c t m (FVar f)) where
   recip a = a >>= inv_
 
-instance (CircuitM f c t m) => EuclideanRing (Snarky t m (FVar f)) where
+instance (CircuitM f c t m) => EuclideanRing (Snarky c t m (FVar f)) where
   degree _ = 1
   div a b = join $ lift2 div_ a b
   mod _ _ = pure $ const_ zero
 
-instance (CircuitM f c t m) => HeytingAlgebra (Snarky t m (BoolVar f)) where
+instance (CircuitM f c t m) => HeytingAlgebra (Snarky c t m (BoolVar f)) where
   tt = pure $ const_ (one :: f)
   ff = pure $ const_ (zero :: f)
   not a = not_ <$> a
@@ -205,7 +205,7 @@ or_
    . CircuitM f c t m
   => BoolVar f
   -> BoolVar f
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 or_ a b = not_ <$> (not_ a) `and_` (not_ b)
 
 and_
@@ -213,7 +213,7 @@ and_
    . CircuitM f c t m
   => BoolVar f
   -> BoolVar f
-  -> Snarky t m (BoolVar f)
+  -> Snarky c t m (BoolVar f)
 and_ a b = do
   coerce <$> mul_ (coerce a :: FVar f) (coerce b)
 
@@ -221,7 +221,7 @@ inv_
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 inv_ = case _ of
   Const a -> pure
     if a == zero then unsafeCrashWith "inv: expected nonzero arg"
@@ -239,7 +239,7 @@ mul_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 mul_ a b =
   case a, b of
     Const f, Const f' -> pure $ Const (f * f')
@@ -258,5 +258,5 @@ div_
    . CircuitM f c t m
   => FVar f
   -> FVar f
-  -> Snarky t m (FVar f)
+  -> Snarky c t m (FVar f)
 div_ a b = mul_ a =<< inv_ b
