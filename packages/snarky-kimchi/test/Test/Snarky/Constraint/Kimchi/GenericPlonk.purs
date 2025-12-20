@@ -14,6 +14,7 @@ import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.GenericPlonk (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
+import Snarky.Constraint.Kimchi.Wire (emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', (===))
 import Test.Spec (Spec, describe, it)
@@ -27,7 +28,7 @@ spec pf = describe "Constraint Spec" do
       { basic, assignments } <- Basic.genWithAssignments pf
       let
         nextVariable = maybe v0 incrementVariable $ maximum (Map.keys assignments)
-        plonkConstraints = reduceAsBuilder { nextVariable, constraints: [ basic ] }
+        plonkConstraints = reduceAsBuilder { nextVariable, constraints: [ basic ], wireState: emptyKimchiWireState }
         finalAssignments = case reduceAsProver [ basic ] { nextVariable, assignments } of
           Left e -> unsafeCrashWith $ "Unexpected error in Plonk reduce as Prover: " <> show e
           Right { assignments: assignments' } -> assignments'

@@ -33,7 +33,7 @@ type CircuitBuilderState c r =
   { nextVar :: Variable
   , constraints :: Array c
   , publicInputs :: Array Variable
-  | r
+  , aux :: r
   }
 
 newtype CircuitBuilderT c r m a = CircuitBuilderT (StateT (CircuitBuilderState c r) m a)
@@ -65,11 +65,12 @@ instance Monad m => MonadFresh (CircuitBuilderT c r m) where
 instance ConstraintM (CircuitBuilderT (Basic f) r) (Basic f) where
   addConstraint' = appendConstraint
 
-initialState :: forall c. CircuitBuilderState c ()
+initialState :: forall c. CircuitBuilderState c Unit
 initialState =
   { nextVar: v0
   , constraints: mempty
   , publicInputs: mempty
+  , aux: unit
   }
 
 instance (Monad m, PrimeField f, BasicSystem f c', ConstraintM (CircuitBuilderT c r) c') => CircuitM f c' (CircuitBuilderT c r) m where

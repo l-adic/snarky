@@ -28,11 +28,12 @@ instance ConstraintM (ProverT f) (R1CS f) where
 instance ConstraintM (CircuitBuilderT (R1CS f) r) (R1CS f) where
   addConstraint' = appendConstraint
 
-initialState :: forall c. CircuitBuilderState c ()
+initialState :: forall c. CircuitBuilderState c Unit
 initialState =
   { nextVar: v0
   , constraints: mempty
   , publicInputs: mempty
+  , aux: unit
   }
 
 genWithAssignments
