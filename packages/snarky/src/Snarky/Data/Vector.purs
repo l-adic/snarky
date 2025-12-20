@@ -17,6 +17,9 @@ module Snarky.Data.Vector
   , generateA
   , scanl
   , append
+  , splitAt
+  , chunks
+  , head
   ) where
 
 import Prelude
@@ -35,7 +38,8 @@ import Data.TraversableWithIndex (class TraversableWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Type.Proxy (Proxy(..))
@@ -145,16 +149,16 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
   valueToFields as = foldMap valueToFields (unVector as)
   fieldsToValue as =
     let
-      chunks = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToValue <$> chunks
+      cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToValue <$> cs
     in
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
   varToFields as = foldMap (varToFields @f @a) (unVector as)
   fieldsToVar as =
     let
-      chunks = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToVar @f @a <$> chunks
+      cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToVar @f @a <$> cs
     in
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
 
@@ -177,3 +181,33 @@ scanl f init (Vector as) = Vector $ Array.scanl f init as
 
 append :: forall n m k a. Add m n k => Vector n a -> Vector m a -> Vector k a
 append (Vector as) (Vector as') = Vector $ as <> as'
+
+splitAt
+  :: forall n k m a
+   . Reflectable k Int
+  => Compare k n LT
+  => Add m k n
+  => Proxy k
+  -> Vector n a
+  -> { before :: Vector k a, after :: Vector m a }
+splitAt pk (Vector as) =
+  let
+    { after, before } = Array.splitAt (reflectType pk) as
+  in
+    { after: Vector after, before: Vector before }
+
+chunks
+  :: forall n m k a
+   . Mul k m n
+  => Reflectable k Int
+  => Proxy k
+  -> Vector n a
+  -> Vector m (Vector k a)
+chunks pk (Vector as) = Vector (Vector <$> chunk (reflectType pk) as)
+
+head
+  :: forall n a
+   . Compare 0 n LT
+  => Vector n a
+  -> a
+head (Vector as) = unsafePartial $ fromJust $ Array.head as

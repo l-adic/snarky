@@ -30,7 +30,7 @@ spec pf = describe "Constraint Spec" do
       { basic, assignments } <- Basic.genWithAssignments pf
       let
         nextVariable = maybe v0 incrementVariable $ maximum (Map.keys assignments)
-        Tuple _ plonkConstraints = reduceAsBuilder { nextVariable, wireState: emptyKimchiWireState } (reduceBasic basic)
+        Tuple _ plonkConstraints = reduceAsBuilder { nextVariable, wireState: emptyKimchiWireState, cachedConstants: Map.empty } (reduceBasic basic)
         finalAssignments = case reduceAsProver { nextVariable, assignments } (reduceBasic basic) of
           Left e -> unsafeCrashWith $ "Unexpected error in Plonk reduce as Prover: " <> show e
           Right (Tuple _ { assignments: assignments' }) -> assignments'

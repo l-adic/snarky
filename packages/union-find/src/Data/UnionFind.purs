@@ -10,7 +10,8 @@ module Data.UnionFind
 
 import Prelude
 
-import Control.Monad.State.Class (class MonadState, get, modify_)
+import Control.Monad.State (State)
+import Control.Monad.State.Class (get, modify_)
 import Data.Array as Array
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map (Map)
@@ -18,7 +19,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 
 -- | Interface for Union-Find operations
-class Monad m <= MonadUnionFind a m | m -> a where
+class Monad m <= MonadUnionFind a m where
   -- | Find the representative of an element's equivalence class
   find :: a -> m a
 
@@ -43,7 +44,7 @@ findRootPure parentMap element =
 
 -- | Get all equivalence classes as an array of arrays (pure function)
 equivalenceClasses :: forall a. Ord a => UnionFindData a -> Array (Array a)
-equivalenceClasses { parent } =
+equivalenceClasses (UnionFindData { parent }) =
   let
     -- Group elements by their root
     rootGroups = foldlWithIndex
@@ -59,27 +60,25 @@ equivalenceClasses { parent } =
     Array.fromFoldable (Map.values rootGroups)
 
 -- | The Union-Find data structure
-type UnionFindData a =
+newtype UnionFindData a = UnionFindData
   { parent :: Map a a -- parent pointers
   , rank :: Map a Int -- rank for union by rank
   }
 
 -- | Create an empty union-find data structure
 emptyUnionFind :: forall a. UnionFindData a
-emptyUnionFind = { parent: Map.empty, rank: Map.empty }
+emptyUnionFind = UnionFindData { parent: Map.empty, rank: Map.empty }
 
 -- | Implementation for any MonadState with a unionFind field
-instance (MonadState { unionFind :: UnionFindData a | s } m, Ord a) => MonadUnionFind a m where
+instance Ord a => MonadUnionFind a (State (UnionFindData a)) where
   find x = do
-    st <- get
-    case Map.lookup x st.unionFind.parent of
+    UnionFindData st <- get
+    case Map.lookup x st.parent of
       Nothing -> do
         -- First time seeing this element, make it its own parent
-        modify_ \s -> s
-          { unionFind = s.unionFind
-              { parent = Map.insert x x s.unionFind.parent
-              , rank = Map.insert x 0 s.unionFind.rank
-              }
+        modify_ \(UnionFindData s) -> UnionFindData s
+          { parent = Map.insert x x s.parent
+          , rank = Map.insert x 0 s.rank
           }
         pure x
       Just p ->
@@ -87,10 +86,8 @@ instance (MonadState { unionFind :: UnionFindData a | s } m, Ord a) => MonadUnio
         else do
           root <- find p
           -- Path compression
-          modify_ \s -> s
-            { unionFind = s.unionFind
-                { parent = Map.insert x root s.unionFind.parent }
-            }
+          modify_ \(UnionFindData s) -> UnionFindData s
+            { parent = Map.insert x root s.parent }
           pure root
 
   union x y = do
@@ -98,22 +95,16 @@ instance (MonadState { unionFind :: UnionFindData a | s } m, Ord a) => MonadUnio
     rootY <- find y
 
     when (rootX /= rootY) do
-      st <- get
-      let rankX = fromMaybe 0 $ Map.lookup rootX st.unionFind.rank
-      let rankY = fromMaybe 0 $ Map.lookup rootY st.unionFind.rank
+      UnionFindData st <- get
+      let rankX = fromMaybe 0 $ Map.lookup rootX st.rank
+      let rankY = fromMaybe 0 $ Map.lookup rootY st.rank
 
       -- Union by rank
-      if rankX < rankY then modify_ \s -> s
-        { unionFind = s.unionFind
-            { parent = Map.insert rootX rootY s.unionFind.parent }
-        }
-      else if rankX > rankY then modify_ \s -> s
-        { unionFind = s.unionFind
-            { parent = Map.insert rootY rootX s.unionFind.parent }
-        }
-      else modify_ \s -> s
-        { unionFind = s.unionFind
-            { parent = Map.insert rootY rootX s.unionFind.parent
-            , rank = Map.insert rootX (rankX + 1) s.unionFind.rank
-            }
+      if rankX < rankY then modify_ \(UnionFindData s) -> UnionFindData s
+        { parent = Map.insert rootX rootY s.parent }
+      else if rankX > rankY then modify_ \(UnionFindData s) -> UnionFindData s
+        { parent = Map.insert rootY rootX s.parent }
+      else modify_ \(UnionFindData s) -> UnionFindData s
+        { parent = Map.insert rootY rootX s.parent
+        , rank = Map.insert rootX (rankX + 1) s.rank
         }

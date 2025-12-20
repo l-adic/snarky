@@ -1,9 +1,12 @@
 module Snarky.Constraint.Kimchi.Reduction
   ( class PlonkReductionM
   , createInternalVariable
-  , freshUnconstrainedVariable
   , addGenericPlonkConstraint
+  , addRow
+  , cacheConstant
+  , lookupConstant
   , reduceAffineExpression
+  , reduceToVariable
   , reduceAsBuilder
   , reduceAsProver
   , finalizeGateQueue
@@ -13,43 +16,52 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, get, modify_, runState)
+import Control.Monad.State (class MonadState, State, execState, get, modify_, put, runState)
+import Data.Array (catMaybes)
 import Data.Array as A
+import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM)
+import Data.Foldable (foldM, foldl, for_)
+import Data.FoldableWithIndex (traverseWithIndex_)
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromJust, fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
-import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, evalAffineExpression, incrementVariable)
+import Data.UnionFind (class MonadUnionFind)
+import Data.UnionFind as UnionFind
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiWireRow)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiWireRow, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector (Vector)
+import Snarky.Data.Fin (getFinite)
+import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
-import Type.Proxy (Proxy(..))
 
-class Monad m <= PlonkReductionM m f | m -> f where
+class (MonadUnionFind Variable m) <= PlonkReductionM m f | m -> f where
   createInternalVariable
     :: AffineExpression f
     -> m Variable
   addGenericPlonkConstraint
     :: GenericPlonkConstraint f
     -> m Unit
+  addRow
+    :: Vector 15 (Maybe Variable)
+    -> KimchiRow f
+    -> m Unit
+  cacheConstant
+    :: f
+    -> Variable
+    -> m Unit
+  lookupConstant
+    :: f
+    -> m (Maybe Variable)
 
-freshUnconstrainedVariable
-  :: forall m f
-   . PlonkReductionM m f
-  => m Variable
-freshUnconstrainedVariable =
-  createInternalVariable $ AffineExpression { constant: Nothing, terms: mempty }
-
+-- return a * x where a \in f and x is a variable.
 reduceAffineExpression
   :: forall f m
    . PrimeField f
@@ -63,35 +75,58 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
       Nothing -> pure $ lmap Just head
       Just c -> do
         vo <- createInternalVariable $ AffineExpression { constant, terms: [ head ] }
-        vr <- freshUnconstrainedVariable
         let Tuple vl cl = head
-        addGenericPlonkConstraint { vl, cl, vr, cr: zero, vo, co: -one, m: zero, c }
+        addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, vo: Just vo, co: -one, m: zero, c }
         pure $ Tuple (Just vo) one
     Cons (Tuple vr cr) Nil -> do
       let Tuple vl cl = head
       vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl, cl, vr, cr, vo, co: -one, m: zero, c: fromMaybe zero constant }
+      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
       pure $ Tuple (Just vo) one
     Cons head' tail' -> do
       Tuple vr cr <-
         foldM
           ( \(Tuple vr cr) (Tuple vl cl) -> do
               vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple vl cl, Tuple vr cr ] }
-              addGenericPlonkConstraint { cl, vl, cr, vr, co: -one, vo, m: zero, c: zero }
+              addGenericPlonkConstraint { cl, vl: Just vl, cr, vr: Just vr, co: -one, vo: Just vo, m: zero, c: zero }
               pure $ Tuple vo one
           )
           head'
           tail'
       let Tuple vl cl = head
       vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl, cl, vr, cr, vo, co: -one, m: zero, c: fromMaybe zero constant }
+      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
       pure $ Tuple (Just vo) one
+
+reduceToVariable
+  :: forall f m
+   . PrimeField f
+  => PlonkReductionM m f
+  => CVar f Variable
+  -> m Variable
+reduceToVariable var = do
+  Tuple mvar c <- reduceAffineExpression $ reduceToAffineExpression var
+  case mvar of
+    -- result is a constant
+    Nothing -> do
+      vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
+      addGenericPlonkConstraint { cl: one, vl: Just vl, cr: zero, vr: Nothing, co: zero, vo: Nothing, m: zero, c: (-c) }
+      pure vl
+    -- result is c * v
+    Just v ->
+      if c == one then pure v
+      else do
+        c_times_v <- createInternalVariable $ AffineExpression { constant: zero, terms: [ Tuple v c ] }
+        -- c * v - c_times_v = 0
+        addGenericPlonkConstraint { cl: c, vl: Just v, cr: zero, vr: Nothing, co: -one, vo: Just c_times_v, m: zero, c: zero }
+        pure c_times_v
 
 reduceAsBuilder
   :: forall f a
    . PrimeField f
   => { nextVariable :: Variable
      , wireState :: KimchiWireRow f
+     , cachedConstants :: Map f Variable
      }
   -> (forall m. PlonkReductionM m f => m a)
   -> Tuple
@@ -99,10 +134,11 @@ reduceAsBuilder
        { nextVariable :: Variable
        , constraints :: Array (GenericPlonkConstraint f)
        , wireState :: KimchiWireRow f
+       , cachedConstants :: Map f Variable
        }
 reduceAsBuilder { nextVariable, wireState } m =
   let
-    initState = BuilderReductionState { nextVariable, constraints: mempty, wireState }
+    initState = BuilderReductionState { nextVariable, constraints: mempty, wireState, cachedConstants: Map.empty }
     Tuple a (BuilderReductionState s) = runState (un PlonkBuilder m) initState
   in
     Tuple a s
@@ -133,6 +169,7 @@ newtype BuilderReductionState f = BuilderReductionState
   { constraints :: Array (GenericPlonkConstraint f)
   , nextVariable :: Variable
   , wireState :: KimchiWireRow f
+  , cachedConstants :: Map f Variable
   }
 
 newtype PlonkBuilder f a = PlonkBuilder (State (BuilderReductionState f) a)
@@ -146,42 +183,15 @@ derive newtype instance MonadState (BuilderReductionState f) (PlonkBuilder f)
 
 derive instance Newtype (PlonkBuilder f a) _
 
--- Wire a variable at specific matrix position
-wireVariableAt :: forall f. Variable -> Int -> Int -> PlonkBuilder f Unit
-wireVariableAt var row col = do
-  modify_ \(BuilderReductionState s) -> BuilderReductionState $ s
-    { wireState = s.wireState
-        { wireAssignments = Map.insert var (Tuple row col) s.wireState.wireAssignments }
-    }
-
 -- Convert GenericPlonkConstraint to coefficient vector (columns for one gate)
 -- Note: This is a simplified version - actual Kimchi gate coefficients would be more complex
-constraintToCoeffs :: forall f. PrimeField f => GenericPlonkConstraint f -> Vector 5 f
-constraintToCoeffs gate = unsafePartial $ fromJust $
-  Vector.toVector (Proxy @5) [ gate.cl, gate.cr, gate.co, gate.m, gate.c ]
-
--- Emit complete coefficient row for two GenericPlonk gates
-emitDoubleGateRow :: forall f. PrimeField f => GenericPlonkConstraint f -> GenericPlonkConstraint f -> Int -> PlonkBuilder f Unit
-emitDoubleGateRow gate1 gate2 row = do
-  -- Wire variables to matrix positions
-  wireVariableAt gate1.vl row 0
-  wireVariableAt gate1.vr row 1
-  wireVariableAt gate1.vo row 2
-  wireVariableAt gate2.vl row 3
-  wireVariableAt gate2.vr row 4
-  wireVariableAt gate2.vo row 5
-
-  let gate1Coeffs = constraintToCoeffs gate1
-  let gate2Coeffs = constraintToCoeffs gate2
-  let zeros = Vector.generate (const zero)
-  let coeffRow = gate1Coeffs `Vector.append` gate2Coeffs `Vector.append` zeros
-
-  -- Emit the complete row
-  let kimchiRow = { kind: GenericPlonkGate, coeffs: coeffRow }
-  modify_ \(BuilderReductionState s) -> BuilderReductionState $ s
-    { wireState = s.wireState
-        { emittedRows = s.wireState.emittedRows `A.snoc` kimchiRow }
-    }
+constraintToCoeffs
+  :: forall f
+   . PrimeField f
+  => GenericPlonkConstraint f
+  -> Vector 5 f
+constraintToCoeffs gate =
+  gate.cl :< gate.cr :< gate.co :< gate.m :< gate.c :< Vector.nilVector
 
 finalizeGateQueue :: forall f. PrimeField f => KimchiWireRow f -> KimchiWireRow f
 finalizeGateQueue wireState =
@@ -202,10 +212,14 @@ finalizeGateQueue wireState =
           { nextRow = wireState.nextRow + 1
           , queuedGenericGate = Nothing
           , emittedRows = wireState.emittedRows `A.snoc` kimchiRow
-          , wireAssignments = wireState.wireAssignments
-              # Map.insert leftoverGate.vl (Tuple row 0)
-              # Map.insert leftoverGate.vr (Tuple row 1)
-              # Map.insert leftoverGate.vo (Tuple row 2)
+          , wireAssignments =
+              foldl (\acc (Tuple k v) -> Map.insert k v acc) wireState.wireAssignments
+                $ catMaybes
+                $
+                  [ Tuple <$> leftoverGate.vl <*> pure (Tuple row 0)
+                  , Tuple <$> leftoverGate.vr <*> pure (Tuple row 1)
+                  , Tuple <$> leftoverGate.vo <*> pure (Tuple row 2)
+                  ]
           }
 
 -- Handle gate batching and wire placement for GenericPlonk gates
@@ -218,17 +232,21 @@ handleGateBatching newGate = do
       modify_ \(BuilderReductionState s') -> BuilderReductionState $ s'
         { wireState = s'.wireState { queuedGenericGate = Just newGate } }
     Just queuedGate -> do
-      -- Have queued gate, emit row with both gates
-      let row = s.wireState.nextRow
-      emitDoubleGateRow queuedGate newGate row
-
-      -- Advance to next row and clear queue
+      emitDoubleGateRow queuedGate newGate
+      -- clear the queue
       modify_ \(BuilderReductionState s') -> BuilderReductionState $ s'
         { wireState = s'.wireState
-            { nextRow = s'.wireState.nextRow + 1
-            , queuedGenericGate = Nothing
+            { queuedGenericGate = Nothing
             }
         }
+  where
+  emitDoubleGateRow gate1 gate2 = do
+    let
+      vars = gate1.vl :< gate1.vr :< gate1.vo :< gate2.vl :< gate2.vr :< gate2.vo :< Vector.generate (const Nothing)
+      coeffs = constraintToCoeffs gate1
+        `Vector.append` constraintToCoeffs gate2
+        `Vector.append` Vector.generate (const zero)
+    addRow vars { kind: GenericPlonkGate, coeffs }
 
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
@@ -237,7 +255,38 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   createInternalVariable _ = do
     BuilderReductionState { nextVariable } <- get
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
+    void $ UnionFind.find nextVariable
     pure nextVariable
+  addRow vars r = do
+    (BuilderReductionState s@{ wireState: { nextRow: row } }) <- get
+    traverseWithIndex_ (\i mv -> wireVariableAt mv row (getFinite i)) vars
+    put $ BuilderReductionState s { wireState { nextRow = row + 1 } }
+    where
+    wireVariableAt mvar row col = for_ mvar $ \var -> do
+      modify_ \(BuilderReductionState s) -> BuilderReductionState $ s
+        { wireState = s.wireState
+            { wireAssignments = Map.insert var (Tuple row col) s.wireState.wireAssignments
+            , emittedRows = s.wireState.emittedRows `Array.snoc` r
+            }
+        }
+      void $ UnionFind.find var
+  cacheConstant f var = modify_ \(BuilderReductionState s) -> BuilderReductionState
+    s { cachedConstants = Map.insert f var s.cachedConstants }
+  lookupConstant f = do
+    BuilderReductionState s <- get
+    pure $ Map.lookup f s.cachedConstants
+
+instance MonadUnionFind Variable (PlonkBuilder f) where
+  find v = do
+    (BuilderReductionState s) <- get
+    let Tuple a ufs' = runState (UnionFind.find v) s.wireState.unionFind
+    put $ BuilderReductionState s { wireState = s.wireState { unionFind = ufs' } }
+    pure a
+  union v1 v2 = modify_ \(BuilderReductionState s) ->
+    let
+      ufs' = execState (UnionFind.union v1 v2) s.wireState.unionFind
+    in
+      BuilderReductionState s { wireState = s.wireState { unionFind = ufs' } }
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -271,3 +320,11 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         , assignments = Map.insert nextVariable a assignments
         }
     pure nextVariable
+  addRow _ _ = pure unit
+  cacheConstant _ _ = pure unit
+  lookupConstant _ = pure Nothing
+
+-- The prover doesn't actually care about this
+instance MonadUnionFind Variable (PlonkProver f) where
+  find = pure
+  union _ _ = pure unit

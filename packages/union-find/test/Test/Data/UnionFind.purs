@@ -3,10 +3,10 @@ module Test.Data.UnionFind where
 import Prelude
 
 import Control.Monad.State (State, evalState, execState)
-import Data.UnionFind (connected, find, union, equivalenceClasses, emptyUnionFind, UnionFindData)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse, traverse_)
+import Data.UnionFind (UnionFindData, connected, emptyUnionFind, equivalenceClasses, find, union)
 import Effect (Effect)
 import Test.QuickCheck ((===))
 import Test.Spec (describe, it)
@@ -16,11 +16,11 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 -- | Test state type
-type TestState = { unionFind :: UnionFindData Int }
+type TestState = UnionFindData Int
 
 -- | Helper to run union-find operations
 runUF :: forall a. State TestState a -> a
-runUF = flip evalState { unionFind: emptyUnionFind }
+runUF = flip evalState emptyUnionFind
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
@@ -313,10 +313,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
                 _ <- find 6 -- Make sure 6 is in the structure
                 pure unit
             )
-            { unionFind: emptyUnionFind }
+            emptyUnionFind
 
-          classes = equivalenceClasses finalState.unionFind
-
+          classes = equivalenceClasses finalState
         -- Should have 3 classes total
         Array.length classes `shouldEqual` 3
 
@@ -346,9 +345,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
                 _ <- find 3
                 pure unit
             )
-            { unionFind: emptyUnionFind }
+            emptyUnionFind
 
-          classes = equivalenceClasses finalState.unionFind
+          classes = equivalenceClasses finalState
 
         Array.length classes `shouldEqual` 3
         let allElements = Array.concatMap identity classes

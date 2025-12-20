@@ -16,7 +16,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -240,3 +240,9 @@ foreign import _vestaToAffine
        (Maybe a)
        VestaG
        (Maybe a)
+
+instance Ord VestaScalarField where
+  compare x y = compare (toBigInt x) (toBigInt y)
+
+instance Ord PallasScalarField where
+  compare x y = compare (toBigInt x) (toBigInt y)

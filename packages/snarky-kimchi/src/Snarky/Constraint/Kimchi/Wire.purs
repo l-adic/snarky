@@ -19,6 +19,7 @@ data GateKind
   = GenericPlonkGate
   | AddCompleteGate
   | PoseidonGate
+  | Zero
 
 -- Complete 15-column coefficient row for proof construction
 type KimchiRow f =

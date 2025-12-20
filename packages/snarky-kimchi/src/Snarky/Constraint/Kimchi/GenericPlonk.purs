@@ -5,13 +5,13 @@ module Snarky.Constraint.Kimchi.GenericPlonk
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (Variable, reduceToAffineExpression)
 import Snarky.Constraint.Basic (Basic(..))
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, freshUnconstrainedVariable, reduceAffineExpression)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, reduceAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -23,9 +23,9 @@ eval
   -> GenericPlonkConstraint f
   -> m Boolean
 eval lookup x = ado
-  vl <- if x.cl == zero && x.m == zero then pure zero else lookup x.vl
-  vr <- if x.cr == zero && x.m == zero then pure zero else lookup x.vr
-  vo <- if x.co == zero then pure zero else lookup x.vo
+  vl <- maybe (pure zero) lookup x.vl
+  vr <- maybe (pure zero) lookup x.vr
+  vo <- maybe (pure zero) lookup x.vo
   in x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
 
 reduceBasic
@@ -42,34 +42,25 @@ reduceBasic g = case g of
     case mvl, mvr, mvo of
       -- (cl * vl) * (cr * vr) = (co * vo)
       Just vl, Just vr, Just vo -> do
-        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co, vo, m: -(cl * cr), c: zero }
+        addGenericPlonkConstraint { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co, vo: Just vo, m: -(cl * cr), c: zero }
       -- (cl * vl) * (cr * vr) = co
       Just vl, Just vr, Nothing -> do
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { cl: zero, vl, cr: zero, vr, co: zero, vo, m: (cl * cr), c: -co }
+        addGenericPlonkConstraint { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co: zero, vo: Nothing, m: (cl * cr), c: -co }
       -- (cl * vl) * cr = (co * vo)
       Just vl, Nothing, Just vo -> do
-        vr <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: cl * cr, vr, cr: zero, vo, co: -co, m: zero, c: zero }
+        addGenericPlonkConstraint { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Just vo, co: -co, m: zero, c: zero }
       -- cl * (cr * vr) = (co * vo)
       Nothing, Just vr, Just vo -> do
-        vl <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cl * cr, vo, co: -co, m: zero, c: zero }
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Just vo, co: -co, m: zero, c: zero }
       -- (cl * vl) cr = co
       Just vl, Nothing, Nothing -> do
-        vr <- freshUnconstrainedVariable
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: cl * cr, vr, cr: zero, vo, co: zero, m: zero, c: -co }
+        addGenericPlonkConstraint { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Nothing, co: zero, m: zero, c: -co }
       -- cl * (cr * vr) = co
       Nothing, Just vr, Nothing -> do
-        vl <- freshUnconstrainedVariable
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cl * cr, vo, co: zero, m: zero, c: -co }
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Nothing, co: zero, m: zero, c: -co }
       -- cl * cr = (co * vo)
       Nothing, Nothing, Just vo -> do
-        vl <- freshUnconstrainedVariable
-        vr <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: zero, vr, cr: zero, co, vo, m: zero, c: -(cl * cr) }
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co, vo: Just vo, m: zero, c: -(cl * cr) }
       -- cl * cr = co
       Nothing, Nothing, Nothing -> do
         if ((cl * cr) /= co) then
@@ -87,18 +78,13 @@ reduceBasic g = case g of
     case mvl, mvr of
       -- cl * vl = cr * vr
       Just vl, Just vr -> do
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl, vr, cr: -cr, co: zero, vo, m: zero, c: zero }
+        addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr: -cr, co: zero, vo: Nothing, m: zero, c: zero }
       -- cl * vl = cr
       Just vl, Nothing -> do
-        vr <- freshUnconstrainedVariable
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl, vr, cr: zero, co: zero, vo, m: zero, c: -cr }
+        addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: -cr }
       -- cl = cr * vr
       Nothing, Just vr -> do
-        vl <- freshUnconstrainedVariable
-        vo <- freshUnconstrainedVariable
-        addGenericPlonkConstraint { vl, cl: zero, vr, cr: cr, co: zero, vo, m: zero, c: -cl }
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cr, co: zero, vo: Nothing, m: zero, c: -cl }
       Nothing, Nothing ->
         if (cl /= cr) then
           ( unsafeThrowException
@@ -124,4 +110,4 @@ reduceBasic g = case g of
         else pure unit
       -- v * v = v
       Just v -> do
-        addGenericPlonkConstraint { vl: v, cl: -c, vr: v, cr: zero, co: zero, vo: v, m: c * c, c: zero }
+        addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
