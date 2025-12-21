@@ -23,7 +23,7 @@ import Snarky.Constraint.Kimchi.AddComplete (AddComplete, reduceAddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
-import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
+import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, reducePoseidon)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
@@ -52,7 +52,7 @@ initialAuxState = AuxState
   { wireState: emptyKimchiWireState
   }
 
-instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
+instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> do
       s <- CircuitBuilder.getState
@@ -67,7 +67,19 @@ instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f
         { nextVar = res.nextVariable
         , aux = AuxState { wireState: res.wireState }
         }
-    KimchiPoseidon c -> appendConstraint (KimchiGatePoseidon c)
+    KimchiPoseidon c -> do
+      s <- CircuitBuilder.getState
+      let
+        Tuple _ res = reduceAsBuilder
+          { nextVariable: s.nextVar
+          , wireState: (un AuxState s.aux).wireState
+          }
+          (reducePoseidon c)
+      appendConstraint (KimchiGatePoseidon c)
+      CircuitBuilder.putState s
+        { nextVar = res.nextVariable
+        , aux = AuxState { wireState: res.wireState }
+        }
     KimchiPlonk c -> appendConstraint (KimchiGatePlonk c)
     KimchiBasic c -> do
       s <- CircuitBuilder.getState
@@ -83,11 +95,16 @@ instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f
         , aux = AuxState { wireState: res.wireState }
         }
 
-instance PrimeField f => ConstraintM (ProverT f) (KimchiConstraint f) where
+instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> do
       s <- Prover.getState
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceAddComplete c) of
+        Left e -> throwProverError e
+        Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+    KimchiPoseidon c -> do
+      s <- Prover.getState
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducePoseidon c) of
         Left e -> throwProverError e
         Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
     KimchiBasic c -> do
