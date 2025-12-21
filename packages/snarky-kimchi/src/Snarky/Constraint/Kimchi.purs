@@ -19,7 +19,7 @@ import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
-import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
+import Snarky.Constraint.Kimchi.AddComplete (AddComplete, reduceAddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
@@ -54,7 +54,19 @@ initialAuxState = AuxState
 
 instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
-    KimchiAddComplete c -> appendConstraint (KimchiGateAddComplete c)
+    KimchiAddComplete c -> do
+      s <- CircuitBuilder.getState
+      let
+        Tuple _ res = reduceAsBuilder
+          { nextVariable: s.nextVar
+          , wireState: (un AuxState s.aux).wireState
+          }
+          (reduceAddComplete c)
+      appendConstraint (KimchiGateAddComplete c)
+      CircuitBuilder.putState s
+        { nextVar = res.nextVariable
+        , aux = AuxState { wireState: res.wireState }
+        }
     KimchiPoseidon c -> appendConstraint (KimchiGatePoseidon c)
     KimchiPlonk c -> appendConstraint (KimchiGatePlonk c)
     KimchiBasic c -> do
@@ -73,6 +85,11 @@ instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f
 
 instance PrimeField f => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
+    KimchiAddComplete c -> do
+      s <- Prover.getState
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceAddComplete c) of
+        Left e -> throwProverError e
+        Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
     KimchiBasic c -> do
       s <- Prover.getState
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceBasic c) of
