@@ -2,25 +2,32 @@ module Snarky.Constraint.Kimchi
   ( KimchiConstraint(..)
   , KimchiGate(..)
   , eval
+  , AuxState(..)
+  , initialState
   ) where
 
 import Prelude
 
 import Data.Either (Either(..))
+import Data.Newtype (class Newtype, un)
+import Data.Tuple (Tuple(..))
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Builder (CircuitBuilderT, appendConstraint)
+import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState, appendConstraint)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
-import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
-import Snarky.Constraint.Kimchi.GenericPlonk (GenericPlonkConstraint, reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
+import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
+import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 
 data KimchiConstraint f
@@ -34,24 +41,52 @@ data KimchiGate f
   | KimchiGateAddComplete (AddComplete f)
   | KimchiGatePoseidon (PoseidonConstraint f)
 
-instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) Unit) (KimchiConstraint f) where
+newtype AuxState f = AuxState
+  { wireState :: KimchiWireRow f
+  }
+
+derive instance Newtype (AuxState f) _
+
+initialAuxState :: forall f. AuxState f
+initialAuxState = AuxState
+  { wireState: emptyKimchiWireState
+  }
+
+instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> appendConstraint (KimchiGateAddComplete c)
     KimchiPoseidon c -> appendConstraint (KimchiGatePoseidon c)
     KimchiPlonk c -> appendConstraint (KimchiGatePlonk c)
     KimchiBasic c -> do
       s <- CircuitBuilder.getState
-      let res = reduceAsBuilder { nextVariable: s.nextVar, constraints: [ c ] }
-      CircuitBuilder.putState $ s { nextVar = res.nextVariable, constraints = s.constraints <> map KimchiGatePlonk res.constraints }
+      let
+        Tuple _ res = reduceAsBuilder
+          { nextVariable: s.nextVar
+          , wireState: (un AuxState s.aux).wireState
+          }
+          (reduceBasic c)
+      CircuitBuilder.putState s
+        { nextVar = res.nextVariable
+        , constraints = s.constraints <> map KimchiGatePlonk res.constraints
+        , aux = AuxState { wireState: res.wireState }
+        }
 
 instance PrimeField f => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiBasic c -> do
       s <- Prover.getState
-      case reduceAsProver [ c ] { assignments: s.assignments, nextVariable: s.nextVar } of
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceBasic c) of
         Left e -> throwProverError e
-        Right res -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+        Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
     _ -> pure unit
+
+initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
+initialState =
+  { nextVar: v0
+  , constraints: mempty
+  , publicInputs: mempty
+  , aux: initialAuxState
+  }
 
 eval
   :: forall f m
