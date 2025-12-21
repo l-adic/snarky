@@ -1,15 +1,21 @@
 module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
   , eval
+  , reduceAddComplete
   ) where
 
 import Prelude
 
 import Data.Foldable (and)
+import Data.Maybe (Maybe(..))
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..))
 import Snarky.Curves.Class (class PrimeField, fromInt)
+import Snarky.Data.Vector (Vector, (:<))
+import Snarky.Data.Vector as Vector
 
 type AddComplete f =
   { p1 :: { x :: FVar f, y :: FVar f }
@@ -68,3 +74,37 @@ eval lookup c = ado
       if x1 == x2 then x21Inv == zero
       else x21Inv == recip (x2 - x1)
   in and [ c1, c2, c3, c4, c5, c6, c7 ]
+
+reduceAddComplete
+  :: forall f m
+   . PrimeField f
+  => PlonkReductionM m f
+  => AddComplete f
+  -> m Unit
+reduceAddComplete c = do
+  p1 <- reduceAffinePoint c.p1
+  p2 <- reduceAffinePoint c.p2
+  p3 <- reduceAffinePoint c.p3
+  inf <- reduceToVariable c.inf
+  sameX <- reduceToVariable c.sameX
+  s <- reduceToVariable c.s
+  infZ <- reduceToVariable c.infZ
+  x21Inv <- reduceToVariable c.x21Inv
+  let
+    vars :: Vector 15 (Maybe Variable)
+    vars =
+      Just p1.x :< Just p1.y :< Just p2.x :< Just p2.y :< Just p3.x
+        :< Just p3.y
+        :< Just inf
+        :< Just sameX
+        :< Just s
+        :< Just infZ
+        :< Just x21Inv
+        :< Vector.generate (const Nothing)
+  addRow vars { kind: AddCompleteGate, coeffs: Vector.generate zero }
+
+  where
+  reduceAffinePoint p = do
+    x <- reduceToVariable p.x
+    y <- reduceToVariable p.y
+    pure { x, y }

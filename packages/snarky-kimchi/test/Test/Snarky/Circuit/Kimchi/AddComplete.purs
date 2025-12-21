@@ -7,13 +7,13 @@ import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Builder (initialState)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
@@ -58,7 +58,7 @@ spec pg pc =
             (Proxy @(Point (F f)))
             pc
             (uncurry circuit)
-            initialState
+            Kimchi.initialState
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2
