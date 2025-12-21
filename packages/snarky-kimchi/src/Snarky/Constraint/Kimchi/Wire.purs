@@ -9,7 +9,6 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple)
-import Data.UnionFind (UnionFindData, emptyUnionFind)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Data.Vector (Vector)
@@ -33,7 +32,6 @@ type KimchiWireRow f =
   , wireAssignments :: Map Variable (Tuple Int Int) -- Variable -> (row, col) mapping
   , queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
   , emittedRows :: Array (KimchiRow f) -- Complete coefficient rows for proof construction
-  , unionFind :: UnionFindData Variable -- Union-find for variable equivalences
   }
 
 -- Initial empty wire state
@@ -43,5 +41,4 @@ emptyKimchiWireState =
   , wireAssignments: Map.empty
   , queuedGenericGate: Nothing
   , emittedRows: []
-  , unionFind: emptyUnionFind
   }

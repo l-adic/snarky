@@ -3,8 +3,6 @@ module Snarky.Constraint.Kimchi.Reduction
   , createInternalVariable
   , addGenericPlonkConstraint
   , addRow
-  , cacheConstant
-  , lookupConstant
   , reduceAffineExpression
   , reduceToVariable
   , reduceAsBuilder
@@ -16,7 +14,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, execState, get, modify_, put, runState)
+import Control.Monad.State (class MonadState, State, get, modify_, put, runState)
 import Data.Array (catMaybes)
 import Data.Array as A
 import Data.Array as Array
@@ -32,8 +30,6 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
-import Data.UnionFind (class MonadUnionFind)
-import Data.UnionFind as UnionFind
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiWireRow, KimchiRow)
@@ -42,7 +38,7 @@ import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 
-class (MonadUnionFind Variable m) <= PlonkReductionM m f | m -> f where
+class Monad m <= PlonkReductionM m f | m -> f where
   createInternalVariable
     :: AffineExpression f
     -> m Variable
@@ -53,13 +49,6 @@ class (MonadUnionFind Variable m) <= PlonkReductionM m f | m -> f where
     :: Vector 15 (Maybe Variable)
     -> KimchiRow f
     -> m Unit
-  cacheConstant
-    :: f
-    -> Variable
-    -> m Unit
-  lookupConstant
-    :: f
-    -> m (Maybe Variable)
 
 -- return a * x where a \in f and x is a variable.
 reduceAffineExpression
@@ -255,7 +244,6 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   createInternalVariable _ = do
     BuilderReductionState { nextVariable } <- get
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
-    void $ UnionFind.find nextVariable
     pure nextVariable
   addRow vars r = do
     (BuilderReductionState s@{ wireState: { nextRow: row } }) <- get
@@ -269,24 +257,6 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
             , emittedRows = s.wireState.emittedRows `Array.snoc` r
             }
         }
-      void $ UnionFind.find var
-  cacheConstant f var = modify_ \(BuilderReductionState s) -> BuilderReductionState
-    s { cachedConstants = Map.insert f var s.cachedConstants }
-  lookupConstant f = do
-    BuilderReductionState s <- get
-    pure $ Map.lookup f s.cachedConstants
-
-instance MonadUnionFind Variable (PlonkBuilder f) where
-  find v = do
-    (BuilderReductionState s) <- get
-    let Tuple a ufs' = runState (UnionFind.find v) s.wireState.unionFind
-    put $ BuilderReductionState s { wireState = s.wireState { unionFind = ufs' } }
-    pure a
-  union v1 v2 = modify_ \(BuilderReductionState s) ->
-    let
-      ufs' = execState (UnionFind.union v1 v2) s.wireState.unionFind
-    in
-      BuilderReductionState s { wireState = s.wireState { unionFind = ufs' } }
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -321,10 +291,3 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         }
     pure nextVariable
   addRow _ _ = pure unit
-  cacheConstant _ _ = pure unit
-  lookupConstant _ = pure Nothing
-
--- The prover doesn't actually care about this
-instance MonadUnionFind Variable (PlonkProver f) where
-  find = pure
-  union _ _ = pure unit
