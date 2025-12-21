@@ -13,6 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
+import Snarky.Backend.Builder (initialState)
 import Snarky.Backend.Bulletproof.Class (class Bulletproof, createCrs, createWitness, createCircuit, createStatement, circuitIsSatisfiedBy, createProof, verify)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
@@ -20,7 +21,7 @@ import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const_, equals_, exists, mul_, neq_, read)
-import Snarky.Constraint.Bulletproofs (R1CS, initialState, eval)
+import Snarky.Constraint.Bulletproofs (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta

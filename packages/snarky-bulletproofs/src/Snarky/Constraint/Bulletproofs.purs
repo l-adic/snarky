@@ -2,15 +2,14 @@ module Snarky.Constraint.Bulletproofs
   ( R1CS(..)
   , genWithAssignments
   , eval
-  , initialState
   ) where
 
 import Prelude
 
 import Data.Map (Map)
-import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState, appendConstraint)
+import Snarky.Backend.Builder (CircuitBuilderT, appendConstraint)
 import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.CVar (CVar, Variable, const_, v0)
+import Snarky.Circuit.CVar (CVar, Variable, const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic as Basic
@@ -27,14 +26,6 @@ instance ConstraintM (ProverT f) (R1CS f) where
 
 instance ConstraintM (CircuitBuilderT (R1CS f) r) (R1CS f) where
   addConstraint' = appendConstraint
-
-initialState :: forall c. CircuitBuilderState c Unit
-initialState =
-  { nextVar: v0
-  , constraints: mempty
-  , publicInputs: mempty
-  , aux: unit
-  }
 
 genWithAssignments
   :: forall f
