@@ -94,11 +94,12 @@ fromAffine { x, y } = Point { x, y, z: one }
 
 instance PrimeField f => Eq (Point f) where
   eq (Point p1) (Point p2)
-    | p1.z == zero && p2.z == zero = true
-    | p1.z == zero && p2.z /= zero = false
-    | p1.z /= zero && p2.z == zero = false
-    | otherwise = (p1.x / p1.z) == (p2.x / p2.z) &&
-        (p2.x / p2.z) == (p2.y / p2.z)
+    | (p1.z /= zero && p2.z /= zero) = 
+        (p1.x / p1.z) == (p2.x / p2.z) &&
+          (p2.y / p2.z) == (p2.y / p2.z)
+    | p1.z == zero && p2.z == zero = 
+        p1.x == zero && p2.x == zero
+    | otherwise = false   
 
 infinity_ :: forall f. PrimeField f => Point f
 infinity_ = Point { x: zero, y: one, z: zero }

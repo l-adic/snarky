@@ -484,6 +484,7 @@ dependencies = [
  "ark-std",
  "ark-vesta",
  "bulletproofs",
+ "kimchi",
  "mina-curves",
  "mina-poseidon",
  "napi",
@@ -796,6 +797,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "groupmap"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -815,6 +826,12 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+
+[[package]]
+name = "heck"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hex"
@@ -879,6 +896,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "internal-tracing"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -919,6 +950,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
 dependencies = [
  "cpufeatures",
+]
+
+[[package]]
+name = "kimchi"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-poly",
+ "ark-serialize",
+ "blake2",
+ "groupmap",
+ "hex",
+ "internal-tracing",
+ "itertools 0.12.1",
+ "log",
+ "mina-curves",
+ "mina-poseidon",
+ "num-bigint",
+ "num-integer",
+ "o1-utils",
+ "once_cell",
+ "poly-commitment",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_with",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.17",
+ "turshi",
 ]
 
 [[package]]
@@ -1282,6 +1347,33 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
+
+[[package]]
+name = "poly-commitment"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-poly",
+ "ark-serialize",
+ "blake2",
+ "groupmap",
+ "hex",
+ "itertools 0.12.1",
+ "mina-curves",
+ "mina-poseidon",
+ "num-bigint",
+ "o1-utils",
+ "once_cell",
+ "rand 0.8.5",
+ "rand_core 0.6.4",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_with",
+ "thiserror 2.0.17",
+]
 
 [[package]]
 name = "powerfmt"
@@ -1703,6 +1795,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
+name = "strum"
+version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fec0f0aef304996cf250b31b5a10dee7980c85da9d759361292b8bca5a18f06"
+
+[[package]]
+name = "strum_macros"
+version = "0.26.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c6bee85a5a24955dc440386795aa378cd9cf82acd5f764469152d2270e581be"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "rustversion",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1863,6 +1974,16 @@ checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
 dependencies = [
  "num-integer",
  "strength_reduce",
+]
+
+[[package]]
+name = "turshi"
+version = "0.1.0"
+source = "git+https://github.com/o1-labs/proof-systems?rev=1f5dc49#1f5dc49f2cdd4003a4639875b75c1490e1838432"
+dependencies = [
+ "ark-ff",
+ "hex",
+ "o1-utils",
 ]
 
 [[package]]

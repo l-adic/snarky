@@ -5,10 +5,11 @@ module Snarky.Constraint.Kimchi.Wire
   , emptyKimchiWireState
   ) where
 
+import Data.Foldable (foldl)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple)
+import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Data.Vector (Vector)

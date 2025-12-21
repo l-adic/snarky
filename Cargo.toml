@@ -28,6 +28,7 @@ bulletproofs = { git = "https://github.com/l-adic/bulletproofs" , rev = "8267344
 spongefish = {git = "https://github.com/arkworks-rs/spongefish" , rev = "cda8c90", features = ["derive", "ark-ff", "ark-ec"] }
 
 mina-curves = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
+kimchi = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
 
 [workspace.dependencies.proptest]
 version = "1.0"
