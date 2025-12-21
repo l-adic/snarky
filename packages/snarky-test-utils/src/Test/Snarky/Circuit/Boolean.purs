@@ -3,14 +3,13 @@ module Test.Snarky.Circuit.Boolean (spec) where
 import Prelude
 
 import Data.Array (foldMap)
-import Data.Identity (Identity(..))
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
-import Snarky.Backend.Builder (CircuitBuilderT)
-import Snarky.Backend.Compile (compile, makeSolver)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F, Variable, all_, and_, any_, if_, not_, or_, xor_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
@@ -24,10 +23,10 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall f c c'
+  :: forall f c c' r
    . PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
@@ -37,8 +36,9 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval = describe "Boolean Circuit Specs" do
+spec _ pc eval initialState = describe "Boolean Circuit Specs" do
 
   it "not Circuit is Valid" $
     let
@@ -46,12 +46,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: Boolean -> Boolean
       f = not
       solver = makeSolver pc (pure <<< not_)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @Boolean)
           (Proxy @Boolean)
           pc
           (pure <<< not_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -60,12 +61,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (&&)
       solver = makeSolver pc (uncurry and_)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
           pc
           (uncurry and_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -74,12 +76,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (||)
       solver = makeSolver pc (uncurry or_)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
           pc
           (uncurry or_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -88,12 +91,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
       solver = makeSolver pc (uncurry xor_)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
           pc
           (uncurry xor_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -103,12 +107,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f = uncurry3 \b t e ->
         if b then t else e
       solver = makeSolver pc (uncurry3 if_)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Tuple3 Boolean (F f) (F f)))
           (Proxy @(F f))
           pc
           (uncurry3 if_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -117,12 +122,13 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: forall n. Vector n Boolean -> Boolean
       f = un Conj <<< foldMap Conj <<< unVector
       solver = makeSolver pc (all_ <<< unVector)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
           pc
           (all_ <<< unVector)
+          initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
 
@@ -131,11 +137,12 @@ spec _ pc eval = describe "Boolean Circuit Specs" do
       f :: forall n. Vector n Boolean -> Boolean
       f = un Disj <<< foldMap Disj <<< unVector
       solver = makeSolver pc (any_ <<< unVector)
-      { constraints } = un Identity $
-        compile
+      { constraints } =
+        compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
           pc
           (any_ <<< unVector)
+          initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)

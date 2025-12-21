@@ -6,7 +6,7 @@ import Control.Monad.Trans.Class (lift)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Backend.Builder (CircuitBuilderT)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, Variable, all_, assert_, const_, equals_, exists, mul_, neq_, read)
@@ -49,10 +49,10 @@ instance FactorM f Effect where
     throw "unhandled request: Factor"
 
 spec
-  :: forall f c c'
+  :: forall f c c' r
    . PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
@@ -62,16 +62,19 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval = describe "Factors Specs" do
+spec _ pc eval initialState = describe "Factors Specs" do
 
-  it "factors Circuit is Valid" $ do
+  it "factors Circuit is Valid" do
+
     { constraints } <- liftEffect $
       compile
         (Proxy @(F f))
         (Proxy @Unit)
         pc
         factorsCircuit
+        initialState
     let solver = makeSolver pc factorsCircuit
     let
       gen :: Gen (F f)

@@ -9,6 +9,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
+import Snarky.Backend.Builder (initialState)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
@@ -58,6 +59,7 @@ spec pg pc =
             (Proxy @Unit)
             pc
             (uncurry assertOnCurve)
+            initialState
 
         onCurve = do
           p :: AffinePoint (F f) <- genAffinePoint pg
@@ -88,6 +90,7 @@ spec pg pc =
             (Proxy @Unit)
             pc
             (uncurry assertEqual)
+            initialState
 
         same = do
           p :: AffinePoint (F f) <- genAffinePoint pg
@@ -112,6 +115,7 @@ spec pg pc =
             (Proxy @(AffinePoint (F f)))
             pc
             Curves.negate
+            initialState
         gen = genAffinePoint pg
       in
         circuitSpecPure' constraints Basic.eval solver (satisfied pureNegate) gen
@@ -127,6 +131,7 @@ spec pg pc =
             (Proxy @(AffinePoint (F f)))
             pc
             (uncurry3 if_)
+            initialState
         gen = do
           b <- arbitrary
           frequency $ NEA.cons'
@@ -152,6 +157,7 @@ spec pg pc =
             (Proxy @(AffinePoint (F f)))
             pc
             (uncurry add_)
+            initialState
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2
@@ -188,6 +194,7 @@ spec pg pc =
             (Proxy @(AffinePoint (F f)))
             pc
             (double $ curveParams pg)
+            initialState
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero

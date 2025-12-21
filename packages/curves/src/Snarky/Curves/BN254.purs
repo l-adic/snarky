@@ -11,7 +11,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 foreign import data ScalarField :: Type
@@ -175,3 +175,9 @@ foreign import _toAffine
 
 instance FieldSizeInBits ScalarField 254
 instance FieldSizeInBits BaseField 254
+
+instance Ord ScalarField where
+  compare x y = compare (toBigInt x) (toBigInt y)
+
+instance Ord BaseField where
+  compare x y = compare (toBigInt x) (toBigInt y)
