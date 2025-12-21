@@ -3,11 +3,10 @@ module Test.Snarky.Circuit.Field (spec) where
 import Prelude
 
 import Data.Foldable (sum)
-import Data.Identity (Identity)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Backend.Builder (CircuitBuilderT)
-import Snarky.Backend.Compile (SolverT, compilePure, makeSolver)
+import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (Variable, div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
@@ -22,10 +21,10 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall f c c'
+  :: forall f c r c'
    . PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
@@ -35,14 +34,14 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval = describe "Field Circuit Specs" do
+spec _ pc eval initialState = describe "Field Circuit Specs" do
 
   it "mul Circuit is Valid" $
     let
       f (Tuple (F a) (F b)) = F (a * b)
 
-      solver :: SolverT f c' Identity (Tuple (F f) (F f)) (F f)
       solver = makeSolver pc (uncurry mul_)
       { constraints } =
         compilePure
@@ -50,6 +49,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           (uncurry mul_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -64,6 +64,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @Boolean)
           pc
           (uncurry equals_)
+          initialState
       same = do
         a <- arbitrary
         pure $ Tuple (F a) (F a)
@@ -88,6 +89,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           inv_
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -103,6 +105,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           (uncurry div_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -117,6 +120,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           (pure <<< sum_ <<< unVector)
+          initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
 
@@ -130,6 +134,7 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           (pure <<< negate_)
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)
 
@@ -144,5 +149,6 @@ spec _ pc eval = describe "Field Circuit Specs" do
           (Proxy @(F f))
           pc
           seal
+          initialState
     in
       circuitSpecPure constraints eval solver (satisfied f)

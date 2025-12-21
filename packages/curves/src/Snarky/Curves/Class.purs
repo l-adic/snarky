@@ -24,7 +24,7 @@ import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy)
 
 class PrimeField :: Type -> Constraint
-class (Eq f, Show f, Field f, Arbitrary f) <= PrimeField f where
+class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
   fromBigInt :: BigInt -> f
   toBigInt :: f -> BigInt
   modulus :: BigInt

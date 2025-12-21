@@ -10,6 +10,7 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
+import Snarky.Backend.Builder (initialState)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Backend.Groth16.Class (class Groth16, setup, prove, verify, circuitIsSatisfiedBy)
 import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
@@ -26,7 +27,7 @@ import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) eval
+  CircuitTests.spec (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) eval initialState
   factorsSpec (Proxy @BN254.G) (Proxy @BN254.ScalarField) (Proxy @(R1CS BN254.ScalarField)) "BN254"
 
 --------------------------------------------------------------------------------
@@ -78,6 +79,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         (Proxy @Unit)
         pc
         factorsCircuit
+        initialState
     let
       gates = makeGates { publicInputs, constraints: cs }
 

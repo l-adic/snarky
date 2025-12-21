@@ -3,6 +3,7 @@ module Test.Snarky.Circuit.Main where
 import Prelude
 
 import Effect (Effect)
+import Snarky.Backend.Builder as Snarky
 import Snarky.Constraint.Basic (Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.BN254 as BN254
@@ -17,5 +18,5 @@ import Type.Proxy (Proxy(..))
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   ConstraintTests.spec $ Proxy @BN254.ScalarField
-  CircuitTests.spec (Proxy @Vesta.ScalarField) (Proxy @(Basic Vesta.ScalarField)) (Basic.eval)
+  CircuitTests.spec (Proxy @Vesta.ScalarField) (Proxy @(Basic Vesta.ScalarField)) (Basic.eval) Snarky.initialState
   TypesTests.spec $ Proxy @(Vesta.BaseField)

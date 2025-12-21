@@ -3,7 +3,7 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Backend.Builder (CircuitBuilderT)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
@@ -17,10 +17,10 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall f c c'
+  :: forall f c r c'
    . PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
@@ -30,8 +30,9 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval = describe "Assertion Circuit Specs" do
+spec _ pc eval initialState = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $
     let
@@ -42,6 +43,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
           (Proxy @Unit)
           pc
           assertNonZero_
+          initialState
       gen = do
         a <- arbitrary `suchThat` (_ /= zero)
         pure $ F a
@@ -59,6 +61,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
           (Proxy @Unit)
           pc
           (uncurry assertEqual_)
+          initialState
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
         a <- arbitrary
@@ -78,6 +81,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
           (Proxy @Unit)
           pc
           (uncurry assertNotEqual_)
+          initialState
       same = arbitrary <#> \a -> Tuple a a
       distinct = do
         a <- arbitrary
@@ -97,6 +101,7 @@ spec _ pc eval = describe "Assertion Circuit Specs" do
           (Proxy @Unit)
           pc
           (uncurry assertSquare_)
+          initialState
       squares = do
         x <- arbitrary
         pure $ Tuple (F x) (F (x * x))

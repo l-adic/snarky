@@ -34,7 +34,7 @@ data KimchiGate f
   | KimchiGateAddComplete (AddComplete f)
   | KimchiGatePoseidon (PoseidonConstraint f)
 
-instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f)) (KimchiConstraint f) where
+instance PrimeField f => ConstraintM (CircuitBuilderT (KimchiGate f) Unit) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> appendConstraint (KimchiGateAddComplete c)
     KimchiPoseidon c -> appendConstraint (KimchiGatePoseidon c)

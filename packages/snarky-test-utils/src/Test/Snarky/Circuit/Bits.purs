@@ -10,7 +10,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Backend.Builder (CircuitBuilderT)
+import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, Variable, pack_, unpack_)
@@ -59,11 +59,11 @@ bitSizes :: Int -> Gen Int
 bitSizes mx = Gen.chooseInt 1 mx
 
 spec
-  :: forall f n c c'
+  :: forall f n c c' r
    . FieldSizeInBits f n
   => PrimeField f
   => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c) c'
+  => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
@@ -73,8 +73,9 @@ spec
        -> c
        -> m Boolean
      )
+  -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval = describe "Bits Circuit Specs" do
+spec _ pc eval initialState = describe "Bits Circuit Specs" do
   it "unpack Circuit is Valid" $
     let
 
@@ -91,6 +92,7 @@ spec _ pc eval = describe "Bits Circuit Specs" do
           (Proxy @(Vector n Boolean))
           pc
           unpack_
+          initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
@@ -104,5 +106,6 @@ spec _ pc eval = describe "Bits Circuit Specs" do
           (Proxy @(F f))
           pc
           (packUnpackCircuit)
+          initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

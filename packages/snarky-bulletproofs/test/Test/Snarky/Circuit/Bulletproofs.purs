@@ -13,6 +13,7 @@ import Data.Tuple (Tuple(..), snd)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throw)
+import Snarky.Backend.Builder (initialState)
 import Snarky.Backend.Bulletproof.Class (class Bulletproof, createCrs, createWitness, createCircuit, createStatement, circuitIsSatisfiedBy, createProof, verify)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
@@ -34,7 +35,7 @@ import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval
+  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval initialState
   factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
   factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 
@@ -91,6 +92,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         (Proxy @Unit)
         pc
         factorsCircuit
+        initialState
     let
       constraints = sortR1CS cs
       gates = makeGates { publicInputs, constraints }
@@ -201,6 +203,7 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg pc name = describe (name <> " DLog
         (Proxy @Unit)
         pc
         (dlog16Circuit cp)
+        initialState
     let
       constraints = sortR1CS cs
       gates = makeGates { publicInputs, constraints }

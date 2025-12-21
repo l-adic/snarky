@@ -24,7 +24,7 @@ derive newtype instance Show f => Show (R1CS f)
 instance ConstraintM (ProverT f) (R1CS f) where
   addConstraint' _ = pure unit
 
-instance ConstraintM (CircuitBuilderT (R1CS f)) (R1CS f) where
+instance ConstraintM (CircuitBuilderT (R1CS f) r) (R1CS f) where
   addConstraint' = appendConstraint
 
 genWithAssignments

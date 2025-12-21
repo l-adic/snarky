@@ -3,11 +3,12 @@ module Test.Snarky.Circuit.Kimchi.Main where
 import Prelude
 
 import Effect (Effect)
+import Snarky.Backend.Builder (initialState)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
-import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
+import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
 import Test.Spec (Spec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -21,5 +22,5 @@ main =
 spec :: Spec Unit
 spec = do
   GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval
+  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval initialState
   PoseidonTests.spec
