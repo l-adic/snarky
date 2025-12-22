@@ -3,24 +3,29 @@ module Test.Snarky.Circuit.Kimchi.Poseidon (spec) where
 import Prelude
 
 import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Newtype (unwrap)
+import Data.Tuple (Tuple(..))
+import Effect.Class (liftEffect)
 import Poseidon.Class (fullRound)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Types (F(..))
-import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
+import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pasta (PallasBaseField)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (arbitrary)
+import Test.QuickCheck (arbitrary, quickCheck')
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
+import Test.Utils.Poseidon (class VerifyPoseidon)
+import Test.Utils.Poseidon as PoseidonUtils
 import Type.Proxy (Proxy(..))
 
-spec :: Spec Unit
-spec = describe "Poseidon Circuit Tests" do
+spec :: forall f. VerifyPoseidon f => Proxy f -> Spec Unit
+spec _ = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
     let
@@ -34,7 +39,7 @@ spec = describe "Poseidon Circuit Tests" do
           F (Vector.index finalState (unsafeFinite 2))
 
       solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidon
-      { constraints } = compilePure
+      { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } = compilePure
         (Proxy @(Vector 3 (F PallasBaseField)))
         (Proxy @(F PallasBaseField))
         (Proxy @(KimchiConstraint PallasBaseField))
@@ -42,4 +47,11 @@ spec = describe "Poseidon Circuit Tests" do
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
-    circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
+    do
+      circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
+      liftEffect $ quickCheck' 1 do
+        input <- genInputs
+        case runSolver solver input of
+          Left _ -> pure false
+          Right (Tuple _ varAssignments) ->
+            pure $ PoseidonUtils.verify { wireAssignments, varAssignments, rows: emittedRows }

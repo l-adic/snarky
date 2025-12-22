@@ -47,8 +47,7 @@ spongefish = { workspace = true }
 [features]
 default = ["mina-curves-backend"]
 arkworks = ["ark-pallas", "ark-vesta"]
-mina-curves-backend = ["mina-curves", "mina-poseidon"]
-test-utils = ["mina-curves-backend", "kimchi"]
+mina-curves-backend = ["mina-curves", "mina-poseidon", "kimchi"]
 
 [dev-dependencies]
 proptest = { workspace = true }

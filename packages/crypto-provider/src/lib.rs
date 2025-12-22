@@ -420,5 +420,8 @@ pub use kimchi::poseidon::{
     },
 };
 
-#[cfg(feature = "test-utils")]
-pub use kimchi::test_utils::{verify_pallas_complete_add, verify_vesta_complete_add};
+#[cfg(feature = "mina-curves-backend")]
+pub use kimchi::test_utils::{
+    verify_pallas_complete_add, verify_pallas_poseidon, verify_vesta_complete_add,
+    verify_vesta_poseidon,
+};

@@ -6,10 +6,7 @@
 
 pub mod poseidon;
 
-#[cfg(feature = "test-utils")]
 pub mod test_utils;
 
 pub use poseidon::*;
-
-#[cfg(feature = "test-utils")]
 pub use test_utils::*;
