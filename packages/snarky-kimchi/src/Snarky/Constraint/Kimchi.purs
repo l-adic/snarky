@@ -8,6 +8,7 @@ module Snarky.Constraint.Kimchi
 
 import Prelude
 
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Newtype (class Newtype, un)
 import Data.Tuple (Tuple(..))
@@ -54,7 +55,7 @@ initialAuxState = AuxState
 
 instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
-    KimchiAddComplete c -> do
+    (KimchiAddComplete c) -> do
       s <- CircuitBuilder.getState
       let
         Tuple _ res = reduceAsBuilder
@@ -62,9 +63,9 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (Kimchi
           , wireState: (un AuxState s.aux).wireState
           }
           (reduceAddComplete c)
-      appendConstraint (KimchiGateAddComplete c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
+        , constraints = s.constraints `Array.snoc` (KimchiGateAddComplete c) <> (KimchiGatePlonk <$> res.constraints)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiPoseidon c -> do
@@ -75,9 +76,9 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (Kimchi
           , wireState: (un AuxState s.aux).wireState
           }
           (reducePoseidon c)
-      appendConstraint (KimchiGatePoseidon c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
+        , constraints = s.constraints `Array.snoc` (KimchiGatePoseidon c) <> (KimchiGatePlonk <$> res.constraints)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiPlonk c -> appendConstraint (KimchiGatePlonk c)

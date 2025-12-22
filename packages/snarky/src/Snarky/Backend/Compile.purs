@@ -112,11 +112,6 @@ makeSolver _ circuit = \inputs -> do
     Tuple (Left e) _ -> throwError e
     Tuple (Right c) { assignments } -> pure $ Tuple c assignments
 
-type SolverResult f a =
-  { result :: a
-  , assignments :: Map Variable f
-  }
-
 type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
 type SolverT f c m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
 

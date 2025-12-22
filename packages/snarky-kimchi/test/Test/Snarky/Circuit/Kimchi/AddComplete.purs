@@ -3,30 +3,35 @@ module Test.Snarky.Circuit.Kimchi.AddComplete where
 import Prelude
 
 import Control.Monad.Gen (suchThat)
+import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
+import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Test.QuickCheck (class Arbitrary)
+import Test.QuickCheck (class Arbitrary, quickCheck')
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
+import Test.Utils.AddComplete (class VerifyAddComplete)
+import Test.Utils.AddComplete as AddCompleteUtils
 import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f
    . PrimeField f
   => PoseidonField f
+  => VerifyAddComplete f
   => Arbitrary g
   => WeierstrassCurve f g
   => Proxy g
@@ -52,7 +57,7 @@ spec pg pc =
           y <- Snarky.if_ isInfinity (const_ one) p.y
           z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
           pure $ Point { x, y, z }
-        { constraints } =
+        { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(Point (F f)))
@@ -75,8 +80,11 @@ spec pg pc =
           p1 <- EC.genAffinePoint pg
           let p2 = p1 { y = -p1.y }
           pure $ Tuple p1 p2
-
       in
         do
           circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
           circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
+          liftEffect $ quickCheck' 10 do
+            input <- gen
+            let Right (Tuple _ varAssignments) = runSolver solver input
+            pure $ AddCompleteUtils.verify { wireAssignments, varAssignments, rows: emittedRows }
