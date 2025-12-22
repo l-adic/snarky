@@ -421,6 +421,4 @@ pub use kimchi::poseidon::{
 };
 
 #[cfg(feature = "test-utils")]
-pub use kimchi::test_utils::{
-    verify_pallas_complete_add, verify_vesta_complete_add,
-};
+pub use kimchi::test_utils::{verify_pallas_complete_add, verify_vesta_complete_add};

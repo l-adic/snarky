@@ -14,7 +14,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, get, modify_, put, runState)
+import Control.Monad.State (class MonadState, State, get, modify_, runState)
 import Data.Array (catMaybes)
 import Data.Array as A
 import Data.Array as Array
@@ -199,7 +199,7 @@ finalizeGateQueue wireState =
           , queuedGenericGate = Nothing
           , emittedRows = wireState.emittedRows `A.snoc` kimchiRow
           , wireAssignments =
-              foldl (\acc (Tuple k v) -> Map.insert k v acc) wireState.wireAssignments
+              foldl (\acc (Tuple k v) -> Map.insertWith (<>) k [ v ] acc) wireState.wireAssignments
                 $ catMaybes
                 $
                   [ Tuple <$> leftoverGate.vl <*> pure (Tuple row 0)
@@ -243,15 +243,23 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
     pure nextVariable
   addRow vars r = do
-    (BuilderReductionState s@{ wireState: { nextRow: row } }) <- get
-    traverseWithIndex_ (\i mv -> wireVariableAt mv row (getFinite i)) vars
-    put $ BuilderReductionState s { wireState { nextRow = row + 1 } }
+    (BuilderReductionState { wireState: { nextRow: row } }) <- get
+    traverseWithIndex_
+      ( \i mv -> wireVariableAt mv row (getFinite i)
+      )
+      vars
+    modify_ \(BuilderReductionState s) ->
+      BuilderReductionState s
+        { wireState
+            { nextRow = row + 1
+            , emittedRows = s.wireState.emittedRows `Array.snoc` r
+            }
+        }
     where
     wireVariableAt mvar row col = for_ mvar $ \var -> do
       modify_ \(BuilderReductionState s) -> BuilderReductionState $ s
         { wireState = s.wireState
-            { wireAssignments = Map.insert var (Tuple row col) s.wireState.wireAssignments
-            , emittedRows = s.wireState.emittedRows `Array.snoc` r
+            { wireAssignments = Map.insertWith (<>) var [ (Tuple row col) ] s.wireState.wireAssignments
             }
         }
 
