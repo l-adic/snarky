@@ -10,16 +10,17 @@ module Poseidon.Class
   ) where
 
 import Prelude
-import Type.Proxy (Proxy)
 
+import Poseidon.FFI.Pallas as PallasFFI
+import Poseidon.FFI.Vesta as VestaFFI
+import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector)
-import Poseidon.FFI.Pallas as PallasFFI
-import Poseidon.FFI.Vesta as VestaFFI
+import Type.Proxy (Proxy)
 
 -- | Type class for fields that support Poseidon operations
-class PoseidonField f where
+class PrimeField f <= PoseidonField f where
   -- | S-box operation (x^7)
   sbox :: f -> f
 
