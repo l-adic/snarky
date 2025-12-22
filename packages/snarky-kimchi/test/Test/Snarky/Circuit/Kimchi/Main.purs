@@ -26,5 +26,6 @@ spec = do
   GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
   CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval Kimchi.initialState
   PoseidonTests.spec (Proxy @Vesta.BaseField)
+  PoseidonTests.spec (Proxy @Pallas.BaseField)
   AddCompleteTests.spec (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
   AddCompleteTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))

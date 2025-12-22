@@ -3,84 +3,122 @@ use napi_derive::napi;
 
 use crate::pasta::types::{PallasGroup, PallasScalarField, VestaGroup, VestaScalarField};
 use kimchi::circuits::gate::{CircuitGate, GateType};
-use kimchi::circuits::wires::COLUMNS;
+use kimchi::circuits::wires::{Wire, COLUMNS};
 
-#[napi]
-pub fn verify_pallas_poseidon(
-    row: Vec<&External<PallasScalarField>>,
-    next_row: Vec<&External<PallasScalarField>>,
-    coeffs: Vec<&External<PallasScalarField>>,
-) -> bool {
-    if row.len() != 15 || next_row.len() != 15 {
-        println!(
-            "Invalid vector lengths: row.len() = {}, next_row.len() = {}",
-            row.len(),
-            next_row.len()
-        );
-        return false;
-    }
+pub struct PallasPoseidonVerifier {
+    gates: Vec<CircuitGate<PallasScalarField>>,
+}
 
-    let coeffs_vec: Vec<PallasScalarField> = coeffs.into_iter().map(|c| **c).collect();
-    let gate = CircuitGate::new(GateType::Poseidon, Default::default(), coeffs_vec);
-
-    // Create witness matrix where each column has exactly 2 elements [current_row, next_row]
-    let mut witness_vecs: Vec<Vec<PallasScalarField>> = Vec::with_capacity(COLUMNS);
-
-    // Fill first 15 columns with actual data
-    for col_idx in 0..15 {
-        witness_vecs.push(vec![**row[col_idx], **next_row[col_idx]]);
-    }
-
-    // Fill remaining columns with zeros
-    for _ in 15..COLUMNS {
-        witness_vecs.push(vec![
-            PallasScalarField::from(0u32),
-            PallasScalarField::from(0u32),
-        ]);
-    }
-
-    // Convert to fixed-size array
-    let witness: [Vec<PallasScalarField>; COLUMNS] = witness_vecs.try_into().unwrap();
-
-    gate.verify_poseidon::<PallasGroup>(0, &witness).is_ok()
+pub struct VestaPoseidonVerifier {
+    gates: Vec<CircuitGate<VestaScalarField>>,
 }
 
 #[napi]
-pub fn verify_vesta_poseidon(
-    row: Vec<&External<VestaScalarField>>,
-    next_row: Vec<&External<VestaScalarField>>,
-    coeffs: Vec<&External<VestaScalarField>>,
+pub fn make_pallas_poseidon_verifier(
+    round_constants: Vec<Vec<&External<PallasScalarField>>>,
+    first_row: u32,
+    last_row: u32,
+) -> External<PallasPoseidonVerifier> {
+    let round_constants_converted: Vec<Vec<PallasScalarField>> = round_constants
+        .into_iter()
+        .map(|row| row.into_iter().map(|field_ext| **field_ext).collect())
+        .collect();
+
+    let first_wire_array = Wire::for_row(first_row as usize);
+    let last_wire_array = Wire::for_row(last_row as usize);
+
+    let (gates, _next_row) = CircuitGate::create_poseidon_gadget(
+        0,
+        [first_wire_array, last_wire_array],
+        &round_constants_converted,
+    );
+
+    let verifier = PallasPoseidonVerifier { gates };
+
+    External::new(verifier)
+}
+
+#[napi]
+pub fn make_vesta_poseidon_verifier(
+    round_constants: Vec<Vec<&External<VestaScalarField>>>,
+    first_row: u32,
+    last_row: u32,
+) -> External<VestaPoseidonVerifier> {
+    let round_constants_converted: Vec<Vec<VestaScalarField>> = round_constants
+        .into_iter()
+        .map(|row| row.into_iter().map(|field_ext| **field_ext).collect())
+        .collect();
+
+    let first_wire_array = Wire::for_row(first_row as usize);
+    let last_wire_array = Wire::for_row(last_row as usize);
+
+    let (gates, _next_row) = CircuitGate::create_poseidon_gadget(
+        0,
+        [first_wire_array, last_wire_array],
+        &round_constants_converted,
+    );
+
+    let verifier = VestaPoseidonVerifier { gates };
+
+    External::new(verifier)
+}
+
+#[napi]
+pub fn verify_pallas_poseidon_gadget(
+    verifier: &External<PallasPoseidonVerifier>,
+    witness_matrix: Vec<Vec<&External<PallasScalarField>>>,
 ) -> bool {
-    if row.len() != 15 || next_row.len() != 15 {
-        println!(
-            "Invalid vector lengths: row.len() = {}, next_row.len() = {}",
-            row.len(),
-            next_row.len()
-        );
-        return false;
+    let mut witness: [Vec<PallasScalarField>; COLUMNS] = Default::default();
+
+    for column in witness.iter_mut().take(COLUMNS) {
+        *column = Vec::new();
     }
 
-    let coeffs_vec: Vec<VestaScalarField> = coeffs.into_iter().map(|c| **c).collect();
-    let gate = CircuitGate::new(GateType::Poseidon, Default::default(), coeffs_vec);
-
-    // Create witness matrix where each column has exactly 2 elements [current_row, next_row]
-    let mut witness_vecs: Vec<Vec<VestaScalarField>> = Vec::with_capacity(COLUMNS);
-
-    // Fill first 15 columns with actual data
-    for col_idx in 0..15 {
-        witness_vecs.push(vec![**row[col_idx], **next_row[col_idx]]);
+    for row_data in witness_matrix {
+        for (col_idx, field_ext) in row_data.into_iter().enumerate().take(15) {
+            witness[col_idx].push(**field_ext);
+        }
     }
 
-    // Fill remaining columns with zeros
-    for _ in 15..COLUMNS {
-        witness_vecs.push(vec![
-            VestaScalarField::from(0u32),
-            VestaScalarField::from(0u32),
-        ]);
+    for (gate_idx, gate) in verifier.gates.iter().enumerate() {
+        if gate.typ == GateType::Poseidon
+            && gate
+                .verify_poseidon::<PallasGroup>(gate_idx, &witness)
+                .is_err()
+        {
+            return false;
+        }
     }
 
-    // Convert to fixed-size array
-    let witness: [Vec<VestaScalarField>; COLUMNS] = witness_vecs.try_into().unwrap();
+    true
+}
 
-    gate.verify_poseidon::<VestaGroup>(0, &witness).is_ok()
+#[napi]
+pub fn verify_vesta_poseidon_gadget(
+    verifier: &External<VestaPoseidonVerifier>,
+    witness_matrix: Vec<Vec<&External<VestaScalarField>>>,
+) -> bool {
+    let mut witness: [Vec<VestaScalarField>; COLUMNS] = Default::default();
+
+    for column in witness.iter_mut().take(COLUMNS) {
+        *column = Vec::new();
+    }
+
+    for row_data in witness_matrix {
+        for (col_idx, field_ext) in row_data.into_iter().enumerate().take(15) {
+            witness[col_idx].push(**field_ext);
+        }
+    }
+
+    for (gate_idx, gate) in verifier.gates.iter().enumerate() {
+        if gate.typ == GateType::Poseidon
+            && gate
+                .verify_poseidon::<VestaGroup>(gate_idx, &witness)
+                .is_err()
+        {
+            return false;
+        }
+    }
+
+    true
 }

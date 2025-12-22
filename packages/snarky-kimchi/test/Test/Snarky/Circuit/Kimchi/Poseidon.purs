@@ -20,11 +20,11 @@ import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary, quickCheck')
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
-import Test.Utils.Poseidon (class VerifyPoseidon)
+import Test.Utils.Poseidon (class PoseidonVerifier)
 import Test.Utils.Poseidon as PoseidonUtils
 import Type.Proxy (Proxy(..))
 
-spec :: forall f. VerifyPoseidon f => Proxy f -> Spec Unit
+spec :: forall f v. PoseidonVerifier f v => Proxy f -> Spec Unit
 spec _ = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
@@ -54,4 +54,4 @@ spec _ = describe "Poseidon Circuit Tests" do
         case runSolver solver input of
           Left _ -> pure false
           Right (Tuple _ varAssignments) ->
-            pure $ PoseidonUtils.verify { wireAssignments, varAssignments, rows: emittedRows }
+            pure $ PoseidonUtils._verify { wireAssignments, varAssignments, rows: emittedRows }

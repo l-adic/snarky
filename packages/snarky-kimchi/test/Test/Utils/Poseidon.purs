@@ -2,30 +2,24 @@ module Test.Utils.Poseidon where
 
 import Prelude
 
-import Data.Array (all, catMaybes, mapWithIndex, (!!), (:))
-import Data.Array as Array
+import Data.Array (catMaybes, mapWithIndex)
+import Data.Function.Uncurried (Fn2, Fn3, runFn2, runFn3)
 import Data.Foldable (foldl)
-import Data.List (List(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (Tuple(..))
-import Debug (trace)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Poseidon (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasScalarField, VestaScalarField)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
-
-foreign import verifyPallasPoseidon :: { row :: Vector 15 PallasScalarField, nextRow :: Vector 15 PallasScalarField, coeffs :: Vector 15 PallasScalarField } -> Boolean
-
-foreign import verifyVestaPoseidon :: { row :: Vector 15 VestaScalarField, nextRow :: Vector 15 VestaScalarField, coeffs :: Vector 15 VestaScalarField } -> Boolean
 
 placeWitness
   :: forall f r
@@ -50,25 +44,60 @@ placeWitness { wireAssignments, varAssignments } =
     Map.empty
     (Map.toUnfoldable wireAssignments :: Array _)
 
-class PrimeField f <= VerifyPoseidon f where
-  verifyPoseidon :: { row :: Vector 15 f, nextRow :: Vector 15 f, coeffs :: Vector 15 f } -> Boolean
+foreign import data PallasPoseidonVerifier :: Type
 
-instance VerifyPoseidon Pallas.ScalarField where
-  verifyPoseidon { row, nextRow, coeffs } = verifyPallasPoseidon { row, nextRow, coeffs }
+foreign import makePallasPoseidonVerifier
+  :: Fn3 (Vector 55 (Vector 3 Pallas.ScalarField)) Int Int PallasPoseidonVerifier
 
-instance VerifyPoseidon Vesta.ScalarField where
-  verifyPoseidon { row, nextRow, coeffs } = verifyVestaPoseidon { row, nextRow, coeffs }
+foreign import verifyPallasPoseidonGadget
+  :: Fn2 PallasPoseidonVerifier (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean
 
-verify
-  :: forall f
-   . VerifyPoseidon f
+foreign import data VestaPoseidonVerifier :: Type
+
+foreign import makeVestaPoseidonVerifier
+  :: Fn3 (Vector 55 (Vector 3 Pallas.BaseField)) Int Int VestaPoseidonVerifier
+
+foreign import verifyVestaPoseidonGadget
+  :: Fn2 VestaPoseidonVerifier (Vector 12 (Vector 15 Vesta.ScalarField)) Boolean
+
+class PoseidonField f <= PoseidonVerifier f v | f -> v where
+  makeVerifier
+    :: Proxy f
+    -> { firstRow :: Int
+       , lastRow :: Int
+       }
+    -> v
+  verify :: v -> Vector 12 (Vector 15 f) -> Boolean
+
+instance PoseidonVerifier Pallas.ScalarField PallasPoseidonVerifier where
+  makeVerifier _ { firstRow, lastRow } =
+    let
+      roundConstaints = Vector.generate $ \i ->
+        getRoundConstants (Proxy @Vesta.BaseField) (getFinite i)
+    in
+      runFn3 makePallasPoseidonVerifier roundConstaints firstRow lastRow
+  verify v w = runFn2 verifyPallasPoseidonGadget v w
+
+instance PoseidonVerifier Vesta.ScalarField VestaPoseidonVerifier where
+  makeVerifier _ { firstRow, lastRow } =
+    let
+      roundConstaints = Vector.generate $ \i ->
+        getRoundConstants (Proxy @Pallas.BaseField) (getFinite i)
+    in
+      runFn3 makeVestaPoseidonVerifier roundConstaints firstRow lastRow
+  verify v w = runFn2 verifyVestaPoseidonGadget v w
+
+_verify
+  :: forall f v
+   . PoseidonVerifier f v
   => { wireAssignments :: Map Variable (Array (Tuple Int Int))
      , varAssignments :: Map Variable f
      , rows :: Array (KimchiRow f)
      }
   -> Boolean
-verify arg@{ rows } =
+_verify arg@{ rows } =
   let
+    poseidonRowIndices :: Array Int
     poseidonRowIndices = catMaybes $
       mapWithIndex
         ( \i { kind } -> case kind of
@@ -77,32 +106,20 @@ verify arg@{ rows } =
             _ -> Nothing
         )
         rows
+
+    verifier = makeVerifier (Proxy @f) { firstRow: 0, lastRow: 11 }
     witnessMatrix = placeWitness arg
 
-    witnessRowsWithCoeffs :: Vector 12 { witnessRow :: Vector 15 f, coeffs :: Vector 15 f }
-    witnessRowsWithCoeffs = unsafePartial $ fromJust $ Vector.toVector (Proxy @12) $
+    witness :: Vector 12 (Vector 15 f)
+    witness = unsafePartial $ fromJust $ Vector.toVector (Proxy @12) $
       map
         ( \rowIndex ->
-            let
-              witnessRow = Vector.generate \col ->
-                case Map.lookup (Tuple rowIndex (getFinite col)) witnessMatrix of
-                  Just a -> a
-                  Nothing -> zero
-              coeffs = case rows !! rowIndex of
-                Just kimchiRow -> kimchiRow.coeffs
-                Nothing -> unsafeCrashWith "Missing kimchi row"
-            in
-              { witnessRow, coeffs }
+            Vector.generate \col ->
+              case Map.lookup (Tuple rowIndex (getFinite col)) witnessMatrix of
+                Just a -> a
+                Nothing -> zero
         )
         poseidonRowIndices
 
-    pairs = pairRowsWithCoeffs (Array.toUnfoldable $ Vector.unVector witnessRowsWithCoeffs)
-    res = map verifyPoseidon pairs
   in
-    trace res \_ -> all identity res
-  where
-  pairRowsWithCoeffs (Cons { witnessRow: row, coeffs: coeffs1 } (Cons { witnessRow: nextRow } Nil)) =
-    [ { row, nextRow, coeffs: coeffs1 } ]
-  pairRowsWithCoeffs (Cons { witnessRow: row, coeffs: coeffs1 } (Cons next@{ witnessRow: nextRow } rest)) =
-    { row, nextRow, coeffs: coeffs1 } : pairRowsWithCoeffs (Cons next rest)
-  pairRowsWithCoeffs _ = unsafeCrashWith "Expected at least two poseidon rows"
+    verify verifier witness
