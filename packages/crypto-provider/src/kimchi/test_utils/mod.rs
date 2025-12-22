@@ -4,9 +4,11 @@
 // and witness values satisfy the same equations as the Rust Kimchi proof system.
 
 pub mod complete_add;
+pub mod generic;
 pub mod poseidon;
 
 pub use complete_add::*;
+pub use generic::*;
 pub use poseidon::*;
 
 use kimchi::circuits::wires::COLUMNS;
