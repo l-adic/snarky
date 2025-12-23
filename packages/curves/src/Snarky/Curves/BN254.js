@@ -196,3 +196,7 @@ export function _toAffine(just, nothing, value) {
     return just([p[0], p[1]]);
   }
 }
+
+export function _fromAffine({x,y}) {
+    return napi.bn254GroupFromAffine(x,y)
+}

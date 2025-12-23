@@ -173,6 +173,8 @@ foreign import _toAffine
        G
        (Maybe a)
 
+foreign import _fromAffine :: { x :: BaseField, y :: BaseField } -> G
+
 instance FieldSizeInBits ScalarField 254
 instance FieldSizeInBits BaseField 254
 

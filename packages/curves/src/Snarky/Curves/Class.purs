@@ -10,6 +10,7 @@ module Snarky.Curves.Class
   , class WeierstrassCurve
   , curveParams
   , toAffine
+  , fromAffine
   , class FieldSizeInBits
   , fromInt
   ) where
@@ -33,15 +34,14 @@ class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
 fromInt :: forall f. PrimeField f => Int -> f
 fromInt x = fromBigInt $ JS.BigInt.fromInt x
 
-class FrModule :: Type -> Type -> Constraint
 class (PrimeField f, Monoid g) <= FrModule f g | g -> f where
   scalarMul :: f -> g -> g
   inverse :: g -> g
 
-class WeierstrassCurve :: Type -> Type -> Constraint
 class PrimeField f <= WeierstrassCurve f g | g -> f where
   curveParams :: Proxy g -> { a :: f, b :: f }
   toAffine :: g -> Maybe { x :: f, y :: f }
+  fromAffine :: { x :: f, y :: f } -> g
 
 class FieldSizeInBits :: Type -> Int -> Constraint
 class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n
