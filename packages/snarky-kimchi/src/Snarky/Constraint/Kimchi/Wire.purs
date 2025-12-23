@@ -22,6 +22,7 @@ data GateKind
   = GenericPlonkGate
   | AddCompleteGate
   | PoseidonGate
+  | VarBaseMul
   | Zero
 
 derive instance Generic GateKind _

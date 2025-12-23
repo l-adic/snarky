@@ -12,7 +12,6 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Newtype (class Newtype, un)
 import Data.Tuple (Tuple(..))
-import Partial.Unsafe (unsafeCrashWith)
 import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState, appendConstraint)
 import Snarky.Backend.Builder as CircuitBuilder
@@ -29,7 +28,7 @@ import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, reducePoseidon)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
-import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
+import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul, reduceVarBaseMul)
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -44,6 +43,7 @@ data KimchiGate f
   = KimchiGatePlonk (GenericPlonkConstraint f)
   | KimchiGateAddComplete (AddComplete f)
   | KimchiGatePoseidon (PoseidonConstraint f)
+  | KimchiGateVarBaseMul (VarBaseMul f)
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
@@ -98,7 +98,19 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (Kimchi
         , constraints = s.constraints <> map KimchiGatePlonk res.constraints
         , aux = AuxState { wireState: res.wireState }
         }
-    KimchiVarBaseMul _ -> unsafeCrashWith "TODO: builder varbasemul"
+    KimchiVarBaseMul c -> do
+      s <- CircuitBuilder.getState
+      let
+        Tuple _ res = reduceAsBuilder
+          { nextVariable: s.nextVar
+          , wireState: (un AuxState s.aux).wireState
+          }
+          (reduceVarBaseMul c)
+      CircuitBuilder.putState s
+        { nextVar = res.nextVariable
+        , constraints = s.constraints `Array.snoc` (KimchiGateVarBaseMul c) <> (KimchiGatePlonk <$> res.constraints)
+        , aux = AuxState { wireState: res.wireState }
+        }
 
 instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
@@ -117,8 +129,11 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConst
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceBasic c) of
         Left e -> throwProverError e
         Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
-    KimchiVarBaseMul _ ->
-      unsafeCrashWith "TODO: prover varBaseMul"
+    KimchiVarBaseMul c -> do
+      s <- Prover.getState
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceVarBaseMul c) of
+        Left e -> throwProverError e
+        Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
     KimchiPlonk _ -> pure unit
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
@@ -141,6 +156,7 @@ eval lookup = case _ of
   KimchiGatePlonk c -> GenericPlonk.eval lookup c
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
+  KimchiGateVarBaseMul _ -> pure true
 
 instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS

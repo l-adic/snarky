@@ -36,7 +36,6 @@ scaleFastUnpack
        , lsb_bits :: Vector n (BoolVar f)
        }
 scaleFastUnpack base t = do
-  -- TODO: Why is this unchecked?
   lsb_bits :: Vector n (BoolVar f) <- Vector.generateA \i -> exists do
     vVal <- readCVar t
     let
