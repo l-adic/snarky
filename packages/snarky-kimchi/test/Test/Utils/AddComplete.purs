@@ -3,12 +3,11 @@ module Test.Utils.AddComplete where
 import Prelude
 
 import Data.Array (all, catMaybes, mapWithIndex)
-import Data.Foldable (foldl)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Partial.Unsafe (unsafeCrashWith)
+import Snarky.Backend.Kimchi (placeWitness)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -22,29 +21,6 @@ import Snarky.Data.Vector as Vector
 foreign import verifyPallasCompleteAdd :: Vector 15 PallasBaseField -> Boolean
 
 foreign import verifyVestaCompleteAdd :: Vector 15 VestaBaseField -> Boolean
-
-placeWitness
-  :: forall f r
-   . PrimeField f
-  => { wireAssignments :: Map Variable (Array (Tuple Int Int))
-     , varAssignments :: Map Variable f
-     | r
-     }
-  -> Map (Tuple Int Int) f
-placeWitness { wireAssignments, varAssignments } =
-  foldl
-    ( \acc (Tuple var positions) ->
-        foldl
-          ( \m pos ->
-              case Map.lookup var varAssignments of
-                Nothing -> unsafeCrashWith $ "placeWitness failed, missing var in varAssignments: " <> show var
-                Just value -> Map.insert pos value m
-          )
-          acc
-          positions
-    )
-    Map.empty
-    (Map.toUnfoldable wireAssignments :: Array _)
 
 class PrimeField f <= VerifyAddComplete f where
   verifyAddComplete :: Vector 15 f -> Boolean
