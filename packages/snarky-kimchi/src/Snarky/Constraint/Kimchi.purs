@@ -12,6 +12,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Newtype (class Newtype, un)
 import Data.Tuple (Tuple(..))
+import Partial.Unsafe (unsafeCrashWith)
 import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState, appendConstraint)
 import Snarky.Backend.Builder as CircuitBuilder
@@ -28,6 +29,7 @@ import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, reducePoseidon)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
+import Snarky.Constraint.Kimchi.VarBaseMul (VarBaseMul)
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -36,6 +38,7 @@ data KimchiConstraint f
   | KimchiPlonk (GenericPlonkConstraint f)
   | KimchiAddComplete (AddComplete f)
   | KimchiPoseidon (PoseidonConstraint f)
+  | KimchiVarBaseMul (VarBaseMul f)
 
 data KimchiGate f
   = KimchiGatePlonk (GenericPlonkConstraint f)
@@ -95,6 +98,7 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (Kimchi
         , constraints = s.constraints <> map KimchiGatePlonk res.constraints
         , aux = AuxState { wireState: res.wireState }
         }
+    KimchiVarBaseMul _ -> unsafeCrashWith "TODO: builder varbasemul"
 
 instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
@@ -113,7 +117,9 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConst
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reduceBasic c) of
         Left e -> throwProverError e
         Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
-    _ -> pure unit
+    KimchiVarBaseMul _ ->
+      unsafeCrashWith "TODO: prover varBaseMul"
+    KimchiPlonk _ -> pure unit
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =

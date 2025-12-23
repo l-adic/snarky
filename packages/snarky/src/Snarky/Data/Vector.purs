@@ -20,6 +20,8 @@ module Snarky.Data.Vector
   , splitAt
   , chunks
   , head
+  , last
+  , reverse
   ) where
 
 import Prelude
@@ -211,3 +213,13 @@ head
   => Vector n a
   -> a
 head (Vector as) = unsafePartial $ fromJust $ Array.head as
+
+last
+  :: forall n a
+   . Compare 0 n LT
+  => Vector n a
+  -> a
+last (Vector as) = unsafePartial $ fromJust $ Array.last as
+
+reverse :: forall n a. Vector n a -> Vector n a
+reverse (Vector as) = Vector (Array.reverse as)
