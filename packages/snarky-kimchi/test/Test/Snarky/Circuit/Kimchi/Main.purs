@@ -8,6 +8,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
+import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
 import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
@@ -32,3 +33,4 @@ spec = do
   AddCompleteTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
   GenericTests.spec (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
   GenericTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+  VarBaseMulTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))

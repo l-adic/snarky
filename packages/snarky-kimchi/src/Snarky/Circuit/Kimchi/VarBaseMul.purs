@@ -23,7 +23,7 @@ import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
-scaleFastUnpack
+varBaseMul
   :: forall t m n k f
    . FieldSizeInBits f n
   => Mul 5 k n
@@ -34,8 +34,9 @@ scaleFastUnpack
   -> Snarky (KimchiConstraint f) t m
        { g :: AffinePoint (FVar f)
        , lsb_bits :: Vector n (BoolVar f)
+       , k :: Proxy k
        }
-scaleFastUnpack base t = do
+varBaseMul base t = do
   lsb_bits :: Vector n (BoolVar f) <- Vector.generateA \i -> exists do
     vVal <- readCVar t
     let
@@ -90,7 +91,7 @@ scaleFastUnpack base t = do
   let rounds = Vector.reverse rounds_rev
   addConstraint $ KimchiVarBaseMul $ Vector.unVector rounds
   assertEqual_ nAcc t
-  pure { g, lsb_bits: coerce lsb_bits }
+  pure { g, lsb_bits: coerce lsb_bits, k: Proxy }
   where
   double x = x + x
 
