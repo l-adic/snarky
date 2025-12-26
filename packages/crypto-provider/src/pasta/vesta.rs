@@ -190,9 +190,13 @@ pub mod group {
     #[napi]
     pub fn vesta_group_from_affine(
         x: &pallas::scalar_field::FieldExternal,
-        y: &pallas::scalar_field::FieldExternal
+        y: &pallas::scalar_field::FieldExternal,
     ) -> G {
-        let p = Affine {x: **x, y: **y, infinity: false};
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
         p.into()
     }
 }

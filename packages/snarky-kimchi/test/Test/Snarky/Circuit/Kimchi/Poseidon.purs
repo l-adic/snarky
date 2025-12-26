@@ -11,9 +11,10 @@ import Poseidon.Class (fullRound)
 import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Types (F(..))
-import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint, eval)
+import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState(..), KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pasta (PallasBaseField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -24,12 +25,12 @@ import Test.Utils.Poseidon (class PoseidonVerifier)
 import Test.Utils.Poseidon as PoseidonUtils
 import Type.Proxy (Proxy(..))
 
-spec :: forall f v. PoseidonVerifier f v => Proxy f -> Spec Unit
+spec :: forall f v. PoseidonVerifier f v => KimchiVerify Vesta.ScalarField => Proxy f -> Spec Unit
 spec _ = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
     let
-      referenceHash :: Vector 3 (F PallasBaseField) -> F PallasBaseField
+      referenceHash :: Vector 3 (F Pallas.BaseField) -> F Pallas.BaseField
       referenceHash inputs =
         let
           initialValues = map unwrap inputs
@@ -38,11 +39,11 @@ spec _ = describe "Poseidon Circuit Tests" do
         in
           F (Vector.index finalState (unsafeFinite 2))
 
-      solver = makeSolver (Proxy @(KimchiConstraint PallasBaseField)) PoseidonCircuit.poseidon
+      solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) PoseidonCircuit.poseidon
       { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } = compilePure
-        (Proxy @(Vector 3 (F PallasBaseField)))
-        (Proxy @(F PallasBaseField))
-        (Proxy @(KimchiConstraint PallasBaseField))
+        (Proxy @(Vector 3 (F Pallas.BaseField)))
+        (Proxy @(F Pallas.BaseField))
+        (Proxy @(KimchiConstraint Pallas.BaseField))
         PoseidonCircuit.poseidon
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)

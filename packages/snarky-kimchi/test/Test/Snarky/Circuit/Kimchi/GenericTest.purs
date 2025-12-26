@@ -12,7 +12,7 @@ import Poseidon (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.Curves (add_)
 import Snarky.Circuit.Types (F)
-import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState(..), KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class WeierstrassCurve)
@@ -28,6 +28,7 @@ spec
   :: forall g f
    . Arbitrary g
   => WeierstrassCurve f g
+  => KimchiVerify f
   => VerifyGeneric f
   => PoseidonField f
   => Proxy g

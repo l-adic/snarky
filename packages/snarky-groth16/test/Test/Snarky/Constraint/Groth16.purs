@@ -10,7 +10,7 @@ import Data.Maybe (maybe)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Groth16.Gate (makeGates, makeGatesWitness, satisfies)
-import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', withHelp)
@@ -25,7 +25,7 @@ spec pf = describe "Constraint Spec" do
       let
         lookup var = maybe (throwError $ MissingVariable var) pure $ Map.lookup var assignments
       case runExcept $ Basic.eval lookup basic of
-        Left (e :: EvaluationError Variable) -> unsafeCrashWith $ "basic eval failed " <> show e
+        Left (e :: EvaluationError) -> unsafeCrashWith $ "basic eval failed " <> show e
         Right b -> if b then pure unit else unsafeCrashWith "Basic eval was false"
       let
         r1cs = Basic.fromBasic basic

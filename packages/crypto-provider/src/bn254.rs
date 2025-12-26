@@ -276,9 +276,13 @@ pub mod group {
     #[napi]
     pub fn bn254_group_from_affine(
         x: &base_field::BaseFieldExternal,
-        y: &base_field::BaseFieldExternal
+        y: &base_field::BaseFieldExternal,
     ) -> G {
-        let p = Affine {x: **x, y: **y, infinity: false};
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
         p.into()
     }
 }

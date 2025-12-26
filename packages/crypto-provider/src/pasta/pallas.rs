@@ -192,9 +192,13 @@ pub mod group {
     #[napi]
     pub fn pallas_group_from_affine(
         x: &vesta::scalar_field::FieldExternal,
-        y: &vesta::scalar_field::FieldExternal
+        y: &vesta::scalar_field::FieldExternal,
     ) -> G {
-        let p = Affine {x: **x, y: **y, infinity: false};
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
         p.into()
     }
 }

@@ -8,16 +8,15 @@ import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
-import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState(..), KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary, quickCheck')
@@ -29,8 +28,7 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f
-   . PrimeField f
-  => PoseidonField f
+   . KimchiVerify f
   => VerifyAddComplete f
   => Arbitrary g
   => WeierstrassCurve f g

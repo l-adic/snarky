@@ -7,16 +7,15 @@ import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.VarBaseMul (varBaseMul)
 import Snarky.Circuit.Types (F, FVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class WeierstrassCurve, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (class Shifted, Type1(..))
@@ -28,8 +27,7 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f f'
-   . PrimeField f
-  => PoseidonField f
+   . KimchiVerify f
   => Arbitrary g
   => WeierstrassCurve f g -- g is defined over f
   => FrModule f' g
