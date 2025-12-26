@@ -4,23 +4,25 @@ import Prelude
 
 import Control.Monad.State (StateT(..), runStateT)
 import Data.Foldable (foldl)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..), fst)
-import JS.BigInt as BigInt
 import Prim.Int (class Mul)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F, Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar)
+import Snarky.Circuit.CVar (EvaluationError(..))
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
 import Snarky.Circuit.DSL as Bits
+import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (FVar, BoolVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
-import Snarky.Curves.Class (class FieldSizeInBits, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
+import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 
 varBaseMul
@@ -30,20 +32,16 @@ varBaseMul
   => Reflectable k Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
-  -> FVar f
+  -> Type1 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        { g :: AffinePoint (FVar f)
        , lsb_bits :: Vector n (BoolVar f)
        , k :: Proxy k
        }
-varBaseMul base t = do
-  lsb_bits :: Vector n (BoolVar f) <- Vector.generateA \i -> exists do
-    vVal <- readCVar t
-    let
-      bit =
-        if (toBigInt vVal `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then zero
-        else one :: f
-    pure $ bit == one
+varBaseMul base (Type1 t) = do
+  lsb_bits :: Vector n (BoolVar f) <- exists do
+    F vVal <- readCVar t
+    pure $ unpackPure vVal
   { p } <- addComplete base base
   let
     msb_fbits :: Vector n (FVar f)
@@ -54,7 +52,7 @@ varBaseMul base t = do
   Tuple rounds_rev { nAccPrev: nAcc, acc: g } <- mapAccumM
     ( \s bs -> do
         nAcc <- exists do
-          nAccPrevVal :: F f <- readCVar (s.nAccPrev :: FVar f)
+          nAccPrevVal :: F f <- readCVar s.nAccPrev
           bsVal :: Vector 5 (F f) <- read bs
           pure $ foldl (\a b -> double a + b) nAccPrevVal bsVal
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
@@ -62,9 +60,17 @@ varBaseMul base t = do
             ( \a b -> exists do
                 { x: xAcc, y: yAcc } :: AffinePoint _ <- read a
                 bVal <- readCVar b
-                { x: xBase, y: yBase } :: AffinePoint _ <- read s.acc
+                { x: xBase, y: yBase } :: AffinePoint _ <- read base
+                s1 <-
+                  let
+                    d = xAcc - xBase
+                  in
+                    if d == zero then throwAsProver $ DivisionByZero
+                      { context: "varBaseMul"
+                      , expression: Just "xAcc - xBase"
+                      }
+                    else pure $ (yAcc - (yBase * (double bVal - one))) / d
                 let
-                  s1 = (yAcc - (yBase * (double bVal - one))) / (xAcc - xBase)
                   s1Squared = s1 * s1
                   s2 = (double yAcc / (double xAcc + xBase - s1Squared)) - s1
                   xRes = (xBase + (s2 * s2) - s1Squared)

@@ -28,7 +28,7 @@ spec pf = describe "Constraint Spec" do
           Nothing -> throwError $ MissingVariable v
           Just a -> pure a
       let
-        lhs :: Either (EvaluationError f) f
+        lhs :: Either EvaluationError f
         lhs = runExcept $ evalAffineExpression (reduceToAffineExpression cvar) _lookup
       let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs

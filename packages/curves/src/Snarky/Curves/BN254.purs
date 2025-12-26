@@ -164,6 +164,7 @@ instance WeierstrassCurve BaseField G where
       { x: unsafePartial $ fromJust $ as Array.!! 0
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
+  fromAffine = _fromAffine
 
 foreign import _toAffine
   :: forall a

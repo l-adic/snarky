@@ -24,7 +24,7 @@ import Test.QuickCheck.Gen (Gen)
 data Expectation f a
   = Satisfied a
   | Unsatisfied
-  | ProverError (EvaluationError f -> Boolean)
+  | ProverError (EvaluationError -> Boolean)
 
 instance Show a => Show (Expectation f a) where
   show = case _ of
@@ -53,9 +53,9 @@ newtype CircuitSpec f c m a avar b = CircuitSpec
   { constraints :: Array c
   , solver :: SolverT f c m a b
   , evalConstraint ::
-      (Variable -> Except (EvaluationError f) f)
+      (Variable -> Except EvaluationError f)
       -> c
-      -> Except (EvaluationError f) Boolean
+      -> Except EvaluationError Boolean
   , isValid :: a -> Expectation f b
   }
 
@@ -77,7 +77,7 @@ runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) in
         _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple b assignments) ->
       let
-        checker :: Array c -> Except (EvaluationError f) Boolean
+        checker :: Array c -> Except EvaluationError Boolean
         checker =
           let
             lookup v = case Map.lookup v assignments of

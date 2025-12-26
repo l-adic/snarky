@@ -122,15 +122,15 @@ const_ = Const
 negate_ :: forall f i. PrimeField f => CVar f i -> CVar f i
 negate_ = scale_ (negate one)
 
-data EvaluationError f
+data EvaluationError
   = MissingVariable Variable
-  | DivisionByZero { numerator :: CVar f Variable, denominator :: CVar f Variable }
+  | DivisionByZero { context :: String, expression :: Maybe String }
   | FailedAssertion String
 
-derive instance Eq f => Eq (EvaluationError f)
-derive instance Generic (EvaluationError f) _
+derive instance Eq EvaluationError
+derive instance Generic EvaluationError _
 
-instance Show f => Show (EvaluationError f) where
+instance Show EvaluationError where
   show x = genericShow x
 
 -- Given a way of looking up variable assignmetns 'i -> vars -> Maybe f', 

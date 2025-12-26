@@ -56,7 +56,11 @@ initialAuxState = AuxState
   { wireState: emptyKimchiWireState
   }
 
-instance (PrimeField f, PoseidonField f) => ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
+instance
+  ( PrimeField f
+  , PoseidonField f
+  ) =>
+  ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
     (KimchiAddComplete c) -> do
       s <- CircuitBuilder.getState

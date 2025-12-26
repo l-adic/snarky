@@ -33,4 +33,4 @@ spec = do
   AddCompleteTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
   GenericTests.spec (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
   GenericTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
-  VarBaseMulTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+  VarBaseMulTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Vesta.ScalarField))

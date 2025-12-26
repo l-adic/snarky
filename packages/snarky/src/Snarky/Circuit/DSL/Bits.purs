@@ -2,6 +2,7 @@ module Snarky.Circuit.DSL.Bits where
 
 import Prelude
 
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (foldl)
@@ -10,12 +11,13 @@ import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Constraint.Basic (r1cs)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
+import Snarky.Constraint.Basic (r1cs)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generateA)
+import Snarky.Data.Vector as Vector
 
 -- NB: LSB first
 unpack_
@@ -68,3 +70,21 @@ pack_ bits =
       )
       (const_ zero)
       (mapWithIndex Tuple bits)
+
+unpackPure :: forall f n. FieldSizeInBits f n => f -> Vector n Boolean
+unpackPure x = Vector.generate \i ->
+  if (toBigInt x `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then false
+  else true
+
+packPure :: forall f n. FieldSizeInBits f n => Vector n Boolean -> f
+packPure bs = foldlWithIndex
+  ( \i acc bit ->
+      let
+        coeff = pow two (BigInt.fromInt $ getFinite i)
+      in
+        acc + coeff * (if bit then one else zero)
+  )
+  zero
+  bs
+  where
+  two = one + one
