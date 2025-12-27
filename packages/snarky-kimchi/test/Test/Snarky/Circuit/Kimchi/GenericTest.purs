@@ -26,10 +26,10 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f
-   . Arbitrary g
+   . KimchiConstraint.KimchiVerify f
+  => Arbitrary g
   => WeierstrassCurve f g
   => VerifyGeneric f
-  => PoseidonField f
   => Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
