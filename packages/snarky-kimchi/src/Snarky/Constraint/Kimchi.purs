@@ -138,7 +138,7 @@ eval lookup = case _ of
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
 
-class (PrimeField f, AddCompleteVerifiable f, PoseidonVerifiable f, PoseidonField f) <= KimchiVerify f
+class (PrimeField f, AddCompleteVerifiable f, PoseidonVerifiable f) <= KimchiVerify f
 
 instance KimchiVerify Pallas.BaseField
 instance KimchiVerify Vesta.BaseField

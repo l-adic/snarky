@@ -30,7 +30,7 @@ type PoseidonConstraint f =
   { state :: Vector 56 (Vector 3 (FVar f))
   }
 
-class PoseidonVerifiable f where
+class PoseidonField f <= PoseidonVerifiable f where
   verifyPoseidon :: Vector 12 (Vector 15 f) -> Boolean
 
 instance PoseidonVerifiable Pallas.ScalarField where
@@ -76,7 +76,6 @@ eval lookup constraint = ado
   extractRoundWitness roundStates = ado
     evaluatedStates <- traverse (traverse (CVar.eval lookup)) roundStates
     let
-      -- Reorder states: s0, s4, s1, s2, s3 (following the wire layout)
       s0 = evaluatedStates !! unsafeFinite 0
       s4 = evaluatedStates !! unsafeFinite 4
       s1 = evaluatedStates !! unsafeFinite 1
@@ -96,7 +95,6 @@ reducePoseidon
   -> m Unit
 reducePoseidon c = do
   state <- traverse (traverse reduceToVariable) c.state
-  -- after :: Vector 1 (Vector 3) Variable
   let { before, after } = Vector.splitAt (Proxy @55) state
   let rounds = Vector.chunks (Proxy @5) before
   traverseWithIndex_ addRoundState rounds
