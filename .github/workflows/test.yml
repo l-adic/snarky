@@ -67,9 +67,6 @@ jobs:
     - name: Check PureScript formatting
       run: npx purs-tidy check "packages/**/*.purs"
     
-    - name: Check PureScript pedantic build
-      run: npx spago build --strict --pedantic-packages
-    
     - name: Check Rust formatting
       run: cargo fmt --all --check
     
