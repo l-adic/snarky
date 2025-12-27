@@ -1,14 +1,14 @@
 package:
   name: poseidon
   dependencies:
-    - prelude
-    - arrays
     - curves
+    - prelude
     - snarky
   test:
     main: Test.Poseidon.Main
     dependencies:
+      - effect
+      - quickcheck
       - spec
       - spec-node
       - spec-quickcheck
-      - quickcheck

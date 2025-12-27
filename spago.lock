@@ -5,7 +5,11 @@
         "path": "packages/curves",
         "core": {
           "dependencies": [
+            "arrays",
+            "functions",
             "js-bigints",
+            "maybe",
+            "partial",
             "prelude",
             "quickcheck"
           ],
@@ -58,6 +62,9 @@
         },
         "test": {
           "dependencies": [
+            "console",
+            "effect",
+            "foldable-traversable",
             "quickcheck-laws",
             "spec",
             "spec-node",
@@ -148,13 +155,11 @@
         "path": "packages/poseidon",
         "core": {
           "dependencies": [
-            "arrays",
             "curves",
             "prelude",
             "snarky"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -162,7 +167,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -186,7 +190,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -208,6 +211,7 @@
         },
         "test": {
           "dependencies": [
+            "effect",
             "quickcheck",
             "spec",
             "spec-node",
@@ -297,20 +301,31 @@
         "path": "packages/snarky",
         "core": {
           "dependencies": [
-            "aff",
             "arrays",
+            "bifunctors",
+            "console",
             "curves",
+            "effect",
+            "either",
+            "exceptions",
             "foldable-traversable",
+            "gen",
+            "identity",
+            "js-bigints",
+            "lists",
             "maybe",
+            "newtype",
             "ordered-collections",
+            "partial",
             "prelude",
             "quickcheck",
+            "record",
             "safe-coerce",
             "transformers",
-            "tuples"
+            "tuples",
+            "unfoldable"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -318,7 +333,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -342,7 +356,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -384,7 +397,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -457,15 +469,24 @@
         "path": "packages/snarky-bulletproofs",
         "core": {
           "dependencies": [
+            "arrays",
             "curves",
+            "foldable-traversable",
+            "foreign",
+            "functions",
+            "lists",
+            "maybe",
+            "newtype",
+            "ordered-collections",
+            "partial",
             "prelude",
             "quickcheck",
             "simple-json",
             "snarky",
+            "transformers",
             "tuples"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -473,7 +494,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -500,7 +520,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -525,12 +544,13 @@
         },
         "test": {
           "dependencies": [
-            "debug",
+            "effect",
+            "either",
+            "exceptions",
             "snarky-curves",
             "snarky-test-utils",
             "spec",
-            "spec-node",
-            "spec-quickcheck"
+            "spec-node"
           ],
           "build_plan": [
             "aff",
@@ -548,7 +568,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -623,11 +642,13 @@
         "core": {
           "dependencies": [
             "curves",
+            "maybe",
+            "partial",
             "prelude",
+            "quickcheck",
             "snarky"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -635,7 +656,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -659,7 +679,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -681,11 +700,14 @@
         },
         "test": {
           "dependencies": [
+            "arrays",
+            "effect",
+            "gen",
             "quickcheck",
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck"
+            "tuples"
           ],
           "build_plan": [
             "aff",
@@ -703,7 +725,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -792,7 +813,6 @@
             "tuples"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -800,7 +820,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -827,7 +846,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "prelude",
             "profunctor",
@@ -876,7 +894,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -949,15 +966,28 @@
         "path": "packages/snarky-kimchi",
         "core": {
           "dependencies": [
+            "arrays",
+            "bifunctors",
             "curves",
+            "either",
+            "exceptions",
+            "foldable-traversable",
+            "functions",
+            "lists",
+            "maybe",
+            "newtype",
+            "nonempty",
+            "ordered-collections",
+            "partial",
             "poseidon",
             "prelude",
-            "quickcheck",
+            "safe-coerce",
             "snarky",
-            "snarky-curves"
+            "snarky-curves",
+            "transformers",
+            "tuples"
           ],
           "build_plan": [
-            "aff",
             "arrays",
             "bifunctors",
             "console",
@@ -965,7 +995,6 @@
             "contravariant",
             "control",
             "curves",
-            "datetime",
             "distributive",
             "effect",
             "either",
@@ -989,7 +1018,6 @@
             "numbers",
             "ordered-collections",
             "orders",
-            "parallel",
             "partial",
             "poseidon",
             "prelude",
@@ -1013,10 +1041,13 @@
         },
         "test": {
           "dependencies": [
+            "effect",
+            "gen",
+            "identity",
+            "quickcheck",
             "snarky-test-utils",
             "spec",
-            "spec-node",
-            "spec-quickcheck"
+            "spec-node"
           ],
           "build_plan": [
             "aff",
@@ -1034,7 +1065,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -1107,11 +1137,28 @@
         "path": "packages/snarky-test-utils",
         "core": {
           "dependencies": [
-            "debug",
+            "aff",
+            "arrays",
+            "curves",
+            "effect",
+            "either",
+            "exceptions",
+            "foldable-traversable",
+            "gen",
+            "identity",
+            "integers",
+            "js-bigints",
+            "maybe",
+            "newtype",
+            "ordered-collections",
             "prelude",
+            "quickcheck",
+            "safe-coerce",
             "snarky",
             "spec",
-            "spec-quickcheck"
+            "spec-quickcheck",
+            "transformers",
+            "tuples"
           ],
           "build_plan": [
             "aff",
@@ -1126,7 +1173,6 @@
             "control",
             "curves",
             "datetime",
-            "debug",
             "distributive",
             "effect",
             "either",
@@ -1186,6 +1232,8 @@
         "path": "packages/union-find",
         "core": {
           "dependencies": [
+            "arrays",
+            "foldable-traversable",
             "maybe",
             "ordered-collections",
             "prelude",
@@ -1231,8 +1279,8 @@
         },
         "test": {
           "dependencies": [
-            "aff",
             "arrays",
+            "effect",
             "quickcheck",
             "spec",
             "spec-node",
@@ -2072,15 +2120,6 @@
         "partial",
         "prelude",
         "tuples"
-      ]
-    },
-    "debug": {
-      "type": "registry",
-      "version": "6.0.2",
-      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
-      "dependencies": [
-        "functions",
-        "prelude"
       ]
     },
     "distributive": {

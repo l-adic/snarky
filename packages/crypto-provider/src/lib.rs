@@ -422,8 +422,7 @@ pub use kimchi::poseidon::{
 
 #[cfg(feature = "mina-curves-backend")]
 pub use kimchi::test_utils::{
-    make_pallas_poseidon_verifier, make_vesta_poseidon_verifier, verify_pallas_complete_add,
-    verify_pallas_generic, verify_pallas_poseidon_gadget, verify_pallas_varbasemul,
-    verify_vesta_complete_add, verify_vesta_generic, verify_vesta_poseidon_gadget,
-    verify_vesta_varbasemul,
+    verify_pallas_complete_add, verify_pallas_generic, verify_pallas_poseidon_gadget,
+    verify_pallas_varbasemul, verify_vesta_complete_add, verify_vesta_generic,
+    verify_vesta_poseidon_gadget, verify_vesta_varbasemul,
 };

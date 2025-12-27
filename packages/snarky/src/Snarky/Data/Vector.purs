@@ -8,6 +8,7 @@ module Snarky.Data.Vector
   , toVector
   , generator
   , concat
+  , flatten
   , zip
   , zipWith
   , unzip
@@ -107,6 +108,13 @@ concat
   -> Vector m a
   -> Vector k a
 concat (Vector as) (Vector as') = Vector (as <> as')
+
+flatten
+  :: forall n m k a
+   . Mul n m k
+  => Vector n (Vector m a)
+  -> Vector k a
+flatten (Vector vectors) = Vector (Array.concatMap unVector vectors)
 
 zip
   :: forall a b n
