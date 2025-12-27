@@ -257,3 +257,11 @@ export function _vestaToAffine(just, nothing, value) {
     return just([p[0], p[1]]);
   }
 }
+
+export function _vestaFromAffine({x,y}) {
+    return napi.vestaGroupFromAffine(x,y)
+}
+
+export function _pallasFromAffine({x,y}) {
+    return napi.pallasGroupFromAffine(x,y)
+}

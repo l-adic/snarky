@@ -121,6 +121,7 @@ instance WeierstrassCurve PallasBaseField PallasG where
       { x: unsafePartial $ fromJust $ as Array.!! 0
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
+  fromAffine = _pallasFromAffine
 
 foreign import _pallasToAffine
   :: forall a
@@ -232,6 +233,7 @@ instance WeierstrassCurve VestaBaseField VestaG where
       { x: unsafePartial $ fromJust $ as Array.!! 0
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
+  fromAffine = _vestaFromAffine
 
 foreign import _vestaToAffine
   :: forall a
@@ -240,6 +242,10 @@ foreign import _vestaToAffine
        (Maybe a)
        VestaG
        (Maybe a)
+
+foreign import _vestaFromAffine :: { x :: VestaBaseField, y :: VestaBaseField } -> VestaG
+
+foreign import _pallasFromAffine :: { x :: PallasBaseField, y :: PallasBaseField } -> PallasG
 
 instance Ord VestaScalarField where
   compare x y = compare (toBigInt x) (toBigInt y)
