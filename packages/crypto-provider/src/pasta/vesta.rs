@@ -116,6 +116,10 @@ pub mod scalar_field {
 // Note: Vesta base field operations removed - now handled via Pallas scalar field cross-wiring in JS layer
 
 pub mod group {
+    use ark_ec::short_weierstrass::Affine;
+
+    use crate::pallas;
+
     use super::*;
 
     type G = External<VestaGroup>;
@@ -181,5 +185,18 @@ pub mod group {
         } else {
             Some((External::new(p.x), External::new(p.y)))
         }
+    }
+
+    #[napi]
+    pub fn vesta_group_from_affine(
+        x: &pallas::scalar_field::FieldExternal,
+        y: &pallas::scalar_field::FieldExternal,
+    ) -> G {
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
+        p.into()
     }
 }

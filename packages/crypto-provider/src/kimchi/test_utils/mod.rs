@@ -6,10 +6,12 @@
 pub mod complete_add;
 pub mod generic;
 pub mod poseidon;
+pub mod varbasemul;
 
 pub use complete_add::*;
 pub use generic::*;
 pub use poseidon::*;
+pub use varbasemul::*;
 
 use kimchi::circuits::wires::COLUMNS;
 use napi_derive::napi;

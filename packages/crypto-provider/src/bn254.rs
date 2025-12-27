@@ -108,7 +108,7 @@ pub mod base_field {
     use super::*;
     use crate::bigint::napi_bigint_to_ark_bigint;
 
-    type BaseFieldExternal = External<Bn254Fq>;
+    pub type BaseFieldExternal = External<Bn254Fq>;
 
     #[napi]
     pub fn bn254_basefield_zero() -> BaseFieldExternal {
@@ -271,5 +271,18 @@ pub mod group {
         } else {
             Some((External::new(p.x), External::new(p.y)))
         }
+    }
+
+    #[napi]
+    pub fn bn254_group_from_affine(
+        x: &base_field::BaseFieldExternal,
+        y: &base_field::BaseFieldExternal,
+    ) -> G {
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
+        p.into()
     }
 }
