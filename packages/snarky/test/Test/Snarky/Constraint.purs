@@ -11,7 +11,6 @@ import Effect.Class (liftEffect)
 import Snarky.Circuit.CVar (EvaluationError(..), eval, evalAffineExpression, reduceToAffineExpression, v0)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Basic as Basic
-import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen)
 import Test.Spec (Spec, describe, it)
@@ -28,7 +27,7 @@ spec pf = describe "Constraint Spec" do
           Nothing -> throwError $ MissingVariable v
           Just a -> pure a
       let
-        lhs :: Either (EvaluationError f) f
+        lhs :: Either EvaluationError f
         lhs = runExcept $ evalAffineExpression (reduceToAffineExpression cvar) _lookup
       let rhs = runExcept $ eval _lookup cvar
       pure $ lhs == rhs
@@ -41,6 +40,6 @@ spec pf = describe "Constraint Spec" do
           Nothing -> except $ Left $ MissingVariable v
           Just a -> pure a
 
-        res :: Either (EvaluationError (BN254.ScalarField)) Boolean
+        res :: Either (EvaluationError) Boolean
         res = runExcept $ Basic.eval lookup basic
       pure $ res == Right true

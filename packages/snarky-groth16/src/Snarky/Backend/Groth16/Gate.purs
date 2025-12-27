@@ -119,7 +119,7 @@ makeGates { publicInputs, constraints } =
 makeGatesWitness
   :: forall f m
    . PrimeField f
-  => MonadThrow (EvaluationError f) m
+  => MonadThrow EvaluationError m
   => { assignments :: Map Variable f
      , constraints :: Array (R1CS f)
      , publicInputs :: Array Variable
@@ -128,7 +128,7 @@ makeGatesWitness
 makeGatesWitness { assignments, constraints, publicInputs } = do
   publicInputValues <- for publicInputs \var ->
     case Map.lookup var assignments of
-      Nothing -> throwError (MissingVariable var :: EvaluationError f)
+      Nothing -> throwError (MissingVariable var :: EvaluationError)
       Just val -> pure val
 
   let
@@ -147,7 +147,7 @@ makeGatesWitness { assignments, constraints, publicInputs } = do
 
   witnessValues <- for witnessVariablesOrdered \var ->
     case Map.lookup var assignments of
-      Nothing -> throwError (MissingVariable var :: EvaluationError f)
+      Nothing -> throwError (MissingVariable var :: EvaluationError)
       Just val -> pure val
 
   let

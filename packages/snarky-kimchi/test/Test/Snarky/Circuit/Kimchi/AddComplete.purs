@@ -3,21 +3,18 @@ module Test.Snarky.Circuit.Kimchi.AddComplete where
 import Prelude
 
 import Control.Monad.Gen (suchThat)
-import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
-import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Types (F, FVar)
-import Snarky.Constraint.Kimchi (AuxState(..), KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
@@ -53,7 +50,7 @@ spec pg pc =
           y <- Snarky.if_ isInfinity (const_ one) p.y
           z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
           pure $ Point { x, y, z }
-        { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } =
+        { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(Point (F f)))

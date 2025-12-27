@@ -34,7 +34,7 @@ import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (un)
 import Data.Traversable (traverse)
 import Partial.Unsafe (unsafeCrashWith)
@@ -52,14 +52,14 @@ addConstraint :: forall f c t m. CircuitM f c t m => c -> Snarky c t m Unit
 addConstraint c = Snarky $ addConstraint' c
 
 --------------------------------------------------------------------------------
-newtype AsProverT f m a = AsProverT (ExceptT (EvaluationError f) (ReaderT (Map Variable f) m) a)
+newtype AsProverT f m a = AsProverT (ExceptT EvaluationError (ReaderT (Map Variable f) m) a)
 
 runAsProverT
   :: forall f a m
    . Monad m
   => AsProverT f m a
   -> Map Variable f
-  -> m (Either (EvaluationError f) a)
+  -> m (Either EvaluationError a)
 runAsProverT (AsProverT m) env = runReaderT (runExceptT m) env
 
 type AsProver f = AsProverT f Identity
@@ -68,7 +68,7 @@ runAsProver
   :: forall f a
    . AsProver f a
   -> Map Variable f
-  -> Either (EvaluationError f) a
+  -> Either EvaluationError a
 runAsProver m e = un Identity $ runAsProverT m e
 
 readCVar :: forall f m. PrimeField f => Monad m => FVar f -> AsProverT f m (F f)
@@ -155,7 +155,7 @@ runSnarky (Snarky m) = m
 class (Monad m, MonadFresh (t m), PrimeField f, BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky c t m var
 
-throwAsProver :: forall f m a. Monad m => EvaluationError f -> AsProverT f m a
+throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
 
 --------------------------------------------------------------------------------
@@ -229,7 +229,11 @@ inv_ = case _ of
   a -> do
     aInv <- exists do
       aVal <- readCVar a
-      if aVal == zero then throwAsProver $ DivisionByZero { numerator: Const one, denominator: a }
+      if aVal == zero then throwAsProver $
+        DivisionByZero
+          { context: "inv"
+          , expression: Nothing
+          }
       else pure $ if aVal == zero then zero else recip aVal
     addConstraint $ r1cs { left: a, right: aInv, output: Const one }
     pure aInv

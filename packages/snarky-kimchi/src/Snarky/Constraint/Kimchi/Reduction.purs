@@ -138,7 +138,7 @@ reduceAsProver
      }
   -> (forall m. PlonkReductionM m f => m a)
   -> Either
-       (EvaluationError f)
+       EvaluationError
        ( Tuple
            a
            { nextVariable :: Variable
@@ -268,7 +268,7 @@ newtype ProverReductionState f = ProverReductionState
   , assignments :: Map Variable f
   }
 
-newtype PlonkProver f a = PlonkProver (ExceptT (EvaluationError f) (State (ProverReductionState f)) a)
+newtype PlonkProver f a = PlonkProver (ExceptT EvaluationError (State (ProverReductionState f)) a)
 
 derive newtype instance Functor (PlonkProver f)
 derive newtype instance Apply (PlonkProver f)
@@ -276,7 +276,7 @@ derive newtype instance Applicative (PlonkProver f)
 derive newtype instance Bind (PlonkProver f)
 derive newtype instance Monad (PlonkProver f)
 derive newtype instance MonadState (ProverReductionState f) (PlonkProver f)
-derive newtype instance MonadThrow (EvaluationError f) (PlonkProver f)
+derive newtype instance MonadThrow EvaluationError (PlonkProver f)
 
 derive instance Newtype (PlonkProver f a) _
 

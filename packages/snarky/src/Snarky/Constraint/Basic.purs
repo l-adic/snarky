@@ -64,7 +64,6 @@ eval lookup gate =
 genWithAssignments
   :: forall f
    . PrimeField f
-  => Show f
   => Proxy f
   -> Gen
        { basic :: Basic f
@@ -82,7 +81,8 @@ genWithAssignments pf =
 
         b :: f
         b = case eres of
-          Left (e :: EvaluationError f) -> unsafeCrashWith $ "Unexpected error when generating boolean cvar" <> show e
+          Left (e :: EvaluationError) ->
+            unsafeCrashWith $ "Unexpected error when generating boolean cvar" <> show e
           Right a -> a
       cvar' <-
         if b == zero || b == one then pure cvar
@@ -109,7 +109,7 @@ genWithAssignments pf =
             else if l == zero then (scale_ zero right)
             else (scale_ (l / r) right)
       case eres of
-        Left (e :: EvaluationError f) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
+        Left (e :: EvaluationError) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
         Right right' ->
           pure
             { basic: Equal left right'
@@ -133,7 +133,8 @@ genWithAssignments pf =
             if o == zero then scale_ zero output
             else scale_ (l * r / o) output
       case eres of
-        Left (e :: EvaluationError f) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
+        Left (e :: EvaluationError) ->
+          unsafeCrashWith $ "Unexpected error when generating r1cs: " <> (show @EvaluationError e)
         Right output' ->
           pure
             { basic: R1CS { left, right, output: output' }
