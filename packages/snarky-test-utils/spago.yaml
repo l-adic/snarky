@@ -1,8 +1,25 @@
 package:
   name: snarky-test-utils
   dependencies:
+    - aff
+    - arrays
+    - curves
+    - effect
+    - either
+    - exceptions
+    - foldable-traversable
+    - gen
+    - identity
+    - integers
+    - js-bigints
+    - maybe
+    - newtype
+    - ordered-collections
     - prelude
+    - quickcheck
+    - safe-coerce
     - snarky
     - spec
     - spec-quickcheck
-    - debug
+    - transformers
+    - tuples

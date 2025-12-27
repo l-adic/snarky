@@ -1,17 +1,29 @@
 package:
   name: snarky
   dependencies:
-    - prelude
     - arrays
+    - bifunctors
+    - console
     - curves
+    - effect
+    - either
+    - exceptions
     - foldable-traversable
+    - gen
+    - identity
+    - js-bigints
+    - lists
     - maybe
+    - newtype
     - ordered-collections
+    - partial
+    - prelude
     - quickcheck
+    - record
     - safe-coerce
     - transformers
     - tuples
-    - aff
+    - unfoldable
   test:
     main: Test.Snarky.Circuit.Main
     dependencies:

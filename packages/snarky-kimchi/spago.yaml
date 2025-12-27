@@ -1,16 +1,33 @@
 package:
   name: snarky-kimchi
   dependencies:
-    - prelude
+    - arrays
+    - bifunctors
     - curves
+    - either
+    - exceptions
+    - foldable-traversable
+    - functions
+    - lists
+    - maybe
+    - newtype
+    - nonempty
+    - ordered-collections
+    - partial
+    - poseidon
+    - prelude
+    - safe-coerce
     - snarky
     - snarky-curves
-    - poseidon
-    - quickcheck
+    - transformers
+    - tuples
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
+      - effect
+      - gen
+      - identity
+      - quickcheck
       - snarky-test-utils
       - spec
       - spec-node
-      - spec-quickcheck

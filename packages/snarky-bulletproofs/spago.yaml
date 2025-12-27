@@ -1,18 +1,29 @@
 package:
   name: snarky-bulletproofs
   dependencies:
-    - prelude
+    - arrays
     - curves
-    - snarky
+    - foldable-traversable
+    - foreign
+    - functions
+    - lists
+    - maybe
+    - newtype
+    - ordered-collections
+    - partial
+    - prelude
     - quickcheck
     - simple-json
+    - snarky
+    - transformers
     - tuples
   test:
     main: Test.Snarky.Bulletproofs.Main
     dependencies:
-      - debug
+      - effect
+      - either
+      - exceptions
       - snarky-curves
       - snarky-test-utils
       - spec
       - spec-node
-      - spec-quickcheck

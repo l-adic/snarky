@@ -41,6 +41,8 @@ jobs:
     
     - name: Build and test (default mina-curves backend)
       run: npm test
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
     
     - name: Test curves package with arkworks backend
       run: PASTA_CURVES_BACKEND=arkworks make test-curves
@@ -64,6 +66,9 @@ jobs:
     
     - name: Check PureScript formatting
       run: npx purs-tidy check "packages/**/*.purs"
+    
+    - name: Check PureScript pedantic build
+      run: npx spago build --strict --pedantic-packages
     
     - name: Check Rust formatting
       run: cargo fmt --all --check

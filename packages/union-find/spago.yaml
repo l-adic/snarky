@@ -1,16 +1,18 @@
 package:
   name: union-find
   dependencies:
-    - prelude
+    - arrays
+    - foldable-traversable
     - maybe
     - ordered-collections
+    - prelude
     - transformers
   test:
     main: Test.Data.UnionFind
     dependencies:
-      - aff
+      - arrays
+      - effect
+      - quickcheck
       - spec
       - spec-node
-      - quickcheck
       - spec-quickcheck
-      - arrays

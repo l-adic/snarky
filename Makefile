@@ -43,7 +43,7 @@ build-crypto: ## Build unified crypto-provider with backend selection (set PASTA
 
 # PureScript package testing
 test-curves: build-crypto ## Test curves package
-	cd packages/curves && npx spago test
+	cd packages/curves && npx spago build && npx spago run --main Test.Snarky.Curves.Main
 
 test-snarky: build-crypto ## Test snarky core package  
 	cd packages/snarky && npx spago test
