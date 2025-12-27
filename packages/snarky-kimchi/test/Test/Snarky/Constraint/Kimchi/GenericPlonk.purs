@@ -38,7 +38,7 @@ spec pf = describe "Constraint Spec" do
           Nothing -> except $ Left $ MissingVariable v
           Just a -> pure a
 
-        basicEval :: Either (EvaluationError f) Boolean
+        basicEval :: Either EvaluationError Boolean
         basicEval = runExcept $ Basic.eval lookup basic
         plonkEval = runExcept $
           foldM

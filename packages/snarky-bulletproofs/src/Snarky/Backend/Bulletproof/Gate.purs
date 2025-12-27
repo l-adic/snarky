@@ -220,7 +220,7 @@ type GatesWitness f =
 makeGatesWitness
   :: forall f m
    . PrimeField f
-  => MonadThrow (EvaluationError f) m
+  => MonadThrow EvaluationError m
   => { assignments :: Map Variable f
      , constraints :: SortedR1CS f
      , publicInputs :: Array Variable

@@ -1,4 +1,6 @@
-module Test.Snarky.Circuit.Kimchi.GenericTest where
+module Test.Snarky.Circuit.Kimchi.GenericTest
+  ( spec
+  ) where
 
 import Prelude
 
@@ -8,7 +10,6 @@ import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Poseidon (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
 import Snarky.Circuit.Curves (add_)
 import Snarky.Circuit.Types (F)

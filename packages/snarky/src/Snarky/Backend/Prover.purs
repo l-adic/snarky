@@ -43,7 +43,7 @@ emptyProverState =
   , assignments: Map.empty
   }
 
-newtype ProverT f m a = ProverT (ExceptT (EvaluationError f) (StateT (ProverState f) m) a)
+newtype ProverT f m a = ProverT (ExceptT EvaluationError (StateT (ProverState f) m) a)
 
 derive newtype instance Functor m => Functor (ProverT f m)
 derive newtype instance Monad m => Apply (ProverT f m)
@@ -55,12 +55,12 @@ derive newtype instance Monad m => Monad (ProverT f m)
 instance MonadTrans (ProverT f) where
   lift m = ProverT $ lift $ lift m
 
-runProverT :: forall f a m. Monad m => ProverT f m a -> ProverState f -> m (Tuple (Either (EvaluationError f) a) (ProverState f))
+runProverT :: forall f a m. Monad m => ProverT f m a -> ProverState f -> m (Tuple (Either EvaluationError a) (ProverState f))
 runProverT (ProverT m) s = runStateT (runExceptT m) s
 
 type Prover f = ProverT f Identity
 
-runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either (EvaluationError f) a) (ProverState f)
+runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either EvaluationError a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
 instance ConstraintM (ProverT f) (Basic f) where
@@ -84,7 +84,7 @@ instance Monad m => MonadFresh (ProverT f m) where
     modify_ _ { nextVar = incrementVariable nextVar }
     pure nextVar
 
-throwProverError :: forall f m a. Monad m => (EvaluationError f) -> ProverT f m a
+throwProverError :: forall f m a. Monad m => EvaluationError -> ProverT f m a
 throwProverError = ProverT <<< throwError
 
 setAssignments :: forall f m. Monad m => Array (Tuple Variable f) -> ProverT f m Unit

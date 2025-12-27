@@ -21,29 +21,29 @@ import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
 
-data Expectation f a
+data Expectation a
   = Satisfied a
   | Unsatisfied
-  | ProverError (EvaluationError f -> Boolean)
+  | ProverError (EvaluationError -> Boolean)
 
-instance Show a => Show (Expectation f a) where
+instance Show a => Show (Expectation a) where
   show = case _ of
     Unsatisfied -> "Unsatisfiable"
     Satisfied a -> "Satisfied " <> show a
     ProverError _ -> "[ProverError]"
 
-derive instance Functor (Expectation f)
+derive instance Functor Expectation
 
-satisfied :: forall f a b. (a -> b) -> a -> Expectation f b
+satisfied :: forall a b. (a -> b) -> a -> Expectation b
 satisfied f a = Satisfied (f a)
 
-satisfied_ :: forall f a. a -> Expectation f Unit
+satisfied_ :: forall a. a -> Expectation Unit
 satisfied_ _ = Satisfied unit
 
-unsatisfied :: forall f a b. a -> Expectation f b
+unsatisfied :: forall a b. a -> Expectation b
 unsatisfied _ = Unsatisfied
 
-expectDivideByZero :: forall f. (forall a b. a -> Expectation f b)
+expectDivideByZero :: forall a b. a -> Expectation b
 expectDivideByZero _ = ProverError \e -> case e of
   DivisionByZero _ -> true
   _ -> false
@@ -53,10 +53,10 @@ newtype CircuitSpec f c m a avar b = CircuitSpec
   { constraints :: Array c
   , solver :: SolverT f c m a b
   , evalConstraint ::
-      (Variable -> Except (EvaluationError f) f)
+      (Variable -> Except EvaluationError f)
       -> c
-      -> Except (EvaluationError f) Boolean
-  , isValid :: a -> Expectation f b
+      -> Except EvaluationError Boolean
+  , isValid :: a -> Expectation b
   }
 
 runCircuitSpec
@@ -77,7 +77,7 @@ runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) in
         _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple b assignments) ->
       let
-        checker :: Array c -> Except (EvaluationError f) Boolean
+        checker :: Array c -> Except EvaluationError Boolean
         checker =
           let
             lookup v = case Map.lookup v assignments of
@@ -105,7 +105,7 @@ circuitSpecPure
   => Array c
   -> Checker f c
   -> Solver f c a b
-  -> (a -> Expectation f b)
+  -> (a -> Expectation b)
   -> Aff Unit
 circuitSpecPure constraints evalConstraint solver f =
   circuitSpecPure' constraints evalConstraint solver f arbitrary
@@ -120,7 +120,7 @@ circuitSpecPure'
   => Array c
   -> Checker f c
   -> Solver f c a b
-  -> (a -> Expectation f b)
+  -> (a -> Expectation b)
   -> Gen a
   -> Aff Unit
 circuitSpecPure' constraints evalConstraint solver isValid g = liftEffect
@@ -146,7 +146,7 @@ circuitSpec
   -> Array c
   -> Checker f c
   -> SolverT f c m a b
-  -> (a -> Expectation f b)
+  -> (a -> Expectation b)
   -> Aff Unit
 circuitSpec nat constraints evalConstraint solver f =
   circuitSpec' nat constraints evalConstraint solver f arbitrary
@@ -163,7 +163,7 @@ circuitSpec'
   -> Array c
   -> Checker f c
   -> SolverT f c m a b
-  -> (a -> Expectation f b)
+  -> (a -> Expectation b)
   -> Gen a
   -> Aff Unit
 circuitSpec' nat constraints evalConstraint solver isValid g =

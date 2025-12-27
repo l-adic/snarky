@@ -113,17 +113,17 @@ makeSolver _ circuit = \inputs -> do
     Tuple (Right c) { assignments } -> pure $ Tuple c assignments
 
 type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
-type SolverT f c m a b = a -> ExceptT (EvaluationError f) m (Tuple b (Map Variable f))
+type SolverT f c m a b = a -> ExceptT EvaluationError m (Tuple b (Map Variable f))
 
-runSolverT :: forall f c m a b. SolverT f c m a b -> a -> m (Either (EvaluationError f) (Tuple b (Map Variable f)))
+runSolverT :: forall f c m a b. SolverT f c m a b -> a -> m (Either EvaluationError (Tuple b (Map Variable f)))
 runSolverT f a = runExceptT (f a)
 
 type Solver f c a b = SolverT f c Identity a b
 
-runSolver :: forall f c a b. Solver f c a b -> a -> Either (EvaluationError f) (Tuple b (Map Variable f))
+runSolver :: forall f c a b. Solver f c a b -> a -> Either EvaluationError (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
 type Checker f c =
-  (Variable -> Except (EvaluationError f) f)
+  (Variable -> Except EvaluationError f)
   -> c
-  -> Except (EvaluationError f) Boolean
+  -> Except EvaluationError Boolean

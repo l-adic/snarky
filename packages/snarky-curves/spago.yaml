@@ -1,14 +1,20 @@
 package:
   name: snarky-curves
   dependencies:
-    - prelude
-    - snarky
     - curves
+    - maybe
+    - partial
+    - prelude
+    - quickcheck
+    - snarky
   test:
     main: Test.Snarky.Circuit.Curves.Main
     dependencies:
+      - arrays
+      - effect
+      - gen
+      - quickcheck
       - snarky-test-utils
       - spec
       - spec-node
-      - spec-quickcheck
-      - quickcheck
+      - tuples

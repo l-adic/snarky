@@ -1,12 +1,19 @@
 package:
   name: curves
   dependencies:
-    - prelude
+    - arrays
+    - functions
     - js-bigints
+    - maybe
+    - partial
+    - prelude
     - quickcheck
   test:
     main: Test.Snarky.Curves.Main
     dependencies:
+      - console
+      - effect
+      - foldable-traversable
       - quickcheck-laws
       - spec
       - spec-node
