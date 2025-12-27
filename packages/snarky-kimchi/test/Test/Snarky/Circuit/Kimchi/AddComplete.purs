@@ -20,18 +20,14 @@ import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Test.QuickCheck (class Arbitrary, quickCheck')
+import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
-import Test.Utils.AddComplete (class VerifyAddComplete)
-import Test.Utils.AddComplete as AddCompleteUtils
 import Type.Proxy (Proxy(..))
 
 spec
   :: forall g f
-   . PrimeField f
-  => PoseidonField f
-  => VerifyAddComplete f
+   . KimchiConstraint.KimchiVerify f
   => Arbitrary g
   => WeierstrassCurve f g
   => Proxy g
@@ -84,7 +80,3 @@ spec pg pc =
         do
           circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
           circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
-          liftEffect $ quickCheck' 10 do
-            input <- gen
-            let Right (Tuple _ varAssignments) = runSolver solver input
-            pure $ AddCompleteUtils.verify { wireAssignments, varAssignments, rows: emittedRows }

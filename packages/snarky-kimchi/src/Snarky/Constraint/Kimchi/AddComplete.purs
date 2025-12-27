@@ -2,18 +2,22 @@ module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
   , eval
   , reduceAddComplete
+  , class AddCompleteVerifiable
+  , verifyAddComplete
   ) where
 
 import Prelude
 
-import Data.Foldable (and)
+import Data.Function.Uncurried (Fn1, runFn1)
 import Data.Maybe (Maybe(..))
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..))
-import Snarky.Curves.Class (class PrimeField, fromInt)
+import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 
@@ -28,9 +32,19 @@ type AddComplete f =
   , x21Inv :: FVar f
   }
 
+class AddCompleteVerifiable f where
+  verifyAddComplete :: Vector 15 f -> Boolean
+
+instance AddCompleteVerifiable Pallas.BaseField where
+  verifyAddComplete = verifyPallasCompleteAdd
+
+instance AddCompleteVerifiable Vesta.BaseField where
+  verifyAddComplete = verifyVestaCompleteAdd
+
 eval
   :: forall f m
    . PrimeField f
+  => AddCompleteVerifiable f
   => Applicative m
   => (Variable -> m f)
   -> AddComplete f
@@ -47,33 +61,11 @@ eval lookup c = ado
   s <- CVar.eval lookup c.s
   infZ <- CVar.eval lookup c.infZ
   x21Inv <- CVar.eval lookup c.x21Inv
-  let
-    c1 =
-      if x1 == x2 then sameX == one
-      else sameX == zero
-    c2 =
-      if sameX == one then fromInt 2 * s * y1 == fromInt 3 * x1 * x1
-      else (x2 - x1) * s == y2 - y1
-    c3 = s * s == x1 + x2 + x3
-    c4 = y3 == s * (x1 - x3) - y1
-    c5 =
-      let
-        notSameY = if y1 /= y2 then one else zero
-      in
-        inf == sameX * notSameY
-    c6 =
-      if y1 == y2 then infZ == zero
-      else
-        let
-          a =
-            if sameX == one then recip $ y2 - y1
-            else zero
-        in
-          infZ == a
-    c7 =
-      if x1 == x2 then x21Inv == zero
-      else x21Inv == recip (x2 - x1)
-  in and [ c1, c2, c3, c4, c5, c6, c7 ]
+  in
+    let
+      witness = x1 :< y1 :< x2 :< y2 :< x3 :< y3 :< inf :< sameX :< s :< infZ :< x21Inv :< Vector.generate (const zero)
+    in
+      verifyAddComplete witness
 
 reduceAddComplete
   :: forall f m
@@ -108,3 +100,15 @@ reduceAddComplete c = do
     x <- reduceToVariable p.x
     y <- reduceToVariable p.y
     pure { x, y }
+
+foreign import verifyPallasCompleteAddGadget
+  :: Fn1 (Vector 15 Pallas.BaseField) Boolean
+
+foreign import verifyVestaCompleteAddGadget
+  :: Fn1 (Vector 15 Vesta.BaseField) Boolean
+
+verifyPallasCompleteAdd :: Vector 15 Pallas.BaseField -> Boolean
+verifyPallasCompleteAdd witness = runFn1 verifyPallasCompleteAddGadget witness
+
+verifyVestaCompleteAdd :: Vector 15 Vesta.BaseField -> Boolean
+verifyVestaCompleteAdd witness = runFn1 verifyVestaCompleteAddGadget witness

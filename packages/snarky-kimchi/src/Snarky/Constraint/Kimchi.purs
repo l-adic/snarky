@@ -4,6 +4,7 @@ module Snarky.Constraint.Kimchi
   , eval
   , AuxState(..)
   , initialState
+  , class KimchiVerify
   ) where
 
 import Prelude
@@ -20,7 +21,7 @@ import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
-import Snarky.Constraint.Kimchi.AddComplete (AddComplete, reduceAddComplete)
+import Snarky.Constraint.Kimchi.AddComplete (AddComplete, reduceAddComplete, class AddCompleteVerifiable)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
@@ -30,6 +31,8 @@ import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
@@ -125,8 +128,7 @@ initialState =
 
 eval
   :: forall f m
-   . PoseidonField f
-  => PrimeField f
+   . KimchiVerify f
   => Applicative m
   => (Variable -> m f)
   -> KimchiGate f
@@ -135,6 +137,11 @@ eval lookup = case _ of
   KimchiGatePlonk c -> GenericPlonk.eval lookup c
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
+
+class (PrimeField f, AddCompleteVerifiable f, PoseidonField f) <= KimchiVerify f
+
+instance KimchiVerify Pallas.BaseField
+instance KimchiVerify Vesta.BaseField
 
 instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS
