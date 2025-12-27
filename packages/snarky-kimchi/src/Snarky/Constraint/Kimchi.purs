@@ -25,7 +25,7 @@ import Snarky.Constraint.Kimchi.AddComplete (AddComplete, reduceAddComplete, cla
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
-import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, reducePoseidon)
+import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, reducePoseidon, class PoseidonVerifiable)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
@@ -138,7 +138,7 @@ eval lookup = case _ of
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
 
-class (PrimeField f, AddCompleteVerifiable f, PoseidonField f) <= KimchiVerify f
+class (PrimeField f, AddCompleteVerifiable f, PoseidonVerifiable f, PoseidonField f) <= KimchiVerify f
 
 instance KimchiVerify Pallas.BaseField
 instance KimchiVerify Vesta.BaseField
