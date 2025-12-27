@@ -2,25 +2,27 @@ module Snarky.Constraint.Kimchi.Poseidon
   ( PoseidonConstraint
   , eval
   , reducePoseidon
+  , class PoseidonVerifiable
+  , verifyPoseidon
   ) where
 
 import Prelude hiding (append)
 
-import Data.Array as Array
-import Data.Foldable (and, foldl)
 import Data.FoldableWithIndex (traverseWithIndex_)
+import Data.Function.Uncurried (Fn2, runFn2)
 import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
-import Poseidon.Class (class PoseidonField, getMdsMatrix, getRoundConstants, sbox)
+import Poseidon.Class (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Types (F(..), FVar)
+import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..))
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
-import Snarky.Data.Vector (Vector, append, head, (!!))
+import Snarky.Data.Vector (Vector, append, flatten, head, nilVector, (!!), (:<))
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
@@ -28,59 +30,61 @@ type PoseidonConstraint f =
   { state :: Vector 56 (Vector 3 (FVar f))
   }
 
+class PoseidonField f <= PoseidonVerifiable f where
+  verifyPoseidon :: Vector 12 (Vector 15 f) -> Boolean
+
+instance PoseidonVerifiable Pallas.ScalarField where
+  verifyPoseidon = verifyPallasPoseidon
+
+instance PoseidonVerifiable Vesta.ScalarField where
+  verifyPoseidon = verifyVestaPoseidon
+
 eval
   :: forall f m
-   . PoseidonField f
-  => PrimeField f
+   . PrimeField f
+  => PoseidonVerifiable f
   => Applicative m
   => (Variable -> m f)
   -> PoseidonConstraint f
   -> m Boolean
 eval lookup constraint = ado
-  allStates <- traverse evaluateState constraint.state
-  let roundChecks = map (validateRoundTransition allStates) (Array.range 0 54)
-  in and roundChecks
+  witness <- extractWitness constraint.state
+  in verifyPoseidon witness
   where
-  validateRoundTransition
-    :: Vector 56 (Vector 3 (F f))
-    -> Int
-    -> Boolean
-  validateRoundTransition allStates round =
-    let
-      inputState = Vector.index allStates (unsafeFinite round)
-      outputState = Vector.index allStates (unsafeFinite (round + 1))
-      sboxInputs = map (\(F x) -> sbox x) inputState
-      roundConstants = getRoundConstants (Proxy :: Proxy f) round
-      expected = computeRoundOutput sboxInputs roundConstants
-    in
-      map (\(F x) -> x) outputState == map (\(F x) -> x) expected
+  extractWitness
+    :: Vector 56 (Vector 3 (FVar f))
+    -> m (Vector 12 (Vector 15 f))
+  extractWitness states = ado
+    poseidonRows <- traverse extractRoundWitness stateGroups
+    lastRow <- extractLastRow (head after)
+    in poseidonRows `append` (lastRow :< nilVector)
+    where
+    { before, after } = Vector.splitAt (Proxy @55) states
+    stateGroups = Vector.chunks (Proxy @5) before
 
-  computeRoundOutput
-    :: Vector 3 f
-    -> Vector 3 f
-    -> Vector 3 (F f)
-  computeRoundOutput sboxInputs roundConstants =
-    let
-      mdsMatrix = getMdsMatrix (Proxy :: Proxy f)
-
-      computeElement :: Finite 3 -> F f
-      computeElement j =
-        let
-          roundConstant = Vector.index roundConstants j
-          mdsRow = Vector.index mdsMatrix j
-          mdsSum = foldl (\acc (Tuple mdsCoeff sboxInput) -> acc + mdsCoeff * sboxInput) zero
-            (Vector.zip mdsRow sboxInputs)
-          expectedOutput = roundConstant + mdsSum
-        in
-          F expectedOutput
-    in
-      Vector.generate computeElement
-
-  evaluateState
+  extractLastRow
     :: Vector 3 (FVar f)
-    -> m (Vector 3 (F f))
-  evaluateState stateVec =
-    traverse (\var -> F <$> CVar.eval lookup var) stateVec
+    -> m (Vector 15 f)
+  extractLastRow lastState = ado
+    evaluated <- traverse (CVar.eval lookup) lastState
+    in
+      evaluated `append` Vector.generate (const zero)
+
+  extractRoundWitness
+    :: Vector 5 (Vector 3 (FVar f))
+    -> m (Vector 15 f)
+  extractRoundWitness roundStates = ado
+    evaluatedStates <- traverse (traverse (CVar.eval lookup)) roundStates
+    let
+      s0 = evaluatedStates !! unsafeFinite 0
+      s4 = evaluatedStates !! unsafeFinite 4
+      s1 = evaluatedStates !! unsafeFinite 1
+      s2 = evaluatedStates !! unsafeFinite 2
+      s3 = evaluatedStates !! unsafeFinite 3
+      reorderedStates = s0 :< s4 :< s1 :< s2 :< s3 :< nilVector
+      witnessData = flatten reorderedStates
+    in
+      witnessData
 
 reducePoseidon
   :: forall f m
@@ -91,7 +95,6 @@ reducePoseidon
   -> m Unit
 reducePoseidon c = do
   state <- traverse (traverse reduceToVariable) c.state
-  -- after :: Vector 1 (Vector 3) Variable
   let { before, after } = Vector.splitAt (Proxy @55) state
   let rounds = Vector.chunks (Proxy @5) before
   traverseWithIndex_ addRoundState rounds
@@ -116,3 +119,15 @@ reducePoseidon c = do
             getRoundConstants (Proxy @f) (getFinite round + 4)
     in
       addRow vars { kind: PoseidonGate, coeffs }
+
+foreign import verifyPallasPoseidonGadget
+  :: Fn2 Int (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean
+
+foreign import verifyVestaPoseidonGadget
+  :: Fn2 Int (Vector 12 (Vector 15 Vesta.ScalarField)) Boolean
+
+verifyPallasPoseidon :: Vector 12 (Vector 15 Pallas.ScalarField) -> Boolean
+verifyPallasPoseidon witness = runFn2 verifyPallasPoseidonGadget 12 witness
+
+verifyVestaPoseidon :: Vector 12 (Vector 15 Vesta.ScalarField) -> Boolean
+verifyVestaPoseidon witness = runFn2 verifyVestaPoseidonGadget 12 witness
