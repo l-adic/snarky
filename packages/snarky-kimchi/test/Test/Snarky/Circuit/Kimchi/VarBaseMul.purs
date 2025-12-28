@@ -91,7 +91,7 @@ spec = do
           -> FVar Fp
           -> Snarky (KimchiConstraint Fp) t Identity (AffinePoint (FVar Fp))
         circuit p t = do
-          g <- scaleFast2 @255 @51 p t
+          g <- scaleFast2 @51 p t
           pure g
         { constraints } =
           compilePure

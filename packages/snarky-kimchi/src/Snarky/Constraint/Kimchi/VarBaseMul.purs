@@ -23,7 +23,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (Finite, unsafeFinite)
-import Snarky.Data.Vector (Vector, index, nilVector, (:<))
+import Snarky.Data.Vector (Vector, index, nil, (:<))
 import Snarky.Data.Vector as Vector
 
 class VarBaseMulVerifiable f where
@@ -82,10 +82,10 @@ eval lookup constraint =
 
     in
       let
-        row0 = baseX :< baseY :< acc0X :< acc0Y :< nPrev :< nNext :< zero :< acc1X :< acc1Y :< acc2X :< acc2Y :< acc3X :< acc3Y :< acc4X :< acc4Y :< nilVector
+        row0 = baseX :< baseY :< acc0X :< acc0Y :< nPrev :< nNext :< zero :< acc1X :< acc1Y :< acc2X :< acc2Y :< acc3X :< acc3Y :< acc4X :< acc4Y :< nil
         row1 = acc5X :< acc5Y :< b0 :< b1 :< b2 :< b3 :< b4 :< s0 :< s1 :< s2 :< s3 :< s4 :< Vector.generate (const zero)
       in
-        row0 :< row1 :< nilVector
+        row0 :< row1 :< nil
 
 type ScaleRound f =
   { accs :: Vector 6 (AffinePoint (FVar f))
@@ -142,7 +142,7 @@ reduceVarBaseMul c =
           :< Just (accs `index` finite6 4).x
           :< Just (accs `index` finite6 4).y
           :<
-            nilVector
+            nil
       nextRow =
         Just (accs `index` finite6 5).x
           :< Just (accs `index` finite6 5).y
@@ -160,7 +160,7 @@ reduceVarBaseMul c =
           :< Nothing
           :< Nothing
           :<
-            nilVector
+            nil
     in
       do
         addRow row { kind: VarBaseMul, coeffs: Vector.generate (const zero) }

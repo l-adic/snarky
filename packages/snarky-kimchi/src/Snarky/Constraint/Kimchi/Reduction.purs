@@ -177,7 +177,7 @@ constraintToCoeffs
   => GenericPlonkConstraint f
   -> Vector 5 f
 constraintToCoeffs gate =
-  gate.cl :< gate.cr :< gate.co :< gate.m :< gate.c :< Vector.nilVector
+  gate.cl :< gate.cr :< gate.co :< gate.m :< gate.c :< Vector.nil
 
 finalizeGateQueue :: forall f. PrimeField f => KimchiWireRow f -> KimchiWireRow f
 finalizeGateQueue wireState =

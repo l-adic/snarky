@@ -22,7 +22,7 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
-import Snarky.Data.Vector (Vector, append, flatten, head, nilVector, (!!), (:<))
+import Snarky.Data.Vector (Vector, append, flatten, head, nil, (!!), (:<))
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
@@ -57,10 +57,10 @@ eval lookup constraint = ado
   extractWitness states = ado
     poseidonRows <- traverse extractRoundWitness stateGroups
     lastRow <- extractLastRow (head after)
-    in poseidonRows `append` (lastRow :< nilVector)
+    in poseidonRows `append` (lastRow :< nil)
     where
-    { before, after } = Vector.splitAt (Proxy @55) states
-    stateGroups = Vector.chunks (Proxy @5) before
+    { before, after } = Vector.splitAt @55 states
+    stateGroups = Vector.chunks @5 before
 
   extractLastRow
     :: Vector 3 (FVar f)
@@ -81,7 +81,7 @@ eval lookup constraint = ado
       s1 = evaluatedStates !! unsafeFinite 1
       s2 = evaluatedStates !! unsafeFinite 2
       s3 = evaluatedStates !! unsafeFinite 3
-      reorderedStates = s0 :< s4 :< s1 :< s2 :< s3 :< nilVector
+      reorderedStates = s0 :< s4 :< s1 :< s2 :< s3 :< nil
       witnessData = flatten reorderedStates
     in
       witnessData
@@ -95,8 +95,8 @@ reducePoseidon
   -> m Unit
 reducePoseidon c = do
   state <- traverse (traverse reduceToVariable) c.state
-  let { before, after } = Vector.splitAt (Proxy @55) state
-  let rounds = Vector.chunks (Proxy @5) before
+  let { before, after } = Vector.splitAt @55 state
+  let rounds = Vector.chunks @5 before
   traverseWithIndex_ addRoundState rounds
   let lastRowVars = map Just (head after) `append` Vector.generate (const Nothing)
   addRow lastRowVars { kind: Zero, coeffs: Vector.generate (const zero) }

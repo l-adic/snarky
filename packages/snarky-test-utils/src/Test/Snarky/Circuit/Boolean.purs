@@ -2,7 +2,7 @@ module Test.Snarky.Circuit.Boolean (spec) where
 
 import Prelude
 
-import Data.Array (foldMap)
+import Data.Foldable (foldMap)
 import Data.Monoid.Conj (Conj(..))
 import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)
@@ -15,7 +15,7 @@ import Snarky.Circuit.DSL (F, Variable, all_, and_, any_, if_, not_, or_, xor_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector (Vector, unVector)
+import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure, circuitSpecPure', satisfied)
@@ -120,14 +120,14 @@ spec _ pc eval initialState = describe "Boolean Circuit Specs" do
   it "all Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
-      f = un Conj <<< foldMap Conj <<< unVector
-      solver = makeSolver pc (all_ <<< unVector)
+      f = un Conj <<< foldMap Conj
+      solver = makeSolver pc (all_ <<< Vector.toUnfoldable)
       { constraints } =
         compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
           pc
-          (all_ <<< unVector)
+          (all_ <<< Vector.toUnfoldable)
           initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
@@ -135,14 +135,14 @@ spec _ pc eval initialState = describe "Boolean Circuit Specs" do
   it "any Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
-      f = un Disj <<< foldMap Disj <<< unVector
-      solver = makeSolver pc (any_ <<< unVector)
+      f = un Disj <<< foldMap Disj
+      solver = makeSolver pc (any_ <<< Vector.toUnfoldable)
       { constraints } =
         compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
           pc
-          (any_ <<< unVector)
+          (any_ <<< Vector.toUnfoldable)
           initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
