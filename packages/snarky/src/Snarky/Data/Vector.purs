@@ -19,8 +19,11 @@ module Snarky.Data.Vector
   , scanl
   , append
   , splitAt
+  , take
   , chunks
   , head
+  , last
+  , reverse
   ) where
 
 import Prelude
@@ -193,8 +196,7 @@ append (Vector as) (Vector as') = Vector $ as <> as'
 splitAt
   :: forall n k m a
    . Reflectable k Int
-  => Compare k n LT
-  => Add m k n
+  => Add k m n
   => Proxy k
   -> Vector n a
   -> { before :: Vector k a, after :: Vector m a }
@@ -203,6 +205,16 @@ splitAt pk (Vector as) =
     { after, before } = Array.splitAt (reflectType pk) as
   in
     { after: Vector after, before: Vector before }
+
+take
+  :: forall n k m a
+   . Reflectable k Int
+  => Add k m n
+  => Proxy k
+  -> Vector n a
+  -> Vector k a
+take pk (Vector as) =
+  Vector $ Array.take (reflectType pk) as
 
 chunks
   :: forall n m k a
@@ -219,3 +231,13 @@ head
   => Vector n a
   -> a
 head (Vector as) = unsafePartial $ fromJust $ Array.head as
+
+last
+  :: forall n a
+   . Compare 0 n LT
+  => Vector n a
+  -> a
+last (Vector as) = unsafePartial $ fromJust $ Array.last as
+
+reverse :: forall n a. Vector n a -> Vector n a
+reverse (Vector as) = Vector (Array.reverse as)

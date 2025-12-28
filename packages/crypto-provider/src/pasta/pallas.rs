@@ -118,6 +118,10 @@ pub mod scalar_field {
 // Note: Pallas base field operations handled via Vesta scalar field (curve duality)
 
 pub mod group {
+    use ark_ec::short_weierstrass::Affine;
+
+    use crate::vesta;
+
     use super::*;
 
     type G = External<PallasGroup>;
@@ -183,5 +187,18 @@ pub mod group {
         } else {
             Some((External::new(p.x), External::new(p.y)))
         }
+    }
+
+    #[napi]
+    pub fn pallas_group_from_affine(
+        x: &vesta::scalar_field::FieldExternal,
+        y: &vesta::scalar_field::FieldExternal,
+    ) -> G {
+        let p = Affine {
+            x: **x,
+            y: **y,
+            infinity: false,
+        };
+        p.into()
     }
 }
