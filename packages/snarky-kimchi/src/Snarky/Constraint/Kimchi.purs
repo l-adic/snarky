@@ -165,7 +165,7 @@ eval lookup = case _ of
   KimchiGatePoseidon c -> Poseidon.eval lookup c
   KimchiGateVarBaseMul c -> VarBaseMul.eval lookup c
 
-class (PrimeField f, AddCompleteVerifiable f, PoseidonVerifiable f) <= KimchiVerify f
+class (PrimeField f, AddCompleteVerifiable f, PoseidonVerifiable f, VarBaseMulVerifiable f) <= KimchiVerify f
 
 instance KimchiVerify Pallas.BaseField
 instance KimchiVerify Vesta.BaseField
@@ -174,8 +174,3 @@ instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS
   equal a b = KimchiBasic $ Equal a b
   boolean = KimchiBasic <<< Boolean
-
-class (PrimeField f, VarBaseMulVerifiable f, PoseidonField f) <= KimchiVerify f
-
-instance KimchiVerify (Pallas.ScalarField)
-instance KimchiVerify (Vesta.ScalarField)

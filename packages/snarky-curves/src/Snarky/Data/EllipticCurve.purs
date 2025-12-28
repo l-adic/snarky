@@ -9,6 +9,7 @@ module Snarky.Data.EllipticCurve
   , mkPoint
   , toAffine
   , double
+  , negate_
   ) where
 
 import Prelude
@@ -114,6 +115,13 @@ double { a } { x, y } =
     three = F (one + one + one)
   in
     { x: x', y: y' }
+
+negate_
+  :: forall f
+   . PrimeField f
+  => AffinePoint f
+  -> AffinePoint f
+negate_ { x, y } = { x, y: negate y }
 
 addAffine
   :: forall f
