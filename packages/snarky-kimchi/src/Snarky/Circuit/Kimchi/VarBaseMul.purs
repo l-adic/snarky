@@ -27,27 +27,24 @@ import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Vector (Vector)
+import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 import Snarky.Types.Shifted (Type1(..), Type2(..))
-import Type.Proxy (Proxy(..))
 
 varBaseMul
-  :: forall t m n bitsUsed l k f
+  :: forall t m @n bitsUsed l @nChunks f
    . FieldSizeInBits f n
   => Add bitsUsed l n
-  => Mul 5 k bitsUsed
+  => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => CircuitM f (KimchiConstraint f) t m
-  => Proxy k
-  -> Proxy bitsUsed
-  -> AffinePoint (FVar f)
+  => AffinePoint (FVar f)
   -> Type1 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
-varBaseMul _ pbu base (Type1 t) = do
+varBaseMul base (Type1 t) = do
   lsbBits :: Vector n (BoolVar f) <- exists do
     F vVal <- readCVar t
     pure $ unpackPure vVal
@@ -56,10 +53,10 @@ varBaseMul _ pbu base (Type1 t) = do
     msbBits :: Vector n (FVar f)
     msbBits = coerce $ Vector.reverse lsbBits
 
-    msbBitsUsed = Vector.take pbu msbBits
+    msbBitsUsed = Vector.take @bitsUsed msbBits
 
-    chunks :: Vector k (Vector 5 (FVar f))
-    chunks = Vector.chunks (Proxy @5) msbBitsUsed
+    chunks :: Vector nChunks (Vector 5 (FVar f))
+    chunks = Vector.chunks @5 msbBitsUsed
   Tuple rounds_rev { nAccPrev: nAcc, acc: g } <- mapAccumM
     ( \s bs -> do
         nAcc <- exists do
@@ -92,7 +89,7 @@ varBaseMul _ pbu base (Type1 t) = do
             s.acc
             bs
         pure $ Tuple
-          ( { accs: Vector.vCons s.acc accs
+          ( { accs: s.acc :< accs
             , bits: bs
             , slopes
             , nPrev: s.nAccPrev
@@ -106,25 +103,25 @@ varBaseMul _ pbu base (Type1 t) = do
     { nAccPrev: const_ zero, acc: p }
     chunks
   let rounds = Vector.reverse rounds_rev
-  addConstraint $ KimchiVarBaseMul $ Vector.unVector rounds
+  addConstraint $ KimchiVarBaseMul $ Vector.toUnfoldable rounds
   assertEqual_ nAcc t
   pure { g, lsbBits: coerce lsbBits }
   where
   double x = x + x
 
 scaleFast1
-  :: forall t m n @k f
+  :: forall t m n @nChunks f
    . FieldSizeInBits f n
   => Add n 0 n -- trivial but required for some dumb reason
-  => Mul 5 k n
-  => Reflectable k Int
+  => Mul 5 nChunks n
+  => Reflectable nChunks Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 scaleFast1 p t = do
-  { g } <- varBaseMul (Proxy @k) (Proxy @n) p t
+  { g } <- varBaseMul @n @nChunks p t
   pure g
 
 scaleFast2'
@@ -142,45 +139,16 @@ scaleFast2'
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 scaleFast2' base (Type2 sDiv2) sOdd = do
-  { g, lsbBits } <- varBaseMul (Proxy @nChunks) (Proxy @bitsUsed) base (Type1 sDiv2)
-  let { after } = Vector.splitAt (Proxy @sDiv2Bits) lsbBits
+  { g, lsbBits } <- varBaseMul @n @nChunks base (Type1 sDiv2)
+  let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
   EllipticCurve.if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
     { p } <- addComplete g negBase
     pure p
 
-{-
-
-  let scale_fast2' (type scalar_field)
-      (module Scalar_field : Scalar_field_intf
-        with type Constant.t = scalar_field ) g (s : Scalar_field.t) ~num_bits =
-    let ((s_div_2, s_odd) as s_parts) =
-      with_label __LOC__ (fun () ->
-          exists
-            Typ.(Scalar_field.typ * Boolean.typ)
-            ~compute:
-              As_prover.(
-                fun () ->
-                  let s = read Scalar_field.typ s in
-                  let open Scalar_field.Constant in
-                  let s_odd = Bigint.test_bit (to_bigint s) 0 in
-                  ((if s_odd then s - one else s) / of_int 2, s_odd)) )
-    in
-
-    (* In this case, it's safe to use this field to compute
-
-       2 s_div_2 + b
-
-       in the other field. *)
-    with_label __LOC__ (fun () ->
-        Field.Assert.equal Field.((of_int 2 * s_div_2) + (s_odd :> Field.t)) s ) ;
-    scale_fast2 g (Pickles_types.Shifted_value.Type2.Shifted_value s_parts)
-      ~num_bits
-
--}
 scaleFast2
-  :: forall t m f @n @nChunks sDiv2Bits bitsUsed _l
+  :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits 1 n

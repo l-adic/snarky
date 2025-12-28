@@ -13,7 +13,7 @@ import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector (Vector, unVector)
+import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure, circuitSpecPure', satisfied)
@@ -113,13 +113,13 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
     let
       f :: Vector 10 (F f) -> F f
       f as = F $ sum (un F <$> as)
-      solver = makeSolver pc (pure <<< sum_ <<< unVector)
+      solver = makeSolver pc (pure <<< sum_ <<< Vector.toUnfoldable)
       { constraints } =
         compilePure
           (Proxy @(Vector 10 (F f)))
           (Proxy @(F f))
           pc
-          (pure <<< sum_ <<< unVector)
+          (pure <<< sum_ <<< Vector.toUnfoldable)
           initialState
     in
       circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)

@@ -1,8 +1,8 @@
 module Snarky.Data.Vector
   ( Vector
-  , unVector
-  , nilVector
-  , vCons
+  , nil
+  , toUnfoldable
+  , cons
   , (:<)
   , length
   , toVector
@@ -29,10 +29,10 @@ module Snarky.Data.Vector
 import Prelude
 
 import Control.Monad.Gen (class MonadGen)
-import Data.Array (foldMap, (:))
+import Data.Array ((:))
 import Data.Array as A
 import Data.Array as Array
-import Data.Foldable (class Foldable)
+import Data.Foldable (class Foldable, foldMap)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..), fromJust)
@@ -81,16 +81,16 @@ generator
   -> m (Vector n a)
 generator _ gen = Vector <$> replicateA (reflectType (Proxy @n)) gen
 
-unVector :: forall a n. Vector n a -> Array a
-unVector (Vector as) = as
+nil :: forall a. Vector 0 a
+nil = Vector mempty
 
-nilVector :: forall a. Vector 0 a
-nilVector = Vector mempty
+toUnfoldable :: forall f n. Unfoldable f => Vector n ~> f
+toUnfoldable (Vector xs) = Array.toUnfoldable xs
 
-vCons :: forall a n nInc. Add n 1 nInc => a -> Vector n a -> Vector nInc a
-vCons a (Vector as) = Vector (a : as)
+cons :: forall a n nInc. Add n 1 nInc => a -> Vector n a -> Vector nInc a
+cons a (Vector as) = Vector (a : as)
 
-infixr 6 vCons as :<
+infixr 6 cons as :<
 
 length :: forall a n. Reflectable n Int => Vector n a -> Int
 length _ = reflectType (Proxy @n)
@@ -115,7 +115,7 @@ flatten
    . Mul n m k
   => Vector n (Vector m a)
   -> Vector k a
-flatten (Vector vectors) = Vector (Array.concatMap unVector vectors)
+flatten (Vector vectors) = Vector (Array.concatMap toUnfoldable vectors)
 
 zip
   :: forall a b n
@@ -157,7 +157,7 @@ generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f 
 generateA f = Vector <$> traverse f (finites $ Proxy @n)
 
 instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
-  valueToFields as = foldMap valueToFields (unVector as)
+  valueToFields as = foldMap valueToFields as
   fieldsToValue as =
     let
       cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
@@ -165,7 +165,7 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
     in
       unsafePartial $ fromJust $ toVector (Proxy @n) vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
-  varToFields as = foldMap (varToFields @f @a) (unVector as)
+  varToFields as = foldMap (varToFields @f @a) as
   fieldsToVar as =
     let
       cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
@@ -194,36 +194,33 @@ append :: forall n m k a. Add m n k => Vector n a -> Vector m a -> Vector k a
 append (Vector as) (Vector as') = Vector $ as <> as'
 
 splitAt
-  :: forall n k m a
+  :: forall n @k m a
    . Reflectable k Int
   => Add k m n
-  => Proxy k
-  -> Vector n a
+  => Vector n a
   -> { before :: Vector k a, after :: Vector m a }
-splitAt pk (Vector as) =
+splitAt (Vector as) =
   let
-    { after, before } = Array.splitAt (reflectType pk) as
+    { after, before } = Array.splitAt (reflectType $ Proxy @k) as
   in
     { after: Vector after, before: Vector before }
 
 take
-  :: forall n k m a
+  :: forall n @k m a
    . Reflectable k Int
   => Add k m n
-  => Proxy k
-  -> Vector n a
+  => Vector n a
   -> Vector k a
-take pk (Vector as) =
-  Vector $ Array.take (reflectType pk) as
+take (Vector as) =
+  Vector $ Array.take (reflectType $ Proxy @k) as
 
 chunks
-  :: forall n m k a
+  :: forall n m @k a
    . Mul k m n
   => Reflectable k Int
-  => Proxy k
-  -> Vector n a
+  => Vector n a
   -> Vector m (Vector k a)
-chunks pk (Vector as) = Vector (Vector <$> chunk (reflectType pk) as)
+chunks (Vector as) = Vector (Vector <$> chunk (reflectType $ Proxy @k) as)
 
 head
   :: forall n a
