@@ -42,9 +42,9 @@ unsafeFinite k =
       in
         unsafeThrowException (error ("Attempted to coerce " <> show k <> " to Finite " <> show n))
 
-finites :: forall n. Reflectable n Int => Proxy n -> Array (Finite n)
-finites p =
+finites :: forall @n. Reflectable n Int => Array (Finite n)
+finites =
   let
-    n = reflectType p
+    n = reflectType (Proxy @n)
   in
     Finite <$> (0 .. (n - 1))

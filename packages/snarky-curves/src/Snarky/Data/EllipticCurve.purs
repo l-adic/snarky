@@ -22,7 +22,7 @@ import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Curves.Class as Snarky.Curves.Class
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
-import Type.Proxy (Proxy(..))
+import Type.Proxy (Proxy)
 
 type CurveParams f = { a :: f, b :: f }
 
@@ -53,8 +53,8 @@ instance CircuitType f (Point (F f)) (Point (FVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(Point (F f)))
-  fieldsToVar = genericFieldsToVar (Proxy @(Point (F f)))
+  varToFields = genericVarToFields @(Point (F f))
+  fieldsToVar = genericFieldsToVar @(Point (F f))
 
 instance CheckedType (Point (FVar f)) c where
   check = genericCheck

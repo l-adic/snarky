@@ -154,8 +154,8 @@ instance
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(Tuple a b))
-  fieldsToVar = genericFieldsToVar (Proxy @(Tuple a b))
+  varToFields = genericVarToFields @(Tuple a b)
+  fieldsToVar = genericFieldsToVar @(Tuple a b)
 
 instance (CheckedType avar c, CheckedType bvar c) => CheckedType (Tuple avar bvar) c where
   check = genericCheck
@@ -251,24 +251,22 @@ genericSizeInFields :: forall f a b rep. Generic a rep => GCircuitType f rep b =
 genericSizeInFields pf pa = gSizeInFields @f @rep @b pf (repOf pa)
 
 genericVarToFields
-  :: forall f a rep var var'
+  :: forall f @a rep var var'
    . Generic var var'
   => Generic a rep
   => GCircuitType f rep var'
-  => Proxy a
-  -> var
+  => var
   -> Array (FVar f)
-genericVarToFields _ var = gVarToFields @f @rep $ from var
+genericVarToFields var = gVarToFields @f @rep $ from var
 
 genericFieldsToVar
-  :: forall f a rep var var'
+  :: forall f @a rep var var'
    . Generic var var'
   => Generic a rep
   => GCircuitType f rep var'
-  => Proxy a
-  -> Array (FVar f)
+  => Array (FVar f)
   -> var
-genericFieldsToVar _ fs = to $ gFieldsToVar @f @rep fs
+genericFieldsToVar fs = to $ gFieldsToVar @f @rep fs
 
 genericCheck
   :: forall var rep c

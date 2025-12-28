@@ -31,8 +31,8 @@ instance CircuitType f (Type1 (F f)) (Type1 (FVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(Type1 (F f)))
-  fieldsToVar = genericFieldsToVar (Proxy @(Type1 (F f)))
+  varToFields = genericVarToFields @(Type1 (F f))
+  fieldsToVar = genericFieldsToVar @(Type1 (F f))
 
 shift1 :: forall f. PrimeField f => Int -> { c :: f, scale :: f }
 shift1 fieldSizeInBits =
@@ -53,8 +53,8 @@ instance CircuitType f (Type2 (F f)) (Type2 (FVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(Type2 (F f)))
-  fieldsToVar = genericFieldsToVar (Proxy @(Type2 (F f)))
+  varToFields = genericVarToFields @(Type2 (F f))
+  fieldsToVar = genericFieldsToVar @(Type2 (F f))
 
 shift2 :: forall f. PrimeField f => Int -> { shift :: f }
 shift2 fieldSizeInBits =
