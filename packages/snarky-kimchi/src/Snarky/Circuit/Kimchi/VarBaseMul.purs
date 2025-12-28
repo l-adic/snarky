@@ -61,14 +61,14 @@ varBaseMul base (Type1 t) = do
     ( \s bs -> do
         nAcc <- exists do
           nAccPrevVal :: F f <- readCVar s.nAccPrev
-          bsVal :: Vector 5 (F f) <- read bs
+          bsVal <- read @(Vector _ _) bs
           pure $ foldl (\a b -> double a + b) nAccPrevVal bsVal
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
           mapAccumM
             ( \a b -> exists do
-                { x: xAcc, y: yAcc } :: AffinePoint _ <- read a
+                { x: xAcc, y: yAcc } <- read @(AffinePoint _) a
                 bVal <- readCVar b
-                { x: xBase, y: yBase } :: AffinePoint _ <- read base
+                { x: xBase, y: yBase } <- read @(AffinePoint _) base
                 s1 <-
                   let
                     d = xAcc - xBase

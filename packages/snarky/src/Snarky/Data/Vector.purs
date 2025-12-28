@@ -73,10 +73,10 @@ instance Reflectable n Int => TraversableWithIndex (Finite n) (Vector n) where
   traverseWithIndex f (Vector as) = Vector <$> traverseWithIndex (\i a -> f (unsafeFinite i) a) as
 
 generator
-  :: forall n m proxy a
+  :: forall n m a
    . Reflectable n Int
   => MonadGen m
-  => proxy n
+  => Proxy n
   -> m a
   -> m (Vector n a)
 generator _ gen = Vector <$> replicateA (reflectType (Proxy @n)) gen
@@ -95,8 +95,8 @@ infixr 6 cons as :<
 length :: forall a n. Reflectable n Int => Vector n a -> Int
 length _ = reflectType (Proxy @n)
 
-toVector :: forall a (n :: Int) proxy. Reflectable n Int => proxy n -> Array a -> Maybe (Vector n a)
-toVector _ as =
+toVector :: forall a @n. Reflectable n Int => Array a -> Maybe (Vector n a)
+toVector as =
   if reflectType (Proxy @n) /= A.length as then
     Nothing
   else
@@ -151,10 +151,10 @@ index (Vector as) k =
 infixl 8 index as !!
 
 generate :: forall n a. Reflectable n Int => (Finite n -> a) -> Vector n a
-generate f = Vector $ map f (finites $ Proxy @n)
+generate f = Vector $ map f (finites @n)
 
 generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
-generateA f = Vector <$> traverse f (finites $ Proxy @n)
+generateA f = Vector <$> traverse f (finites @n)
 
 instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
   valueToFields as = foldMap valueToFields as
@@ -163,7 +163,7 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
       cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
       vals = fieldsToValue <$> cs
     in
-      unsafePartial $ fromJust $ toVector (Proxy @n) vals
+      unsafePartial $ fromJust $ toVector @n vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
   varToFields as = foldMap (varToFields @f @a) as
   fieldsToVar as =
@@ -171,7 +171,7 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
       cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
       vals = fieldsToVar @f @a <$> cs
     in
-      unsafePartial $ fromJust $ toVector (Proxy @n) vals
+      unsafePartial $ fromJust $ toVector @n vals
 
 instance CheckedType var c => CheckedType (Vector n var) c where
   check (Vector var) = foldMap check var

@@ -35,8 +35,8 @@ instance CircuitType f (Point (F f)) (Point (CVar f Variable)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(Point (F f)))
-  fieldsToVar = genericFieldsToVar (Proxy @(Point (F f)))
+  varToFields = genericVarToFields @(Point (F f))
+  fieldsToVar = genericFieldsToVar @(Point (F f))
 
 -- Another custom type with more complex structure
 data MyRecord f bool = MyRecord
@@ -67,8 +67,8 @@ instance
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields (Proxy @(MyRecord (F f) Boolean))
-  fieldsToVar = genericFieldsToVar (Proxy @(MyRecord (F f) Boolean))
+  varToFields = genericVarToFields @(MyRecord (F f) Boolean)
+  fieldsToVar = genericFieldsToVar @(MyRecord (F f) Boolean)
 
 instance (PrimeField f, BasicSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
   check = genericCheck

@@ -78,7 +78,7 @@ readCVar v = AsProverT do
   F <$> CVar.eval _lookup v
 
 read
-  :: forall f var a m
+  :: forall f var @a m
    . CircuitType f a var
   => PrimeField f
   => Monad m
