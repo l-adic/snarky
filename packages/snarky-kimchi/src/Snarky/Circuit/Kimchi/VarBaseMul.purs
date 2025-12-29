@@ -1,7 +1,6 @@
 module Snarky.Circuit.Kimchi.VarBaseMul
   ( scaleFast1
   , scaleFast2
-  , class DivMod
   ) where
 
 import Prelude
@@ -13,8 +12,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..), fst)
 import JS.BigInt as BigInt
-import Prim.Int (class Mul, class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
@@ -45,7 +43,7 @@ varBaseMul
        , lsbBits :: Vector n (FVar f)
        }
 varBaseMul base (Type1 t) = do
-  lsbBits :: Vector n (BoolVar f) <- exists do
+  lsbBits <- exists do
     F vVal <- readCVar t
     pure $ unpackPure vVal
   { p } <- addComplete base base
@@ -185,13 +183,3 @@ mapAccumM
 mapAccumM f initial xs = runStateT (traverse step xs) initial
   where
   step x = StateT (\s -> f s x)
-
--- quotient + remainder = numerator / denominator
-class (Compare 0 denominator LT) <= DivMod (numerator :: Int) (denominator :: Int) (quotient :: Int) (remainder :: Int) | numerator denominator -> quotient remainder
-
-instance
-  ( Compare 0 denominator LT
-  , Add quotient remainder k
-  , Mul denominator k numerator
-  ) =>
-  DivMod numerator denominator quotient remainder
