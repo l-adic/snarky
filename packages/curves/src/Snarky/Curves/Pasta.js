@@ -265,3 +265,11 @@ export function _vestaFromAffine({x,y}) {
 export function _pallasFromAffine({x,y}) {
     return napi.pallasGroupFromAffine(x,y)
 }
+
+export function _pallasEndoCoefficient() {
+    return napi.pallasEndoCoefficient();
+}
+
+export function _vestaEndoCoefficient() {
+    return napi.vestaEndoCoefficient();
+}

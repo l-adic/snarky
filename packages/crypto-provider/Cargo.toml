@@ -26,6 +26,7 @@ ark-snark = { workspace = true }
 # mina-curves and poseidon
 mina-curves = { workspace = true, optional = true }
 mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49", optional = true }
+poly-commitment = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49", optional = true }
 kimchi = { workspace = true, optional = true }
 
 # napi
@@ -47,7 +48,7 @@ spongefish = { workspace = true }
 [features]
 default = ["mina-curves-backend"]
 arkworks = ["ark-pallas", "ark-vesta"]
-mina-curves-backend = ["mina-curves", "mina-poseidon", "kimchi"]
+mina-curves-backend = ["mina-curves", "mina-poseidon", "poly-commitment", "kimchi"]
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -111,6 +111,24 @@ pub mod scalar_field {
         let result = base.pow(exp_limbs);
         Ok(External::new(result))
     }
+
+    #[napi]
+    pub fn vesta_endo_base() -> External<PallasScalarField> {
+        use mina_curves::pasta::Vesta;
+        use poly_commitment::ipa::endos;
+
+        let (endo_q, _endo_r) = endos::<Vesta>();
+        External::new(endo_q)
+    }
+
+    #[napi]
+    pub fn vesta_endo_scalar() -> FieldExternal {
+        use mina_curves::pasta::Vesta;
+        use poly_commitment::ipa::endos;
+
+        let (_endo_q, endo_r) = endos::<Vesta>();
+        External::new(endo_r)
+    }
 }
 
 // Note: Vesta base field operations removed - now handled via Pallas scalar field cross-wiring in JS layer

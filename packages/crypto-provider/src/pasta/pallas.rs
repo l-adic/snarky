@@ -113,6 +113,24 @@ pub mod scalar_field {
         let result = base.pow(exp_limbs);
         Ok(External::new(result))
     }
+
+    #[napi]
+    pub fn pallas_endo_base() -> External<VestaScalarField> {
+        use mina_curves::pasta::Pallas;
+        use poly_commitment::ipa::endos;
+
+        let (endo_q, _endo_r) = endos::<Pallas>();
+        External::new(endo_q)
+    }
+
+    #[napi]
+    pub fn pallas_endo_scalar() -> FieldExternal {
+        use mina_curves::pasta::Pallas;
+        use poly_commitment::ipa::endos;
+
+        let (_endo_q, endo_r) = endos::<Pallas>();
+        External::new(endo_r)
+    }
 }
 
 // Note: Pallas base field operations handled via Vesta scalar field (curve duality)
