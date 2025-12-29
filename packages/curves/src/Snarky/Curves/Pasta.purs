@@ -3,10 +3,12 @@ module Snarky.Curves.Pasta
     PallasScalarField
   , PallasBaseField
   , PallasG
+  , pallasEndoCoefficient
   , -- Vesta exports
     VestaScalarField
   , VestaBaseField
   , VestaG
+  , vestaEndoCoefficient
   ) where
 
 import Prelude
@@ -39,6 +41,7 @@ foreign import _pallasFromBigInt :: BigInt -> PallasScalarField
 foreign import _pallasToBigInt :: PallasScalarField -> BigInt
 foreign import _pallasModulus :: Unit -> BigInt
 foreign import _pallasPow :: PallasScalarField -> BigInt -> PallasScalarField
+foreign import _pallasEndoCoefficient :: Unit -> PallasScalarField
 
 instance Semiring PallasScalarField where
   add = _pallasAdd
@@ -151,6 +154,7 @@ foreign import _vestaScalarFieldFromBigInt :: BigInt -> VestaScalarField
 foreign import _vestaScalarFieldToBigInt :: VestaScalarField -> BigInt
 foreign import _vestaScalarFieldPow :: VestaScalarField -> BigInt -> VestaScalarField
 foreign import _vestaScalarFieldModulus :: Unit -> BigInt
+foreign import _vestaEndoCoefficient :: Unit -> VestaScalarField
 
 instance Semiring VestaScalarField where
   add = _vestaScalarFieldAdd
@@ -252,3 +256,9 @@ instance Ord VestaScalarField where
 
 instance Ord PallasScalarField where
   compare x y = compare (toBigInt x) (toBigInt y)
+
+pallasEndoCoefficient :: PallasScalarField
+pallasEndoCoefficient = _pallasEndoCoefficient unit
+
+vestaEndoCoefficient :: VestaScalarField
+vestaEndoCoefficient = _vestaEndoCoefficient unit
