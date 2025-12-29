@@ -17,7 +17,7 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..))
-import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Class (class PrimeField, endoCoefficient)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -31,19 +31,23 @@ two = one + one
 class EndoMulVerifiable f where
   verifyEndoMul :: EndoMul' f -> Boolean
 
-instance EndoMulVerifiable Pallas.ScalarField where
-  verifyEndoMul = verifyEndoMul'Generic Pallas.endoCoefficient
+-- PallasBaseField = VestaScalarField, so we need VestaScalarField endo coefficient  
+instance EndoMulVerifiable Pallas.BaseField where
+  verifyEndoMul = verifyEndoMul'Generic (endoCoefficient @Vesta.ScalarField)
 
-instance EndoMulVerifiable Vesta.ScalarField where
-  verifyEndoMul = verifyEndoMul'Generic Vesta.endoCoefficient
+-- VestaBaseField = PallasScalarField, so we need PallasScalarField endo coefficient
+instance EndoMulVerifiable Vesta.BaseField where  
+  verifyEndoMul = verifyEndoMul'Generic (endoCoefficient @Pallas.ScalarField)
 
 type EndoscaleRound f =
   { t :: AffinePoint f
   , p :: AffinePoint f
   , r :: AffinePoint f
+  , s :: AffinePoint f
   , s1 :: f
   , s3 :: f
   , nAcc :: f
+  , nAccNext :: f
   , bits :: Vector 4 f
   }
 
@@ -51,12 +55,12 @@ boolean :: forall f. PrimeField f => f -> Boolean
 boolean b = b * b == b
 
 verifyEndoMul'Generic :: forall f. PrimeField f => f -> EndoMul' f -> Boolean
-verifyEndoMul'Generic endoCoeff c = all (verifyRound endoCoeff) c.state
+verifyEndoMul'Generic endoCoeff {state} = all (verifyRound endoCoeff) state
   where
   verifyRound :: f -> EndoscaleRound f -> Boolean
   verifyRound endo round =
     let
-      { bits, t, p, r, s1, s3, nAcc } = round
+      { bits, t, p, r, s1, s3, nAcc, s, nAccNext } = round
       b1 = bits !! unsafeFinite 0
       b2 = bits !! unsafeFinite 1
       b3 = bits !! unsafeFinite 2
@@ -68,10 +72,10 @@ verifyEndoMul'Generic endoCoeff c = all (verifyRound endoCoeff) c.state
       yq2 = (b4 * two - one) * t.y
       s1Squared = s1 * s1
       s3Squared = s3 * s3
-      nConstraint = (((nAcc * two + b1) * two + b2) * two + b3) * two + b4 - nAcc
+      nConstraint = (((nAcc * two + b1) * two + b2) * two + b3) * two + b4 - nAccNext
       xpXr = p.x - r.x
-      xrXs = r.x - c.s.x
-      ysYr = c.s.y + r.y
+      xrXs = r.x - s.x
+      ysYr = s.y + r.y
       yrYp = r.y + p.y
 
     in
@@ -82,9 +86,9 @@ verifyEndoMul'Generic endoCoeff c = all (verifyRound endoCoeff) c.state
         && ((xq1 - p.x) * s1) == (yq1 - p.y)
         && (((p.x * two - s1Squared) + xq1) * ((xpXr * s1) + yrYp)) == (p.y * two * xpXr)
         && (yrYp * yrYp) == ((xpXr * xpXr) * ((s1Squared - xq1) + r.x))
-        && ((xq2 - r.y) * s3) == (yq2 - r.y)
+        && ((xq2 - r.x) * s3) == (yq2 - r.y)
         && (((r.x * two - s3Squared) + xq2) * ((xrXs * s3) + ysYr)) == (r.y * two * xrXs)
-        && (ysYr * ysYr) == ((xrXs * xrXs) * ((s3Squared - xq2) + c.s.x))
+        && (ysYr * ysYr) == ((xrXs * xrXs) * ((s3Squared - xq2) + s.x))
         &&
           nConstraint == zero
 
@@ -116,15 +120,20 @@ eval lookup constraint = ado
     yr <- CVar.eval lookup round.r.y
     s1 <- CVar.eval lookup round.s1
     s3 <- CVar.eval lookup round.s3
+    xs <- CVar.eval lookup round.s.x
+    ys <- CVar.eval lookup round.s.y
+    nAccNext <- CVar.eval lookup round.nAccNext
     bits <- traverse (CVar.eval lookup) (round.bits)
     in
       { t: { x: xt, y: yt }
       , p: { x: xp, y: yp }
       , nAcc
       , r: { x: xr, y: yr }
+      , s: { x: xs, y: ys }
       , s1
       , s3
       , bits
+      , nAccNext
       }
 
 type EndoMul' f =

@@ -19,6 +19,7 @@ pub use pallas::scalar_field::{
     pallas_scalarfield_modulus, pallas_scalarfield_mul, pallas_scalarfield_one,
     pallas_scalarfield_pow, pallas_scalarfield_rand, pallas_scalarfield_sub,
     pallas_scalarfield_to_bigint, pallas_scalarfield_to_string, pallas_scalarfield_zero,
+    pallas_endo_base, pallas_endo_scalar,
 };
 
 // Note: Pallas base field functions removed - handled via Vesta scalar field cross-wiring
@@ -35,7 +36,7 @@ pub use vesta::scalar_field::{
     vesta_scalarfield_from_bigint, vesta_scalarfield_from_string, vesta_scalarfield_invert,
     vesta_scalarfield_modulus, vesta_scalarfield_mul, vesta_scalarfield_one, vesta_scalarfield_pow,
     vesta_scalarfield_rand, vesta_scalarfield_sub, vesta_scalarfield_to_bigint,
-    vesta_scalarfield_to_string, vesta_scalarfield_zero,
+    vesta_scalarfield_to_string, vesta_scalarfield_zero, vesta_endo_base, vesta_endo_scalar,
 };
 
 // Note: Vesta base field functions removed - handled via Pallas scalar field cross-wiring

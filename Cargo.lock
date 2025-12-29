@@ -492,6 +492,7 @@ dependencies = [
  "napi-derive",
  "num-bigint",
  "num-integer",
+ "poly-commitment",
  "proptest",
  "rand 0.8.5",
  "rand_chacha 0.3.1",

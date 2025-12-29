@@ -18,7 +18,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, class HasEndo, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -41,7 +41,8 @@ foreign import _pallasFromBigInt :: BigInt -> PallasScalarField
 foreign import _pallasToBigInt :: PallasScalarField -> BigInt
 foreign import _pallasModulus :: Unit -> BigInt
 foreign import _pallasPow :: PallasScalarField -> BigInt -> PallasScalarField
-foreign import _pallasEndoCoefficient :: Unit -> PallasScalarField
+foreign import _pallasEndoBase :: Unit -> VestaScalarField
+foreign import _pallasEndoScalar :: Unit -> PallasScalarField
 
 instance Semiring PallasScalarField where
   add = _pallasAdd
@@ -154,7 +155,8 @@ foreign import _vestaScalarFieldFromBigInt :: BigInt -> VestaScalarField
 foreign import _vestaScalarFieldToBigInt :: VestaScalarField -> BigInt
 foreign import _vestaScalarFieldPow :: VestaScalarField -> BigInt -> VestaScalarField
 foreign import _vestaScalarFieldModulus :: Unit -> BigInt
-foreign import _vestaEndoCoefficient :: Unit -> VestaScalarField
+foreign import _vestaEndoBase :: Unit -> PallasScalarField
+foreign import _vestaEndoScalar :: Unit -> VestaScalarField
 
 instance Semiring VestaScalarField where
   add = _vestaScalarFieldAdd
@@ -257,8 +259,22 @@ instance Ord VestaScalarField where
 instance Ord PallasScalarField where
   compare x y = compare (toBigInt x) (toBigInt y)
 
-pallasEndoCoefficient :: PallasScalarField
-pallasEndoCoefficient = _pallasEndoCoefficient unit
+pallasEndoBase :: VestaScalarField
+pallasEndoBase = _pallasEndoBase unit
 
-vestaEndoCoefficient :: VestaScalarField
-vestaEndoCoefficient = _vestaEndoCoefficient unit
+pallasEndoScalar :: PallasScalarField  
+pallasEndoScalar = _pallasEndoScalar unit
+
+vestaEndoBase :: PallasScalarField
+vestaEndoBase = _vestaEndoBase unit
+
+vestaEndoScalar :: VestaScalarField
+vestaEndoScalar = _vestaEndoScalar unit
+
+instance HasEndo VestaScalarField PallasScalarField where
+  endoBase = pallasEndoBase
+  endoScalar = pallasEndoScalar
+
+instance HasEndo PallasScalarField VestaScalarField where  
+  endoBase = vestaEndoBase
+  endoScalar = vestaEndoScalar
