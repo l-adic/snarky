@@ -2,8 +2,6 @@ module Snarky.Circuit.Kimchi.EndoScale where
 
 import Prelude
 
-import Data.Array.NonEmpty (mapWithIndex)
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -14,7 +12,7 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
-import Snarky.Data.Fin (unsafeFinite, getFinite)
+import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, chunks, (!!))
 import Snarky.Data.Vector as Vector
 
@@ -40,18 +38,8 @@ toField (ScalarChallenge scalar) endo = do
     nibblesByRow =
       let
         f :: Vector 2 (FVar f) -> FVar f
-        f v = (v !! unsafeFinite 0) `add_` scale_ (fromInt 2) (v !! unsafeFinite 1)
+        f v = (v !! unsafeFinite 1) `add_` scale_ (fromInt 2) (v !! unsafeFinite 0)
       in
-        {-
-          chunks @2 = [(b0, b1), (b2, b3) ..., (b127,128)]
-
-          chunks @8 _ = [ [(b0,b1), ... (b14, b15)]
-                        , [(b16, b17), .. (b30, b31)]
-                        ,...
-                        , [(b112, b113) ... (b126, b127)]
-                        ]
-        
-        -}
         chunks @8 $ map f (chunks @2 msbBits)
 
   Tuple rowsRev { a, b, n } <- mapAccumM
@@ -76,7 +64,7 @@ toField (ScalarChallenge scalar) endo = do
     }
     nibblesByRow
   addConstraint $ KimchiEndoScale (Vector.reverse rowsRev)
-  --assertEqual_ n scalar
+  assertEqual_ n scalar
   a `mul_` endo <#>
     add_ b
 
