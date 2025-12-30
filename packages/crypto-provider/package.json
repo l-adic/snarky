@@ -4,10 +4,6 @@
   "main": "crypto-provider.node",
   "scripts": {
     "build": "napi build --release",
-    "build:arkworks": "napi build --release --no-default-features --features arkworks", 
-    "build:mina-curves": "napi build --release --no-default-features --features mina-curves-backend",
-    "build:kimchi": "napi build --release --no-default-features --features kimchi",
-    "build:test-utils": "napi build --release --no-default-features --features test-utils",
     "prepublish": "npm run build"
   },
   "napi": {
