@@ -64,13 +64,13 @@ eval lookup cs = ado
   in all identity bs
   where
   double x = x + x
-  cF x
+  aF x
     | x == zero = zero
     | x == one = zero
     | x == fromInt 2 = -one
     | x == fromInt 3 = one
     | otherwise = unsafeThrow ("unexpecte cF application: " <> show x)
-  dF x
+  bF x
     | x == zero = -one
     | x == one = one
     | x == fromInt 2 = zero
@@ -86,6 +86,6 @@ eval lookup cs = ado
     b8 <- CVar.eval lookup c.b8
     in
       foldl (\acc x -> double (double acc) + x) n0 xs == n8
-        && foldl (\acc x -> double acc + cF x) a0 xs == a8
+        && foldl (\acc x -> double acc + aF x) a0 xs == a8
         &&
-          foldl (\acc x -> double acc + dF x) b0 xs == b8
+          foldl (\acc x -> double acc + bF x) b0 xs == b8

@@ -190,7 +190,7 @@ chunk n arr
 scanl :: forall a b n. (b -> a -> b) -> b -> Vector n a -> Vector n b
 scanl f init (Vector as) = Vector $ Array.scanl f init as
 
-append :: forall n m k a. Add m n k => Vector n a -> Vector m a -> Vector k a
+append :: forall n m k a. Add n m k => Vector n a -> Vector m a -> Vector k a
 append (Vector as) (Vector as') = Vector $ as <> as'
 
 splitAt

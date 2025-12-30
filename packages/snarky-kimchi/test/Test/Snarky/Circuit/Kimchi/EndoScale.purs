@@ -2,19 +2,20 @@ module Test.Snarky.Circuit.Kimchi.EndoScale where
 
 import Prelude
 
-import Data.Identity (Identity)
 import Data.Newtype (over)
+import Data.Reflectable (class Reflectable)
 import Data.Traversable (foldl)
 import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.EndoScale (ScalarChallenge(..), toField)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, endoBase, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!))
 import Snarky.Data.Vector as Vector
@@ -60,39 +61,55 @@ toFieldConstant f endo =
   double x = x + x
 
 circuit
-  :: forall t
-   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-  => FVar Vesta.ScalarField
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (FVar Vesta.ScalarField)
+  :: forall f f' t m n _l
+   . CircuitM f (KimchiConstraint f) t m
+  => FieldSizeInBits f n
+  => Add 128 _l n
+  => HasEndo f f'
+  => FVar f
+  -> Snarky (KimchiConstraint f) t m (FVar f)
 circuit scalarValue =
   let
-    endoVar = const_ (endoBase @Vesta.ScalarField)
+    endoVar = const_ (endoBase @f)
   in
     toField (ScalarChallenge scalarValue) endoVar
 
-gen128BitElem :: Gen (F Vesta.ScalarField)
+gen128BitElem :: forall f n _l. FieldSizeInBits f n => Reflectable _l Int => Add 128 _l n => Gen (F f)
 gen128BitElem = do
   v <- Vector.generator (Proxy @128) arbitrary
   let v' = v `Vector.append` (Vector.generate $ const false)
   pure $ F $ packPure v'
 
-spec :: Spec Unit
-spec = do
-  describe "EndoScale" do
-    it "Circuit output matches constant implementation (like OCaml test)" $
+spec'
+  :: forall f f'
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => KimchiVerify f
+  => HasEndo f f'
+  => Proxy f
+  -> String
+  -> Spec Unit
+spec' _ s = do
+  describe ("EndoScale: " <> s) do
+    it "Cicuit matches the reference implementation and satisfies constraints" $
       let
-        f :: F Vesta.ScalarField -> F Vesta.ScalarField
+        f :: F f -> F f
         f =
-          over F \x -> toFieldConstant x (endoBase @Vesta.ScalarField)
+          over F \x -> toFieldConstant x (endoBase @f)
 
-        solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+        solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
         { constraints } = compilePure
-          (Proxy @(F Vesta.ScalarField))
-          (Proxy @(F Vesta.ScalarField))
-          (Proxy @(KimchiConstraint Vesta.ScalarField))
+          (Proxy @(F f))
+          (Proxy @(F f))
+          (Proxy @(KimchiConstraint f))
           circuit
           Kimchi.initialState
       in
         -- Test that circuit matches reference on random 128-bit boolean arrays
         circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen128BitElem
+
+spec :: Spec Unit
+spec = do
+  spec' (Proxy @Vesta.ScalarField) "Vesta"
+  spec' (Proxy @Pallas.ScalarField) "Pallas"
