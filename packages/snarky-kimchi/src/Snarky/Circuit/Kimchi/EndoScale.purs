@@ -12,8 +12,8 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
-import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
 import Snarky.Data.Fin as Fin
+import Snarky.Data.Fin (unsafeFinite, getFinite)
 import Snarky.Data.Vector (Vector, (!!))
 import Snarky.Data.Vector as Vector
 
@@ -39,11 +39,13 @@ toField (ScalarChallenge scalar) endo = do
     Vector.generateA \i ->
       Vector.generateA \j ->
         let
-          -- Use type-level calculation: bit = (bits_per_row * i) + (2 * j)
-          -- where bits_per_row = 16
-          bitPos = Fin.scale @16 i `Fin.add_` Fin.scale @2 j
-          b1 = msbBits !! (Fin.relax bitPos) -- MSB of the 2-bit pair
-          b0 = msbBits !! (Fin.translate @1 bitPos) -- LSB of the 2-bit pair
+          -- Manual calculation to match OCaml: bit = (16 * i) + (2 * j)  
+          -- This gives us pairs: (0,1), (2,3), (4,5), ..., (14,15) for each row
+          baseIndex = 16 * getFinite i + 2 * getFinite j
+          evenBitIndex = unsafeFinite baseIndex           -- bits.(2*k) equivalent  
+          oddBitIndex = unsafeFinite (baseIndex + 1)      -- bits.(2*k + 1) equivalent
+          b0 = msbBits !! evenBitIndex    -- even bit (LSB of the 2-bit pair)
+          b1 = msbBits !! oddBitIndex     -- odd bit (MSB of the 2-bit pair)
         in
           pure b0 + const_ (fromInt 2) `mul_` b1
   Tuple rowsRev { a, b, n } <- mapAccumM
