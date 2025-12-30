@@ -47,7 +47,7 @@ toField (ScalarChallenge scalar) endo = do
         let
           double x = x + x
         { n8, a8, b8 } <- exists do
-          xs :: Vector 8 (F f) <- read nibble
+          xs :: Vector 8 _ <- read nibble
           { a: a0, b: b0, n: n0 } <- read @{ a :: F f, b :: F f, n :: F f } st
           let
             n8 = foldl (\acc x -> double (double acc) + x) n0 xs
@@ -84,13 +84,3 @@ toField (ScalarChallenge scalar) endo = do
     | x == fromInt 2 = zero
     | x == fromInt 3 = zero
     | otherwise = unsafeThrow ("Unexpected bF application: " <> show x)
-
-{-
-
-Fin n = [0,..,n-1]
-Fin m = [0,..,m-1]
-
-(n - 1) + (m - 1) = n + m - 1)
-
-
--}

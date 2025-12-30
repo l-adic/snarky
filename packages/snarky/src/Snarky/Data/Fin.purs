@@ -9,8 +9,6 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Show.Generic (genericShow)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
-import Prim.Int (class Add, class Mul)
-import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 
 newtype Finite (n :: Int) = Finite Int
@@ -50,38 +48,3 @@ finites =
     n = reflectType (Proxy @n)
   in
     Finite <$> (0 .. (n - 1))
-
--- [0.. n - 1] + [0.. m - 1] = [0..(n + m - 1) - 1]
-add_
-  :: forall n m _l k
-   . Add n m _l
-  => Add k 1 _l
-  => Finite n
-  -> Finite m
-  -> Finite k
-add_ (Finite n) (Finite m) = Finite (n + m)
-
--- n * [0.. m - 1] = [0..(n * m - n)]
---               = [0.. (n * m - n + 1) - 1 ]
-scale
-  :: forall @n m negN nTimesM k _l
-   . Mul n m nTimesM
-  => Add n negN 0
-  => Add nTimesM negN _l
-  => Add _l 1 k
-  => Reflectable n Int
-  => Finite m
-  -> Finite k
-scale (Finite m) = Finite (reflectType (Proxy @n) * m)
-
--- n + [0.. m - 1] = [0..( n + m - 1)]
-translate
-  :: forall @n m k
-   . Add n m k
-  => Reflectable n Int
-  => Finite m
-  -> Finite k
-translate (Finite m) = Finite (reflectType (Proxy @n) + m)
-
-relax :: forall m n k. Add n k m => Finite n -> Finite m
-relax = coerce

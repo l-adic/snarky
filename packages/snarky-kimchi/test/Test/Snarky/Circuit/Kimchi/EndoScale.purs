@@ -3,11 +3,11 @@ module Test.Snarky.Circuit.Kimchi.EndoScale where
 import Prelude
 
 import Data.Identity (Identity)
+import Data.Newtype (over)
 import Data.Traversable (foldl)
 import Prim.Int (class Add)
-import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, add_, const_, Bool(..))
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.EndoScale (ScalarChallenge(..), toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -24,7 +24,14 @@ import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-toFieldConstant :: forall f n _l. PrimeField f => FieldSizeInBits f n => Add 128 _l n => f -> f -> f
+toFieldConstant
+  :: forall f n _l
+   . PrimeField f
+  => FieldSizeInBits f n
+  => Add 128 _l n
+  => f
+  -> f
+  -> f
 toFieldConstant f endo =
   let
     bits :: Vector 128 Boolean
@@ -33,72 +40,51 @@ toFieldConstant f endo =
     chunks :: Vector 64 (Vector 2 Boolean)
     chunks = Vector.chunks @2 bits
 
-    processChunk :: { a :: f, b :: f } -> Vector 2 Boolean  -> { a :: f, b :: f }
-    processChunk { a, b } v =
+    processChunk
+      :: { a :: f, b :: f }
+      -> Vector 2 Boolean
+      -> { a :: f, b :: f }
+    processChunk st v =
       let
-        bit_even = v !! unsafeFinite 1
-        bit_odd = v !! unsafeFinite 0
-
-        s = if bit_even then one else -one
-
-        a2 = a + a
-        b2 = b + b
-
+        bitEven = v !! unsafeFinite 1
+        bitOdd = v !! unsafeFinite 0
+        s = if bitEven then one else -one
       in
-        if bit_odd then { a: a2 + s, b: b2 }
-        else { a: a2, b: b2 + s }
+        if bitOdd then { a: double st.a + s, b: double st.b }
+        else { a: double st.a, b: double st.b + s }
 
-    final = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunks
+    { a, b } = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunks
   in
-    final.a * endo + final.b
-
-refEndoScale :: F Vesta.ScalarField -> F Vesta.ScalarField
-refEndoScale (F f) =
-  let
-    endo = endoBase @Vesta.ScalarField
-
-    result = toFieldConstant f endo
-  in
-    F result
+    a * endo + b
+  where
+  double x = x + x
 
 circuit
   :: forall t
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
   => FVar Vesta.ScalarField
   -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (FVar Vesta.ScalarField)
-circuit scalarValue = do
+circuit scalarValue =
+  let
+    endoVar = const_ (endoBase @Vesta.ScalarField)
+  in
+    toField (ScalarChallenge scalarValue) endoVar
 
-  let 
-    challenge = ScalarChallenge scalarValue
-    endoCoeff = endoBase :: Vesta.ScalarField -- from HasEndo Vesta.ScalarField Pallas.ScalarField
-    endoVar = const_ endoCoeff
-
-  -- Apply the endoscale algorithm and return the FVar
-  toField challenge endoVar
-
--- Generator for 128-bit boolean arrays (like OCaml QuickCheck test)
 gen128BitElem :: Gen (F Vesta.ScalarField)
-gen128BitElem = do 
+gen128BitElem = do
   v <- Vector.generator (Proxy @128) arbitrary
   let v' = v `Vector.append` (Vector.generate $ const false)
   pure $ F $ packPure v'
 
--- Convert boolean array to scalar field element (LSB first)
-boolArrayToScalar :: forall f n. PrimeField f => Vector n (BoolVar f) -> (FVar f)
-boolArrayToScalar bits =
-  foldl (\acc bit -> acc `add_` coerce bit) (const_ zero) bits
-
--- Test specification (following OCaml QuickCheck pattern)
 spec :: Spec Unit
 spec = do
   describe "EndoScale" do
     it "Circuit output matches constant implementation (like OCaml test)" $
       let
-        -- Reference function: apply constant algorithm to boolean array
         f :: F Vesta.ScalarField -> F Vesta.ScalarField
-        f = refEndoScale
+        f =
+          over F \x -> toFieldConstant x (endoBase @Vesta.ScalarField)
 
-        -- Solver and constraint compilation
         solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
 
         { constraints } = compilePure
