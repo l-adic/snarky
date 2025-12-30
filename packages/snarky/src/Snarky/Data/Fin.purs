@@ -34,7 +34,7 @@ finite k =
     if k >= 0 && k < n then Just (Finite k)
     else Nothing
 
-unsafeFinite :: forall n. Reflectable n Int => Int -> Finite n
+unsafeFinite :: forall @n. Reflectable n Int => Int -> Finite n
 unsafeFinite k =
   case finite k of
     Just k' -> k'

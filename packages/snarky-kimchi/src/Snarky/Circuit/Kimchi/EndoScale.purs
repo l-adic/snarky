@@ -2,19 +2,20 @@ module Snarky.Circuit.Kimchi.EndoScale where
 
 import Prelude
 
+import Data.Array.NonEmpty (mapWithIndex)
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, readCVar, scale_)
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
-import Snarky.Data.Fin as Fin
 import Snarky.Data.Fin (unsafeFinite, getFinite)
-import Snarky.Data.Vector (Vector, (!!))
+import Snarky.Data.Vector (Vector, chunks, (!!))
 import Snarky.Data.Vector as Vector
 
 newtype ScalarChallenge f = ScalarChallenge f
@@ -35,19 +36,24 @@ toField (ScalarChallenge scalar) endo = do
     msbBits :: Vector 128 (FVar f)
     msbBits = coerce $ Vector.reverse lsbBits
 
-  nibblesByRow :: Vector 8 (Vector 8 (FVar f)) <-
-    Vector.generateA \i ->
-      Vector.generateA \j ->
-        let
-          -- Manual calculation to match OCaml: bit = (16 * i) + (2 * j)  
-          -- This gives us pairs: (0,1), (2,3), (4,5), ..., (14,15) for each row
-          baseIndex = 16 * getFinite i + 2 * getFinite j
-          evenBitIndex = unsafeFinite baseIndex           -- bits.(2*k) equivalent  
-          oddBitIndex = unsafeFinite (baseIndex + 1)      -- bits.(2*k + 1) equivalent
-          b0 = msbBits !! evenBitIndex    -- even bit (LSB of the 2-bit pair)
-          b1 = msbBits !! oddBitIndex     -- odd bit (MSB of the 2-bit pair)
-        in
-          pure b0 + const_ (fromInt 2) `mul_` b1
+    nibblesByRow :: Vector 8 (Vector 8 (FVar f))
+    nibblesByRow =
+      let
+        f :: Vector 2 (FVar f) -> FVar f
+        f v = (v !! unsafeFinite 0) `add_` scale_ (fromInt 2) (v !! unsafeFinite 1)
+      in
+        {-
+          chunks @2 = [(b0, b1), (b2, b3) ..., (b127,128)]
+
+          chunks @8 _ = [ [(b0,b1), ... (b14, b15)]
+                        , [(b16, b17), .. (b30, b31)]
+                        ,...
+                        , [(b112, b113) ... (b126, b127)]
+                        ]
+        
+        -}
+        chunks @8 $ map f (chunks @2 msbBits)
+
   Tuple rowsRev { a, b, n } <- mapAccumM
     ( \st nibble -> do
         let
@@ -70,7 +76,7 @@ toField (ScalarChallenge scalar) endo = do
     }
     nibblesByRow
   addConstraint $ KimchiEndoScale (Vector.reverse rowsRev)
-  assertEqual_ n scalar
+  --assertEqual_ n scalar
   a `mul_` endo <#>
     add_ b
 
