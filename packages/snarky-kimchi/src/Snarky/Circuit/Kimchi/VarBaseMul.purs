@@ -1,20 +1,16 @@
 module Snarky.Circuit.Kimchi.VarBaseMul
   ( scaleFast1
   , scaleFast2
-  , class DivMod
   ) where
 
 import Prelude
 
-import Control.Monad.State (StateT(..), runStateT)
 import Data.Foldable (foldl, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..), fst)
 import JS.BigInt as BigInt
-import Prim.Int (class Mul, class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
@@ -22,6 +18,7 @@ import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertE
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar, BoolVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
@@ -173,25 +170,3 @@ scaleFast2 base s = do
   assertEqual_ s =<< do
     pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
   scaleFast2' @n @nChunks base (Type2 sDiv2) sOdd
-
-mapAccumM
-  :: forall m s t a b
-   . Monad m
-  => Traversable t
-  => (s -> a -> m (Tuple b s))
-  -> s
-  -> t a
-  -> m (Tuple (t b) s)
-mapAccumM f initial xs = runStateT (traverse step xs) initial
-  where
-  step x = StateT (\s -> f s x)
-
--- quotient + remainder = numerator / denominator
-class (Compare 0 denominator LT) <= DivMod (numerator :: Int) (denominator :: Int) (quotient :: Int) (remainder :: Int) | numerator denominator -> quotient remainder
-
-instance
-  ( Compare 0 denominator LT
-  , Add quotient remainder k
-  , Mul denominator k numerator
-  ) =>
-  DivMod numerator denominator quotient remainder

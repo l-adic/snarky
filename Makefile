@@ -11,11 +11,7 @@ help: ## Show available commands and their descriptions
 	@echo "  Single crypto-provider crate provides all curve operations,"
 	@echo "  bulletproofs proving, and groth16 proving functionality."
 	@echo ""
-	@echo "Pasta Curves Backend Selection:"
-	@echo "  Set PASTA_CURVES_BACKEND environment variable to choose field implementation:"
-	@echo "  - PASTA_CURVES_BACKEND=mina-curves (default): Use mina-curves from proof-systems (kimchi ecosystem)"
-	@echo "  - PASTA_CURVES_BACKEND=arkworks: Use ark-pallas/ark-vesta"
-	@echo "  Example: PASTA_CURVES_BACKEND=arkworks make test-bulletproofs"
+	@echo "Pasta Curves: Uses mina-curves from proof-systems (kimchi ecosystem)"
 	@echo ""
 	@echo "Available commands:"
 	@echo ""
@@ -23,22 +19,10 @@ help: ## Show available commands and their descriptions
 
 all: cargo-build build-crypto ## Build everything
 
-# Environment variable for pasta curves backend selection
-PASTA_CURVES_BACKEND ?= mina-curves
-
-# Helper to determine npm script based on backend
-ifeq ($(PASTA_CURVES_BACKEND),mina-curves)
-CRYPTO_BUILD_SCRIPT = build:mina-curves
-else ifeq ($(PASTA_CURVES_BACKEND),arkworks)
-CRYPTO_BUILD_SCRIPT = build:arkworks
-else
-$(error Invalid PASTA_CURVES_BACKEND: $(PASTA_CURVES_BACKEND). Must be 'arkworks' or 'mina-curves')
-endif
-
 # Unified crypto provider build
-build-crypto: ## Build unified crypto-provider with backend selection (set PASTA_CURVES_BACKEND=mina-curves|arkworks)
-	@echo "Building crypto-provider with backend: $(PASTA_CURVES_BACKEND)"
-	cd packages/crypto-provider && npm run $(CRYPTO_BUILD_SCRIPT)
+build-crypto: ## Build unified crypto-provider
+	@echo "Building crypto-provider with mina-curves backend"
+	cd packages/crypto-provider && npm run build
 	npm install
 
 # PureScript package testing

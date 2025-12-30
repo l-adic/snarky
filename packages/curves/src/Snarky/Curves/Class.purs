@@ -13,6 +13,9 @@ module Snarky.Curves.Class
   , fromAffine
   , class FieldSizeInBits
   , fromInt
+  , class HasEndo
+  , endoBase
+  , endoScalar
   ) where
 
 import Prelude
@@ -31,7 +34,7 @@ class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
   modulus :: BigInt
   pow :: f -> BigInt -> f
 
-fromInt :: forall f. PrimeField f => Int -> f
+fromInt :: forall @f. PrimeField f => Int -> f
 fromInt x = fromBigInt $ JS.BigInt.fromInt x
 
 class (PrimeField f, Monoid g) <= FrModule f g | g -> f where
@@ -45,3 +48,7 @@ class PrimeField f <= WeierstrassCurve f g | g -> f where
 
 class FieldSizeInBits :: Type -> Int -> Constraint
 class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n
+
+class HasEndo f f' | f -> f', f' -> f where
+  endoBase :: f
+  endoScalar :: f'

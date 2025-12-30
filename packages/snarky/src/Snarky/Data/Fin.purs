@@ -2,6 +2,7 @@ module Snarky.Data.Fin where
 
 import Prelude
 
+import Data.Array ((..))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
@@ -9,7 +10,6 @@ import Data.Show.Generic (genericShow)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Type.Proxy (Proxy(..))
-import Data.Array ((..))
 
 newtype Finite (n :: Int) = Finite Int
 
@@ -29,10 +29,10 @@ finite k =
   let
     n = reflectType (Proxy @n)
   in
-    if k < n then Just (Finite k)
+    if k >= 0 && k < n then Just (Finite k)
     else Nothing
 
-unsafeFinite :: forall n. Reflectable n Int => Int -> Finite n
+unsafeFinite :: forall @n. Reflectable n Int => Int -> Finite n
 unsafeFinite k =
   case finite k of
     Just k' -> k'

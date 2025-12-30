@@ -265,3 +265,20 @@ export function _vestaFromAffine({x,y}) {
 export function _pallasFromAffine({x,y}) {
     return napi.pallasGroupFromAffine(x,y)
 }
+
+// Endomorphism coefficients
+export function _pallasEndoBase() {
+    return napi.pallasEndoBase();
+}
+
+export function _pallasEndoScalar() {
+    return napi.pallasEndoScalar();
+}
+
+export function _vestaEndoBase() {
+    return napi.vestaEndoBase();
+}
+
+export function _vestaEndoScalar() {
+    return napi.vestaEndoScalar();
+}
