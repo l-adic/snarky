@@ -266,10 +266,19 @@ export function _pallasFromAffine({x,y}) {
     return napi.pallasGroupFromAffine(x,y)
 }
 
-export function _pallasEndoCoefficient() {
-    return napi.pallasEndoCoefficient();
+// Endomorphism coefficients
+export function _pallasEndoBase() {
+    return napi.pallasEndoBase();
 }
 
-export function _vestaEndoCoefficient() {
-    return napi.vestaEndoCoefficient();
+export function _pallasEndoScalar() {
+    return napi.pallasEndoScalar();
+}
+
+export function _vestaEndoBase() {
+    return napi.vestaEndoBase();
+}
+
+export function _vestaEndoScalar() {
+    return napi.vestaEndoScalar();
 }

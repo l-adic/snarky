@@ -23,6 +23,7 @@ data GateKind
   | AddCompleteGate
   | PoseidonGate
   | VarBaseMul
+  | EndoScale
   | Zero
 
 derive instance Generic GateKind _
