@@ -46,5 +46,5 @@ spec pf = describe "Constraint Spec" do
                 Plonk.eval lookup c <#> conj acc
             )
             true
-            plonkConstraints.constraints
+            (Plonk.mkRows <$> plonkConstraints.constraints)
       pure $ plonkEval === basicEval

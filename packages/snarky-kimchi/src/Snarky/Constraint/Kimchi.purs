@@ -21,7 +21,6 @@ import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete, class AddCompleteVerifiable)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -31,28 +30,27 @@ import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
-import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, KimchiRow, emptyKimchiWireState)
+import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Vector (Vector)
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
   | KimchiAddComplete (AddComplete f)
   | KimchiPoseidon (PoseidonConstraint f)
-  | KimchiVarBaseMul (VarBaseMul (FVar f))
+  | KimchiVarBaseMul (VarBaseMul f)
   | KimchiEndoScale (EndoScale f)
 
 data KimchiGate f
-  = KimchiGatePlonk (KimchiRow f)
-  | KimchiGateAddComplete (KimchiRow f)
-  | KimchiGatePoseidon (Vector 12 (KimchiRow f))
-  | KimchiGateVarBaseMul (Array (Vector 2 (KimchiRow f)))
-  | KimchiGateEndoScale (Vector 8 (KimchiRow f))
+  = KimchiGatePlonk (GenericPlonk.Rows f)
+  | KimchiGateAddComplete (AddComplete.Rows f)
+  | KimchiGatePoseidon (Poseidon.Rows f)
+  | KimchiGateVarBaseMul (VarBaseMul.Rows f)
+  | KimchiGateEndoScale (EndoScale.Rows f)
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
@@ -64,7 +62,7 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
       Tuple mRow ws' = finalizeGateQueue (un AuxState s.aux).wireState
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk r) mRow
+        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk (GenericPlonk.mkRows r)) mRow
         , aux = AuxState
             { wireState: ws'
             }
@@ -85,23 +83,9 @@ instance
   addConstraint' = case _ of
     KimchiAddComplete c -> go AddComplete.reduce KimchiGateAddComplete c
     KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
-    -- this one is special :/
-    KimchiBasic c -> do
-      s <- CircuitBuilder.getState
-      let
-        Tuple _ res = reduceAsBuilder
-          { nextVariable: s.nextVar
-          , wireState: (un AuxState s.aux).wireState
-          }
-          (GenericPlonk.reduce c >>= maybe (pure unit) addGenericPlonkConstraint)
-      CircuitBuilder.putState s
-        { nextVar = res.nextVariable
-        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints)
-        , aux = AuxState { wireState: res.wireState }
-        }
+    KimchiBasic c -> go GenericPlonk.reduce KimchiGatePlonk c
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
     KimchiEndoScale c -> go EndoScale.reduce KimchiGateEndoScale c
-
     where
     go
       :: forall a c m
@@ -120,7 +104,7 @@ instance
           (reducer c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (wrap rows)
+        , constraints = s.constraints <> (KimchiGatePlonk <<< GenericPlonk.mkRows <$> res.constraints) `Array.snoc` (wrap rows)
         , aux = AuxState
             { wireState:
                 res.wireState

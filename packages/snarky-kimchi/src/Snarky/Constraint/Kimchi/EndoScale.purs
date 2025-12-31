@@ -1,6 +1,7 @@
 module Snarky.Constraint.Kimchi.EndoScale
   ( EndoScale
   , EndoScaleRound
+  , Rows
   , reduce
   , eval
   ) where
@@ -14,7 +15,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (:<), (!!))
@@ -32,13 +33,18 @@ type EndoScaleRound f =
 
 type EndoScale f = Vector 8 (EndoScaleRound f)
 
+newtype Rows f = Rows (Vector 8 (KimchiRow f))
+
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Vector.toUnfoldable as
+
 reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => EndoScale f
-  -> m (Vector 8 (KimchiRow f))
-reduce cs =
+  -> m (Rows f)
+reduce cs = Rows <$>
   traverse reduceRound cs
   where
   reduceRound c = do
@@ -62,9 +68,9 @@ eval
    . PrimeField f
   => Applicative m
   => (Variable -> m f)
-  -> Vector 8 (KimchiRow f)
+  -> Rows f
   -> m Boolean
-eval lookup rounds = ado
+eval lookup (Rows rounds) = ado
   bs <- traverse (\r -> evalRound r.variables) rounds
   in all identity bs
   where
@@ -74,24 +80,28 @@ eval lookup rounds = ado
     | x == one = zero
     | x == fromInt 2 = -one
     | x == fromInt 3 = one
-    | otherwise = unsafeThrow ("unexpecte cF application: " <> show x)
+    | otherwise = unsafeThrow ("unexpected aF application: " <> show x)
   bF x
     | x == zero = -one
     | x == one = one
     | x == fromInt 2 = zero
     | x == fromInt 3 = zero
-    | otherwise = unsafeThrow ("unexpecte dF application: " <> show x)
-  lookup' = maybe (pure zero) lookup
+    | otherwise = unsafeThrow ("unexpected bF application: " <> show x)
   evalRound round = ado
-    xs <- traverse lookup' (Vector.take @8 $ Vector.drop @6 round)
-    n0 <- lookup' (round !! unsafeFinite 0)
-    n8 <- lookup' (round !! unsafeFinite 1)
-    a0 <- lookup' (round !! unsafeFinite 2)
-    a8 <- lookup' (round !! unsafeFinite 3)
-    b0 <- lookup' (round !! unsafeFinite 4)
-    b8 <- lookup' (round !! unsafeFinite 5)
+    xs <- traverse lookup' xs
+    n0 <- lookup' (cs !! finite6 0)
+    n8 <- lookup' (cs !! finite6 1)
+    a0 <- lookup' (cs !! finite6 2)
+    a8 <- lookup' (cs !! finite6 3)
+    b0 <- lookup' (cs !! finite6 4)
+    b8 <- lookup' (cs !! finite6 5)
     in
       foldl (\acc x -> double (double acc) + x) n0 xs == n8
         && foldl (\acc x -> double acc + aF x) a0 xs == a8
         &&
           foldl (\acc x -> double acc + bF x) b0 xs == b8
+    where
+    lookup' = maybe (pure zero) lookup
+    { before: cs, after } = Vector.splitAt @6 round
+    xs = Vector.take @8 after
+    finite6 = unsafeFinite @6

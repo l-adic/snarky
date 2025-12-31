@@ -1,9 +1,10 @@
 module Snarky.Constraint.Kimchi.Poseidon
   ( PoseidonConstraint
-  , eval
-  , reduce
+  , Rows
   , class PoseidonVerifiable
   , verifyPoseidon
+  , eval
+  , reduce
   ) where
 
 import Prelude hiding (append)
@@ -16,7 +17,7 @@ import Poseidon.Class (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -32,11 +33,10 @@ type PoseidonConstraint f =
 class PoseidonField f <= PoseidonVerifiable f where
   verifyPoseidon :: Vector 12 (Vector 15 f) -> Boolean
 
-instance PoseidonVerifiable Pallas.ScalarField where
-  verifyPoseidon = verifyPallasPoseidon
+newtype Rows f = Rows (Vector 12 (KimchiRow f))
 
-instance PoseidonVerifiable Vesta.ScalarField where
-  verifyPoseidon = verifyVestaPoseidon
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Vector.toUnfoldable as
 
 eval
   :: forall f m
@@ -44,9 +44,9 @@ eval
   => PoseidonVerifiable f
   => Applicative m
   => (Variable -> m f)
-  -> Vector 12 (KimchiRow f)
+  -> Rows f
   -> m Boolean
-eval lookup rows =
+eval lookup (Rows rows) =
   let
     lookup' = maybe (pure zero) lookup
   in
@@ -58,8 +58,8 @@ reduce
   => PoseidonField f
   => PlonkReductionM m f
   => PoseidonConstraint f
-  -> m (Vector 12 (KimchiRow f))
-reduce c = do
+  -> m (Rows f)
+reduce c = Rows <$> do
   state <- traverse (traverse reduceToVariable) c.state
   let
     { before, after } = Vector.splitAt @55 state
@@ -70,12 +70,13 @@ reduce c = do
   addRoundState :: Finite 11 -> Vector 5 (Vector 3 Variable) -> KimchiRow f
   addRoundState round s =
     let
+      finite5 = unsafeFinite @5
       variables = map Just $
-        (s !! unsafeFinite 0)
-          `append` (s !! unsafeFinite 4)
-          `append` (s !! unsafeFinite 1)
-          `append` (s !! unsafeFinite 2)
-          `append` (s !! unsafeFinite 3)
+        (s !! finite5 0)
+          `append` (s !! finite5 4)
+          `append` (s !! finite5 1)
+          `append` (s !! finite5 2)
+          `append` (s !! finite5 3)
       coeffs =
         getRoundConstants (Proxy @f) (getFinite round)
           `append` getRoundConstants (Proxy @f) (getFinite round + 1)
@@ -92,8 +93,8 @@ foreign import verifyPallasPoseidonGadget
 foreign import verifyVestaPoseidonGadget
   :: Fn2 Int (Vector 12 (Vector 15 Vesta.ScalarField)) Boolean
 
-verifyPallasPoseidon :: Vector 12 (Vector 15 Pallas.ScalarField) -> Boolean
-verifyPallasPoseidon witness = runFn2 verifyPallasPoseidonGadget 12 witness
+instance PoseidonVerifiable Pallas.ScalarField where
+  verifyPoseidon = runFn2 verifyPallasPoseidonGadget 12
 
-verifyVestaPoseidon :: Vector 12 (Vector 15 Vesta.ScalarField) -> Boolean
-verifyVestaPoseidon witness = runFn2 verifyVestaPoseidonGadget 12 witness
+instance PoseidonVerifiable Vesta.ScalarField where
+  verifyPoseidon = runFn2 verifyVestaPoseidonGadget 12

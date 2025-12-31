@@ -1,20 +1,22 @@
 module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
-  , eval
-  , reduce
+  , Rows
   , class AddCompleteVerifiable
   , verifyAddComplete
+  , eval
+  , reduce
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Function.Uncurried (Fn1, runFn1)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -35,11 +37,10 @@ type AddComplete f =
 class AddCompleteVerifiable f where
   verifyAddComplete :: Vector 15 f -> Boolean
 
-instance AddCompleteVerifiable Pallas.BaseField where
-  verifyAddComplete = verifyPallasCompleteAdd
+newtype Rows f = Rows (KimchiRow f)
 
-instance AddCompleteVerifiable Vesta.BaseField where
-  verifyAddComplete = verifyVestaCompleteAdd
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Array.singleton as
 
 eval
   :: forall f m
@@ -47,9 +48,9 @@ eval
   => AddCompleteVerifiable f
   => Applicative m
   => (Variable -> m f)
-  -> KimchiRow f
+  -> Rows f
   -> m Boolean
-eval lookup row =
+eval lookup (Rows row) =
   verifyAddComplete <$> traverse lookup' row.variables
   where
   lookup' = maybe (pure zero) lookup
@@ -59,8 +60,8 @@ reduce
    . PrimeField f
   => PlonkReductionM m f
   => AddComplete f
-  -> m (KimchiRow f)
-reduce c = do
+  -> m (Rows f)
+reduce c = Rows <$> do
   p1 <- reduceAffinePoint c.p1
   p2 <- reduceAffinePoint c.p2
   p3 <- reduceAffinePoint c.p3
@@ -94,8 +95,8 @@ foreign import verifyPallasCompleteAddGadget
 foreign import verifyVestaCompleteAddGadget
   :: Fn1 (Vector 15 Vesta.BaseField) Boolean
 
-verifyPallasCompleteAdd :: Vector 15 Pallas.BaseField -> Boolean
-verifyPallasCompleteAdd witness = runFn1 verifyPallasCompleteAddGadget witness
+instance AddCompleteVerifiable Pallas.BaseField where
+  verifyAddComplete = runFn1 verifyPallasCompleteAddGadget
 
-verifyVestaCompleteAdd :: Vector 15 Vesta.BaseField -> Boolean
-verifyVestaCompleteAdd witness = runFn1 verifyVestaCompleteAddGadget witness
+instance AddCompleteVerifiable Vesta.BaseField where
+  verifyAddComplete = runFn1 verifyVestaCompleteAddGadget

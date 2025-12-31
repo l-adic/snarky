@@ -3,6 +3,8 @@ module Snarky.Constraint.Kimchi.Wire
   , KimchiRow
   , GateKind(..)
   , emptyKimchiWireState
+  , class ToKimchiRows
+  , toKimchiRows
   ) where
 
 import Prelude
@@ -48,3 +50,6 @@ emptyKimchiWireState =
   { queuedGenericGate: Nothing
   , internalVariables: Set.empty
   }
+
+class ToKimchiRows f a where
+  toKimchiRows :: a -> Array (KimchiRow f)
