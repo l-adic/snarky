@@ -1,7 +1,7 @@
 module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
   , eval
-  , reduceAddComplete
+  , reduce
   , class AddCompleteVerifiable
   , verifyAddComplete
   ) where
@@ -67,13 +67,13 @@ eval lookup c = ado
     in
       verifyAddComplete witness
 
-reduceAddComplete
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => AddComplete f
   -> m Unit
-reduceAddComplete c = do
+reduce c = do
   p1 <- reduceAffinePoint c.p1
   p2 <- reduceAffinePoint c.p2
   p3 <- reduceAffinePoint c.p3

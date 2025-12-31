@@ -13,7 +13,6 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
 import Snarky.Constraint.Basic as Basic
-import Snarky.Constraint.Kimchi.GenericPlonk (reduceBasic)
 import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Wire (emptyKimchiWireState)
@@ -30,8 +29,8 @@ spec pf = describe "Constraint Spec" do
       { basic, assignments } <- Basic.genWithAssignments pf
       let
         nextVariable = maybe v0 incrementVariable $ maximum (Map.keys assignments)
-        Tuple _ plonkConstraints = reduceAsBuilder { nextVariable, wireState: emptyKimchiWireState } (reduceBasic basic)
-        finalAssignments = case reduceAsProver { nextVariable, assignments } (reduceBasic basic) of
+        Tuple _ plonkConstraints = reduceAsBuilder { nextVariable, wireState: emptyKimchiWireState } (Plonk.reduce basic)
+        finalAssignments = case reduceAsProver { nextVariable, assignments } (Plonk.reduce basic) of
           Left e -> unsafeCrashWith $ "Unexpected error in Plonk reduce as Prover: " <> show e
           Right (Tuple _ { assignments: assignments' }) -> assignments'
         lookup v = case Map.lookup v finalAssignments of

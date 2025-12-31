@@ -1,7 +1,7 @@
 module Snarky.Constraint.Kimchi.Poseidon
   ( PoseidonConstraint
   , eval
-  , reducePoseidon
+  , reduce
   , class PoseidonVerifiable
   , verifyPoseidon
   ) where
@@ -86,14 +86,14 @@ eval lookup constraint = ado
     in
       witnessData
 
-reducePoseidon
+reduce
   :: forall f m
    . PrimeField f
   => PoseidonField f
   => PlonkReductionM m f
   => PoseidonConstraint f
   -> m Unit
-reducePoseidon c = do
+reduce c = do
   state <- traverse (traverse reduceToVariable) c.state
   let { before, after } = Vector.splitAt @55 state
   let rounds = Vector.chunks @5 before

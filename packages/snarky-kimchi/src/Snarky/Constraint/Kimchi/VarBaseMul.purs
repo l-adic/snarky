@@ -2,7 +2,7 @@ module Snarky.Constraint.Kimchi.VarBaseMul
   ( ScaleRound
   , VarBaseMul
   , eval
-  , reduceVarBaseMul
+  , reduce
   , class VarBaseMulVerifiable
   , verifyVarBaseMul
   ) where
@@ -98,16 +98,16 @@ type ScaleRound f =
 
 type VarBaseMul f = Array (ScaleRound f)
 
-reduceVarBaseMul
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => VarBaseMul f
   -> m Unit
-reduceVarBaseMul c =
-  traverse_ (\r -> reduce r >>= addRound) c
+reduce c =
+  traverse_ (\r -> reduceRound r >>= addRound) c
   where
-  reduce round = do
+  reduceRound round = do
     let
       reducePointToVariable p = do
         x <- reduceToVariable p.x

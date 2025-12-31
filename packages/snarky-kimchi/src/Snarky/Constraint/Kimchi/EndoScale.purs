@@ -1,4 +1,9 @@
-module Snarky.Constraint.Kimchi.EndoScale where
+module Snarky.Constraint.Kimchi.EndoScale
+  ( EndoScale
+  , EndoScaleRound
+  , reduce
+  , eval
+  ) where
 
 import Prelude
 
@@ -16,24 +21,24 @@ import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 
 type EndoScaleRound f =
-  { n0 :: f
-  , n8 :: f
-  , a0 :: f
-  , a8 :: f
-  , b0 :: f
-  , b8 :: f
-  , xs :: Vector 8 f
+  { n0 :: FVar f
+  , n8 :: FVar f
+  , a0 :: FVar f
+  , a8 :: FVar f
+  , b0 :: FVar f
+  , b8 :: FVar f
+  , xs :: Vector 8 (FVar f)
   }
 
 type EndoScale f = Vector 8 (EndoScaleRound f)
 
-reduceEndoScalar
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => EndoScale (FVar f)
+  => EndoScale f
   -> m Unit
-reduceEndoScalar cs =
+reduce cs =
   traverse_ reduceRound cs
   where
   reduceRound c = do
@@ -57,7 +62,7 @@ eval
    . PrimeField f
   => Applicative m
   => (Variable -> m f)
-  -> EndoScale (FVar f)
+  -> EndoScale f
   -> m Boolean
 eval lookup cs = ado
   bs <- traverse evalRound cs

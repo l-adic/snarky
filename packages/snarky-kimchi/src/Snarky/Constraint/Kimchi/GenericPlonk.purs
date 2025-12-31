@@ -1,6 +1,6 @@
 module Snarky.Constraint.Kimchi.GenericPlonk
   ( eval
-  , reduceBasic
+  , reduce
   ) where
 
 import Prelude
@@ -28,13 +28,13 @@ eval lookup x = ado
   vo <- maybe (pure zero) lookup x.vo
   in x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
 
-reduceBasic
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => Basic f
   -> m Unit
-reduceBasic g = case g of
+reduce g = case g of
   R1CS { left, right, output } -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
