@@ -83,8 +83,8 @@ reduce c = do
   infZ <- reduceToVariable c.infZ
   x21Inv <- reduceToVariable c.x21Inv
   let
-    vars :: Vector 15 (Maybe Variable)
-    vars =
+    variables :: Vector 15 (Maybe Variable)
+    variables =
       Just p1.x :< Just p1.y :< Just p2.x :< Just p2.y :< Just p3.x
         :< Just p3.y
         :< Just inf
@@ -93,7 +93,7 @@ reduce c = do
         :< Just infZ
         :< Just x21Inv
         :< Vector.generate (const Nothing)
-  addRow vars { kind: AddCompleteGate, coeffs: Vector.generate zero }
+  addRow { kind: AddCompleteGate, coeffs: Vector.generate zero, variables }
 
   where
   reduceAffinePoint p = do

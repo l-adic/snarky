@@ -50,12 +50,12 @@ reduce cs =
     b8 <- reduceToVariable c.b8
     xs <- traverse reduceToVariable c.xs
     let
-      vars =
+      variables =
         let
           vs = Just n0 :< Just n8 :< Just a0 :< Just a8 :< Just b0 :< Just b8 :< (Just <$> xs)
         in
           vs `Vector.append` (Nothing :< Vector.nil)
-    addRow vars { kind: EndoScale, coeffs: Vector.generate (const zero) }
+    addRow { kind: EndoScale, coeffs: Vector.generate (const zero), variables }
 
 eval
   :: forall f m

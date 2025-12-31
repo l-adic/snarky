@@ -46,8 +46,7 @@ class Monad m <= PlonkReductionM m f | m -> f where
     :: GenericPlonkConstraint f
     -> m Unit
   addRow
-    :: Vector 15 (Maybe Variable)
-    -> KimchiRow f
+    :: KimchiRow f
     -> m Unit
 
 -- return a * x where a \in f and x is a variable.
@@ -192,7 +191,11 @@ finalizeGateQueue wireState =
         gateCoeffs = constraintToCoeffs leftoverGate
         zeros = Vector.generate $ const zero :: Vector 10 f
         coeffRow = gateCoeffs `Vector.append` zeros
-        kimchiRow = { kind: GenericPlonkGate, coeffs: coeffRow }
+        kimchiRow =
+          { kind: GenericPlonkGate
+          , coeffs: coeffRow
+          , variables: leftoverGate.vl :< leftoverGate.vr :< leftoverGate.vo :< Vector.generate (const Nothing)
+          }
       in
         wireState
           { nextRow = wireState.nextRow + 1
@@ -232,7 +235,7 @@ handleGateBatching newGate = do
       coeffs = constraintToCoeffs gate1
         `Vector.append` constraintToCoeffs gate2
         `Vector.append` Vector.generate (const zero)
-    addRow vars { kind: GenericPlonkGate, coeffs }
+    addRow { kind: GenericPlonkGate, coeffs, variables: vars }
 
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
@@ -242,12 +245,12 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     BuilderReductionState { nextVariable } <- get
     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
     pure nextVariable
-  addRow vars r = do
+  addRow r = do
     (BuilderReductionState { wireState: { nextRow: row } }) <- get
     traverseWithIndex_
       ( \i mv -> wireVariableAt mv row (getFinite i)
       )
-      vars
+      r.variables
     modify_ \(BuilderReductionState s) ->
       BuilderReductionState s
         { wireState
@@ -295,4 +298,4 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         , assignments = Map.insert nextVariable a assignments
         }
     pure nextVariable
-  addRow _ _ = pure unit
+  addRow _ = pure unit

@@ -99,12 +99,12 @@ reduce c = do
   let rounds = Vector.chunks @5 before
   traverseWithIndex_ addRoundState rounds
   let lastRowVars = map Just (head after) `append` Vector.generate (const Nothing)
-  addRow lastRowVars { kind: Zero, coeffs: Vector.generate (const zero) }
+  addRow { kind: Zero, coeffs: Vector.generate (const zero), variables: lastRowVars }
   where
   addRoundState :: Finite 11 -> Vector 5 (Vector 3 Variable) -> m Unit
   addRoundState round s =
     let
-      vars = map Just $
+      variables = map Just $
         (s !! unsafeFinite 0)
           `append` (s !! unsafeFinite 4)
           `append` (s !! unsafeFinite 1)
@@ -118,7 +118,7 @@ reduce c = do
           `append`
             getRoundConstants (Proxy @f) (getFinite round + 4)
     in
-      addRow vars { kind: PoseidonGate, coeffs }
+      addRow { kind: PoseidonGate, coeffs, variables }
 
 foreign import verifyPallasPoseidonGadget
   :: Fn2 Int (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean

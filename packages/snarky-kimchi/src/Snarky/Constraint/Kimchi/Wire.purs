@@ -33,6 +33,7 @@ instance Show GateKind where
 -- Complete 15-column coefficient row for proof construction
 type KimchiRow f =
   { kind :: GateKind
+  , variables :: Vector 15 (Maybe Variable)
   , coeffs :: Vector 15 f -- 15-column coefficient row  
   }
 

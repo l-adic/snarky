@@ -163,8 +163,8 @@ reduce c =
             nil
     in
       do
-        addRow row { kind: VarBaseMul, coeffs: Vector.generate (const zero) }
-        addRow nextRow { kind: Zero, coeffs: Vector.generate (const zero) }
+        addRow { kind: VarBaseMul, coeffs: Vector.generate (const zero), variables: row }
+        addRow { kind: Zero, coeffs: Vector.generate (const zero), variables: nextRow }
 
 foreign import verifyPallasVarBaseMulGadget
   :: Fn1 (Vector 2 (Vector 15 Pallas.ScalarField)) Boolean
