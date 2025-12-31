@@ -9,12 +9,12 @@ module Snarky.Constraint.Kimchi.AddComplete
 import Prelude
 
 import Data.Function.Uncurried (Fn1, runFn1)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (traverse)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -47,32 +47,19 @@ eval
   => AddCompleteVerifiable f
   => Applicative m
   => (Variable -> m f)
-  -> AddComplete f
+  -> KimchiRow f
   -> m Boolean
-eval lookup c = ado
-  x1 <- CVar.eval lookup c.p1.x
-  y1 <- CVar.eval lookup c.p1.y
-  x2 <- CVar.eval lookup c.p2.x
-  y2 <- CVar.eval lookup c.p2.y
-  x3 <- CVar.eval lookup c.p3.x
-  y3 <- CVar.eval lookup c.p3.y
-  inf <- CVar.eval lookup c.inf
-  sameX <- CVar.eval lookup c.sameX
-  s <- CVar.eval lookup c.s
-  infZ <- CVar.eval lookup c.infZ
-  x21Inv <- CVar.eval lookup c.x21Inv
-  in
-    let
-      witness = x1 :< y1 :< x2 :< y2 :< x3 :< y3 :< inf :< sameX :< s :< infZ :< x21Inv :< Vector.generate (const zero)
-    in
-      verifyAddComplete witness
+eval lookup row =
+  verifyAddComplete <$> traverse lookup' row.variables
+  where
+  lookup' = maybe (pure zero) lookup
 
 reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => AddComplete f
-  -> m Unit
+  -> m (KimchiRow f)
 reduce c = do
   p1 <- reduceAffinePoint c.p1
   p2 <- reduceAffinePoint c.p2
@@ -93,7 +80,7 @@ reduce c = do
         :< Just infZ
         :< Just x21Inv
         :< Vector.generate (const Nothing)
-  addRow { kind: AddCompleteGate, coeffs: Vector.generate zero, variables }
+  pure { kind: AddCompleteGate, coeffs: Vector.generate zero, variables }
 
   where
   reduceAffinePoint p = do

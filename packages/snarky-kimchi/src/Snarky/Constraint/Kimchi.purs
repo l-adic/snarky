@@ -11,6 +11,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Maybe (maybe)
 import Data.Newtype (class Newtype, un)
 import Data.Tuple (Tuple(..))
 import Poseidon.Class (class PoseidonField)
@@ -20,6 +21,7 @@ import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete, class AddCompleteVerifiable)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -28,29 +30,30 @@ import Snarky.Constraint.Kimchi.EndoScale as EndoScale
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
-import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.Reduction (addGenericPlonkConstraint, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
-import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
+import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, KimchiRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.Vector (Vector)
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
   | KimchiPlonk (GenericPlonkConstraint f)
   | KimchiAddComplete (AddComplete f)
   | KimchiPoseidon (PoseidonConstraint f)
-  | KimchiVarBaseMul (VarBaseMul f)
+  | KimchiVarBaseMul (VarBaseMul (FVar f))
   | KimchiEndoScale (EndoScale f)
 
 data KimchiGate f
   = KimchiGatePlonk (GenericPlonkConstraint f)
-  | KimchiGateAddComplete (AddComplete f)
-  | KimchiGatePoseidon (PoseidonConstraint f)
-  | KimchiGateVarBaseMul (VarBaseMul f)
-  | KimchiGateEndoScale (EndoScale f)
+  | KimchiGateAddComplete (KimchiRow f)
+  | KimchiGatePoseidon (Vector 12 (KimchiRow f))
+  | KimchiGateVarBaseMul (Array (Vector 2 (KimchiRow f)))
+  | KimchiGateEndoScale (Vector 8 (KimchiRow f))
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
@@ -72,27 +75,27 @@ instance
     (KimchiAddComplete c) -> do
       s <- CircuitBuilder.getState
       let
-        Tuple _ res = reduceAsBuilder
+        Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
           , wireState: (un AuxState s.aux).wireState
           }
           (AddComplete.reduce c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints `Array.snoc` (KimchiGateAddComplete c) <> (KimchiGatePlonk <$> res.constraints)
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (KimchiGateAddComplete rows)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiPoseidon c -> do
       s <- CircuitBuilder.getState
       let
-        Tuple _ res = reduceAsBuilder
+        Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
           , wireState: (un AuxState s.aux).wireState
           }
           (Poseidon.reduce c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints `Array.snoc` (KimchiGatePoseidon c) <> (KimchiGatePlonk <$> res.constraints)
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (KimchiGatePoseidon rows)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiPlonk c -> appendConstraint (KimchiGatePlonk c)
@@ -103,38 +106,59 @@ instance
           { nextVariable: s.nextVar
           , wireState: (un AuxState s.aux).wireState
           }
-          (GenericPlonk.reduce c)
+          (GenericPlonk.reduce c >>= maybe (pure unit) addGenericPlonkConstraint)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> map KimchiGatePlonk res.constraints
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiVarBaseMul c -> do
       s <- CircuitBuilder.getState
       let
-        Tuple _ res = reduceAsBuilder
+        Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
           , wireState: (un AuxState s.aux).wireState
           }
           (VarBaseMul.reduce c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints `Array.snoc` (KimchiGateVarBaseMul c) <> (KimchiGatePlonk <$> res.constraints)
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (KimchiGateVarBaseMul rows)
         , aux = AuxState { wireState: res.wireState }
         }
     KimchiEndoScale c -> do
       s <- CircuitBuilder.getState
       let
-        Tuple _ res = reduceAsBuilder
+        Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
           , wireState: (un AuxState s.aux).wireState
           }
           (EndoScale.reduce c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints `Array.snoc` (KimchiGateEndoScale c) <> (KimchiGatePlonk <$> res.constraints)
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (KimchiGateEndoScale rows)
         , aux = AuxState { wireState: res.wireState }
         }
+
+-- go
+--   :: forall m c
+--    . Monad m
+--   => (forall n. PlonkReductionM n f => c -> n (Array (KimchiRow f)))
+--   -> (c -> KimchiGate f)
+--   -> c
+--   -> CircuitBuilderT (KimchiGate f) (AuxState f) m Unit
+-- go reduce g c = do
+--   s <- CircuitBuilder.getState
+--   let
+--     Tuple _ res = reduceAsBuilder
+--       { nextVariable: s.nextVar
+--       , wireState: (un AuxState s.aux).wireState
+--       }
+--       (reduce c)
+--   CircuitBuilder.putState s
+--     { nextVar = res.nextVariable
+--     , constraints = s.constraints `Array.snoc` (g c) <> (KimchiGatePlonk <$> res.constraints)
+--     , aux = AuxState { wireState: res.wireState }
+--     }
 
 instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
@@ -196,3 +220,8 @@ instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS
   equal a b = KimchiBasic $ Equal a b
   boolean = KimchiBasic <<< Boolean
+
+--_varBaseMulConstraint :: forall f. Prism' (KimchiConstraint f) (VarBaseMul (FVar f))
+--_varBaseMulConstraint = prism' KimchiVarBaseMul case _ of
+--  KimchiVarBaseMul c -> Just c
+--  _ -> Nothing

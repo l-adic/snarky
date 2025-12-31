@@ -11,7 +11,7 @@ import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (Variable, reduceToAffineExpression)
 import Snarky.Constraint.Basic (Basic(..))
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, reduceAffineExpression)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -33,36 +33,36 @@ reduce
    . PrimeField f
   => PlonkReductionM m f
   => Basic f
-  -> m Unit
+  -> m (Maybe (GenericPlonkConstraint f))
 reduce g = case g of
   R1CS { left, right, output } -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
     Tuple mvo co <- reduceAffineExpression $ reduceToAffineExpression output
-    case mvl, mvr, mvo of
+    pure case mvl, mvr, mvo of
       -- (cl * vl) * (cr * vr) = (co * vo)
-      Just vl, Just vr, Just vo -> do
-        addGenericPlonkConstraint { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co, vo: Just vo, m: -(cl * cr), c: zero }
+      Just vl, Just vr, Just vo ->
+        Just { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co, vo: Just vo, m: -(cl * cr), c: zero }
       -- (cl * vl) * (cr * vr) = co
-      Just vl, Just vr, Nothing -> do
-        addGenericPlonkConstraint { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co: zero, vo: Nothing, m: (cl * cr), c: -co }
+      Just vl, Just vr, Nothing ->
+        Just { cl: zero, vl: Just vl, cr: zero, vr: Just vr, co: zero, vo: Nothing, m: (cl * cr), c: -co }
       -- (cl * vl) * cr = (co * vo)
-      Just vl, Nothing, Just vo -> do
-        addGenericPlonkConstraint { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Just vo, co: -co, m: zero, c: zero }
+      Just vl, Nothing, Just vo ->
+        Just { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Just vo, co: -co, m: zero, c: zero }
       -- cl * (cr * vr) = (co * vo)
-      Nothing, Just vr, Just vo -> do
-        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Just vo, co: -co, m: zero, c: zero }
+      Nothing, Just vr, Just vo ->
+        Just { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Just vo, co: -co, m: zero, c: zero }
       -- (cl * vl) cr = co
-      Just vl, Nothing, Nothing -> do
-        addGenericPlonkConstraint { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Nothing, co: zero, m: zero, c: -co }
+      Just vl, Nothing, Nothing ->
+        Just { vl: Just vl, cl: cl * cr, vr: Nothing, cr: zero, vo: Nothing, co: zero, m: zero, c: -co }
       -- cl * (cr * vr) = co
-      Nothing, Just vr, Nothing -> do
-        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Nothing, co: zero, m: zero, c: -co }
+      Nothing, Just vr, Nothing ->
+        Just { vl: Nothing, cl: zero, vr: Just vr, cr: cl * cr, vo: Nothing, co: zero, m: zero, c: -co }
       -- cl * cr = (co * vo)
-      Nothing, Nothing, Just vo -> do
-        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co, vo: Just vo, m: zero, c: -(cl * cr) }
+      Nothing, Nothing, Just vo ->
+        Just { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co, vo: Just vo, m: zero, c: -(cl * cr) }
       -- cl * cr = co
-      Nothing, Nothing, Nothing -> do
+      Nothing, Nothing, Nothing ->
         if ((cl * cr) /= co) then
           ( unsafeThrowException
               $ error
@@ -71,20 +71,20 @@ reduce g = case g of
                   <> " /= "
                   <> show co
           )
-        else pure unit
+        else Nothing
   Equal a b -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
-    case mvl, mvr of
+    pure case mvl, mvr of
       -- cl * vl = cr * vr
-      Just vl, Just vr -> do
-        addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr: -cr, co: zero, vo: Nothing, m: zero, c: zero }
+      Just vl, Just vr ->
+        Just { vl: Just vl, cl, vr: Just vr, cr: -cr, co: zero, vo: Nothing, m: zero, c: zero }
       -- cl * vl = cr
-      Just vl, Nothing -> do
-        addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: -cr }
+      Just vl, Nothing ->
+        Just { vl: Just vl, cl, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: -cr }
       -- cl = cr * vr
-      Nothing, Just vr -> do
-        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cr, co: zero, vo: Nothing, m: zero, c: -cl }
+      Nothing, Just vr ->
+        Just { vl: Nothing, cl: zero, vr: Just vr, cr: cr, co: zero, vo: Nothing, m: zero, c: -cl }
       Nothing, Nothing ->
         if (cl /= cr) then
           ( unsafeThrowException
@@ -94,10 +94,10 @@ reduce g = case g of
                   <> " /= "
                   <> show cr
           )
-        else pure unit
+        else Nothing
   Boolean b -> do
     Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
-    case mv of
+    pure case mv of
       Nothing ->
         if (c * c /= c) then
           ( unsafeThrowException
@@ -107,7 +107,7 @@ reduce g = case g of
                   <> " /= "
                   <> "{0,1}"
           )
-        else pure unit
+        else Nothing
       -- v * v = v
-      Just v -> do
-        addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
+      Just v ->
+        Just { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }

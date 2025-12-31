@@ -92,7 +92,7 @@ varBaseMul base (Type1 t) = do
             , nPrev: s.nAccPrev
             , nNext: nAcc
             , base
-            } :: ScaleRound f
+            } :: ScaleRound (FVar f)
           )
           { nAccPrev: nAcc, acc: Vector.last accs }
 

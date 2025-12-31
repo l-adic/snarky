@@ -3,6 +3,7 @@ module Snarky.Data.Vector
   , nil
   , toUnfoldable
   , cons
+  , snoc
   , (:<)
   , length
   , toVector
@@ -20,6 +21,7 @@ module Snarky.Data.Vector
   , append
   , splitAt
   , take
+  , drop
   , chunks
   , head
   , last
@@ -89,6 +91,9 @@ toUnfoldable (Vector xs) = Array.toUnfoldable xs
 
 cons :: forall a n nInc. Add n 1 nInc => a -> Vector n a -> Vector nInc a
 cons a (Vector as) = Vector (a : as)
+
+snoc :: forall a n nInc. Add n 1 nInc => Vector n a -> a -> Vector nInc a
+snoc (Vector as) a = Vector (as `Array.snoc` a)
 
 infixr 6 cons as :<
 
@@ -213,6 +218,15 @@ take
   -> Vector k a
 take (Vector as) =
   Vector $ Array.take (reflectType $ Proxy @k) as
+
+drop
+  :: forall n @k m a
+   . Reflectable k Int
+  => Add k m n
+  => Vector n a
+  -> Vector m a
+drop (Vector as) =
+  Vector $ Array.drop (reflectType $ Proxy @k) as
 
 chunks
   :: forall n m @k a

@@ -8,21 +8,20 @@ module Snarky.Constraint.Kimchi.Poseidon
 
 import Prelude hiding (append)
 
-import Data.FoldableWithIndex (traverseWithIndex_)
 import Data.Function.Uncurried (Fn2, runFn2)
-import Data.Maybe (Maybe(..))
+import Data.FunctorWithIndex (mapWithIndex)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Poseidon.Class (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
-import Snarky.Data.Vector (Vector, append, flatten, head, nil, (!!), (:<))
+import Snarky.Data.Vector (Vector, append, head, (!!))
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
@@ -45,46 +44,13 @@ eval
   => PoseidonVerifiable f
   => Applicative m
   => (Variable -> m f)
-  -> PoseidonConstraint f
+  -> Vector 12 (KimchiRow f)
   -> m Boolean
-eval lookup constraint = ado
-  witness <- extractWitness constraint.state
-  in verifyPoseidon witness
-  where
-  extractWitness
-    :: Vector 56 (Vector 3 (FVar f))
-    -> m (Vector 12 (Vector 15 f))
-  extractWitness states = ado
-    poseidonRows <- traverse extractRoundWitness stateGroups
-    lastRow <- extractLastRow (head after)
-    in poseidonRows `append` (lastRow :< nil)
-    where
-    { before, after } = Vector.splitAt @55 states
-    stateGroups = Vector.chunks @5 before
-
-  extractLastRow
-    :: Vector 3 (FVar f)
-    -> m (Vector 15 f)
-  extractLastRow lastState = ado
-    evaluated <- traverse (CVar.eval lookup) lastState
-    in
-      evaluated `append` Vector.generate (const zero)
-
-  extractRoundWitness
-    :: Vector 5 (Vector 3 (FVar f))
-    -> m (Vector 15 f)
-  extractRoundWitness roundStates = ado
-    evaluatedStates <- traverse (traverse (CVar.eval lookup)) roundStates
-    let
-      s0 = evaluatedStates !! unsafeFinite 0
-      s4 = evaluatedStates !! unsafeFinite 4
-      s1 = evaluatedStates !! unsafeFinite 1
-      s2 = evaluatedStates !! unsafeFinite 2
-      s3 = evaluatedStates !! unsafeFinite 3
-      reorderedStates = s0 :< s4 :< s1 :< s2 :< s3 :< nil
-      witnessData = flatten reorderedStates
-    in
-      witnessData
+eval lookup rows =
+  let
+    lookup' = maybe (pure zero) lookup
+  in
+    verifyPoseidon <$> traverse (\r -> traverse lookup' r.variables) rows
 
 reduce
   :: forall f m
@@ -92,16 +58,16 @@ reduce
   => PoseidonField f
   => PlonkReductionM m f
   => PoseidonConstraint f
-  -> m Unit
+  -> m (Vector 12 (KimchiRow f))
 reduce c = do
   state <- traverse (traverse reduceToVariable) c.state
-  let { before, after } = Vector.splitAt @55 state
-  let rounds = Vector.chunks @5 before
-  traverseWithIndex_ addRoundState rounds
-  let lastRowVars = map Just (head after) `append` Vector.generate (const Nothing)
-  addRow { kind: Zero, coeffs: Vector.generate (const zero), variables: lastRowVars }
+  let
+    { before, after } = Vector.splitAt @55 state
+    rounds = mapWithIndex addRoundState $ Vector.chunks @5 before
+    lastRowVars = map Just (head after) `append` Vector.generate (const Nothing)
+  pure $ rounds `Vector.snoc` { kind: Zero, coeffs: Vector.generate (const zero), variables: lastRowVars }
   where
-  addRoundState :: Finite 11 -> Vector 5 (Vector 3 Variable) -> m Unit
+  addRoundState :: Finite 11 -> Vector 5 (Vector 3 Variable) -> KimchiRow f
   addRoundState round s =
     let
       variables = map Just $
@@ -118,7 +84,7 @@ reduce c = do
           `append`
             getRoundConstants (Proxy @f) (getFinite round + 4)
     in
-      addRow { kind: PoseidonGate, coeffs, variables }
+      { kind: PoseidonGate, coeffs, variables }
 
 foreign import verifyPallasPoseidonGadget
   :: Fn2 Int (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean
