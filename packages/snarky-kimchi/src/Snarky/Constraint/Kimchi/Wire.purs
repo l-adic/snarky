@@ -8,11 +8,8 @@ module Snarky.Constraint.Kimchi.Wire
 import Prelude
 
 import Data.Generic.Rep (class Generic)
-import Data.Map (Map)
-import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Show.Generic (genericShow)
-import Data.Tuple (Tuple)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Data.Vector (Vector)
@@ -39,17 +36,17 @@ type KimchiRow f =
 
 -- Wire placement state for Kimchi constraint system
 type KimchiWireRow f =
-  { nextRow :: Int -- Current row being filled
-  , wireAssignments :: Map Variable (Array (Tuple Int Int)) -- Variable -> (row, col) mapping
-  , queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
+  { --nextRow :: Int -- Current row being filled
+    -- , wireAssignments :: Map Variable (Array (Tuple Int Int)) -- Variable -> (row, col) mapping
+    queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
   , emittedRows :: Array (KimchiRow f) -- Complete coefficient rows for proof construction
   }
 
 -- Initial empty wire state
 emptyKimchiWireState :: forall f. KimchiWireRow f
 emptyKimchiWireState =
-  { nextRow: 0
-  , wireAssignments: Map.empty
-  , queuedGenericGate: Nothing
+  { -- nextRow: 0
+    --, wireAssignments: Map.empty
+    queuedGenericGate: Nothing
   , emittedRows: []
   }

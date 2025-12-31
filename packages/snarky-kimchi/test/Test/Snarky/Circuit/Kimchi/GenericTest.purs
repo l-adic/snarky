@@ -43,7 +43,7 @@ spec pg pc =
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
         solver = makeSolver pc (uncurry add_)
 
-        { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } =
+        { constraints, aux: AuxState { wireState: { emittedRows } } } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
@@ -67,4 +67,3 @@ spec pg pc =
             input <- gen
             let Right (Tuple _ varAssignments) = runSolver solver input
             pure $ GenericUtils.verify { wireAssignments, varAssignments, rows: emittedRows }
-

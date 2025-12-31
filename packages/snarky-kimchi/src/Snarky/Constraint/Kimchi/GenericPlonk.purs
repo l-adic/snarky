@@ -5,7 +5,9 @@ module Snarky.Constraint.Kimchi.GenericPlonk
 
 import Prelude
 
+import Data.Foldable (all)
 import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
@@ -13,20 +15,48 @@ import Snarky.Circuit.CVar (Variable, reduceToAffineExpression)
 import Snarky.Constraint.Basic (Basic(..))
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
+import Snarky.Constraint.Kimchi.Wire (KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Data.Fin (unsafeFinite)
+import Snarky.Data.Vector ((!!))
+import Snarky.Data.Vector as Vector
 
 eval
   :: forall f m
    . PrimeField f
   => Applicative m
   => (Variable -> m f)
-  -> GenericPlonkConstraint f
+  -> KimchiRow f
   -> m Boolean
 eval lookup x = ado
-  vl <- maybe (pure zero) lookup x.vl
-  vr <- maybe (pure zero) lookup x.vr
-  vo <- maybe (pure zero) lookup x.vo
-  in x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
+  variables <- traverse lookup' x.variables
+  let
+    { before: vars } = Vector.splitAt @6 variables
+    { before: row0Vars, after: row1Vars } = Vector.splitAt @3 vars
+    { before: coeffs } = Vector.splitAt @10 x.coeffs
+    { before: row0Coeffs, after: row1Coeffs } = Vector.splitAt @5 coeffs
+    finite5 = unsafeFinite @5
+    finite3 = unsafeFinite @3
+
+    f { vars, coeffs } =
+      let
+        cl = coeffs !! finite5 0
+        cr = coeffs !! finite5 1
+        co = coeffs !! finite5 2
+        m = coeffs !! finite5 3
+        c = coeffs !! finite5 4
+        vl = vars !! finite3 0
+        vr = vars !! finite3 1
+        vo = vars !! finite3 2
+      in
+        cl * vl + cr * vr + co * vo + m * vl * vr + c == zero
+  in
+    all f
+      [ { vars: row0Vars, coeffs: row0Coeffs }
+      , { vars: row1Vars, coeffs: row1Coeffs }
+      ]
+  where
+  lookup' = maybe (pure zero) lookup
 
 reduce
   :: forall f m
