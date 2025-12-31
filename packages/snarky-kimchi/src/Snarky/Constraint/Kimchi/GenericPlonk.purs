@@ -1,11 +1,12 @@
 module Snarky.Constraint.Kimchi.GenericPlonk
   ( eval
   , reduce
+  , class GenericPlonkVerifiable
+  , verifyGenericPlonk
   ) where
 
 import Prelude
 
-import Data.Foldable (all)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -17,44 +18,24 @@ import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceAffineEx
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.Wire (KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector ((!!))
-import Snarky.Data.Vector as Vector
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.Vector (Vector)
+
+class GenericPlonkVerifiable f where
+  verifyGenericPlonk :: { coeffs :: Vector 15 f, variables :: Vector 15 f } -> Boolean
 
 eval
   :: forall f m
    . PrimeField f
   => Applicative m
+  => GenericPlonkVerifiable f
   => (Variable -> m f)
   -> KimchiRow f
   -> m Boolean
 eval lookup x = ado
   variables <- traverse lookup' x.variables
-  let
-    { before: vars } = Vector.splitAt @6 variables
-    { before: row0Vars, after: row1Vars } = Vector.splitAt @3 vars
-    { before: coeffs } = Vector.splitAt @10 x.coeffs
-    { before: row0Coeffs, after: row1Coeffs } = Vector.splitAt @5 coeffs
-    finite5 = unsafeFinite @5
-    finite3 = unsafeFinite @3
-
-    f { vars, coeffs } =
-      let
-        cl = coeffs !! finite5 0
-        cr = coeffs !! finite5 1
-        co = coeffs !! finite5 2
-        m = coeffs !! finite5 3
-        c = coeffs !! finite5 4
-        vl = vars !! finite3 0
-        vr = vars !! finite3 1
-        vo = vars !! finite3 2
-      in
-        cl * vl + cr * vr + co * vo + m * vl * vr + c == zero
-  in
-    all f
-      [ { vars: row0Vars, coeffs: row0Coeffs }
-      , { vars: row1Vars, coeffs: row1Coeffs }
-      ]
+  in verifyGenericPlonk { variables, coeffs: x.coeffs }
   where
   lookup' = maybe (pure zero) lookup
 
@@ -141,3 +122,13 @@ reduce g = case g of
       -- v * v = v
       Just v ->
         Just { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
+
+foreign import verifyPallasGeneric :: Vector 15 Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
+
+foreign import verifyVestaGeneric :: Vector 15 Vesta.ScalarField -> Vector 15 Vesta.ScalarField -> Boolean
+
+instance GenericPlonkVerifiable Pallas.ScalarField where
+  verifyGenericPlonk { coeffs, variables } = verifyPallasGeneric coeffs variables
+
+instance GenericPlonkVerifiable Vesta.ScalarField where
+  verifyGenericPlonk { coeffs, variables } = verifyVestaGeneric coeffs variables

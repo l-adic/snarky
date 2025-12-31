@@ -5,7 +5,7 @@ import Prelude
 import Data.Foldable (sum)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (Variable, div_, equals_, inv_, mul_, negate_, seal, sum_)
@@ -25,6 +25,7 @@ spec
    . PrimeField f
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
+  => Finalizer c r
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'

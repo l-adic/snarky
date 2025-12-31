@@ -2,7 +2,6 @@ module Snarky.Constraint.Kimchi.Reduction
   ( class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
-  -- , addRow
   , reduceAffineExpression
   , reduceToVariable
   , reduceAsBuilder
@@ -15,7 +14,6 @@ import Prelude
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.State (class MonadState, State, get, modify_, runState)
-import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
@@ -27,6 +25,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
+import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
@@ -42,10 +41,6 @@ class Monad m <= PlonkReductionM m f | m -> f where
   addGenericPlonkConstraint
     :: GenericPlonkConstraint f
     -> m Unit
-
--- addRow
---   :: KimchiRow f
---   -> m Unit
 
 -- return a * x where a \in f and x is a variable.
 reduceAffineExpression
@@ -176,12 +171,12 @@ constraintToCoeffs
 constraintToCoeffs gate =
   gate.cl :< gate.cr :< gate.co :< gate.m :< gate.c :< Vector.nil
 
-finalizeGateQueue :: forall f. PrimeField f => KimchiWireRow f -> KimchiWireRow f
+finalizeGateQueue :: forall f. PrimeField f => KimchiWireRow f -> Tuple (Maybe (KimchiRow f)) (KimchiWireRow f)
 finalizeGateQueue wireState =
   case wireState.queuedGenericGate of
     Nothing ->
       -- No leftover gate, nothing to do
-      wireState
+      Tuple Nothing wireState
     Just leftoverGate ->
       -- Single leftover gate gets its own row
       let
@@ -195,19 +190,11 @@ finalizeGateQueue wireState =
           , variables: leftoverGate.vl :< leftoverGate.vr :< leftoverGate.vo :< Vector.generate (const Nothing)
           }
       in
-        wireState
-          { -- nextRow = wireState.nextRow + 1
-            queuedGenericGate = Nothing
-          , emittedRows = wireState.emittedRows `A.snoc` kimchiRow
-          -- , wireAssignments =
-          --     foldl (\acc (Tuple k v) -> Map.insertWith (<>) k [ v ] acc) wireState.wireAssignments
-          --       $ catMaybes
-          --       $
-          --         [ Tuple <$> leftoverGate.vl <*> pure (Tuple row 0)
-          --         , Tuple <$> leftoverGate.vr <*> pure (Tuple row 1)
-          --         , Tuple <$> leftoverGate.vo <*> pure (Tuple row 2)
-          --         ]
-          }
+        Tuple
+          (Just kimchiRow)
+          wireState
+            { queuedGenericGate = Nothing
+            }
 
 -- Handle gate batching and wire placement for GenericPlonk gates
 handleGateBatching :: forall f. PrimeField f => GenericPlonkConstraint f -> PlonkBuilder f (Maybe (KimchiRow f))
@@ -244,29 +231,12 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
       modify_ \(BuilderReductionState s) -> BuilderReductionState s { constraints = s.constraints `Array.snoc` row }
   createInternalVariable _ = do
     BuilderReductionState { nextVariable } <- get
-    modify_ \(BuilderReductionState s) -> BuilderReductionState $ s { nextVariable = incrementVariable nextVariable }
+    modify_ \(BuilderReductionState s) -> BuilderReductionState
+      s
+        { nextVariable = incrementVariable nextVariable
+        , wireState = s.wireState { internalVariables = Set.insert nextVariable s.wireState.internalVariables }
+        }
     pure nextVariable
-
--- addRow r = do
---   (BuilderReductionState { wireState: { nextRow: row } }) <- get
---   traverseWithIndex_
---     ( \i mv -> wireVariableAt mv row (getFinite i)
---     )
---     r.variables
---   modify_ \(BuilderReductionState s) ->
---     BuilderReductionState s
---       { wireState
---           { nextRow = row + 1
---           , emittedRows = s.wireState.emittedRows `Array.snoc` r
---           }
---       }
---   where
---   wireVariableAt mvar row col = for_ mvar $ \var -> do
---     modify_ \(BuilderReductionState s) -> BuilderReductionState $ s
---       { wireState = s.wireState
---           { wireAssignments = Map.insertWith (<>) var [ (Tuple row col) ] s.wireState.wireAssignments
---           }
---       }
 
 newtype ProverReductionState f = ProverReductionState
   { nextVariable :: Variable
@@ -300,4 +270,3 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         , assignments = Map.insert nextVariable a assignments
         }
     pure nextVariable
--- addRow _ = pure unit

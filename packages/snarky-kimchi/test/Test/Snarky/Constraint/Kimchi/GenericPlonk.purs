@@ -13,6 +13,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
 import Snarky.Constraint.Basic as Basic
+import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Wire (emptyKimchiWireState)
@@ -21,7 +22,7 @@ import Test.QuickCheck (quickCheckGen', (===))
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
-spec :: forall f. PrimeField f => Proxy f -> Spec Unit
+spec :: forall f. PrimeField f => GenericPlonkVerifiable f => Proxy f -> Spec Unit
 spec pf = describe "Constraint Spec" do
 
   it "reduces basic constraints to plonk constraints" do

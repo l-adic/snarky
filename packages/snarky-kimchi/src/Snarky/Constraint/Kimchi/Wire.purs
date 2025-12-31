@@ -9,6 +9,8 @@ import Prelude
 
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
+import Data.Set (Set)
+import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
@@ -36,17 +38,13 @@ type KimchiRow f =
 
 -- Wire placement state for Kimchi constraint system
 type KimchiWireRow f =
-  { --nextRow :: Int -- Current row being filled
-    -- , wireAssignments :: Map Variable (Array (Tuple Int Int)) -- Variable -> (row, col) mapping
-    queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
-  , emittedRows :: Array (KimchiRow f) -- Complete coefficient rows for proof construction
+  { queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
+  , internalVariables :: Set Variable
   }
 
 -- Initial empty wire state
 emptyKimchiWireState :: forall f. KimchiWireRow f
 emptyKimchiWireState =
-  { -- nextRow: 0
-    --, wireAssignments: Map.empty
-    queuedGenericGate: Nothing
-  , emittedRows: []
+  { queuedGenericGate: Nothing
+  , internalVariables: Set.empty
   }
