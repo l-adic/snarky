@@ -6,7 +6,7 @@
 
 pub mod poseidon;
 
-pub mod test_utils;
+pub mod verify;
 
 pub use poseidon::*;
-pub use test_utils::*;
+pub use verify::*;

@@ -416,7 +416,7 @@ pub use kimchi::poseidon::{
     },
 };
 
-pub use kimchi::test_utils::{
+pub use kimchi::verify::{
     verify_pallas_complete_add, verify_pallas_generic, verify_pallas_poseidon_gadget,
     verify_pallas_varbasemul, verify_vesta_complete_add, verify_vesta_generic,
     verify_vesta_poseidon_gadget, verify_vesta_varbasemul,
