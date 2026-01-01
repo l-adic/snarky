@@ -10,12 +10,11 @@ module Snarky.Constraint.Kimchi.Wire
 import Prelude
 
 import Data.Generic.Rep (class Generic)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Data.Vector (Vector)
 
 -- Gate kinds for tagging coefficient rows
@@ -39,16 +38,15 @@ type KimchiRow f =
   }
 
 -- Wire placement state for Kimchi constraint system
+type KimchiWireRow :: forall k. k -> Type
 type KimchiWireRow f =
-  { queuedGenericGate :: Maybe (GenericPlonkConstraint f) -- Queued gate for batching
-  , internalVariables :: Set Variable
+  { internalVariables :: Set Variable
   }
 
 -- Initial empty wire state
 emptyKimchiWireState :: forall f. KimchiWireRow f
 emptyKimchiWireState =
-  { queuedGenericGate: Nothing
-  , internalVariables: Set.empty
+  { internalVariables: Set.empty
   }
 
 class ToKimchiRows f a where

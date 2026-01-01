@@ -11,8 +11,8 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Maybe (maybe)
-import Data.Newtype (class Newtype, un)
+import Data.Maybe (Maybe(..), maybe)
+import Data.Newtype (class Newtype, over, un)
 import Data.Tuple (Tuple(..))
 import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderT, CircuitBuilderState)
@@ -31,6 +31,8 @@ import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
+import Snarky.Constraint.Kimchi.Reduction as Reduction
+import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
@@ -46,26 +48,32 @@ data KimchiConstraint f
   | KimchiEndoScale (EndoScale f)
 
 data KimchiGate f
-  = KimchiGatePlonk (GenericPlonk.Rows f)
+  = KimchiGatePlonk (Reduction.Rows f)
   | KimchiGateAddComplete (AddComplete.Rows f)
   | KimchiGatePoseidon (Poseidon.Rows f)
   | KimchiGateVarBaseMul (VarBaseMul.Rows f)
   | KimchiGateEndoScale (EndoScale.Rows f)
+  | KimchiGateNoOp
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
+  , queuedGenericGate :: Maybe (GenericPlonkConstraint f)
   }
 
 instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
   finalize s =
     let
-      Tuple mRow ws' = finalizeGateQueue (un AuxState s.aux).wireState
+      mRow = finalizeGateQueue (un AuxState s.aux)
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk (GenericPlonk.mkRows r)) mRow
-        , aux = AuxState
-            { wireState: ws'
-            }
+        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk r) mRow
+        , aux = over AuxState
+            ( \st ->
+                st
+                  { queuedGenericGate = Nothing
+                  }
+            )
+            s.aux
         }
 
 derive instance Newtype (AuxState f) _
@@ -73,6 +81,7 @@ derive instance Newtype (AuxState f) _
 initialAuxState :: forall f. AuxState f
 initialAuxState = AuxState
   { wireState: emptyKimchiWireState
+  , queuedGenericGate: Nothing
   }
 
 instance
@@ -83,7 +92,7 @@ instance
   addConstraint' = case _ of
     KimchiAddComplete c -> go AddComplete.reduce KimchiGateAddComplete c
     KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
-    KimchiBasic c -> go GenericPlonk.reduce KimchiGatePlonk c
+    KimchiBasic c -> go GenericPlonk.reduce (const KimchiGateNoOp) c
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
     KimchiEndoScale c -> go EndoScale.reduce KimchiGateEndoScale c
     where
@@ -97,18 +106,24 @@ instance
     go reducer wrap c = do
       s <- CircuitBuilder.getState
       let
+        AuxState aux = s.aux
         Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
-          , wireState: (un AuxState s.aux).wireState
+          , wireState: aux.wireState
+          , queuedGenericGate: aux.queuedGenericGate
           }
           (reducer c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> (KimchiGatePlonk <<< GenericPlonk.mkRows <$> res.constraints) `Array.snoc` (wrap rows)
-        , aux = AuxState
-            { wireState:
-                res.wireState
-            }
+        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (wrap rows)
+        , aux = over AuxState
+            ( \st ->
+                st
+                  { wireState = res.wireState
+                  , queuedGenericGate = res.queuedGenericGate
+                  }
+            )
+            s.aux
         }
 
 instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
@@ -147,6 +162,7 @@ eval lookup = case _ of
   KimchiGatePoseidon c -> Poseidon.eval lookup c
   KimchiGateVarBaseMul c -> VarBaseMul.eval lookup c
   KimchiGateEndoScale c -> EndoScale.eval lookup c
+  KimchiGateNoOp -> pure true
 
 class (PrimeField f, GenericPlonkVerifiable f, AddCompleteVerifiable f, PoseidonVerifiable f, VarBaseMulVerifiable f) <= KimchiVerify f
 
