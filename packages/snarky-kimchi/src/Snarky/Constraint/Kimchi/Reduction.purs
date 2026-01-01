@@ -1,5 +1,6 @@
 module Snarky.Constraint.Kimchi.Reduction
-  ( Rows
+  ( GenericPlonkConstraint
+  , Rows
   , getRows
   , class PlonkReductionM
   , createInternalVariable
@@ -17,6 +18,7 @@ import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
 import Control.Monad.State (class MonadState, State, get, gets, modify_, runState)
 import Data.Array as A
+import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (foldM)
@@ -30,12 +32,22 @@ import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
 import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
-import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow, KimchiWireRow)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
+
+type GenericPlonkConstraint f =
+  { cl :: f -- Left coefficient
+  , vl :: Maybe Variable -- Left variable
+  , cr :: f -- Right coefficient  
+  , vr :: Maybe Variable -- Right variable
+  , co :: f -- Output coefficient
+  , vo :: Maybe Variable -- Output variable
+  , m :: f -- Multiplication coefficient  
+  , c :: f -- Constant term
+  }
 
 class Monad m <= PlonkReductionM m f | m -> f where
   createInternalVariable
@@ -109,6 +121,9 @@ newtype Rows f = Rows (KimchiRow f)
 
 getRows :: forall f. Rows f -> KimchiRow f
 getRows (Rows x) = x
+
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Array.singleton as
 
 reduceAsBuilder
   :: forall f a

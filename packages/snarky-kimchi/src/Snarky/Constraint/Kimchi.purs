@@ -32,7 +32,6 @@ import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVeri
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
-import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
@@ -57,7 +56,7 @@ data KimchiGate f
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
-  , queuedGenericGate :: Maybe (GenericPlonkConstraint f)
+  , queuedGenericGate :: Maybe (Reduction.GenericPlonkConstraint f)
   }
 
 instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
