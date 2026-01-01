@@ -10,6 +10,8 @@ module Snarky.Backend.Builder
   , appendConstraint
   , putState
   , getState
+  , class Finalizer
+  , finalize
   ) where
 
 import Prelude
@@ -44,6 +46,12 @@ derive newtype instance Monad m => Bind (CircuitBuilderT c r m)
 derive newtype instance Monad m => Applicative (CircuitBuilderT c r m)
 derive newtype instance Monad m => Monad (CircuitBuilderT c r m)
 derive newtype instance MonadTrans (CircuitBuilderT c r)
+
+class Finalizer c r where
+  finalize :: CircuitBuilderState c r -> CircuitBuilderState c r
+
+instance Finalizer (Basic f) r where
+  finalize = identity
 
 runCircuitBuilderT :: forall c r m a. Monad m => CircuitBuilderT c r m a -> CircuitBuilderState c r -> m (Tuple a (CircuitBuilderState c r))
 runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s

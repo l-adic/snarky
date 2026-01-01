@@ -981,6 +981,7 @@
             "partial",
             "poseidon",
             "prelude",
+            "record",
             "safe-coerce",
             "snarky",
             "snarky-curves",

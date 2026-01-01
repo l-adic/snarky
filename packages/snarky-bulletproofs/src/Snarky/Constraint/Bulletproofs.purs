@@ -7,7 +7,7 @@ module Snarky.Constraint.Bulletproofs
 import Prelude
 
 import Data.Map (Map)
-import Snarky.Backend.Builder (CircuitBuilderT, appendConstraint)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderT, appendConstraint)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.CVar (CVar, Variable, const_)
 import Snarky.Circuit.CVar as CVar
@@ -26,6 +26,9 @@ instance ConstraintM (ProverT f) (R1CS f) where
 
 instance ConstraintM (CircuitBuilderT (R1CS f) r) (R1CS f) where
   addConstraint' = appendConstraint
+
+instance Finalizer (R1CS f) r where
+  finalize = identity
 
 genWithAssignments
   :: forall f

@@ -1,40 +1,50 @@
 module Snarky.Constraint.Kimchi.GenericPlonk
-  ( eval
-  , reduceBasic
+  ( class GenericPlonkVerifiable
+  , verifyGenericPlonk
+  , reduce
+  , eval
   ) where
 
 import Prelude
 
 import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (Variable, reduceToAffineExpression)
 import Snarky.Constraint.Basic (Basic(..))
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, reduceAffineExpression)
-import Snarky.Constraint.Kimchi.Types (GenericPlonkConstraint)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, reduceAffineExpression, Rows, getRows)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.Vector (Vector)
+
+class GenericPlonkVerifiable f where
+  verifyGenericPlonk :: { coeffs :: Vector 15 f, variables :: Vector 15 f } -> Boolean
 
 eval
   :: forall f m
    . PrimeField f
   => Applicative m
+  => GenericPlonkVerifiable f
   => (Variable -> m f)
-  -> GenericPlonkConstraint f
+  -> Rows f
   -> m Boolean
-eval lookup x = ado
-  vl <- maybe (pure zero) lookup x.vl
-  vr <- maybe (pure zero) lookup x.vr
-  vo <- maybe (pure zero) lookup x.vo
-  in x.cl * vl + x.cr * vr + x.co * vo + x.m * vl * vr + x.c == zero
+eval lookup rows = ado
+  variables <- traverse lookup' x.variables
+  in verifyGenericPlonk { variables, coeffs: x.coeffs }
+  where
+  x = getRows rows
+  lookup' = maybe (pure zero) lookup
 
-reduceBasic
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => Basic f
   -> m Unit
-reduceBasic g = case g of
+reduce = case _ of
   R1CS { left, right, output } -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression left
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression right
@@ -111,3 +121,13 @@ reduceBasic g = case g of
       -- v * v = v
       Just v -> do
         addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
+
+foreign import verifyPallasGeneric :: Vector 15 Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
+
+foreign import verifyVestaGeneric :: Vector 15 Vesta.ScalarField -> Vector 15 Vesta.ScalarField -> Boolean
+
+instance GenericPlonkVerifiable Pallas.ScalarField where
+  verifyGenericPlonk { coeffs, variables } = verifyPallasGeneric coeffs variables
+
+instance GenericPlonkVerifiable Vesta.ScalarField where
+  verifyGenericPlonk { coeffs, variables } = verifyVestaGeneric coeffs variables

@@ -1,40 +1,51 @@
-module Snarky.Constraint.Kimchi.EndoScale where
+module Snarky.Constraint.Kimchi.EndoScale
+  ( EndoScale
+  , EndoScaleRound
+  , Rows
+  , reduce
+  , eval
+  ) where
 
 import Prelude
 
-import Data.Foldable (all, foldl, traverse_)
-import Data.Maybe (Maybe(..))
+import Data.Foldable (all, foldl)
+import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField, fromInt)
-import Snarky.Data.Vector (Vector, (:<))
+import Snarky.Data.Fin (unsafeFinite)
+import Snarky.Data.Vector (Vector, (:<), (!!))
 import Snarky.Data.Vector as Vector
 
 type EndoScaleRound f =
-  { n0 :: f
-  , n8 :: f
-  , a0 :: f
-  , a8 :: f
-  , b0 :: f
-  , b8 :: f
-  , xs :: Vector 8 f
+  { n0 :: FVar f
+  , n8 :: FVar f
+  , a0 :: FVar f
+  , a8 :: FVar f
+  , b0 :: FVar f
+  , b8 :: FVar f
+  , xs :: Vector 8 (FVar f)
   }
 
 type EndoScale f = Vector 8 (EndoScaleRound f)
 
-reduceEndoScalar
+newtype Rows f = Rows (Vector 8 (KimchiRow f))
+
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Vector.toUnfoldable as
+
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => EndoScale (FVar f)
-  -> m Unit
-reduceEndoScalar cs =
-  traverse_ reduceRound cs
+  => EndoScale f
+  -> m (Rows f)
+reduce cs = Rows <$>
+  traverse reduceRound cs
   where
   reduceRound c = do
     n0 <- reduceToVariable c.n0
@@ -45,22 +56,22 @@ reduceEndoScalar cs =
     b8 <- reduceToVariable c.b8
     xs <- traverse reduceToVariable c.xs
     let
-      vars =
+      variables =
         let
           vs = Just n0 :< Just n8 :< Just a0 :< Just a8 :< Just b0 :< Just b8 :< (Just <$> xs)
         in
           vs `Vector.append` (Nothing :< Vector.nil)
-    addRow vars { kind: EndoScale, coeffs: Vector.generate (const zero) }
+    pure { kind: EndoScale, coeffs: Vector.generate (const zero), variables }
 
 eval
   :: forall f m
    . PrimeField f
   => Applicative m
   => (Variable -> m f)
-  -> EndoScale (FVar f)
+  -> Rows f
   -> m Boolean
-eval lookup cs = ado
-  bs <- traverse evalRound cs
+eval lookup (Rows rounds) = ado
+  bs <- traverse (\r -> evalRound r.variables) rounds
   in all identity bs
   where
   double x = x + x
@@ -69,23 +80,28 @@ eval lookup cs = ado
     | x == one = zero
     | x == fromInt 2 = -one
     | x == fromInt 3 = one
-    | otherwise = unsafeThrow ("unexpecte cF application: " <> show x)
+    | otherwise = unsafeThrow ("unexpected aF application: " <> show x)
   bF x
     | x == zero = -one
     | x == one = one
     | x == fromInt 2 = zero
     | x == fromInt 3 = zero
-    | otherwise = unsafeThrow ("unexpecte dF application: " <> show x)
-  evalRound c = ado
-    xs <- traverse (CVar.eval lookup) c.xs
-    n0 <- CVar.eval lookup c.n0
-    n8 <- CVar.eval lookup c.n8
-    a0 <- CVar.eval lookup c.a0
-    a8 <- CVar.eval lookup c.a8
-    b0 <- CVar.eval lookup c.b0
-    b8 <- CVar.eval lookup c.b8
+    | otherwise = unsafeThrow ("unexpected bF application: " <> show x)
+  evalRound round = ado
+    xs <- traverse lookup' xs
+    n0 <- lookup' (cs !! finite6 0)
+    n8 <- lookup' (cs !! finite6 1)
+    a0 <- lookup' (cs !! finite6 2)
+    a8 <- lookup' (cs !! finite6 3)
+    b0 <- lookup' (cs !! finite6 4)
+    b8 <- lookup' (cs !! finite6 5)
     in
       foldl (\acc x -> double (double acc) + x) n0 xs == n8
         && foldl (\acc x -> double acc + aF x) a0 xs == a8
         &&
           foldl (\acc x -> double acc + bF x) b0 xs == b8
+    where
+    lookup' = maybe (pure zero) lookup
+    { before: cs, after } = Vector.splitAt @6 round
+    xs = Vector.take @8 after
+    finite6 = unsafeFinite @6

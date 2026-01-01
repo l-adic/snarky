@@ -8,7 +8,7 @@ import Data.Monoid.Disj (Disj(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, uncurry3)
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F, Variable, all_, and_, any_, if_, not_, or_, xor_)
@@ -26,6 +26,7 @@ spec
   :: forall f c c' r
    . PrimeField f
   => BasicSystem f c'
+  => Finalizer c r
   => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f

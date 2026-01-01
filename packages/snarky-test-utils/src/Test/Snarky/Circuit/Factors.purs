@@ -6,7 +6,7 @@ import Control.Monad.Trans.Class (lift)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, Variable, all_, assert_, const_, equals_, exists, mul_, neq_, read)
@@ -53,6 +53,7 @@ spec
    . PrimeField f
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
+  => Finalizer c r
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'

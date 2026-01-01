@@ -2,7 +2,7 @@ module Test.Snarky.Circuit (spec) where
 
 import Prelude
 
-import Snarky.Backend.Builder (CircuitBuilderT, CircuitBuilderState)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
@@ -22,6 +22,7 @@ spec
    . PrimeField f
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
+  => Finalizer c r
   => ConstraintM (ProverT f) c'
   => FieldSizeInBits f n
   => Proxy f

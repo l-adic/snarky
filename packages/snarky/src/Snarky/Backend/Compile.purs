@@ -22,7 +22,7 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT, finalize, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
@@ -39,6 +39,7 @@ compilePure
   => CircuitType f b bvar
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
+  => Finalizer c r
   => Proxy a
   -> Proxy b
   -> Proxy c'
@@ -55,13 +56,14 @@ compile
   => Monad m
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
+  => Finalizer c r
   => Proxy a
   -> Proxy b
   -> Proxy c'
   -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
   -> CircuitBuilderState c r
   -> m (CircuitBuilderState c r)
-compile _ _ _ circuit cbs = do
+compile _ _ _ circuit cbs = finalize <$> do
   Tuple _ s <-
     flip runCircuitBuilderT cbs do
       let
