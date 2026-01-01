@@ -15,7 +15,7 @@ import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndoScalar, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -35,13 +35,12 @@ gen128BitScalar = do
   let positiveX = if x < 0 then (-x) else x
   pure $ F $ fromBigInt $ JS.BigInt.fromInt positiveX
 
-endoSpec 
+endoSpec
   :: forall f f' g
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
-  => HasEndoScalar f
-  => KimchiVerify f
+  => KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
   => FrModule f' g
@@ -49,7 +48,7 @@ endoSpec
   -> Proxy g
   -> String
   -> Spec Unit
-endoSpec _ curveProxy curveName = 
+endoSpec _ curveProxy curveName =
   describe ("EndoMul " <> curveName) do
     it ("EndoMul circuit is valid for " <> curveName) $ unsafePartial $
       let
@@ -63,7 +62,7 @@ endoSpec _ curveProxy curveName =
             { x, y } = unsafePartial $ fromJust $ toAffine @f result
           in
             { x: F x, y: F y }
-        
+
         solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry circuit)
 
         circuit
@@ -75,7 +74,7 @@ endoSpec _ curveProxy curveName =
         circuit p scalar = do
           result <- endo p scalar
           pure result
-          
+
         { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (F f)))
@@ -92,8 +91,7 @@ endoSpec _ curveProxy curveName =
       in
         circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
 
-
 spec :: Spec Unit
 spec = do
   endoSpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Pallas"
-  --endoSpec (Proxy @Vesta.ScalarField) (Proxy @Vesta.G) "Vesta"
+  endoSpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Vesta"

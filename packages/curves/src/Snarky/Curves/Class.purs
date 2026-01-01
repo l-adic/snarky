@@ -34,7 +34,7 @@ class (Eq f, Ord f, Show f, Field f, Arbitrary f) <= PrimeField f where
   modulus :: BigInt
   pow :: f -> BigInt -> f
 
-fromInt :: forall f. PrimeField f => Int -> f
+fromInt :: forall @f. PrimeField f => Int -> f
 fromInt x = fromBigInt $ JS.BigInt.fromInt x
 
 class (PrimeField f, Monoid g) <= FrModule f g | g -> f where

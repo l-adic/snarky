@@ -5,11 +5,9 @@ module Snarky.Circuit.Kimchi.VarBaseMul
 
 import Prelude
 
-import Control.Monad.State (StateT(..), runStateT)
 import Data.Foldable (foldl, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (class Traversable, traverse)
 import Data.Tuple (Tuple(..), fst)
 import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
@@ -20,6 +18,7 @@ import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertE
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar, BoolVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
@@ -171,15 +170,3 @@ scaleFast2 base s = do
   assertEqual_ s =<< do
     pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
   scaleFast2' @n @nChunks base (Type2 sDiv2) sOdd
-
-mapAccumM
-  :: forall m s t a b
-   . Monad m
-  => Traversable t
-  => (s -> a -> m (Tuple b s))
-  -> s
-  -> t a
-  -> m (Tuple (t b) s)
-mapAccumM f initial xs = runStateT (traverse step xs) initial
-  where
-  step x = StateT (\s -> f s x)

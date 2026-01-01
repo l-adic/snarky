@@ -3,12 +3,10 @@ module Snarky.Curves.Pasta
     PallasScalarField
   , PallasBaseField
   , PallasG
-  , pallasEndoCoefficient
   , -- Vesta exports
     VestaScalarField
   , VestaBaseField
   , VestaG
-  , vestaEndoCoefficient
   ) where
 
 import Prelude
@@ -259,22 +257,10 @@ instance Ord VestaScalarField where
 instance Ord PallasScalarField where
   compare x y = compare (toBigInt x) (toBigInt y)
 
-pallasEndoBase :: VestaScalarField
-pallasEndoBase = _pallasEndoBase unit
-
-pallasEndoScalar :: PallasScalarField  
-pallasEndoScalar = _pallasEndoScalar unit
-
-vestaEndoBase :: PallasScalarField
-vestaEndoBase = _vestaEndoBase unit
-
-vestaEndoScalar :: VestaScalarField
-vestaEndoScalar = _vestaEndoScalar unit
-
 instance HasEndo VestaScalarField PallasScalarField where
-  endoBase = pallasEndoBase
-  endoScalar = pallasEndoScalar
+  endoBase = _pallasEndoBase unit
+  endoScalar = _pallasEndoScalar unit
 
-instance HasEndo PallasScalarField VestaScalarField where  
-  endoBase = vestaEndoBase
-  endoScalar = vestaEndoScalar
+instance HasEndo PallasScalarField VestaScalarField where
+  endoBase = _vestaEndoBase unit
+  endoScalar = _vestaEndoScalar unit

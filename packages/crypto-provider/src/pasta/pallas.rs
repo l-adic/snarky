@@ -118,7 +118,6 @@ pub mod scalar_field {
     pub fn pallas_endo_base() -> External<VestaScalarField> {
         use mina_curves::pasta::Pallas;
         use poly_commitment::ipa::endos;
-        
         let (endo_q, _endo_r) = endos::<Pallas>();
         External::new(endo_q)
     }
@@ -127,7 +126,6 @@ pub mod scalar_field {
     pub fn pallas_endo_scalar() -> FieldExternal {
         use mina_curves::pasta::Pallas;
         use poly_commitment::ipa::endos;
-        
         let (_endo_q, endo_r) = endos::<Pallas>();
         External::new(endo_r)
     }

@@ -1,27 +1,27 @@
-module Snarky.Circuit.Kimchi.EndoMul where
+module Snarky.Circuit.Kimchi.EndoMul (endo) where
 
 import Prelude
 
-import Control.Monad.State (StateT(..), runStateT)
-import Data.Traversable (class Traversable, foldl, traverse)
+import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_)
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, class HasEndoScalar, endoCoefficient)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!))
 import Snarky.Data.Vector as Vector
 
 endo
-  :: forall f t m n _l
+  :: forall f f' t m n _l
    . PrimeField f
   => FieldSizeInBits f n
-  => HasEndoScalar f
+  => HasEndo f' f
   => CircuitM f (KimchiConstraint f) t m
   => Add 128 _l n
   => AffinePoint (FVar f)
@@ -38,7 +38,7 @@ endo g scalar = do
     chunks :: Vector 32 (Vector 4 (FVar f))
     chunks = Vector.chunks @4 msbBits
   accInit <- do
-    { p } <- addComplete g (g { x = scale_ (endoCoefficient @f) g.x })
+    { p } <- addComplete g (g { x = scale_ (endoScalar @f' @f) g.x })
     _.p <$> addComplete p p
   Tuple roundsRev { nAcc, acc } <- mapAccumM
     ( \st bs -> do
@@ -52,14 +52,14 @@ endo g scalar = do
             b3 = bits !! unsafeFinite 3
           { x: xp, y: yp } <- read @(AffinePoint _) st.acc
           let
-            xq1 = (one + (F (endoCoefficient @f) - one) * b0) * xt
+            xq1 = (one + (F (endoScalar @f' @f) - one) * b0) * xt
             yq1 = (double b1 - one) * yt
             s1 = (yq1 - yp) / (xq1 - xp)
             s1Squared = square s1
             s2 = (double yp / (double xp + xq1 - s1Squared)) - s1
             xr = xq1 + square s2 - s1Squared
             yr = ((xp - xr) * s2) - yp
-            xq2 = (one + (F (endoCoefficient @f) - one) * b2) * xt
+            xq2 = (one + (F (endoScalar @f' @f) - one) * b2) * xt
             yq2 = (double b3 - one) * yt
             s3 = (yq2 - yr) / (xq2 - xr)
             s3Squared = square s3
@@ -88,15 +88,3 @@ endo g scalar = do
   where
   double x = x + x
   square x = x * x
-
-mapAccumM
-  :: forall m s t a b
-   . Monad m
-  => Traversable t
-  => (s -> a -> m (Tuple b s))
-  -> s
-  -> t a
-  -> m (Tuple (t b) s)
-mapAccumM f initial xs = runStateT (traverse step xs) initial
-  where
-  step x = StateT (\s -> f s x)

@@ -12,12 +12,10 @@ pub mod bn254;
 
 mod bigint;
 
-// Pasta curves with conditional backend support
-#[cfg(any(feature = "arkworks", feature = "mina-curves-backend"))]
+// Pasta curves using mina-curves backend
 pub mod pasta;
 
 // Re-export pasta functions for backward compatibility
-#[cfg(any(feature = "arkworks", feature = "mina-curves-backend"))]
 pub use pasta::*;
 
 // ============================================================================
@@ -403,10 +401,8 @@ pub fn bn254_verify(
 // KIMCHI MODULE - Poseidon hashing and Kimchi gate functionality
 // ============================================================================
 
-#[cfg(feature = "mina-curves-backend")]
 pub mod kimchi;
 
-#[cfg(feature = "mina-curves-backend")]
 pub use kimchi::poseidon::{
     pallas::{
         pallas_poseidon_apply_mds, pallas_poseidon_full_round, pallas_poseidon_get_mds_matrix,
@@ -420,8 +416,7 @@ pub use kimchi::poseidon::{
     },
 };
 
-#[cfg(feature = "mina-curves-backend")]
-pub use kimchi::test_utils::{
+pub use kimchi::verify::{
     verify_pallas_complete_add, verify_pallas_generic, verify_pallas_poseidon_gadget,
     verify_pallas_varbasemul, verify_vesta_complete_add, verify_vesta_generic,
     verify_vesta_poseidon_gadget, verify_vesta_varbasemul,

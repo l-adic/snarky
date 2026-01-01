@@ -5,33 +5,28 @@ module Test.Snarky.Circuit.Kimchi.GenericTest
 import Prelude
 
 import Control.Monad.Gen (suchThat)
-import Data.Either (Either(..))
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
-import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Backend.Compile (compilePure, makeSolver, runSolver)
+import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.Curves (add_)
 import Snarky.Circuit.Types (F)
-import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState(..), KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (AffinePoint, addAffine, genAffinePoint, toAffine)
-import Test.QuickCheck (class Arbitrary, quickCheck')
+import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
-import Test.Utils.Generic (class VerifyGeneric)
-import Test.Utils.Generic as GenericUtils
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall g f
-   . KimchiConstraint.KimchiVerify f
+  :: forall g f f'
+   . KimchiConstraint.KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
-  => KimchiVerify f
-  => VerifyGeneric f
+  => KimchiVerify f f'
   => Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
@@ -43,7 +38,7 @@ spec pg pc =
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
         solver = makeSolver pc (uncurry add_)
 
-        { constraints, aux: AuxState { wireState: { emittedRows, wireAssignments } } } =
+        { constraints } =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
@@ -63,8 +58,3 @@ spec pg pc =
       in
         do
           circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
-          liftEffect $ quickCheck' 10 do
-            input <- gen
-            let Right (Tuple _ varAssignments) = runSolver solver input
-            pure $ GenericUtils.verify { wireAssignments, varAssignments, rows: emittedRows }
-

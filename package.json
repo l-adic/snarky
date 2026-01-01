@@ -10,8 +10,6 @@
     "test": "make test",
     "build:napi": "npm run build --workspaces",
     "build:crypto": "npm run build -w crypto-provider",
-    "build:crypto:arkworks": "npm run build:arkworks -w crypto-provider",
-    "build:crypto:mina-curves": "npm run build:mina-curves -w crypto-provider",
     "clean:napi": "npm run clean --workspaces --if-present"
   },
   "repository": {

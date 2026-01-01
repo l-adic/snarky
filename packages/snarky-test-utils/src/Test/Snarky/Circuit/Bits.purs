@@ -10,7 +10,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, Variable, pack_, unpack_)
@@ -63,12 +63,13 @@ spec
    . FieldSizeInBits f n
   => PrimeField f
   => BasicSystem f c'
+  => Finalizer c r
   => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
   -> ( forall m
-        . Applicative m
+        . Monad m
        => (Variable -> m f)
        -> c
        -> m Boolean

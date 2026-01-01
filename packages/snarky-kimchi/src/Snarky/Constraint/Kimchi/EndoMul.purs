@@ -1,45 +1,27 @@
 module Snarky.Constraint.Kimchi.EndoMul
-  ( EndoscaleRound
+  ( Round
   , EndoMul
-  , EndoMul'
+  , Rows
   , eval
-  , reduceEndoMul
-  , class EndoMulVerifiable
-  , verifyEndoMul
+  , reduce
   ) where
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
-import Data.Traversable (all, traverse, traverse_)
+import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (all, traverse)
+import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
-import Snarky.Curves.Class (class PrimeField, endoCoefficient)
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, endoScalar)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, nil, (:<), (!!))
+import Snarky.Data.Vector (Vector, (!!), (:<))
 import Snarky.Data.Vector as Vector
 
-two :: forall f. Semiring f => f
-two = one + one
-
-class EndoMulVerifiable f where
-  verifyEndoMul :: EndoMul' f -> Boolean
-
--- PallasBaseField = VestaScalarField, so we need VestaScalarField endo coefficient  
-instance EndoMulVerifiable Pallas.BaseField where
-  verifyEndoMul = verifyEndoMul'Generic (endoCoefficient @Vesta.ScalarField)
-
--- VestaBaseField = PallasScalarField, so we need PallasScalarField endo coefficient
-instance EndoMulVerifiable Vesta.BaseField where  
-  verifyEndoMul = verifyEndoMul'Generic (endoCoefficient @Pallas.ScalarField)
-
-type EndoscaleRound f =
+type Round f =
   { t :: AffinePoint f
   , p :: AffinePoint f
   , r :: AffinePoint f
@@ -51,14 +33,81 @@ type EndoscaleRound f =
   , bits :: Vector 4 f
   }
 
-boolean :: forall f. PrimeField f => f -> Boolean
-boolean b = b * b == b
+type EndoMul f =
+  { state :: Vector 32 (Round f)
+  , s :: AffinePoint f
+  , nAcc :: f
+  }
 
-verifyEndoMul'Generic :: forall f. PrimeField f => f -> EndoMul' f -> Boolean
-verifyEndoMul'Generic endoCoeff {state} = all (verifyRound endoCoeff) state
+newtype Rows f = Rows (Vector 33 (KimchiRow f))
+
+eval
+  :: forall @f @f' m
+   . PrimeField f
+  => HasEndo f' f
+  => Monad m
+  => (Variable -> m f)
+  -> Rows f
+  -> m Boolean
+eval lookup (Rows rs) = do
+  let rs' = map _.variables rs
+  final <- traverse lookup' $ Vector.last rs'
+  let
+    s =
+      { x: final !! unsafeFinite 4
+      , y: final !! unsafeFinite 5
+      }
+    nAcc = final !! unsafeFinite 6
+  rounds <- do
+    let
+      { before } = Vector.splitAt @32 rs'
+      { after } = Vector.splitAt @1 rs'
+      roundPairs = Vector.zip before after
+    traverse (lookupRound s) roundPairs
+  pure $ verifyEndoMul (endoScalar @f' @f) { s, nAcc, state: rounds }
   where
-  verifyRound :: f -> EndoscaleRound f -> Boolean
-  verifyRound endo round =
+  lookup' = maybe (pure zero) lookup
+
+  lookupRound
+    :: AffinePoint f
+    -> Tuple
+         (Vector 15 (Maybe Variable))
+         (Vector 15 (Maybe Variable))
+    -> m (Round f)
+  lookupRound s (Tuple round next) = do
+    { before, after: bits } <- Vector.splitAt @11 <$> traverse lookup' round
+    let
+      xt = before !! unsafeFinite 0
+      yt = before !! unsafeFinite 1
+      xp = before !! unsafeFinite 4
+      yp = before !! unsafeFinite 5
+      nAcc = before !! unsafeFinite 6
+      xr = before !! unsafeFinite 7
+      yr = before !! unsafeFinite 8
+      s1 = before !! unsafeFinite 9
+      s3 = before !! unsafeFinite 10
+    nAccNext <- lookup' $ next !! unsafeFinite 6
+    pure
+      { t: { x: xt, y: yt }
+      , p: { x: xp, y: yp }
+      , nAcc
+      , r: { x: xr, y: yr }
+      , s
+      , s1
+      , s3
+      , bits
+      , nAccNext
+      }
+
+verifyEndoMul :: forall f. PrimeField f => f -> EndoMul f -> Boolean
+verifyEndoMul endo { state } = all verifyRound state
+  where
+  two :: f
+  two = one + one
+
+  boolean :: f -> Boolean
+  boolean b = b * b == b
+  verifyRound (round :: Round f) =
     let
       { bits, t, p, r, s1, s3, nAcc, s, nAccNext } = round
       b1 = bits !! unsafeFinite 0
@@ -90,72 +139,20 @@ verifyEndoMul'Generic endoCoeff {state} = all (verifyRound endoCoeff) state
         && (((r.x * two - s3Squared) + xq2) * ((xrXs * s3) + ysYr)) == (r.y * two * xrXs)
         && (ysYr * ysYr) == ((xrXs * xrXs) * ((s3Squared - xq2) + s.x))
         &&
-          nConstraint == zero
+          nConstraint == (zero @f)
 
-eval
-  :: forall f m
-   . PrimeField f
-  => EndoMulVerifiable f
-  => Applicative m
-  => (Variable -> m f)
-  -> EndoMul' (FVar f)
-  -> m Boolean
-eval lookup constraint = ado
-  xs <- CVar.eval lookup constraint.s.x
-  ys <- CVar.eval lookup constraint.s.y
-  _finalNAcc <- CVar.eval lookup constraint.nAcc
-  rounds <- traverse lookupRound constraint.state
-  let c = { s: { x: xs, y: ys }, nAcc: _finalNAcc, state: rounds }
-  in verifyEndoMul c
-
-  where
-  lookupRound :: EndoscaleRound (FVar f) -> m (EndoscaleRound f)
-  lookupRound round = ado
-    xt <- CVar.eval lookup round.t.x
-    yt <- CVar.eval lookup round.t.y
-    xp <- CVar.eval lookup round.p.x
-    yp <- CVar.eval lookup round.p.y
-    nAcc <- CVar.eval lookup round.nAcc
-    xr <- CVar.eval lookup round.r.x
-    yr <- CVar.eval lookup round.r.y
-    s1 <- CVar.eval lookup round.s1
-    s3 <- CVar.eval lookup round.s3
-    xs <- CVar.eval lookup round.s.x
-    ys <- CVar.eval lookup round.s.y
-    nAccNext <- CVar.eval lookup round.nAccNext
-    bits <- traverse (CVar.eval lookup) (round.bits)
-    in
-      { t: { x: xt, y: yt }
-      , p: { x: xp, y: yp }
-      , nAcc
-      , r: { x: xr, y: yr }
-      , s: { x: xs, y: ys }
-      , s1
-      , s3
-      , bits
-      , nAccNext
-      }
-
-type EndoMul' f =
-  { state :: Vector 32 (EndoscaleRound f)
-  , s :: AffinePoint f
-  , nAcc :: f
-  }
-
-type EndoMul f = EndoMul' (FVar f)
-
-reduceEndoMul
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => EndoMul f
-  -> m Unit
-reduceEndoMul c = do
+  => EndoMul (FVar f)
+  -> m (Rows f)
+reduce c = do
   xs <- reduceToVariable c.s.x
   ys <- reduceToVariable c.s.y
   nAcc <- reduceToVariable c.nAcc
-  traverse_ (\r -> reduceRound r >>= addEndoMul'Round) c.state
-  addFinalZeroRow xs ys nAcc
+  rows <- traverse (\r -> endoMulRound <$> reduceRound r) c.state
+  pure $ Rows $ rows `Vector.snoc` finalZeroRow xs ys nAcc
 
   where
   reduceRound round = do
@@ -173,9 +170,9 @@ reduceEndoMul c = do
     bits <- traverse reduceToVariable round.bits
     pure { t, p, nAcc, r, s1, s3, bits }
 
-  addEndoMul'Round { t, p, nAcc, r, s1, s3, bits } =
+  endoMulRound { t, p, nAcc, r, s1, s3, bits } =
     let
-      row =
+      variables =
         Just t.x
           :< Just t.y
           :< Nothing
@@ -187,17 +184,13 @@ reduceEndoMul c = do
           :< Just r.y
           :< Just s1
           :< Just s3
-          :< Just (bits !! unsafeFinite 0)
-          :< Just (bits !! unsafeFinite 1)
-          :< Just (bits !! unsafeFinite 2)
-          :< Just (bits !! unsafeFinite 3)
-          :< nil
+          :< map Just bits
     in
-      addRow row { kind: EndoMul, coeffs: Vector.generate (const zero) }
+      { kind: EndoMul, coeffs: Vector.generate (const zero), variables }
 
-  addFinalZeroRow xs ys nAcc =
+  finalZeroRow xs ys nAcc =
     let
-      row =
+      variables =
         Nothing
           :< Nothing
           :< Nothing
@@ -205,14 +198,6 @@ reduceEndoMul c = do
           :< Just xs
           :< Just ys
           :< Just nAcc
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< Nothing
-          :< nil
+          :< Vector.generate (const Nothing)
     in
-      addRow row { kind: Zero, coeffs: Vector.generate (const zero) }
+      { kind: Zero, coeffs: Vector.generate (const zero), variables }

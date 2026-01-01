@@ -1,20 +1,22 @@
 module Snarky.Constraint.Kimchi.AddComplete
   ( AddComplete
-  , eval
-  , reduceAddComplete
+  , Rows
   , class AddCompleteVerifiable
   , verifyAddComplete
+  , eval
+  , reduce
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Function.Uncurried (Fn1, runFn1)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
+import Data.Traversable (traverse)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addRow, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -35,11 +37,10 @@ type AddComplete f =
 class AddCompleteVerifiable f where
   verifyAddComplete :: Vector 15 f -> Boolean
 
-instance AddCompleteVerifiable Pallas.BaseField where
-  verifyAddComplete = verifyPallasCompleteAdd
+newtype Rows f = Rows (KimchiRow f)
 
-instance AddCompleteVerifiable Vesta.BaseField where
-  verifyAddComplete = verifyVestaCompleteAdd
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Array.singleton as
 
 eval
   :: forall f m
@@ -47,33 +48,20 @@ eval
   => AddCompleteVerifiable f
   => Applicative m
   => (Variable -> m f)
-  -> AddComplete f
+  -> Rows f
   -> m Boolean
-eval lookup c = ado
-  x1 <- CVar.eval lookup c.p1.x
-  y1 <- CVar.eval lookup c.p1.y
-  x2 <- CVar.eval lookup c.p2.x
-  y2 <- CVar.eval lookup c.p2.y
-  x3 <- CVar.eval lookup c.p3.x
-  y3 <- CVar.eval lookup c.p3.y
-  inf <- CVar.eval lookup c.inf
-  sameX <- CVar.eval lookup c.sameX
-  s <- CVar.eval lookup c.s
-  infZ <- CVar.eval lookup c.infZ
-  x21Inv <- CVar.eval lookup c.x21Inv
-  in
-    let
-      witness = x1 :< y1 :< x2 :< y2 :< x3 :< y3 :< inf :< sameX :< s :< infZ :< x21Inv :< Vector.generate (const zero)
-    in
-      verifyAddComplete witness
+eval lookup (Rows row) =
+  verifyAddComplete <$> traverse lookup' row.variables
+  where
+  lookup' = maybe (pure zero) lookup
 
-reduceAddComplete
+reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
   => AddComplete f
-  -> m Unit
-reduceAddComplete c = do
+  -> m (Rows f)
+reduce c = Rows <$> do
   p1 <- reduceAffinePoint c.p1
   p2 <- reduceAffinePoint c.p2
   p3 <- reduceAffinePoint c.p3
@@ -83,8 +71,8 @@ reduceAddComplete c = do
   infZ <- reduceToVariable c.infZ
   x21Inv <- reduceToVariable c.x21Inv
   let
-    vars :: Vector 15 (Maybe Variable)
-    vars =
+    variables :: Vector 15 (Maybe Variable)
+    variables =
       Just p1.x :< Just p1.y :< Just p2.x :< Just p2.y :< Just p3.x
         :< Just p3.y
         :< Just inf
@@ -93,7 +81,7 @@ reduceAddComplete c = do
         :< Just infZ
         :< Just x21Inv
         :< Vector.generate (const Nothing)
-  addRow vars { kind: AddCompleteGate, coeffs: Vector.generate zero }
+  pure { kind: AddCompleteGate, coeffs: Vector.generate zero, variables }
 
   where
   reduceAffinePoint p = do
@@ -107,8 +95,8 @@ foreign import verifyPallasCompleteAddGadget
 foreign import verifyVestaCompleteAddGadget
   :: Fn1 (Vector 15 Vesta.BaseField) Boolean
 
-verifyPallasCompleteAdd :: Vector 15 Pallas.BaseField -> Boolean
-verifyPallasCompleteAdd witness = runFn1 verifyPallasCompleteAddGadget witness
+instance AddCompleteVerifiable Pallas.BaseField where
+  verifyAddComplete = runFn1 verifyPallasCompleteAddGadget
 
-verifyVestaCompleteAdd :: Vector 15 Vesta.BaseField -> Boolean
-verifyVestaCompleteAdd witness = runFn1 verifyVestaCompleteAddGadget witness
+instance AddCompleteVerifiable Vesta.BaseField where
+  verifyAddComplete = runFn1 verifyVestaCompleteAddGadget

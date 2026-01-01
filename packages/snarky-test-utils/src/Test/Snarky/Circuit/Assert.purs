@@ -3,7 +3,7 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Backend.Builder (CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
@@ -22,10 +22,11 @@ spec
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
+  => Finalizer c r
   => Proxy f
   -> Proxy c'
   -> ( forall m
-        . Applicative m
+        . Monad m
        => (Variable -> m f)
        -> c
        -> m Boolean

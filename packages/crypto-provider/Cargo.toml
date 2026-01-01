@@ -10,11 +10,15 @@ crate-type = ["cdylib", "rlib"]
 napi-build = { workspace = true }
 
 [dependencies]
-# arkworks
+# mina-curves and poseidon (only backend)
+mina-curves = { workspace = true }
+mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
+poly-commitment = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
+kimchi = { workspace = true }
+
+# arkworks (minimal dependencies still needed for bn254 groth16)
 ark-ff = { workspace = true }
 ark-ec = { workspace = true }
-ark-pallas = { workspace = true, optional = true }
-ark-vesta = { workspace = true, optional = true }
 ark-bn254 = { workspace = true }
 ark-std = { workspace = true }
 ark-groth16 = { workspace = true }
@@ -22,12 +26,6 @@ ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-serialize = { workspace = true }
 ark-snark = { workspace = true }
-
-# mina-curves and poseidon
-mina-curves = { workspace = true, optional = true }
-mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49", optional = true }
-poly-commitment = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49", optional = true }
-kimchi = { workspace = true, optional = true }
 
 # napi
 napi = { workspace = true }
@@ -45,10 +43,6 @@ num-integer = { workspace = true }
 bulletproofs = { workspace = true }
 spongefish = { workspace = true }
 
-[features]
-default = ["mina-curves-backend"]
-arkworks = ["ark-pallas", "ark-vesta"]
-mina-curves-backend = ["mina-curves", "mina-poseidon", "poly-commitment", "kimchi"]
 
 [dev-dependencies]
 proptest = { workspace = true }

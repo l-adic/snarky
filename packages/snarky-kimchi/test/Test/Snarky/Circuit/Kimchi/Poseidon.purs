@@ -18,7 +18,7 @@ import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec :: forall f. Kimchi.KimchiVerify f => Proxy f -> Spec Unit
+spec :: forall f f'. Kimchi.KimchiVerify f f' => Proxy f -> Spec Unit
 spec _ = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
