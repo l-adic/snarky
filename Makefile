@@ -44,6 +44,9 @@ test-groth16: build-crypto ## Test snarky-groth16 package
 test-poseidon: build-crypto ## Test poseidon hash package
 	cd packages/poseidon && npx spago test
 
+test-kimchi: build-crypto ## Test poseidon hash package
+	cd packages/snarky-kimchi && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) test-curves
@@ -54,6 +57,8 @@ test-all: ## Test all packages with proper crypto provider
 	$(MAKE) test-bulletproofs  
 	@echo "=== Testing Groth16 Backend ===" 
 	$(MAKE) test-groth16
+	@echo "=== Testing Kimchi Backend ===" 
+	$(MAKE) test-kimchi
 	@echo "=== All tests completed successfully ==="
 
 test: test-all ## Test everything
