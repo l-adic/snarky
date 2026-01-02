@@ -986,7 +986,8 @@
             "snarky",
             "snarky-curves",
             "transformers",
-            "tuples"
+            "tuples",
+            "union-find"
           ],
           "build_plan": [
             "arrays",
@@ -1037,6 +1038,7 @@
             "tuples",
             "type-equality",
             "unfoldable",
+            "union-find",
             "unsafe-coerce"
           ]
         },
