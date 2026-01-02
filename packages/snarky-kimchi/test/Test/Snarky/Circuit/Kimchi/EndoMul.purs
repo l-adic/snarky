@@ -4,10 +4,8 @@ import Prelude
 
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
-import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), uncurry)
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
@@ -21,19 +19,13 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Data.Vector as Vector
-import Test.QuickCheck (class Arbitrary, arbitrary)
+import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-gen128BitElem :: forall f n _l. FieldSizeInBits f n => Reflectable _l Int => Add 128 _l n => Gen (F f)
-gen128BitElem = do
-  v <- Vector.generator (Proxy @128) arbitrary
-  let v' = v `Vector.append` (Vector.generate $ const false)
-  pure $ F $ packPure v'
+import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
 
 endoSpec
   :: forall f f' g

@@ -58,9 +58,6 @@ eval lookup (Rows rs) = do
   all identity <$> traverse lookupRound roundPairs
   where
   lookup' = maybe (pure zero) lookup
-  double x = x + x
-  square x = x * x
-  boolean b = b * b - b
 
   lookupRound
     :: Tuple
@@ -110,20 +107,24 @@ eval lookup (Rows rs) = do
 
       ysYr = ys + yr
       yrYp = yr + yp
-    let
-      check1 = boolean b1
-      check2 = boolean b2
-      check3 = boolean b3
-      check4 = boolean b4
-      check5 = (xq1 - xp) * s1 - (yq1 - yp)
-      check6 = (double xp - s1Squared + xq1) * (xpXr * s1 + yrYp) - double yp * xpXr
-      check7 = square yrYp - (square xpXr * (s1Squared - xq1 + xr))
-      check8 = (xq2 - xr) * s3 - (yq2 - yr)
-      check9 = (double xr - s3Squared + xq2) * (xrXs * s3 + ysYr) - double yr * xrXs
-      check10 = square ysYr - (square xrXs * (s3Squared - xq2 + xs))
-      check11 = nConstraint
 
-    pure $ all (\x -> x == zero) [ check1, check2, check3, check4, check5, check6, check7, check8, check9, check10, check11 ]
+    pure $ all (\x -> x == zero)
+      [ boolean b1
+      , boolean b2
+      , boolean b3
+      , boolean b4
+      , (xq1 - xp) * s1 - (yq1 - yp)
+      , (double xp - s1Squared + xq1) * (xpXr * s1 + yrYp) - double yp * xpXr
+      , square yrYp - (square xpXr * (s1Squared - xq1 + xr))
+      , (xq2 - xr) * s3 - (yq2 - yr)
+      , (double xr - s3Squared + xq2) * (xrXs * s3 + ysYr) - double yr * xrXs
+      , square ysYr - (square xrXs * (s3Squared - xq2 + xs))
+      , nConstraint
+      ]
+    where
+    double x = x + x
+    square x = x * x
+    boolean b = b * b - b
 
 reduce
   :: forall f m
