@@ -18,7 +18,7 @@ import Snarky.Backend.Compile (Solver, SolverT, Checker, runSolverT)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
+import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
 
 data Expectation a
@@ -128,7 +128,7 @@ circuitSpecPure' constraints evalConstraint solver isValid g = liftEffect
     spc = un Identity <<<
       runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid })
   in
-    quickCheck $
+    quickCheck' 1 $
       g <#> spc
 
 -- Warning: circuitSpec and circuitSpec' use unsafePerformEffect
@@ -170,4 +170,4 @@ circuitSpec' nat constraints evalConstraint solver isValid g =
   let
     spc = runCircuitSpec $ CircuitSpec { constraints, solver, evalConstraint, isValid }
   in
-    liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
+    liftEffect (quickCheck' 1 $ g <#> \a -> unsafePerformEffect $ nat $ spc a)

@@ -969,6 +969,7 @@
             "arrays",
             "bifunctors",
             "curves",
+            "debug",
             "either",
             "exceptions",
             "foldable-traversable",
@@ -996,6 +997,7 @@
             "contravariant",
             "control",
             "curves",
+            "debug",
             "distributive",
             "effect",
             "either",
@@ -2121,6 +2123,15 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "debug": {
+      "type": "registry",
+      "version": "6.0.2",
+      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
+      "dependencies": [
+        "functions",
+        "prelude"
       ]
     },
     "distributive": {

@@ -4,9 +4,11 @@ import Prelude
 
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
+import Data.Ord (abs)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), uncurry)
-import JS.BigInt as JS.BigInt
 import Partial.Unsafe (unsafePartial)
+import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
@@ -15,25 +17,23 @@ import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromInt, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
+import Snarky.Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
--- Generate 128-bit scalar (not full field size)
-gen128BitScalar :: forall f. PrimeField f => FieldSizeInBits f 255 => Gen (F f)
-gen128BitScalar = do
-  -- For now, just generate a small positive scalar 
-  -- TODO: Implement proper 128-bit masking
-  x <- arbitrary @Int
-  let positiveX = if x < 0 then (-x) else x
-  pure $ F $ fromBigInt $ JS.BigInt.fromInt positiveX
+gen128BitElem :: forall f n _l. FieldSizeInBits f n => Reflectable _l Int => Add 128 _l n => Gen (F f)
+gen128BitElem = do
+  v <- Vector.generator (Proxy @128) arbitrary
+  let v' = v `Vector.append` (Vector.generate $ const false)
+  pure $ F $ packPure v'
 
 endoSpec
   :: forall f f' g
@@ -86,7 +86,7 @@ endoSpec _ curveProxy curveName =
         gen :: Gen (Tuple (AffinePoint (F f)) (F f))
         gen = do
           p <- EC.genAffinePoint curveProxy
-          scalar <- gen128BitScalar
+          scalar <- gen128BitElem
           pure $ Tuple p scalar
       in
         circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen

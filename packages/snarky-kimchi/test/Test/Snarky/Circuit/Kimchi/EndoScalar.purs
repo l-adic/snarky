@@ -1,4 +1,4 @@
-module Test.Snarky.Circuit.Kimchi.EndoScale where
+module Test.Snarky.Circuit.Kimchi.EndoScalar where
 
 import Prelude
 
@@ -9,11 +9,11 @@ import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
-import Snarky.Circuit.Kimchi.EndoScale (ScalarChallenge(..), toField)
+import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, endoScalar, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
@@ -65,12 +65,12 @@ circuit
    . CircuitM f (KimchiConstraint f) t m
   => FieldSizeInBits f n
   => Add 128 _l n
-  => HasEndo f' f
+  => HasEndo f f'
   => FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
 circuit scalarValue =
   let
-    endoVar = const_ (endoScalar @f' @f)
+    endoVar = const_ (endoBase @f @f')
   in
     toField (ScalarChallenge scalarValue) endoVar
 
@@ -89,12 +89,12 @@ spec'
   -> String
   -> Spec Unit
 spec' _ s = do
-  describe ("EndoScale: " <> s) do
+  describe ("EndoScalar: " <> s) do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
         f :: F f -> F f
         f =
-          over F \x -> toFieldConstant x (endoScalar @f' @f)
+          over F \x -> toFieldConstant x (endoBase @f @f')
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 

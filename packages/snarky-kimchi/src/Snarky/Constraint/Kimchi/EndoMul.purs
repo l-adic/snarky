@@ -8,14 +8,16 @@ module Snarky.Constraint.Kimchi.EndoMul
 
 import Prelude
 
+import Data.Array (mapWithIndex)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (all, traverse)
 import Data.Tuple (Tuple(..))
+import Debug (trace)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, endoScalar)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!), (:<))
@@ -44,102 +46,90 @@ newtype Rows f = Rows (Vector 33 (KimchiRow f))
 eval
   :: forall @f @f' m
    . PrimeField f
-  => HasEndo f' f
+  => HasEndo f f'
   => Monad m
   => (Variable -> m f)
   -> Rows f
   -> m Boolean
 eval lookup (Rows rs) = do
   let rs' = map _.variables rs
-  final <- traverse lookup' $ Vector.last rs'
   let
-    s =
-      { x: final !! unsafeFinite 4
-      , y: final !! unsafeFinite 5
-      }
-    nAcc = final !! unsafeFinite 6
-  rounds <- do
-    let
-      { before } = Vector.splitAt @32 rs'
-      { after } = Vector.splitAt @1 rs'
-      roundPairs = Vector.zip before after
-    traverse (lookupRound s) roundPairs
-  pure $ verifyEndoMul (endoScalar @f' @f) { s, nAcc, state: rounds }
+    { before } = Vector.splitAt @32 rs'
+    { after } = Vector.splitAt @1 rs'
+    roundPairs = Vector.zip before after
+  all identity <$> traverse lookupRound roundPairs
   where
   lookup' = maybe (pure zero) lookup
 
-  lookupRound
-    :: AffinePoint f
-    -> Tuple
-         (Vector 15 (Maybe Variable))
-         (Vector 15 (Maybe Variable))
-    -> m (Round f)
-  lookupRound s (Tuple round next) = do
-    { before, after: bits } <- Vector.splitAt @11 <$> traverse lookup' round
-    let
-      xt = before !! unsafeFinite 0
-      yt = before !! unsafeFinite 1
-      xp = before !! unsafeFinite 4
-      yp = before !! unsafeFinite 5
-      nAcc = before !! unsafeFinite 6
-      xr = before !! unsafeFinite 7
-      yr = before !! unsafeFinite 8
-      s1 = before !! unsafeFinite 9
-      s3 = before !! unsafeFinite 10
-    nAccNext <- lookup' $ next !! unsafeFinite 6
-    pure
-      { t: { x: xt, y: yt }
-      , p: { x: xp, y: yp }
-      , nAcc
-      , r: { x: xr, y: yr }
-      , s
-      , s1
-      , s3
-      , bits
-      , nAccNext
-      }
-
-verifyEndoMul :: forall f. PrimeField f => f -> EndoMul f -> Boolean
-verifyEndoMul endo { state } = all verifyRound state
-  where
   two :: f
   two = one + one
+  double x = x + x
+  square x = x * x
 
-  boolean :: f -> Boolean
-  boolean b = b * b == b
-  verifyRound (round :: Round f) =
+  boolean b = b * b - b
+
+  lookupRound
+    :: Tuple
+         (Vector 15 (Maybe Variable))
+         (Vector 15 (Maybe Variable))
+    -> m Boolean
+  lookupRound (Tuple round _next) = do
+    { before, after: bits } <- Vector.splitAt @11 <$> traverse lookup' round
+    next <- traverse lookup' _next
     let
-      { bits, t, p, r, s1, s3, nAcc, s, nAccNext } = round
       b1 = bits !! unsafeFinite 0
       b2 = bits !! unsafeFinite 1
       b3 = bits !! unsafeFinite 2
       b4 = bits !! unsafeFinite 3
-      endoMinus1 = endo - one
-      xq1 = (one + b1 * endoMinus1) * t.x
-      xq2 = (one + b3 * endoMinus1) * t.x
-      yq1 = (b2 * two - one) * t.y
-      yq2 = (b4 * two - one) * t.y
-      s1Squared = s1 * s1
-      s3Squared = s3 * s3
-      nConstraint = (((nAcc * two + b1) * two + b2) * two + b3) * two + b4 - nAccNext
-      xpXr = p.x - r.x
-      xrXs = r.x - s.x
-      ysYr = s.y + r.y
-      yrYp = r.y + p.y
 
-    in
-      boolean b1
-        && boolean b2
-        && boolean b3
-        && boolean b4
-        && ((xq1 - p.x) * s1) == (yq1 - p.y)
-        && (((p.x * two - s1Squared) + xq1) * ((xpXr * s1) + yrYp)) == (p.y * two * xpXr)
-        && (yrYp * yrYp) == ((xpXr * xpXr) * ((s1Squared - xq1) + r.x))
-        && ((xq2 - r.x) * s3) == (yq2 - r.y)
-        && (((r.x * two - s3Squared) + xq2) * ((xrXs * s3) + ysYr)) == (r.y * two * xrXs)
-        && (ysYr * ysYr) == ((xrXs * xrXs) * ((s3Squared - xq2) + s.x))
-        &&
-          nConstraint == (zero @f)
+      xt = before !! unsafeFinite 0
+      yt = before !! unsafeFinite 1
+
+      xs = next !! unsafeFinite 4
+      ys = next !! unsafeFinite 5
+
+      xp = before !! unsafeFinite 4
+      yp = before !! unsafeFinite 5
+
+      xr = before !! unsafeFinite 7
+      yr = before !! unsafeFinite 8
+
+      s1 = before !! unsafeFinite 9
+      s3 = before !! unsafeFinite 10
+
+      endoMinus1 = (endoBase @f @f') - one
+      xq1 = (one + b1 * endoMinus1) * xt
+      xq2 = (one + b3 * endoMinus1) * xt
+
+      yq1 = (double b2 - one) * yt
+      yq2 = (double b4 - one) * yt
+
+      s1Squared = square s1
+      s3Squared = square s3
+
+      n = before !! unsafeFinite 6
+      nNext = next !! unsafeFinite 6
+      nConstraint = double (double (double (double n + b1) + b2) + b3) + b4 - nNext
+
+      xpXr = xp - xr
+      xrXs = xr - xs
+
+      ysYr = ys + yr
+      yrYp = yr + yp
+    let
+      check1 = boolean b1
+      check2 = boolean b2
+      check3 = boolean b3
+      check4 = boolean b4
+      check5 = (xq1 - xp) * s1 - (yq1 - yp)
+      check6 = (double xp - s1Squared + xq1) * (xpXr * s1 + yrYp) - double yp * xpXr
+      check7 = square yrYp - (square xpXr * (s1Squared - xq1 + xr))
+      check8 = (xq2 - xr) * s3 - (yq2 - yr)
+      check9 = (double xr - s3Squared + xq2) * (xrXs * s3 + ysYr) - double yr * xrXs
+      check10 = square ysYr - (square xrXs * (s3Squared - xq2 + xs))
+      check11 = nConstraint
+
+    pure $ all (\x -> x == zero) [ check1, check2, check3, check4, check5, check6, check7, check8, check9, check10, check11 ]
 
 reduce
   :: forall f m

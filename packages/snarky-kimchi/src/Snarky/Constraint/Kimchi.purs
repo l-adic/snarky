@@ -27,8 +27,8 @@ import Snarky.Constraint.Kimchi.AddComplete (AddComplete, class AddCompleteVerif
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.EndoMul (EndoMul)
 import Snarky.Constraint.Kimchi.EndoMul as EndoMul
-import Snarky.Constraint.Kimchi.EndoScale (EndoScale)
-import Snarky.Constraint.Kimchi.EndoScale as EndoScale
+import Snarky.Constraint.Kimchi.EndoScalar (EndoScalar)
+import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
@@ -47,7 +47,7 @@ data KimchiConstraint f
   | KimchiAddComplete (AddComplete f)
   | KimchiPoseidon (PoseidonConstraint f)
   | KimchiVarBaseMul (VarBaseMul f)
-  | KimchiEndoScale (EndoScale f)
+  | KimchiEndoScalar (EndoScalar f)
   | KimchiEndoMul (EndoMul (FVar f))
 
 data KimchiGate f
@@ -55,7 +55,7 @@ data KimchiGate f
   | KimchiGateAddComplete (AddComplete.Rows f)
   | KimchiGatePoseidon (Poseidon.Rows f)
   | KimchiGateVarBaseMul (VarBaseMul.Rows f)
-  | KimchiGateEndoScale (EndoScale.Rows f)
+  | KimchiGateEndoScalar (EndoScalar.Rows f)
   | KimchiGateEndoMul (EndoMul.Rows f)
   | KimchiGateNoOp
 
@@ -98,7 +98,7 @@ instance
     KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
     KimchiBasic c -> go GenericPlonk.reduce (const KimchiGateNoOp) c
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
-    KimchiEndoScale c -> go EndoScale.reduce KimchiGateEndoScale c
+    KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
     KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
     where
     go
@@ -137,7 +137,7 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConst
     KimchiPoseidon c -> go Poseidon.reduce c
     KimchiBasic c -> go GenericPlonk.reduce c
     KimchiVarBaseMul c -> go VarBaseMul.reduce c
-    KimchiEndoScale c -> go EndoScale.reduce c
+    KimchiEndoScalar c -> go EndoScalar.reduce c
     KimchiEndoMul c -> go EndoMul.reduce c
     where
     go :: forall a c m. Monad m => (forall n. PlonkReductionM n f => c -> n a) -> c -> ProverT f m Unit
@@ -167,13 +167,13 @@ eval lookup = case _ of
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
   KimchiGateVarBaseMul c -> VarBaseMul.eval lookup c
-  KimchiGateEndoScale c -> EndoScale.eval lookup c
+  KimchiGateEndoScalar c -> EndoScalar.eval lookup c
   KimchiGateEndoMul c -> EndoMul.eval @f @f' lookup c
   KimchiGateNoOp -> pure true
 
 class
   ( PrimeField f
-  , HasEndo f' f
+  , HasEndo f f'
   , GenericPlonkVerifiable f
   , AddCompleteVerifiable f
   , PoseidonVerifiable f

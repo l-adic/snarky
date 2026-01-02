@@ -1,6 +1,6 @@
-module Snarky.Constraint.Kimchi.EndoScale
-  ( EndoScale
-  , EndoScaleRound
+module Snarky.Constraint.Kimchi.EndoScalar
+  ( EndoScalar
+  , EndoScalarRound
   , Rows
   , reduce
   , eval
@@ -21,7 +21,7 @@ import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (:<), (!!))
 import Snarky.Data.Vector as Vector
 
-type EndoScaleRound f =
+type EndoScalarRound f =
   { n0 :: FVar f
   , n8 :: FVar f
   , a0 :: FVar f
@@ -31,7 +31,7 @@ type EndoScaleRound f =
   , xs :: Vector 8 (FVar f)
   }
 
-type EndoScale f = Vector 8 (EndoScaleRound f)
+type EndoScalar f = Vector 8 (EndoScalarRound f)
 
 newtype Rows f = Rows (Vector 8 (KimchiRow f))
 
@@ -42,7 +42,7 @@ reduce
   :: forall f m
    . PrimeField f
   => PlonkReductionM m f
-  => EndoScale f
+  => EndoScalar f
   -> m (Rows f)
 reduce cs = Rows <$>
   traverse reduceRound cs
@@ -61,7 +61,7 @@ reduce cs = Rows <$>
           vs = Just n0 :< Just n8 :< Just a0 :< Just a8 :< Just b0 :< Just b8 :< (Just <$> xs)
         in
           vs `Vector.append` (Nothing :< Vector.nil)
-    pure { kind: EndoScale, coeffs: Vector.generate (const zero), variables }
+    pure { kind: EndoScalar, coeffs: Vector.generate (const zero), variables }
 
 eval
   :: forall f m

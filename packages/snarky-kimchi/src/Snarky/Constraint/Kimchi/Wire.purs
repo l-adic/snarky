@@ -24,7 +24,7 @@ data GateKind
   | PoseidonGate
   | VarBaseMul
   | EndoMul
-  | EndoScale
+  | EndoScalar
   | Zero
 
 derive instance Generic GateKind _
