@@ -5,6 +5,7 @@ module Snarky.Constraint.Kimchi.Reduction
   , class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
+  , addEqualsConstraint
   , reduceAffineExpression
   , reduceToVariable
   , reduceAsBuilder
@@ -16,7 +17,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, get, gets, modify_, runState)
+import Control.Monad.State (class MonadState, State, execState, get, gets, modify_, runState)
 import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
@@ -30,6 +31,7 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
+import Data.UnionFind (class MonadUnionFind, find, union)
 import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
@@ -55,6 +57,13 @@ class Monad m <= PlonkReductionM m f | m -> f where
     -> m Variable
   addGenericPlonkConstraint
     :: GenericPlonkConstraint f
+    -> m Unit
+  addEqualsConstraint
+    :: { cl :: f
+       , vl :: Maybe Variable
+       , cr :: f
+       , vr :: Maybe Variable
+       }
     -> m Unit
 
 -- return a * x where a \in f and x is a variable.
@@ -243,6 +252,26 @@ handleGateBatching newGate = do
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
 
+-- | Implementation for any MonadState with a unionFind field
+instance MonadUnionFind Variable (PlonkBuilder f) where
+  find x = do
+    uf <- gets _.wireState.unionFind
+    let Tuple a uf' = runState (find x) uf
+    modify_ \s -> s
+      { wireState = s.wireState
+          { unionFind = uf'
+          }
+      }
+    pure a
+
+  union x y = do
+    uf <- gets _.wireState.unionFind
+    modify_ \s -> s
+      { wireState = s.wireState
+          { unionFind = execState (union x y) uf
+          }
+      }
+
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
     mconstraint <- handleGateBatching c
@@ -254,6 +283,7 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     nextVariable <- gets _.nextVariable
     modify_ _ { nextVariable = incrementVariable nextVariable }
     pure nextVariable
+  addEqualsConstraint _ = pure unit
 
 type ProverReductionState f =
   { nextVariable :: Variable
@@ -287,3 +317,4 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         , assignments = Map.insert nextVariable a assignments
         }
     pure nextVariable
+  addEqualsConstraint _ = pure unit
