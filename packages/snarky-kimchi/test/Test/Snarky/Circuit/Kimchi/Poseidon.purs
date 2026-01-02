@@ -41,4 +41,4 @@ spec _ = describe "Poseidon Circuit Tests" do
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
-    circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs
+    circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs Kimchi.postCondition

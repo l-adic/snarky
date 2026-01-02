@@ -21,7 +21,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', nullPostCondition, satisfied, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -73,8 +73,8 @@ spec pg pc =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints Basic.eval solver unsatisfied offCurve
-          circuitSpecPure' constraints Basic.eval solver satisfied_ onCurve
+          circuitSpecPure' constraints Basic.eval solver unsatisfied offCurve nullPostCondition
+          circuitSpecPure' constraints Basic.eval solver satisfied_ onCurve nullPostCondition
 
     it "assertEqual Circuit is Valid" $
       let
@@ -101,8 +101,8 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints Basic.eval solver satisfied_ same
-          circuitSpecPure' constraints Basic.eval solver unsatisfied distinct
+          circuitSpecPure' constraints Basic.eval solver satisfied_ same nullPostCondition
+          circuitSpecPure' constraints Basic.eval solver unsatisfied distinct nullPostCondition
 
     it "negate Circuit is Valid" $
       let
@@ -118,7 +118,7 @@ spec pg pc =
             initialState
         gen = genAffinePoint pg
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureNegate) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureNegate) gen nullPostCondition
 
     it "if_ Circuit is Valid" $
       let
@@ -145,7 +145,7 @@ spec pg pc =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureIf) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureIf) gen nullPostCondition
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
@@ -171,7 +171,7 @@ spec pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied f) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied f) gen nullPostCondition
 
     it "double Circuit is Valid" $
       let
@@ -199,4 +199,4 @@ spec pg pc =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureDouble) gen
+        circuitSpecPure' constraints Basic.eval solver (satisfied pureDouble) gen nullPostCondition

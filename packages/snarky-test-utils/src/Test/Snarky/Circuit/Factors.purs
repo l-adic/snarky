@@ -7,15 +7,15 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
-import Snarky.Backend.Compile (compile, makeSolver)
+import Snarky.Backend.Compile (Checker, compile, makeSolver)
 import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, Variable, all_, assert_, const_, equals_, exists, mul_, neq_, read)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assert_, const_, equals_, exists, mul_, neq_, read)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (satisfied_, circuitSpec')
+import Test.Snarky.Circuit.Utils (PostCondition, circuitSpec', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -57,15 +57,11 @@ spec
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
-  -> ( forall m
-        . Monad m
-       => (Variable -> m f)
-       -> c
-       -> m Boolean
-     )
+  -> Checker f c
+  -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval initialState = describe "Factors Specs" do
+spec _ pc eval postCondition initialState = describe "Factors Specs" do
 
   it "factors Circuit is Valid" do
 
@@ -80,4 +76,4 @@ spec _ pc eval initialState = describe "Factors Specs" do
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne constraints eval solver satisfied_ gen
+    circuitSpec' randomSampleOne constraints eval solver satisfied_ gen postCondition

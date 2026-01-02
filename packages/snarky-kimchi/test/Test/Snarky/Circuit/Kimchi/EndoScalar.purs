@@ -102,7 +102,7 @@ spec' _ s = do
           Kimchi.initialState
       in
         -- Test that circuit matches reference on random 128-bit boolean arrays
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen128BitElem
+        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen128BitElem Kimchi.postCondition
 
 spec :: Spec Unit
 spec = do

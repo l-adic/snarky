@@ -4,15 +4,15 @@ import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.DSL (F(..), Variable, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
+import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -25,15 +25,11 @@ spec
   => Finalizer c r
   => Proxy f
   -> Proxy c'
-  -> ( forall m
-        . Monad m
-       => (Variable -> m f)
-       -> c
-       -> m Boolean
-     )
+  -> Checker f c
+  -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval initialState = describe "Assertion Circuit Specs" do
+spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $
     let
@@ -50,8 +46,8 @@ spec _ pc eval initialState = describe "Assertion Circuit Specs" do
         pure $ F a
     in
       do
-        circuitSpecPure' constraints eval solver satisfied_ gen
-        circuitSpecPure' constraints eval solver expectDivideByZero (pure $ F zero)
+        circuitSpecPure' constraints eval solver satisfied_ gen postCondition
+        circuitSpecPure' constraints eval solver expectDivideByZero (pure zero) postCondition
 
   it "assertEqual Circuit is Valid" $
     let
@@ -70,8 +66,8 @@ spec _ pc eval initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver unsatisfied distinct
-        circuitSpecPure' constraints eval solver satisfied_ same
+        circuitSpecPure' constraints eval solver unsatisfied distinct postCondition
+        circuitSpecPure' constraints eval solver satisfied_ same postCondition
 
   it "assertNotEqual Circuit is Valid" $
     let
@@ -90,8 +86,8 @@ spec _ pc eval initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver expectDivideByZero same
-        circuitSpecPure' constraints eval solver satisfied_ distinct
+        circuitSpecPure' constraints eval solver expectDivideByZero same postCondition
+        circuitSpecPure' constraints eval solver satisfied_ distinct postCondition
 
   it "assertSquare Circuit is Valid" $
     let
@@ -112,5 +108,5 @@ spec _ pc eval initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure' constraints eval solver satisfied_ squares
-        circuitSpecPure' constraints eval solver unsatisfied nonSquares
+        circuitSpecPure' constraints eval solver satisfied_ squares postCondition
+        circuitSpecPure' constraints eval solver unsatisfied nonSquares postCondition

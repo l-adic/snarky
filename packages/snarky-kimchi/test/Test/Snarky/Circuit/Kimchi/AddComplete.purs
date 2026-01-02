@@ -75,5 +75,5 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
+          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse Kimchi.postCondition

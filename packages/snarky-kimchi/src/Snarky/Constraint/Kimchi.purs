@@ -5,6 +5,7 @@ module Snarky.Constraint.Kimchi
   , class KimchiVerify
   , eval
   , initialState
+  , postCondition
   ) where
 
 import Prelude
@@ -15,7 +16,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, over, un)
 import Data.Tuple (Tuple(..))
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderT, CircuitBuilderState)
+import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
@@ -41,6 +42,7 @@ import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Test.Snarky.Circuit.Utils (PostCondition)
 
 data KimchiConstraint f
   = KimchiBasic (Basic f)
@@ -170,6 +172,13 @@ eval lookup = case _ of
   KimchiGateEndoScalar c -> EndoScalar.eval lookup c
   KimchiGateEndoMul c -> EndoMul.eval @f @f' lookup c
   KimchiGateNoOp -> pure true
+
+postCondition
+  :: forall f
+   . PrimeField f
+  => PostCondition f (KimchiGate f) (AuxState f)
+postCondition lookup { aux: AuxState { wireState: { unionFind } } } =
+  pure true
 
 class
   ( PrimeField f

@@ -29,13 +29,14 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, double, genAffinePoi
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSample, randomSampleOne, suchThat)
 import Test.Snarky.Circuit as CircuitTests
+import Test.Snarky.Circuit.Utils (nullPostCondition)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval initialState
+  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval nullPostCondition initialState
   factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
   factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 

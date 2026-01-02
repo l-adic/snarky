@@ -6,9 +6,9 @@ import Data.Foldable (sum)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.DSL (Variable, div_, equals_, inv_, mul_, negate_, seal, sum_)
+import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Basic (class BasicSystem)
@@ -16,7 +16,7 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Utils (circuitSpecPure, circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure, circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -29,15 +29,11 @@ spec
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
-  -> ( forall m
-        . Monad m
-       => (Variable -> m f)
-       -> c
-       -> m Boolean
-     )
+  -> Checker f c
+  -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval initialState = describe "Field Circuit Specs" do
+spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
 
   it "mul Circuit is Valid" $
     let
@@ -52,7 +48,7 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           (uncurry mul_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f)
+      circuitSpecPure constraints eval solver (satisfied f) postCondition
 
   it "eq Circuit is Valid" $
     let
@@ -75,8 +71,8 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver (satisfied f) same
-        circuitSpecPure' constraints eval solver (satisfied f) distinct
+        circuitSpecPure' constraints eval solver (satisfied f) same postCondition
+        circuitSpecPure' constraints eval solver (satisfied f) distinct postCondition
 
   it "inv Circuit is Valid" $
     let
@@ -92,7 +88,7 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           inv_
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f)
+      circuitSpecPure constraints eval solver (satisfied f) postCondition
 
   it "div Circuit is Valid" $
     let
@@ -108,7 +104,7 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           (uncurry div_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f)
+      circuitSpecPure constraints eval solver (satisfied f) postCondition
 
   it "sum Circuit is Valid" $
     let
@@ -123,7 +119,7 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary)
+      circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
 
   it "negate Circuit is Valid" $
     let
@@ -137,7 +133,7 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           (pure <<< negate_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f)
+      circuitSpecPure constraints eval solver (satisfied f) postCondition
 
   it "seal Circuit is Valid" $
     let
@@ -152,4 +148,4 @@ spec _ pc eval initialState = describe "Field Circuit Specs" do
           seal
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f)
+      circuitSpecPure constraints eval solver (satisfied f) postCondition

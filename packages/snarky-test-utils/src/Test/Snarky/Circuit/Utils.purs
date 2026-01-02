@@ -14,6 +14,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
+import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, Checker, runSolverT)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.Types (class CircuitType)
@@ -48,8 +49,16 @@ expectDivideByZero _ = ProverError \e -> case e of
   DivisionByZero _ -> true
   _ -> false
 
-newtype CircuitSpec :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type -> Type
-newtype CircuitSpec f c m a avar b = CircuitSpec
+type PostCondition f c r =
+  (Variable -> Except EvaluationError f)
+  -> CircuitBuilderState c r
+  -> Except EvaluationError Boolean
+
+nullPostCondition :: forall f c r. PostCondition f c r
+nullPostCondition _ _ = pure true
+
+newtype CircuitSpec :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type -> Type -> Type
+newtype CircuitSpec f c r m a avar b = CircuitSpec
   { constraints :: Array c
   , solver :: SolverT f c m a b
   , evalConstraint ::
@@ -57,16 +66,17 @@ newtype CircuitSpec f c m a avar b = CircuitSpec
       -> c
       -> Except EvaluationError Boolean
   , isValid :: a -> Expectation b
+  , postCondition :: PostCondition f c r
   }
 
 runCircuitSpec
-  :: forall f c m a avar b
+  :: forall f c r m a avar b
    . CircuitType f a avar
   => Monad m
   => Eq b
   => Show b
   => PrimeField f
-  => CircuitSpec f c m a avar b
+  => CircuitSpec f c r m a avar b
   -> a
   -> m Result
 runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) inputs = do
@@ -95,7 +105,7 @@ runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) in
             res -> withHelp false ("Circuit satisfiability: " <> show isSatisfied <> ", checker exited with " <> show res)
 
 circuitSpecPure
-  :: forall a avar b bvar f c
+  :: forall a avar b bvar f c r
    . CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
@@ -106,12 +116,13 @@ circuitSpecPure
   -> Checker f c
   -> Solver f c a b
   -> (a -> Expectation b)
+  -> PostCondition f c r
   -> Aff Unit
 circuitSpecPure constraints evalConstraint solver f =
   circuitSpecPure' constraints evalConstraint solver f arbitrary
 
 circuitSpecPure'
-  :: forall a b avar bvar f c
+  :: forall a b avar bvar f c r
    . CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
@@ -122,11 +133,12 @@ circuitSpecPure'
   -> Solver f c a b
   -> (a -> Expectation b)
   -> Gen a
+  -> PostCondition f c r
   -> Aff Unit
-circuitSpecPure' constraints evalConstraint solver isValid g = liftEffect
+circuitSpecPure' constraints evalConstraint solver isValid g postCondition = liftEffect
   let
     spc = un Identity <<<
-      runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid })
+      runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid, postCondition })
   in
     quickCheck $
       g <#> spc
@@ -134,7 +146,7 @@ circuitSpecPure' constraints evalConstraint solver isValid g = liftEffect
 -- Warning: circuitSpec and circuitSpec' use unsafePerformEffect
 -- to run their effects layer, use with caution
 circuitSpec
-  :: forall a avar b bvar f m c
+  :: forall a avar b bvar f m c r
    . CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
@@ -147,12 +159,13 @@ circuitSpec
   -> Checker f c
   -> SolverT f c m a b
   -> (a -> Expectation b)
+  -> PostCondition f c r
   -> Aff Unit
-circuitSpec nat constraints evalConstraint solver f =
-  circuitSpec' nat constraints evalConstraint solver f arbitrary
+circuitSpec nat constraints evalConstraint solver f postCondition =
+  circuitSpec' nat constraints evalConstraint solver f arbitrary postCondition
 
 circuitSpec'
-  :: forall a avar b bvar f m c
+  :: forall a avar b bvar f m c r
    . CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
@@ -165,9 +178,10 @@ circuitSpec'
   -> SolverT f c m a b
   -> (a -> Expectation b)
   -> Gen a
+  -> PostCondition f c r
   -> Aff Unit
-circuitSpec' nat constraints evalConstraint solver isValid g =
+circuitSpec' nat constraints evalConstraint solver isValid g postCondition =
   let
-    spc = runCircuitSpec $ CircuitSpec { constraints, solver, evalConstraint, isValid }
+    spc = runCircuitSpec $ CircuitSpec { constraints, solver, evalConstraint, isValid, postCondition }
   in
     liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
