@@ -22,7 +22,6 @@ package:
     - snarky-curves
     - transformers
     - tuples
-    - debug
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:

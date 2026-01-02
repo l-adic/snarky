@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
-import Data.Ord (abs)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), uncurry)
 import Partial.Unsafe (unsafePartial)
@@ -17,7 +16,7 @@ import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromInt, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, endoScalar, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -25,6 +24,7 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
+import Test.Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -55,10 +55,8 @@ endoSpec _ curveProxy curveName =
         f :: Tuple (AffinePoint (F f)) (F f) -> AffinePoint (F f)
         f (Tuple { x: F x, y: F y } (F scalar)) =
           let
-            coerceViaBits :: f -> f'
-            coerceViaBits = packPure <<< unpackPure
             base = fromAffine @f @g { x, y }
-            result = scalarMul (coerceViaBits scalar) base
+            result = scalarMul (shift scalar) base
             { x, y } = unsafePartial $ fromJust $ toAffine @f result
           in
             { x: F x, y: F y }
@@ -90,6 +88,12 @@ endoSpec _ curveProxy curveName =
           pure $ Tuple p scalar
       in
         circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
+  where
+  shift f = toFieldConstant (coerceViaBits f) (endoScalar)
+
+    where
+    coerceViaBits :: f -> f'
+    coerceViaBits = packPure <<< unpackPure
 
 spec :: Spec Unit
 spec = do

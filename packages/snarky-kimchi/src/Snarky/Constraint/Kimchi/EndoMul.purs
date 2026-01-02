@@ -8,11 +8,9 @@ module Snarky.Constraint.Kimchi.EndoMul
 
 import Prelude
 
-import Data.Array (mapWithIndex)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (all, traverse)
 import Data.Tuple (Tuple(..))
-import Debug (trace)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
@@ -60,12 +58,8 @@ eval lookup (Rows rs) = do
   all identity <$> traverse lookupRound roundPairs
   where
   lookup' = maybe (pure zero) lookup
-
-  two :: f
-  two = one + one
   double x = x + x
   square x = x * x
-
   boolean b = b * b - b
 
   lookupRound

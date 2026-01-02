@@ -1,4 +1,9 @@
-module Test.Snarky.Circuit.Kimchi.EndoScalar where
+module Test.Snarky.Circuit.Kimchi.EndoScalar
+  ( circuit
+  , gen128BitElem
+  , spec
+  , toFieldConstant
+  ) where
 
 import Prelude
 
@@ -13,7 +18,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, endoScalar, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
