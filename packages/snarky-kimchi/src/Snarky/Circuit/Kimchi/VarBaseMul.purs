@@ -42,7 +42,7 @@ varBaseMul
        , lsbBits :: Vector n (FVar f)
        }
 varBaseMul base (Type1 t) = do
-  lsbBits :: Vector n (BoolVar f) <- exists do
+  lsbBits <- exists do
     F vVal <- readCVar t
     pure $ unpackPure vVal
   { p } <- addComplete base base

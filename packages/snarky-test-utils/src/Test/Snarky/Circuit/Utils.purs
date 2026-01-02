@@ -18,7 +18,7 @@ import Snarky.Backend.Compile (Solver, SolverT, Checker, runSolverT)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
+import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, withHelp, quickCheck)
 import Test.QuickCheck.Gen (Gen)
 
 data Expectation a

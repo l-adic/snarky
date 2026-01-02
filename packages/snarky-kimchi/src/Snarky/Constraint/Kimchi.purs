@@ -21,11 +21,14 @@ import Snarky.Backend.Prover (ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (AddComplete, class AddCompleteVerifiable)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
-import Snarky.Constraint.Kimchi.EndoScale (EndoScale)
-import Snarky.Constraint.Kimchi.EndoScale as EndoScale
+import Snarky.Constraint.Kimchi.EndoMul (EndoMul)
+import Snarky.Constraint.Kimchi.EndoMul as EndoMul
+import Snarky.Constraint.Kimchi.EndoScalar (EndoScalar)
+import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
 import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
@@ -35,7 +38,7 @@ import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
-import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
@@ -44,14 +47,16 @@ data KimchiConstraint f
   | KimchiAddComplete (AddComplete f)
   | KimchiPoseidon (PoseidonConstraint f)
   | KimchiVarBaseMul (VarBaseMul f)
-  | KimchiEndoScale (EndoScale f)
+  | KimchiEndoScalar (EndoScalar f)
+  | KimchiEndoMul (EndoMul (FVar f))
 
 data KimchiGate f
   = KimchiGatePlonk (Reduction.Rows f)
   | KimchiGateAddComplete (AddComplete.Rows f)
   | KimchiGatePoseidon (Poseidon.Rows f)
   | KimchiGateVarBaseMul (VarBaseMul.Rows f)
-  | KimchiGateEndoScale (EndoScale.Rows f)
+  | KimchiGateEndoScalar (EndoScalar.Rows f)
+  | KimchiGateEndoMul (EndoMul.Rows f)
   | KimchiGateNoOp
 
 newtype AuxState f = AuxState
@@ -93,7 +98,8 @@ instance
     KimchiPoseidon c -> go Poseidon.reduce KimchiGatePoseidon c
     KimchiBasic c -> go GenericPlonk.reduce (const KimchiGateNoOp) c
     KimchiVarBaseMul c -> go VarBaseMul.reduce KimchiGateVarBaseMul c
-    KimchiEndoScale c -> go EndoScale.reduce KimchiGateEndoScale c
+    KimchiEndoScalar c -> go EndoScalar.reduce KimchiGateEndoScalar c
+    KimchiEndoMul c -> go EndoMul.reduce KimchiGateEndoMul c
     where
     go
       :: forall a c m
@@ -131,7 +137,8 @@ instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConst
     KimchiPoseidon c -> go Poseidon.reduce c
     KimchiBasic c -> go GenericPlonk.reduce c
     KimchiVarBaseMul c -> go VarBaseMul.reduce c
-    KimchiEndoScale c -> go EndoScale.reduce c
+    KimchiEndoScalar c -> go EndoScalar.reduce c
+    KimchiEndoMul c -> go EndoMul.reduce c
     where
     go :: forall a c m. Monad m => (forall n. PlonkReductionM n f => c -> n a) -> c -> ProverT f m Unit
     go reducer c = do
@@ -149,9 +156,9 @@ initialState =
   }
 
 eval
-  :: forall f m
-   . KimchiVerify f
-  => Applicative m
+  :: forall f f' m
+   . KimchiVerify f f'
+  => Monad m
   => (Variable -> m f)
   -> KimchiGate f
   -> m Boolean
@@ -160,13 +167,23 @@ eval lookup = case _ of
   KimchiGateAddComplete c -> AddComplete.eval lookup c
   KimchiGatePoseidon c -> Poseidon.eval lookup c
   KimchiGateVarBaseMul c -> VarBaseMul.eval lookup c
-  KimchiGateEndoScale c -> EndoScale.eval lookup c
+  KimchiGateEndoScalar c -> EndoScalar.eval lookup c
+  KimchiGateEndoMul c -> EndoMul.eval @f @f' lookup c
   KimchiGateNoOp -> pure true
 
-class (PrimeField f, GenericPlonkVerifiable f, AddCompleteVerifiable f, PoseidonVerifiable f, VarBaseMulVerifiable f) <= KimchiVerify f
+class
+  ( PrimeField f
+  , HasEndo f f'
+  , GenericPlonkVerifiable f
+  , AddCompleteVerifiable f
+  , PoseidonVerifiable f
+  , VarBaseMulVerifiable f
+  ) <=
+  KimchiVerify f f'
+  | f -> f'
 
-instance KimchiVerify Pallas.BaseField
-instance KimchiVerify Vesta.BaseField
+instance KimchiVerify Pallas.ScalarField Vesta.ScalarField
+instance KimchiVerify Vesta.ScalarField Pallas.ScalarField
 
 instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS

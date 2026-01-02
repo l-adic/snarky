@@ -22,11 +22,11 @@ import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall g f
-   . KimchiConstraint.KimchiVerify f
+  :: forall g f f'
+   . KimchiConstraint.KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
-  => KimchiVerify f
+  => KimchiVerify f f'
   => Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit

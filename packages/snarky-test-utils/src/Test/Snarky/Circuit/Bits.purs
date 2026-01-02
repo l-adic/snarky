@@ -69,7 +69,7 @@ spec
   => Proxy f
   -> Proxy c'
   -> ( forall m
-        . Applicative m
+        . Monad m
        => (Variable -> m f)
        -> c
        -> m Boolean

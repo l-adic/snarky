@@ -1,29 +1,31 @@
-module Test.Snarky.Circuit.Kimchi.EndoScale where
+module Test.Snarky.Circuit.Kimchi.EndoScalar
+  ( circuit
+  , spec
+  , toFieldConstant
+  ) where
 
 import Prelude
 
 import Data.Newtype (over)
-import Data.Reflectable (class Reflectable)
 import Data.Traversable (foldl)
-import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
-import Snarky.Circuit.Kimchi.EndoScale (ScalarChallenge(..), toField)
+import Snarky.Circuit.DSL.Bits (unpackPure)
+import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!))
 import Snarky.Data.Vector as Vector
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
+import Prim.Int (class Add)
 
 toFieldConstant
   :: forall f n _l
@@ -70,32 +72,25 @@ circuit
   -> Snarky (KimchiConstraint f) t m (FVar f)
 circuit scalarValue =
   let
-    endoVar = const_ (endoBase @f)
+    endoVar = const_ (endoBase @f @f')
   in
     toField (ScalarChallenge scalarValue) endoVar
-
-gen128BitElem :: forall f n _l. FieldSizeInBits f n => Reflectable _l Int => Add 128 _l n => Gen (F f)
-gen128BitElem = do
-  v <- Vector.generator (Proxy @128) arbitrary
-  let v' = v `Vector.append` (Vector.generate $ const false)
-  pure $ F $ packPure v'
 
 spec'
   :: forall f f'
    . PrimeField f
   => FieldSizeInBits f 255
-  => KimchiVerify f
-  => HasEndo f f'
+  => KimchiVerify f f'
   => Proxy f
   -> String
   -> Spec Unit
 spec' _ s = do
-  describe ("EndoScale: " <> s) do
+  describe ("EndoScalar: " <> s) do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
         f :: F f -> F f
         f =
-          over F \x -> toFieldConstant x (endoBase @f)
+          over F \x -> toFieldConstant x (endoBase @f @f')
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 

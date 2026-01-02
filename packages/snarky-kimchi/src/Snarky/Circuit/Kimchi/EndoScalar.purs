@@ -1,4 +1,4 @@
-module Snarky.Circuit.Kimchi.EndoScale where
+module Snarky.Circuit.Kimchi.EndoScalar where
 
 import Prelude
 
@@ -63,7 +63,7 @@ toField (ScalarChallenge scalar) endo = do
     , n: const_ $ zero
     }
     nibblesByRow
-  addConstraint $ KimchiEndoScale (Vector.reverse rowsRev)
+  addConstraint $ KimchiEndoScalar (Vector.reverse rowsRev)
   assertEqual_ n scalar
   a `mul_` endo <#>
     add_ b
