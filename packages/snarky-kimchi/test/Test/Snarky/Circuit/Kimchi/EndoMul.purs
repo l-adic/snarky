@@ -65,7 +65,7 @@ endoSpec _ curveProxy curveName =
           result <- endo p scalar
           pure result
 
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (F f)))
             (Proxy @(AffinePoint (F f)))
@@ -79,7 +79,7 @@ endoSpec _ curveProxy curveName =
           scalar <- gen128BitElem
           pure $ Tuple p scalar
       in
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+        circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
   where
   shift f = toFieldConstant (coerceViaBits f) (endoScalar)
 

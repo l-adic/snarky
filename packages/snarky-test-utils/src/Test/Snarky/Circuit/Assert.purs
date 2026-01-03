@@ -34,7 +34,7 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
   it "assertNonZero Circuit is Valid" $
     let
       solver = makeSolver pc assertNonZero_
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @Unit)
@@ -46,13 +46,13 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ F a
     in
       do
-        circuitSpecPure' constraints eval solver satisfied_ gen postCondition
-        circuitSpecPure' constraints eval solver expectDivideByZero (pure zero) postCondition
+        circuitSpecPure' s eval solver satisfied_ gen postCondition
+        circuitSpecPure' s eval solver expectDivideByZero (pure zero) postCondition
 
   it "assertEqual Circuit is Valid" $
     let
       solver = makeSolver pc (uncurry assertEqual_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
@@ -66,13 +66,13 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver unsatisfied distinct postCondition
-        circuitSpecPure' constraints eval solver satisfied_ same postCondition
+        circuitSpecPure' s eval solver unsatisfied distinct postCondition
+        circuitSpecPure' s eval solver satisfied_ same postCondition
 
   it "assertNotEqual Circuit is Valid" $
     let
       solver = makeSolver pc (uncurry assertNotEqual_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
@@ -86,13 +86,13 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver expectDivideByZero same postCondition
-        circuitSpecPure' constraints eval solver satisfied_ distinct postCondition
+        circuitSpecPure' s eval solver expectDivideByZero same postCondition
+        circuitSpecPure' s eval solver satisfied_ distinct postCondition
 
   it "assertSquare Circuit is Valid" $
     let
       solver = makeSolver pc (uncurry assertSquare_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Unit)
@@ -108,5 +108,5 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure' constraints eval solver satisfied_ squares postCondition
-        circuitSpecPure' constraints eval solver unsatisfied nonSquares postCondition
+        circuitSpecPure' s eval solver satisfied_ squares postCondition
+        circuitSpecPure' s eval solver unsatisfied nonSquares postCondition

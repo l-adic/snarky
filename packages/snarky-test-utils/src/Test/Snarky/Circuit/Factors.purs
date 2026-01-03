@@ -65,7 +65,7 @@ spec _ pc eval postCondition initialState = describe "Factors Specs" do
 
   it "factors Circuit is Valid" do
 
-    { constraints } <- liftEffect $
+    s <- liftEffect $
       compile
         (Proxy @(F f))
         (Proxy @Unit)
@@ -76,4 +76,4 @@ spec _ pc eval postCondition initialState = describe "Factors Specs" do
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne constraints eval solver satisfied_ gen postCondition
+    circuitSpec' randomSampleOne s eval solver satisfied_ gen postCondition

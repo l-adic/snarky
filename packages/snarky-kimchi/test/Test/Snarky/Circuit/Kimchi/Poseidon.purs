@@ -33,7 +33,7 @@ spec _ = describe "Poseidon Circuit Tests" do
           F (Vector.index finalState (unsafeFinite 2))
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) PoseidonCircuit.poseidon
-      { constraints } = compilePure
+      s = compilePure
         (Proxy @(Vector 3 (F f)))
         (Proxy @(F f))
         (Proxy @(KimchiConstraint f))
@@ -41,4 +41,4 @@ spec _ = describe "Poseidon Circuit Tests" do
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
-    circuitSpecPure' constraints eval solver (satisfied referenceHash) genInputs Kimchi.postCondition
+    circuitSpecPure' s eval solver (satisfied referenceHash) genInputs Kimchi.postCondition

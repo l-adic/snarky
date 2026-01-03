@@ -38,7 +38,7 @@ spec pg pc =
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
         solver = makeSolver pc (uncurry add_)
 
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
@@ -57,4 +57,4 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+          circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition

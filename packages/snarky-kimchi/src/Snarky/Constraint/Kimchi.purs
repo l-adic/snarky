@@ -10,11 +10,16 @@ module Snarky.Constraint.Kimchi
 
 import Prelude
 
+import Data.Array (all)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, over, un)
+import Data.Set as Set
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
+import Data.UnionFind (equivalenceClasses)
+import Debug (traceM)
 import Poseidon.Class (class PoseidonField)
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Builder as CircuitBuilder
@@ -177,8 +182,11 @@ postCondition
   :: forall f
    . PrimeField f
   => PostCondition f (KimchiGate f) (AuxState f)
-postCondition lookup { aux: AuxState { wireState: { unionFind } } } =
-  pure true
+postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
+  let cs = equivalenceClasses unionFind
+  traceM cs
+  classes <- traverse (map Set.fromFoldable <<< traverse lookup) $ cs
+  pure $ all (\s -> Set.size s == 1) classes
 
 class
   ( PrimeField f

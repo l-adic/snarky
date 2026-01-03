@@ -83,7 +83,7 @@ spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
         in
           generate (toBit <<< getFinite)
       solver = makeSolver pc unpack_
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
@@ -91,13 +91,13 @@ spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
           unpack_
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition
+      circuitSpecPure' s eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition
 
   it "pack/unpack round trip is Valid" $
     let
       f = identity
       solver = makeSolver pc (packUnpackCircuit)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
@@ -105,4 +105,4 @@ spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
           (packUnpackCircuit)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition
+      circuitSpecPure' s eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition

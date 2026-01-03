@@ -59,7 +59,7 @@ nullPostCondition _ _ = pure true
 
 newtype CircuitSpec :: Type -> Type -> Type -> (Type -> Type) -> Type -> Type -> Type -> Type
 newtype CircuitSpec f c r m a avar b = CircuitSpec
-  { constraints :: Array c
+  { builtState :: CircuitBuilderState c r
   , solver :: SolverT f c m a b
   , evalConstraint ::
       (Variable -> Except EvaluationError f)
@@ -79,7 +79,7 @@ runCircuitSpec
   => CircuitSpec f c r m a avar b
   -> a
   -> m Result
-runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) inputs = do
+runCircuitSpec (CircuitSpec { builtState, solver, evalConstraint, isValid, postCondition }) inputs = do
   runSolverT solver inputs <#> case _ of
     Left e ->
       case isValid inputs of
@@ -87,22 +87,24 @@ runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid }) in
         _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
     Right (Tuple b assignments) ->
       let
+        lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just res -> pure res
+
         checker :: Array c -> Except EvaluationError Boolean
-        checker =
-          let
-            lookup v = case Map.lookup v assignments of
-              Nothing -> throwError $ MissingVariable v
-              Just res -> pure res
-          in
-            foldM (\acc c -> conj acc <$> evalConstraint lookup c) true
+        checker = foldM (\acc c -> conj acc <$> evalConstraint lookup c) true
+        satisfiedRes = do
+          constraintsResult <- checker builtState.constraints
+          postConditionResult <- postCondition lookup builtState
+          pure { constraintsResult, postConditionResult }
       in
-        case runExcept $ checker constraints of
+        case runExcept satisfiedRes of
           Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
-          Right isSatisfied -> case isValid inputs of
-            Satisfied expected | isSatisfied == true ->
-              withHelp (expected == b) ("Circuit disagrees with test function, cirvuit got " <> show b <> " expected " <> show expected <> " from test function")
-            Unsatisfied | isSatisfied == false -> Success
-            res -> withHelp false ("Circuit satisfiability: " <> show isSatisfied <> ", checker exited with " <> show res)
+          Right s@{ constraintsResult, postConditionResult } -> case isValid inputs of
+            Satisfied expected | constraintsResult && postConditionResult ->
+              withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
+            Unsatisfied | not (constraintsResult || postConditionResult) -> Success
+            res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
 
 circuitSpecPure
   :: forall a avar b bvar f c r
@@ -112,7 +114,7 @@ circuitSpecPure
   => Eq b
   => Show b
   => Arbitrary a
-  => Array c
+  => CircuitBuilderState c r
   -> Checker f c
   -> Solver f c a b
   -> (a -> Expectation b)
@@ -128,17 +130,17 @@ circuitSpecPure'
   => PrimeField f
   => Eq b
   => Show b
-  => Array c
+  => CircuitBuilderState c r
   -> Checker f c
   -> Solver f c a b
   -> (a -> Expectation b)
   -> Gen a
   -> PostCondition f c r
   -> Aff Unit
-circuitSpecPure' constraints evalConstraint solver isValid g postCondition = liftEffect
+circuitSpecPure' builtState evalConstraint solver isValid g postCondition = liftEffect
   let
     spc = un Identity <<<
-      runCircuitSpec (CircuitSpec { constraints, solver, evalConstraint, isValid, postCondition })
+      runCircuitSpec (CircuitSpec { builtState, solver, evalConstraint, isValid, postCondition })
   in
     quickCheck $
       g <#> spc
@@ -155,14 +157,14 @@ circuitSpec
   => Monad m
   => Arbitrary a
   => (m ~> Effect)
-  -> Array c
+  -> CircuitBuilderState c r
   -> Checker f c
   -> SolverT f c m a b
   -> (a -> Expectation b)
   -> PostCondition f c r
   -> Aff Unit
-circuitSpec nat constraints evalConstraint solver f postCondition =
-  circuitSpec' nat constraints evalConstraint solver f arbitrary postCondition
+circuitSpec nat builtState evalConstraint solver f postCondition =
+  circuitSpec' nat builtState evalConstraint solver f arbitrary postCondition
 
 circuitSpec'
   :: forall a avar b bvar f m c r
@@ -173,15 +175,15 @@ circuitSpec'
   => Show b
   => Monad m
   => (m ~> Effect)
-  -> Array c
+  -> CircuitBuilderState c r
   -> Checker f c
   -> SolverT f c m a b
   -> (a -> Expectation b)
   -> Gen a
   -> PostCondition f c r
   -> Aff Unit
-circuitSpec' nat constraints evalConstraint solver isValid g postCondition =
+circuitSpec' nat builtState evalConstraint solver isValid g postCondition =
   let
-    spc = runCircuitSpec $ CircuitSpec { constraints, solver, evalConstraint, isValid, postCondition }
+    spc = runCircuitSpec $ CircuitSpec { builtState, solver, evalConstraint, isValid, postCondition }
   in
     liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)

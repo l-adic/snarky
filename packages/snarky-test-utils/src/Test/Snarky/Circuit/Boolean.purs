@@ -43,7 +43,7 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
       f :: Boolean -> Boolean
       f = not
       solver = makeSolver pc (pure <<< not_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @Boolean)
           (Proxy @Boolean)
@@ -51,14 +51,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (pure <<< not_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "and Circuit is Valid" $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (&&)
       solver = makeSolver pc (uncurry and_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
@@ -66,14 +66,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry and_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "or Circuit is Valid" $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f = uncurry (||)
       solver = makeSolver pc (uncurry or_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
@@ -81,14 +81,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry or_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "xor Circuit is Valid" $
     let
       f :: Tuple Boolean Boolean -> Boolean
       f (Tuple a b) = (a && not b) || (not a && b)
       solver = makeSolver pc (uncurry xor_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple Boolean Boolean))
           (Proxy @Boolean)
@@ -96,7 +96,7 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry xor_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "if Circuit is Valid" $
     let
@@ -104,7 +104,7 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
       f = uncurry3 \b t e ->
         if b then t else e
       solver = makeSolver pc (uncurry3 if_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple3 Boolean (F f) (F f)))
           (Proxy @(F f))
@@ -112,14 +112,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry3 if_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "all Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Conj <<< foldMap Conj
       solver = makeSolver pc (all_ <<< Vector.toUnfoldable)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
@@ -127,14 +127,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (all_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
 
   it "any Circuit is Valid" $
     let
       f :: forall n. Vector n Boolean -> Boolean
       f = un Disj <<< foldMap Disj
       solver = makeSolver pc (any_ <<< Vector.toUnfoldable)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Vector 10 Boolean))
           (Proxy @Boolean)
@@ -142,4 +142,4 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (any_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition

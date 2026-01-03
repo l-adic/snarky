@@ -40,7 +40,7 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
       f (Tuple (F a) (F b)) = F (a * b)
 
       solver = makeSolver pc (uncurry mul_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @(F f))
@@ -48,14 +48,14 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (uncurry mul_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "eq Circuit is Valid" $
     let
       f :: Tuple (F f) (F f) -> Boolean
       f = uncurry (==)
       solver = makeSolver pc (uncurry equals_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @Boolean)
@@ -71,8 +71,8 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' constraints eval solver (satisfied f) same postCondition
-        circuitSpecPure' constraints eval solver (satisfied f) distinct postCondition
+        circuitSpecPure' s eval solver (satisfied f) same postCondition
+        circuitSpecPure' s eval solver (satisfied f) distinct postCondition
 
   it "inv Circuit is Valid" $
     let
@@ -80,7 +80,7 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
         if a == zero then F zero
         else F @f (recip a)
       solver = makeSolver pc inv_
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
@@ -88,7 +88,7 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           inv_
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "div Circuit is Valid" $
     let
@@ -96,7 +96,7 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
         if b == zero then F zero
         else F @f (a / b)
       solver = makeSolver pc (uncurry div_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Tuple (F f) (F f)))
           (Proxy @(F f))
@@ -104,14 +104,14 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (uncurry div_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "sum Circuit is Valid" $
     let
       f :: Vector 10 (F f) -> F f
       f as = F $ sum (un F <$> as)
       solver = makeSolver pc (pure <<< sum_ <<< Vector.toUnfoldable)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(Vector 10 (F f)))
           (Proxy @(F f))
@@ -119,13 +119,13 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
 
   it "negate Circuit is Valid" $
     let
       f (F a) = F (negate a)
       solver = makeSolver pc (pure <<< negate_)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
@@ -133,14 +133,14 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (pure <<< negate_)
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
 
   it "seal Circuit is Valid" $
     let
       f :: F f -> F f
       f = identity
       solver = makeSolver pc seal
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
@@ -148,4 +148,4 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           seal
           initialState
     in
-      circuitSpecPure constraints eval solver (satisfied f) postCondition
+      circuitSpecPure s eval solver (satisfied f) postCondition
