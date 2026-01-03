@@ -75,5 +75,19 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
-          circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) genInverse Kimchi.postCondition
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            genInverse

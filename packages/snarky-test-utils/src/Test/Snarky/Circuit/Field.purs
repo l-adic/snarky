@@ -48,7 +48,13 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (uncurry mul_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "eq Circuit is Valid" $
     let
@@ -71,8 +77,22 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' s eval solver (satisfied f) same postCondition
-        circuitSpecPure' s eval solver (satisfied f) distinct postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied f
+          , postCondition: postCondition
+          }
+          same
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied f
+          , postCondition: postCondition
+          }
+          distinct
 
   it "inv Circuit is Valid" $
     let
@@ -88,7 +108,13 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           inv_
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "div Circuit is Valid" $
     let
@@ -104,7 +130,13 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (uncurry div_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "sum Circuit is Valid" $
     let
@@ -119,7 +151,14 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (Vector.generator (Proxy @10) arbitrary)
 
   it "negate Circuit is Valid" $
     let
@@ -133,7 +172,13 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           (pure <<< negate_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "seal Circuit is Valid" $
     let
@@ -148,4 +193,10 @@ spec _ pc eval postCondition initialState = describe "Field Circuit Specs" do
           seal
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }

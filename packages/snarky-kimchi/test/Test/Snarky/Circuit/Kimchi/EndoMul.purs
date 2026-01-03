@@ -79,7 +79,14 @@ endoSpec _ curveProxy curveName =
           scalar <- gen128BitElem
           pure $ Tuple p scalar
       in
-        circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: KimchiConstraint.eval
+          , solver: solver
+          , testFunction: satisfied f
+          , postCondition: Kimchi.postCondition
+          }
+          gen
   where
   shift f = toFieldConstant (coerceViaBits f) (endoScalar)
 

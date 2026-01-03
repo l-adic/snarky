@@ -73,8 +73,22 @@ spec pg pc =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' s Basic.eval solver unsatisfied offCurve nullPostCondition
-          circuitSpecPure' s Basic.eval solver satisfied_ onCurve nullPostCondition
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: unsatisfied
+            , postCondition: nullPostCondition
+            }
+            offCurve
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: satisfied_
+            , postCondition: nullPostCondition
+            }
+            onCurve
 
     it "assertEqual Circuit is Valid" $
       let
@@ -101,8 +115,22 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' s Basic.eval solver satisfied_ same nullPostCondition
-          circuitSpecPure' s Basic.eval solver unsatisfied distinct nullPostCondition
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: satisfied_
+            , postCondition: nullPostCondition
+            }
+            same
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: unsatisfied
+            , postCondition: nullPostCondition
+            }
+            distinct
 
     it "negate Circuit is Valid" $
       let
@@ -118,7 +146,14 @@ spec pg pc =
             initialState
         gen = genAffinePoint pg
       in
-        circuitSpecPure' s Basic.eval solver (satisfied pureNegate) gen nullPostCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureNegate)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "if_ Circuit is Valid" $
       let
@@ -145,7 +180,14 @@ spec pg pc =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' s Basic.eval solver (satisfied pureIf) gen nullPostCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureIf)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
@@ -171,7 +213,14 @@ spec pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' s Basic.eval solver (satisfied f) gen nullPostCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied f)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "double Circuit is Valid" $
       let
@@ -199,4 +248,11 @@ spec pg pc =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' s Basic.eval solver (satisfied pureDouble) gen nullPostCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureDouble)
+          , postCondition: nullPostCondition
+          }
+          gen

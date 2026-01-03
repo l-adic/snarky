@@ -91,7 +91,14 @@ spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
           unpack_
           initialState
     in
-      circuitSpecPure' s eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
@@ -105,4 +112,11 @@ spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
           (packUnpackCircuit)
           initialState
     in
-      circuitSpecPure' s eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) postCondition
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

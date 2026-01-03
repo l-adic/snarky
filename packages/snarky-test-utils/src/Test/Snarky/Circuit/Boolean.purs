@@ -51,7 +51,13 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (pure <<< not_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "and Circuit is Valid" $
     let
@@ -66,7 +72,13 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry and_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "or Circuit is Valid" $
     let
@@ -81,7 +93,13 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry or_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "xor Circuit is Valid" $
     let
@@ -96,7 +114,13 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry xor_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "if Circuit is Valid" $
     let
@@ -112,7 +136,13 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (uncurry3 if_)
           initialState
     in
-      circuitSpecPure s eval solver (satisfied f) postCondition
+      circuitSpecPure
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
 
   it "all Circuit is Valid" $
     let
@@ -127,7 +157,14 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (all_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (Vector.generator (Proxy @10) arbitrary)
 
   it "any Circuit is Valid" $
     let
@@ -142,4 +179,11 @@ spec _ pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (any_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure' s eval solver (satisfied f) (Vector.generator (Proxy @10) arbitrary) postCondition
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (Vector.generator (Proxy @10) arbitrary)

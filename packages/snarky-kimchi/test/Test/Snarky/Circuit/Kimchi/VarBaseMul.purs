@@ -69,7 +69,14 @@ spec = do
           pure $ Tuple p (Type1 t)
       in
         do
-          circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
 
   describe "VarBaseMul Type2" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial $
@@ -108,7 +115,14 @@ spec = do
           pure $ Tuple p t
       in
         do
-          circuitSpecPure' s KimchiConstraint.eval solver (satisfied f) gen Kimchi.postCondition
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
 
 fieldShift1 :: forall f f' n. FieldSizeInBits f n => FieldSizeInBits f' n => PrimeField f' => f -> f'
 fieldShift1 t =

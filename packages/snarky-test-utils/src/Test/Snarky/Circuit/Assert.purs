@@ -46,8 +46,22 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ F a
     in
       do
-        circuitSpecPure' s eval solver satisfied_ gen postCondition
-        circuitSpecPure' s eval solver expectDivideByZero (pure zero) postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied_
+          , postCondition: postCondition
+          }
+          gen
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: expectDivideByZero
+          , postCondition: postCondition
+          }
+          (pure zero)
 
   it "assertEqual Circuit is Valid" $
     let
@@ -66,8 +80,22 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' s eval solver unsatisfied distinct postCondition
-        circuitSpecPure' s eval solver satisfied_ same postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: unsatisfied
+          , postCondition: postCondition
+          }
+          distinct
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied_
+          , postCondition: postCondition
+          }
+          same
 
   it "assertNotEqual Circuit is Valid" $
     let
@@ -86,8 +114,22 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure' s eval solver expectDivideByZero same postCondition
-        circuitSpecPure' s eval solver satisfied_ distinct postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: expectDivideByZero
+          , postCondition: postCondition
+          }
+          same
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied_
+          , postCondition: postCondition
+          }
+          distinct
 
   it "assertSquare Circuit is Valid" $
     let
@@ -108,5 +150,19 @@ spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" d
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure' s eval solver satisfied_ squares postCondition
-        circuitSpecPure' s eval solver unsatisfied nonSquares postCondition
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: satisfied_
+          , postCondition: postCondition
+          }
+          squares
+        circuitSpecPure'
+          { builtState: s
+          , checker: eval
+          , solver: solver
+          , testFunction: unsatisfied
+          , postCondition: postCondition
+          }
+          nonSquares
