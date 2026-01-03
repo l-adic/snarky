@@ -14,7 +14,7 @@ import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
 import Snarky.Circuit.CVar (Variable, reduceToAffineExpression)
 import Snarky.Constraint.Basic (Basic(..))
-import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, addGenericPlonkConstraint, reduceAffineExpression, Rows, getRows)
+import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, addEqualsConstraint, addGenericPlonkConstraint, getRows, reduceAffineExpression)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -85,26 +85,7 @@ reduce = case _ of
   Equal a b -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
-    case mvl, mvr of
-      -- cl * vl = cr * vr
-      Just vl, Just vr -> do
-        addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr: -cr, co: zero, vo: Nothing, m: zero, c: zero }
-      -- cl * vl = cr
-      Just vl, Nothing -> do
-        addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: -cr }
-      -- cl = cr * vr
-      Nothing, Just vr -> do
-        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Just vr, cr: cr, co: zero, vo: Nothing, m: zero, c: -cl }
-      Nothing, Nothing ->
-        if (cl /= cr) then
-          ( unsafeThrowException
-              $ error
-              $ "Contradiction while reducing equal to plonk gates: "
-                  <> show cl
-                  <> " /= "
-                  <> show cr
-          )
-        else pure unit
+    addEqualsConstraint { vl: mvl, cl, vr: mvr, cr }
   Boolean b -> do
     Tuple mv c <- reduceAffineExpression $ reduceToAffineExpression b
     case mv of

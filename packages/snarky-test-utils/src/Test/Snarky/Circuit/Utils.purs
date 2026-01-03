@@ -103,7 +103,7 @@ runCircuitSpec (CircuitSpec { builtState, solver, evalConstraint, isValid, postC
           Right s@{ constraintsResult, postConditionResult } -> case isValid inputs of
             Satisfied expected | constraintsResult && postConditionResult ->
               withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
-            Unsatisfied | not (constraintsResult || postConditionResult) -> Success
+            Unsatisfied | not (constraintsResult && postConditionResult) -> Success
             res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
 
 circuitSpecPure

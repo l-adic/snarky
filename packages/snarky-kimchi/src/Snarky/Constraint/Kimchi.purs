@@ -16,7 +16,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, over, un)
 import Data.Set as Set
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
 import Debug (traceM)
@@ -183,9 +183,9 @@ postCondition
    . PrimeField f
   => PostCondition f (KimchiGate f) (AuxState f)
 postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
-  let cs = equivalenceClasses unionFind
-  traceM cs
-  classes <- traverse (map Set.fromFoldable <<< traverse lookup) $ cs
+  classes <- for (equivalenceClasses unionFind) \_class -> do
+    values <- traverse lookup _class
+    pure $ Set.fromFoldable values
   pure $ all (\s -> Set.size s == 1) classes
 
 class
