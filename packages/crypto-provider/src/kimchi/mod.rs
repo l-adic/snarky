@@ -4,9 +4,10 @@
 // Mina Kimchi proof system exactly, enabling verification that PureScript
 // circuits satisfy the Rust Kimchi gate equations.
 
+pub mod circuit;
 pub mod poseidon;
-
 pub mod verify;
 
+pub use circuit::*;
 pub use poseidon::*;
 pub use verify::*;

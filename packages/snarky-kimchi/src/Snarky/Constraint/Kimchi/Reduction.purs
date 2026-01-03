@@ -30,6 +30,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
+import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (class MonadUnionFind, find, union)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -282,7 +283,13 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
         s { constraints = s.constraints `A.snoc` c' }
   createInternalVariable _ = do
     nextVariable <- gets _.nextVariable
-    modify_ _ { nextVariable = incrementVariable nextVariable }
+    void $ find nextVariable
+    modify_ \s -> s
+      { nextVariable = incrementVariable nextVariable
+      , wireState = s.wireState
+          { internalVariables = Set.insert nextVariable s.wireState.internalVariables
+          }
+      }
     pure nextVariable
   addEqualsConstraint c
     | c.cl == zero && c.cr == zero = pure unit
