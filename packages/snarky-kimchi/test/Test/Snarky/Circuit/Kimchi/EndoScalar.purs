@@ -84,8 +84,8 @@ spec'
   => Proxy f
   -> String
   -> Spec Unit
-spec' _ s = do
-  describe ("EndoScalar: " <> s) do
+spec' _ curveName = do
+  describe ("EndoScalar: " <> curveName) do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
         f :: F f -> F f
@@ -94,7 +94,7 @@ spec' _ s = do
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
-        { constraints } = compilePure
+        s = compilePure
           (Proxy @(F f))
           (Proxy @(F f))
           (Proxy @(KimchiConstraint f))
@@ -102,7 +102,14 @@ spec' _ s = do
           Kimchi.initialState
       in
         -- Test that circuit matches reference on random 128-bit boolean arrays
-        circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen128BitElem
+        circuitSpecPure'
+          { builtState: s
+          , checker: KimchiConstraint.eval
+          , solver: solver
+          , testFunction: satisfied f
+          , postCondition: Kimchi.postCondition
+          }
+          gen128BitElem
 
 spec :: Spec Unit
 spec = do

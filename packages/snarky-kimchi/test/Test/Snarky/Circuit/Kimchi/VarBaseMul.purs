@@ -54,7 +54,7 @@ spec = do
         circuit p t = do
           g <- scaleFast1 @51 p t
           pure g
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F Fq)) (Type1 (F Fq))))
             (Proxy @(AffinePoint (F Fq)))
@@ -69,7 +69,14 @@ spec = do
           pure $ Tuple p (Type1 t)
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
 
   describe "VarBaseMul Type2" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial $
@@ -93,7 +100,7 @@ spec = do
         circuit p t = do
           g <- scaleFast2 @51 p t
           pure g
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F Fp)) (F Fp)))
             (Proxy @(AffinePoint (F Fp)))
@@ -108,7 +115,14 @@ spec = do
           pure $ Tuple p t
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
 
 fieldShift1 :: forall f f' n. FieldSizeInBits f n => FieldSizeInBits f' n => PrimeField f' => f -> f'
 fieldShift1 t =

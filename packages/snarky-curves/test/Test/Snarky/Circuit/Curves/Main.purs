@@ -21,7 +21,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', nullPostCondition, satisfied, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -48,7 +48,7 @@ spec pg pc =
       let
         { a, b } = curveParams pg
         solver = makeSolver pc (uncurry assertOnCurve)
-        { constraints } =
+        s =
           compilePure
             ( Proxy
                 @( Tuple
@@ -73,13 +73,27 @@ spec pg pc =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure' constraints Basic.eval solver unsatisfied offCurve
-          circuitSpecPure' constraints Basic.eval solver satisfied_ onCurve
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: unsatisfied
+            , postCondition: nullPostCondition
+            }
+            offCurve
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: satisfied_
+            , postCondition: nullPostCondition
+            }
+            onCurve
 
     it "assertEqual Circuit is Valid" $
       let
         solver = makeSolver (Proxy @(Basic f)) (uncurry assertEqual)
-        { constraints } =
+        s =
           compilePure
             ( Proxy
                 @( Tuple
@@ -101,15 +115,29 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints Basic.eval solver satisfied_ same
-          circuitSpecPure' constraints Basic.eval solver unsatisfied distinct
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: satisfied_
+            , postCondition: nullPostCondition
+            }
+            same
+          circuitSpecPure'
+            { builtState: s
+            , checker: Basic.eval
+            , solver: solver
+            , testFunction: unsatisfied
+            , postCondition: nullPostCondition
+            }
+            distinct
 
     it "negate Circuit is Valid" $
       let
         pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
         pureNegate { x, y } = { x, y: negate y }
         solver = makeSolver (Proxy @(Basic f)) Curves.negate
-        { constraints } =
+        s =
           compilePure
             (Proxy @(AffinePoint (F f)))
             (Proxy @(AffinePoint (F f)))
@@ -118,14 +146,21 @@ spec pg pc =
             initialState
         gen = genAffinePoint pg
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureNegate) gen
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureNegate)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "if_ Circuit is Valid" $
       let
         pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
         solver = makeSolver (Proxy @(Basic f)) (uncurry3 if_)
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
@@ -145,13 +180,20 @@ spec pg pc =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureIf) gen
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureIf)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "unsafeAdd Circuit is Valid" $ unsafePartial $
       let
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
         solver = makeSolver (Proxy @(Basic f)) (uncurry add_)
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(AffinePoint (F f)))
@@ -171,7 +213,14 @@ spec pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied f) gen
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied f)
+          , postCondition: nullPostCondition
+          }
+          gen
 
     it "double Circuit is Valid" $
       let
@@ -188,7 +237,7 @@ spec pg pc =
             { x: x', y: y' }
 
         solver = makeSolver (Proxy @(Basic f)) (double $ curveParams pg)
-        { constraints } =
+        s =
           compilePure
             (Proxy @(AffinePoint (F f)))
             (Proxy @(AffinePoint (F f)))
@@ -199,4 +248,11 @@ spec pg pc =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure' constraints Basic.eval solver (satisfied pureDouble) gen
+        circuitSpecPure'
+          { builtState: s
+          , checker: Basic.eval
+          , solver: solver
+          , testFunction: (satisfied pureDouble)
+          , postCondition: nullPostCondition
+          }
+          gen

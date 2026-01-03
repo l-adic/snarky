@@ -11,16 +11,16 @@ import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
 import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, Variable, pack_, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, pack_, unpack_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
 import Test.QuickCheck.Gen (Gen, chooseInt)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -68,15 +68,11 @@ spec
   => ConstraintM (ProverT f) c'
   => Proxy f
   -> Proxy c'
-  -> ( forall m
-        . Monad m
-       => (Variable -> m f)
-       -> c
-       -> m Boolean
-     )
+  -> Checker f c
+  -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval initialState = describe "Bits Circuit Specs" do
+spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
   it "unpack Circuit is Valid" $
     let
 
@@ -87,7 +83,7 @@ spec _ pc eval initialState = describe "Bits Circuit Specs" do
         in
           generate (toBit <<< getFinite)
       solver = makeSolver pc unpack_
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
@@ -95,13 +91,20 @@ spec _ pc eval initialState = describe "Bits Circuit Specs" do
           unpack_
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
   it "pack/unpack round trip is Valid" $
     let
       f = identity
       solver = makeSolver pc (packUnpackCircuit)
-      { constraints } =
+      s =
         compilePure
           (Proxy @(F f))
           (Proxy @(F f))
@@ -109,4 +112,11 @@ spec _ pc eval initialState = describe "Bits Circuit Specs" do
           (packUnpackCircuit)
           initialState
     in
-      circuitSpecPure' constraints eval solver (satisfied f) (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitSpecPure'
+        { builtState: s
+        , checker: eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: postCondition
+        }
+        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)

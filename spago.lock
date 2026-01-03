@@ -969,6 +969,7 @@
             "arrays",
             "bifunctors",
             "curves",
+            "debug",
             "either",
             "exceptions",
             "foldable-traversable",
@@ -986,7 +987,8 @@
             "snarky",
             "snarky-curves",
             "transformers",
-            "tuples"
+            "tuples",
+            "union-find"
           ],
           "build_plan": [
             "arrays",
@@ -996,6 +998,7 @@
             "contravariant",
             "control",
             "curves",
+            "debug",
             "distributive",
             "effect",
             "either",
@@ -1037,6 +1040,7 @@
             "tuples",
             "type-equality",
             "unfoldable",
+            "union-find",
             "unsafe-coerce"
           ]
         },
@@ -2121,6 +2125,15 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "debug": {
+      "type": "registry",
+      "version": "6.0.2",
+      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
+      "dependencies": [
+        "functions",
+        "prelude"
       ]
     },
     "distributive": {

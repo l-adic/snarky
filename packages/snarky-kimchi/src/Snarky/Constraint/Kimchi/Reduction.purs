@@ -5,6 +5,7 @@ module Snarky.Constraint.Kimchi.Reduction
   , class PlonkReductionM
   , createInternalVariable
   , addGenericPlonkConstraint
+  , addEqualsConstraint
   , reduceAffineExpression
   , reduceToVariable
   , reduceAsBuilder
@@ -16,7 +17,7 @@ import Prelude
 
 import Control.Monad.Error.Class (class MonadThrow, throwError)
 import Control.Monad.Except (ExceptT, runExceptT)
-import Control.Monad.State (class MonadState, State, get, gets, modify_, runState)
+import Control.Monad.State (class MonadState, State, execState, get, gets, modify_, runState)
 import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
@@ -30,6 +31,8 @@ import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
+import Data.UnionFind (class MonadUnionFind, find, union)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
@@ -55,6 +58,13 @@ class Monad m <= PlonkReductionM m f | m -> f where
     -> m Variable
   addGenericPlonkConstraint
     :: GenericPlonkConstraint f
+    -> m Unit
+  addEqualsConstraint
+    :: { cl :: f
+       , vl :: Maybe Variable
+       , cr :: f
+       , vr :: Maybe Variable
+       }
     -> m Unit
 
 -- return a * x where a \in f and x is a variable.
@@ -243,6 +253,26 @@ handleGateBatching newGate = do
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
 
+-- | Implementation for any MonadState with a unionFind field
+instance MonadUnionFind Variable (PlonkBuilder f) where
+  find x = do
+    uf <- gets _.wireState.unionFind
+    let Tuple a uf' = runState (find x) uf
+    modify_ \s -> s
+      { wireState = s.wireState
+          { unionFind = uf'
+          }
+      }
+    pure a
+
+  union x y = do
+    uf <- gets _.wireState.unionFind
+    modify_ \s -> s
+      { wireState = s.wireState
+          { unionFind = execState (union x y) uf
+          }
+      }
+
 instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addGenericPlonkConstraint c = do
     mconstraint <- handleGateBatching c
@@ -254,6 +284,75 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
     nextVariable <- gets _.nextVariable
     modify_ _ { nextVariable = incrementVariable nextVariable }
     pure nextVariable
+  addEqualsConstraint c
+    | c.cl == zero && c.cr == zero = pure unit
+    | Just l <- c.vl, Just r <- c.vr, c.cl == c.cr = union l r
+    | Just l <- c.vl, Just r <- c.vr = do
+        ws <- gets _.wireState
+        let
+          ratio = c.cr / c.cl
+          invRatio = c.cl / c.cr
+        case Map.lookup ratio ws.cachedConstants of
+          Just cached -> union l cached
+          Nothing -> case Map.lookup invRatio ws.cachedConstants of
+            Just cached -> union r cached
+            Nothing -> do
+              addGenericPlonkConstraint
+                { vl: Just l
+                , cl: c.cl
+                , vr: Just r
+                , cr: -c.cr
+                , co: zero
+                , vo: Nothing
+                , m: zero
+                , c: zero
+                }
+              modify_ \s -> s
+                { wireState = s.wireState
+                    { cachedConstants =
+                        Map.insert ratio l $ Map.insert invRatio r s.wireState.cachedConstants
+                    }
+                }
+    | Just l <- c.vl, Nothing <- c.vr, c.cl /= zero = do
+        ws <- gets _.wireState
+        let constVal = c.cr / c.cl
+        case Map.lookup constVal ws.cachedConstants of
+          Just cached -> union l cached
+          Nothing -> do
+            addGenericPlonkConstraint
+              { vl: Just l
+              , cl: c.cl
+              , vr: Nothing
+              , cr: zero
+              , co: zero
+              , vo: Nothing
+              , m: zero
+              , c: -c.cr
+              }
+            modify_ \s -> s { wireState = s.wireState { cachedConstants = Map.insert constVal l s.wireState.cachedConstants } }
+    | Just l <- c.vl, Nothing <- c.vr =
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: c.cr }
+    | Nothing <- c.vl, Just r <- c.vr, c.cr /= zero = do
+        ws <- gets _.wireState
+        let constVal = c.cl / c.cr
+        case Map.lookup constVal ws.cachedConstants of
+          Just cached -> union r cached
+          Nothing -> do
+            addGenericPlonkConstraint
+              { vl: Nothing
+              , cl: zero
+              , vr: Just r
+              , cr: c.cr
+              , co: zero
+              , vo: Nothing
+              , m: zero
+              , c: -c.cl
+              }
+            modify_ \s -> s { wireState = s.wireState { cachedConstants = Map.insert constVal r s.wireState.cachedConstants } }
+    | Nothing <- c.vl, Just r <- c.vr =
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, co: zero, vo: Nothing, m: zero, c: c.cl }
+    | Nothing <- c.vl, Nothing <- c.vr, c.cl == c.cr = pure unit
+    | otherwise = unsafeThrow $ "Contradiction: " <> show c.cl <> " ≠ " <> show c.cr
 
 type ProverReductionState f =
   { nextVariable :: Variable
@@ -287,3 +386,4 @@ instance (PrimeField f) => PlonkReductionM (PlonkProver f) f where
         , assignments = Map.insert nextVariable a assignments
         }
     pure nextVariable
+  addEqualsConstraint _ = pure unit

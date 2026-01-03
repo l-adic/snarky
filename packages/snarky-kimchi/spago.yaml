@@ -22,6 +22,8 @@ package:
     - snarky-curves
     - transformers
     - tuples
+    - union-find
+    - debug
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:

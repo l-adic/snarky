@@ -50,7 +50,7 @@ spec pg pc =
           y <- Snarky.if_ isInfinity (const_ one) p.y
           z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
           pure $ Point { x, y, z }
-        { constraints } =
+        s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
             (Proxy @(Point (F f)))
@@ -75,5 +75,19 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) gen
-          circuitSpecPure' constraints KimchiConstraint.eval solver (satisfied f) genInverse
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            genInverse
