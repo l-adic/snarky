@@ -39,6 +39,10 @@ rand_chacha = { workspace = true }
 num-bigint = { workspace = true }
 num-integer = { workspace = true }
 
+# serialization
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+
 # bulletproofs
 bulletproofs = { workspace = true }
 spongefish = { workspace = true }

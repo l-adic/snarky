@@ -1,21 +1,27 @@
 module Snarky.Backend.Kimchi.Impl.Pallas where
 
-import Snarky.Backend.Kimchi.Types (Gate, GateWires, ConstraintSystem, Witness)
-import Snarky.Curves.Pallas (ScalarField)
+import Effect (Effect)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.Vector (Vector)
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
-foreign import pallasCircuitGateNew :: String -> GateWires -> Array ScalarField -> Gate ScalarField
+foreign import pallasCircuitGateNew :: String -> GateWires -> Array Pallas.ScalarField -> Gate Pallas.ScalarField
 
 -- Get the gate wires from a circuit gate
-foreign import pallasCircuitGateGetWires :: Gate ScalarField -> GateWires
+foreign import pallasCircuitGateGetWires :: Gate Pallas.ScalarField -> GateWires
 
 -- Get the number of coefficients in a circuit gate
-foreign import pallasCircuitGateCoeffCount :: Gate ScalarField -> Int
+foreign import pallasCircuitGateCoeffCount :: Gate Pallas.ScalarField -> Int
 
 -- Get a coefficient at the specified index
-foreign import pallasCircuitGateGetCoeff :: Gate ScalarField -> Int -> ScalarField
+foreign import pallasCircuitGateGetCoeff :: Gate Pallas.ScalarField -> Int -> Pallas.ScalarField
 
-foreign import pallasConstraintSystemCreate :: Array (Gate ScalarField) -> Int -> ConstraintSystem ScalarField
+foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> ConstraintSystem Pallas.ScalarField
 
-foreign import pallasWitnessCreate :: Array (Vector 15 ScalarField) -> Witness ScalarField
+foreign import pallasWitnessCreate :: Array (Vector 15 Pallas.ScalarField) -> Witness Pallas.ScalarField
+
+foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
+
+createCRS :: Effect (CRS Pallas.G)
+createCRS = pallasCrsLoadFromCache

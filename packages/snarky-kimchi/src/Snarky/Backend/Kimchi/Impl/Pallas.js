@@ -36,6 +36,6 @@ export function pallasWitnessCreate(witnessColumns) {
     return napi.pallasWitnessCreate(witnessColumns);
 }
 
-export function pallasWitnessCreate(witnessColumns) {
-    return napi.pallasWitnessCreate(witnessColumns);
+export function pallasCrsLoadFromCache() {
+    return napi.pallasCrsLoadFromCache();
 }

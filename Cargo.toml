@@ -25,6 +25,8 @@ napi-derive = "3.3.0"
 napi-build = "2.2.4"
 bulletproofs = { git = "https://github.com/l-adic/bulletproofs" , rev = "8267344186b388129187f5c78e1a2ced8a4fb30a" }
 spongefish = {git = "https://github.com/arkworks-rs/spongefish" , rev = "cda8c90", features = ["derive", "ark-ff", "ark-ec"] }
+serde = { version = "1.0", features = ["derive"] }
+rmp-serde = "1.0"
 
 mina-curves = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
 kimchi = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }

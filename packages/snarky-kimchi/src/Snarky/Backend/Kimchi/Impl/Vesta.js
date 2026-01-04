@@ -36,6 +36,6 @@ export function vestaWitnessCreate(witnessColumns) {
     return napi.vestaWitnessCreate(witnessColumns);
 }
 
-export function vestaWitnessCreate(witnessColumns) {
-    return napi.vestaWitnessCreate(witnessColumns);
+export function vestaCrsLoadFromCache() {
+    return napi.vestaCrsLoadFromCache();
 }
