@@ -25,8 +25,13 @@ foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 
+foreign import pallasProverIndexVerify :: ProverIndex Pallas.G Pallas.ScalarField -> Witness Pallas.ScalarField -> Array Pallas.ScalarField -> Boolean
+
 createCRS :: Effect (CRS Pallas.G)
 createCRS = pallasCrsLoadFromCache
 
 createProverIndex :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 createProverIndex = pallasProverIndexCreate
+
+verifyProverIndex :: ProverIndex Pallas.G Pallas.ScalarField -> Witness Pallas.ScalarField -> Array Pallas.ScalarField -> Boolean
+verifyProverIndex = pallasProverIndexVerify

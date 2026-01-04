@@ -25,8 +25,13 @@ foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 
 foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 
+foreign import vestaProverIndexVerify :: ProverIndex Vesta.G Vesta.ScalarField -> Witness Vesta.ScalarField -> Array Vesta.ScalarField -> Boolean
+
 createCRS :: Effect (CRS Vesta.G)
 createCRS = vestaCrsLoadFromCache
 
 createProverIndex :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 createProverIndex = vestaProverIndexCreate
+
+verifyProverIndex :: ProverIndex Vesta.G Vesta.ScalarField -> Witness Vesta.ScalarField -> Array Vesta.ScalarField -> Boolean
+verifyProverIndex = vestaProverIndexVerify

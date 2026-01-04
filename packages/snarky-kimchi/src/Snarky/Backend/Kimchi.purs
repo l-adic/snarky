@@ -105,8 +105,8 @@ makeWireMapping uf variablePlacement =
   getRoot x = evalState (find x) uf
 
 makeGates
-  :: forall f
-   . CircuitGateConstructor f
+  :: forall f g
+   . CircuitGateConstructor f g
   => Map (Tuple Int Int) Wire
   -> Array (KimchiRow f)
   -> Array (Gate f)
@@ -127,15 +127,15 @@ makeGates wireMap rows =
         Just w -> w
 
 makeConstraintSystem
-  :: forall f
-   . CircuitGateConstructor f
+  :: forall f g
+   . CircuitGateConstructor f g
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
      , unionFind :: UnionFindData Variable
      }
   -> { constraintSystem :: ConstraintSystem f
-     , rows :: Array (Vector 15 (Maybe Variable))
+     , constraintRows :: Array (Vector 15 (Maybe Variable))
      }
 makeConstraintSystem arg =
   let
@@ -146,27 +146,42 @@ makeConstraintSystem arg =
     gates = makeGates wireMapping rows
   in
     { constraintSystem: constraintSystemCreate @f gates (Array.length publicInputRows)
-    , rows: map _.variables rows
+    , constraintRows: map _.variables arg.constraints
     }
 
 makeWitness
-  :: forall f
-   . CircuitGateConstructor f
+  :: forall f g
+   . CircuitGateConstructor f g
   => PrimeField f
   => { assignments :: Map Variable f
-     , rows :: Array (Vector 15 (Maybe Variable))
+     , constraintRows :: Array (Vector 15 (Maybe Variable))
+     , publicInputs :: Array Variable
      }
-  -> Witness f
-makeWitness { assignments, rows } = witnessCreate $
-  map
-    ( \row ->
+  -> { publicInputs :: Array f
+     , witness :: Witness f
+     }
+makeWitness { assignments, constraintRows: rows, publicInputs: fs } =
+  let
+    witness =
+      witnessCreate $
         map
-          ( \mv -> case mv of
-              Nothing -> zero
-              Just v -> case Map.lookup v assignments of
-                Nothing -> unsafeThrow $ "Missing variable assignment in witness: " <> show v
-                Just f -> f
+          ( \row ->
+              map
+                ( \mv -> case mv of
+                    Nothing -> zero
+                    Just v -> case Map.lookup v assignments of
+                      Nothing -> unsafeThrow $ "Missing witness variable assignment in witness: " <> show v
+                      Just f -> f
+                )
+                row
           )
-          row
-    )
-    rows
+          rows
+    publicInputs =
+      map
+        ( \v -> case Map.lookup v assignments of
+            Nothing -> unsafeThrow $ "Missing public input variable assignment in witness: " <> show v
+            Just f -> f
+        )
+        fs
+  in
+    { witness, publicInputs }

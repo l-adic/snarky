@@ -336,3 +336,23 @@ pub fn vesta_prover_index_create(
     );
     External::new(prover_index)
 }
+
+#[napi]
+pub fn pallas_prover_index_verify(
+    prover_index: &PallasProverIndexExternal,
+    witness: &PallasWitnessExternal,
+    public_inputs: Vec<&PallasFieldExternal>,
+) -> bool {
+    let public: Vec<PallasScalarField> = public_inputs.iter().map(|f| ***f).collect();
+    (**prover_index).verify(witness, &public).is_ok()
+}
+
+#[napi]
+pub fn vesta_prover_index_verify(
+    prover_index: &VestaProverIndexExternal,
+    witness: &VestaWitnessExternal,
+    public_inputs: Vec<&VestaFieldExternal>,
+) -> bool {
+    let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
+    (**prover_index).verify(witness, &public).is_ok()
+}

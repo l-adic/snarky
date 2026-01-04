@@ -47,3 +47,11 @@ export function vestaProverIndexCreate(cs) {
         };
     };
 }
+
+export function vestaProverIndexVerify(proverIndex) {
+    return function(witness) {
+        return function(publicInputs) {
+            return napi.vestaProverIndexVerify(proverIndex, witness, publicInputs);
+        };
+    };
+}
