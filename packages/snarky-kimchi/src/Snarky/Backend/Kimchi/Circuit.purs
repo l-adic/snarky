@@ -1,20 +1,13 @@
 module Snarky.Backend.Kimchi.Circuit where
 
-import Prelude
-
 import Snarky.Data.Vector (Vector)
-
--- ============================================================================
--- FOREIGN TYPES
--- ============================================================================
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Constraint.Kimchi.Wire (GateKind(..))
 
 -- Opaque types for Wire and GateWires from proof-systems
 foreign import data Wire :: Type
 foreign import data GateWires :: Type
-
--- ============================================================================
--- WIRE OPERATIONS
--- ============================================================================
 
 -- Create a new wire pointing to the given row and column
 foreign import wireNew :: Int -> Int -> Wire
@@ -25,13 +18,69 @@ foreign import wireGetRow :: Wire -> Int
 -- Get the column that this wire points to  
 foreign import wireGetCol :: Wire -> Int
 
--- ============================================================================
--- GATE WIRES OPERATIONS (7-element wire array)
--- ============================================================================
-
 -- Create gate wires from exactly 7 wires
 foreign import gateWiresNewFromWires :: Vector 7 Wire -> GateWires
 
 -- Get the wire at the specified column (0-6)
 foreign import gateWiresGetWire :: GateWires -> Int -> Wire
+
+-- Opaque types for CircuitGate from proof-systems
+foreign import data PallasCircuitGate :: Type
+foreign import data VestaCircuitGate :: Type
+
+-- Create a new circuit gate with the given gate kind, wires, and coefficients
+foreign import pallasCircuitGateNew :: String -> GateWires -> Array Pallas.ScalarField -> PallasCircuitGate
+
+-- Get the gate wires from a circuit gate
+foreign import pallasCircuitGateGetWires :: PallasCircuitGate -> GateWires
+
+-- Get the number of coefficients in a circuit gate
+foreign import pallasCircuitGateCoeffCount :: PallasCircuitGate -> Int
+
+-- Get a coefficient at the specified index
+foreign import pallasCircuitGateGetCoeff :: PallasCircuitGate -> Int -> Pallas.ScalarField
+
+-- Create a new circuit gate with the given gate kind, wires, and coefficients  
+foreign import vestaCircuitGateNew :: String -> GateWires -> Array Vesta.ScalarField -> VestaCircuitGate
+
+-- Get the gate wires from a circuit gate
+foreign import vestaCircuitGateGetWires :: VestaCircuitGate -> GateWires
+
+-- Get the number of coefficients in a circuit gate
+foreign import vestaCircuitGateCoeffCount :: VestaCircuitGate -> Int
+
+-- Get a coefficient at the specified index
+foreign import vestaCircuitGateGetCoeff :: VestaCircuitGate -> Int -> Vesta.ScalarField
+
+-- Convert PureScript GateKind to string expected by Rust FFI
+gateKindToString :: GateKind -> String
+gateKindToString = case _ of
+  GenericPlonkGate -> "GenericPlonkGate"
+  AddCompleteGate -> "AddCompleteGate"
+  PoseidonGate -> "PoseidonGate"
+  VarBaseMul -> "VarBaseMul"
+  EndoMul -> "EndoMul"
+  EndoScalar -> "EndoScalar"
+  Zero -> "Zero"
+
+-- Typeclass for circuit gate construction over different field types
+class CircuitGateConstructor f gate | f -> gate where
+  circuitGateNew :: GateKind -> GateWires -> Array f -> gate
+  circuitGateGetWires :: gate -> GateWires
+  circuitGateCoeffCount :: gate -> Int
+  circuitGateGetCoeff :: gate -> Int -> f
+
+-- Instance for Pallas field
+instance CircuitGateConstructor Pallas.ScalarField PallasCircuitGate where
+  circuitGateNew kind wires coeffs = pallasCircuitGateNew (gateKindToString kind) wires coeffs
+  circuitGateGetWires = pallasCircuitGateGetWires
+  circuitGateCoeffCount = pallasCircuitGateCoeffCount
+  circuitGateGetCoeff = pallasCircuitGateGetCoeff
+
+-- Instance for Vesta field
+instance CircuitGateConstructor Vesta.ScalarField VestaCircuitGate where
+  circuitGateNew kind wires coeffs = vestaCircuitGateNew (gateKindToString kind) wires coeffs
+  circuitGateGetWires = vestaCircuitGateGetWires
+  circuitGateCoeffCount = vestaCircuitGateCoeffCount
+  circuitGateGetCoeff = vestaCircuitGateGetCoeff
 

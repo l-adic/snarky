@@ -2,9 +2,6 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const napi = require('snarky-crypto');
 
-// ============================================================================
-// WIRE FUNCTIONS
-// ============================================================================
 
 export function wireNew(row) {
     return function(col) {
@@ -20,9 +17,6 @@ export function wireGetCol(wire) {
     return napi.wireGetCol(wire);
 }
 
-// ============================================================================
-// GATE WIRES FUNCTIONS (7-element wire array)
-// ============================================================================
 
 export function gateWiresNewFromWires(wires) {
     return napi.gateWiresNewFromWires(wires);
@@ -31,6 +25,52 @@ export function gateWiresNewFromWires(wires) {
 export function gateWiresGetWire(wires) {
     return function(col) {
         return napi.gateWiresGetWire(wires, col);
+    };
+}
+
+
+export function pallasCircuitGateNew(gateKind) {
+    return function(wires) {
+        return function(coeffs) {
+            return napi.pallasCircuitGateNew(gateKind, wires, coeffs);
+        };
+    };
+}
+
+export function pallasCircuitGateGetWires(gate) {
+    return napi.pallasCircuitGateGetWires(gate);
+}
+
+export function pallasCircuitGateCoeffCount(gate) {
+    return napi.pallasCircuitGateCoeffCount(gate);
+}
+
+export function pallasCircuitGateGetCoeff(gate) {
+    return function(index) {
+        return napi.pallasCircuitGateGetCoeff(gate, index);
+    };
+}
+
+
+export function vestaCircuitGateNew(gateKind) {
+    return function(wires) {
+        return function(coeffs) {
+            return napi.vestaCircuitGateNew(gateKind, wires, coeffs);
+        };
+    };
+}
+
+export function vestaCircuitGateGetWires(gate) {
+    return napi.vestaCircuitGateGetWires(gate);
+}
+
+export function vestaCircuitGateCoeffCount(gate) {
+    return napi.vestaCircuitGateCoeffCount(gate);
+}
+
+export function vestaCircuitGateGetCoeff(gate) {
+    return function(index) {
+        return napi.vestaCircuitGateGetCoeff(gate, index);
     };
 }
 
