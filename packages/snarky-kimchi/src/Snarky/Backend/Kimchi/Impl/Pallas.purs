@@ -1,7 +1,7 @@
 module Snarky.Backend.Kimchi.Impl.Pallas where
 
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness, ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.Vector (Vector)
 
@@ -23,5 +23,10 @@ foreign import pallasWitnessCreate :: Array (Vector 15 Pallas.ScalarField) -> Wi
 
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 
+foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
+
 createCRS :: Effect (CRS Pallas.G)
 createCRS = pallasCrsLoadFromCache
+
+createProverIndex :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
+createProverIndex = pallasProverIndexCreate

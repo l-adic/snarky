@@ -1,7 +1,7 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness, ProverIndex)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector)
 
@@ -23,5 +23,10 @@ foreign import vestaWitnessCreate :: Array (Vector 15 Vesta.ScalarField) -> Witn
 
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 
+foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
+
 createCRS :: Effect (CRS Vesta.G)
 createCRS = vestaCrsLoadFromCache
+
+createProverIndex :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
+createProverIndex = vestaProverIndexCreate

@@ -10,10 +10,13 @@ use napi_derive::napi;
 use kimchi::circuits::constraints::ConstraintSystem;
 use kimchi::circuits::gate::{CircuitGate, GateType};
 use kimchi::circuits::wires::{GateWires, Wire, COLUMNS, PERMUTS};
+use kimchi::prover_index::ProverIndex;
+use poly_commitment::ipa::OpeningProof;
 use poly_commitment::{ipa::SRS, precomputed_srs::TestSRS};
 use serde;
 use std::fs::File;
 use std::path::Path;
+use std::sync::Arc;
 
 // Import field types from our pasta module
 use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExternal;
@@ -28,8 +31,20 @@ pub type PallasConstraintSystemExternal = External<ConstraintSystem<PallasScalar
 pub type VestaConstraintSystemExternal = External<ConstraintSystem<VestaScalarField>>;
 pub type PallasWitnessExternal = External<[Vec<PallasScalarField>; COLUMNS]>;
 pub type VestaWitnessExternal = External<[Vec<VestaScalarField>; COLUMNS]>;
-pub type PallasCRSExternal = External<SRS<super::super::pasta::types::VestaGroup>>;
-pub type VestaCRSExternal = External<SRS<super::super::pasta::types::PallasGroup>>;
+pub type PallasCRSExternal = External<SRS<super::super::pasta::types::PallasGroup>>;
+pub type VestaCRSExternal = External<SRS<super::super::pasta::types::VestaGroup>>;
+pub type PallasProverIndexExternal = External<
+    ProverIndex<
+        super::super::pasta::types::PallasGroup,
+        OpeningProof<super::super::pasta::types::PallasGroup>,
+    >,
+>;
+pub type VestaProverIndexExternal = External<
+    ProverIndex<
+        super::super::pasta::types::VestaGroup,
+        OpeningProof<super::super::pasta::types::VestaGroup>,
+    >,
+>;
 
 #[napi]
 pub fn wire_new(row: u32, col: u32) -> WireExternal {
@@ -284,12 +299,40 @@ where
 
 #[napi]
 pub fn pallas_crs_load_from_cache() -> Result<PallasCRSExternal> {
-    Ok(External::new(load_srs_from_cache(
-        "srs-cache/test_pallas.srs",
-    )?))
+    Ok(External::new(load_srs_from_cache("srs-cache/pallas.srs")?))
 }
 
 #[napi]
 pub fn vesta_crs_load_from_cache() -> Result<VestaCRSExternal> {
-    Ok(External::new(load_srs_from_cache("srs-cache/pallas.srs")?))
+    Ok(External::new(load_srs_from_cache("srs-cache/vesta.srs")?))
+}
+
+#[napi]
+pub fn pallas_prover_index_create(
+    cs: &PallasConstraintSystemExternal,
+    endo_q: &PallasFieldExternal,
+    srs: &PallasCRSExternal,
+) -> PallasProverIndexExternal {
+    let prover_index = ProverIndex::create(
+        (**cs).clone(),
+        **endo_q,
+        Arc::new((**srs).clone()),
+        false, // lazy_mode
+    );
+    External::new(prover_index)
+}
+
+#[napi]
+pub fn vesta_prover_index_create(
+    cs: &VestaConstraintSystemExternal,
+    endo_q: &VestaFieldExternal,
+    srs: &VestaCRSExternal,
+) -> VestaProverIndexExternal {
+    let prover_index = ProverIndex::create(
+        (**cs).clone(),
+        **endo_q,
+        Arc::new((**srs).clone()),
+        false, // lazy_mode
+    );
+    External::new(prover_index)
 }

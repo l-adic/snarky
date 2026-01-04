@@ -39,3 +39,11 @@ export function vestaWitnessCreate(witnessColumns) {
 export function vestaCrsLoadFromCache() {
     return napi.vestaCrsLoadFromCache();
 }
+
+export function vestaProverIndexCreate(cs) {
+    return function(endoQ) {
+        return function(srs) {
+            return napi.vestaProverIndexCreate(cs, endoQ, srs);
+        };
+    };
+}

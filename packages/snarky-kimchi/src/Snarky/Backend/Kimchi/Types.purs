@@ -37,3 +37,4 @@ foreign import data CRS :: Type -> Type
 foreign import data Witness :: Type -> Type
 foreign import data ConstraintSystem :: Type -> Type
 foreign import data Gate :: Type -> Type
+foreign import data ProverIndex :: Type -> Type -> Type

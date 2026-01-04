@@ -39,3 +39,11 @@ export function pallasWitnessCreate(witnessColumns) {
 export function pallasCrsLoadFromCache() {
     return napi.pallasCrsLoadFromCache();
 }
+
+export function pallasProverIndexCreate(cs) {
+    return function(endoQ) {
+        return function(srs) {
+            return napi.pallasProverIndexCreate(cs, endoQ, srs);
+        };
+    };
+}
