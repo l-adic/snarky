@@ -39,7 +39,7 @@ instance Show GateKind where
 type KimchiRow f =
   { kind :: GateKind
   , variables :: Vector 15 (Maybe Variable)
-  , coeffs :: Vector 15 f -- 15-column coefficient row  
+  , coeffs :: Array f -- 15-column coefficient row  
   }
 
 -- Wire placement state for Kimchi constraint system

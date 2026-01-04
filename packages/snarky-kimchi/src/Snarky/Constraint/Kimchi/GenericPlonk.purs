@@ -21,7 +21,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector)
 
 class GenericPlonkVerifiable f where
-  verifyGenericPlonk :: { coeffs :: Vector 15 f, variables :: Vector 15 f } -> Boolean
+  verifyGenericPlonk :: { coeffs :: Array f, variables :: Vector 15 f } -> Boolean
 
 eval
   :: forall f m
@@ -103,9 +103,9 @@ reduce = case _ of
       Just v -> do
         addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
 
-foreign import verifyPallasGeneric :: Vector 15 Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
+foreign import verifyPallasGeneric :: Array Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
 
-foreign import verifyVestaGeneric :: Vector 15 Vesta.ScalarField -> Vector 15 Vesta.ScalarField -> Boolean
+foreign import verifyVestaGeneric :: Array Vesta.ScalarField -> Vector 15 Vesta.ScalarField -> Boolean
 
 instance GenericPlonkVerifiable Pallas.ScalarField where
   verifyGenericPlonk { coeffs, variables } = verifyPallasGeneric coeffs variables

@@ -128,8 +128,8 @@ reduce c = Rows <$>
             :<
               nil
     in
-      { kind: Wire.VarBaseMul, coeffs: Vector.generate (const zero), variables: row }
-        :< { kind: Wire.Zero, coeffs: Vector.generate (const zero), variables: nextRow }
+      { kind: Wire.VarBaseMul, coeffs: mempty, variables: row }
+        :< { kind: Wire.Zero, coeffs: mempty, variables: nextRow }
         :<
           nil
 

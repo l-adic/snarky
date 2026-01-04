@@ -61,7 +61,7 @@ reduce cs = Rows <$>
           vs = Just n0 :< Just n8 :< Just a0 :< Just a8 :< Just b0 :< Just b8 :< (Just <$> xs)
         in
           vs `Vector.append` (Nothing :< Vector.nil)
-    pure { kind: EndoScalar, coeffs: Vector.generate (const zero), variables }
+    pure { kind: EndoScalar, coeffs: mempty, variables }
 
 eval
   :: forall f m

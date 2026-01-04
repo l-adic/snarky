@@ -171,7 +171,7 @@ reduce c = do
           :< Just s3
           :< map Just bits
     in
-      { kind: EndoMul, coeffs: Vector.generate (const zero), variables }
+      { kind: EndoMul, coeffs: mempty, variables }
 
   finalZeroRow xs ys nAcc =
     let
@@ -185,4 +185,4 @@ reduce c = do
           :< Just nAcc
           :< Vector.generate (const Nothing)
     in
-      { kind: Zero, coeffs: Vector.generate (const zero), variables }
+      { kind: Zero, coeffs: mempty, variables }
