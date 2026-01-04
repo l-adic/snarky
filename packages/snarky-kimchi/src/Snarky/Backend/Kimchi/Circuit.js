@@ -75,3 +75,15 @@ export function vestaCircuitGateGetCoeff(gate) {
 }
 
 
+
+export function pallasConstraintSystemCreate(gates) {
+    return function(publicInputsCount) {
+        return napi.pallasConstraintSystemCreate(gates, publicInputsCount);
+    };
+}
+
+export function vestaConstraintSystemCreate(gates) {
+    return function(publicInputsCount) {
+        return napi.vestaConstraintSystemCreate(gates, publicInputsCount);
+    };
+}

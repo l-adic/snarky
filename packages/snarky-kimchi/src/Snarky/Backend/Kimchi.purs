@@ -13,7 +13,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind (UnionFindData, find)
-import Snarky.Backend.Kimchi.Circuit (class CircuitGateConstructor, Wire, circuitGateNew, gateWiresNewFromWires, wireNew)
+import Snarky.Backend.Kimchi.Circuit (class CircuitGateConstructor, Wire, circuitGateNew, constraintSystemCreate, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -100,8 +100,8 @@ makeWireMapping uf variablePlacement =
   getRoot x = evalState (find x) uf
 
 makeGates
-  :: forall f gate
-   . CircuitGateConstructor f gate
+  :: forall f gate cs
+   . CircuitGateConstructor f gate cs
   => Map (Tuple Int Int) Wire
   -> Array (KimchiRow f)
   -> Array gate
@@ -120,3 +120,22 @@ makeGates wireMap rows =
       case Map.lookup (Tuple i (getFinite j)) wireMap of
         Nothing -> wireNew i (getFinite j)
         Just w -> w
+
+makeConstraintSystem
+  :: forall f gate cs
+   . CircuitGateConstructor f gate cs
+  => PrimeField f
+  => { constraints :: Array (KimchiRow f)
+     , publicInputs :: Array Variable
+     , unionFind :: UnionFindData Variable
+     }
+  -> cs
+makeConstraintSystem arg =
+  let
+    publicInputRows = makePublicInputRows arg.publicInputs
+    rows = publicInputRows <> arg.constraints
+    placement = placeVariables rows
+    wireMapping = makeWireMapping arg.unionFind placement
+    gates = makeGates wireMapping rows
+  in
+    constraintSystemCreate @f gates (Array.length publicInputRows)

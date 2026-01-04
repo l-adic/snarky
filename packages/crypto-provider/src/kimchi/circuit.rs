@@ -7,6 +7,7 @@ use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 // Import the actual proof-systems types
+use kimchi::circuits::constraints::ConstraintSystem;
 use kimchi::circuits::gate::{CircuitGate, GateType};
 use kimchi::circuits::wires::{GateWires, Wire, PERMUTS};
 
@@ -19,6 +20,8 @@ pub type WireExternal = External<Wire>;
 pub type GateWiresExternal = External<GateWires>;
 pub type PallasCircuitGateExternal = External<CircuitGate<PallasScalarField>>;
 pub type VestaCircuitGateExternal = External<CircuitGate<VestaScalarField>>;
+pub type PallasConstraintSystemExternal = External<ConstraintSystem<PallasScalarField>>;
+pub type VestaConstraintSystemExternal = External<ConstraintSystem<VestaScalarField>>;
 
 #[napi]
 pub fn wire_new(row: u32, col: u32) -> WireExternal {
@@ -153,4 +156,47 @@ pub fn vesta_circuit_gate_get_coeff(
         )
     })?;
     Ok(External::new(*coeff))
+}
+
+
+#[napi]
+pub fn pallas_constraint_system_create(
+    gates: Vec<&PallasCircuitGateExternal>,
+    public_inputs_count: u32,
+) -> Result<PallasConstraintSystemExternal> {
+    let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
+        .into_iter()
+        .map(|gate_ext| (**gate_ext).clone())
+        .collect();
+
+    let cs = ConstraintSystem::create(internal_gates)
+        .public(public_inputs_count as usize)
+        .build()
+        .map_err(|e| Error::new(
+            Status::GenericFailure,
+            format!("Failed to create constraint system: {e}"),
+        ))?;
+
+    Ok(External::new(cs))
+}
+
+#[napi]
+pub fn vesta_constraint_system_create(
+    gates: Vec<&VestaCircuitGateExternal>,
+    public_inputs_count: u32,
+) -> Result<VestaConstraintSystemExternal> {
+    let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
+        .into_iter()
+        .map(|gate_ext| (**gate_ext).clone())
+        .collect();
+
+    let cs = ConstraintSystem::create(internal_gates)
+        .public(public_inputs_count as usize)
+        .build()
+        .map_err(|e| Error::new(
+            Status::GenericFailure,
+            format!("Failed to create constraint system: {e}"),
+        ))?;
+
+    Ok(External::new(cs))
 }
