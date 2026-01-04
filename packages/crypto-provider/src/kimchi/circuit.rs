@@ -10,6 +10,10 @@ use napi_derive::napi;
 use kimchi::circuits::constraints::ConstraintSystem;
 use kimchi::circuits::gate::{CircuitGate, GateType};
 use kimchi::circuits::wires::{GateWires, Wire, COLUMNS, PERMUTS};
+use kimchi::prover_index::ProverIndex;
+use poly_commitment::ipa::OpeningProof;
+use poly_commitment::SRS;
+use std::sync::Arc;
 
 // Import field types from our pasta module
 use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExternal;
@@ -24,6 +28,8 @@ pub type PallasConstraintSystemExternal = External<ConstraintSystem<PallasScalar
 pub type VestaConstraintSystemExternal = External<ConstraintSystem<VestaScalarField>>;
 pub type PallasWitnessExternal = External<[Vec<PallasScalarField>; COLUMNS]>;
 pub type VestaWitnessExternal = External<[Vec<VestaScalarField>; COLUMNS]>;
+pub type PallasProverIndexExternal = External<ProverIndex<super::super::pasta::types::VestaGroup, OpeningProof<super::super::pasta::types::VestaGroup>>>;
+pub type VestaProverIndexExternal = External<ProverIndex<super::super::pasta::types::PallasGroup, OpeningProof<super::super::pasta::types::PallasGroup>>>;
 
 #[napi]
 pub fn wire_new(row: u32, col: u32) -> WireExternal {
@@ -230,4 +236,25 @@ pub fn vesta_witness_create(
             .collect()
     });
     External::new(witness)
+}
+
+
+#[napi]
+pub fn pallas_verify_witness(
+    prover_index: &PallasProverIndexExternal,
+    witness: &PallasWitnessExternal,
+    public_inputs: Vec<&PallasFieldExternal>
+) -> bool {
+    let public: Vec<PallasScalarField> = public_inputs.iter().map(|f| ***f).collect();
+    (**prover_index).verify(&**witness, &public).is_ok()
+}
+
+#[napi]
+pub fn vesta_verify_witness(
+    prover_index: &VestaProverIndexExternal,
+    witness: &VestaWitnessExternal,
+    public_inputs: Vec<&VestaFieldExternal>
+) -> bool {
+    let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
+    (**prover_index).verify(&**witness, &public).is_ok()
 }
