@@ -1,4 +1,7 @@
-module Snarky.Backend.Kimchi where
+module Snarky.Backend.Kimchi
+  ( makeConstraintSystem
+  , makeWitness
+  ) where
 
 import Prelude
 
@@ -13,12 +16,13 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind (UnionFindData, find)
-import Snarky.Backend.Kimchi.Circuit (class CircuitGateConstructor, Wire, circuitGateNew, constraintSystemCreate, gateWiresNewFromWires, wireNew)
+import Effect.Exception.Unsafe (unsafeThrow)
+import Snarky.Backend.Kimchi.Circuit (class CircuitGateConstructor, Wire, circuitGateNew, constraintSystemCreate, gateWiresNewFromWires, wireNew, witnessCreate)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Fin (getFinite)
-import Snarky.Data.Vector ((:<))
+import Snarky.Data.Vector (Vector, (:<))
 import Snarky.Data.Vector as Vector
 
 -- figure out the cell placement for each variable. 
@@ -100,8 +104,8 @@ makeWireMapping uf variablePlacement =
   getRoot x = evalState (find x) uf
 
 makeGates
-  :: forall f gate cs
-   . CircuitGateConstructor f gate cs
+  :: forall f gate cs witness
+   . CircuitGateConstructor f gate cs witness
   => Map (Tuple Int Int) Wire
   -> Array (KimchiRow f)
   -> Array gate
@@ -122,14 +126,16 @@ makeGates wireMap rows =
         Just w -> w
 
 makeConstraintSystem
-  :: forall f gate cs
-   . CircuitGateConstructor f gate cs
+  :: forall f gate cs witness
+   . CircuitGateConstructor f gate cs witness
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
      , unionFind :: UnionFindData Variable
      }
-  -> cs
+  -> { constraintSystem :: cs
+     , rows :: Array (Vector 15 (Maybe Variable))
+     }
 makeConstraintSystem arg =
   let
     publicInputRows = makePublicInputRows arg.publicInputs
@@ -138,4 +144,28 @@ makeConstraintSystem arg =
     wireMapping = makeWireMapping arg.unionFind placement
     gates = makeGates wireMapping rows
   in
-    constraintSystemCreate @f gates (Array.length publicInputRows)
+    { constraintSystem: constraintSystemCreate @f gates (Array.length publicInputRows)
+    , rows: map _.variables rows
+    }
+
+makeWitness
+  :: forall f gate cs witness
+   . CircuitGateConstructor f gate cs witness
+  => PrimeField f
+  => { assignments :: Map Variable f
+     , rows :: Array (Vector 15 (Maybe Variable))
+     }
+  -> witness
+makeWitness { assignments, rows } = witnessCreate $
+  map
+    ( \row ->
+        map
+          ( \mv -> case mv of
+              Nothing -> zero
+              Just v -> case Map.lookup v assignments of
+                Nothing -> unsafeThrow $ "Missing variable assignment in witness: " <> show v
+                Just f -> f
+          )
+          row
+    )
+    rows

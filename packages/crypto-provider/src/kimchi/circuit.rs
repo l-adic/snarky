@@ -9,7 +9,7 @@ use napi_derive::napi;
 // Import the actual proof-systems types
 use kimchi::circuits::constraints::ConstraintSystem;
 use kimchi::circuits::gate::{CircuitGate, GateType};
-use kimchi::circuits::wires::{GateWires, Wire, PERMUTS};
+use kimchi::circuits::wires::{GateWires, Wire, COLUMNS, PERMUTS};
 
 // Import field types from our pasta module
 use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExternal;
@@ -22,6 +22,8 @@ pub type PallasCircuitGateExternal = External<CircuitGate<PallasScalarField>>;
 pub type VestaCircuitGateExternal = External<CircuitGate<VestaScalarField>>;
 pub type PallasConstraintSystemExternal = External<ConstraintSystem<PallasScalarField>>;
 pub type VestaConstraintSystemExternal = External<ConstraintSystem<VestaScalarField>>;
+pub type PallasWitnessExternal = External<[Vec<PallasScalarField>; COLUMNS]>;
+pub type VestaWitnessExternal = External<[Vec<VestaScalarField>; COLUMNS]>;
 
 #[napi]
 pub fn wire_new(row: u32, col: u32) -> WireExternal {
@@ -158,7 +160,6 @@ pub fn vesta_circuit_gate_get_coeff(
     Ok(External::new(*coeff))
 }
 
-
 #[napi]
 pub fn pallas_constraint_system_create(
     gates: Vec<&PallasCircuitGateExternal>,
@@ -172,10 +173,12 @@ pub fn pallas_constraint_system_create(
     let cs = ConstraintSystem::create(internal_gates)
         .public(public_inputs_count as usize)
         .build()
-        .map_err(|e| Error::new(
-            Status::GenericFailure,
-            format!("Failed to create constraint system: {e}"),
-        ))?;
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to create constraint system: {e}"),
+            )
+        })?;
 
     Ok(External::new(cs))
 }
@@ -193,10 +196,38 @@ pub fn vesta_constraint_system_create(
     let cs = ConstraintSystem::create(internal_gates)
         .public(public_inputs_count as usize)
         .build()
-        .map_err(|e| Error::new(
-            Status::GenericFailure,
-            format!("Failed to create constraint system: {e}"),
-        ))?;
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to create constraint system: {e}"),
+            )
+        })?;
 
     Ok(External::new(cs))
+}
+
+#[napi]
+pub fn pallas_witness_create(
+    witness_columns: Vec<Vec<&PallasFieldExternal>>,
+) -> PallasWitnessExternal {
+    let witness: [Vec<PallasScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    External::new(witness)
+}
+
+#[napi]
+pub fn vesta_witness_create(
+    witness_columns: Vec<Vec<&VestaFieldExternal>>,
+) -> VestaWitnessExternal {
+    let witness: [Vec<VestaScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    External::new(witness)
 }

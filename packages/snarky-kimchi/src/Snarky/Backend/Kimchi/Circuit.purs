@@ -64,31 +64,40 @@ gateKindToString = case _ of
   Zero -> "Zero"
 
 -- Typeclass for circuit gate construction over different field types
-class CircuitGateConstructor f gate cs | f -> gate, f -> cs where
+class CircuitGateConstructor f gate cs witness | f -> gate, f -> cs, f -> witness where
   circuitGateNew :: GateKind -> GateWires -> Array f -> gate
   circuitGateGetWires :: gate -> GateWires
   circuitGateCoeffCount :: gate -> Int
   circuitGateGetCoeff :: gate -> Int -> f
   constraintSystemCreate :: Array gate -> Int -> cs
+  witnessCreate :: Array (Vector 15 f) -> witness
 
 -- Instance for Pallas field
-instance CircuitGateConstructor Pallas.ScalarField PallasCircuitGate PallasConstraintSystem where
+instance CircuitGateConstructor Pallas.ScalarField PallasCircuitGate PallasConstraintSystem PallasWitness where
   circuitGateNew kind wires coeffs = pallasCircuitGateNew (gateKindToString kind) wires coeffs
   circuitGateGetWires = pallasCircuitGateGetWires
   circuitGateCoeffCount = pallasCircuitGateCoeffCount
   circuitGateGetCoeff = pallasCircuitGateGetCoeff
   constraintSystemCreate = pallasConstraintSystemCreate
+  witnessCreate = pallasWitnessCreate
 
 -- Instance for Vesta field
-instance CircuitGateConstructor Vesta.ScalarField VestaCircuitGate VestaConstraintSystem where
+instance CircuitGateConstructor Vesta.ScalarField VestaCircuitGate VestaConstraintSystem VestaWitness where
   circuitGateNew kind wires coeffs = vestaCircuitGateNew (gateKindToString kind) wires coeffs
   circuitGateGetWires = vestaCircuitGateGetWires
   circuitGateCoeffCount = vestaCircuitGateCoeffCount
   circuitGateGetCoeff = vestaCircuitGateGetCoeff
   constraintSystemCreate = vestaConstraintSystemCreate
+  witnessCreate = vestaWitnessCreate
 
 foreign import data PallasConstraintSystem :: Type
 foreign import data VestaConstraintSystem :: Type
 
 foreign import pallasConstraintSystemCreate :: Array PallasCircuitGate -> Int -> PallasConstraintSystem
 foreign import vestaConstraintSystemCreate :: Array VestaCircuitGate -> Int -> VestaConstraintSystem
+
+foreign import data PallasWitness :: Type
+foreign import data VestaWitness :: Type
+
+foreign import pallasWitnessCreate :: Array (Vector 15 Pallas.ScalarField) -> PallasWitness
+foreign import vestaWitnessCreate :: Array (Vector 15 Vesta.ScalarField) -> VestaWitness

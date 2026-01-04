@@ -87,3 +87,19 @@ export function vestaConstraintSystemCreate(gates) {
         return napi.vestaConstraintSystemCreate(gates, publicInputsCount);
     };
 }
+
+export function pallasWitnessCreate(witnessColumns) {
+    return napi.pallasWitnessCreate(witnessColumns);
+}
+
+export function vestaWitnessCreate(witnessColumns) {
+    return napi.vestaWitnessCreate(witnessColumns);
+}
+
+export function pallasWitnessCreate(witnessColumns) {
+    return napi.pallasWitnessCreate(witnessColumns);
+}
+
+export function vestaWitnessCreate(witnessColumns) {
+    return napi.vestaWitnessCreate(witnessColumns);
+}
