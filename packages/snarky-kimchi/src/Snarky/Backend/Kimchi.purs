@@ -2,17 +2,21 @@ module Snarky.Backend.Kimchi where
 
 import Prelude
 
-import Data.Foldable (foldl)
+import Data.Array ((:))
+import Data.Array as Array
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Set (Set)
 import Data.Tuple (Tuple(..))
-import Partial.Unsafe (unsafeCrashWith)
+import Data.UnionFind (UnionFindData)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Constraint.Kimchi.Wire (KimchiRow)
+import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Fin (getFinite)
+import Snarky.Data.Vector ((:<))
+import Snarky.Data.Vector as Vector
 
 placeVariables
   :: forall f
@@ -31,6 +35,27 @@ placeVariables rows =
     )
     Map.empty
     rows
+
+makePublicInputRows
+  :: forall f
+   . PrimeField f 
+  => Array Variable
+  -> Array (KimchiRow f)
+makePublicInputRows = 
+  map
+  (\var -> 
+      { kind: GenericPlonkGate
+      , coeffs: one : Array.replicate 9 zero
+      , variables: Just var :< Vector.generate (const Nothing)
+      }
+  )
+
+type BuilderInput f =
+  { gates :: Array (KimchiRow f)
+  , publicInputs :: Array Variable
+  , internalVariables :: Set Variable
+  , unionFind :: UnionFindData Variable
+  }
 
 -- placeWitness
 --   :: forall f r
