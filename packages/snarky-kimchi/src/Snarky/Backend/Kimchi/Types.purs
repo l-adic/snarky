@@ -32,3 +32,8 @@ foreign import gateWiresNewFromWires :: Vector 7 Wire -> GateWires
 
 -- Get the wire at the specified column (0-6)
 foreign import gateWiresGetWire :: GateWires -> Int -> Wire
+
+foreign import data CRS :: Type -> Type
+foreign import data Witness :: Type -> Type
+foreign import data ConstraintSystem :: Type -> Type
+foreign import data Gate :: Type -> Type

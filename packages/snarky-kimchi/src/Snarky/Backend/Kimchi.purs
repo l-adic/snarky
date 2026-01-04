@@ -18,7 +18,7 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind (UnionFindData, find)
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate, witnessCreate)
-import Snarky.Backend.Kimchi.Types (Wire, gateWiresNewFromWires, wireNew)
+import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, Witness, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
@@ -105,11 +105,11 @@ makeWireMapping uf variablePlacement =
   getRoot x = evalState (find x) uf
 
 makeGates
-  :: forall f gate cs witness
-   . CircuitGateConstructor f gate cs witness
+  :: forall f
+   . CircuitGateConstructor f
   => Map (Tuple Int Int) Wire
   -> Array (KimchiRow f)
-  -> Array gate
+  -> Array (Gate f)
 makeGates wireMap rows =
   mapWithIndex
     ( \i { kind, coeffs } ->
@@ -127,14 +127,14 @@ makeGates wireMap rows =
         Just w -> w
 
 makeConstraintSystem
-  :: forall f gate cs witness
-   . CircuitGateConstructor f gate cs witness
+  :: forall f
+   . CircuitGateConstructor f
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
      , publicInputs :: Array Variable
      , unionFind :: UnionFindData Variable
      }
-  -> { constraintSystem :: cs
+  -> { constraintSystem :: ConstraintSystem f
      , rows :: Array (Vector 15 (Maybe Variable))
      }
 makeConstraintSystem arg =
@@ -150,13 +150,13 @@ makeConstraintSystem arg =
     }
 
 makeWitness
-  :: forall f gate cs witness
-   . CircuitGateConstructor f gate cs witness
+  :: forall f
+   . CircuitGateConstructor f
   => PrimeField f
   => { assignments :: Map Variable f
      , rows :: Array (Vector 15 (Maybe Variable))
      }
-  -> witness
+  -> Witness f
 makeWitness { assignments, rows } = witnessCreate $
   map
     ( \row ->
