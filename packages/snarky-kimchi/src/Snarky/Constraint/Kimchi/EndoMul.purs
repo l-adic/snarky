@@ -14,7 +14,7 @@ import Data.Tuple (Tuple(..))
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
@@ -40,6 +40,9 @@ type EndoMul f =
   }
 
 newtype Rows f = Rows (Vector 33 (KimchiRow f))
+
+instance ToKimchiRows f (Rows f) where
+  toKimchiRows (Rows as) = Vector.toUnfoldable as
 
 eval
   :: forall @f @f' m

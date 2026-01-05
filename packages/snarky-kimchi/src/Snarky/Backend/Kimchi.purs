@@ -127,7 +127,7 @@ makeGates wireMap rows =
         Just w -> w
 
 makeConstraintSystem
-  :: forall f g
+  :: forall @f g
    . CircuitGateConstructor f g
   => PrimeField f
   => { constraints :: Array (KimchiRow f)
@@ -135,7 +135,7 @@ makeConstraintSystem
      , unionFind :: UnionFindData Variable
      }
   -> { constraintSystem :: ConstraintSystem f
-     , constraintRows :: Array (Vector 15 (Maybe Variable))
+     , constraints :: Array (Vector 15 (Maybe Variable))
      }
 makeConstraintSystem arg =
   let
@@ -146,7 +146,7 @@ makeConstraintSystem arg =
     gates = makeGates wireMapping rows
   in
     { constraintSystem: constraintSystemCreate @f gates (Array.length publicInputRows)
-    , constraintRows: map _.variables arg.constraints
+    , constraints: map _.variables arg.constraints
     }
 
 makeWitness
@@ -154,13 +154,13 @@ makeWitness
    . CircuitGateConstructor f g
   => PrimeField f
   => { assignments :: Map Variable f
-     , constraintRows :: Array (Vector 15 (Maybe Variable))
+     , constraints :: Array (Vector 15 (Maybe Variable))
      , publicInputs :: Array Variable
      }
   -> { publicInputs :: Array f
      , witness :: Witness f
      }
-makeWitness { assignments, constraintRows: rows, publicInputs: fs } =
+makeWitness { assignments, constraints: rows, publicInputs: fs } =
   let
     witness =
       witnessCreate $
