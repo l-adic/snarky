@@ -7,7 +7,7 @@ import Snarky.Backend.Compile (Checker)
 import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits)
 import Test.Snarky.Circuit.Assert as AssertTest
 import Test.Snarky.Circuit.Bits as BitsTest
 import Test.Snarky.Circuit.Boolean as BoolTest
@@ -20,8 +20,7 @@ import Type.Proxy (Proxy)
 
 spec
   :: forall f c c' r n
-   . PrimeField f
-  => BasicSystem f c'
+   . BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
   => Finalizer c r
   => ConstraintM (ProverT f) c'

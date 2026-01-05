@@ -17,7 +17,7 @@ import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class HasEndo, class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Class (class HasEndo, class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (AffinePoint, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
@@ -29,7 +29,6 @@ spec
   :: forall g g' f f'
    . KimchiConstraint.KimchiVerify f f'
   => Arbitrary g
-  => PrimeField f
   => WeierstrassCurve f g
   => KimchiVerify f f'
   => HasEndo f' f

@@ -64,7 +64,7 @@ factorsCircuit n = do
   c3 <- neq_ b (const_ one)
   assert_ =<< all_ [ c1, c2, c3 ]
 
-instance (Arbitrary f, PrimeField f) => FactorM f Gen where
+instance PrimeField f => FactorM f Gen where
   factor n = do
     a <- arbitrary @(F f) `suchThat` \a ->
       a /= one && a /= n

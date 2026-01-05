@@ -44,7 +44,7 @@ newtype Point f = Point { x :: f, y :: f, z :: f }
 
 derive instance Generic (Point f) _
 
-instance (Show f, PrimeField f) => Show (Point f) where
+instance (PrimeField f) => Show (Point f) where
   show p = case toAffine p of
     Nothing -> show $ { x: zero @f, y: one @f, z: one @f }
     Just { x, y } -> show { x, y, z: one @f }

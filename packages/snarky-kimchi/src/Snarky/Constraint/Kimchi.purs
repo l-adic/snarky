@@ -105,8 +105,7 @@ initialAuxState = AuxState
   }
 
 instance
-  ( PrimeField f
-  , PoseidonField f
+  ( PoseidonField f
   ) =>
   ConstraintM (CircuitBuilderT (KimchiGate f) (AuxState f)) (KimchiConstraint f) where
   addConstraint' = case _ of
@@ -147,7 +146,7 @@ instance
             s.aux
         }
 
-instance (PrimeField f, PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
+instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> go AddComplete.reduce c
     KimchiPoseidon c -> go Poseidon.reduce c
@@ -198,8 +197,7 @@ postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
   pure $ all (\s -> Set.size s == 1) classes
 
 class
-  ( PrimeField f
-  , HasEndo f f'
+  ( HasEndo f f'
   , HasEndo f' f
   , GenericPlonkVerifiable f
   , AddCompleteVerifiable f

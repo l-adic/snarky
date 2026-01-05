@@ -50,8 +50,7 @@ instance FactorM f Effect where
 
 spec
   :: forall f c c' r
-   . PrimeField f
-  => BasicSystem f c'
+   . BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
   => Finalizer c r
   => ConstraintM (ProverT f) c'

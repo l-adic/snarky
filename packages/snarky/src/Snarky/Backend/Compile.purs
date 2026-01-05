@@ -29,13 +29,11 @@ import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, Snarky, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 compilePure
   :: forall f c c' a b avar bvar r
-   . PrimeField f
-  => CircuitType f a avar
+   . CircuitType f a avar
   => CircuitType f b bvar
   => BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
@@ -50,8 +48,7 @@ compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
 
 compile
   :: forall f c c' m a b avar bvar r
-   . PrimeField f
-  => CircuitType f a avar
+   . CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
   => BasicSystem f c'
@@ -82,8 +79,7 @@ compile _ _ _ circuit cbs = finalize <$> do
 
 makeSolver
   :: forall f a b c m avar bvar
-   . PrimeField f
-  => CircuitType f a avar
+   . CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
   => BasicSystem f c

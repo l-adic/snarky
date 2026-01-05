@@ -53,7 +53,7 @@ type GenericPlonkConstraint f =
   , c :: f -- Constant term
   }
 
-class Monad m <= PlonkReductionM m f | m -> f where
+class (Monad m, PrimeField f) <= PlonkReductionM m f | m -> f where
   createInternalVariable
     :: AffineExpression f
     -> m Variable
@@ -71,8 +71,7 @@ class Monad m <= PlonkReductionM m f | m -> f where
 -- return a * x where a \in f and x is a variable.
 reduceAffineExpression
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => AffineExpression f
   -> m (Tuple (Maybe Variable) f)
 reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldable terms of
@@ -107,8 +106,7 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
 
 reduceToVariable
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => CVar f Variable
   -> m Variable
 reduceToVariable var = do

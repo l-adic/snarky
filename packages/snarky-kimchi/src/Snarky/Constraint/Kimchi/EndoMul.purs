@@ -15,7 +15,7 @@ import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase)
+import Snarky.Curves.Class (class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!), (:<))
@@ -46,8 +46,7 @@ instance ToKimchiRows f (Rows f) where
 
 eval
   :: forall @f @f' m
-   . PrimeField f
-  => HasEndo f f'
+   . HasEndo f f'
   => Monad m
   => (Variable -> m f)
   -> Rows f
@@ -131,8 +130,7 @@ eval lookup (Rows rs) = do
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => EndoMul (FVar f)
   -> m (Rows f)
 reduce c = do

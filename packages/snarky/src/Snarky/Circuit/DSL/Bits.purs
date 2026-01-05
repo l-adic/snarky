@@ -23,7 +23,6 @@ import Snarky.Data.Vector as Vector
 unpack_
   :: forall f c t m n
    . CircuitM f c t m
-  => PrimeField f
   => FieldSizeInBits f n
   => FVar f
   -> Snarky c t m (Vector n (BoolVar f))

@@ -61,7 +61,6 @@ bitSizes mx = Gen.chooseInt 1 mx
 spec
   :: forall f n c c' r
    . FieldSizeInBits f n
-  => PrimeField f
   => BasicSystem f c'
   => Finalizer c r
   => ConstraintM (CircuitBuilderT c r) c'

@@ -49,6 +49,7 @@ class PrimeField f <= WeierstrassCurve f g | g -> f where
 class FieldSizeInBits :: Type -> Int -> Constraint
 class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n
 
-class HasEndo f f' | f -> f', f' -> f where
+-- phi p == phi (x,y) := (endBase * x, y) == [endoScalar] \cdot p
+class (PrimeField f, PrimeField f') <= HasEndo f f' | f -> f', f' -> f where
   endoBase :: f
   endoScalar :: f'

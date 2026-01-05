@@ -40,8 +40,7 @@ eval lookup rows = ado
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => Basic f
   -> m Unit
 reduce = case _ of

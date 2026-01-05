@@ -40,8 +40,7 @@ instance ToKimchiRows f (Rows f) where
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => EndoScalar f
   -> m (Rows f)
 reduce cs = Rows <$>

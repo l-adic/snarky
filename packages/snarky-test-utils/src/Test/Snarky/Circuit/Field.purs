@@ -12,7 +12,6 @@ import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
@@ -22,8 +21,7 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall f c r c'
-   . PrimeField f
-  => BasicSystem f c'
+   . BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
   => Finalizer c r
   => ConstraintM (ProverT f) c'

@@ -9,7 +9,6 @@ import Snarky.Backend.Prover (ProverT)
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
 import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
@@ -18,8 +17,7 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall f c r c'
-   . PrimeField f
-  => BasicSystem f c'
+   . BasicSystem f c'
   => ConstraintM (CircuitBuilderT c r) c'
   => ConstraintM (ProverT f) c'
   => Finalizer c r
