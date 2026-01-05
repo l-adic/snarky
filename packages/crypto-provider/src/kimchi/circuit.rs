@@ -29,8 +29,6 @@ pub type PallasCircuitGateExternal = External<CircuitGate<PallasScalarField>>;
 pub type VestaCircuitGateExternal = External<CircuitGate<VestaScalarField>>;
 pub type PallasConstraintSystemExternal = External<ConstraintSystem<PallasScalarField>>;
 pub type VestaConstraintSystemExternal = External<ConstraintSystem<VestaScalarField>>;
-pub type PallasWitnessExternal = External<[Vec<PallasScalarField>; COLUMNS]>;
-pub type VestaWitnessExternal = External<[Vec<VestaScalarField>; COLUMNS]>;
 pub type PallasCRSExternal = External<SRS<super::super::pasta::types::PallasGroup>>;
 pub type VestaCRSExternal = External<SRS<super::super::pasta::types::VestaGroup>>;
 pub type PallasProverIndexExternal = External<
@@ -227,32 +225,6 @@ pub fn vesta_constraint_system_create(
     Ok(External::new(cs))
 }
 
-#[napi]
-pub fn pallas_witness_create(
-    witness_columns: Vec<Vec<&PallasFieldExternal>>,
-) -> PallasWitnessExternal {
-    let witness: [Vec<PallasScalarField>; COLUMNS] = std::array::from_fn(|i| {
-        witness_columns[i]
-            .iter()
-            .map(|field_ext| ***field_ext)
-            .collect()
-    });
-    External::new(witness)
-}
-
-#[napi]
-pub fn vesta_witness_create(
-    witness_columns: Vec<Vec<&VestaFieldExternal>>,
-) -> VestaWitnessExternal {
-    let witness: [Vec<VestaScalarField>; COLUMNS] = std::array::from_fn(|i| {
-        witness_columns[i]
-            .iter()
-            .map(|field_ext| ***field_ext)
-            .collect()
-    });
-    External::new(witness)
-}
-
 fn load_srs_from_cache<G>(cache_path: &str) -> Result<SRS<G>>
 where
     G: Clone,
@@ -340,19 +312,31 @@ pub fn vesta_prover_index_create(
 #[napi]
 pub fn pallas_prover_index_verify(
     prover_index: &PallasProverIndexExternal,
-    witness: &PallasWitnessExternal,
+    witness_columns: Vec<Vec<&External<PallasScalarField>>>,
     public_inputs: Vec<&PallasFieldExternal>,
 ) -> bool {
+    let witness: [Vec<PallasScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
     let public: Vec<PallasScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    (**prover_index).verify(witness, &public).is_ok()
+    (**prover_index).verify(&witness, &public).is_ok()
 }
 
 #[napi]
 pub fn vesta_prover_index_verify(
     prover_index: &VestaProverIndexExternal,
-    witness: &VestaWitnessExternal,
+    witness_columns: Vec<Vec<&External<VestaScalarField>>>,
     public_inputs: Vec<&VestaFieldExternal>,
 ) -> bool {
+    let witness: [Vec<VestaScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
     let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    (**prover_index).verify(witness, &public).is_ok()
+    (**prover_index).verify(&witness, &public).is_ok()
 }

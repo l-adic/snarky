@@ -1,7 +1,7 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness, ProverIndex)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Vector (Vector)
 
@@ -19,13 +19,11 @@ foreign import vestaCircuitGateGetCoeff :: Gate Vesta.ScalarField -> Int -> Vest
 
 foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> Int -> ConstraintSystem Vesta.ScalarField
 
-foreign import vestaWitnessCreate :: Array (Vector 15 Vesta.ScalarField) -> Witness Vesta.ScalarField
-
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 
 foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 
-foreign import vestaProverIndexVerify :: ProverIndex Vesta.G Vesta.ScalarField -> Witness Vesta.ScalarField -> Array Vesta.ScalarField -> Boolean
+foreign import vestaProverIndexVerify :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
 
 createCRS :: Effect (CRS Vesta.G)
 createCRS = vestaCrsLoadFromCache
@@ -33,5 +31,5 @@ createCRS = vestaCrsLoadFromCache
 createProverIndex :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 createProverIndex = vestaProverIndexCreate
 
-verifyProverIndex :: ProverIndex Vesta.G Vesta.ScalarField -> Witness Vesta.ScalarField -> Array Vesta.ScalarField -> Boolean
+verifyProverIndex :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
 verifyProverIndex = vestaProverIndexVerify

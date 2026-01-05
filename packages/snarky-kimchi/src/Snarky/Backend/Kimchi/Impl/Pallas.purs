@@ -1,7 +1,7 @@
 module Snarky.Backend.Kimchi.Impl.Pallas where
 
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Witness, ProverIndex)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.Vector (Vector)
 
@@ -19,13 +19,11 @@ foreign import pallasCircuitGateGetCoeff :: Gate Pallas.ScalarField -> Int -> Pa
 
 foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> ConstraintSystem Pallas.ScalarField
 
-foreign import pallasWitnessCreate :: Array (Vector 15 Pallas.ScalarField) -> Witness Pallas.ScalarField
-
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 
-foreign import pallasProverIndexVerify :: ProverIndex Pallas.G Pallas.ScalarField -> Witness Pallas.ScalarField -> Array Pallas.ScalarField -> Boolean
+foreign import pallasProverIndexVerify :: ProverIndex Pallas.G Pallas.ScalarField -> Vector 15 (Array Pallas.ScalarField) -> Array Pallas.ScalarField -> Boolean
 
 createCRS :: Effect (CRS Pallas.G)
 createCRS = pallasCrsLoadFromCache
@@ -33,5 +31,5 @@ createCRS = pallasCrsLoadFromCache
 createProverIndex :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 createProverIndex = pallasProverIndexCreate
 
-verifyProverIndex :: ProverIndex Pallas.G Pallas.ScalarField -> Witness Pallas.ScalarField -> Array Pallas.ScalarField -> Boolean
+verifyProverIndex :: ProverIndex Pallas.G Pallas.ScalarField -> Vector 15 (Array Pallas.ScalarField) -> Array Pallas.ScalarField -> Boolean
 verifyProverIndex = pallasProverIndexVerify

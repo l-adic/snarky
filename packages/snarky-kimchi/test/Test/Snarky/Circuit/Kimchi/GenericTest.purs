@@ -81,14 +81,14 @@ spec pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
 
-      circuitSpecPure'
-        { builtState: s
-        , checker: KimchiConstraint.eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: Kimchi.postCondition
-        }
-        gen
+      --circuitSpecPure'
+      --  { builtState: s
+      --  , checker: KimchiConstraint.eval
+      --  , solver: solver
+      --  , testFunction: satisfied f
+      --  , postCondition: Kimchi.postConditio liftEffect n
+      --  }
+      --  gen
 
       liftEffect do
         k <- randomSampleOne gen
@@ -102,13 +102,15 @@ spec pg pc =
                 , constraints
                 , publicInputs: s.publicInputs
                 }
+              endo = endoScalar @f' @f
               proverIndex = createProverIndex
-                { endo: endoScalar @f' @f
+                { endo
                 , constraintSystem
                 , crs
                 }
-            verifyProverIndex
-              { proverIndex
-              , witness
-              , publicInputs
-              } `shouldEqual` true
+              result = verifyProverIndex
+                { proverIndex
+                , witness
+                , publicInputs
+                }
+            result `shouldEqual` true

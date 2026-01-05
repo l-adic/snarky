@@ -17,13 +17,13 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind (UnionFindData, find)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate, witnessCreate)
-import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, Witness, gateWiresNewFromWires, wireNew)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate)
+import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Fin (getFinite)
-import Snarky.Data.Vector (Vector, (:<))
+import Snarky.Data.Vector (Vector, (:<), (!!))
 import Snarky.Data.Vector as Vector
 
 -- figure out the cell placement for each variable. 
@@ -150,32 +150,29 @@ makeConstraintSystem arg =
     }
 
 makeWitness
-  :: forall f g
-   . CircuitGateConstructor f g
-  => PrimeField f
+  :: forall f
+   . PrimeField f
   => { assignments :: Map Variable f
      , constraints :: Array (Vector 15 (Maybe Variable))
      , publicInputs :: Array Variable
      }
   -> { publicInputs :: Array f
-     , witness :: Witness f
+     , witness :: Vector 15 (Array f)
      }
-makeWitness { assignments, constraints: rows, publicInputs: fs } =
+makeWitness { assignments, constraints, publicInputs: fs } =
   let
     witness =
-      witnessCreate $
+      Vector.generate \i ->
         map
           ( \row ->
-              map
-                ( \mv -> case mv of
-                    Nothing -> zero
-                    Just v -> case Map.lookup v assignments of
-                      Nothing -> unsafeThrow $ "Missing witness variable assignment in witness: " <> show v
-                      Just f -> f
-                )
-                row
+              case row !! i of
+                Nothing -> zero
+                Just v -> case Map.lookup v assignments of
+                  Nothing -> unsafeThrow $ "Missing witness variable assignment in witness: " <> show v
+                  Just f -> f
+
           )
-          rows
+          constraints
     publicInputs =
       map
         ( \v -> case Map.lookup v assignments of

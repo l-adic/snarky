@@ -32,9 +32,6 @@ export function pallasConstraintSystemCreate(gates) {
     };
 }
 
-export function pallasWitnessCreate(witnessColumns) {
-    return napi.pallasWitnessCreate(witnessColumns);
-}
 
 export function pallasCrsLoadFromCache() {
     return napi.pallasCrsLoadFromCache();
@@ -49,9 +46,9 @@ export function pallasProverIndexCreate(cs) {
 }
 
 export function pallasProverIndexVerify(proverIndex) {
-    return function(witness) {
+    return function(witnessColumns) {
         return function(publicInputs) {
-            return napi.pallasProverIndexVerify(proverIndex, witness, publicInputs);
+            return napi.pallasProverIndexVerify(proverIndex, witnessColumns, publicInputs);
         };
     };
 }
