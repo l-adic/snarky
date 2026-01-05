@@ -58,10 +58,10 @@ reduce cs = Rows <$>
     let
       variables =
         let
-          vs = Just n0 :< Just n8 :< Just a0 :< Just a8 :< Just b0 :< Just b8 :< (Just <$> xs)
+          vs = Just n0 :< Just n8 :< Just a0 :< Just b0 :< Just a8 :< Just b8 :< (Just <$> xs)
         in
           vs `Vector.append` (Nothing :< Vector.nil)
-    pure { kind: EndoScalar, coeffs: Vector.generate (const zero), variables }
+    pure { kind: EndoScalar, coeffs: mempty, variables }
 
 eval
   :: forall f m
@@ -92,8 +92,8 @@ eval lookup (Rows rounds) = ado
     n0 <- lookup' (cs !! finite6 0)
     n8 <- lookup' (cs !! finite6 1)
     a0 <- lookup' (cs !! finite6 2)
-    a8 <- lookup' (cs !! finite6 3)
-    b0 <- lookup' (cs !! finite6 4)
+    b0 <- lookup' (cs !! finite6 3)
+    a8 <- lookup' (cs !! finite6 4)
     b8 <- lookup' (cs !! finite6 5)
     in
       foldl (\acc x -> double (double acc) + x) n0 xs == n8

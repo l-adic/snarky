@@ -11,7 +11,7 @@ module Data.UnionFind
 import Prelude
 
 import Control.Monad.State (State)
-import Control.Monad.State.Class (class MonadState, get, modify_)
+import Control.Monad.State.Class (get, modify_)
 import Data.Array as Array
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map (Map)

@@ -81,7 +81,7 @@ reduce c = Rows <$> do
         :< Just infZ
         :< Just x21Inv
         :< Vector.generate (const Nothing)
-  pure { kind: AddCompleteGate, coeffs: Vector.generate zero, variables }
+  pure { kind: AddCompleteGate, coeffs: mempty, variables }
 
   where
   reduceAffinePoint p = do

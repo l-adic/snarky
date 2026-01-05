@@ -42,7 +42,7 @@ import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQu
 import Snarky.Constraint.Kimchi.Reduction as Reduction
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
-import Snarky.Constraint.Kimchi.Wire (KimchiWireRow, emptyKimchiWireState)
+import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, KimchiWireRow, emptyKimchiWireState, toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -64,6 +64,16 @@ data KimchiGate f
   | KimchiGateEndoScalar (EndoScalar.Rows f)
   | KimchiGateEndoMul (EndoMul.Rows f)
   | KimchiGateNoOp
+
+instance ToKimchiRows f (KimchiGate f) where
+  toKimchiRows = case _ of
+    KimchiGatePlonk a -> toKimchiRows a
+    KimchiGateAddComplete a -> toKimchiRows a
+    KimchiGatePoseidon a -> toKimchiRows a
+    KimchiGateVarBaseMul a -> toKimchiRows a
+    KimchiGateEndoScalar a -> toKimchiRows a
+    KimchiGateEndoMul a -> toKimchiRows a
+    KimchiGateNoOp -> []
 
 newtype AuxState f = AuxState
   { wireState :: KimchiWireRow f
@@ -190,6 +200,7 @@ postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
 class
   ( PrimeField f
   , HasEndo f f'
+  , HasEndo f' f
   , GenericPlonkVerifiable f
   , AddCompleteVerifiable f
   , PoseidonVerifiable f

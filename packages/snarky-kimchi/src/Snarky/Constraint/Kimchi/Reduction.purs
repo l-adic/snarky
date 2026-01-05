@@ -30,6 +30,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, un)
 import Data.NonEmpty (NonEmpty(..))
+import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (class MonadUnionFind, find, union)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -37,7 +38,7 @@ import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector (Vector, (:<))
+import Snarky.Data.Vector ((:<))
 import Snarky.Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
@@ -201,9 +202,9 @@ constraintToCoeffs
   :: forall f
    . PrimeField f
   => GenericPlonkConstraint f
-  -> Vector 5 f
+  -> Array f
 constraintToCoeffs gate =
-  gate.cl :< gate.cr :< gate.co :< gate.m :< gate.c :< Vector.nil
+  [ gate.cl, gate.cr, gate.co, gate.m, gate.c ]
 
 finalizeGateQueue
   :: forall f r
@@ -216,12 +217,9 @@ finalizeGateQueue { queuedGenericGate } =
   map
     ( \gate ->
         let
-          gateCoeffs = constraintToCoeffs gate
-          zeros = Vector.generate $ const zero :: Vector 10 f
-          coeffRow = gateCoeffs `Vector.append` zeros
           variables = gate.vl :< gate.vr :< gate.vo :< Vector.generate (const Nothing)
         in
-          Rows { kind: GenericPlonkGate, coeffs: coeffRow, variables }
+          Rows { kind: GenericPlonkGate, coeffs: constraintToCoeffs gate, variables }
 
     )
     queuedGenericGate
@@ -247,9 +245,8 @@ handleGateBatching newGate = do
   emitDoubleGateRow gate1 gate2 =
     let
       vars = gate1.vl :< gate1.vr :< gate1.vo :< gate2.vl :< gate2.vr :< gate2.vo :< Vector.generate (const Nothing)
-      coeffs = constraintToCoeffs gate1
-        `Vector.append` constraintToCoeffs gate2
-        `Vector.append` Vector.generate (const zero)
+      coeffs = constraintToCoeffs gate1 <> constraintToCoeffs gate2
+
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
 
@@ -282,7 +279,13 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
         s { constraints = s.constraints `A.snoc` c' }
   createInternalVariable _ = do
     nextVariable <- gets _.nextVariable
-    modify_ _ { nextVariable = incrementVariable nextVariable }
+    void $ find nextVariable
+    modify_ \s -> s
+      { nextVariable = incrementVariable nextVariable
+      , wireState = s.wireState
+          { internalVariables = Set.insert nextVariable s.wireState.internalVariables
+          }
+      }
     pure nextVariable
   addEqualsConstraint c
     | c.cl == zero && c.cr == zero = pure unit

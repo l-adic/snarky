@@ -12,8 +12,8 @@ napi-build = { workspace = true }
 [dependencies]
 # mina-curves and poseidon (only backend)
 mina-curves = { workspace = true }
-mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
-poly-commitment = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
+mina-poseidon = { workspace = true }
+poly-commitment = { workspace = true }
 kimchi = { workspace = true }
 
 # arkworks (minimal dependencies still needed for bn254 groth16)
@@ -38,6 +38,10 @@ rand_chacha = { workspace = true }
 # utilities  
 num-bigint = { workspace = true }
 num-integer = { workspace = true }
+
+# serialization
+serde = { workspace = true }
+rmp-serde = { workspace = true }
 
 # bulletproofs
 bulletproofs = { workspace = true }

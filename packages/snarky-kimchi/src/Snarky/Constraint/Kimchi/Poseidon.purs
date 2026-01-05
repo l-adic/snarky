@@ -65,7 +65,7 @@ reduce c = Rows <$> do
     { before, after } = Vector.splitAt @55 state
     rounds = mapWithIndex addRoundState $ Vector.chunks @5 before
     lastRowVars = map Just (head after) `append` Vector.generate (const Nothing)
-  pure $ rounds `Vector.snoc` { kind: Zero, coeffs: Vector.generate (const zero), variables: lastRowVars }
+  pure $ rounds `Vector.snoc` { kind: Zero, coeffs: mempty, variables: lastRowVars }
   where
   addRoundState :: Finite 11 -> Vector 5 (Vector 3 Variable) -> KimchiRow f
   addRoundState round s =
@@ -78,14 +78,17 @@ reduce c = Rows <$> do
           `append` (s !! finite5 2)
           `append` (s !! finite5 3)
       coeffs =
-        getRoundConstants (Proxy @f) (getFinite round)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 1)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 2)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 3)
-          `append`
-            getRoundConstants (Proxy @f) (getFinite round + 4)
+        let
+          baseRound = getFinite round * 5
+        in
+          getRoundConstants (Proxy @f) baseRound
+            `append` getRoundConstants (Proxy @f) (baseRound + 1)
+            `append` getRoundConstants (Proxy @f) (baseRound + 2)
+            `append` getRoundConstants (Proxy @f) (baseRound + 3)
+            `append`
+              getRoundConstants (Proxy @f) (baseRound + 4)
     in
-      { kind: PoseidonGate, coeffs, variables }
+      { kind: PoseidonGate, coeffs: Vector.toUnfoldable coeffs, variables }
 
 foreign import verifyPallasPoseidonGadget
   :: Fn2 Int (Vector 12 (Vector 15 Pallas.ScalarField)) Boolean

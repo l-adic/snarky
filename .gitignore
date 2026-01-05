@@ -44,4 +44,6 @@ Thumbs.db
 # Purescript Spec
 .spec-results
 
+srs-cache/
+
 # Crypto provider symlink (removed - now using real crate)

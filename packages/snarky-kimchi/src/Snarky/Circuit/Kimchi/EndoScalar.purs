@@ -63,7 +63,7 @@ toField (ScalarChallenge scalar) endo = do
     , n: const_ $ zero
     }
     nibblesByRow
-  addConstraint $ KimchiEndoScalar (Vector.reverse rowsRev)
+  addConstraint $ KimchiEndoScalar rowsRev
   assertEqual_ n scalar
   a `mul_` endo <#>
     add_ b

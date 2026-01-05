@@ -93,3 +93,7 @@ clean: ## Clean everything
 	-cd packages/snarky-groth16 && rm -rf output
 	rm -rf output node_modules target
 	rm -f package-lock.json
+
+.PHONY: fetch-srs
+fetch-srs: ## Download the srs-cache from github
+	sh ./scripts/fetch-srs.sh
