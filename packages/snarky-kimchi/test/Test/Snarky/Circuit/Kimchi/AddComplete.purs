@@ -5,8 +5,10 @@ import Prelude
 import Control.Monad.Gen (suchThat)
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
+import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -18,13 +20,15 @@ import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
+import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 spec
-  :: forall g f f'
+  :: forall g g' f f'
    . KimchiConstraint.KimchiVerify f f'
+  => CircuitGateConstructor f g'
   => Arbitrary g
   => WeierstrassCurve f g
   => Proxy g
@@ -83,6 +87,8 @@ spec pg pc =
             , postCondition: Kimchi.postCondition
             }
             gen
+          liftEffect $ verifyCircuit { s, gen, solver }
+
           circuitSpecPure'
             { builtState: s
             , checker: KimchiConstraint.eval
@@ -91,3 +97,4 @@ spec pg pc =
             , postCondition: Kimchi.postCondition
             }
             genInverse
+          liftEffect $ verifyCircuit { s, gen: genInverse, solver }

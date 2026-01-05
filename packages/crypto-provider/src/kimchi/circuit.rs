@@ -322,7 +322,13 @@ pub fn pallas_prover_index_verify(
             .collect()
     });
     let public: Vec<PallasScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    (**prover_index).verify(&witness, &public).is_ok()
+    match (**prover_index).verify(&witness, &public) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("Verification failed: {e:?}");
+            false
+        }
+    }
 }
 
 #[napi]
@@ -338,5 +344,11 @@ pub fn vesta_prover_index_verify(
             .collect()
     });
     let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    (**prover_index).verify(&witness, &public).is_ok()
+    match (**prover_index).verify(&witness, &public) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("Verification failed: {e:?}");
+            false
+        }
+    }
 }

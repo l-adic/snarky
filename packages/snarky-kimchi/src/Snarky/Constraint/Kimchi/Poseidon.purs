@@ -78,12 +78,15 @@ reduce c = Rows <$> do
           `append` (s !! finite5 2)
           `append` (s !! finite5 3)
       coeffs =
-        getRoundConstants (Proxy @f) (getFinite round)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 1)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 2)
-          `append` getRoundConstants (Proxy @f) (getFinite round + 3)
-          `append`
-            getRoundConstants (Proxy @f) (getFinite round + 4)
+        let
+          baseRound = getFinite round * 5
+        in
+          getRoundConstants (Proxy @f) baseRound
+            `append` getRoundConstants (Proxy @f) (baseRound + 1)
+            `append` getRoundConstants (Proxy @f) (baseRound + 2)
+            `append` getRoundConstants (Proxy @f) (baseRound + 3)
+            `append`
+              getRoundConstants (Proxy @f) (baseRound + 4)
     in
       { kind: PoseidonGate, coeffs: Vector.toUnfoldable coeffs, variables }
 

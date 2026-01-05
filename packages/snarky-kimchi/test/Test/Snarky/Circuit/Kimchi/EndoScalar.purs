@@ -8,7 +8,10 @@ import Prelude
 
 import Data.Newtype (over)
 import Data.Traversable (foldl)
+import Effect.Class (liftEffect)
+import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
@@ -21,11 +24,10 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!))
 import Snarky.Data.Vector as Vector
+import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem, verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
-import Prim.Int (class Add)
 
 toFieldConstant
   :: forall f n _l
@@ -77,10 +79,12 @@ circuit scalarValue =
     toField (ScalarChallenge scalarValue) endoVar
 
 spec'
-  :: forall f f'
+  :: forall f f' g'
    . PrimeField f
   => FieldSizeInBits f 255
+  => CircuitGateConstructor f g'
   => KimchiVerify f f'
+  => HasEndo f' f
   => Proxy f
   -> String
   -> Spec Unit
@@ -100,16 +104,20 @@ spec' _ curveName = do
           (Proxy @(KimchiConstraint f))
           circuit
           Kimchi.initialState
+
       in
-        -- Test that circuit matches reference on random 128-bit boolean arrays
-        circuitSpecPure'
-          { builtState: s
-          , checker: KimchiConstraint.eval
-          , solver: solver
-          , testFunction: satisfied f
-          , postCondition: Kimchi.postCondition
-          }
-          gen128BitElem
+        do
+          -- Test that circuit matches reference on random 128-bit boolean arrays
+          circuitSpecPure'
+            { builtState: s
+            , checker: KimchiConstraint.eval
+            , solver: solver
+            , testFunction: satisfied f
+            , postCondition: Kimchi.postCondition
+            }
+            gen128BitElem
+
+          liftEffect $ verifyCircuit { s, gen: gen128BitElem, solver }
 
 spec :: Spec Unit
 spec = do

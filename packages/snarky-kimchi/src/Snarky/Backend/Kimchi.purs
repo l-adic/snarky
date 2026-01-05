@@ -97,7 +97,12 @@ makeWireMapping uf variablePlacement =
         )
         (Map.values m)
   in
-    uncurry wireNew <$> Map.unions classes
+    uncurry wireNew <$>
+      Map.filterWithKey
+        ( \(Tuple _ j) (Tuple _ j') ->
+            j < 7 && j' < 7
+        )
+        (Map.unions classes)
   where
   rotateLeft xs = case Array.uncons xs of
     Just { head, tail } -> tail `Array.snoc` head
@@ -123,8 +128,8 @@ makeGates wireMap rows =
   makeGateWires i =
     gateWiresNewFromWires $ Vector.generate \j ->
       case Map.lookup (Tuple i (getFinite j)) wireMap of
-        Nothing -> wireNew i (getFinite j)
         Just w -> w
+        Nothing -> wireNew i (getFinite j)
 
 makeConstraintSystem
   :: forall @f g
@@ -135,7 +140,7 @@ makeConstraintSystem
      , unionFind :: UnionFindData Variable
      }
   -> { constraintSystem :: ConstraintSystem f
-     , constraints :: Array (Vector 15 (Maybe Variable))
+     , constraints :: Array (KimchiRow f)
      }
 makeConstraintSystem arg =
   let
@@ -146,7 +151,7 @@ makeConstraintSystem arg =
     gates = makeGates wireMapping rows
   in
     { constraintSystem: constraintSystemCreate @f gates (Array.length publicInputRows)
-    , constraints: map _.variables arg.constraints
+    , constraints: rows
     }
 
 makeWitness

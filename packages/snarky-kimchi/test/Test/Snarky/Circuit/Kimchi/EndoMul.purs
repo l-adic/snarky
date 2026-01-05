@@ -5,8 +5,10 @@ import Prelude
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
+import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -22,16 +24,17 @@ import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
+import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem, verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
 
 endoSpec
-  :: forall f f' g
+  :: forall f f' g g'
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
+  => CircuitGateConstructor f g'
   => KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
@@ -42,7 +45,7 @@ endoSpec
   -> Spec Unit
 endoSpec _ curveProxy curveName =
   describe ("EndoMul " <> curveName) do
-    it ("EndoMul circuit is valid for " <> curveName) $ unsafePartial $
+    it ("EndoMul circuit is valid for " <> curveName) $ unsafePartial $ do
       let
         f :: Tuple (AffinePoint (F f)) (F f) -> AffinePoint (F f)
         f (Tuple { x: F x, y: F y } (F scalar)) =
@@ -78,15 +81,17 @@ endoSpec _ curveProxy curveName =
           p <- EC.genAffinePoint curveProxy
           scalar <- gen128BitElem
           pure $ Tuple p scalar
-      in
-        circuitSpecPure'
-          { builtState: s
-          , checker: KimchiConstraint.eval
-          , solver: solver
-          , testFunction: satisfied f
-          , postCondition: Kimchi.postCondition
-          }
-          gen
+
+      circuitSpecPure'
+        { builtState: s
+        , checker: KimchiConstraint.eval
+        , solver: solver
+        , testFunction: satisfied f
+        , postCondition: Kimchi.postCondition
+        }
+        gen
+
+      liftEffect $ verifyCircuit { s, gen, solver }
   where
   shift f = toFieldConstant (coerceViaBits f) (endoScalar)
 

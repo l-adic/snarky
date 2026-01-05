@@ -4,8 +4,10 @@ import Prelude
 
 import Data.Array as Array
 import Data.Newtype (unwrap)
+import Effect.Class (liftEffect)
 import Poseidon.Class (fullRound)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
@@ -14,11 +16,17 @@ import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
+import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec :: forall f f'. Kimchi.KimchiVerify f f' => Proxy f -> Spec Unit
+spec
+  :: forall f f' g'
+   . Kimchi.KimchiVerify f f'
+  => CircuitGateConstructor f g'
+  => Proxy f
+  -> Spec Unit
 spec _ = describe "Poseidon Circuit Tests" do
 
   it "Poseidon hash circuit matches reference implementation" do
@@ -49,3 +57,5 @@ spec _ = describe "Poseidon Circuit Tests" do
       , postCondition: Kimchi.postCondition
       }
       genInputs
+
+    liftEffect $ verifyCircuit { s, gen: genInputs, solver }

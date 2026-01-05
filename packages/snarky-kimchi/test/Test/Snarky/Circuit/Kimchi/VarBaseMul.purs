@@ -5,6 +5,7 @@ import Prelude
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
+import Effect.Class (liftEffect)
 import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -23,6 +24,7 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (class Shifted, Type1(..))
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
+import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -77,6 +79,7 @@ spec = do
             , postCondition: Kimchi.postCondition
             }
             gen
+          liftEffect $ verifyCircuit { s, gen, solver }
 
   describe "VarBaseMul Type2" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial $
@@ -123,6 +126,7 @@ spec = do
             , postCondition: Kimchi.postCondition
             }
             gen
+          liftEffect $ verifyCircuit { s, gen, solver }
 
 fieldShift1 :: forall f f' n. FieldSizeInBits f n => FieldSizeInBits f' n => PrimeField f' => f -> f'
 fieldShift1 t =

@@ -200,6 +200,7 @@ postCondition lookup { aux: AuxState { wireState: { unionFind } } } = do
 class
   ( PrimeField f
   , HasEndo f f'
+  , HasEndo f' f
   , GenericPlonkVerifiable f
   , AddCompleteVerifiable f
   , PoseidonVerifiable f
