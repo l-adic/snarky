@@ -1,4 +1,3 @@
-use ark_ff::AdditiveGroup;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -14,6 +13,26 @@ use mina_curves::pasta::{Fp as PallasBaseField, Fq as VestaBaseField};
 use crate::pasta::pallas::scalar_field::FieldExternal as VestaBaseFieldExternal;
 use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 
+mod generic {
+    use ark_ff::Field;
+    use mina_poseidon::poseidon::ArithmeticSpongeParams;
+
+    pub fn apply_mds<F: Field>(
+        params: &'static ArithmeticSpongeParams<F>,
+        state: Vec<&F>,
+    ) -> Vec<F> {
+        params
+            .mds
+            .iter()
+            .map(|row| {
+                state
+                    .iter()
+                    .zip(row.iter())
+                    .fold(F::ZERO, |acc, (&s, &m)| acc + m * s)
+            })
+            .collect()
+    }
+}
 pub mod pallas {
     use super::*;
 
@@ -27,19 +46,8 @@ pub mod pallas {
     pub fn pallas_poseidon_apply_mds(
         state: Vec<&PallasBaseFieldExternal>,
     ) -> Vec<PallasBaseFieldExternal> {
-        let params = fp_kimchi::static_params();
-        let state_vec: Vec<PallasBaseField> = state.iter().map(|&s| **s).collect();
-
-        let result: Vec<PallasBaseField> = params
-            .mds
-            .iter()
-            .map(|row| {
-                state_vec
-                    .iter()
-                    .zip(row.iter())
-                    .fold(PallasBaseField::ZERO, |acc, (&s, &m)| acc + m * s)
-            })
-            .collect();
+        let state = state.into_iter().map(|x| &**x).collect();
+        let result = generic::apply_mds(fp_kimchi::static_params(), state);
 
         result.into_iter().map(External::new).collect()
     }
@@ -109,19 +117,8 @@ pub mod vesta {
     pub fn vesta_poseidon_apply_mds(
         state: Vec<&VestaBaseFieldExternal>,
     ) -> Vec<VestaBaseFieldExternal> {
-        let params = fq_kimchi::static_params();
-        let state_vec: Vec<VestaBaseField> = state.iter().map(|&s| **s).collect();
-
-        let result: Vec<VestaBaseField> = params
-            .mds
-            .iter()
-            .map(|row| {
-                state_vec
-                    .iter()
-                    .zip(row.iter())
-                    .fold(VestaBaseField::ZERO, |acc, (&s, &m)| acc + m * s)
-            })
-            .collect();
+        let state = state.into_iter().map(|x| &**x).collect();
+        let result = generic::apply_mds(fq_kimchi::static_params(), state);
 
         result.into_iter().map(External::new).collect()
     }
@@ -181,7 +178,7 @@ pub mod vesta {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_ff::Field;
+    use ark_ff::{AdditiveGroup, Field};
     use mina_poseidon::poseidon::ArithmeticSpongeParams;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
