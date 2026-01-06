@@ -1,4 +1,4 @@
-module Test.Snarky.Circuit.Kimchi.AddComplete where
+module Test.Snarky.Circuit.Kimchi.AddComplete (spec) where
 
 import Prelude
 
@@ -17,6 +17,8 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
@@ -25,17 +27,23 @@ import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec
+spec :: Spec Unit
+spec = do
+  spec' "Vesta" (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
+  spec' "Pallas" (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+
+spec'
   :: forall g g' f f'
    . KimchiConstraint.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Arbitrary g
   => WeierstrassCurve f g
-  => Proxy g
+  => String
+  -> Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
-spec pg pc =
-  describe "Kimchi AddComplete" do
+spec' testName pg pc =
+  describe ("Kimchi AddComplete: " <> testName) do
 
     it "addComplete Circuit is Valid" $ unsafePartial $
       let

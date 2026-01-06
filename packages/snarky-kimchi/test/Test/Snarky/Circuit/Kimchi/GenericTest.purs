@@ -17,7 +17,9 @@ import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class HasEndo, class WeierstrassCurve)
+import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
@@ -25,19 +27,24 @@ import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec
+spec :: Spec Unit
+spec = do
+  spec' "Vesta" (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
+  spec' "Pallas" (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+
+spec'
   :: forall g g' f f'
    . KimchiConstraint.KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
   => KimchiVerify f f'
-  => HasEndo f' f
   => CircuitGateConstructor f g'
-  => Proxy g
+  => String
+  -> Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
-spec pg pc =
-  describe "Kimchi Generic (EC Add)" do
+spec' testName pg pc =
+  describe ("Kimchi Generic (EC Add): " <> testName) do
 
     it "unsafeAdd Circuit generates valid Generic constraints" $ unsafePartial do
       let
