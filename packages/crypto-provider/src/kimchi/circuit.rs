@@ -22,6 +22,7 @@ use std::sync::Arc;
 use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExternal;
 use super::super::pasta::types::{PallasScalarField, VestaScalarField};
 use super::super::pasta::vesta::scalar_field::FieldExternal as VestaFieldExternal;
+use ark_ff::PrimeField;
 
 pub type WireExternal = External<Wire>;
 pub type GateWiresExternal = External<GateWires>;
@@ -43,6 +44,54 @@ pub type VestaProverIndexExternal = External<
         OpeningProof<super::super::pasta::types::VestaGroup>,
     >,
 >;
+
+// Generic implementations for circuit operations
+mod generic {
+    use super::*;
+    use kimchi::curve::KimchiCurve;
+
+    pub fn circuit_gate_new<F: PrimeField>(
+        gate_kind: &str,
+        wires: &GateWires,
+        coeffs: Vec<F>,
+    ) -> Result<CircuitGate<F>> {
+        let gate_type = super::purescript_gate_kind_to_rust_gate_type(gate_kind)?;
+        Ok(CircuitGate::new(gate_type, *wires, coeffs))
+    }
+
+    pub fn constraint_system_create<F: PrimeField>(
+        gates: Vec<CircuitGate<F>>,
+        public_inputs_count: usize,
+    ) -> Result<ConstraintSystem<F>> {
+        ConstraintSystem::create(gates)
+            .public(public_inputs_count)
+            .build()
+            .map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to create constraint system: {e}"),
+                )
+            })
+    }
+
+    pub fn prover_index_verify<G>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        witness: &[Vec<G::ScalarField>; COLUMNS],
+        public: &[G::ScalarField],
+    ) -> bool
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+    {
+        match prover_index.verify(witness, public) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("Verification failed: {e:?}");
+                false
+            }
+        }
+    }
+}
 
 #[napi]
 pub fn wire_new(row: u32, col: u32) -> WireExternal {
@@ -111,10 +160,8 @@ pub fn pallas_circuit_gate_new(
     wires: &GateWiresExternal,
     coeffs: Vec<&PallasFieldExternal>,
 ) -> Result<PallasCircuitGateExternal> {
-    let gate_type = purescript_gate_kind_to_rust_gate_type(&gate_kind)?;
     let coeffs_vec: Vec<PallasScalarField> = coeffs.iter().map(|c| ***c).collect();
-
-    let circuit_gate = CircuitGate::new(gate_type, **wires, coeffs_vec);
+    let circuit_gate = generic::circuit_gate_new(&gate_kind, wires, coeffs_vec)?;
     Ok(External::new(circuit_gate))
 }
 
@@ -148,10 +195,8 @@ pub fn vesta_circuit_gate_new(
     wires: &GateWiresExternal,
     coeffs: Vec<&VestaFieldExternal>,
 ) -> Result<VestaCircuitGateExternal> {
-    let gate_type = purescript_gate_kind_to_rust_gate_type(&gate_kind)?;
     let coeffs_vec: Vec<VestaScalarField> = coeffs.iter().map(|c| ***c).collect();
-
-    let circuit_gate = CircuitGate::new(gate_type, **wires, coeffs_vec);
+    let circuit_gate = generic::circuit_gate_new(&gate_kind, wires, coeffs_vec)?;
     Ok(External::new(circuit_gate))
 }
 
@@ -189,16 +234,7 @@ pub fn pallas_constraint_system_create(
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = ConstraintSystem::create(internal_gates)
-        .public(public_inputs_count as usize)
-        .build()
-        .map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to create constraint system: {e}"),
-            )
-        })?;
-
+    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
     Ok(External::new(cs))
 }
 
@@ -212,16 +248,7 @@ pub fn vesta_constraint_system_create(
         .map(|gate_ext| (**gate_ext).clone())
         .collect();
 
-    let cs = ConstraintSystem::create(internal_gates)
-        .public(public_inputs_count as usize)
-        .build()
-        .map_err(|e| {
-            Error::new(
-                Status::GenericFailure,
-                format!("Failed to create constraint system: {e}"),
-            )
-        })?;
-
+    let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
     Ok(External::new(cs))
 }
 
@@ -322,13 +349,7 @@ pub fn pallas_prover_index_verify(
             .collect()
     });
     let public: Vec<PallasScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    match (**prover_index).verify(&witness, &public) {
-        Ok(()) => true,
-        Err(e) => {
-            eprintln!("Verification failed: {e:?}");
-            false
-        }
-    }
+    generic::prover_index_verify(&**prover_index, &witness, &public)
 }
 
 #[napi]
@@ -344,11 +365,5 @@ pub fn vesta_prover_index_verify(
             .collect()
     });
     let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
-    match (**prover_index).verify(&witness, &public) {
-        Ok(()) => true,
-        Err(e) => {
-            eprintln!("Verification failed: {e:?}");
-            false
-        }
-    }
+    generic::prover_index_verify(&**prover_index, &witness, &public)
 }
