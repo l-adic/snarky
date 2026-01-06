@@ -2,11 +2,9 @@ module Test.Snarky.Circuit (spec) where
 
 import Prelude
 
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker)
-import Snarky.Backend.Prover (ProverT)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Test.Snarky.Circuit.Assert as AssertTest
 import Test.Snarky.Circuit.Bits as BitsTest
@@ -20,10 +18,8 @@ import Type.Proxy (Proxy)
 
 spec
   :: forall f c c' r n
-   . BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c r) c'
-  => Finalizer c r
-  => ConstraintM (ProverT f) c'
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
   => FieldSizeInBits f n
   => Proxy f
   -> Proxy c'
@@ -33,8 +29,8 @@ spec
   -> Spec Unit
 spec pf pc eval cbs postCondition = do
   CheckedTypeTest.spec pf
-  FieldTest.spec pf pc eval cbs postCondition
-  BoolTest.spec pf pc eval cbs postCondition
-  AssertTest.spec pf pc eval cbs postCondition
-  BitsTest.spec pf pc eval cbs postCondition
-  Factors.spec pf pc eval cbs postCondition
+  FieldTest.spec pc eval cbs postCondition
+  BoolTest.spec pc eval cbs postCondition
+  AssertTest.spec pc eval cbs postCondition
+  BitsTest.spec pc eval cbs postCondition
+  Factors.spec pc eval cbs postCondition

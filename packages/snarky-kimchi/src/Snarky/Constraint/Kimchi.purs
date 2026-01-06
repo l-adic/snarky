@@ -20,9 +20,9 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
 import Poseidon.Class (class PoseidonField)
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Builder as CircuitBuilder
-import Snarky.Backend.Prover (ProverT, throwProverError)
+import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
@@ -104,6 +104,8 @@ initialAuxState = AuxState
   , queuedGenericGate: Nothing
   }
 
+instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f)
+
 instance
   ( PoseidonField f
   ) =>
@@ -145,6 +147,8 @@ instance
             )
             s.aux
         }
+
+instance PoseidonField f => SolveCircuit f (KimchiConstraint f)
 
 instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of

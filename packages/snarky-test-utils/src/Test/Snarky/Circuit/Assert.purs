@@ -3,12 +3,10 @@ module Test.Snarky.Circuit.Assert (spec) where
 import Prelude
 
 import Data.Tuple (Tuple(..), uncurry)
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
-import Snarky.Backend.Prover (ProverT)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (F(..), assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
 import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', expectDivideByZero, satisfied_, unsatisfied)
@@ -17,17 +15,14 @@ import Type.Proxy (Proxy(..))
 
 spec
   :: forall f c r c'
-   . BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c r) c'
-  => ConstraintM (ProverT f) c'
-  => Finalizer c r
-  => Proxy f
-  -> Proxy c'
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => Proxy c'
   -> Checker f c
   -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval postCondition initialState = describe "Assertion Circuit Specs" do
+spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
 
   it "assertNonZero Circuit is Valid" $
     let

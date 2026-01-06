@@ -6,12 +6,10 @@ import Control.Monad.Trans.Class (lift)
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker, compile, makeSolver)
-import Snarky.Backend.Prover (ProverT)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assert_, const_, equals_, exists, mul_, neq_, read)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
@@ -50,17 +48,14 @@ instance FactorM f Effect where
 
 spec
   :: forall f c c' r
-   . BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c r) c'
-  => Finalizer c r
-  => ConstraintM (ProverT f) c'
-  => Proxy f
-  -> Proxy c'
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => Proxy c'
   -> Checker f c
   -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval postCondition initialState = describe "Factors Specs" do
+spec pc eval postCondition initialState = describe "Factors Specs" do
 
   it "factors Circuit is Valid" do
 

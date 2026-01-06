@@ -12,6 +12,7 @@ module Snarky.Backend.Builder
   , getState
   , class Finalizer
   , finalize
+  , class CompileCircuit
   ) where
 
 import Prelude
@@ -70,8 +71,17 @@ instance Monad m => MonadFresh (CircuitBuilderT c r m) where
     modify_ _ { nextVar = incrementVariable nextVar }
     pure nextVar
 
+class
+  ( BasicSystem f c'
+  , ConstraintM (CircuitBuilderT c r) c'
+  , Finalizer c r
+  ) <=
+  CompileCircuit f c c' r
+
 instance ConstraintM (CircuitBuilderT (Basic f) r) (Basic f) where
   addConstraint' = appendConstraint
+
+instance PrimeField f => CompileCircuit f (Basic f) (Basic f) r
 
 initialState :: forall c. CircuitBuilderState c Unit
 initialState =

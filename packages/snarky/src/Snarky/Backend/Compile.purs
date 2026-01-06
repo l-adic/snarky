@@ -22,22 +22,19 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT, finalize, runCircuitBuilderT, setPublicInputVars)
-import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError, class SolveCircuit)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, Snarky, fresh, read, runAsProverT, runSnarky)
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Type.Proxy (Proxy(..))
 
 compilePure
-  :: forall f c c' a b avar bvar r
-   . CircuitType f a avar
+  :: forall @f c c' a b avar bvar r
+   . CompileCircuit f c c' r
+  => CircuitType f a avar
   => CircuitType f b bvar
-  => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c r) c'
-  => Finalizer c r
   => Proxy a
   -> Proxy b
   -> Proxy c'
@@ -48,12 +45,10 @@ compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
 
 compile
   :: forall f c c' m a b avar bvar r
-   . CircuitType f a avar
+   . CompileCircuit f c c' r
+  => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => BasicSystem f c'
-  => ConstraintM (CircuitBuilderT c r) c'
-  => Finalizer c r
   => Proxy a
   -> Proxy b
   -> Proxy c'
@@ -79,11 +74,10 @@ compile _ _ _ circuit cbs = finalize <$> do
 
 makeSolver
   :: forall f a b c m avar bvar
-   . CircuitType f a avar
+   . SolveCircuit f c
+  => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => BasicSystem f c
-  => ConstraintM (ProverT f) c
   => Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
   -> SolverT f c m a b

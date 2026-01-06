@@ -9,8 +9,9 @@ import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Backend.Builder (initialState)
+import Snarky.Backend.Builder (class CompileCircuit, initialState)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.Types (F(..))
@@ -34,9 +35,9 @@ main =
 
 spec
   :: forall g f
-   . Arbitrary f
+   . CompileCircuit f (Basic f) (Basic f) Unit
+  => SolveCircuit f (Basic f)
   => Arbitrary g
-  => Eq f
   => WeierstrassCurve f g
   => Proxy g
   -> Proxy (Basic f)
