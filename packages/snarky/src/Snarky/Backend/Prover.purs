@@ -10,6 +10,7 @@ module Snarky.Backend.Prover
   , getAssignments
   , getState
   , putState
+  , class SolveCircuit
   ) where
 
 import Prelude
@@ -65,6 +66,15 @@ runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
 instance ConstraintM (ProverT f) (Basic f) where
   addConstraint' _ = pure unit
+
+class
+  ( BasicSystem f c
+  , ConstraintM (ProverT f) c
+  ) <=
+  SolveCircuit f c
+  | c -> f
+
+instance PrimeField f => SolveCircuit f (Basic f)
 
 instance (Monad m, PrimeField f, BasicSystem f c, ConstraintM (ProverT f) c) => CircuitM f c (ProverT f) m where
   exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky c (ProverT f) m var

@@ -16,7 +16,7 @@ import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, endoScalar, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class WeierstrassCurve, endoScalar, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -31,8 +31,7 @@ import Type.Proxy (Proxy(..))
 
 endoSpec
   :: forall f f' g g'
-   . PrimeField f
-  => FieldSizeInBits f 255
+   . FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => CircuitGateConstructor f g'
   => KimchiVerify f f'

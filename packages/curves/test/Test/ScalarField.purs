@@ -8,13 +8,13 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Snarky.Curves.Class (class PrimeField, fromBigInt, toBigInt, pow)
 import Test.Snarky.Curves.BigInt (bigIntHomomorphismSpec)
-import Test.QuickCheck (class Arbitrary, arbitrary, quickCheckGen, (===))
+import Test.QuickCheck (arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (chooseInt)
 import Test.QuickCheck.Laws.Data as Laws
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy)
 
-spec :: forall f. Arbitrary f => PrimeField f => Proxy f -> Spec Unit
+spec :: forall f. PrimeField f => Proxy f -> Spec Unit
 spec proxy = describe "Field Laws" do
   it "satisfies Eq laws" $ liftEffect $
     Laws.checkEq proxy
@@ -38,7 +38,7 @@ spec proxy = describe "Field Laws" do
 
   toBigIntPowSpec proxy
 
-toBigIntPowSpec :: forall f. Arbitrary f => PrimeField f => Proxy f -> Spec Unit
+toBigIntPowSpec :: forall f. PrimeField f => Proxy f -> Spec Unit
 toBigIntPowSpec _ = describe "toBigInt and pow tests" do
   it "toBigInt roundtrips with fromBigInt" $ liftEffect $ quickCheckGen do
     a :: f <- arbitrary

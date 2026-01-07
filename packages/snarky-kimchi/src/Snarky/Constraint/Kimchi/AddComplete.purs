@@ -57,8 +57,7 @@ eval lookup (Rows row) =
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => AddComplete f
   -> m (Rows f)
 reduce c = Rows <$> do

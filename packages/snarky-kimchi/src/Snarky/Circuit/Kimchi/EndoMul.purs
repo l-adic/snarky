@@ -10,7 +10,7 @@ import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector, (!!))
@@ -18,8 +18,7 @@ import Snarky.Data.Vector as Vector
 
 endo
   :: forall f f' t m n _l
-   . PrimeField f
-  => FieldSizeInBits f n
+   . FieldSizeInBits f n
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => Add 128 _l n

@@ -143,7 +143,7 @@ instance (PrimeField f) => CircuitType f Boolean (BoolVar f) where
   fieldsToVar x = coerce $ unsafePartial $ fromJust $ Array.head x
   varToFields = Array.singleton <<< coerce
 
-instance (PrimeField f, BasicSystem f c) => CheckedType (BoolVar f) c where
+instance (BasicSystem f c) => CheckedType (BoolVar f) c where
   check var = Array.singleton $ boolean (coerce var :: FVar f)
 
 instance

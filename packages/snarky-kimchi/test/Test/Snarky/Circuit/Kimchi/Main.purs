@@ -8,14 +8,14 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
-import Test.Snarky.Circuit.Kimchi.EndoMul as EndoMulTests
-import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
+import Test.Snarky.Circuit.Kimchi.EndoMul as EndoMulTests
 import Test.Snarky.Circuit.Kimchi.EndoScalar as EndoScalarTests
 import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
+import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
-import Test.Spec (Spec)
+import Test.Spec (Spec, describe)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -25,16 +25,20 @@ main =
   runSpecAndExitProcess [ consoleReporter ] do
     spec
 
+circuitSpec :: Spec Unit
+circuitSpec = do
+  describe "Pallas" $
+    CircuitTests.spec (Proxy @Pallas.BaseField) (Proxy @(KimchiConstraint Pallas.BaseField)) eval Kimchi.postCondition Kimchi.initialState
+  describe "Vesta" $
+    CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval Kimchi.postCondition Kimchi.initialState
+
 spec :: Spec Unit
 spec = do
-  GenericPlonkSpec.spec (Proxy @Vesta.ScalarField)
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(KimchiConstraint Vesta.BaseField)) eval Kimchi.postCondition Kimchi.initialState
-  PoseidonTests.spec (Proxy @Vesta.BaseField)
-  PoseidonTests.spec (Proxy @Pallas.BaseField)
-  AddCompleteTests.spec (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
-  AddCompleteTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
-  GenericTests.spec (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
-  GenericTests.spec (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+  circuitSpec
+  GenericPlonkSpec.spec
+  PoseidonTests.spec
+  AddCompleteTests.spec
+  GenericTests.spec
   VarBaseMulTests.spec
   EndoMulTests.spec
   EndoScalarTests.spec

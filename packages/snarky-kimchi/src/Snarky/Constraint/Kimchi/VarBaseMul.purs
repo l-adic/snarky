@@ -63,8 +63,7 @@ eval lookup (Rows rounds) = do
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PlonkReductionM m f
+   . PlonkReductionM m f
   => VarBaseMul f
   -> m (Rows f)
 reduce c = Rows <$>

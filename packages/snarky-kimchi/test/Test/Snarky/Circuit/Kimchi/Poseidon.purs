@@ -12,6 +12,8 @@ import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.Fin (unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -21,13 +23,19 @@ import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec
+spec :: Spec Unit
+spec = do
+  spec' "Vesta" (Proxy @Vesta.BaseField)
+  spec' "Pallas" (Proxy @Pallas.BaseField)
+
+spec'
   :: forall f f' g'
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
-  => Proxy f
+  => String
+  -> Proxy f
   -> Spec Unit
-spec _ = describe "Poseidon Circuit Tests" do
+spec' testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
 
   it "Poseidon hash circuit matches reference implementation" do
     let

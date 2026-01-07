@@ -54,8 +54,7 @@ eval lookup (Rows rows) =
 
 reduce
   :: forall f m
-   . PrimeField f
-  => PoseidonField f
+   . PoseidonField f
   => PlonkReductionM m f
   => PoseidonConstraint f
   -> m (Rows f)

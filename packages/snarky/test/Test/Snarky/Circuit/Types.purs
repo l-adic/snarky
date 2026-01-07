@@ -70,7 +70,7 @@ instance
   varToFields = genericVarToFields @(MyRecord (F f) Boolean)
   fieldsToVar = genericFieldsToVar @(MyRecord (F f) Boolean)
 
-instance (PrimeField f, BasicSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+instance (BasicSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
   check = genericCheck
 
 -- Generic test suite for any CircuitType

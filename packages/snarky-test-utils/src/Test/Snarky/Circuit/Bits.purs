@@ -10,12 +10,10 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import JS.BigInt as BigInt
-import Snarky.Backend.Builder (class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
-import Snarky.Backend.Prover (ProverT)
+import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, pack_, unpack_)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.Fin (getFinite)
 import Snarky.Data.Vector (Vector, generate)
@@ -60,19 +58,15 @@ bitSizes mx = Gen.chooseInt 1 mx
 
 spec
   :: forall f n c c' r
-   . FieldSizeInBits f n
-  => PrimeField f
-  => BasicSystem f c'
-  => Finalizer c r
-  => ConstraintM (CircuitBuilderT c r) c'
-  => ConstraintM (ProverT f) c'
-  => Proxy f
-  -> Proxy c'
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => FieldSizeInBits f n
+  => Proxy c'
   -> Checker f c
   -> PostCondition f c r
   -> CircuitBuilderState c r
   -> Spec Unit
-spec _ pc eval postCondition initialState = describe "Bits Circuit Specs" do
+spec pc eval postCondition initialState = describe "Bits Circuit Specs" do
   it "unpack Circuit is Valid" $
     let
 

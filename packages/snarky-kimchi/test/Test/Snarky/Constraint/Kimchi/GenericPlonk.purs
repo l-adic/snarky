@@ -18,12 +18,19 @@ import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Wire (emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (quickCheckGen', (===))
 import Test.Spec (Spec, describe, it)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
-spec :: forall f. PrimeField f => GenericPlonkVerifiable f => Proxy f -> Spec Unit
-spec pf = describe "Constraint Spec" do
+spec :: Spec Unit
+spec = do
+  spec' "Vesta" (Proxy @Vesta.ScalarField)
+  spec' "Pallas" (Proxy @Pallas.ScalarField)
+
+spec' :: forall f. PrimeField f => GenericPlonkVerifiable f => String -> Proxy f -> Spec Unit
+spec' testName pf = describe ("Constraint Spec: " <> testName) do
 
   it "reduces basic constraints to plonk constraints" do
     liftEffect $ quickCheckGen' 10000 do

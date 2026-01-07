@@ -80,11 +80,9 @@ circuit scalarValue =
 
 spec'
   :: forall f f' g'
-   . PrimeField f
-  => FieldSizeInBits f 255
+   . FieldSizeInBits f 255
   => CircuitGateConstructor f g'
   => KimchiVerify f f'
-  => HasEndo f' f
   => Proxy f
   -> String
   -> Spec Unit

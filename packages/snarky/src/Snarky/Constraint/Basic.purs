@@ -148,7 +148,7 @@ genWithAssignments pf =
       , Tuple 4.0 genEqual
       ]
 
-class BasicSystem f c | c -> f where
+class PrimeField f <= BasicSystem f c | c -> f where
   r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
   equal :: CVar f Variable -> CVar f Variable -> c
   boolean :: CVar f Variable -> c
@@ -159,7 +159,7 @@ fromBasic = case _ of
   Boolean b -> boolean b
   Equal a b -> equal a b
 
-instance BasicSystem f (Basic f) where
+instance PrimeField f => BasicSystem f (Basic f) where
   r1cs = R1CS
   equal = Equal
   boolean = Boolean

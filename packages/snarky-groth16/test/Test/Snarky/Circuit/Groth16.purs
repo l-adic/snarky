@@ -18,7 +18,7 @@ import Snarky.Circuit.DSL (class CircuitM, F, Snarky, FVar, all_, assert_, const
 import Snarky.Constraint.Groth16 (R1CS, eval)
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, arbitrary)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
 import Test.Snarky.Circuit as CircuitTests
 import Test.Snarky.Circuit.Utils (nullPostCondition)
@@ -51,7 +51,7 @@ factorsCircuit n = do
   c3 <- neq_ b (const_ one)
   assert_ =<< all_ [ c1, c2, c3 ]
 
-instance (Arbitrary f, PrimeField f) => FactorM f Gen where
+instance (PrimeField f) => FactorM f Gen where
   factor n = do
     a <- arbitrary @(F f) `suchThat` \a ->
       a /= one && a /= n

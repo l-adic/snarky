@@ -152,7 +152,7 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky c t)
 runSnarky :: forall c t m a. Snarky c t m a -> t m a
 runSnarky (Snarky m) = m
 
-class (Monad m, MonadFresh (t m), PrimeField f, BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
+class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a

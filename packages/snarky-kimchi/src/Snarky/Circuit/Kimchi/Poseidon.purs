@@ -11,7 +11,6 @@ import Snarky.Circuit.DSL (Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
-import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.Fin (getFinite, unsafeFinite)
 import Snarky.Data.Vector (Vector)
 import Snarky.Data.Vector as Vector
@@ -19,7 +18,6 @@ import Snarky.Data.Vector as Vector
 poseidon
   :: forall f t m
    . PoseidonField f
-  => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)

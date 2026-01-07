@@ -19,7 +19,7 @@ import Snarky.Circuit.DSL.Bits (packPure)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (AuxState(..), KimchiGate)
 import Snarky.Constraint.Kimchi.Wire (toKimchiRows)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
 import Snarky.Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
@@ -34,8 +34,7 @@ gen128BitElem = do
 
 verifyCircuit
   :: forall f f' g' a b
-   . PrimeField f
-  => HasEndo f f'
+   . HasEndo f f'
   => CircuitGateConstructor f g'
   => { gen :: Gen a
      , solver :: Solver f (KimchiGate f) a b
