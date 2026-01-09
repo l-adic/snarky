@@ -1,0 +1,31 @@
+package:
+  name: snarky-merkle-tree
+  test:
+    main: Test.Main
+    dependencies:
+      - snarky-test-utils
+      - snarky-kimchi
+      - quickcheck
+      - spec
+      - spec-node
+  dependencies:
+    - aff
+    - arrays
+    - console
+    - control
+    - curves
+    - effect
+    - either
+    - foldable-traversable
+    - integers
+    - js-bigints
+    - lists
+    - maybe
+    - newtype
+    - poseidon
+    - prelude
+    - profunctor-lenses
+    - snarky
+    - transformers
+    - tuples
+    - unfoldable
