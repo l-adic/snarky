@@ -70,7 +70,7 @@ pack_ bits =
       (const_ zero)
       (mapWithIndex Tuple bits)
 
-unpackPure :: forall f n. FieldSizeInBits f n => f -> Vector n Boolean
+unpackPure :: forall f @n. FieldSizeInBits f n => f -> Vector n Boolean
 unpackPure x = Vector.generate \i ->
   if (toBigInt x `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then false
   else true

@@ -1,9 +1,12 @@
 module Snarky.Data.MerkleTree
-  ( MerkleTree
+  ( MerkleTree(..)
+  , NonEmptyTree(..)
+  , Tree(..)
   , Address(..)
   , Path
   , depth
   , create
+  , leftTree
   , add_
   , addMany
   , get
@@ -98,6 +101,30 @@ ithBit
   -> Boolean
 ithBit n i = BigInt.and (BigInt.shr n (BigInt.fromInt i)) one == one
 
+-- Create a left-leaning tree of given depth with element at leftmost position
+leftTree
+  :: forall hash a
+   . MerkleHashable a hash
+  => Int
+  -> a
+  -> { hash :: hash, tree :: NonEmptyTree hash a }
+leftTree targetDepth v =
+  let
+    leafHash = hash @a (Just v)
+
+    go :: Int -> hash -> NonEmptyTree hash a -> { hash :: hash, tree :: NonEmptyTree hash a }
+    go i h acc =
+      if i == targetDepth then
+        { hash: h, tree: acc }
+      else
+        let
+          h' = merge h (defaultHash @a)
+          tree' = Node h' (NonEmpty acc) Empty
+        in
+          go (i + 1) h' tree'
+  in
+    go 0 leafHash (Leaf leafHash v)
+
 -- Add an element to the tree
 add_
   :: forall hash a
@@ -127,78 +154,58 @@ add_ mt@(MerkleTree t) value =
         { tree = tree'
         , count = t.count + one
         }
-  where
-  -- Create a left-leaning tree of given depth with element at leftmost position
-  leftTree
-    :: Int
-    -> a
-    -> { hash :: hash, tree :: NonEmptyTree hash a }
-  leftTree targetDepth v =
-    let
-      leafHash = hash @a (Just v)
 
-      go :: Int -> hash -> NonEmptyTree hash a -> { hash :: hash, tree :: NonEmptyTree hash a }
-      go i h acc =
-        if i == targetDepth then
-          { hash: h, tree: acc }
-        else
-          let
-            h' = merge h (defaultHash @a)
-            tree' = Node h' (NonEmpty acc) Empty
-          in
-            go (i + 1) h' tree'
-    in
-      go 0 leafHash (Leaf leafHash v)
-
-  -- Insert element at given address using mask for navigation
-  -- NB: the unsafeCrashWith here is justified because we
-  -- generate fresh addresses.
-  insert
-    :: NonEmptyTree hash a
-    -> BigInt -- mask
-    -> Address -- address
-    -> a -- value to insert
-    -> NonEmptyTree hash a
-  insert tree0 mask0 (Address address) v =
-    let
-      go :: BigInt -> Tree hash a -> NonEmptyTree hash a
-      go mask tree =
-        if mask == zero then
+-- Insert element at given address using mask for navigation
+-- NB: the unsafeCrashWith here is justified because we
+-- generate fresh addresses.
+insert
+  :: forall hash a
+   . MerkleHashable a hash
+  => NonEmptyTree hash a
+  -> BigInt -- mask
+  -> Address -- address
+  -> a -- value to insert
+  -> NonEmptyTree hash a
+insert tree0 mask0 (Address address) v =
+  let
+    go :: BigInt -> Tree hash a -> NonEmptyTree hash a
+    go mask tree =
+      if mask == zero then
+        case tree of
+          Empty -> Leaf (hash (Just v)) v
+          NonEmpty _ -> unsafeCrashWith "impossible: cannot insert new leaf in occupied slot"
+      else
+        let
+          goLeft = BigInt.and mask address == zero
+          mask' = BigInt.shr mask one
+        in
           case tree of
-            Empty -> Leaf (hash (Just v)) v
-            NonEmpty _ -> unsafeCrashWith "impossible: cannot insert new leaf in occupied slot"
-        else
-          let
-            goLeft = BigInt.and mask address == zero
-            mask' = BigInt.shr mask one
-          in
-            case tree of
-              Empty ->
-                if goLeft then
-                  let
-                    tl' = go mask' Empty
-                  in
-                    Node (merge (nonEmptyHash tl') (defaultHash @a)) (NonEmpty tl') Empty
-                else
-                  let
-                    tr' = go mask' Empty
-                  in
-                    Node (merge (defaultHash @a) (nonEmptyHash tr')) Empty (NonEmpty tr')
-              NonEmpty (Node _ tl tr) ->
-                if goLeft then
-                  let
-                    tl' = go mask' tl
-                  in
-                    Node (merge (nonEmptyHash tl') (treeHash tr)) (NonEmpty tl') tr
-                else
-                  let
-                    tr' = go mask' tr
-                  in
-                    Node (merge (treeHash tl) (nonEmptyHash tr')) tl (NonEmpty tr')
-              NonEmpty (Leaf _ _) ->
-                unsafeCrashWith "impossible: cannot insert past leaf"
-    in
-      go mask0 (NonEmpty tree0)
+            Empty ->
+              if goLeft then
+                let
+                  tl' = go mask' Empty
+                in
+                  Node (merge (nonEmptyHash tl') (defaultHash @a)) (NonEmpty tl') Empty
+              else
+                let
+                  tr' = go mask' Empty
+                in
+                  Node (merge (defaultHash @a) (nonEmptyHash tr')) Empty (NonEmpty tr')
+            NonEmpty (Node _ tl tr) ->
+              if goLeft then
+                let
+                  tl' = go mask' tl
+                in
+                  Node (merge (nonEmptyHash tl') (treeHash tr)) (NonEmpty tl') tr
+              else
+                let
+                  tr' = go mask' tr
+                in
+                  Node (merge (treeHash tl) (nonEmptyHash tr')) tl (NonEmpty tr')
+            NonEmpty (Leaf _ _) ->
+              unsafeCrashWith "impossible: cannot insert past leaf"
+  in
+    go mask0 (NonEmpty tree0)
 
 -- Add many elements efficiently, ie just add them to the tree
 -- then re-merkelize at the end
@@ -245,7 +252,7 @@ addMany _tree xs =
       -> Address
       -> Array Boolean
     addressBits treeDepth (Address addr) =
-      Array.fromFoldable $ map (ithBit addr) (List.range 0 (treeDepth - 1))
+      Array.fromFoldable $ map (ithBit addr) (List.reverse $ List.range 0 (treeDepth - 1))
 
     -- Create left tree without computing hashes
     leftTreeDirty :: hash -> Int -> a -> NonEmptyTree hash a
@@ -267,7 +274,13 @@ addMany _tree xs =
           Nil -> Leaf default x
           goRight : rest ->
             case currentTree of
-              Leaf _ _ -> Leaf default x
+              -- If we hit a Leaf but still have bits to process, we must 
+              -- "push" the existing leaf down and create new Node structure
+              Leaf _ _ ->
+                if goRight then
+                  Node default Empty (NonEmpty (go (Leaf default x) rest))
+                else
+                  Node default (NonEmpty (go (Leaf default x) rest)) Empty
               Node _ l r ->
                 if goRight then
                   Node default l (NonEmpty (go (fromTreeWithDefault r) rest))
