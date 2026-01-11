@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint 
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps
 
 .DEFAULT_GOAL := help
 
@@ -25,6 +25,10 @@ build-crypto: ## Build unified crypto-provider
 	cd packages/crypto-provider && npm run build
 	npm install
 
+build-ps: ## Build ass the purescript packages
+	@echo "building PS packages"
+	npm run build:ps
+
 # PureScript package testing
 test-curves: build-crypto ## Test curves package
 	cd packages/curves && npx spago build && npx spago run --main Test.Snarky.Curves.Main
@@ -49,6 +53,7 @@ test-kimchi: build-crypto ## Test poseidon hash package
 
 test-all: ## Test all packages with proper crypto provider
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
+	$(MAKE) build-ps
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
 	@echo "=== Testing Poseidon Hash Package ==="
