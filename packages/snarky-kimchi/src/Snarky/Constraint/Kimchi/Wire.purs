@@ -19,7 +19,7 @@ import Data.Show.Generic (genericShow)
 import Data.UnionFind (UnionFindData)
 import Data.UnionFind as UnionFind
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Data.Vector (Vector)
+import Data.Vector (Vector)
 
 -- Gate kinds for tagging coefficient rows
 data GateKind

@@ -1,0 +1,25 @@
+package:
+  name: merkle-tree
+  test:
+    main: Test.Main
+    dependencies:
+      - curves
+      - effect
+      - integers
+      - nonempty
+      - poseidon
+      - quickcheck
+      - spec
+      - spec-node
+  dependencies:
+    - arrays
+    - exceptions
+    - foldable-traversable
+    - js-bigints
+    - lists
+    - maybe
+    - partial
+    - prelude
+    - safe-coerce
+    - unfoldable
+    - vector-sized

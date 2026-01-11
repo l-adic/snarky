@@ -17,9 +17,9 @@ import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField, fromInt)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, (:<), (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, (:<), (!!))
+import Data.Vector as Vector
 
 type EndoScalarRound f =
   { n0 :: FVar f

@@ -29,12 +29,12 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Data.MerkleTree (FreeHash)
-import Snarky.Data.MerkleTree as MT
-import Snarky.Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
-import Snarky.Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash)
-import Snarky.Data.Vector (Vector)
-import Snarky.Data.Vector as Vector
+import Data.MerkleTree (FreeHash)
+import Data.MerkleTree as MT
+import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
+import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 newtype MerkleTree (d :: Int) hash a = MerkleTree (MT.MerkleTree hash a)

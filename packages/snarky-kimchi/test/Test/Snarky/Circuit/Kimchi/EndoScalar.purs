@@ -21,9 +21,9 @@ import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, (!!))
+import Data.Vector as Vector
 import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem, verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)

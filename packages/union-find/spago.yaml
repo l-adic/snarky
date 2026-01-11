@@ -4,6 +4,7 @@ package:
     - arrays
     - foldable-traversable
     - maybe
+    - newtype
     - ordered-collections
     - prelude
     - transformers

@@ -1,0 +1,12 @@
+package:
+  name: vector-sized
+  dependencies:
+    - arrays
+    - exceptions
+    - foldable-traversable
+    - gen
+    - maybe
+    - partial
+    - prelude
+    - tuples
+    - unfoldable

@@ -15,9 +15,9 @@ import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, 
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
-import Snarky.Data.Fin (getFinite)
-import Snarky.Data.Vector (Vector, generateA)
-import Snarky.Data.Vector as Vector
+import Data.Fin (getFinite)
+import Data.Vector (Vector, generateA)
+import Data.Vector as Vector
 
 -- NB: LSB first
 unpack_

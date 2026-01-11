@@ -1,4 +1,4 @@
-module Snarky.Data.Fin where
+module Data.Fin where
 
 import Prelude
 

@@ -7,9 +7,7 @@ package:
     - curves
     - effect
     - either
-    - exceptions
     - foldable-traversable
-    - gen
     - identity
     - js-bigints
     - lists
@@ -24,6 +22,7 @@ package:
     - transformers
     - tuples
     - unfoldable
+    - vector-sized
   test:
     main: Test.Snarky.Circuit.Main
     dependencies:

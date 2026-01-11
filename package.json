@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "test": "make test",
+    "build:ps": "spago build",
     "build:napi": "npm run build --workspaces",
     "build:crypto": "npm run build -w crypto-provider",
     "clean:napi": "npm run clean --workspaces --if-present"

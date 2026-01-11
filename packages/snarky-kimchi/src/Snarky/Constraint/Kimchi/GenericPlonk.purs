@@ -18,7 +18,7 @@ import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, Rows, addEqual
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Vector (Vector)
+import Data.Vector (Vector)
 
 class GenericPlonkVerifiable f where
   verifyGenericPlonk :: { coeffs :: Array f, variables :: Vector 15 f } -> Boolean

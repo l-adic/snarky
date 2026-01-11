@@ -21,9 +21,9 @@ import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRo
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Fin (Finite, getFinite, unsafeFinite)
-import Snarky.Data.Vector (Vector, append, head, (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (Finite, getFinite, unsafeFinite)
+import Data.Vector (Vector, append, head, (!!))
+import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 type PoseidonConstraint f =

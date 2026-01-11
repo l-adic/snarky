@@ -16,7 +16,7 @@ import JS.BigInt as BigInt
 import Poseidon.Class (class PoseidonField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.MerkleTree as MT
+import Data.MerkleTree as MT
 import Test.Data.MerkleTree.Helpers (PoseidonHash)
 import Partial.Unsafe (unsafePartial)
 import Test.QuickCheck (Result, arbitrary, quickCheck, quickCheckGen, (===))

@@ -42,9 +42,11 @@ module Snarky.Circuit.Types
 import Prelude
 
 import Data.Array as Array
+import Data.Foldable (foldMap)
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments(..), Product(..), from, repOf, to)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Tuple (Tuple)
 import Partial.Unsafe (unsafePartial)
@@ -56,6 +58,8 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Constraint.Basic (class BasicSystem, boolean)
 import Snarky.Curves.Class (class PrimeField, fromBigInt, modulus, pow, toBigInt)
+import Data.Vector (Vector, toVector)
+import Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -169,6 +173,26 @@ instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) wher
 
 instance CheckedType (UnChecked var) c where
   check _ = mempty
+
+instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
+  valueToFields as = foldMap valueToFields as
+  fieldsToValue as =
+    let
+      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToValue <$> cs
+    in
+      unsafePartial $ fromJust $ toVector @n vals
+  sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
+  varToFields as = foldMap (varToFields @f @a) as
+  fieldsToVar as =
+    let
+      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
+      vals = fieldsToVar @f @a <$> cs
+    in
+      unsafePartial $ fromJust $ toVector @n vals
+
+instance CheckedType var c => CheckedType (Vector n var) c where
+  check var = foldMap check var
 
 instance (RowToList r rl, RowToList var rlvar, RCircuitType f rl rlvar r var) => CircuitType f (Record r) (Record var) where
   fieldsToValue = rFieldsToValue @f @rl @rlvar @r (Proxy @rl)

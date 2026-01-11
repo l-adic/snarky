@@ -4,32 +4,35 @@ package:
     - arrays
     - bifunctors
     - curves
+    - effect
     - either
     - exceptions
     - foldable-traversable
     - functions
+    - js-bigints
     - lists
     - maybe
     - newtype
     - nonempty
     - ordered-collections
-    - partial
     - poseidon
     - prelude
     - record
     - safe-coerce
     - snarky
     - snarky-curves
+    - snarky-test-utils
     - transformers
     - tuples
     - union-find
-    - debug
+    - vector-sized
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
       - effect
       - gen
       - identity
+      - partial
       - quickcheck
       - snarky-test-utils
       - spec

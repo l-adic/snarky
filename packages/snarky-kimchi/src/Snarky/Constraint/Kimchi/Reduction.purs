@@ -38,8 +38,8 @@ import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector ((:<))
-import Snarky.Data.Vector as Vector
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 type GenericPlonkConstraint f =

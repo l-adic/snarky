@@ -24,8 +24,8 @@ import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Vector (Vector, (:<))
-import Snarky.Data.Vector as Vector
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 varBaseMul

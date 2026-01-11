@@ -20,8 +20,8 @@ import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRo
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Vector (Vector, (:<))
-import Snarky.Data.Vector as Vector
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 
 type AddComplete f =
   { p1 :: { x :: FVar f, y :: FVar f }

@@ -10,8 +10,8 @@ import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Vector (Vector)
-import Snarky.Data.Vector as Vector
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
 import Test.QuickCheck.Gen (Gen)
 import Test.Spec (Spec, describe, it)
