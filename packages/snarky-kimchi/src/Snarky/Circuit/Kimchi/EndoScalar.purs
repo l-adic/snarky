@@ -12,9 +12,9 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, chunks, (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, chunks, (!!))
+import Data.Vector as Vector
 
 newtype ScalarChallenge f = ScalarChallenge f
 

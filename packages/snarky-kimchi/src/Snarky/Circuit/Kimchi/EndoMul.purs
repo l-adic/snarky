@@ -12,9 +12,9 @@ import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, (!!))
+import Data.Vector as Vector
 
 endo
   :: forall f f' t m n _l

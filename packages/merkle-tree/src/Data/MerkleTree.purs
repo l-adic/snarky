@@ -1,4 +1,4 @@
-module Snarky.Data.MerkleTree
+module Data.MerkleTree
   ( MerkleTree(..)
   , NonEmptyTree(..)
   , Tree(..)
@@ -32,8 +32,8 @@ import Data.Traversable (class Traversable)
 import Data.Unfoldable (class Unfoldable, class Unfoldable1)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Snarky.Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, FreeHash(..), hash, merge, defaultHash)
-import Snarky.Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
+import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, FreeHash(..), hash, merge, defaultHash)
+import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
 
 -- Address uses BigInt to handle large tree depths
 newtype Address = Address BigInt

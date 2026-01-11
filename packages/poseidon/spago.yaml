@@ -3,7 +3,7 @@ package:
   dependencies:
     - curves
     - prelude
-    - snarky
+    - vector-sized
   test:
     main: Test.Poseidon.Main
     dependencies:

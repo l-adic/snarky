@@ -3,7 +3,7 @@ module Snarky.Backend.Kimchi.Impl.Pallas where
 import Effect (Effect)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Data.Vector (Vector)
+import Data.Vector (Vector)
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
 foreign import pallasCircuitGateNew :: String -> GateWires -> Array Pallas.ScalarField -> Gate Pallas.ScalarField

@@ -12,8 +12,8 @@ import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (F, all_, and_, any_, if_, not_, or_, xor_)
-import Snarky.Data.Vector (Vector)
-import Snarky.Data.Vector as Vector
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure, circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)

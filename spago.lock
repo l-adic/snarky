@@ -67,8 +67,7 @@
             "foldable-traversable",
             "quickcheck-laws",
             "spec",
-            "spec-node",
-            "spec-quickcheck"
+            "spec-node"
           ],
           "build_plan": [
             "aff",
@@ -138,7 +137,6 @@
             "safe-coerce",
             "spec",
             "spec-node",
-            "spec-quickcheck",
             "st",
             "strings",
             "tailrec",
@@ -151,13 +149,163 @@
           ]
         }
       },
+      "merkle-tree": {
+        "path": "packages/merkle-tree",
+        "core": {
+          "dependencies": [
+            "arrays",
+            "exceptions",
+            "foldable-traversable",
+            "js-bigints",
+            "lists",
+            "maybe",
+            "partial",
+            "prelude",
+            "safe-coerce",
+            "unfoldable",
+            "vector-sized"
+          ],
+          "build_plan": [
+            "arrays",
+            "bifunctors",
+            "const",
+            "contravariant",
+            "control",
+            "distributive",
+            "effect",
+            "either",
+            "exceptions",
+            "exists",
+            "foldable-traversable",
+            "functions",
+            "functors",
+            "gen",
+            "identity",
+            "integers",
+            "invariant",
+            "js-bigints",
+            "lazy",
+            "lists",
+            "maybe",
+            "newtype",
+            "nonempty",
+            "numbers",
+            "orders",
+            "partial",
+            "prelude",
+            "profunctor",
+            "refs",
+            "safe-coerce",
+            "st",
+            "tailrec",
+            "tuples",
+            "type-equality",
+            "unfoldable",
+            "unsafe-coerce",
+            "vector-sized"
+          ]
+        },
+        "test": {
+          "dependencies": [
+            "curves",
+            "effect",
+            "integers",
+            "nonempty",
+            "poseidon",
+            "quickcheck",
+            "spec",
+            "spec-node"
+          ],
+          "build_plan": [
+            "aff",
+            "ansi",
+            "argonaut-codecs",
+            "argonaut-core",
+            "arraybuffer-types",
+            "arrays",
+            "avar",
+            "bifunctors",
+            "catenable-lists",
+            "console",
+            "const",
+            "contravariant",
+            "control",
+            "curves",
+            "datetime",
+            "distributive",
+            "effect",
+            "either",
+            "enums",
+            "exceptions",
+            "exists",
+            "exitcodes",
+            "foldable-traversable",
+            "foreign",
+            "foreign-object",
+            "fork",
+            "free",
+            "functions",
+            "functors",
+            "gen",
+            "identity",
+            "integers",
+            "invariant",
+            "js-bigints",
+            "js-date",
+            "lazy",
+            "lcg",
+            "lists",
+            "maybe",
+            "mmorph",
+            "newtype",
+            "node-buffer",
+            "node-event-emitter",
+            "node-fs",
+            "node-path",
+            "node-process",
+            "node-streams",
+            "nonempty",
+            "now",
+            "nullable",
+            "numbers",
+            "open-memoize",
+            "optparse",
+            "ordered-collections",
+            "orders",
+            "parallel",
+            "partial",
+            "pipes",
+            "poseidon",
+            "posix-types",
+            "prelude",
+            "profunctor",
+            "quickcheck",
+            "random",
+            "record",
+            "refs",
+            "safe-coerce",
+            "spec",
+            "spec-node",
+            "st",
+            "strings",
+            "tailrec",
+            "transformers",
+            "tuples",
+            "type-equality",
+            "typelevel-prelude",
+            "unfoldable",
+            "unsafe-coerce",
+            "vector-sized"
+          ]
+        }
+      },
       "poseidon": {
         "path": "packages/poseidon",
         "core": {
           "dependencies": [
             "curves",
             "prelude",
-            "snarky"
+            "vector-sized"
           ],
           "build_plan": [
             "arrays",
@@ -188,7 +336,6 @@
             "newtype",
             "nonempty",
             "numbers",
-            "ordered-collections",
             "orders",
             "partial",
             "prelude",
@@ -198,7 +345,6 @@
             "record",
             "refs",
             "safe-coerce",
-            "snarky",
             "st",
             "strings",
             "tailrec",
@@ -206,7 +352,8 @@
             "tuples",
             "type-equality",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         },
         "test": {
@@ -307,9 +454,7 @@
             "curves",
             "effect",
             "either",
-            "exceptions",
             "foldable-traversable",
-            "gen",
             "identity",
             "js-bigints",
             "lists",
@@ -323,7 +468,8 @@
             "safe-coerce",
             "transformers",
             "tuples",
-            "unfoldable"
+            "unfoldable",
+            "vector-sized"
           ],
           "build_plan": [
             "arrays",
@@ -371,7 +517,8 @@
             "tuples",
             "type-equality",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         },
         "test": {
@@ -461,7 +608,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         }
       },
@@ -539,7 +687,8 @@
             "typelevel-prelude",
             "unfoldable",
             "unsafe-coerce",
-            "variant"
+            "variant",
+            "vector-sized"
           ]
         },
         "test": {
@@ -633,7 +782,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         }
       },
@@ -695,7 +845,8 @@
             "tuples",
             "type-equality",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         },
         "test": {
@@ -789,7 +940,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         }
       },
@@ -865,7 +1017,8 @@
             "typelevel-prelude",
             "unfoldable",
             "unsafe-coerce",
-            "variant"
+            "variant",
+            "vector-sized"
           ]
         },
         "test": {
@@ -958,7 +1111,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         }
       },
@@ -969,36 +1123,42 @@
             "arrays",
             "bifunctors",
             "curves",
-            "debug",
+            "effect",
             "either",
             "exceptions",
             "foldable-traversable",
             "functions",
+            "js-bigints",
             "lists",
             "maybe",
             "newtype",
             "nonempty",
             "ordered-collections",
-            "partial",
             "poseidon",
             "prelude",
             "record",
             "safe-coerce",
             "snarky",
             "snarky-curves",
+            "snarky-test-utils",
             "transformers",
             "tuples",
-            "union-find"
+            "union-find",
+            "vector-sized"
           ],
           "build_plan": [
+            "aff",
+            "ansi",
             "arrays",
+            "avar",
             "bifunctors",
+            "catenable-lists",
             "console",
             "const",
             "contravariant",
             "control",
             "curves",
-            "debug",
+            "datetime",
             "distributive",
             "effect",
             "either",
@@ -1006,6 +1166,8 @@
             "exceptions",
             "exists",
             "foldable-traversable",
+            "fork",
+            "free",
             "functions",
             "functors",
             "gen",
@@ -1017,12 +1179,16 @@
             "lcg",
             "lists",
             "maybe",
+            "mmorph",
             "newtype",
             "nonempty",
+            "now",
             "numbers",
             "ordered-collections",
             "orders",
+            "parallel",
             "partial",
+            "pipes",
             "poseidon",
             "prelude",
             "profunctor",
@@ -1033,6 +1199,9 @@
             "safe-coerce",
             "snarky",
             "snarky-curves",
+            "snarky-test-utils",
+            "spec",
+            "spec-quickcheck",
             "st",
             "strings",
             "tailrec",
@@ -1041,7 +1210,8 @@
             "type-equality",
             "unfoldable",
             "union-find",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         },
         "test": {
@@ -1049,6 +1219,7 @@
             "effect",
             "gen",
             "identity",
+            "partial",
             "quickcheck",
             "snarky-test-utils",
             "spec",
@@ -1134,186 +1305,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
-          ]
-        }
-      },
-      "snarky-merkle-tree": {
-        "path": "packages/snarky-merkle-tree",
-        "core": {
-          "dependencies": [
-            "aff",
-            "arrays",
-            "console",
-            "control",
-            "curves",
-            "effect",
-            "either",
-            "foldable-traversable",
-            "integers",
-            "js-bigints",
-            "lists",
-            "maybe",
-            "newtype",
-            "poseidon",
-            "prelude",
-            "profunctor-lenses",
-            "snarky",
-            "transformers",
-            "tuples",
-            "unfoldable"
-          ],
-          "build_plan": [
-            "aff",
-            "arrays",
-            "bifunctors",
-            "console",
-            "const",
-            "contravariant",
-            "control",
-            "curves",
-            "datetime",
-            "distributive",
-            "effect",
-            "either",
-            "enums",
-            "exceptions",
-            "exists",
-            "foldable-traversable",
-            "foreign-object",
-            "functions",
-            "functors",
-            "gen",
-            "identity",
-            "integers",
-            "invariant",
-            "js-bigints",
-            "lazy",
-            "lcg",
-            "lists",
-            "maybe",
-            "newtype",
-            "nonempty",
-            "numbers",
-            "ordered-collections",
-            "orders",
-            "parallel",
-            "partial",
-            "poseidon",
-            "prelude",
-            "profunctor",
-            "profunctor-lenses",
-            "quickcheck",
-            "random",
-            "record",
-            "refs",
-            "safe-coerce",
-            "snarky",
-            "st",
-            "strings",
-            "tailrec",
-            "transformers",
-            "tuples",
-            "type-equality",
-            "typelevel-prelude",
-            "unfoldable",
-            "unsafe-coerce"
-          ]
-        },
-        "test": {
-          "dependencies": [
-            "quickcheck",
-            "snarky-kimchi",
-            "snarky-test-utils",
-            "spec",
-            "spec-node"
-          ],
-          "build_plan": [
-            "aff",
-            "ansi",
-            "argonaut-codecs",
-            "argonaut-core",
-            "arraybuffer-types",
-            "arrays",
-            "avar",
-            "bifunctors",
-            "catenable-lists",
-            "console",
-            "const",
-            "contravariant",
-            "control",
-            "curves",
-            "datetime",
-            "debug",
-            "distributive",
-            "effect",
-            "either",
-            "enums",
-            "exceptions",
-            "exists",
-            "exitcodes",
-            "foldable-traversable",
-            "foreign",
-            "foreign-object",
-            "fork",
-            "free",
-            "functions",
-            "functors",
-            "gen",
-            "identity",
-            "integers",
-            "invariant",
-            "js-bigints",
-            "js-date",
-            "lazy",
-            "lcg",
-            "lists",
-            "maybe",
-            "mmorph",
-            "newtype",
-            "node-buffer",
-            "node-event-emitter",
-            "node-fs",
-            "node-path",
-            "node-process",
-            "node-streams",
-            "nonempty",
-            "now",
-            "nullable",
-            "numbers",
-            "open-memoize",
-            "optparse",
-            "ordered-collections",
-            "orders",
-            "parallel",
-            "partial",
-            "pipes",
-            "poseidon",
-            "posix-types",
-            "prelude",
-            "profunctor",
-            "quickcheck",
-            "random",
-            "record",
-            "refs",
-            "safe-coerce",
-            "snarky",
-            "snarky-curves",
-            "snarky-kimchi",
-            "snarky-test-utils",
-            "spec",
-            "spec-node",
-            "spec-quickcheck",
-            "st",
-            "strings",
-            "tailrec",
-            "transformers",
-            "tuples",
-            "type-equality",
-            "typelevel-prelude",
-            "unfoldable",
-            "union-find",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         }
       },
@@ -1342,7 +1335,8 @@
             "spec",
             "spec-quickcheck",
             "transformers",
-            "tuples"
+            "tuples",
+            "vector-sized"
           ],
           "build_plan": [
             "aff",
@@ -1404,7 +1398,8 @@
             "tuples",
             "type-equality",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "vector-sized"
           ]
         },
         "test": {
@@ -1419,6 +1414,7 @@
             "arrays",
             "foldable-traversable",
             "maybe",
+            "newtype",
             "ordered-collections",
             "prelude",
             "transformers"
@@ -1548,6 +1544,59 @@
             "unfoldable",
             "unsafe-coerce"
           ]
+        }
+      },
+      "vector-sized": {
+        "path": "packages/sized-vector",
+        "core": {
+          "dependencies": [
+            "arrays",
+            "exceptions",
+            "foldable-traversable",
+            "gen",
+            "maybe",
+            "partial",
+            "prelude",
+            "tuples",
+            "unfoldable"
+          ],
+          "build_plan": [
+            "arrays",
+            "bifunctors",
+            "const",
+            "contravariant",
+            "control",
+            "distributive",
+            "effect",
+            "either",
+            "exceptions",
+            "exists",
+            "foldable-traversable",
+            "functions",
+            "functors",
+            "gen",
+            "identity",
+            "invariant",
+            "maybe",
+            "newtype",
+            "nonempty",
+            "orders",
+            "partial",
+            "prelude",
+            "profunctor",
+            "refs",
+            "safe-coerce",
+            "st",
+            "tailrec",
+            "tuples",
+            "type-equality",
+            "unfoldable",
+            "unsafe-coerce"
+          ]
+        },
+        "test": {
+          "dependencies": [],
+          "build_plan": []
         }
       }
     },
@@ -2306,15 +2355,6 @@
         "tuples"
       ]
     },
-    "debug": {
-      "type": "registry",
-      "version": "6.0.2",
-      "integrity": "sha256-vmkYFuXYuELBzeauvgHG6E6Kf/Hp1dAnxwE9ByHfwSg=",
-      "dependencies": [
-        "functions",
-        "prelude"
-      ]
-    },
     "distributive": {
       "type": "registry",
       "version": "6.0.0",
@@ -2925,33 +2965,6 @@
         "invariant",
         "newtype",
         "prelude",
-        "tuples"
-      ]
-    },
-    "profunctor-lenses": {
-      "type": "registry",
-      "version": "8.0.0",
-      "integrity": "sha256-K7f29rHRHgVSb2Y/PaSKtfYPriP6n87BJNO7EhsZHas=",
-      "dependencies": [
-        "arrays",
-        "bifunctors",
-        "const",
-        "control",
-        "distributive",
-        "either",
-        "foldable-traversable",
-        "foreign-object",
-        "functors",
-        "identity",
-        "lists",
-        "maybe",
-        "newtype",
-        "ordered-collections",
-        "partial",
-        "prelude",
-        "profunctor",
-        "record",
-        "transformers",
         "tuples"
       ]
     },

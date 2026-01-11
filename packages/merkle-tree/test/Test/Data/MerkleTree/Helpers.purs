@@ -3,8 +3,8 @@ module Test.Data.MerkleTree.Helpers where
 import Prelude
 
 import Data.Maybe (Maybe(..))
+import Data.MerkleTree (class Hashable, class MergeHash, class MerkleHashable)
 import Poseidon.Class (class PoseidonField, hash)
-import Snarky.Data.MerkleTree (class Hashable, class MergeHash)
 
 -- Newtype for Poseidon hash to avoid orphan instance
 newtype PoseidonHash f = PoseidonHash f
@@ -21,3 +21,5 @@ instance PoseidonField f => Hashable f (PoseidonHash f) where
   hash = case _ of
     Nothing -> PoseidonHash (hash [ zero ])
     Just x -> PoseidonHash (hash [ x ])
+
+instance PoseidonField f => MerkleHashable f (PoseidonHash f)

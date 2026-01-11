@@ -17,4 +17,3 @@ package:
       - quickcheck-laws
       - spec
       - spec-node
-      - spec-quickcheck

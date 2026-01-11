@@ -17,9 +17,9 @@ import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariab
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, (!!), (:<))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, (!!), (:<))
+import Data.Vector as Vector
 
 type Round f =
   { t :: AffinePoint f

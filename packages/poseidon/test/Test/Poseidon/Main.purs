@@ -12,7 +12,7 @@ import Type.Proxy (Proxy(..))
 import Poseidon.Class (getNumRounds, getMdsMatrix, hash)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Vector as Vector
+import Data.Vector as Vector
 import Test.QuickCheck ((===))
 
 main :: Effect Unit

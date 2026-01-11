@@ -14,9 +14,9 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector)
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)

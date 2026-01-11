@@ -7,7 +7,7 @@ import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, Prov
 import Snarky.Constraint.Kimchi.Wire (GateKind)
 import Snarky.Curves.Pallas (ScalarField, G) as Pallas
 import Snarky.Curves.Vesta (ScalarField, G) as Vesta
-import Snarky.Data.Vector (Vector)
+import Data.Vector (Vector)
 
 -- Typeclass for circuit gate construction over different field types
 class CircuitGateConstructor f g | f -> g, g -> f where

@@ -10,8 +10,8 @@ import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Snarky.Circuit.Types (F(..))
-import Snarky.Data.Vector (Vector)
-import Snarky.Data.Vector as Vector
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure, circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)

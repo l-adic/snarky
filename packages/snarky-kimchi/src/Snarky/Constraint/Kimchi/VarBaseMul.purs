@@ -23,9 +23,9 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.Fin (unsafeFinite)
-import Snarky.Data.Vector (Vector, index, nil, (:<))
-import Snarky.Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Data.Vector (Vector, index, nil, (:<))
+import Data.Vector as Vector
 
 type ScaleRound f =
   { accs :: Vector 6 (AffinePoint (FVar f))

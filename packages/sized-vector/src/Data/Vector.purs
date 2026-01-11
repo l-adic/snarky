@@ -1,4 +1,4 @@
-module Snarky.Data.Vector
+module Data.Vector
   ( Vector
   , nil
   , toUnfoldable
@@ -26,6 +26,8 @@ module Snarky.Data.Vector
   , head
   , last
   , reverse
+  --
+  , chunk
   ) where
 
 import Prelude
@@ -34,7 +36,7 @@ import Control.Monad.Gen (class MonadGen)
 import Data.Array ((:))
 import Data.Array as A
 import Data.Array as Array
-import Data.Foldable (class Foldable, foldMap)
+import Data.Foldable (class Foldable)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..), fromJust)
@@ -46,8 +48,7 @@ import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
-import Snarky.Data.Fin (Finite, finites, getFinite, unsafeFinite)
+import Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Type.Proxy (Proxy(..))
 
 newtype Vector (n :: Int) a = Vector (Array a)
@@ -160,26 +161,6 @@ generate f = Vector $ map f (finites @n)
 
 generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites @n)
-
-instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) (Vector n var) where
-  valueToFields as = foldMap valueToFields as
-  fieldsToValue as =
-    let
-      cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToValue <$> cs
-    in
-      unsafePartial $ fromJust $ toVector @n vals
-  sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
-  varToFields as = foldMap (varToFields @f @a) as
-  fieldsToVar as =
-    let
-      cs = chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToVar @f @a <$> cs
-    in
-      unsafePartial $ fromJust $ toVector @n vals
-
-instance CheckedType var c => CheckedType (Vector n var) c where
-  check (Vector var) = foldMap check var
 
 chunk :: forall a. Int -> Array a -> Array (Array a)
 chunk n arr

@@ -22,9 +22,9 @@ import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFr
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.Fin (getFinite)
-import Snarky.Data.Vector (Vector, (:<), (!!))
-import Snarky.Data.Vector as Vector
+import Data.Fin (getFinite)
+import Data.Vector (Vector, (:<), (!!))
+import Data.Vector as Vector
 
 -- figure out the cell placement for each variable. 
 -- since we can use the same variable in multiple constraints,

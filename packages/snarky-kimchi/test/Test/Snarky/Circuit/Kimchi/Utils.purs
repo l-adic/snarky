@@ -20,7 +20,7 @@ import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (AuxState(..), KimchiGate)
 import Snarky.Constraint.Kimchi.Wire (toKimchiRows)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
-import Snarky.Data.Vector as Vector
+import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Spec.Assertions (shouldEqual)
