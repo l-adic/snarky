@@ -15,7 +15,6 @@ import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -73,7 +72,7 @@ spec = do
         do
           circuitSpecPure'
             { builtState: s
-            , checker: KimchiConstraint.eval
+            , checker: Kimchi.eval
             , solver: solver
             , testFunction: satisfied f
             , postCondition: Kimchi.postCondition
@@ -120,7 +119,7 @@ spec = do
         do
           circuitSpecPure'
             { builtState: s
-            , checker: KimchiConstraint.eval
+            , checker: Kimchi.eval
             , solver: solver
             , testFunction: satisfied f
             , postCondition: Kimchi.postCondition

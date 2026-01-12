@@ -14,9 +14,9 @@ import Snarky.Backend.Compile (Solver, compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.Curves (add_)
 import Snarky.Circuit.Types (F)
-import Snarky.Constraint.Kimchi (class KimchiVerify, AuxState, KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi as KimchiConstraint
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -34,7 +34,7 @@ spec = do
 
 spec'
   :: forall g g' f f'
-   . KimchiConstraint.KimchiVerify f f'
+   . Kimchi.KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
   => KimchiVerify f f'
@@ -75,7 +75,7 @@ spec' testName pg pc =
 
       circuitSpecPure'
         { builtState: s
-        , checker: KimchiConstraint.eval
+        , checker: Kimchi.eval
         , solver: solver
         , testFunction: satisfied f
         , postCondition: Kimchi.postCondition

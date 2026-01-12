@@ -5,7 +5,7 @@ import Effect (Effect)
 import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, verifyProverIndex) as Pallas
 import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate) as Vesta
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, gateKindToString)
-import Snarky.Constraint.Kimchi.Wire (GateKind)
+import Snarky.Constraint.Kimchi.Types (GateKind)
 import Snarky.Curves.Pallas (G, ScalarField) as Pallas
 import Snarky.Curves.Vesta (G, ScalarField) as Vesta
 

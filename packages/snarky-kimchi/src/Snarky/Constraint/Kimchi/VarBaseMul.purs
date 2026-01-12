@@ -20,8 +20,8 @@ import Data.Vector as Vector
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
-import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, KimchiRow)
-import Snarky.Constraint.Kimchi.Wire as Wire
+import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, KimchiRow)
+import Snarky.Constraint.Kimchi.Types as GateKind
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -127,8 +127,8 @@ reduce c = Rows <$>
             :<
               nil
     in
-      { kind: Wire.VarBaseMul, coeffs: mempty, variables: row }
-        :< { kind: Wire.Zero, coeffs: mempty, variables: nextRow }
+      { kind: GateKind.VarBaseMul, coeffs: mempty, variables: row }
+        :< { kind: GateKind.Zero, coeffs: mempty, variables: nextRow }
         :<
           nil
 

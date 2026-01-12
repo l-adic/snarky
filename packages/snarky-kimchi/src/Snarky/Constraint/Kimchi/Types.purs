@@ -1,7 +1,10 @@
-module Snarky.Constraint.Kimchi.Wire
-  ( KimchiWireRow
-  , KimchiRow
+module Snarky.Constraint.Kimchi.Types
+  ( GenericPlonkConstraint
+  , AuxState(..)
+  , initialAuxState
   , GateKind(..)
+  , KimchiRow
+  , KimchiWireRow
   , emptyKimchiWireState
   , class ToKimchiRows
   , toKimchiRows
@@ -12,7 +15,8 @@ import Prelude
 import Data.Generic.Rep (class Generic)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Show.Generic (genericShow)
@@ -20,6 +24,30 @@ import Data.UnionFind (UnionFindData)
 import Data.UnionFind as UnionFind
 import Data.Vector (Vector)
 import Snarky.Circuit.CVar (Variable)
+
+type GenericPlonkConstraint f =
+  { cl :: f -- Left coefficient
+  , vl :: Maybe Variable -- Left variable
+  , cr :: f -- Right coefficient  
+  , vr :: Maybe Variable -- Right variable
+  , co :: f -- Output coefficient
+  , vo :: Maybe Variable -- Output variable
+  , m :: f -- Multiplication coefficient  
+  , c :: f -- Constant term
+  }
+
+newtype AuxState f = AuxState
+  { wireState :: KimchiWireRow f
+  , queuedGenericGate :: Maybe (GenericPlonkConstraint f)
+  }
+
+derive instance Newtype (AuxState f) _
+
+initialAuxState :: forall f. AuxState f
+initialAuxState = AuxState
+  { wireState: emptyKimchiWireState
+  , queuedGenericGate: Nothing
+  }
 
 -- Gate kinds for tagging coefficient rows
 data GateKind

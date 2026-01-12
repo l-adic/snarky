@@ -1,7 +1,7 @@
 module Snarky.Backend.Kimchi.Types where
 
 import Data.Vector (Vector)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..))
+import Snarky.Constraint.Kimchi.Types (GateKind(..))
 
 -- Opaque types for Wire and GateWires from proof-systems
 foreign import data Wire :: Type

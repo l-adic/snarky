@@ -16,7 +16,7 @@ import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as Plonk
 import Snarky.Constraint.Kimchi.Reduction (reduceAsBuilder, reduceAsProver)
-import Snarky.Constraint.Kimchi.Wire (emptyKimchiWireState)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), emptyKimchiWireState)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -37,7 +37,7 @@ spec' testName pf = describe ("Constraint Spec: " <> testName) do
       { basic, assignments } <- Basic.genWithAssignments pf
       let
         nextVariable = maybe v0 incrementVariable $ maximum (Map.keys assignments)
-        initStateBuilderState = { nextVariable, wireState: emptyKimchiWireState, queuedGenericGate: Nothing }
+        initStateBuilderState = { nextVariable, aux: AuxState { wireState: emptyKimchiWireState, queuedGenericGate: Nothing } }
         Tuple _ plonkConstraints = reduceAsBuilder initStateBuilderState (Plonk.reduce basic)
         finalAssignments = case reduceAsProver { nextVariable, assignments } (Plonk.reduce basic) of
           Left e -> unsafeCrashWith $ "Unexpected error in Plonk reduce as Prover: " <> show e

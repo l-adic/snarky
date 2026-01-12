@@ -1,6 +1,5 @@
 module Snarky.Constraint.Kimchi
-  ( AuxState(..)
-  , KimchiConstraint(..)
+  ( KimchiConstraint(..)
   , KimchiGate
   , class KimchiVerify
   , eval
@@ -14,7 +13,7 @@ import Data.Array (all)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
-import Data.Newtype (class Newtype, over, un)
+import Data.Newtype (over, un)
 import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
@@ -40,9 +39,9 @@ import Snarky.Constraint.Kimchi.Poseidon (class PoseidonVerifiable, PoseidonCons
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
+import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
-import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, KimchiWireRow, emptyKimchiWireState, toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -75,11 +74,6 @@ instance ToKimchiRows f (KimchiGate f) where
     KimchiGateEndoMul a -> toKimchiRows a
     KimchiGateNoOp -> []
 
-newtype AuxState f = AuxState
-  { wireState :: KimchiWireRow f
-  , queuedGenericGate :: Maybe (Reduction.GenericPlonkConstraint f)
-  }
-
 instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
   finalize s =
     let
@@ -95,14 +89,6 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
             )
             s.aux
         }
-
-derive instance Newtype (AuxState f) _
-
-initialAuxState :: forall f. AuxState f
-initialAuxState = AuxState
-  { wireState: emptyKimchiWireState
-  , queuedGenericGate: Nothing
-  }
 
 instance PoseidonField f => CompileCircuit f (KimchiGate f) (KimchiConstraint f) (AuxState f)
 
@@ -128,24 +114,15 @@ instance
     go reducer wrap c = do
       s <- CircuitBuilder.getState
       let
-        AuxState aux = s.aux
         Tuple rows res = reduceAsBuilder
           { nextVariable: s.nextVar
-          , wireState: aux.wireState
-          , queuedGenericGate: aux.queuedGenericGate
+          , aux: s.aux
           }
           (reducer c)
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
         , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (wrap rows)
-        , aux = over AuxState
-            ( \st ->
-                st
-                  { wireState = res.wireState
-                  , queuedGenericGate = res.queuedGenericGate
-                  }
-            )
-            s.aux
+        , aux = res.aux
         }
 
 instance PoseidonField f => SolveCircuit f (KimchiConstraint f)

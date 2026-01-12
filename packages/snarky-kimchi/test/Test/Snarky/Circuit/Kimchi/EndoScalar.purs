@@ -20,7 +20,6 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -108,7 +107,7 @@ spec' _ curveName = do
           -- Test that circuit matches reference on random 128-bit boolean arrays
           circuitSpecPure'
             { builtState: s
-            , checker: KimchiConstraint.eval
+            , checker: Kimchi.eval
             , solver: solver
             , testFunction: satisfied f
             , postCondition: Kimchi.postCondition

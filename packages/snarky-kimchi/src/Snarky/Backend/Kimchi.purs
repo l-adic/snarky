@@ -23,7 +23,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate)
 import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
+import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 
 -- figure out the cell placement for each variable. 

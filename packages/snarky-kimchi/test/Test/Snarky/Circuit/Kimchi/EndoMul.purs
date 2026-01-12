@@ -15,7 +15,6 @@ import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class WeierstrassCurve, endoScalar, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -83,7 +82,7 @@ endoSpec _ curveProxy curveName =
 
       circuitSpecPure'
         { builtState: s
-        , checker: KimchiConstraint.eval
+        , checker: Kimchi.eval
         , solver: solver
         , testFunction: satisfied f
         , postCondition: Kimchi.postCondition
