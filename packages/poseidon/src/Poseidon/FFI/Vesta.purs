@@ -1,8 +1,8 @@
 module Poseidon.FFI.Vesta where
 
+import Data.Vector (Vector)
 import Prelude (Unit)
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector)
 
 foreign import sbox :: Vesta.BaseField -> Vesta.BaseField
 foreign import applyMds :: Vector 3 Vesta.BaseField -> Vector 3 Vesta.BaseField

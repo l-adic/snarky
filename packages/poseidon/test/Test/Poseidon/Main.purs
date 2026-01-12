@@ -2,18 +2,18 @@ module Test.Poseidon.Main where
 
 import Prelude
 
+import Data.Vector as Vector
 import Effect (Effect)
-import Test.Spec (describe, it)
-import Test.Spec.Runner.Node (runSpecAndExitProcess)
-import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Assertions (shouldEqual)
-import Test.Spec.QuickCheck (quickCheck)
-import Type.Proxy (Proxy(..))
-import Poseidon.Class (getNumRounds, getMdsMatrix, hash)
+import Poseidon.Class (getMdsMatrix, getNumRounds, hash)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector as Vector
 import Test.QuickCheck ((===))
+import Test.Spec (describe, it)
+import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.QuickCheck (quickCheck)
+import Test.Spec.Reporter.Console (consoleReporter)
+import Test.Spec.Runner.Node (runSpecAndExitProcess)
+import Type.Proxy (Proxy(..))
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do

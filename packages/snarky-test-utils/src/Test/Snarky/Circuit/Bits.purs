@@ -5,18 +5,18 @@ import Prelude
 import Control.Monad.Gen as Gen
 import Data.Array (foldl)
 import Data.Array as Array
+import Data.Fin (getFinite)
 import Data.Int (pow)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, generate)
 import JS.BigInt as BigInt
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
 import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, pack_, unpack_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
-import Data.Fin (getFinite)
-import Data.Vector (Vector, generate)
 import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)

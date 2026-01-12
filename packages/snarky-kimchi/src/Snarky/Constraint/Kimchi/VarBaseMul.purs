@@ -11,9 +11,12 @@ module Snarky.Constraint.Kimchi.VarBaseMul
 import Prelude
 
 import Data.Array (all, concatMap)
+import Data.Fin (unsafeFinite)
 import Data.Function.Uncurried (Fn1, runFn1)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (for, traverse)
+import Data.Vector (Vector, index, nil, (:<))
+import Data.Vector as Vector
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
@@ -23,9 +26,6 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Data.Fin (unsafeFinite)
-import Data.Vector (Vector, index, nil, (:<))
-import Data.Vector as Vector
 
 type ScaleRound f =
   { accs :: Vector 6 (AffinePoint (FVar f))

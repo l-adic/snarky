@@ -28,7 +28,7 @@ import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL.Monad (class ConstraintM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
-import Snarky.Constraint.Kimchi.AddComplete (AddComplete, class AddCompleteVerifiable)
+import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.EndoMul (EndoMul)
 import Snarky.Constraint.Kimchi.EndoMul as EndoMul
@@ -36,7 +36,7 @@ import Snarky.Constraint.Kimchi.EndoScalar (EndoScalar)
 import Snarky.Constraint.Kimchi.EndoScalar as EndoScalar
 import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonk
-import Snarky.Constraint.Kimchi.Poseidon (PoseidonConstraint, class PoseidonVerifiable)
+import Snarky.Constraint.Kimchi.Poseidon (class PoseidonVerifiable, PoseidonConstraint)
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Reduction as Reduction

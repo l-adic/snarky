@@ -19,7 +19,7 @@ import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (Point(..), AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, Point(..))
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
 import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)

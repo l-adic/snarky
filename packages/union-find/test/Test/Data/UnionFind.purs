@@ -3,10 +3,10 @@ module Test.Data.UnionFind where
 import Prelude
 
 import Control.Monad.State (State, evalState, execState)
-import Data.UnionFind (connected, find, union, equivalenceClasses, emptyUnionFind, UnionFindData)
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Data.Traversable (traverse, traverse_)
+import Data.UnionFind (UnionFindData, connected, emptyUnionFind, equivalenceClasses, find, union)
 import Effect (Effect)
 import Test.QuickCheck ((===))
 import Test.Spec (describe, it)

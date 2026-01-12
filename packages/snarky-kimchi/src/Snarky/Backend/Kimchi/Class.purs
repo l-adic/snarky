@@ -1,13 +1,13 @@
 module Snarky.Backend.Kimchi.Class where
 
+import Data.Vector (Vector)
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, verifyProverIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate) as Pallas
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, verifyProverIndex) as Pallas
 import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate) as Vesta
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, gateKindToString)
 import Snarky.Constraint.Kimchi.Wire (GateKind)
-import Snarky.Curves.Pallas (ScalarField, G) as Pallas
-import Snarky.Curves.Vesta (ScalarField, G) as Vesta
-import Data.Vector (Vector)
+import Snarky.Curves.Pallas (G, ScalarField) as Pallas
+import Snarky.Curves.Vesta (G, ScalarField) as Vesta
 
 -- Typeclass for circuit gate construction over different field types
 class CircuitGateConstructor f g | f -> g, g -> f where

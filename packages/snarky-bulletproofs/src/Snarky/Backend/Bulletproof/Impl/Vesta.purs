@@ -12,8 +12,8 @@ module Snarky.Backend.Bulletproof.Impl.Vesta
 import Data.Function.Uncurried (Fn2, Fn4, Fn5, Fn6, runFn2, runFn4, runFn5, runFn6)
 import Foreign (Foreign)
 import Simple.JSON (write)
-import Snarky.Backend.Bulletproof.Types (CRS, Witness, Statement, Circuit, Proof, CircuitDimensions, Entry, CircuitMatrix, CircuitVector)
-import Snarky.Curves.Vesta (ScalarField, G)
+import Snarky.Backend.Bulletproof.Types (CRS, Circuit, CircuitDimensions, CircuitMatrix, CircuitVector, Entry, Proof, Statement, Witness)
+import Snarky.Curves.Vesta (G, ScalarField)
 
 crsCreate :: { size :: Int, seed :: Int } -> CRS G
 crsCreate { size, seed } = runFn2 vestaCrsCreate size seed

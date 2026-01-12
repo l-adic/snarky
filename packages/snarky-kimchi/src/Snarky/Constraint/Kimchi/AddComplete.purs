@@ -13,6 +13,8 @@ import Data.Array as Array
 import Data.Function.Uncurried (Fn1, runFn1)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
@@ -20,8 +22,6 @@ import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRo
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector, (:<))
-import Data.Vector as Vector
 
 type AddComplete f =
   { p1 :: { x :: FVar f, y :: FVar f }

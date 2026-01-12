@@ -49,6 +49,8 @@ import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Tuple (Tuple)
+import Data.Vector (Vector, toVector)
+import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
@@ -58,8 +60,6 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Constraint.Basic (class BasicSystem, boolean)
 import Snarky.Curves.Class (class PrimeField, fromBigInt, modulus, pow, toBigInt)
-import Data.Vector (Vector, toVector)
-import Data.Vector as Vector
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 

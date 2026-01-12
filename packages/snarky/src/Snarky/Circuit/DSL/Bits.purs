@@ -2,11 +2,14 @@ module Snarky.Circuit.DSL.Bits where
 
 import Prelude
 
+import Data.Fin (getFinite)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, generateA)
+import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
@@ -15,9 +18,6 @@ import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, 
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
-import Data.Fin (getFinite)
-import Data.Vector (Vector, generateA)
-import Data.Vector as Vector
 
 -- NB: LSB first
 unpack_

@@ -10,15 +10,15 @@ import Data.List ((:))
 import Data.List as List
 import Data.List.Types (NonEmptyList(..))
 import Data.Maybe (Maybe(..), fromJust)
+import Data.MerkleTree as MT
 import Data.NonEmpty (NonEmpty(..))
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
+import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.MerkleTree as MT
 import Test.Data.MerkleTree.Helpers (PoseidonHash)
-import Partial.Unsafe (unsafePartial)
 import Test.QuickCheck (Result, arbitrary, quickCheck, quickCheckGen, (===))
 import Test.QuickCheck.Gen (Gen, vectorOf)
 import Test.Spec (Spec, describe, it)

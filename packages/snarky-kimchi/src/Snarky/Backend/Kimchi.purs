@@ -8,6 +8,7 @@ import Prelude
 import Control.Monad.State (evalState)
 import Data.Array ((:))
 import Data.Array as Array
+import Data.Fin (getFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (foldlWithIndex)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -16,15 +17,14 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), uncurry)
 import Data.UnionFind (UnionFindData, find)
+import Data.Vector (Vector, (!!), (:<))
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate)
 import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Constraint.Kimchi.Wire (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
-import Data.Fin (getFinite)
-import Data.Vector (Vector, (:<), (!!))
-import Data.Vector as Vector
 
 -- figure out the cell placement for each variable. 
 -- since we can use the same variable in multiple constraints,

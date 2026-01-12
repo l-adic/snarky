@@ -19,7 +19,7 @@ import Snarky.Constraint.Basic (Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, genAffinePoint, addAffine, toAffine)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', nullPostCondition, satisfied, satisfied_, unsatisfied)

@@ -4,6 +4,8 @@ import Prelude
 
 import Data.Array as Array
 import Data.Newtype (unwrap)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Poseidon.Class (fullRound)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -14,8 +16,6 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)

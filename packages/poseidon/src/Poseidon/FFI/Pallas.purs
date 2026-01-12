@@ -1,8 +1,8 @@
 module Poseidon.FFI.Pallas where
 
+import Data.Vector (Vector)
 import Prelude (Unit)
 import Snarky.Curves.Pallas as Pallas
-import Data.Vector (Vector)
 
 foreign import sbox :: Pallas.BaseField -> Pallas.BaseField
 foreign import applyMds :: Vector 3 Pallas.BaseField -> Vector 3 Pallas.BaseField

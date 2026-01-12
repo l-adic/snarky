@@ -27,7 +27,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError, Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class MonadFresh, class ConstraintM, AsProverT, Snarky(..), fresh, runAsProverT)
+import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky(..), fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -56,12 +56,21 @@ derive newtype instance Monad m => Monad (ProverT f m)
 instance MonadTrans (ProverT f) where
   lift m = ProverT $ lift $ lift m
 
-runProverT :: forall f a m. Monad m => ProverT f m a -> ProverState f -> m (Tuple (Either EvaluationError a) (ProverState f))
+runProverT
+  :: forall f a m
+   . Monad m
+  => ProverT f m a
+  -> ProverState f
+  -> m (Tuple (Either EvaluationError a) (ProverState f))
 runProverT (ProverT m) s = runStateT (runExceptT m) s
 
 type Prover f = ProverT f Identity
 
-runProver :: forall f a. Prover f a -> ProverState f -> Tuple (Either EvaluationError a) (ProverState f)
+runProver
+  :: forall f a
+   . Prover f a
+  -> ProverState f
+  -> Tuple (Either EvaluationError a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
 instance ConstraintM (ProverT f) (Basic f) where
@@ -76,8 +85,18 @@ class
 
 instance PrimeField f => SolveCircuit f (Basic f)
 
-instance (Monad m, PrimeField f, BasicSystem f c, ConstraintM (ProverT f) c) => CircuitM f c (ProverT f) m where
-  exists :: forall a var. CircuitType f a var => AsProverT f m a -> Snarky c (ProverT f) m var
+instance
+  ( Monad m
+  , PrimeField f
+  , BasicSystem f c
+  , ConstraintM (ProverT f) c
+  ) =>
+  CircuitM f c (ProverT f) m where
+  exists
+    :: forall a var
+     . CircuitType f a var
+    => AsProverT f m a
+    -> Snarky c (ProverT f) m var
   exists m = Snarky do
     assignments <- getAssignments
     let n = sizeInFields (Proxy @f) (Proxy @a)
@@ -94,15 +113,26 @@ instance Monad m => MonadFresh (ProverT f m) where
     modify_ _ { nextVar = incrementVariable nextVar }
     pure nextVar
 
-throwProverError :: forall f m a. Monad m => EvaluationError -> ProverT f m a
+throwProverError
+  :: forall f m a
+   . Monad m
+  => EvaluationError
+  -> ProverT f m a
 throwProverError = ProverT <<< throwError
 
-setAssignments :: forall f m. Monad m => Array (Tuple Variable f) -> ProverT f m Unit
+setAssignments
+  :: forall f m
+   . Monad m
+  => Array (Tuple Variable f)
+  -> ProverT f m Unit
 setAssignments vs = ProverT $
   modify_ \s ->
     s { assignments = foldl (\acc (Tuple v f) -> Map.insert v f acc) s.assignments vs }
 
-getAssignments :: forall f m. Monad m => ProverT f m (Map Variable f)
+getAssignments
+  :: forall f m
+   . Monad m
+  => ProverT f m (Map Variable f)
 getAssignments = ProverT $ gets _.assignments
 
 getState

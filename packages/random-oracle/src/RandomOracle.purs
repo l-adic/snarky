@@ -15,10 +15,10 @@ module RandomOracle
 import Prelude
 
 import Data.Array (foldl, index, length, (..))
+import Data.Fin (unsafeFinite)
 import Data.Maybe (fromMaybe)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Data.Fin (unsafeFinite)
 import Poseidon.Class (class PoseidonField)
 import RandomOracle.Sponge (permute)
 

@@ -18,7 +18,7 @@ import Data.Foldable (foldl)
 import Data.FoldableWithIndex as ArrayWithIndex
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), maybe, fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for)

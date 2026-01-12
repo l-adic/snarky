@@ -2,7 +2,10 @@ module Snarky.Circuit.Kimchi.EndoMul (endo) where
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (!!))
+import Data.Vector as Vector
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_)
 import Snarky.Circuit.DSL.Bits (unpackPure)
@@ -12,9 +15,6 @@ import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Data.Fin (unsafeFinite)
-import Data.Vector (Vector, (!!))
-import Data.Vector as Vector
 
 endo
   :: forall f f' t m n _l
