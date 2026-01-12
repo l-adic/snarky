@@ -18,9 +18,8 @@ import Prelude
 
 import Data.Array (foldl, snoc)
 import Data.Reflectable (reflectType)
-import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Snarky.Curves.Class (class FieldSizeInBits, fromBigInt, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, fromInt, pow)
 import Type.Proxy (Proxy(..))
 
 -- | A packed chunk is a field value with a known bit length.
@@ -60,10 +59,6 @@ append t1 t2 =
   , packeds: t1.packeds <> t2.packeds
   }
 
--- | Compute 2^n as a BigInt
-pow2BigInt :: Int -> BigInt
-pow2BigInt n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
-
 -- | Pack chunked input into field elements.
 -- |
 -- | This greedily combines packed chunks from left to right into field elements,
@@ -73,33 +68,41 @@ packToFields { fieldElements: fields, packeds: chunks } =
   let
     sizeBits = reflectType (Proxy @n)
 
+    packChunk
+      :: { accBits :: Int
+         , acc :: f
+         , packed :: Array f
+         }
+      -> PackedChunk f
+      -> { accBits :: Int
+         , acc :: f
+         , packed :: Array f
+         }
     packChunk state chunk =
       let
-        chunkBigInt = toBigInt chunk.value
         newBits = chunk.length + state.accBits
       in
         if newBits < sizeBits then
           -- Combine with accumulator: shift accumulator left and add chunk
           let
-            newAcc = (state.acc * pow2BigInt chunk.length) + chunkBigInt
+            newAcc = (state.acc * pow (fromInt 2) (BigInt.fromInt chunk.length)) + chunk.value
           in
             state { acc = newAcc, accBits = newBits }
         else
           -- Flush accumulator and start new one
           let
-            flushed = fromBigInt state.acc
             newPacked =
-              if state.accBits > 0 then snoc state.packed flushed
+              if state.accBits > 0 then snoc state.packed state.acc
               else state.packed
           in
-            { packed: newPacked, acc: chunkBigInt, accBits: chunk.length }
+            { packed: newPacked, acc: chunk.value, accBits: chunk.length }
 
     -- Fold over packed chunks, accumulating into field elements
-    result = foldl packChunk { packed: [], acc: BigInt.fromInt 0, accBits: 0 } chunks
+    result = foldl packChunk { packed: [], acc: zero, accBits: 0 } chunks
 
     -- Get final packed elements
     finalPacked =
-      if result.accBits > 0 then snoc result.packed (fromBigInt result.acc)
+      if result.accBits > 0 then snoc result.packed result.acc
       else result.packed
   in
     fields <> finalPacked
