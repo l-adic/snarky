@@ -16,9 +16,10 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
+import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.Types (F)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Data.MerkleTree.Helpers (PoseidonHash)
 import Test.QuickCheck (Result, arbitrary, quickCheck, quickCheckGen, (===))
 import Test.QuickCheck.Gen (Gen, vectorOf)
 import Test.Spec (Spec, describe, it)
@@ -41,20 +42,20 @@ spec = describe "Dynamic MerkleTree Property Laws" do
       for_ (Array.range 1 5) \targetDepth ->
         quickCheckGen $ depthExpansionLaw targetDepth
 
-canRecoverElementsAddMany :: forall f. PoseidonField f => Proxy f -> NonEmptyList f -> Result
+canRecoverElementsAddMany :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
 canRecoverElementsAddMany _ expected@(NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (PoseidonHash f) f
+    base :: MT.MerkleTree (Digest (F f)) (F f)
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     elems = MT.toUnfoldable mt
   in
     Array.fromFoldable expected === elems
 
-canRecoverElementsAdd :: forall f. PoseidonField f => Proxy f -> NonEmptyList f -> Result
+canRecoverElementsAdd :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
 canRecoverElementsAdd _ expected@(NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (PoseidonHash f) f
+    base :: MT.MerkleTree (Digest (F f)) (F f)
     base = MT.create a
     mt = foldl MT.add_ base as
     elems = MT.toUnfoldable mt
@@ -62,10 +63,10 @@ canRecoverElementsAdd _ expected@(NonEmptyList (NonEmpty a as)) =
     Array.fromFoldable expected === elems
 
 -- Path validation law: For any element in the tree, its path should validate against the root
-pathValidationLaw :: forall f. PoseidonField f => Proxy f -> NonEmptyList f -> Result
+pathValidationLaw :: forall f. PoseidonField f => Proxy f -> NonEmptyList (F f) -> Result
 pathValidationLaw _ (NonEmptyList (NonEmpty a as)) =
   let
-    base :: MT.MerkleTree (PoseidonHash f) f
+    base :: MT.MerkleTree (Digest (F f)) (F f)
     base = MT.create a
     mt = MT.addMany base (List.fromFoldable as)
     rootHash = MT.root mt
@@ -97,13 +98,13 @@ pathValidationLaw _ (NonEmptyList (NonEmpty a as)) =
 depthExpansionLaw :: Int -> Gen Result
 depthExpansionLaw targetDepth = do
   -- Generate exactly 2^d elements to fill tree to capacity
-  vs <- vectorOf (2 `pow` targetDepth) (arbitrary @Pallas.ScalarField)
-  extraElement <- arbitrary @Pallas.ScalarField
+  vs <- vectorOf (2 `pow` targetDepth) (arbitrary @(F Pallas.ScalarField))
+  extraElement <- arbitrary @(F Pallas.ScalarField)
   let
     nea = unsafePartial $ fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: MT.MerkleTree (PoseidonHash Pallas.ScalarField) Pallas.ScalarField
+    base :: MT.MerkleTree (Digest (F Pallas.ScalarField)) (F Pallas.ScalarField)
     base = MT.create a
     fullTree = MT.addMany base (List.fromFoldable as)
     depthBefore = MT.depth fullTree

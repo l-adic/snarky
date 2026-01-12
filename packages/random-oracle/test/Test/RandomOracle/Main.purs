@@ -13,6 +13,7 @@ import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
@@ -128,13 +129,13 @@ circuitTests _ = describe "Circuit" do
   it "hash2 circuit matches pure hash" do
     let
       -- Reference: pure hash of 2 elements
-      referenceHash :: Tuple (F f) (F f) -> F f
-      referenceHash (Tuple (F a) (F b)) = F $ hash [ a, b ]
+      referenceHash :: Tuple (F f) (F f) -> Digest (F f)
+      referenceHash (Tuple (F a) (F b)) = Digest $ F $ hash [ a, b ]
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hash2)
       s = compilePure
         (Proxy @(Tuple (F f) (F f)))
-        (Proxy @(F f))
+        (Proxy @(Digest (F f)))
         (Proxy @(KimchiConstraint f))
         (uncurry Checked.hash2)
         Kimchi.initialState
@@ -152,13 +153,13 @@ circuitTests _ = describe "Circuit" do
   it "hash circuit matches pure hash for 4 elements" do
     let
       -- Reference: pure hash of 4 elements
-      referenceHash :: Vector 16 (F f) -> F f
-      referenceHash inputs = F $ hash (map unwrap (Vector.toUnfoldable inputs))
+      referenceHash :: Vector 16 (F f) -> Digest (F f)
+      referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) (Checked.hash @8)
       s = compilePure
         (Proxy @(Vector 16 (F f)))
-        (Proxy @(F f))
+        (Proxy @((Digest (F f))))
         (Proxy @(KimchiConstraint f))
         (Checked.hash @8)
         Kimchi.initialState

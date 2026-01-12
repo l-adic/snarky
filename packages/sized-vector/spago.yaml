@@ -2,6 +2,7 @@ package:
   name: vector-sized
   dependencies:
     - arrays
+    - enums
     - exceptions
     - foldable-traversable
     - gen

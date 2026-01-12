@@ -18,8 +18,13 @@ package:
     - js-bigints
     - lists
     - maybe
+    - newtype
     - partial
+    - poseidon
     - prelude
+    - random-oracle
     - safe-coerce
+    - snarky
+    - snarky-kimchi
     - unfoldable
     - vector-sized

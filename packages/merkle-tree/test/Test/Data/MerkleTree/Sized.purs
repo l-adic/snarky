@@ -16,9 +16,10 @@ import Effect.Exception (catchException)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
+import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.Types (F)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Data.MerkleTree.Helpers (PoseidonHash)
 import Test.QuickCheck (Result, arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (vectorOf)
 import Test.Spec (Spec, describe, it)
@@ -31,7 +32,7 @@ spec = describe "Sized MerkleTree Property Laws" do
     it "preserves all elements when using addMany (batch insertion)" $ liftEffect do
       for_ (Array.range 1 5) \depth ->
         quickCheckGen $ do
-          vs <- vectorOf (2 `pow` depth) (arbitrary @Vesta.ScalarField)
+          vs <- vectorOf (2 `pow` depth) (arbitrary @(F Vesta.ScalarField))
           reifyType depth \pd -> do
             let as = unsafePartial $ fromJust $ NEA.fromFoldable vs
             pure $ canRecoverElementsAddMany pd as
@@ -39,7 +40,7 @@ spec = describe "Sized MerkleTree Property Laws" do
     it "preserves all elements when using individual add_ operations" $ liftEffect do
       for_ (Array.range 1 5) \depth ->
         quickCheckGen $ do
-          vs <- vectorOf (2 `pow` depth) (arbitrary @Vesta.ScalarField)
+          vs <- vectorOf (2 `pow` depth) (arbitrary @(F Vesta.ScalarField))
           reifyType depth \pd -> do
             let as = unsafePartial $ fromJust $ NEA.fromFoldable vs
             pure $ canRecoverElementsAdd pd as
@@ -47,7 +48,7 @@ spec = describe "Sized MerkleTree Property Laws" do
     it "validates merkle paths for all elements (cryptographic proof correctness)" $ liftEffect do
       for_ (Array.range 1 4) \depth ->
         quickCheckGen $ do
-          vs <- vectorOf (2 `pow` depth) (arbitrary @Pallas.ScalarField)
+          vs <- vectorOf (2 `pow` depth) (arbitrary @(F Pallas.ScalarField))
           reifyType depth \pd -> do
             let as = unsafePartial $ fromJust $ NEA.fromFoldable vs
             pure $ pathValidationLaw pd as
@@ -57,7 +58,7 @@ spec = describe "Sized MerkleTree Property Laws" do
           for_ (Array.range 1 3) \depth ->
             quickCheckGen $ do
               -- Create exactly 2^depth elements to fill the tree completely
-              vs <- vectorOf ((2 `pow` depth) + 1) (arbitrary @Vesta.ScalarField)
+              vs <- vectorOf ((2 `pow` depth) + 1) (arbitrary @(F Vesta.ScalarField))
               reifyType depth \pd -> do
                 let
                   as = unsafePartial $ fromJust $ NEA.fromFoldable vs
@@ -65,39 +66,39 @@ spec = describe "Sized MerkleTree Property Laws" do
                 pure false
       )
 
-canRecoverElementsAddMany :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray f -> Result
+canRecoverElementsAddMany :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray (F f) -> Result
 canRecoverElementsAddMany _ xs =
   let
     { head: a, tail: as } = NEA.uncons xs
 
-    base :: SMT.MerkleTree n (PoseidonHash f) f
+    base :: SMT.MerkleTree n (Digest (F f)) (F f)
     base = SMT.create a
-    mt = SMT.addMany base (Array.toUnfoldable as :: List f)
+    mt = SMT.addMany base (Array.toUnfoldable as :: List (F f))
     elems = SMT.toUnfoldable mt
   in
     NEA.toArray xs === elems
 
-canRecoverElementsAdd :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray f -> Result
+canRecoverElementsAdd :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray (F f) -> Result
 canRecoverElementsAdd _ xs =
   let
     { head: a, tail: as } = NEA.uncons xs
 
-    base :: SMT.MerkleTree n (PoseidonHash f) f
+    base :: SMT.MerkleTree n (Digest (F f)) (F f)
     base = SMT.create a
-    mt = foldl SMT.add_ base (Array.toUnfoldable as :: List f)
+    mt = foldl SMT.add_ base (Array.toUnfoldable as :: List (F f))
     elems = SMT.toUnfoldable mt
   in
     NEA.toArray xs === elems
 
 -- Path validation law: For any element in the sized tree, its path should validate against the root
-pathValidationLaw :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray f -> Result
+pathValidationLaw :: forall n f. Reflectable n Int => PoseidonField f => Proxy n -> NonEmptyArray (F f) -> Result
 pathValidationLaw _ xs =
   let
     { head: a, tail: as } = NEA.uncons xs
 
-    base :: SMT.MerkleTree n (PoseidonHash f) f
+    base :: SMT.MerkleTree n (Digest (F f)) (F f)
     base = SMT.create a
-    mt = SMT.addMany base (Array.toUnfoldable as :: List f)
+    mt = SMT.addMany base (Array.toUnfoldable as :: List (F f))
     rootHash = SMT.root mt
     allElements = NEA.toArray xs
 

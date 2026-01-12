@@ -4,7 +4,8 @@
 -- | the circuit/constraint system. Unlike the pure version, inputs
 -- | must have statically known sizes.
 module Snarky.Circuit.RandomOracle
-  ( hash
+  ( Digest(..)
+  , hash
   , hash2
   , update
   ) where
@@ -13,16 +14,18 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
+import Data.Generic.Rep (class Generic)
+import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon.Class (class PoseidonField)
 import Prim.Int (class Mul)
 import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (Snarky)
+import Snarky.Circuit.DSL (F, Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
-import Snarky.Circuit.Types (FVar)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -61,6 +64,26 @@ updateBlock state block = do
   let stateWithBlock = addBlock state block
   poseidon stateWithBlock
 
+newtype Digest f = Digest f
+
+derive newtype instance Eq f => Eq (Digest f)
+derive newtype instance Show f => Show (Digest f)
+derive newtype instance Ord f => Ord (Digest f)
+
+derive instance Generic (Digest f) _
+
+derive instance Newtype (Digest f) _
+
+instance CircuitType f (Digest (F f)) (Digest (FVar f)) where
+  valueToFields = genericValueToFields
+  fieldsToValue = genericFieldsToValue
+  sizeInFields = genericSizeInFields
+  varToFields = genericVarToFields @(Digest (F f))
+  fieldsToVar = genericFieldsToVar @(Digest (F f))
+
+instance CheckedType (Digest (FVar f)) c where
+  check = genericCheck
+
 -- | Hash exactly 2 field elements.
 -- |
 -- | This is the most common case: hash(a, b).
@@ -70,14 +93,14 @@ hash2
   => CircuitM f (KimchiConstraint f) t m
   => FVar f
   -> FVar f
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 hash2 a b = do
   let
     block :: Vector 2 (FVar f)
     block = a Vector.:< b Vector.:< Vector.nil
   finalState <- updateBlock initialState block
   -- Squeeze from position 0 (standard sponge)
-  pure $ Vector.index finalState (unsafeFinite 0)
+  pure $ Digest $ Vector.index finalState (unsafeFinite 0)
 
 -- | Update state with a vector of inputs (must be even length for simplicity).
 -- |
@@ -118,8 +141,8 @@ hash
   => Reflectable 2 Int
   => Mul 2 nBlocks n
   => Vector n (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 hash inputs = do
   finalState <- update @nBlocks initialState inputs
   -- Squeeze from position 0
-  pure $ Vector.index finalState (unsafeFinite 0)
+  pure $ Digest $ Vector.index finalState (unsafeFinite 0)
