@@ -14,7 +14,6 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Fin (unsafeFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Test.QuickCheck (arbitrary)
@@ -39,19 +38,19 @@ spec' testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
 
   it "Poseidon hash circuit matches reference implementation" do
     let
-      referenceHash :: Vector 3 (F f) -> F f
+      referenceHash :: Vector 3 (F f) -> Vector 3 (F f)
       referenceHash inputs =
         let
           initialValues = map unwrap inputs
           rounds = Array.range 0 54
           finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
         in
-          F (Vector.index finalState (unsafeFinite 2))
+          F <$> finalState
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) PoseidonCircuit.poseidon
       s = compilePure
         (Proxy @(Vector 3 (F f)))
-        (Proxy @(F f))
+        (Proxy @(Vector 3 (F f)))
         (Proxy @(KimchiConstraint f))
         PoseidonCircuit.poseidon
         Kimchi.initialState

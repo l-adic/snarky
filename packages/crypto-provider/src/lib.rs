@@ -405,14 +405,14 @@ pub mod kimchi;
 
 pub use kimchi::poseidon::{
     pallas::{
-        pallas_poseidon_apply_mds, pallas_poseidon_full_round, pallas_poseidon_get_mds_matrix,
-        pallas_poseidon_get_num_rounds, pallas_poseidon_get_round_constants, pallas_poseidon_hash,
-        pallas_poseidon_sbox,
+        pallas_domain_prefix_to_field, pallas_init_with_domain, pallas_poseidon_apply_mds,
+        pallas_poseidon_full_round, pallas_poseidon_get_mds_matrix, pallas_poseidon_get_num_rounds,
+        pallas_poseidon_get_round_constants, pallas_poseidon_hash, pallas_poseidon_sbox,
     },
     vesta::{
-        vesta_poseidon_apply_mds, vesta_poseidon_full_round, vesta_poseidon_get_mds_matrix,
-        vesta_poseidon_get_num_rounds, vesta_poseidon_get_round_constants, vesta_poseidon_hash,
-        vesta_poseidon_sbox,
+        vesta_domain_prefix_to_field, vesta_init_with_domain, vesta_poseidon_apply_mds,
+        vesta_poseidon_full_round, vesta_poseidon_get_mds_matrix, vesta_poseidon_get_num_rounds,
+        vesta_poseidon_get_round_constants, vesta_poseidon_hash, vesta_poseidon_sbox,
     },
 };
 

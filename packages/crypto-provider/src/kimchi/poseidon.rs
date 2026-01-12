@@ -14,8 +14,13 @@ use crate::pasta::pallas::scalar_field::FieldExternal as VestaBaseFieldExternal;
 use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 
 mod generic {
-    use ark_ff::Field;
-    use mina_poseidon::poseidon::ArithmeticSpongeParams;
+    use ark_ff::{Field, PrimeField};
+    use core::cmp::min;
+    use kimchi::o1_utils::FieldHelpers;
+    use mina_poseidon::{
+        constants::SpongeConstants,
+        poseidon::{ArithmeticSponge, ArithmeticSpongeParams, Sponge},
+    };
 
     pub fn apply_mds<F: Field>(
         params: &'static ArithmeticSpongeParams<F>,
@@ -31,6 +36,42 @@ mod generic {
                     .fold(F::ZERO, |acc, (&s, &m)| acc + m * s)
             })
             .collect()
+    }
+
+    /// Convert domain prefix string to field element (mina-hasher compatible).
+    ///
+    /// This is vendored from mina-hasher::domain_prefix_to_field which is private.
+    /// See: https://github.com/o1-labs/proof-systems/blob/master/hasher/src/lib.rs
+    ///
+    /// - Truncates to 20 chars max
+    /// - Right-pads with '*' to 20 chars
+    /// - Zero-pads to field byte size (32 bytes)
+    /// - Converts using little-endian from_bytes
+    pub fn domain_prefix_to_field<F: PrimeField + FieldHelpers<F>>(prefix: &str) -> F {
+        const MAX_DOMAIN_STRING_LEN: usize = 20;
+        let prefix = &prefix[..min(prefix.len(), MAX_DOMAIN_STRING_LEN)];
+        let mut bytes = format!("{prefix:*<MAX_DOMAIN_STRING_LEN$}")
+            .as_bytes()
+            .to_vec();
+        bytes.resize(F::size_in_bytes(), 0);
+        F::from_bytes(&bytes).expect("invalid domain bytes")
+    }
+
+    /// Initialize sponge state with domain separation (mina-hasher compatible).
+    ///
+    /// This matches the behavior of mina-hasher's Hasher::init():
+    /// - Absorbs domain prefix field element
+    /// - Squeezes (runs permutation)
+    /// - Returns the resulting 3-element state
+    pub fn init_with_domain<F: PrimeField + FieldHelpers<F>, SC: SpongeConstants>(
+        params: &'static ArithmeticSpongeParams<F>,
+        domain: &str,
+    ) -> [F; 3] {
+        let mut sponge = ArithmeticSponge::<F, SC>::new(params);
+        let domain_field = domain_prefix_to_field::<F>(domain);
+        sponge.absorb(&[domain_field]);
+        sponge.squeeze(); // This runs the permutation
+        [sponge.state[0], sponge.state[1], sponge.state[2]]
     }
 }
 pub mod pallas {
@@ -102,6 +143,23 @@ pub mod pallas {
         sponge.absorb(&fields);
         External::new(sponge.squeeze())
     }
+
+    /// Convert domain string to field element (mina-hasher compatible)
+    #[napi]
+    pub fn pallas_domain_prefix_to_field(domain: String) -> PallasBaseFieldExternal {
+        External::new(generic::domain_prefix_to_field::<PallasBaseField>(&domain))
+    }
+
+    /// Initialize sponge state with domain separation (mina-hasher compatible)
+    /// Returns the 3-element state after absorbing domain and squeezing
+    #[napi]
+    pub fn pallas_init_with_domain(domain: String) -> Vec<PallasBaseFieldExternal> {
+        let params = fp_kimchi::static_params();
+        let state = generic::init_with_domain::<PallasBaseField, PlonkSpongeConstantsKimchi>(
+            params, &domain,
+        );
+        state.into_iter().map(External::new).collect()
+    }
 }
 
 pub mod vesta {
@@ -172,6 +230,23 @@ pub mod vesta {
 
         sponge.absorb(&fields);
         External::new(sponge.squeeze())
+    }
+
+    /// Convert domain string to field element (mina-hasher compatible)
+    #[napi]
+    pub fn vesta_domain_prefix_to_field(domain: String) -> VestaBaseFieldExternal {
+        External::new(generic::domain_prefix_to_field::<VestaBaseField>(&domain))
+    }
+
+    /// Initialize sponge state with domain separation (mina-hasher compatible)
+    /// Returns the 3-element state after absorbing domain and squeezing
+    #[napi]
+    pub fn vesta_init_with_domain(domain: String) -> Vec<VestaBaseFieldExternal> {
+        let params = fq_kimchi::static_params();
+        let state = generic::init_with_domain::<VestaBaseField, PlonkSpongeConstantsKimchi>(
+            params, &domain,
+        );
+        state.into_iter().map(External::new).collect()
     }
 }
 
