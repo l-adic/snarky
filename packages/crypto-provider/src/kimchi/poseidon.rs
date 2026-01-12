@@ -16,11 +16,11 @@ use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 mod generic {
     use ark_ff::{Field, PrimeField};
     use core::cmp::min;
+    use kimchi::o1_utils::FieldHelpers;
     use mina_poseidon::{
         constants::SpongeConstants,
         poseidon::{ArithmeticSponge, ArithmeticSpongeParams, Sponge},
     };
-    use kimchi::o1_utils::FieldHelpers;
 
     pub fn apply_mds<F: Field>(
         params: &'static ArithmeticSpongeParams<F>,
@@ -155,8 +155,9 @@ pub mod pallas {
     #[napi]
     pub fn pallas_init_with_domain(domain: String) -> Vec<PallasBaseFieldExternal> {
         let params = fp_kimchi::static_params();
-        let state =
-            generic::init_with_domain::<PallasBaseField, PlonkSpongeConstantsKimchi>(params, &domain);
+        let state = generic::init_with_domain::<PallasBaseField, PlonkSpongeConstantsKimchi>(
+            params, &domain,
+        );
         state.into_iter().map(External::new).collect()
     }
 }
@@ -242,8 +243,9 @@ pub mod vesta {
     #[napi]
     pub fn vesta_init_with_domain(domain: String) -> Vec<VestaBaseFieldExternal> {
         let params = fq_kimchi::static_params();
-        let state =
-            generic::init_with_domain::<VestaBaseField, PlonkSpongeConstantsKimchi>(params, &domain);
+        let state = generic::init_with_domain::<VestaBaseField, PlonkSpongeConstantsKimchi>(
+            params, &domain,
+        );
         state.into_iter().map(External::new).collect()
     }
 }
