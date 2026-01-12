@@ -8,7 +8,7 @@ import Data.Tuple (fst, Tuple(..), uncurry)
 import Effect (Effect)
 import Poseidon.Class (class PoseidonField, hash) as Poseidon
 import RandomOracle (hash, update, initialState, digest)
-import RandomOracle.Checked as Checked
+import Snarky.Circuit.RandomOracle as Checked
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -125,18 +125,18 @@ circuitTests
   -> Spec Unit
 circuitTests _ = describe "Circuit" do
 
-  it "hashChecked2 circuit matches pure hash" do
+  it "hash2 circuit matches pure hash" do
     let
       -- Reference: pure hash of 2 elements
       referenceHash :: Tuple (F f) (F f) -> F f
       referenceHash (Tuple (F a) (F b)) = F $ hash [ a, b ]
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hashChecked2)
+      solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hash2)
       s = compilePure
         (Proxy @(Tuple (F f) (F f)))
         (Proxy @(F f))
         (Proxy @(KimchiConstraint f))
-        (uncurry Checked.hashChecked2)
+        (uncurry Checked.hash2)
         Kimchi.initialState
       genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
@@ -149,20 +149,20 @@ circuitTests _ = describe "Circuit" do
       }
       genInputs
 
-  it "hashChecked circuit matches pure hash for 4 elements" do
+  it "hash circuit matches pure hash for 4 elements" do
     let
       -- Reference: pure hash of 4 elements
-      referenceHash :: Vector 4 (F f) -> F f
+      referenceHash :: Vector 16 (F f) -> F f
       referenceHash inputs = F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (Checked.hashChecked @4 @2)
+      solver = makeSolver (Proxy @(KimchiConstraint f)) (Checked.hash @8)
       s = compilePure
-        (Proxy @(Vector 4 (F f)))
+        (Proxy @(Vector 16 (F f)))
         (Proxy @(F f))
         (Proxy @(KimchiConstraint f))
-        (Checked.hashChecked @4 @2)
+        (Checked.hash @8)
         Kimchi.initialState
-      genInputs = Vector.generator (Proxy @4) (F <$> arbitrary)
+      genInputs = Vector.generator (Proxy @16) (F <$> arbitrary)
 
     circuitSpecPure'
       { builtState: s

@@ -3,11 +3,11 @@
 -- | This module provides random oracle operations that work within
 -- | the circuit/constraint system. Unlike the pure version, inputs
 -- | must have statically known sizes.
-module RandomOracle.Checked
+module Snarky.Circuit.RandomOracle
   ( poseidonPermutation
-  , hashChecked
-  , hashChecked2
-  , updateChecked
+  , hash
+  , hash2
+  , update
   ) where
 
 import Prelude
@@ -19,8 +19,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon.Class (class PoseidonField, fullRound)
-import Prim.Int (class Compare, class Mul)
-import Prim.Ordering (GT)
+import Prim.Int (class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, const_)
 import Snarky.Circuit.DSL (Snarky, addConstraint, exists, readCVar)
@@ -40,9 +39,9 @@ poseidonPermutation
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
-poseidonPermutation initialState = do
+poseidonPermutation initState = do
   state <- exists do
-    initialValues <- traverse readCVar initialState
+    initialValues <- traverse readCVar initState
     let
       rounds = Vector.generate (\i -> \st -> fullRound st (getFinite i))
       roundOutputs = Vector.scanl (\st roundFn -> roundFn st) (coerce initialValues) rounds
@@ -53,17 +52,17 @@ poseidonPermutation initialState = do
   pure $ Vector.index state (unsafeFinite 55)
 
 -- | Initial state for the sponge: all zeros
-initialStateChecked :: forall f. PrimeField f => Vector 3 (FVar f)
-initialStateChecked = Vector.generate (const (const_ zero))
+initialState :: forall f. PrimeField f => Vector 3 (FVar f)
+initialState = Vector.generate (const (const_ zero))
 
 -- | Add a block of 2 elements to the sponge state (positions 0 and 1)
-addBlockChecked
+addBlock
   :: forall f
    . PrimeField f
   => Vector 3 (FVar f)
   -> Vector 2 (FVar f)
   -> Vector 3 (FVar f)
-addBlockChecked state block =
+addBlock state block =
   let
     s0 = Vector.index state (unsafeFinite 0)
     s1 = Vector.index state (unsafeFinite 1)
@@ -76,32 +75,32 @@ addBlockChecked state block =
 -- | Update the sponge state with a single block and permute.
 -- |
 -- | This is the core sponge operation: add block to rate positions, then permute.
-updateBlockChecked
+updateBlock
   :: forall f t m
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
   -> Vector 2 (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
-updateBlockChecked state block = do
-  let stateWithBlock = addBlockChecked state block
+updateBlock state block = do
+  let stateWithBlock = addBlock state block
   poseidonPermutation stateWithBlock
 
 -- | Hash exactly 2 field elements.
 -- |
 -- | This is the most common case: hash(a, b).
-hashChecked2
+hash2
   :: forall f t m
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => FVar f
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
-hashChecked2 a b = do
+hash2 a b = do
   let
     block :: Vector 2 (FVar f)
     block = a Vector.:< b Vector.:< Vector.nil
-  finalState <- updateBlockChecked initialStateChecked block
+  finalState <- updateBlock initialState block
   -- Squeeze from position 0 (standard sponge)
   pure $ Vector.index finalState (unsafeFinite 0)
 
@@ -109,18 +108,17 @@ hashChecked2 a b = do
 -- |
 -- | The input vector is chunked into rate-sized blocks (2 elements each),
 -- | and each block is absorbed with a permutation.
-updateChecked
-  :: forall f t m @n @nBlocks
+update
+  :: forall f t m n @nBlocks
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Reflectable nBlocks Int
   => Reflectable 2 Int
-  => Compare nBlocks 0 GT
   => Mul 2 nBlocks n -- n = 2 * nBlocks (even length inputs)
   => Vector 3 (FVar f)
   -> Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
-updateChecked initState inputs = do
+update initState inputs = do
   let
     blocks :: Vector nBlocks (Vector 2 (FVar f))
     blocks = Vector.chunks @2 inputs
@@ -129,25 +127,24 @@ updateChecked initState inputs = do
     blocksArray :: Array (Vector 2 (FVar f))
     blocksArray = Vector.toUnfoldable blocks
   -- Fold over blocks, updating state with each
-  foldM updateBlockChecked initState blocksArray
+  foldM updateBlock initState blocksArray
 
 -- | Hash a vector of field elements (must be even length).
 -- |
 -- | Example usage:
 -- | ```
--- | result <- hashChecked @4 inputs  -- hash 4 elements
+-- | result <- hash @4 inputs  -- hash 4 elements
 -- | ```
-hashChecked
-  :: forall f t m @n @nBlocks
+hash
+  :: forall f t m n @nBlocks
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Reflectable nBlocks Int
   => Reflectable 2 Int
-  => Compare nBlocks 0 GT
   => Mul 2 nBlocks n
   => Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
-hashChecked inputs = do
-  finalState <- updateChecked @n @nBlocks initialStateChecked inputs
+hash inputs = do
+  finalState <- update @nBlocks initialState inputs
   -- Squeeze from position 0
   pure $ Vector.index finalState (unsafeFinite 0)
