@@ -4,52 +4,27 @@
 -- | the circuit/constraint system. Unlike the pure version, inputs
 -- | must have statically known sizes.
 module Snarky.Circuit.RandomOracle
-  ( poseidonPermutation
-  , hash
+  ( hash
   , hash2
   , update
   ) where
 
 import Prelude
 
-import Data.Traversable (traverse)
+import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
-import Data.Fin (getFinite, unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField, fullRound)
+import Poseidon.Class (class PoseidonField)
 import Prim.Int (class Mul)
-import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.DSL (Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
-import Snarky.Circuit.Types (F(..), FVar)
-import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
+import Snarky.Circuit.Kimchi.Poseidon (poseidon)
+import Snarky.Circuit.Types (FVar)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-
--- | Run a single Poseidon permutation and return the FULL final state.
--- |
--- | Unlike the standard poseidon circuit which returns position 2,
--- | this returns all 3 elements of the final state, which is needed
--- | for the sponge construction (which squeezes from position 0).
-poseidonPermutation
-  :: forall f t m
-   . PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => Vector 3 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
-poseidonPermutation initState = do
-  state <- exists do
-    initialValues <- traverse readCVar initState
-    let
-      rounds = Vector.generate (\i -> \st -> fullRound st (getFinite i))
-      roundOutputs = Vector.scanl (\st roundFn -> roundFn st) (coerce initialValues) rounds
-      allStates = (coerce initialValues) Vector.:< roundOutputs
-    pure (map (map F) allStates)
-  addConstraint $ KimchiPoseidon { state }
-  -- Return the full final state (round 55)
-  pure $ Vector.index state (unsafeFinite 55)
 
 -- | Initial state for the sponge: all zeros
 initialState :: forall f. PrimeField f => Vector 3 (FVar f)
@@ -84,7 +59,7 @@ updateBlock
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 updateBlock state block = do
   let stateWithBlock = addBlock state block
-  poseidonPermutation stateWithBlock
+  poseidon stateWithBlock
 
 -- | Hash exactly 2 field elements.
 -- |

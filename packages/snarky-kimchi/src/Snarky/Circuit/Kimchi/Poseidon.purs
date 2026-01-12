@@ -20,7 +20,7 @@ poseidon
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 poseidon initialState = do
   state <- exists do
     initialValues <- traverse readCVar initialState
@@ -30,5 +30,4 @@ poseidon initialState = do
       allStates = (coerce initialValues) Vector.:< roundOutputs
     pure (map (map F) allStates)
   addConstraint $ KimchiPoseidon { state }
-  pure $
-    (Vector.index (Vector.index state (unsafeFinite 55)) (unsafeFinite 2))
+  pure $ Vector.index state (unsafeFinite 55)
