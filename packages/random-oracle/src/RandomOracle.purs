@@ -9,26 +9,18 @@ module RandomOracle
   , hashWithInit
   , update
   , digest
-  , salt
-  , prefixToField
   , initialState
   ) where
 
 import Prelude
 
 import Data.Array (foldl, index, length, (..))
-import Data.Enum (fromEnum)
-import Data.FoldableWithIndex (foldlWithIndex)
-import Data.Int.Bits ((.&.), shl)
 import Data.Maybe (fromMaybe)
-import Data.String.CodeUnits (toCharArray)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Data.Fin (unsafeFinite)
-import JS.BigInt as BigInt
 import Poseidon.Class (class PoseidonField)
 import RandomOracle.Sponge (permute)
-import Snarky.Curves.Class (class PrimeField, pow)
 
 -- | The sponge state type
 type State f = Vector 3 f
@@ -93,31 +85,3 @@ hash inputs = digest (update initialState inputs)
 -- | Hash an array of field elements with custom initial state
 hashWithInit :: forall f. PoseidonField f => State f -> Array f -> Digest f
 hashWithInit init inputs = digest (update init inputs)
-
--- | Convert a string prefix to a field element
--- | The string is converted to bits (8 bits per character), then packed into a field
-prefixToField :: forall f. PrimeField f => String -> f
-prefixToField s =
-  let
-    chars = toCharArray s
-    bits = chars >>= charToBits
-  in
-    bitsToField bits
-  where
-  charToBits :: Char -> Array Boolean
-  charToBits c =
-    let
-      n = fromEnum c
-    in
-      map (\i -> (n .&. (1 `shl` i)) /= 0) (0 .. 7)
-
-  bitsToField :: Array Boolean -> f
-  bitsToField = foldlWithIndex
-    (\i acc bit -> acc + pow two (BigInt.fromInt i) * (if bit then one else zero))
-    zero
-    where
-    two = one + one
-
--- | Create a salted initial state from a string prefix
-salt :: forall f. PoseidonField f => PrimeField f => String -> State f
-salt s = update initialState [ prefixToField s ]
