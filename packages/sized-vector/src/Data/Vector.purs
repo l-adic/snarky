@@ -26,6 +26,8 @@ module Data.Vector
   , head
   , last
   , reverse
+  , updateAt
+  , modifyAt
   --
   , chunk
   ) where
@@ -36,6 +38,7 @@ import Control.Monad.Gen (class MonadGen)
 import Data.Array ((:))
 import Data.Array as A
 import Data.Array as Array
+import Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Data.Foldable (class Foldable)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
@@ -48,7 +51,6 @@ import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Type.Proxy (Proxy(..))
 
 newtype Vector (n :: Int) a = Vector (Array a)
@@ -233,3 +235,17 @@ last (Vector as) = unsafePartial $ fromJust $ Array.last as
 
 reverse :: forall n a. Vector n a -> Vector n a
 reverse (Vector as) = Vector (Array.reverse as)
+
+updateAt :: forall n a. Finite n -> a -> Vector n a -> Vector n a
+updateAt n a (Vector as) =
+  Vector
+    $ unsafePartial fromJust
+    $
+      Array.updateAt (getFinite n) a as
+
+modifyAt :: forall n a. Finite n -> (a -> a) -> Vector n a -> Vector n a
+modifyAt n a (Vector as) =
+  Vector
+    $ unsafePartial fromJust
+    $
+      Array.modifyAt (getFinite n) a as

@@ -3,6 +3,7 @@ module Data.Fin where
 import Prelude
 
 import Data.Array ((..))
+import Data.Enum (class BoundedEnum, class Enum, Cardinality(..))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
@@ -23,6 +24,29 @@ instance Show (Finite n) where
 
 derive newtype instance Eq (Finite n)
 derive newtype instance Ord (Finite n)
+
+instance Reflectable n Int => Bounded (Finite n) where
+  top = Finite (reflectType (Proxy @n) - 1)
+  bottom = Finite 0
+
+instance Reflectable n Int => Enum (Finite n) where
+  succ (Finite k) =
+    let
+      n = reflectType (Proxy @n)
+      next = k + 1
+    in
+      if k + 1 < n then Just (Finite next)
+      else Nothing
+  pred (Finite k) =
+    if k == 0 then Nothing
+    else Just $ Finite (k - 1)
+
+instance Reflectable n Int => BoundedEnum (Finite n) where
+  cardinality = Cardinality (reflectType $ Proxy @n)
+  toEnum i =
+    if i < (reflectType $ Proxy @n) then Just (Finite i)
+    else Nothing
+  fromEnum (Finite i) = i
 
 finite :: forall n. Reflectable n Int => Int -> Maybe (Finite n)
 finite k =
