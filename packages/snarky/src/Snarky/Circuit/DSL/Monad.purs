@@ -41,7 +41,7 @@ import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), F(..), FVar, BoolVar, fieldsToValue, varToFields)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, fieldsToValue, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem, r1cs)
 import Snarky.Curves.Class (class PrimeField)
 

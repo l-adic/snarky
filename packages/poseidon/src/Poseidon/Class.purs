@@ -11,12 +11,12 @@ module Poseidon.Class
 
 import Prelude
 
+import Data.Vector (Vector)
 import Poseidon.FFI.Pallas as PallasFFI
 import Poseidon.FFI.Vesta as VestaFFI
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector)
 import Type.Proxy (Proxy)
 
 -- | Type class for fields that support Poseidon operations

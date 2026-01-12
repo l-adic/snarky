@@ -10,8 +10,8 @@ import Data.Function.Uncurried (Fn1, Fn2, Fn3, Fn4, Fn5, runFn1, runFn2, runFn3,
 import Data.Tuple (Tuple(..))
 import Foreign (Foreign)
 import Simple.JSON (write)
-import Snarky.Backend.Groth16.Types (R1CSDimensions, CircuitGates, CircuitMatrix, CircuitWitness, Proof, ProvingKey, VerifyingKey)
-import Snarky.Curves.BN254 (ScalarField, G)
+import Snarky.Backend.Groth16.Types (CircuitGates, CircuitMatrix, CircuitWitness, Proof, ProvingKey, R1CSDimensions, VerifyingKey)
+import Snarky.Curves.BN254 (G, ScalarField)
 
 setup
   :: { dimensions :: R1CSDimensions

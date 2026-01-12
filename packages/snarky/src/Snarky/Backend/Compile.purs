@@ -23,7 +23,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
-import Snarky.Backend.Prover (ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError, class SolveCircuit)
+import Snarky.Backend.Prover (class SolveCircuit, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
@@ -107,12 +107,20 @@ makeSolver _ circuit = \inputs -> do
 type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
 type SolverT f c m a b = a -> ExceptT EvaluationError m (Tuple b (Map Variable f))
 
-runSolverT :: forall f c m a b. SolverT f c m a b -> a -> m (Either EvaluationError (Tuple b (Map Variable f)))
+runSolverT
+  :: forall f c m a b
+   . SolverT f c m a b
+  -> a
+  -> m (Either EvaluationError (Tuple b (Map Variable f)))
 runSolverT f a = runExceptT (f a)
 
 type Solver f c a b = SolverT f c Identity a b
 
-runSolver :: forall f c a b. Solver f c a b -> a -> Either EvaluationError (Tuple b (Map Variable f))
+runSolver
+  :: forall f c a b
+   . Solver f c a b
+  -> a
+  -> Either EvaluationError (Tuple b (Map Variable f))
 runSolver c a = un Identity $ runSolverT c a
 
 type Checker f c =

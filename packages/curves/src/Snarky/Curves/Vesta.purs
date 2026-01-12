@@ -4,7 +4,7 @@ module Snarky.Curves.Vesta
   , G
   ) where
 
-import Snarky.Curves.Pasta (VestaScalarField, VestaBaseField, VestaG)
+import Snarky.Curves.Pasta (VestaBaseField, VestaG, VestaScalarField)
 
 type ScalarField = VestaScalarField
 type BaseField = VestaBaseField

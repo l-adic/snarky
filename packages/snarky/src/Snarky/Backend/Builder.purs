@@ -54,15 +54,29 @@ class Finalizer c r where
 instance Finalizer (Basic f) r where
   finalize = identity
 
-runCircuitBuilderT :: forall c r m a. Monad m => CircuitBuilderT c r m a -> CircuitBuilderState c r -> m (Tuple a (CircuitBuilderState c r))
+runCircuitBuilderT
+  :: forall c r m a
+   . Monad m
+  => CircuitBuilderT c r m a
+  -> CircuitBuilderState c r
+  -> m (Tuple a (CircuitBuilderState c r))
 runCircuitBuilderT (CircuitBuilderT m) s = runStateT m s
 
-execCircuitBuilderT :: forall c r m a. Monad m => CircuitBuilderT c r m a -> CircuitBuilderState c r -> m (CircuitBuilderState c r)
+execCircuitBuilderT
+  :: forall c r m a
+   . Monad m
+  => CircuitBuilderT c r m a
+  -> CircuitBuilderState c r
+  -> m (CircuitBuilderState c r)
 execCircuitBuilderT (CircuitBuilderT m) s = execStateT m s
 
 type CircuitBuilder c r = CircuitBuilderT c r Identity
 
-runCircuitBuilder :: forall c r a. CircuitBuilder c r a -> CircuitBuilderState c r -> Tuple a (CircuitBuilderState c r)
+runCircuitBuilder
+  :: forall c r a
+   . CircuitBuilder c r a
+  -> CircuitBuilderState c r
+  -> Tuple a (CircuitBuilderState c r)
 runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
 instance Monad m => MonadFresh (CircuitBuilderT c r m) where
@@ -91,8 +105,20 @@ initialState =
   , aux: unit
   }
 
-instance (Monad m, PrimeField f, BasicSystem f c', ConstraintM (CircuitBuilderT c r) c') => CircuitM f c' (CircuitBuilderT c r) m where
-  exists :: forall a var. CheckedType var c' => CircuitType f a var => ConstraintM (CircuitBuilderT c r) c' => AsProverT f m a -> Snarky c' (CircuitBuilderT c r) m var
+instance
+  ( Monad m
+  , PrimeField f
+  , BasicSystem f c'
+  , ConstraintM (CircuitBuilderT c r) c'
+  ) =>
+  CircuitM f c' (CircuitBuilderT c r) m where
+  exists
+    :: forall a var
+     . CheckedType var c'
+    => CircuitType f a var
+    => ConstraintM (CircuitBuilderT c r) c'
+    => AsProverT f m a
+    -> Snarky c' (CircuitBuilderT c r) m var
   exists _ = do
     let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh
@@ -100,11 +126,19 @@ instance (Monad m, PrimeField f, BasicSystem f c', ConstraintM (CircuitBuilderT 
     traverse_ addConstraint (check v)
     pure v
 
-setPublicInputVars :: forall f r m. Monad m => Array Variable -> CircuitBuilderT f r m Unit
+setPublicInputVars
+  :: forall f r m
+   . Monad m
+  => Array Variable
+  -> CircuitBuilderT f r m Unit
 setPublicInputVars vars = CircuitBuilderT $ modify_ \s ->
   s { publicInputs = vars }
 
-appendConstraint :: forall m c r. Monad m => c -> CircuitBuilderT c r m Unit
+appendConstraint
+  :: forall m c r
+   . Monad m
+  => c
+  -> CircuitBuilderT c r m Unit
 appendConstraint c = CircuitBuilderT $ modify_ \s ->
   s { constraints = s.constraints `snoc` c }
 

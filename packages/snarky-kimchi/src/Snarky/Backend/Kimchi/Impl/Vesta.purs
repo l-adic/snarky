@@ -1,9 +1,9 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
+import Data.Vector (Vector)
 import Effect (Effect)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex)
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector)
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
 foreign import vestaCircuitGateNew :: String -> GateWires -> Array Vesta.ScalarField -> Gate Vesta.ScalarField

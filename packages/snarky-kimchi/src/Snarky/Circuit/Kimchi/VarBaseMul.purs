@@ -9,6 +9,8 @@ import Data.Foldable (foldl, traverse_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), fst)
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
@@ -19,13 +21,11 @@ import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
-import Snarky.Circuit.Types (FVar, BoolVar)
+import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Data.Vector (Vector, (:<))
-import Data.Vector as Vector
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 varBaseMul

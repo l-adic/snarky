@@ -2,25 +2,25 @@ module Test.RandomOracle.Main where
 
 import Prelude
 
-import Data.Newtype (unwrap)
 import Data.Fin (unsafeFinite)
-import Data.Tuple (fst, Tuple(..), uncurry)
+import Data.Newtype (unwrap)
+import Data.Tuple (Tuple(..), fst, uncurry)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect (Effect)
 import Poseidon.Class (class PoseidonField, hash) as Poseidon
-import RandomOracle (hash, update, initialState, digest)
-import Snarky.Circuit.RandomOracle as Checked
+import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Vector (Vector)
-import Data.Vector as Vector
-import Test.QuickCheck ((===), arbitrary)
+import Test.QuickCheck (arbitrary, (===))
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)

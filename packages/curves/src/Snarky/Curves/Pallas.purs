@@ -4,7 +4,7 @@ module Snarky.Curves.Pallas
   , G
   ) where
 
-import Snarky.Curves.Pasta (PallasScalarField, PallasBaseField, PallasG)
+import Snarky.Curves.Pasta (PallasBaseField, PallasG, PallasScalarField)
 
 type ScalarField = PallasScalarField
 type BaseField = PallasBaseField

@@ -8,18 +8,18 @@ module Snarky.Constraint.Kimchi.EndoScalar
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Foldable (all, foldl)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
+import Data.Vector (Vector, (!!), (:<))
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField, fromInt)
-import Data.Fin (unsafeFinite)
-import Data.Vector (Vector, (:<), (!!))
-import Data.Vector as Vector
 
 type EndoScalarRound f =
   { n0 :: FVar f

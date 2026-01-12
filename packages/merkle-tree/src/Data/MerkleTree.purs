@@ -22,18 +22,18 @@ module Data.MerkleTree
 
 import Prelude
 
-import Partial.Unsafe (unsafeCrashWith)
 import Data.Array as Array
 import Data.Foldable (class Foldable)
 import Data.List (List(..), (:))
 import Data.List as List
 import Data.Maybe (Maybe(..))
+import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge) as ReExports
+import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge)
 import Data.Traversable (class Traversable)
 import Data.Unfoldable (class Unfoldable, class Unfoldable1)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, FreeHash(..), hash, merge, defaultHash)
-import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
+import Partial.Unsafe (unsafeCrashWith)
 
 -- Address uses BigInt to handle large tree depths
 newtype Address = Address BigInt

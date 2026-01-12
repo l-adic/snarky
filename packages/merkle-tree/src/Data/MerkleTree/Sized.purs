@@ -23,18 +23,18 @@ import Data.Array as Array
 import Data.Foldable (length)
 import Data.List (List)
 import Data.Maybe (Maybe(..))
+import Data.MerkleTree (FreeHash)
+import Data.MerkleTree as MT
+import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge) as ReExports
+import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Unfoldable (class Unfoldable)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Data.MerkleTree (FreeHash)
-import Data.MerkleTree as MT
-import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash, class Hashable, FreeHash(..), hash, merge, defaultHash) as ReExports
-import Data.MerkleTree.Hashable (class MerkleHashable, class MergeHash)
-import Data.Vector (Vector)
-import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 newtype MerkleTree (d :: Int) hash a = MerkleTree (MT.MerkleTree hash a)

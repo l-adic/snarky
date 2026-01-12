@@ -16,7 +16,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, class HasEndo, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================

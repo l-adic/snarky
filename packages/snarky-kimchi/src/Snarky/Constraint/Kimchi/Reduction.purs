@@ -33,13 +33,13 @@ import Data.NonEmpty (NonEmpty(..))
 import Data.Set as Set
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (class MonadUnionFind, find, union)
+import Data.Vector ((:<))
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
 import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow, KimchiWireRow)
 import Snarky.Curves.Class (class PrimeField)
-import Data.Vector ((:<))
-import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 type GenericPlonkConstraint f =

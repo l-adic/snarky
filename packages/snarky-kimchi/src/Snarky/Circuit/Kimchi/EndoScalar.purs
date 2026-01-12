@@ -2,8 +2,11 @@ module Snarky.Circuit.Kimchi.EndoScalar where
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, chunks, (!!))
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
@@ -12,9 +15,6 @@ import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
-import Data.Fin (unsafeFinite)
-import Data.Vector (Vector, chunks, (!!))
-import Data.Vector as Vector
 
 newtype ScalarChallenge f = ScalarChallenge f
 

@@ -8,18 +8,18 @@ module Snarky.Constraint.Kimchi.EndoMul
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (all, traverse)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (!!), (:<))
+import Data.Vector as Vector
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class HasEndo, endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Data.Fin (unsafeFinite)
-import Data.Vector (Vector, (!!), (:<))
-import Data.Vector as Vector
 
 type Round f =
   { t :: AffinePoint f

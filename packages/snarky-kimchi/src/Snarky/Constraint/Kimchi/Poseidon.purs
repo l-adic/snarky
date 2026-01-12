@@ -9,10 +9,13 @@ module Snarky.Constraint.Kimchi.Poseidon
 
 import Prelude hiding (append)
 
+import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Function.Uncurried (Fn2, runFn2)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
+import Data.Vector (Vector, append, head, (!!))
+import Data.Vector as Vector
 import Poseidon.Class (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.Types (FVar)
@@ -21,9 +24,6 @@ import Snarky.Constraint.Kimchi.Wire (class ToKimchiRows, GateKind(..), KimchiRo
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Vector (Vector, append, head, (!!))
-import Data.Vector as Vector
 import Type.Proxy (Proxy(..))
 
 type PoseidonConstraint f =

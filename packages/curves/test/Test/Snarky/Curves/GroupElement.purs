@@ -5,6 +5,7 @@ module Test.Snarky.Curves.GroupElement
 import Prelude
 
 import Data.Array (fold)
+import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
@@ -13,7 +14,6 @@ import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Class (class FrModule, class WeierstrassCurve, curveParams, fromBigInt, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Data.Maybe (Maybe(..))
 import Test.QuickCheck (class Arbitrary, Result, arbitrary, quickCheck', (===))
 import Test.QuickCheck.Gen (suchThat)
 import Test.QuickCheck.Laws (checkLaws)
