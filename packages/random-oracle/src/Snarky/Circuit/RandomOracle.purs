@@ -12,15 +12,19 @@ module Snarky.Circuit.RandomOracle
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Generic.Rep (class Generic)
+import Data.Int (odd)
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
+import Data.Traversable (traverse)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
-import Prim.Int (class Mul)
 import Snarky.Circuit.CVar (add_, const_)
 import Snarky.Circuit.DSL (F, Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
@@ -28,6 +32,7 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
+import Type.Proxy (Proxy(..))
 
 -- | Initial state for the sponge: all zeros
 initialState :: forall f. PrimeField f => Vector 3 (FVar f)
@@ -107,25 +112,26 @@ hash2 a b = do
 -- | The input vector is chunked into rate-sized blocks (2 elements each),
 -- | and each block is absorbed with a permutation.
 update
-  :: forall f t m n @nBlocks
+  :: forall f t m n
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable nBlocks Int
-  => Reflectable 2 Int
-  => Mul 2 nBlocks n -- n = 2 * nBlocks (even length inputs)
+  => Reflectable n Int
   => Vector 3 (FVar f)
   -> Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 update initState inputs = do
   let
-    blocks :: Vector nBlocks (Vector 2 (FVar f))
-    blocks = Vector.chunks @2 inputs
+    blocks :: Array (Vector 2 (FVar f))
+    blocks =
+      let
+        n = reflectType (Proxy @n)
+        inputsArray = Vector.toUnfoldable inputs
+        as = if odd n then inputsArray `Array.snoc` (const_ zero) else inputsArray
+      in
+        unsafePartial fromJust $ traverse (Vector.toVector @2) (Vector.chunk 2 as)
 
-    -- Convert to array for monadic folding
-    blocksArray :: Array (Vector 2 (FVar f))
-    blocksArray = Vector.toUnfoldable blocks
   -- Fold over blocks, updating state with each
-  foldM updateBlock initState blocksArray
+  foldM updateBlock initState blocks
 
 -- | Hash a vector of field elements (must be even length).
 -- |
@@ -134,15 +140,13 @@ update initState inputs = do
 -- | result <- hash @4 inputs  -- hash 4 elements
 -- | ```
 hash
-  :: forall f t m n @nBlocks
+  :: forall f t m n
    . PoseidonField f
+  => Reflectable n Int
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable nBlocks Int
-  => Reflectable 2 Int
-  => Mul 2 nBlocks n
   => Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 hash inputs = do
-  finalState <- update @nBlocks initialState inputs
+  finalState <- update initialState inputs
   -- Squeeze from position 0
   pure $ Digest $ Vector.index finalState (unsafeFinite 0)

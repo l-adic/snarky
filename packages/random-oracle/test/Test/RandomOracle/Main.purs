@@ -150,20 +150,44 @@ circuitTests _ = describe "Circuit" do
       }
       genInputs
 
-  it "hash circuit matches pure hash for 4 elements" do
+  it "hash circuit matches pure hash for 16 elements" do
     let
       -- Reference: pure hash of 4 elements
       referenceHash :: Vector 16 (F f) -> Digest (F f)
       referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (Checked.hash @8)
+      solver = makeSolver (Proxy @(KimchiConstraint f)) Checked.hash
       s = compilePure
         (Proxy @(Vector 16 (F f)))
         (Proxy @((Digest (F f))))
         (Proxy @(KimchiConstraint f))
-        (Checked.hash @8)
+        Checked.hash
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @16) (F <$> arbitrary)
+
+    circuitSpecPure'
+      { builtState: s
+      , checker: eval
+      , solver: solver
+      , testFunction: satisfied referenceHash
+      , postCondition: Kimchi.postCondition
+      }
+      genInputs
+
+  it "hash circuit matches pure hash for 17 elements" do
+    let
+      -- Reference: pure hash of 4 elements
+      referenceHash :: Vector 17 (F f) -> Digest (F f)
+      referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
+
+      solver = makeSolver (Proxy @(KimchiConstraint f)) Checked.hash
+      s = compilePure
+        (Proxy @(Vector 17 (F f)))
+        (Proxy @((Digest (F f))))
+        (Proxy @(KimchiConstraint f))
+        Checked.hash
+        Kimchi.initialState
+      genInputs = Vector.generator (Proxy @17) (F <$> arbitrary)
 
     circuitSpecPure'
       { builtState: s
