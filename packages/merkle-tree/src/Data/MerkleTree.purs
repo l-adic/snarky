@@ -17,6 +17,7 @@ module Data.MerkleTree
   , impliedFreeRoot
   , root
   , toUnfoldable
+  , ithBit
   , module ReExports
   ) where
 

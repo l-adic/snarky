@@ -9,5 +9,5 @@ import Snarky.Circuit.DSL.Boolean (all_, any_, if_, xor_) as ReExports
 import Snarky.Circuit.DSL.Field (equals, equals_, neq_, pow_, sum_) as ReExports
 import Snarky.Circuit.DSL.Monad (class CircuitM, AsProver, AsProverT, Snarky, addConstraint, and_, div_, exists, inv_, mul_, not_, or_, read, readCVar, runAsProver, runAsProverT, throwAsProver) as ReExports
 import Snarky.Circuit.DSL.Utils (seal) as ReExports
-import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), FVar, UnChecked(..)) as ReExports
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, UnChecked(..)) as ReExports
 import Snarky.Constraint.Basic (boolean, equal, r1cs) as ReExports
