@@ -1,6 +1,7 @@
 module Data.MerkleTree.Sized
   ( MerkleTree(..)
   , Address(..)
+  , AddressVar(..)
   , Path(..)
   , create
   , size
@@ -21,8 +22,10 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (length)
+import Data.FoldableWithIndex (foldlWithIndex)
+import Data.Generic.Rep (class Generic)
 import Data.List (List)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree (FreeHash)
 import Data.MerkleTree as MT
 import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge) as ReExports
@@ -34,7 +37,11 @@ import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
+import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar)
+import Snarky.Circuit.Types (genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Type.Proxy (Proxy(..))
 
 newtype MerkleTree (d :: Int) hash a = MerkleTree (MT.MerkleTree hash a)
@@ -91,6 +98,36 @@ addMany _tree@(MerkleTree mt@(MT.MerkleTree t)) xs =
 
 newtype Address (d :: Int) = Address BigInt
 
+newtype AddressVar d f = AddressVar (Vector d (BoolVar f))
+
+instance
+  ( Reflectable d Int
+  , PrimeField f
+  ) =>
+  CircuitType f (Address d) (AddressVar d f) where
+  valueToFields (Address a) =
+    let
+      n = (reflectType $ Proxy @d) - one
+    in
+      map (\i -> if MT.ithBit a i then one else zero) (Array.range 0 n)
+  fieldsToValue bits =
+    let
+      two = BigInt.fromInt 2
+    in
+      Address $ foldlWithIndex
+        ( \i acc bit ->
+            let
+              coeff = two `BigInt.pow` BigInt.fromInt i
+            in
+              acc + toBigInt bit * coeff
+        )
+        zero
+        bits
+  sizeInFields _ _ = reflectType (Proxy @d)
+  varToFields (AddressVar as) = coerce $ (Vector.toUnfoldable as :: Array _)
+  fieldsToVar as =
+    coerce $ unsafePartial fromJust $ Vector.toVector @d as
+
 get
   :: forall d hash a
    . MerkleTree d hash a
@@ -99,6 +136,20 @@ get
 get t a = MT.get (coerce t :: MT.MerkleTree hash a) (coerce a)
 
 newtype Path d hash = Path (Vector d hash)
+
+derive instance Generic (Path d hash) _
+
+derive instance Functor (Path d)
+
+instance (Reflectable d Int, CircuitType f hash hashvar) => CircuitType f (Path d hash) (Path d hashvar) where
+  valueToFields = genericValueToFields
+  fieldsToValue = genericFieldsToValue
+  sizeInFields = genericSizeInFields
+  varToFields = genericVarToFields @(Path d hash)
+  fieldsToVar = genericFieldsToVar @(Path d hash)
+
+instance CheckedType hash c => CheckedType (Path d hash) c where
+  check = genericCheck
 
 getPath
   :: forall d hash a
