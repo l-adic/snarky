@@ -8,6 +8,7 @@ module Data.MerkleTree.Sized
   , add_
   , addMany
   , get
+  , set
   , getPath
   , impliedRoot
   , getFreePath
@@ -134,6 +135,18 @@ get
   -> Address d
   -> Maybe a
 get t a = MT.get (coerce t :: MT.MerkleTree hash a) (coerce a)
+
+-- | Set element at address, recomputing hashes along the path.
+-- | Returns Nothing if the address doesn't exist in the tree.
+set
+  :: forall d hash a
+   . MerkleHashable a hash
+  => MerkleTree d hash a
+  -> Address d
+  -> a
+  -> Maybe (MerkleTree d hash a)
+set (MerkleTree t) (Address a) v =
+  MerkleTree <$> MT.set t (MT.Address a) v
 
 newtype Path d hash = Path (Vector d hash)
 
