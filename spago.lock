@@ -155,34 +155,22 @@
           "dependencies": [
             "arrays",
             "curves",
-            "effect",
-            "foldable-traversable",
-            "identity",
-            "js-bigints",
             "maybe",
             "merkle-tree",
             "newtype",
-            "ordered-collections",
-            "partial",
             "poseidon",
             "prelude",
             "quickcheck",
             "random-oracle",
-            "refs",
             "safe-coerce",
-            "sized-vectors",
             "snarky",
             "snarky-kimchi",
             "transformers",
-            "tuples"
+            "vector-sized"
           ],
           "build_plan": [
             "aff",
             "ansi",
-            "argonaut",
-            "argonaut-codecs",
-            "argonaut-core",
-            "argonaut-traversals",
             "arrays",
             "avar",
             "bifunctors",
@@ -200,7 +188,6 @@
             "exceptions",
             "exists",
             "foldable-traversable",
-            "foreign-object",
             "fork",
             "free",
             "functions",
@@ -228,14 +215,12 @@
             "poseidon",
             "prelude",
             "profunctor",
-            "profunctor-lenses",
             "quickcheck",
             "random",
             "random-oracle",
             "record",
             "refs",
             "safe-coerce",
-            "sized-vectors",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
@@ -248,8 +233,6 @@
             "transformers",
             "tuples",
             "type-equality",
-            "typelevel",
-            "typelevel-prelude",
             "unfoldable",
             "union-find",
             "unsafe-coerce",
@@ -261,10 +244,19 @@
             "aff",
             "console",
             "effect",
+            "exceptions",
+            "foldable-traversable",
+            "identity",
+            "integers",
+            "js-bigints",
             "lists",
+            "ordered-collections",
+            "partial",
+            "refs",
             "snarky-test-utils",
             "spec",
-            "spec-node"
+            "spec-node",
+            "tuples"
           ],
           "build_plan": [
             "aff",
@@ -447,6 +439,8 @@
         },
         "test": {
           "dependencies": [
+            "aff",
+            "console",
             "curves",
             "effect",
             "exceptions",
@@ -2629,16 +2623,6 @@
         "strings"
       ]
     },
-    "argonaut": {
-      "type": "registry",
-      "version": "9.0.0",
-      "integrity": "sha256-9sHzkzcFkaMUa9+3FjIybJDYnHtY4Jp4zHOJ84qPTXo=",
-      "dependencies": [
-        "argonaut-codecs",
-        "argonaut-core",
-        "argonaut-traversals"
-      ]
-    },
     "argonaut-codecs": {
       "type": "registry",
       "version": "9.1.0",
@@ -2673,16 +2657,6 @@
         "prelude",
         "strings",
         "tailrec"
-      ]
-    },
-    "argonaut-traversals": {
-      "type": "registry",
-      "version": "10.0.0",
-      "integrity": "sha256-9nSfqR70rjiNWVVsCoK+jrm9dmyZTx89IKNYO6uNUIk=",
-      "dependencies": [
-        "argonaut-codecs",
-        "argonaut-core",
-        "profunctor-lenses"
       ]
     },
     "arraybuffer-types": {
@@ -3427,33 +3401,6 @@
         "tuples"
       ]
     },
-    "profunctor-lenses": {
-      "type": "registry",
-      "version": "8.0.0",
-      "integrity": "sha256-K7f29rHRHgVSb2Y/PaSKtfYPriP6n87BJNO7EhsZHas=",
-      "dependencies": [
-        "arrays",
-        "bifunctors",
-        "const",
-        "control",
-        "distributive",
-        "either",
-        "foldable-traversable",
-        "foreign-object",
-        "functors",
-        "identity",
-        "lists",
-        "maybe",
-        "newtype",
-        "ordered-collections",
-        "partial",
-        "prelude",
-        "profunctor",
-        "record",
-        "transformers",
-        "tuples"
-      ]
-    },
     "quickcheck": {
       "type": "registry",
       "version": "8.0.1",
@@ -3547,22 +3494,6 @@
         "record",
         "typelevel-prelude",
         "variant"
-      ]
-    },
-    "sized-vectors": {
-      "type": "registry",
-      "version": "5.0.2",
-      "integrity": "sha256-L7gThpeZqzYA41xs94DegbWS3Mzpp5u9/tABIaHmIcs=",
-      "dependencies": [
-        "argonaut",
-        "arrays",
-        "distributive",
-        "foldable-traversable",
-        "maybe",
-        "prelude",
-        "quickcheck",
-        "typelevel",
-        "unfoldable"
       ]
     },
     "spec": {
@@ -3733,18 +3664,6 @@
       "version": "4.0.1",
       "integrity": "sha256-Hs9D6Y71zFi/b+qu5NSbuadUQXe5iv5iWx0226vOHUw=",
       "dependencies": []
-    },
-    "typelevel": {
-      "type": "registry",
-      "version": "6.0.0",
-      "integrity": "sha256-Iu7INcwTC/SbKcienMe7KKQvWku2VhCZSGCvrQWVVoc=",
-      "dependencies": [
-        "partial",
-        "prelude",
-        "tuples",
-        "typelevel-prelude",
-        "unsafe-coerce"
-      ]
     },
     "typelevel-prelude": {
       "type": "registry",

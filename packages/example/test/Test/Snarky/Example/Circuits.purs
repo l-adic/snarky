@@ -207,15 +207,6 @@ genTreeWithAccounts _ = do
 
   pure { tree, accountMap }
 
--- -- | Generate a valid address for a tree
--- genValidAddress
---   :: forall d f
---    . SMT.MerkleTree d (Digest (F f)) (Account (F f))
---   -> Gen (Address d)
--- genValidAddress tree = do
---   let maxAddr = SMT.size tree - one
---   Address <$> chooseBigInt zero maxAddr
-
 -- | Generate two distinct valid addresses for a tree
 genDistinctAddresses
   :: forall d f

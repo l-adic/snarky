@@ -3,33 +3,34 @@ package:
   dependencies:
     - arrays
     - curves
-    - effect
-    - foldable-traversable
-    - identity
-    - js-bigints
     - maybe
     - merkle-tree
     - newtype
-    - ordered-collections
-    - partial
     - poseidon
     - prelude
     - quickcheck
     - random-oracle
-    - refs
     - safe-coerce
-    - sized-vectors
     - snarky
     - snarky-kimchi
     - transformers
-    - tuples
+    - vector-sized
   test:
-    main: Test.Main
+    main: Test.Example.Main
     dependencies:
       - aff
       - console
       - effect
+      - exceptions
+      - foldable-traversable
+      - identity
+      - integers
+      - js-bigints
       - lists
+      - ordered-collections
+      - partial
+      - refs
       - snarky-test-utils
       - spec
       - spec-node
+      - tuples

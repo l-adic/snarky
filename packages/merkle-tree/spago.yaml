@@ -3,6 +3,8 @@ package:
   test:
     main: Test.Main
     dependencies:
+      - aff
+      - console
       - curves
       - effect
       - exceptions
