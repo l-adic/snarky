@@ -2055,3 +2055,113 @@ impliedRoot (AddressVar addr) initialHash (Path path) =
     initialHash
     (Vector.zip addr path)
 ```
+---
+
+## How to Test Circuits
+
+The `snarky-test-utils` package provides a framework for testing circuits. The core of this framework is the `circuitSpec` family of functions, which automate the process of compiling a circuit, generating a witness, and verifying its correctness against a pure functional model.
+
+### The `CircuitSpec` Record
+
+All testing functions are configured with a `CircuitSpec` record:
+
+```purescript
+type CircuitSpec f c r m a b =
+  { builtState :: CircuitBuilderState c r
+  , solver :: SolverT f c m a b
+  , checker :: Checker f c
+  , testFunction :: a -> Expectation b
+  , postCondition :: PostCondition f c r
+  }
+```
+
+-   `builtState`: The compiled circuit, produced by `compile`.
+-   `solver`: A function that generates the witness, created by `makeSolver`.
+-   `checker`: A function that verifies the constraints (e.g., `Kimchi.eval`).
+-   `testFunction`: A pure function that defines the expected behavior. It takes the same public input as the circuit and returns an `Expectation`:
+    -   `satisfied`: The circuit should succeed, and the output should match the provided value.
+    -   `unsatisfied`: The circuit should fail to prove (i.e., a constraint was not met).
+    -   `ProverError`: The prover is expected to throw a specific error (e.g., `DivisionByZero`).
+-   `postCondition`: An optional function to run additional checks on the generated witness.
+
+### Testing Pure Circuits
+
+For circuits that do not involve any side effects or state (i.e., their `Snarky` monad is specialized to `Identity`), you can use `circuitSpecPure'`.
+
+**Example Pattern:**
+
+1.  **Define the Circuit**: Write your circuit as a pure function in the `Snarky ... Identity` monad.
+
+2.  **Define a `testFunction`**: Write a regular PureScript function that computes the same result as your circuit. This is your specification.
+
+3.  **Compile the Circuit**: Use `compile` to get the `builtState`.
+    ```purescript
+    s = un Identity $
+      compile
+        (Proxy @InputType)
+        (Proxy @OutputType)
+        (Proxy @ConstraintSystem)
+        circuit
+        initialState
+    ```
+
+4.  **Create a Solver**: Use `makeSolver` to create the witness generator.
+
+5.  **Run the Spec**: Use `circuitSpecPure'` with a `QuickCheck` generator for your inputs.
+
+    ```purescript
+    circuitSpecPure'
+      { builtState: s
+      , checker: eval
+      , solver: solver
+      , testFunction: satisfied testFunction
+      , postCondition: Kimchi.postCondition
+      }
+      inputGenerator
+    ```
+
+### Testing Stateful and Effectful Circuits
+
+For circuits that need to interact with external state (like a database or a Merkle tree), you need a more advanced setup. These circuits typically use a custom monad `m` constrained by a typeclass (e.g., `MerkleRequestM`).
+
+**Example Pattern:**
+
+1.  **Define Two Monads**:
+    -   **A Compile Monad**: This monad is used during the `compile` step. It should be pure (e.g., based on `Identity`) and its implementation for your custom typeclass should simply throw an error. This ensures that no side effects can occur during compilation.
+    -   **A Test Monad**: This monad is used during the `solver` step. It's typically stateful (e.g., using `ReaderT` over `Effect` with a `Ref`) and implements the logic for your custom typeclass (e.g., reading from/writing to the `Ref`).
+
+2.  **Compile the Circuit**: Compile the circuit using the *compile monad*.
+    ```purescript
+    s =
+      runMyCompileMonad $
+        compile
+          ...
+          (circuit @(MyCompileMonad f))
+          initialState
+    ```
+
+3.  **Set up the Test State**: Initialize your state (e.g., create an initial Merkle tree and a `Ref` to hold it).
+
+4.  **Define a Natural Transformation**: Write a function that runs a computation in your *test monad* and produces an `Effect`. This function will typically set up initial state, run the monad, and return the result. If you need to reset the state for each `QuickCheck` sample, do it here.
+
+    ```purescript
+    natWithReset :: MyTestMonad f ~> Effect
+    natWithReset m = do
+      write initialTree ref
+      runMyTestMonad ref m
+    ```
+
+5.  **Run the Spec**: Use `circuitSpec'` with the natural transformation.
+
+    ```purescript
+    circuitSpec' natWithReset
+      { builtState: s
+      , checker: eval
+      , solver: solver
+      , testFunction: satisfied testFunction
+      , postCondition: Kimchi.postCondition
+      }
+      inputGenerator
+    ```
+
+This two-monad system cleanly separates the pure circuit structure from the effectful witness generation, ensuring your circuits are deterministic and portable while allowing for stateful testing.
