@@ -36,6 +36,8 @@ make test
 
 ### Circuit Libraries
 - `packages/snarky-curves/` - Elliptic curve arithmetic circuits using the DSL
+- `packages/random-oracle/` Hash functions and circuits
+- `packages/merkle-tree/` Merkle trees and ciruits. Supports both fixed-depth and unbounded. 
 
 ### Utilities
 - `packages/snarky-test-utils/` - Testing utilities for circuit development
