@@ -49,7 +49,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Circuits (class AccountMapM, transfer)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (circuitSpec', satisfied)
+import Test.Snarky.Circuit.Utils (circuitSpec', satisfied, unsatisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -207,6 +207,26 @@ genTreeWithAccounts _ = do
 
   pure { tree, accountMap }
 
+-- -- | Generate a valid address for a tree
+-- genValidAddress
+--   :: forall d f
+--    . SMT.MerkleTree d (Digest (F f)) (Account (F f))
+--   -> Gen (Address d)
+-- genValidAddress tree = do
+--   let maxAddr = SMT.size tree - one
+--   Address <$> chooseBigInt zero maxAddr
+
+-- | Generate two distinct valid addresses for a tree
+genDistinctAddresses
+  :: forall d f
+   . SMT.MerkleTree d (Digest (F f)) (Account (F f))
+  -> Gen { fromAddr :: Address d, toAddr :: Address d }
+genDistinctAddresses tree = do
+  let maxAddr = SMT.size tree - one
+  fromIdx <- chooseBigInt zero maxAddr
+  toIdx <- chooseBigInt zero maxAddr `suchThat` (\i -> i /= fromIdx)
+  pure { fromAddr: Address fromIdx, toAddr: Address toIdx }
+
 -- | Generate a valid transfer transaction for a given tree
 genValidTransfer
   :: forall d f
@@ -216,15 +236,9 @@ genValidTransfer
   => TransferState d f
   -> Gen (Transaction (F f))
 genValidTransfer { tree } = do
-  let maxAddr = SMT.size tree - one
-  -- Pick sender and receiver (different addresses)
-  fromIdx <- chooseBigInt zero maxAddr
-  toIdx <- chooseBigInt zero maxAddr `suchThat` (\i -> i /= fromIdx)
+  { fromAddr, toAddr } <- genDistinctAddresses tree
 
   let
-    fromAddr = Address fromIdx
-    toAddr = Address toIdx
-
     -- Get sender account to determine max transfer amount
     Account senderAcc = unsafePartial fromJust $ SMT.get tree fromAddr
     TokenAmount (F senderBalance) = senderAcc.tokenBalance
@@ -234,6 +248,30 @@ genValidTransfer { tree } = do
   let amount = TokenAmount $ F $ fromBigInt amountInt
 
   let
+    Account { publicKey: from } = unsafePartial fromJust $ SMT.get tree fromAddr
+    Account { publicKey: to } = unsafePartial fromJust $ SMT.get tree toAddr
+
+  pure $ Transaction { from, to, amount }
+
+-- | Generate an invalid transfer transaction where the amount exceeds the sender's balance
+genInvalidTransferOverdraft
+  :: forall d f
+   . Reflectable d Int
+  => PoseidonField f
+  => Ord f
+  => TransferState d f
+  -> Gen (Transaction (F f))
+genInvalidTransferOverdraft { tree } = do
+  { fromAddr, toAddr } <- genDistinctAddresses tree
+
+  let
+    -- Get sender account
+    Account senderAcc = unsafePartial fromJust $ SMT.get tree fromAddr
+    TokenAmount (F senderBalance) = senderAcc.tokenBalance
+
+    -- Set amount to one more than sender's balance (overdraft)
+    amount = TokenAmount $ F $ senderBalance + one
+
     Account { publicKey: from } = unsafePartial fromJust $ SMT.get tree fromAddr
     Account { publicKey: to } = unsafePartial fromJust $ SMT.get tree toAddr
 
@@ -308,8 +346,6 @@ transferSpec _ pd = do
           (circuit @(TransferCompileM d f))
           initialState
 
-    gen = genValidTransfer initialState'
-
   ref <- liftEffect $ Ref.new initialState'
 
   -- Reset state before each test case
@@ -319,6 +355,7 @@ transferSpec _ pd = do
       write initialState' ref
       runTransferRefM ref m
 
+  Console.log "Checking the Valid case"
   circuitSpec' natWithReset
     { builtState: s
     , checker: eval
@@ -326,11 +363,21 @@ transferSpec _ pd = do
     , testFunction: satisfied testFunction
     , postCondition: Kimchi.postCondition
     }
-    gen
+    (genValidTransfer initialState')
 
-  -- Reset for verify
   liftEffect $ write initialState' ref
-  liftEffect $ (runTransferRefM ref) $ verifyCircuitM { s, gen, solver }
+  liftEffect $ runTransferRefM ref $ verifyCircuitM { s, gen: genValidTransfer initialState', solver }
+
+  Console.log "Checking the overdraft case"
+  circuitSpec' natWithReset
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: unsatisfied
+    , postCondition: Kimchi.postCondition
+    }
+    (genInvalidTransferOverdraft initialState')
+  liftEffect $ write initialState' ref
 
 --------------------------------------------------------------------------------
 -- Spec
@@ -338,7 +385,7 @@ transferSpec _ pd = do
 spec :: SpecT Aff Unit Aff Unit
 spec = beforeAll genSize $
   describe "Transfer Circuit Specs" do
-    describe "transfer" do
+    describe "valid transfer" do
       it "Vesta" \d ->
         reifyType d \pd ->
           transferSpec (Proxy @Vesta.ScalarField) pd
