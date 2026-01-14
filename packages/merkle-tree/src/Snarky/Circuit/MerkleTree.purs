@@ -14,7 +14,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Foldable (foldM)
 import Data.Maybe (Maybe(..))
-import Data.MerkleTree.Hashable (class MerkleHashable, hashCircuit, mergeCircuit)
+import Data.MerkleTree.Hashable (class MerkleHashable, hash, mergeCircuit)
 import Data.MerkleTree.Sized (Address, AddressVar(..), Path(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
@@ -40,19 +40,20 @@ class
   setValue :: Address d -> v -> m Unit
 
 get
-  :: forall t m f d
+  :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+  => MerkleRequestM m f v (KimchiConstraint f) d var
   => CircuitM f (KimchiConstraint f) t m
+  => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => AddressVar d f
   -> Digest (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky (KimchiConstraint f) t m var
 get addr (Digest root) = do
   { value, path } <- exists do
     a <- read addr
-    lift $ getElement @_ @_ @(F f) @(KimchiConstraint f) @d a
-  h <- hashCircuit $ Just value
+    lift $ getElement @_ @_ @v @(KimchiConstraint f) @d a
+  h <- hash $ Just value
   impliedRoot addr h path >>= \(Digest d) ->
     assertEqual_ root d
   pure value
@@ -66,26 +67,27 @@ get addr (Digest root) = do
 -- | 4. Updates the underlying tree state via setValue
 -- | 5. Computes and returns the new root along with old and new elements
 fetchAndUpdate
-  :: forall t m f d
+  :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+  => MerkleRequestM m f v (KimchiConstraint f) d var
+  => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => AddressVar d f
   -> Digest (FVar f)
-  -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
+  -> (var -> Snarky (KimchiConstraint f) t m var)
   -> Snarky (KimchiConstraint f) t m
        { root :: Digest (FVar f)
-       , old :: FVar f
-       , new :: FVar f
+       , old :: var
+       , new :: var
        }
 fetchAndUpdate addr (Digest root) f = do
   -- Get element and path as witnesses
   { value: prev, path } <- exists do
     a <- read addr
-    lift $ getElement @m @_ @(F f) @(KimchiConstraint f) @d a
+    lift $ getElement @m @_ @v @(KimchiConstraint f) @d a
   -- Hash old element and verify against root
-  prevHash <- hashCircuit $ Just prev
+  prevHash <- hash $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
     assertEqual_ root d
   -- Apply modification function
@@ -93,10 +95,10 @@ fetchAndUpdate addr (Digest root) f = do
   -- Update the tree with the new value
   _ <- exists do
     a <- read addr
-    n <- read @(F f) next
-    lift $ setValue @_ @_ @(F f) @(KimchiConstraint f) @d a n
+    n <- read @v next
+    lift $ setValue @_ @_ @v @(KimchiConstraint f) @d a n
   -- Hash new element and compute new root
-  nextHash <- hashCircuit $ Just next
+  nextHash <- hash $ Just next
   newRoot <- impliedRoot addr nextHash path
   pure { root: newRoot, old: prev, new: next }
 
@@ -108,32 +110,33 @@ fetchAndUpdate addr (Digest root) f = do
 -- | 3. Updates the underlying tree state via setValue
 -- | 4. Computes and returns the new root
 update
-  :: forall t m f d
+  :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+  => MerkleRequestM m f v (KimchiConstraint f) d var
+  => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => AddressVar d f
   -> Digest (FVar f)
-  -> FVar f
-  -> FVar f
+  -> var
+  -> var
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 update addr (Digest root) prev next = do
   -- Witness only the path
   path <- exists do
     a <- read addr
-    lift $ getPath @m @_ @(F f) @(KimchiConstraint f) @d a
+    lift $ getPath @m @_ @v @(KimchiConstraint f) @d a
   -- Hash old element and verify against root
-  prevHash <- hashCircuit $ Just prev
+  prevHash <- hash $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
     assertEqual_ root d
   -- Update the tree with the new value
   _ <- exists do
     a <- read addr
-    n <- read @(F f) next
-    lift $ setValue @_ @_ @(F f) @(KimchiConstraint f) @d a n
+    n <- read @v next
+    lift $ setValue @_ @_ @v @(KimchiConstraint f) @d a n
   -- Hash new element and compute new root
-  nextHash <- hashCircuit $ Just next
+  nextHash <- hash $ Just next
   impliedRoot addr nextHash path
 
 impliedRoot

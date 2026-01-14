@@ -6,11 +6,12 @@ import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array.NonEmpty as NEA
+import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(..))
 import Data.Int (pow)
 import Data.List as List
 import Data.Maybe (Maybe(..), fromJust)
-import Data.MerkleTree.Hashable (hash)
+import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, hash)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sized as SMT
 import Data.Newtype (class Newtype, un)
@@ -25,49 +26,52 @@ import Effect.Ref (Ref, read, write)
 import Effect.Ref as Ref
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
+import Poseidon as Poseidon
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit, verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest(..))
-import Snarky.Circuit.Types (class CheckedType, class CircuitType)
+import Snarky.Circuit.RandomOracle (Digest(..), hash2)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.QuickCheck (arbitrary)
+import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, vectorOf)
 import Test.Snarky.Circuit.Utils (circuitSpec', circuitSpecPure', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
--- | Tree reference type alias
-type TreeRef d f = Ref (SMT.MerkleTree d (Digest (F f)) (F f))
+--------------------------------------------------------------------------------
+
+-- | Tree reference type alias (using Account as leaf type)
+type TreeRef d f v = Ref (SMT.MerkleTree d (Digest (F f)) v)
 
 -- | Monad that reads tree from a Ref
-newtype MerkleRefM d f a = MerkleRefM (ReaderT (TreeRef d f) Effect a)
+newtype MerkleRefM d f v a = MerkleRefM (ReaderT (TreeRef d f v) Effect a)
 
-derive instance Newtype (MerkleRefM d f a) _
-derive newtype instance Functor (MerkleRefM d f)
-derive newtype instance Apply (MerkleRefM d f)
-derive newtype instance Applicative (MerkleRefM d f)
-derive newtype instance Bind (MerkleRefM d f)
-derive newtype instance Monad (MerkleRefM d f)
-derive newtype instance MonadEffect (MerkleRefM d f)
+derive instance Newtype (MerkleRefM d f v a) _
+derive newtype instance Functor (MerkleRefM d f v)
+derive newtype instance Apply (MerkleRefM d f v)
+derive newtype instance Applicative (MerkleRefM d f v)
+derive newtype instance Bind (MerkleRefM d f v)
+derive newtype instance Monad (MerkleRefM d f v)
+derive newtype instance MonadEffect (MerkleRefM d f v)
 
-runMerkleRefM :: forall d f. TreeRef d f -> MerkleRefM d f ~> Effect
+runMerkleRefM :: forall d f v. TreeRef d f v -> MerkleRefM d f v ~> Effect
 runMerkleRefM tree (MerkleRefM m) = runReaderT m tree
 
-getTreeRef :: forall d f. MerkleRefM d f (SMT.MerkleTree d (Digest (F f)) (F f))
+getTreeRef :: forall d f v. MerkleRefM d f v (SMT.MerkleTree d (Digest (F f)) v)
 getTreeRef = MerkleRefM $ ask >>= \ref -> liftEffect $ read ref
 
 modifyTreeRef
-  :: forall d f
-   . (SMT.MerkleTree d (Digest (F f)) (F f) -> SMT.MerkleTree d (Digest (F f)) (F f))
-  -> MerkleRefM d f Unit
+  :: forall d f v
+   . (SMT.MerkleTree d (Digest (F f)) v -> SMT.MerkleTree d (Digest (F f)) v)
+  -> MerkleRefM d f v Unit
 modifyTreeRef f = MerkleRefM $ ask >>= \ref -> liftEffect do
   tree <- read ref
   write (f tree) ref
@@ -76,10 +80,11 @@ modifyTreeRef f = MerkleRefM $ ask >>= \ref -> liftEffect do
 instance
   ( Reflectable d Int
   , PoseidonField f
-  , CircuitType f (F f) (FVar f)
-  , CheckedType (FVar f) c
+  , CircuitType f v var
+  , CheckedType var c
+  , MerkleHashable v (Digest (F f))
   ) =>
-  CMT.MerkleRequestM (MerkleRefM d f) f (F f) c d (FVar f) where
+  CMT.MerkleRequestM (MerkleRefM d f v) f v c d var where
   getElement (SMT.Address addr) = do
     tree <- getTreeRef
     let
@@ -119,31 +124,86 @@ runMerkleCompileM (MerkleCompileM m) = un Identity m
 instance
   ( Reflectable d Int
   , PoseidonField f
-  , CircuitType f (F f) (FVar f)
-  , CheckedType (FVar f) c
+  , CircuitType f (Account (F f)) (Account (FVar f))
+  , CheckedType (Account (FVar f)) c
   ) =>
-  CMT.MerkleRequestM (MerkleCompileM d f) f (F f) c d (FVar f) where
+  CMT.MerkleRequestM (MerkleCompileM d f) f (Account (F f)) c d (Account (FVar f)) where
   getElement _ = unsafeThrow "unhandled request: getElement"
   getPath _ = unsafeThrow "unhandled request: getPath"
   setValue _ _ = unsafeThrow "unhandled request: setValue"
 
--- | Generate a random filled merkle tree of depth d
+-- | Generate a random filled merkle tree of depth d (with Account leaves)
 genTree
   :: forall d f
    . Reflectable d Int
   => PoseidonField f
   => Proxy d
-  -> Gen (SMT.MerkleTree d (Digest (F f)) (F f))
+  -> Gen (SMT.MerkleTree d (Digest (F f)) (Account (F f)))
 genTree _ = do
   let numElements = 2 `pow` (reflectType (Proxy @d))
-  vs <- vectorOf numElements (arbitrary @(F f))
+  vs <- vectorOf numElements (arbitrary @(Account (F f)))
   let
     nea = unsafePartial fromJust $ NEA.fromArray vs
     { head: a, tail: as } = NEA.uncons nea
 
-    base :: SMT.MerkleTree d (Digest (F f)) (F f)
+    base :: SMT.MerkleTree d (Digest (F f)) (Account (F f))
     base = SMT.create a
   pure $ SMT.addMany base (List.fromFoldable as)
+
+--------------------------------------------------------------------------------
+-- | Account type for merkle tree leaves
+-- | Uses two field elements: publicKey and tokenBalance
+newtype Account f = Account { publicKey :: f, tokenBalance :: f }
+
+derive instance Newtype (Account f) _
+derive instance Generic (Account f) _
+derive instance Eq f => Eq (Account f)
+derive instance Functor Account
+
+instance Show f => Show (Account f) where
+  show (Account { publicKey, tokenBalance }) =
+    "Account { publicKey: " <> show publicKey <> ", tokenBalance: " <> show tokenBalance <> " }"
+
+instance Arbitrary f => Arbitrary (Account f) where
+  arbitrary = Account <$> ({ publicKey: _, tokenBalance: _ } <$> arbitrary <*> arbitrary)
+
+-- | CircuitType instance: Account (F f) <-> Account (FVar f)
+instance CircuitType f (Account (F f)) (Account (FVar f)) where
+  valueToFields = genericValueToFields
+  fieldsToValue = genericFieldsToValue
+  sizeInFields = genericSizeInFields
+  varToFields = genericVarToFields @(Account (F f))
+  fieldsToVar = genericFieldsToVar @(Account (F f))
+
+instance CheckedType (Account (FVar f)) c where
+  check = genericCheck
+
+-- | Pure Hashable instance for Account (F f)
+instance PoseidonField f => Hashable (Account (F f)) (Digest (F f)) where
+  hash = case _ of
+    Nothing -> Digest $ F $ Poseidon.hash []
+    Just (Account { publicKey: F pk, tokenBalance: F tb }) ->
+      Digest $ F $ Poseidon.hash [ pk, tb ]
+
+-- | Circuit Hashable instance for Account (FVar f)
+instance
+  ( CircuitM f (KimchiConstraint f) t m
+  , PoseidonField f
+  ) =>
+  Hashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
+  hash = case _ of
+    Nothing -> hash2 (const_ zero) (const_ zero)
+    Just (Account { publicKey, tokenBalance }) -> hash2 publicKey tokenBalance
+
+-- | MerkleHashable instance for pure Account
+instance PoseidonField f => MerkleHashable (Account (F f)) (Digest (F f))
+
+-- | MerkleHashable instance for circuit Account
+instance
+  ( CircuitM f (KimchiConstraint f) t m
+  , PoseidonField f
+  ) =>
+  MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
 
 --------------------------------------------------------------------------------
 
@@ -220,7 +280,7 @@ getSpec _ pd = do
   tree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
-    testFunction :: SMT.Address d -> F f
+    testFunction :: SMT.Address d -> Account (F f)
     testFunction addr = unsafePartial $ fromJust $ SMT.get tree addr
 
     rootVar =
@@ -231,10 +291,10 @@ getSpec _ pd = do
 
     circuit
       :: forall t @m
-       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+       . CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
       => CircuitM f (KimchiConstraint f) t m
       => SMT.AddressVar d f
-      -> Snarky (KimchiConstraint f) t m (FVar f)
+      -> Snarky (KimchiConstraint f) t m (Account (FVar f))
     circuit addr = CMT.get addr rootVar
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
@@ -242,7 +302,7 @@ getSpec _ pd = do
       runMerkleCompileM $
         compile
           (Proxy @(Address d))
-          (Proxy @(F f))
+          (Proxy @(Account (F f)))
           (Proxy @(KimchiConstraint f))
           (circuit @(MerkleCompileM d f))
           initialState
@@ -280,17 +340,24 @@ fetchAndUpdateSpec _ pd = do
   initialTree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
-    -- Modification function: add one (uses Semiring instance for Snarky)
-    modifyF :: forall t m. CircuitM f (KimchiConstraint f) t m => FVar f -> Snarky (KimchiConstraint f) t m (FVar f)
-    modifyF x = pure x + one
+    -- Modification function: add one to tokenBalance (uses Semiring instance for Snarky)
+    modifyF
+      :: forall t m
+       . CircuitM f (KimchiConstraint f) t m
+      => Account (FVar f)
+      -> Snarky (KimchiConstraint f) t m (Account (FVar f))
+    modifyF (Account { publicKey, tokenBalance }) = do
+      newBalance <- pure tokenBalance + one
+      pure $ Account { publicKey, tokenBalance: newBalance }
 
     -- Pure modification for test function
-    modifyPure :: F f -> F f
-    modifyPure x = x + one
+    modifyPure :: Account (F f) -> Account (F f)
+    modifyPure (Account { publicKey, tokenBalance }) =
+      Account { publicKey, tokenBalance: tokenBalance + one }
 
     -- Test function: compute expected output from initial tree state
     -- Note: tree gets reset before each test case
-    testFunction :: SMT.Address d -> { root :: Digest (F f), old :: F f, new :: F f }
+    testFunction :: SMT.Address d -> { root :: Digest (F f), old :: Account (F f), new :: Account (F f) }
     testFunction addr =
       let
         oldVal = unsafePartial fromJust $ SMT.get initialTree addr
@@ -309,10 +376,10 @@ fetchAndUpdateSpec _ pd = do
 
     circuit
       :: forall t @m
-       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+       . CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
       => CircuitM f (KimchiConstraint f) t m
       => SMT.AddressVar d f
-      -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: FVar f, new :: FVar f }
+      -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: Account (FVar f), new :: Account (FVar f) }
     circuit addr = CMT.fetchAndUpdate addr rootVar modifyF
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
@@ -320,7 +387,7 @@ fetchAndUpdateSpec _ pd = do
       runMerkleCompileM $
         compile
           (Proxy @(Address d))
-          (Proxy @{ root :: Digest (F f), old :: F f, new :: F f })
+          (Proxy @{ root :: Digest (F f), old :: Account (F f), new :: Account (F f) })
           (Proxy @(KimchiConstraint f))
           (circuit @(MerkleCompileM d f))
           initialState
@@ -335,7 +402,7 @@ fetchAndUpdateSpec _ pd = do
 
   -- Reset tree before each test case
   let
-    natWithReset :: MerkleRefM d f ~> Effect
+    natWithReset :: MerkleRefM d f (Account (F f)) ~> Effect
     natWithReset m = do
       write initialTree ref
       runMerkleRefM ref m
@@ -370,7 +437,7 @@ updateSpec _ pd = do
   let
     -- Test function: compute expected new root
     testFunction
-      :: Tuple (Address d) (Tuple (F f) (F f))
+      :: Tuple (Address d) (Tuple (Account (F f)) (Account (F f)))
       -> Digest (F f)
     testFunction (Tuple addr (Tuple _old new)) =
       let
@@ -387,9 +454,9 @@ updateSpec _ pd = do
 
     circuit
       :: forall t @m
-       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+       . CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
       => CircuitM f (KimchiConstraint f) t m
-      => Tuple (SMT.AddressVar d f) (Tuple (FVar f) (FVar f))
+      => Tuple (SMT.AddressVar d f) (Tuple (Account (FVar f)) (Account (FVar f)))
       -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
     circuit (Tuple addr (Tuple old new)) = CMT.update addr rootVar old new
 
@@ -397,7 +464,7 @@ updateSpec _ pd = do
     s =
       runMerkleCompileM $
         compile
-          (Proxy @(Tuple (Address d) (Tuple (F f) (F f))))
+          (Proxy @(Tuple (Address d) (Tuple (Account (F f)) (Account (F f)))))
           (Proxy @(Digest (F f)))
           (Proxy @(KimchiConstraint f))
           (circuit @(MerkleCompileM d f))
@@ -416,7 +483,7 @@ updateSpec _ pd = do
 
   -- Reset tree before each test case
   let
-    natWithReset :: MerkleRefM d f ~> Effect
+    natWithReset :: MerkleRefM d f (Account (F f)) ~> Effect
     natWithReset m = do
       write initialTree ref
       runMerkleRefM ref m
