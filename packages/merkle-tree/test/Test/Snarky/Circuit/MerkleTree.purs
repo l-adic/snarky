@@ -14,10 +14,12 @@ import Data.MerkleTree.Hashable (hash)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sized as SMT
 import Data.Newtype (class Newtype, un)
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
+import Effect.Aff (Aff)
 import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Class.Console as Console
 import Effect.Exception.Unsafe (unsafeThrow)
 import Effect.Ref (Ref, read, write)
 import Effect.Ref as Ref
@@ -39,7 +41,7 @@ import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, vectorOf)
 import Test.Snarky.Circuit.Utils (circuitSpec', circuitSpecPure', satisfied)
-import Test.Spec (Spec, describe, it)
+import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
 -- | Tree reference type alias
@@ -151,59 +153,57 @@ impliedRootSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => String
-  -> Proxy f
+  => Proxy f
   -> Proxy d
-  -> Spec Unit
-impliedRootSpec testName _ pd = describe ("impliedRoot: " <> testName) do
-  it "computes correct root from address, hash, and path" do
-    tree <- liftEffect $ randomSampleOne (genTree pd)
+  -> Aff Unit
+impliedRootSpec _ pd = do
+  tree <- liftEffect $ randomSampleOne (genTree pd)
 
-    let
-      -- Expected: use pure impliedRoot
-      testFunction
-        :: Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))
-        -> Digest (F f)
-      testFunction (Tuple addr (Tuple entryHash path)) =
-        SMT.impliedRoot addr entryHash path
+  let
+    -- Expected: use pure impliedRoot
+    testFunction
+      :: Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))
+      -> Digest (F f)
+    testFunction (Tuple addr (Tuple entryHash path)) =
+      SMT.impliedRoot addr entryHash path
 
-      circuit
-        :: forall t
-         . CircuitM f (KimchiConstraint f) t Identity
-        => Tuple (SMT.AddressVar d f) (Tuple (Digest (FVar f)) (SMT.Path d (Digest (FVar f))))
-        -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
-      circuit (Tuple addr (Tuple entryHash path)) =
-        CMT.impliedRoot addr entryHash path
+    circuit
+      :: forall t
+       . CircuitM f (KimchiConstraint f) t Identity
+      => Tuple (SMT.AddressVar d f) (Tuple (Digest (FVar f)) (SMT.Path d (Digest (FVar f))))
+      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+    circuit (Tuple addr (Tuple entryHash path)) =
+      CMT.impliedRoot addr entryHash path
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-      s = un Identity $
-        compile
-          (Proxy @(Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))))
-          (Proxy @(Digest (F f)))
-          (Proxy @(KimchiConstraint f))
-          circuit
-          initialState
+    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+    s = un Identity $
+      compile
+        (Proxy @(Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))))
+        (Proxy @(Digest (F f)))
+        (Proxy @(KimchiConstraint f))
+        circuit
+        initialState
 
-      -- Generator: produce valid (address, entryHash, path) triples from fixed tree
-      gen = do
-        addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
-        let
-          addr = Address $ BigInt.fromInt addrInt
-          elem = unsafePartial fromJust $ SMT.get tree addr
-          entryHash = hash (Just elem)
-          path = unsafePartial fromJust $ SMT.getPath tree addr
-        pure $ Tuple addr (Tuple entryHash path)
+    -- Generator: produce valid (address, entryHash, path) triples from fixed tree
+    gen = do
+      addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
+      let
+        addr = Address $ BigInt.fromInt addrInt
+        elem = unsafePartial fromJust $ SMT.get tree addr
+        entryHash = hash (Just elem)
+        path = unsafePartial fromJust $ SMT.getPath tree addr
+      pure $ Tuple addr (Tuple entryHash path)
 
-    circuitSpecPure'
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+  circuitSpecPure'
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied testFunction
+    , postCondition: Kimchi.postCondition
+    }
+    gen
 
-    liftEffect $ verifyCircuit { s, gen, solver }
+  liftEffect $ verifyCircuit { s, gen, solver }
 
 --------------------------------------------------------------------------------
 
@@ -213,59 +213,57 @@ getSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => String
-  -> Proxy f
+  => Proxy f
   -> Proxy d
-  -> Spec Unit
-getSpec testName _ pd = describe ("Poseidon Circuit Tests: " <> testName) do
-  it "factors Circuit is Valid" do
-    tree <- liftEffect $ randomSampleOne (genTree pd)
+  -> Aff Unit
+getSpec _ pd = do
+  tree <- liftEffect $ randomSampleOne (genTree pd)
 
-    let
-      testFunction :: SMT.Address d -> F f
-      testFunction addr = unsafePartial $ fromJust $ SMT.get tree addr
+  let
+    testFunction :: SMT.Address d -> F f
+    testFunction addr = unsafePartial $ fromJust $ SMT.get tree addr
 
-      rootVar =
-        let
-          Digest (F r) = SMT.root tree
-        in
-          Digest $ const_ r
+    rootVar =
+      let
+        Digest (F r) = SMT.root tree
+      in
+        Digest $ const_ r
 
-      circuit
-        :: forall t @m
-         . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
-        => CircuitM f (KimchiConstraint f) t m
-        => SMT.AddressVar d f
-        -> Snarky (KimchiConstraint f) t m (FVar f)
-      circuit addr = CMT.get addr rootVar
+    circuit
+      :: forall t @m
+       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+      => CircuitM f (KimchiConstraint f) t m
+      => SMT.AddressVar d f
+      -> Snarky (KimchiConstraint f) t m (FVar f)
+    circuit addr = CMT.get addr rootVar
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-      s =
-        runMerkleCompileM $
-          compile
-            (Proxy @(Address d))
-            (Proxy @(F f))
-            (Proxy @(KimchiConstraint f))
-            (circuit @(MerkleCompileM d f))
-            initialState
-      gen =
-        let
-          maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
-        in
-          Address <<< BigInt.fromInt <$> chooseInt 0 maxAddress
+    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+    s =
+      runMerkleCompileM $
+        compile
+          (Proxy @(Address d))
+          (Proxy @(F f))
+          (Proxy @(KimchiConstraint f))
+          (circuit @(MerkleCompileM d f))
+          initialState
+    gen =
+      let
+        maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
+      in
+        Address <<< BigInt.fromInt <$> chooseInt 0 maxAddress
 
-    ref <- liftEffect $ Ref.new tree
+  ref <- liftEffect $ Ref.new tree
 
-    circuitSpec' (runMerkleRefM ref)
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+  circuitSpec' (runMerkleRefM ref)
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied testFunction
+    , postCondition: Kimchi.postCondition
+    }
+    gen
 
-    liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
+  liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
 
 --------------------------------------------------------------------------------
 
@@ -275,87 +273,85 @@ fetchAndUpdateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => String
-  -> Proxy f
+  => Proxy f
   -> Proxy d
-  -> Spec Unit
-fetchAndUpdateSpec testName _ pd = describe ("fetchAndUpdate: " <> testName) do
-  it "fetches element, applies modification, and updates tree" do
-    initialTree <- liftEffect $ randomSampleOne (genTree pd)
+  -> Aff Unit
+fetchAndUpdateSpec _ pd = do
+  initialTree <- liftEffect $ randomSampleOne (genTree pd)
 
-    let
-      -- Modification function: add one (uses Semiring instance for Snarky)
-      modifyF :: forall t m. CircuitM f (KimchiConstraint f) t m => FVar f -> Snarky (KimchiConstraint f) t m (FVar f)
-      modifyF x = pure x + one
+  let
+    -- Modification function: add one (uses Semiring instance for Snarky)
+    modifyF :: forall t m. CircuitM f (KimchiConstraint f) t m => FVar f -> Snarky (KimchiConstraint f) t m (FVar f)
+    modifyF x = pure x + one
 
-      -- Pure modification for test function
-      modifyPure :: F f -> F f
-      modifyPure x = x + one
+    -- Pure modification for test function
+    modifyPure :: F f -> F f
+    modifyPure x = x + one
 
-      -- Test function: compute expected output from initial tree state
-      -- Note: tree gets reset before each test case
-      testFunction :: SMT.Address d -> { root :: Digest (F f), old :: F f, new :: F f }
-      testFunction addr =
-        let
-          oldVal = unsafePartial fromJust $ SMT.get initialTree addr
-          newVal = modifyPure oldVal
-          -- Compute new root by updating the tree
-          updatedTree = unsafePartial fromJust $ SMT.set initialTree addr newVal
-          newRoot = SMT.root updatedTree
-        in
-          { root: newRoot, old: oldVal, new: newVal }
+    -- Test function: compute expected output from initial tree state
+    -- Note: tree gets reset before each test case
+    testFunction :: SMT.Address d -> { root :: Digest (F f), old :: F f, new :: F f }
+    testFunction addr =
+      let
+        oldVal = unsafePartial fromJust $ SMT.get initialTree addr
+        newVal = modifyPure oldVal
+        -- Compute new root by updating the tree
+        updatedTree = unsafePartial fromJust $ SMT.set initialTree addr newVal
+        newRoot = SMT.root updatedTree
+      in
+        { root: newRoot, old: oldVal, new: newVal }
 
-      rootVar =
-        let
-          Digest (F r) = SMT.root initialTree
-        in
-          Digest $ const_ r
+    rootVar =
+      let
+        Digest (F r) = SMT.root initialTree
+      in
+        Digest $ const_ r
 
-      circuit
-        :: forall t @m
-         . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
-        => CircuitM f (KimchiConstraint f) t m
-        => SMT.AddressVar d f
-        -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: FVar f, new :: FVar f }
-      circuit addr = CMT.fetchAndUpdate addr rootVar modifyF
+    circuit
+      :: forall t @m
+       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+      => CircuitM f (KimchiConstraint f) t m
+      => SMT.AddressVar d f
+      -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: FVar f, new :: FVar f }
+    circuit addr = CMT.fetchAndUpdate addr rootVar modifyF
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-      s =
-        runMerkleCompileM $
-          compile
-            (Proxy @(Address d))
-            (Proxy @{ root :: Digest (F f), old :: F f, new :: F f })
-            (Proxy @(KimchiConstraint f))
-            (circuit @(MerkleCompileM d f))
-            initialState
+    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+    s =
+      runMerkleCompileM $
+        compile
+          (Proxy @(Address d))
+          (Proxy @{ root :: Digest (F f), old :: F f, new :: F f })
+          (Proxy @(KimchiConstraint f))
+          (circuit @(MerkleCompileM d f))
+          initialState
 
-      gen =
-        let
-          maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
-        in
-          Address <<< BigInt.fromInt <$> chooseInt 0 maxAddress
+    gen =
+      let
+        maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
+      in
+        Address <<< BigInt.fromInt <$> chooseInt 0 maxAddress
 
-    ref <- liftEffect $ Ref.new initialTree
+  ref <- liftEffect $ Ref.new initialTree
 
-    -- Reset tree before each test case
-    let
-      natWithReset :: MerkleRefM d f ~> Effect
-      natWithReset m = do
-        write initialTree ref
-        runMerkleRefM ref m
+  -- Reset tree before each test case
+  let
+    natWithReset :: MerkleRefM d f ~> Effect
+    natWithReset m = do
+      write initialTree ref
+      runMerkleRefM ref m
 
-    circuitSpec' natWithReset
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+  circuitSpec' natWithReset
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied testFunction
+    , postCondition: Kimchi.postCondition
+    }
+    gen
 
-    -- Reset for verify
-    liftEffect $ write initialTree ref
-    liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
+  -- Reset for verify
+  liftEffect $ write initialTree ref
+  liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
 
 --------------------------------------------------------------------------------
 
@@ -365,92 +361,112 @@ updateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => String
-  -> Proxy f
+  => Proxy f
   -> Proxy d
-  -> Spec Unit
-updateSpec testName _ pd = describe ("update: " <> testName) do
-  it "updates element and computes new root" do
-    initialTree <- liftEffect $ randomSampleOne (genTree pd)
+  -> Aff Unit
+updateSpec _ pd = do
+  initialTree <- liftEffect $ randomSampleOne (genTree pd)
 
-    let
-      -- Test function: compute expected new root
-      testFunction
-        :: Tuple (Address d) (Tuple (F f) (F f))
-        -> Digest (F f)
-      testFunction (Tuple addr (Tuple _old new)) =
-        let
-          -- Update the tree and get new root
-          updatedTree = unsafePartial fromJust $ SMT.set initialTree addr new
-        in
-          SMT.root updatedTree
+  let
+    -- Test function: compute expected new root
+    testFunction
+      :: Tuple (Address d) (Tuple (F f) (F f))
+      -> Digest (F f)
+    testFunction (Tuple addr (Tuple _old new)) =
+      let
+        -- Update the tree and get new root
+        updatedTree = unsafePartial fromJust $ SMT.set initialTree addr new
+      in
+        SMT.root updatedTree
 
-      rootVar =
-        let
-          Digest (F r) = SMT.root initialTree
-        in
-          Digest $ const_ r
+    rootVar =
+      let
+        Digest (F r) = SMT.root initialTree
+      in
+        Digest $ const_ r
 
-      circuit
-        :: forall t @m
-         . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
-        => CircuitM f (KimchiConstraint f) t m
-        => Tuple (SMT.AddressVar d f) (Tuple (FVar f) (FVar f))
-        -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-      circuit (Tuple addr (Tuple old new)) = CMT.update addr rootVar old new
+    circuit
+      :: forall t @m
+       . CMT.MerkleRequestM m f (F f) (KimchiConstraint f) d (FVar f)
+      => CircuitM f (KimchiConstraint f) t m
+      => Tuple (SMT.AddressVar d f) (Tuple (FVar f) (FVar f))
+      -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+    circuit (Tuple addr (Tuple old new)) = CMT.update addr rootVar old new
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-      s =
-        runMerkleCompileM $
-          compile
-            (Proxy @(Tuple (Address d) (Tuple (F f) (F f))))
-            (Proxy @(Digest (F f)))
-            (Proxy @(KimchiConstraint f))
-            (circuit @(MerkleCompileM d f))
-            initialState
+    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+    s =
+      runMerkleCompileM $
+        compile
+          (Proxy @(Tuple (Address d) (Tuple (F f) (F f))))
+          (Proxy @(Digest (F f)))
+          (Proxy @(KimchiConstraint f))
+          (circuit @(MerkleCompileM d f))
+          initialState
 
-      -- Generator: produce (address, oldValue, newValue) from fixed tree
-      gen = do
-        addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
-        newVal <- arbitrary
-        let
-          addr = Address $ BigInt.fromInt addrInt
-          oldVal = unsafePartial fromJust $ SMT.get initialTree addr
-        pure $ Tuple addr (Tuple oldVal newVal)
+    -- Generator: produce (address, oldValue, newValue) from fixed tree
+    gen = do
+      addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
+      newVal <- arbitrary
+      let
+        addr = Address $ BigInt.fromInt addrInt
+        oldVal = unsafePartial fromJust $ SMT.get initialTree addr
+      pure $ Tuple addr (Tuple oldVal newVal)
 
-    ref <- liftEffect $ Ref.new initialTree
+  ref <- liftEffect $ Ref.new initialTree
 
-    -- Reset tree before each test case
-    let
-      natWithReset :: MerkleRefM d f ~> Effect
-      natWithReset m = do
-        write initialTree ref
-        runMerkleRefM ref m
+  -- Reset tree before each test case
+  let
+    natWithReset :: MerkleRefM d f ~> Effect
+    natWithReset m = do
+      write initialTree ref
+      runMerkleRefM ref m
 
-    circuitSpec' natWithReset
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+  circuitSpec' natWithReset
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied testFunction
+    , postCondition: Kimchi.postCondition
+    }
+    gen
 
-    -- Reset for verify
-    liftEffect $ write initialTree ref
-    liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
+  -- Reset for verify
+  liftEffect $ write initialTree ref
+  liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
 
-spec :: Spec Unit
-spec = describe "Merkle Tree Circuit Specs" do
-  describe "impliedRoot" do
-    impliedRootSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
-    impliedRootSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
-  describe "get" do
-    getSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
-    getSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
-  describe "fetchAndUpdate" do
-    fetchAndUpdateSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
-    fetchAndUpdateSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
-  describe "update" do
-    updateSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
-    updateSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
+spec :: SpecT Aff Unit Aff Unit
+spec = beforeAll genSize $
+  describe "Merkle Tree Circuit Specs" do
+    describe "impliedRoot" do
+      it "Vesta" \d ->
+        reifyType d \pd -> do
+          impliedRootSpec (Proxy @Vesta.ScalarField) pd
+      it "Pallas" \d ->
+        reifyType d \pd ->
+          impliedRootSpec (Proxy @Pallas.ScalarField) pd
+    describe "get" do
+      it "Vesta" \d ->
+        reifyType d \pd -> do
+          getSpec (Proxy @Vesta.ScalarField) pd
+      it "Pallas" \d ->
+        reifyType d \pd ->
+          getSpec (Proxy @Pallas.ScalarField) pd
+    describe "fetchAndUpdate" do
+      it "Vesta" \d ->
+        reifyType d \pd ->
+          fetchAndUpdateSpec (Proxy @Vesta.ScalarField) pd
+      it "Pallas" \d ->
+        reifyType d \pd ->
+          fetchAndUpdateSpec (Proxy @Pallas.ScalarField) pd
+    describe "update" do
+      it "Vesta" \d ->
+        reifyType d \pd ->
+          updateSpec (Proxy @Vesta.ScalarField) pd
+      it "Pallas" \d ->
+        reifyType d \pd ->
+          updateSpec (Proxy @Pallas.ScalarField) pd
+  where
+  genSize = liftEffect do
+    d <- randomSampleOne $ chooseInt 3 8
+    Console.log $ "Running MerkleTreeSpec Circuit Spec with depth " <> show d
+    pure d
