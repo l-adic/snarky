@@ -168,3 +168,24 @@ circuitSpec' nat spec g =
     spc = runCircuitSpec spec
   in
     liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
+
+-- | Like circuitSpec' but allows the natural transformation to depend on the input.
+-- | This is useful for stateful circuits like merkle trees where the monad needs
+-- | to be initialized with per-test state derived from the input.
+circuitSpecStateful'
+  :: forall a avar b bvar f m c r
+   . CircuitType f a avar
+  => CircuitType f b bvar
+  => PrimeField f
+  => Eq b
+  => Show b
+  => Monad m
+  => (a -> m ~> Effect)
+  -> CircuitSpec f c r m a avar b
+  -> Gen a
+  -> Aff Unit
+circuitSpecStateful' nat spec g =
+  let
+    spc = runCircuitSpec spec
+  in
+    liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat a $ spc a)

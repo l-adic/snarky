@@ -5,21 +5,35 @@ package:
     dependencies:
       - curves
       - effect
+      - exceptions
+      - identity
       - integers
       - nonempty
       - poseidon
       - quickcheck
+      - refs
+      - snarky-test-utils
       - spec
       - spec-node
+      - transformers
+      - tuples
   dependencies:
     - arrays
+    - curves
     - exceptions
     - foldable-traversable
     - js-bigints
     - lists
     - maybe
+    - newtype
     - partial
+    - poseidon
     - prelude
+    - random-oracle
     - safe-coerce
+    - snarky
+    - snarky-kimchi
+    - transformers
+    - tuples
     - unfoldable
     - vector-sized

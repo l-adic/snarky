@@ -4,7 +4,6 @@
 -- | mirrors the Mina protocol's random oracle implementation.
 module RandomOracle
   ( State
-  , Digest
   , hash
   , hashWithInit
   , update

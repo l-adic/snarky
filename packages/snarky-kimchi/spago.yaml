@@ -9,19 +9,23 @@ package:
     - exceptions
     - foldable-traversable
     - functions
+    - identity
     - js-bigints
     - lists
     - maybe
+    - mmorph
     - newtype
     - nonempty
     - ordered-collections
     - poseidon
     - prelude
+    - quickcheck
     - record
     - safe-coerce
     - snarky
     - snarky-curves
     - snarky-test-utils
+    - spec
     - transformers
     - tuples
     - union-find

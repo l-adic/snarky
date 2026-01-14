@@ -51,6 +51,12 @@ test-poseidon: build-crypto ## Test poseidon hash package
 test-kimchi: build-crypto ## Test poseidon hash package
 	cd packages/snarky-kimchi && npx spago test
 
+test-random-oracle: build-crypto ## Test random-oracle package
+	cd packages/random-oracle && npx spago test
+
+test-merkle-tree: build-crypto ## Test merkle-tree package
+	cd packages/merkle-tree && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) build-ps
@@ -58,12 +64,16 @@ test-all: ## Test all packages with proper crypto provider
 	$(MAKE) test-snarky
 	@echo "=== Testing Poseidon Hash Package ==="
 	$(MAKE) test-poseidon
+	@echo "=== Testing Kimchi Backend ===" 
+	$(MAKE) test-kimchi
+	@echo "=== Testing Random Oracle ===" 
+	$(MAKE) test-random-oracle
+	@echo "=== Testing merkle-tree ===" 
+	$(MAKE) test-merkle-tree
 	@echo "=== Testing Bulletproofs Backend ==="
 	$(MAKE) test-bulletproofs  
 	@echo "=== Testing Groth16 Backend ===" 
 	$(MAKE) test-groth16
-	@echo "=== Testing Kimchi Backend ===" 
-	$(MAKE) test-kimchi
 	@echo "=== All tests completed successfully ==="
 
 test: test-all ## Test everything

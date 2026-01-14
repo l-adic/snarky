@@ -18,12 +18,13 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
+import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem, verifyCircuit)
+import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))

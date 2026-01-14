@@ -2,21 +2,19 @@ package:
   name: random-oracle
   dependencies:
     - arrays
-    - bifunctors
     - curves
+    - enums
     - foldable-traversable
     - integers
     - js-bigints
     - maybe
     - newtype
+    - partial
     - poseidon
     - prelude
-    - safe-coerce
     - snarky
     - snarky-kimchi
-    - strings
     - tuples
-    - unfoldable
     - vector-sized
   test:
     main: Test.RandomOracle.Main

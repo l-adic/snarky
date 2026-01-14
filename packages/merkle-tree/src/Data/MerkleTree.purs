@@ -10,6 +10,7 @@ module Data.MerkleTree
   , add_
   , addMany
   , get
+  , set
   , getPath
   , impliedRoot
   , getFreePath
@@ -17,6 +18,7 @@ module Data.MerkleTree
   , impliedFreeRoot
   , root
   , toUnfoldable
+  , ithBit
   , module ReExports
   ) where
 
@@ -346,6 +348,51 @@ get (MerkleTree t) (Address addr0) =
         Leaf _ x -> Just x
   in
     goNonEmpty t.tree (t.depth - 1)
+
+-- | Set element at address, recomputing hashes along the path.
+-- | Returns Nothing if the address doesn't exist in the tree.
+set
+  :: forall hash a
+   . MerkleHashable a hash
+  => MerkleTree hash a
+  -> Address
+  -> a
+  -> Maybe (MerkleTree hash a)
+set (MerkleTree t) (Address addr0) newValue
+  -- Check that address is within the tree's current size
+  | addr0 >= t.count = Nothing
+  | otherwise =
+      let
+        -- Navigate to address and update, recomputing hashes on the way back up
+        go :: Tree hash a -> Int -> Maybe (Tree hash a)
+        go Empty _ = Nothing
+        go (NonEmpty tree) i = NonEmpty <$> goNonEmpty tree i
+
+        goNonEmpty :: NonEmptyTree hash a -> Int -> Maybe (NonEmptyTree hash a)
+        goNonEmpty tree i =
+          case tree of
+            Leaf _ _
+              -- Only replace the leaf if we've consumed all address bits
+              | i < 0 -> Just $ Leaf (hash (Just newValue)) newValue
+              -- Address requires more depth than tree has - invalid address
+              | otherwise -> Nothing
+            Node _ l r ->
+              let
+                goRight = ithBit addr0 i
+              in
+                if goRight then do
+                  -- Go right, update, then recompute this node's hash
+                  r' <- go r (i - 1)
+                  let newHash = merge (treeHash l) (treeHash r')
+                  Just $ Node newHash l r'
+                else do
+                  -- Go left, update, then recompute this node's hash
+                  l' <- go l (i - 1)
+                  let newHash = merge (treeHash l') (treeHash r)
+                  Just $ Node newHash l' r
+      in
+        goNonEmpty t.tree (t.depth - 1) <#> \tree' ->
+          MerkleTree t { tree = tree' }
 
 newtype Path hash = Path (List hash)
 
