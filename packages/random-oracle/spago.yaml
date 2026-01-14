@@ -5,6 +5,7 @@ package:
     - curves
     - enums
     - foldable-traversable
+    - integers
     - js-bigints
     - maybe
     - newtype

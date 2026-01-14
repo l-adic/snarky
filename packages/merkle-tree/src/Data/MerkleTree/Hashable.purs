@@ -6,6 +6,8 @@ module Data.MerkleTree.Hashable
   , hash
   , defaultHash
   , FreeHash(..)
+  , hashCircuit
+  , mergeCircuit
   ) where
 
 import Prelude
@@ -70,3 +72,24 @@ data FreeHash a
 
 derive instance Eq a => Eq (FreeHash a)
 derive instance Functor FreeHash
+
+-- | Circuit-level hash function for a single field element
+hashCircuit
+  :: forall f t m
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => Maybe (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+hashCircuit = case _ of
+  Nothing -> hash2 (const_ zero) (const_ zero)
+  Just a -> hash2 a (const_ zero)
+
+-- | Circuit-level merge of two digests
+mergeCircuit
+  :: forall f t m
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => Digest (FVar f)
+  -> Digest (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+mergeCircuit (Digest a) (Digest b) = hash2 a b

@@ -11,13 +11,13 @@ import Poseidon.Class (fullRound)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
+import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))

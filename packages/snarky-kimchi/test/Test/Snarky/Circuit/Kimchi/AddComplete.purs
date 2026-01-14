@@ -12,6 +12,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -21,7 +22,6 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, Point(..))
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
-import Test.Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))

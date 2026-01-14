@@ -29,7 +29,7 @@ import Data.List (List)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree (FreeHash)
 import Data.MerkleTree as MT
-import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge) as ReExports
+import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, hashCircuit, merge, mergeCircuit) as ReExports
 import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Unfoldable (class Unfoldable)
