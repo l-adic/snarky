@@ -35,7 +35,7 @@ import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
-import Data.Newtype (un)
+import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse)
 import Partial.Unsafe (unsafeCrashWith)
 import Safe.Coerce (coerce)
@@ -163,8 +163,14 @@ throwAsProver = AsProverT <<< throwError
 instance (CircuitM f c t m) => Semigroup (Snarky c t m (FVar f)) where
   append a b = lift2 (<>) a b
 
+else instance (Semigroup (Snarky c t m a), Newtype s a, Functor (Snarky c t m)) => Semigroup (Snarky c t m s) where
+  append x y = map wrap (append (map unwrap x) (map unwrap y))
+
 instance (CircuitM f c t m) => Monoid (Snarky c t m (FVar f)) where
   mempty = pure mempty
+
+else instance (Monoid (Snarky c t m a), Newtype s a, Functor (Snarky c t m), Semigroup (Snarky c t m s)) => Monoid (Snarky c t m s) where
+  mempty = map wrap mempty
 
 instance (CircuitM f c t m) => Semiring (Snarky c t m (FVar f)) where
   one = pure $ const_ one
@@ -172,18 +178,37 @@ instance (CircuitM f c t m) => Semiring (Snarky c t m (FVar f)) where
   add a b = lift2 add_ a b
   mul a b = join $ lift2 mul_ a b
 
+else instance (Semiring (Snarky c t m a), Newtype s a, Functor (Snarky c t m)) => Semiring (Snarky c t m s) where
+  one = map wrap one
+  zero = map wrap zero
+  add x y = map wrap (add (map unwrap x) (map unwrap y))
+  mul x y = map wrap (mul (map unwrap x) (map unwrap y))
+
 instance (CircuitM f c t m) => Ring (Snarky c t m (FVar f)) where
   sub a b = sub_ <$> a <*> b
 
+else instance (Ring (Snarky c t m a), Newtype s a, Functor (Snarky c t m), Semiring (Snarky c t m s)) => Ring (Snarky c t m s) where
+  sub x y = map wrap (sub (map unwrap x) (map unwrap y))
+
 instance (CircuitM f c t m) => CommutativeRing (Snarky c t m (FVar f))
+
+else instance (CommutativeRing (Snarky c t m a), Newtype s a, Ring (Snarky c t m s)) => CommutativeRing (Snarky c t m s)
 
 instance (CircuitM f c t m) => DivisionRing (Snarky c t m (FVar f)) where
   recip a = a >>= inv_
+
+else instance (DivisionRing (Snarky c t m a), Newtype s a, Functor (Snarky c t m), Ring (Snarky c t m s)) => DivisionRing (Snarky c t m s) where
+  recip x = map wrap (recip (map unwrap x))
 
 instance (CircuitM f c t m) => EuclideanRing (Snarky c t m (FVar f)) where
   degree _ = 1
   div a b = join $ lift2 div_ a b
   mod _ _ = pure $ const_ zero
+
+else instance (EuclideanRing (Snarky c t m a), Newtype s a, Functor (Snarky c t m), CommutativeRing (Snarky c t m s)) => EuclideanRing (Snarky c t m s) where
+  degree _ = 1
+  div x y = map wrap (div (map unwrap x) (map unwrap y))
+  mod x y = map wrap (mod (map unwrap x) (map unwrap y))
 
 instance (CircuitM f c t m) => HeytingAlgebra (Snarky c t m (BoolVar f)) where
   tt = pure $ const_ (one :: f)
@@ -192,6 +217,14 @@ instance (CircuitM f c t m) => HeytingAlgebra (Snarky c t m (BoolVar f)) where
   conj a b = join $ lift2 and_ a b
   disj a b = join $ lift2 or_ a b
   implies a b = not a || b
+
+else instance (HeytingAlgebra (Snarky c t m a), Newtype s a, Functor (Snarky c t m)) => HeytingAlgebra (Snarky c t m s) where
+  tt = map wrap tt
+  ff = map wrap ff
+  not x = map wrap (not (map unwrap x))
+  conj x y = map wrap (conj (map unwrap x) (map unwrap y))
+  disj x y = map wrap (disj (map unwrap x) (map unwrap y))
+  implies x y = map wrap (implies (map unwrap x) (map unwrap y))
 
 not_
   :: forall f

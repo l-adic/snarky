@@ -1,0 +1,36 @@
+package:
+  name: example
+  dependencies:
+    - arrays
+    - curves
+    - maybe
+    - merkle-tree
+    - newtype
+    - poseidon
+    - prelude
+    - quickcheck
+    - random-oracle
+    - safe-coerce
+    - snarky
+    - snarky-kimchi
+    - transformers
+    - vector-sized
+  test:
+    main: Test.Example.Main
+    dependencies:
+      - aff
+      - console
+      - effect
+      - exceptions
+      - foldable-traversable
+      - identity
+      - integers
+      - js-bigints
+      - lists
+      - ordered-collections
+      - partial
+      - refs
+      - snarky-test-utils
+      - spec
+      - spec-node
+      - tuples
