@@ -10,10 +10,12 @@ import Data.Identity (Identity(..))
 import Data.Int (pow)
 import Data.List as List
 import Data.Maybe (Maybe(..), fromJust)
+import Data.MerkleTree.Hashable (hash)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sized as SMT
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
 import Effect.Exception.Unsafe (unsafeThrow)
@@ -26,7 +28,7 @@ import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
-import Snarky.Circuit.Kimchi.Utils (verifyCircuitM)
+import Snarky.Circuit.Kimchi.Utils (verifyCircuit, verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.Types (class CheckedType, class CircuitType)
@@ -36,7 +38,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, vectorOf)
-import Test.Snarky.Circuit.Utils (circuitSpec', satisfied)
+import Test.Snarky.Circuit.Utils (circuitSpec', circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -143,6 +145,68 @@ genTree _ = do
 
 --------------------------------------------------------------------------------
 
+-- | Test for impliedRoot circuit - pure computation, no MerkleRequestM needed
+impliedRootSpec
+  :: forall f f' g' d
+   . Kimchi.KimchiVerify f f'
+  => CircuitGateConstructor f g'
+  => Reflectable d Int
+  => String
+  -> Proxy f
+  -> Proxy d
+  -> Spec Unit
+impliedRootSpec testName _ pd = describe ("impliedRoot: " <> testName) do
+  it "computes correct root from address, hash, and path" do
+    tree <- liftEffect $ randomSampleOne (genTree pd)
+
+    let
+      -- Expected: use pure impliedRoot
+      testFunction
+        :: Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))
+        -> Digest (F f)
+      testFunction (Tuple addr (Tuple entryHash path)) =
+        SMT.impliedRoot addr entryHash path
+
+      circuit
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
+        => Tuple (SMT.AddressVar d f) (Tuple (Digest (FVar f)) (SMT.Path d (Digest (FVar f))))
+        -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+      circuit (Tuple addr (Tuple entryHash path)) =
+        CMT.impliedRoot addr entryHash path
+
+      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+      s = un Identity $
+        compile
+          (Proxy @(Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))))
+          (Proxy @(Digest (F f)))
+          (Proxy @(KimchiConstraint f))
+          circuit
+          initialState
+
+      -- Generator: produce valid (address, entryHash, path) triples from fixed tree
+      gen = do
+        addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
+        let
+          addr = Address $ BigInt.fromInt addrInt
+          elem = unsafePartial fromJust $ SMT.get tree addr
+          entryHash = hash (Just elem)
+          path = unsafePartial fromJust $ SMT.getPath tree addr
+        pure $ Tuple addr (Tuple entryHash path)
+
+    circuitSpecPure'
+      { builtState: s
+      , checker: eval
+      , solver: solver
+      , testFunction: satisfied testFunction
+      , postCondition: Kimchi.postCondition
+      }
+      gen
+
+    liftEffect $ verifyCircuit { s, gen, solver }
+
+--------------------------------------------------------------------------------
+
 -- | The get circuit for testing - polymorphic in monad m
 getSpec
   :: forall f f' g' d
@@ -205,6 +269,9 @@ getSpec testName _ pd = describe ("Poseidon Circuit Tests: " <> testName) do
 
 spec :: Spec Unit
 spec = describe "Merkle Tree Circuit Specs" do
+  describe "impliedRoot" do
+    impliedRootSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
+    impliedRootSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
   describe "get" do
     getSpec "Vesta" (Proxy @Vesta.ScalarField) (Proxy @4)
     getSpec "Pallas" (Proxy @Pallas.ScalarField) (Proxy @4)
