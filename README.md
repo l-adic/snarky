@@ -9,10 +9,7 @@ backed by [arkworks](https://github.com/arkworks-rs/algebra) for the finite fiel
 arithmetic and cryptography (using [napi-rs](https://napi.rs/)).
 
 ## Example
-The closest thing to an example is currently the [factors test](https://github.com/l-adic/snarky/blob/main/packages/snarky/test/Snarky/Test/Circuit/Factors.purs).
-This is like the hello-world of zk circuits: 
-
-Given a public integer `n`, I know a private non-trivial factorization (neither factor being `1` or `n`) `a` and `b` such that `a * b == n`
+For a practical demonstration, refer to `packages/example`. This implements a simple Merkle tree-based cryptocurrency ledger with `createAccount`, `getAccount`, and `transfer` circuits. It showcases foundational ZK application development.
 
 ## Build
 

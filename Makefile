@@ -57,6 +57,9 @@ test-random-oracle: build-crypto ## Test random-oracle package
 test-merkle-tree: build-crypto ## Test merkle-tree package
 	cd packages/merkle-tree && npx spago test
 
+test-example: build-crypto ## Test example package
+	cd packages/example && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) build-ps
@@ -70,6 +73,8 @@ test-all: ## Test all packages with proper crypto provider
 	$(MAKE) test-random-oracle
 	@echo "=== Testing merkle-tree ===" 
 	$(MAKE) test-merkle-tree
+	@echo "=== Testing Example ==="
+	$(MAKE) test-example
 	@echo "=== Testing Bulletproofs Backend ==="
 	$(MAKE) test-bulletproofs  
 	@echo "=== Testing Groth16 Backend ===" 
