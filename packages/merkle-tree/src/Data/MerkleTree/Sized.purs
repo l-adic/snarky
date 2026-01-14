@@ -31,6 +31,7 @@ import Data.MerkleTree (FreeHash)
 import Data.MerkleTree as MT
 import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, hashCircuit, merge, mergeCircuit) as ReExports
 import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable)
+import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Unfoldable (class Unfoldable)
 import Data.Vector (Vector)
@@ -42,6 +43,7 @@ import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar)
 import Snarky.Circuit.Types (genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Type.Proxy (Proxy(..))
 
@@ -101,6 +103,9 @@ newtype Address (d :: Int) = Address BigInt
 
 newtype AddressVar d f = AddressVar (Vector d (BoolVar f))
 
+derive instance Newtype (AddressVar d f) _
+derive instance Generic (AddressVar d f) _
+
 instance
   ( Reflectable d Int
   , PrimeField f
@@ -128,6 +133,9 @@ instance
   varToFields (AddressVar as) = coerce $ (Vector.toUnfoldable as :: Array _)
   fieldsToVar as =
     coerce $ unsafePartial fromJust $ Vector.toVector @d as
+
+instance BasicSystem f c => CheckedType (AddressVar d f) c where
+  check = genericCheck
 
 get
   :: forall d hash a
