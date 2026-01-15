@@ -7,7 +7,7 @@ import Effect (Effect)
 import Poseidon.Class (getMdsMatrix, getNumRounds, hash)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.QuickCheck ((===))
+import Test.QuickCheck ((/==), (===))
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.QuickCheck (quickCheck)
@@ -61,3 +61,27 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         h2 = hash [ zero, zero :: Vesta.BaseField ]
       h0 `shouldEqual` h1
       h1 `shouldEqual` h2
+
+    it "hash [x] == hash [x, zero] for any x (Pallas)" do
+      quickCheck \(x :: Pallas.BaseField) ->
+        hash [ x ] === hash [ x, zero ]
+
+    it "hash [x] == hash [x, zero] for any x (Vesta)" do
+      quickCheck \(x :: Vesta.BaseField) ->
+        hash [ x ] === hash [ x, zero ]
+
+    it "hash [x, zero] /= hash [x, zero, zero] (Pallas)" do
+      quickCheck \(x :: Pallas.BaseField) ->
+        hash [ x, zero ] /== hash [ x, zero, zero ]
+
+    it "hash [x, zero] /= hash [x, zero, zero] (Vesta)" do
+      quickCheck \(x :: Vesta.BaseField) ->
+        hash [ x, zero ] /== hash [ x, zero, zero ]
+
+    it "hash [a, b, c] == hash [a, b, c, zero] for any a, b, c (Pallas)" do
+      quickCheck \(a :: Pallas.BaseField) (b :: Pallas.BaseField) (c :: Pallas.BaseField) ->
+        hash [ a, b, c ] === hash [ a, b, c, zero ]
+
+    it "hash [a, b, c] == hash [a, b, c, zero] for any a, b, c (Vesta)" do
+      quickCheck \(a :: Vesta.BaseField) (b :: Vesta.BaseField) (c :: Vesta.BaseField) ->
+        hash [ a, b, c ] === hash [ a, b, c, zero ]
