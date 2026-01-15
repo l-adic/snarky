@@ -23,6 +23,7 @@ import Data.Fin (unsafeFinite)
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
@@ -32,7 +33,6 @@ import Snarky.Circuit.DSL.Field (equals_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
-import Snarky.Circuit.Types (class CheckedType)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -46,9 +46,6 @@ newtype SignatureVar f = SignatureVar
 
 derive instance Newtype (SignatureVar f) _
 derive instance Generic (SignatureVar f) _
-
-instance CheckedType (SignatureVar f) c where
-  check _ = []
 
 -- | Create a SignatureVar from individual field variables.
 mkSignatureVar :: forall f. FVar f -> FVar f -> SignatureVar f
@@ -84,16 +81,21 @@ isEven y = do
 -- |
 -- | This version takes a pre-hashed message digest for simplicity.
 hashMessage
-  :: forall f t m
+  :: forall f t m @n _k
    . PoseidonField f
+  => Add 3 n _k
+  => Reflectable _k Int
   => CircuitM f (KimchiConstraint f) t m
+  => Reflectable n Int
   => AffinePoint (FVar f)
   -> FVar f
-  -> Digest (FVar f)
+  -> Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-hashMessage { x: px, y: py } r (Digest msgHash) = do
-  let inputs = px Vector.:< py Vector.:< r Vector.:< msgHash Vector.:< Vector.nil
-  hashVec inputs
+hashMessage { x: px, y: py } r message = do
+  let
+    as = px :< py :< r :< Vector.nil
+    inputs = as `Vector.append` message
+  hashVec @_k inputs
 
 -- | Verify a Schnorr signature in a circuit, returning a boolean.
 -- |
@@ -102,8 +104,11 @@ hashMessage { x: px, y: py } r (Digest msgHash) = do
 -- | 2. R' = [s] * G - [e] * pk
 -- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
 verifies
-  :: forall f t m n @nChunks sDiv2Bits bitsUsed _l
+  :: forall f t m n l @nChunks sDiv2Bits bitsUsed _l _k
    . PoseidonField f
+  => Add 3 l _k
+  => Reflectable _k Int
+  => Reflectable l Int
   => FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits 1 n
@@ -114,11 +119,11 @@ verifies
   => AffinePoint (FVar f)
   -> SignatureVar f
   -> AffinePoint (FVar f)
-  -> Digest (FVar f)
+  -> Vector l (FVar f)
   -> Snarky (KimchiConstraint f) t m (BoolVar f)
-verifies gen (SignatureVar { r, s }) publicKey msgDigest = do
+verifies gen (SignatureVar { r, s }) publicKey message = do
   -- Step 1: Compute challenge hash e = H(pk_x, pk_y, r, H(message))
-  Digest e <- hashMessage publicKey r msgDigest
+  Digest e <- hashMessage @l publicKey r message
 
   -- Step 2: Compute R' = [s] * G - [e] * pk
   -- First compute s*G
@@ -140,8 +145,10 @@ verifies gen (SignatureVar { r, s }) publicKey msgDigest = do
 -- |
 -- | This is like `verifies` but asserts the result rather than returning it.
 assertVerifies
-  :: forall f t m n @nChunks sDiv2Bits bitsUsed _l
+  :: forall f t m n @nChunks sDiv2Bits bitsUsed _l _k
    . PoseidonField f
+  => Add 3 n _k
+  => Reflectable _k Int
   => FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits 1 n
@@ -152,8 +159,8 @@ assertVerifies
   => AffinePoint (FVar f)
   -> SignatureVar f
   -> AffinePoint (FVar f)
-  -> Digest (FVar f)
+  -> Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m Unit
-assertVerifies gen sig publicKey msgDigest = do
-  result <- verifies @nChunks gen sig publicKey msgDigest
+assertVerifies gen sig publicKey message = do
+  result <- verifies @nChunks gen sig publicKey message
   assert_ result

@@ -17,6 +17,7 @@ module Data.Schnorr
 
 import Prelude
 
+import Data.Array ((:))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
@@ -24,7 +25,6 @@ import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Curves.Class (class FrModule, class Generator, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
-import Test.QuickCheck (class Arbitrary)
 
 -- | Schnorr signature: (r, s) where:
 -- | - r is an x-coordinate (base field element)
@@ -40,7 +40,6 @@ derive instance Newtype (Signature fb fs) _
 derive instance Generic (Signature fb fs) _
 derive newtype instance (Show fb, Show fs) => Show (Signature fb fs)
 derive newtype instance (Eq fb, Eq fs) => Eq (Signature fb fs)
-derive newtype instance (Arbitrary fb, Arbitrary fs) => Arbitrary (Signature fb fs)
 
 -- | Check if a field element is even (LSB is 0).
 -- | In the Schnorr scheme, we use this to normalize the nonce.
@@ -61,10 +60,7 @@ hashMessage
   -> Array fb
   -> fb
 hashMessage { x: px, y: py } r message =
-  let
-    msgHash = Poseidon.hash message
-  in
-    Poseidon.hash [ px, py, r, msgHash ]
+  Poseidon.hash $ px : py : r : message
 
 -- | Sign a message with a private key.
 -- |
@@ -100,8 +96,10 @@ sign privateKey message = do
   -- k' = H(pk_x, pk_y, H(message))
   let
     msgHash = Poseidon.hash message
+
     kPrimeBase :: fb
     kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
+
     -- Convert base field element to scalar field via BigInt
     -- This properly handles the field conversion through the FFI
     kPrime :: fs
@@ -120,6 +118,7 @@ sign privateKey message = do
     let
       eBase :: fb
       eBase = hashMessage publicKey r message
+
       -- Convert to scalar field via BigInt for arithmetic
       e :: fs
       e = fromBigInt (toBigInt eBase)
@@ -154,6 +153,7 @@ verify (Signature { r, s }) publicKey message =
     -- Compute challenge hash: e = H(pk_x, pk_y, r, H(message)) (in base field)
     eBase :: fb
     eBase = hashMessage publicKey r message
+
     -- Convert to scalar field via BigInt
     e :: fs
     e = fromBigInt (toBigInt eBase)

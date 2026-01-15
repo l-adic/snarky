@@ -4,26 +4,30 @@ module Test.Snarky.Circuit.Schnorr
 
 import Prelude
 
-import Data.Identity (Identity)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Array ((:))
 import Data.Generic.Rep (class Generic)
-import Data.Newtype (class Newtype)
+import Data.Identity (Identity)
+import Data.Maybe (Maybe(..), fromJust, isJust)
+import Data.Newtype (class Newtype, un)
+import Data.Reflectable (class Reflectable)
 import Data.Schnorr as Schnorr
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
+import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
-import Snarky.Circuit.Types (F(..), class CircuitType, genericValueToFields, genericFieldsToValue, genericSizeInFields, genericVarToFields, genericFieldsToVar)
+import Snarky.Circuit.Types (class CircuitType, F(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class Generator, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
@@ -31,7 +35,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen)
+import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -39,22 +43,22 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 -- | Input type for Schnorr verification circuit
 -- | All values are in the circuit field f (base field of curve g)
-newtype VerifyInput a = VerifyInput
+newtype VerifyInput n a = VerifyInput
   { sigR :: a
   , sigS :: a
   , publicKey :: AffinePoint a
-  , msgDigest :: Digest a
+  , message :: Vector n a
   }
 
-derive instance Newtype (VerifyInput a) _
-derive instance Generic (VerifyInput a) _
+derive instance Newtype (VerifyInput n a) _
+derive instance Generic (VerifyInput n a) _
 
-instance CircuitType f (VerifyInput (F f)) (VerifyInput (FVar f)) where
+instance Reflectable n Int => CircuitType f (VerifyInput n (F f)) (VerifyInput n (FVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(VerifyInput (F f))
-  fieldsToVar = genericFieldsToVar @(VerifyInput (F f))
+  varToFields = genericVarToFields @(VerifyInput n (F f))
+  fieldsToVar = genericFieldsToVar @(VerifyInput n (F f))
 
 --------------------------------------------------------------------------------
 -- | Convert between fields via bit representation (preserves integer value)
@@ -77,9 +81,10 @@ fieldShift2 t =
 -- | f = base field of curve g (circuit field)
 -- | f' = scalar field of curve g
 genValidSignature
-  :: forall f f' g
+  :: forall f f' g n
    . PoseidonField f
   => PrimeField f'
+  => Reflectable n Int
   => WeierstrassCurve f g
   => FrModule f' g
   => Generator g
@@ -87,52 +92,53 @@ genValidSignature
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => Proxy g
-  -> Gen (VerifyInput (F f))
-genValidSignature _ = do
+  -> Proxy n
+  -> Gen (VerifyInput n (F f))
+genValidSignature pg pn = do
   -- Generate random private key (in scalar field f')
-  privateKey <- arbitrary @f'
+  privateKey <- arbitrary @f' `suchThat` \sk ->
+    isJust $ toAffine $ scalarMul sk (generator @g)
+  let
+    publicKey = unsafePartial fromJust
+      $ toAffine
+      $ scalarMul privateKey (generator @g)
   -- Generate random message field element (in base field f)
-  msgField <- arbitrary @f
+  message <- Vector.generateA @n (const arbitrary)
 
   -- Compute public key first (this ties the curve type g)
+
   let
-    gen :: g
-    gen = generator
-    pkPoint = scalarMul privateKey gen
+    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
 
-  case toAffine pkPoint of
-    Nothing -> genValidSignature (Proxy @g) -- Retry if point at infinity
-    Just publicKey -> do
-      -- Derive nonce deterministically
-      let
-        msgHash = Poseidon.hash [ msgField ]
-        kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
-        kPrime :: f'
-        kPrime = fromBigInt (toBigInt kPrimeBase)
+    kPrime :: f'
+    kPrime = fromBigInt (toBigInt kPrimeBase)
 
-      if kPrime == zero then
-        genValidSignature (Proxy @g)
-      else
-        case toAffine $ scalarMul kPrime gen of
-          Nothing -> genValidSignature (Proxy @g)
-          Just { x: r, y: ry } -> do
-            let
-              k = if Schnorr.isEven ry then kPrime else negate kPrime
-              eBase = Poseidon.hash [ publicKey.x, publicKey.y, r, msgHash ]
-              e :: f'
-              e = fromBigInt (toBigInt eBase)
-              s :: f'
-              s = k + e * privateKey
-              -- Convert s from scalar field to base field via bits
-              sInBaseField :: f
-              sInBaseField = coerceViaBits s
+  if kPrime == zero then
+    genValidSignature pg pn
+  else
+    case toAffine $ scalarMul kPrime (generator @g) of
+      Nothing -> genValidSignature pg pn
+      Just { x: r, y: ry } -> do
+        let
+          k = if Schnorr.isEven ry then kPrime else negate kPrime
+          eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
 
-            pure $ VerifyInput
-              { sigR: F r
-              , sigS: F sInBaseField
-              , publicKey: { x: F publicKey.x, y: F publicKey.y }
-              , msgDigest: Digest $ F $ Poseidon.hash [ msgField ]
-              }
+          e :: f'
+          e = fromBigInt (toBigInt eBase)
+
+          s :: f'
+          s = k + e * privateKey
+
+          -- Convert s from scalar field to base field via bits
+          sInBaseField :: f
+          sInBaseField = coerceViaBits s
+
+        pure $ VerifyInput
+          { sigR: F r
+          , sigS: F sInBaseField
+          , publicKey: { x: F publicKey.x, y: F publicKey.y }
+          , message: map F message
+          }
 
 --------------------------------------------------------------------------------
 -- | Pure reference function for verification.
@@ -141,8 +147,9 @@ genValidSignature _ = do
 -- | f = base field of curve g (circuit field)
 -- | f' = scalar field of curve g
 pureVerify
-  :: forall f f' g
+  :: forall f f' g n
    . PoseidonField f
+  => Reflectable n Int
   => PrimeField f'
   => WeierstrassCurve f g
   => FrModule f' g
@@ -151,9 +158,9 @@ pureVerify
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => Proxy g
-  -> VerifyInput (F f)
+  -> VerifyInput n (F f)
   -> Boolean
-pureVerify _ (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, msgDigest: Digest (F msgHash) }) =
+pureVerify _ (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, message }) =
   let
     publicKey = { x: case pk.x of F x -> x, y: case pk.y of F y -> y }
 
@@ -163,7 +170,8 @@ pureVerify _ (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, msgD
     s = fieldShift2 sInBaseField
 
     -- Compute e = H(pk_x, pk_y, r, msgHash)
-    eBase = Poseidon.hash [ publicKey.x, publicKey.y, r, msgHash ]
+    eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
+
     -- Apply fieldShift2 to e as well (circuit uses scaleFast2 for e*pk too)
     e :: f'
     e = fieldShift2 eBase
@@ -181,8 +189,11 @@ pureVerify _ (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, msgD
 --------------------------------------------------------------------------------
 -- | Circuit specification for Schnorr verification
 verifySpec
-  :: forall f f' g g'
+  :: forall f f' g g' k l
    . KimchiVerify f f'
+  => Reflectable k Int
+  => Add 3 k l
+  => Reflectable l Int
   => CircuitGateConstructor f g'
   => PoseidonField f
   => WeierstrassCurve f g
@@ -194,8 +205,9 @@ verifySpec
   => FieldSizeInBits f' 255
   => Proxy f
   -> Proxy g
+  -> Proxy k
   -> Aff Unit
-verifySpec _ pg = do
+verifySpec _ pg pn = do
   let
     -- Generator point (get the raw field coordinates)
     genPointRaw :: AffinePoint f
@@ -203,35 +215,36 @@ verifySpec _ pg = do
 
     -- Generator as circuit constants
     genPointVar :: AffinePoint (FVar f)
-    genPointVar = { x: const_ genPointRaw.x
-                  , y: const_ genPointRaw.y
-                  }
+    genPointVar =
+      { x: const_ genPointRaw.x
+      , y: const_ genPointRaw.y
+      }
 
     -- Pure test function
-    testFunction :: VerifyInput (F f) -> Boolean
+    testFunction :: VerifyInput k (F f) -> Boolean
     testFunction = pureVerify pg
 
     -- Circuit function
     circuit
       :: forall t
        . CircuitM f (KimchiConstraint f) t Identity
-      => VerifyInput (FVar f)
+      => VerifyInput k (FVar f)
       -> Snarky (KimchiConstraint f) t Identity (BoolVar f)
-    circuit (VerifyInput { sigR, sigS, publicKey, msgDigest }) =
+    circuit (VerifyInput { sigR, sigS, publicKey, message }) =
       let
         sig = SignatureVar { r: sigR, s: sigS }
       in
-        verifies @51 genPointVar sig publicKey msgDigest
+        verifies @51 genPointVar sig publicKey message
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
     s = compilePure
-      (Proxy @(VerifyInput (F f)))
+      (Proxy @(VerifyInput k (F f)))
       (Proxy @Boolean)
       (Proxy @(KimchiConstraint f))
       circuit
       Kimchi.initialState
 
-    gen = genValidSignature pg
+    gen = genValidSignature pg pn
 
   circuitSpecPure'
     { builtState: s
@@ -252,7 +265,7 @@ spec :: Spec Unit
 spec = describe "Snarky.Circuit.Schnorr" do
   describe "verifies" do
     it "Pallas curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G)
+      verifySpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) (Proxy @4)
 
     it "Vesta curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G)
+      verifySpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) (Proxy @5)

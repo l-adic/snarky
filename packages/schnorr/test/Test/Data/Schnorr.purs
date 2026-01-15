@@ -34,8 +34,10 @@ signPallas privateKey message = do
   -- Derive nonce deterministically using Poseidon hash (in base field)
   let
     msgHash = Poseidon.hash message
+
     kPrimeBase :: PallasBaseField
     kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
+
     -- Convert to scalar field via BigInt
     kPrime :: PallasScalarField
     kPrime = fromBigInt (toBigInt kPrimeBase)
@@ -50,11 +52,13 @@ signPallas privateKey message = do
     let k = if Schnorr.isEven ry then kPrime else negate kPrime
 
     -- Compute challenge hash (in base field)
-    let eBase :: PallasBaseField
-        eBase = Schnorr.hashMessage publicKey r message
-        -- Convert to scalar field via BigInt
-        e :: PallasScalarField
-        e = fromBigInt (toBigInt eBase)
+    let
+      eBase :: PallasBaseField
+      eBase = Schnorr.hashMessage publicKey r message
+
+      -- Convert to scalar field via BigInt
+      e :: PallasScalarField
+      e = fromBigInt (toBigInt eBase)
 
     -- Compute s = k + e * d (all in scalar field)
     let s = k + e * privateKey
@@ -68,6 +72,7 @@ verifyPallas (Signature { r, s }) publicKey message =
     -- Compute challenge hash (in base field)
     eBase :: PallasBaseField
     eBase = Schnorr.hashMessage publicKey r message
+
     -- Convert to scalar field via BigInt
     e :: PallasScalarField
     e = fromBigInt (toBigInt eBase)

@@ -17,8 +17,8 @@ import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Circuit.RandomOracle (class Hashable, hash) as RO
+import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 
 -- | Type class for merging two hashes into one.

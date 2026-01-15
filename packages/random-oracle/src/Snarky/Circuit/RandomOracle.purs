@@ -143,7 +143,7 @@ update initState inputs = do
 -- | result <- hashVec @4 inputs  -- hash 4 elements
 -- | ```
 hashVec
-  :: forall f t m n
+  :: forall f t m @n
    . PoseidonField f
   => Reflectable n Int
   => CircuitM f (KimchiConstraint f) t m
