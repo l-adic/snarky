@@ -1,37 +1,26 @@
 package:
-  name: example
+  name: schnorr
   dependencies:
     - arrays
     - curves
+    - js-bigints
     - maybe
-    - merkle-tree
     - newtype
     - poseidon
     - prelude
-    - quickcheck
     - random-oracle
-    - safe-coerce
     - snarky
+    - snarky-curves
     - snarky-kimchi
-    - transformers
     - vector-sized
   test:
-    main: Test.Example.Main
+    main: Test.Schnorr.Main
     dependencies:
       - aff
-      - console
       - effect
-      - exceptions
-      - foldable-traversable
-      - gen
       - identity
-      - integers
-      - js-bigints
-      - lists
-      - ordered-collections
       - partial
-      - refs
+      - quickcheck
       - snarky-test-utils
       - spec
       - spec-node
-      - tuples

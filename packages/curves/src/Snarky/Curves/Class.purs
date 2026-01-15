@@ -11,6 +11,7 @@ module Snarky.Curves.Class
   , curveParams
   , toAffine
   , fromAffine
+  , generator
   , class FieldSizeInBits
   , fromInt
   , class HasEndo
@@ -45,6 +46,7 @@ class PrimeField f <= WeierstrassCurve f g | g -> f where
   curveParams :: Proxy g -> { a :: f, b :: f }
   toAffine :: g -> Maybe { x :: f, y :: f }
   fromAffine :: { x :: f, y :: f } -> g
+  generator :: g
 
 class FieldSizeInBits :: Type -> Int -> Constraint
 class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n

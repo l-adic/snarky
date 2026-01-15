@@ -2,8 +2,7 @@ module Data.MerkleTree.Hashable
   ( class MerkleHashable
   , class MergeHash
   , merge
-  , class Hashable
-  , hash
+  , module RO
   , defaultHash
   , FreeHash(..)
   , hashCircuit
@@ -18,9 +17,12 @@ import Data.Newtype (un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.RandomOracle (class Hashable, hash) as RO
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 
+-- | Type class for merging two hashes into one.
+-- | Used for computing internal node hashes in merkle trees.
 class MergeHash hash where
   merge :: hash -> hash -> hash
 
@@ -34,27 +36,13 @@ instance
   MergeHash (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
   merge a b = join $ lift2 hash2 (map (un Digest) a) (map (un Digest) b)
 
-class MergeHash hash <= Hashable a hash where
-  hash :: Maybe a -> hash
+-- | The default/empty hash for a type
+defaultHash :: forall @a hash. RO.Hashable a hash => hash
+defaultHash = RO.hash @a @hash Nothing
 
-instance PoseidonField f => Hashable (F f) (Digest (F f)) where
-  hash = case _ of
-    Nothing -> Digest $ F $ Poseidon.hash []
-    Just (F a) -> Digest $ F $ Poseidon.hash [ a ]
-
-instance
-  ( CircuitM f (KimchiConstraint f) t m
-  , PoseidonField f
-  ) =>
-  Hashable (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
-  hash = case _ of
-    Nothing -> hash2 (const_ zero) (const_ zero)
-    Just a -> hash2 a (const_ zero)
-
-defaultHash :: forall @a hash. Hashable a hash => hash
-defaultHash = hash @a @hash Nothing
-
-class (MergeHash hash, Hashable a hash) <= MerkleHashable a hash
+-- | Combined constraint for merkle tree operations.
+-- | Requires both hashing elements and merging hashes.
+class (MergeHash hash, RO.Hashable a hash) <= MerkleHashable a hash
 
 instance PoseidonField f => MerkleHashable (F f) (Digest (F f))
 
@@ -64,7 +52,7 @@ instance
   ) =>
   MerkleHashable (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
 
--- Free hash type
+-- | Free hash type for lazy/symbolic hash computation
 data FreeHash a
   = HashValue a
   | HashEmpty

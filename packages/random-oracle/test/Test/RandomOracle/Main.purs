@@ -156,12 +156,12 @@ circuitTests _ = describe "Circuit" do
       referenceHash :: Vector 16 (F f) -> Digest (F f)
       referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) Checked.hash
+      solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
       s = compilePure
         (Proxy @(Vector 16 (F f)))
         (Proxy @((Digest (F f))))
         (Proxy @(KimchiConstraint f))
-        Checked.hash
+        (\x -> Checked.hashVec (Vector.toUnfoldable x))
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @16) (F <$> arbitrary)
 
@@ -180,12 +180,12 @@ circuitTests _ = describe "Circuit" do
       referenceHash :: Vector 17 (F f) -> Digest (F f)
       referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) Checked.hash
+      solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec $ Vector.toUnfoldable x)
       s = compilePure
         (Proxy @(Vector 17 (F f)))
         (Proxy @((Digest (F f))))
         (Proxy @(KimchiConstraint f))
-        Checked.hash
+        (\x -> Checked.hashVec $ Vector.toUnfoldable x)
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @17) (F <$> arbitrary)
 

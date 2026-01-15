@@ -161,7 +161,7 @@ infixl 8 index as !!
 generate :: forall n a. Reflectable n Int => (Finite n -> a) -> Vector n a
 generate f = Vector $ map f (finites @n)
 
-generateA :: forall n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
+generateA :: forall @n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites @n)
 
 chunk :: forall a. Int -> Array a -> Array (Array a)

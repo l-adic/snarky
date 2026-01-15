@@ -171,6 +171,11 @@ pub mod group {
     }
 
     #[napi]
+    pub fn vesta_group_generator() -> G {
+        External::new(VestaGroup::generator())
+    }
+
+    #[napi]
     pub fn vesta_group_eq(p1: &G, p2: &G) -> bool {
         **p1 == **p2
     }

@@ -85,6 +85,7 @@ type PallasBaseField = VestaScalarField
 foreign import data PallasG :: Type
 foreign import _pallasGroupAdd :: PallasG -> PallasG -> PallasG
 foreign import _pallasGroupIdentity :: Unit -> PallasG
+foreign import _pallasGroupGenerator :: Unit -> PallasG
 foreign import _pallasGroupRand :: Int -> PallasG
 foreign import _pallasGroupEq :: PallasG -> PallasG -> Boolean
 foreign import _pallasGroupToString :: PallasG -> String
@@ -124,6 +125,7 @@ instance WeierstrassCurve PallasBaseField PallasG where
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
   fromAffine = _pallasFromAffine
+  generator = _pallasGroupGenerator unit
 
 foreign import _pallasToAffine
   :: forall a
@@ -199,6 +201,7 @@ type VestaBaseField = PallasScalarField
 foreign import data VestaG :: Type
 foreign import _vestaGroupAdd :: VestaG -> VestaG -> VestaG
 foreign import _vestaGroupIdentity :: Unit -> VestaG
+foreign import _vestaGroupGenerator :: Unit -> VestaG
 foreign import _vestaGroupRand :: Int -> VestaG
 foreign import _vestaGroupEq :: VestaG -> VestaG -> Boolean
 foreign import _vestaGroupToString :: VestaG -> String
@@ -238,6 +241,7 @@ instance WeierstrassCurve VestaBaseField VestaG where
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
   fromAffine = _vestaFromAffine
+  generator = _vestaGroupGenerator unit
 
 foreign import _vestaToAffine
   :: forall a

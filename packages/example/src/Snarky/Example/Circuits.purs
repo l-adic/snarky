@@ -1,7 +1,6 @@
 module Snarky.Example.Circuits
   ( class AccountMapM
   , getAccountId
-  , createAccount
   , getAccount
   , transfer
   ) where
@@ -11,7 +10,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (Address, AddressVar)
+import Data.MerkleTree.Sized (Address)
 import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
@@ -26,7 +25,7 @@ import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
+import Snarky.Example.Types (Account(..), PublicKey, TokenAmount(..), Transaction(..))
 
 --------------------------------------------------------------------------------
 -- | Advice monad for looking up account addresses from public keys.
@@ -57,40 +56,6 @@ assertU64 (TokenAmount v) = do
   -- Convert Vector to Array and coerce BoolVar to FVar for sum_
   let higherBitsArray = Array.fromFoldable higherBits
   assertEqual_ (sum_ (coerce higherBitsArray)) (const_ zero)
-
--- | Add a new account to the merkle tree.
--- |
--- | This circuit:
--- | 1. Takes an address and public key as inputs
--- | 2. Asserts the slot at the address is empty (zero account)
--- | 3. Creates a new account with the given public key and zero balance
--- | 4. Returns the new merkle root
-createAccount
-  :: forall t m f d
-   . Reflectable d Int
-  => PoseidonField f
-  => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
-  => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
-  => CircuitM f (KimchiConstraint f) t m
-  => AddressVar d f
-  -> Digest (FVar f)
-  -> PublicKey (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-createAccount addr root pubKey =
-  let
-    -- Empty account: zero public key and zero balance
-    emptyAccount = Account
-      { publicKey: PublicKey (const_ zero)
-      , tokenBalance: TokenAmount (const_ zero)
-      }
-    -- New account: given public key with zero balance
-    newAccount = Account
-      { publicKey: pubKey
-      , tokenBalance: TokenAmount (const_ zero)
-      }
-  in
-    -- Update the slot from empty to new account
-    CMT.update addr root emptyAccount newAccount
 
 -- | Get an account from the merkle tree and verify ownership.
 -- |

@@ -173,6 +173,11 @@ pub mod group {
     }
 
     #[napi]
+    pub fn pallas_group_generator() -> G {
+        External::new(PallasGroup::generator())
+    }
+
+    #[napi]
     pub fn pallas_group_eq(p1: &G, p2: &G) -> bool {
         **p1 == **p2
     }
