@@ -18,12 +18,12 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, exists, read, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, exists, read, unpack_)
 import Snarky.Circuit.DSL.Assert (assertEq)
-import Snarky.Circuit.DSL.Field (equals_, sum_)
+import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Circuit.Types (Bool(..), BoolVar)
+import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
@@ -47,7 +47,7 @@ assertU64
   => FieldSizeInBits f n
   => Add 64 rest n
   => TokenAmount (FVar f)
-  -> Snarky c t m (BoolVar f)
+  -> Snarky c t m Unit
 assertU64 (TokenAmount v) = do
   -- Unpack to n bits (255 for pasta curves)
   allBits <- unpack_ v
@@ -56,7 +56,7 @@ assertU64 (TokenAmount v) = do
   -- Check that the sum of higher bits is zero (i.e., all are false)
   -- Convert Vector to Array and coerce BoolVar to FVar for sum_
   let higherBitsArray = Array.fromFoldable higherBits
-  equals_ (sum_ (coerce higherBitsArray)) (const_ zero)
+  assertEqual_ (sum_ (coerce higherBitsArray)) (const_ zero)
 
 -- | Add a new account to the merkle tree.
 -- |
@@ -158,7 +158,7 @@ transfer root (Transaction { from, to, amount }) = do
     assertEq acc.publicKey from
     -- Debit the amount
     newBalance <- pure acc.tokenBalance - pure amount
-    assertU64 newBalance >>= assert_
+    assertU64 newBalance
     pure $ Account acc { tokenBalance = newBalance }
   -- Credit receiver: verify ownership and add amount
   { root: root'' } <- CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
@@ -166,6 +166,6 @@ transfer root (Transaction { from, to, amount }) = do
     assertEq acc.publicKey to
     -- Credit the amount
     newBalance <- pure acc.tokenBalance + pure amount
-    assertU64 newBalance >>= assert_
+    assertU64 newBalance
     pure $ Account acc { tokenBalance = newBalance }
   pure root''
