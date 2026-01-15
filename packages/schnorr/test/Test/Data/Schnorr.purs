@@ -1,19 +1,18 @@
-module Test.Schnorr.Main where
+module Test.Data.Schnorr
+  ( spec
+  ) where
 
 import Prelude
 
 import Data.Maybe (Maybe(..))
 import Data.Schnorr (Signature(..))
 import Data.Schnorr as Schnorr
-import Effect (Effect)
-import Snarky.Curves.Pasta (PallasBaseField, PallasG, PallasScalarField)
-import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Effect.Class (liftEffect)
 import Poseidon as Poseidon
-import Test.QuickCheck (Result(..), withHelp)
-import Test.Spec.QuickCheck (quickCheck)
+import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Pasta (PallasBaseField, PallasG, PallasScalarField)
+import Test.QuickCheck (Result(..), quickCheck, withHelp)
 import Test.Spec (Spec, describe, it)
-import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 -- | For Pallas curve:
 -- | - Base field = PallasBaseField (= VestaScalarField)
@@ -86,28 +85,24 @@ verifyPallas (Signature { r, s }) publicKey message =
       Nothing -> false
       Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
-main :: Effect Unit
-main = runSpecAndExitProcess [ consoleReporter ] do
-  pureSpec
-
 -- | Pure (non-circuit) tests for Schnorr signatures using Pallas curve.
-pureSpec :: Spec Unit
-pureSpec = describe "Data.Schnorr (Pallas curve)" do
+spec :: Spec Unit
+spec = describe "Data.Schnorr (Pallas curve)" do
 
   it "sign produces valid signatures" do
-    quickCheck signProducesValidSignature
+    liftEffect $ quickCheck signProducesValidSignature
 
   it "verify rejects invalid signatures (wrong message)" do
-    quickCheck verifyRejectsWrongMessage
+    liftEffect $ quickCheck verifyRejectsWrongMessage
 
   it "verify rejects invalid signatures (wrong public key)" do
-    quickCheck verifyRejectsWrongPublicKey
+    liftEffect $ quickCheck verifyRejectsWrongPublicKey
 
   it "verify rejects invalid signatures (tampered r)" do
-    quickCheck verifyRejectsTamperedR
+    liftEffect $ quickCheck verifyRejectsTamperedR
 
   it "verify rejects invalid signatures (tampered s)" do
-    quickCheck verifyRejectsTamperedS
+    liftEffect $ quickCheck verifyRejectsTamperedS
 
 -- | Test that signing a message produces a signature that verifies
 signProducesValidSignature :: PallasScalarField -> PallasBaseField -> Result

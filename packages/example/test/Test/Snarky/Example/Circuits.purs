@@ -40,7 +40,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Circuits (class AccountMapM, transfer)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (circuitSpec', satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (circuitSpec', satisfied, unsatisfied)
 import Test.Snarky.Example.Monad (TransferCompileM, TransferRefM, TransferState, runTransferCompileM, runTransferRefM)
 import Test.Snarky.Example.Utils (chooseBigInt)
 import Test.Spec (SpecT, beforeAll, describe, it)
