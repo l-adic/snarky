@@ -7,6 +7,7 @@ module Data.Vector
   , (:<)
   , length
   , toVector
+  , toVector'
   , generator
   , concat
   , flatten
@@ -109,6 +110,9 @@ toVector as =
     Nothing
   else
     Just (Vector as)
+
+toVector' :: forall n a. Reflectable n Int => Proxy n -> Array a -> (Maybe (Vector n a))
+toVector' _ = toVector
 
 concat
   :: forall n m k a

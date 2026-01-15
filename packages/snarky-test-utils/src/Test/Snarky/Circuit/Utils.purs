@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Either (Either(..))
-import Data.Foldable (foldM)
+import Data.Foldable (foldM, traverse_)
 import Data.Identity (Identity(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
@@ -21,6 +21,7 @@ import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
 import Test.QuickCheck.Gen (Gen)
+import Test.Spec.Assertions (fail)
 
 data Expectation a
   = Satisfied a
@@ -133,6 +134,58 @@ circuitSpecPure' arg g = liftEffect
   in
     quickCheck $
       g <#> spc
+
+-- | Like circuitSpecPure' but takes an Array of specific test cases instead of a generator.
+-- | Useful for testing edge cases with deterministic inputs.
+circuitSpecPureInputs
+  :: forall a b avar bvar f c r
+   . CircuitType f a avar
+  => CircuitType f b bvar
+  => PrimeField f
+  => Eq b
+  => Show b
+  => Show a
+  => CircuitSpec f c r Identity a avar b
+  -> Array a
+  -> Aff Unit
+circuitSpecPureInputs arg inputs =
+  let
+    spc = un Identity <<< runCircuitSpec arg
+  in
+    traverse_
+      ( \a -> case spc a of
+          Success -> pure unit
+          Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
+      )
+      inputs
+
+-- | Like circuitSpec' but takes an Array of specific test cases instead of a generator.
+-- | Useful for testing edge cases with deterministic inputs.
+circuitSpecInputs
+  :: forall a avar b bvar f m c r
+   . CircuitType f a avar
+  => CircuitType f b bvar
+  => PrimeField f
+  => Eq b
+  => Show b
+  => Show a
+  => Monad m
+  => (m ~> Effect)
+  -> CircuitSpec f c r m a avar b
+  -> Array a
+  -> Aff Unit
+circuitSpecInputs nat spec inputs =
+  let
+    spc = runCircuitSpec spec
+  in
+    traverse_
+      ( \a -> do
+          result <- liftEffect $ nat $ spc a
+          case result of
+            Success -> pure unit
+            Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
+      )
+      inputs
 
 -- Warning: circuitSpec and circuitSpec' use unsafePerformEffect
 -- to run their effects layer, use with caution
