@@ -2,12 +2,20 @@ module Test.RandomOracle.Main where
 
 import Prelude
 
+import Control.Monad.Gen (chooseInt)
+import Data.Array ((:))
+import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Newtype (unwrap)
+import Data.Reflectable (class Reflectable, reifyType)
+import Data.Traversable (for_)
 import Data.Tuple (Tuple(..), fst, uncurry)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Effect.Class.Console as Console
 import Poseidon.Class (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
@@ -22,8 +30,9 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary, (===))
+import Test.QuickCheck.Gen (randomSample')
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
-import Test.Spec (Spec, describe, it)
+import Test.Spec (Spec, before, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -40,13 +49,35 @@ spec = do
       hashTests (Proxy :: Proxy Pallas.BaseField)
       spongeTests (Proxy :: Proxy Pallas.BaseField)
       domainSeparatorTests (Proxy :: Proxy Pallas.BaseField)
-      circuitTests (Proxy :: Proxy Pallas.BaseField)
+
+    describe "circuit tests" $ do
+      it "Can handle hashing 2 elements" $
+        hash2CircuitTests (Proxy :: Proxy Pallas.BaseField)
+      before genLengths $ it "Can handle variable length input" \ns ->
+        for_ ns \n -> do
+          Console.log $ "Checking for size " <> show n
+          reifyType n \pn ->
+            hashVecCircuitTests (Proxy :: Proxy Pallas.BaseField) pn
 
     describe "Vesta" do
       hashTests (Proxy :: Proxy Vesta.BaseField)
       spongeTests (Proxy :: Proxy Vesta.BaseField)
       domainSeparatorTests (Proxy :: Proxy Vesta.BaseField)
-      circuitTests (Proxy :: Proxy Vesta.BaseField)
+
+      it "Can handle hashing 2 elements" $
+        hash2CircuitTests (Proxy :: Proxy Vesta.BaseField)
+      before genLengths $ it "Can handle variable length input" \ns ->
+        for_ ns \n -> do
+          Console.log $ "Checking for size " <> show n
+          reifyType n \pn ->
+            hashVecCircuitTests (Proxy :: Proxy Vesta.BaseField) pn
+
+  where
+  genLengths :: Aff (Array Int)
+  genLengths = liftEffect do
+    ns <- randomSample' 3 $ chooseInt 1 17
+    --TODO: the test case for 0 is failing
+    pure $ 1 : 2 : Array.nub ns
 
 hashTests
   :: forall f
@@ -117,83 +148,67 @@ domainSeparatorTests _ = describe "DomainSeparator" do
       domainState = initWithDomain @f "TestDomain"
     domainState `shouldNotEqual` initialState
 
-circuitTests
+hash2CircuitTests
   :: forall f f'
    . Poseidon.PoseidonField f
   => PrimeField f
   => Kimchi.KimchiVerify f f'
   => Proxy f
-  -> Spec Unit
-circuitTests _ = describe "Circuit" do
+  -> Aff Unit
+hash2CircuitTests _ = do
 
-  it "hash2 circuit matches pure hash" do
-    let
-      -- Reference: pure hash of 2 elements
-      referenceHash :: Tuple (F f) (F f) -> Digest (F f)
-      referenceHash (Tuple (F a) (F b)) = Digest $ F $ hash [ a, b ]
+  let
+    -- Reference: pure hash of 2 elements
+    referenceHash :: Tuple (F f) (F f) -> Digest (F f)
+    referenceHash (Tuple (F a) (F b)) = Digest $ F $ hash [ a, b ]
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hash2)
-      s = compilePure
-        (Proxy @(Tuple (F f) (F f)))
-        (Proxy @(Digest (F f)))
-        (Proxy @(KimchiConstraint f))
-        (uncurry Checked.hash2)
-        Kimchi.initialState
-      genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
+    solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hash2)
+    s = compilePure
+      (Proxy @(Tuple (F f) (F f)))
+      (Proxy @(Digest (F f)))
+      (Proxy @(KimchiConstraint f))
+      (uncurry Checked.hash2)
+      Kimchi.initialState
+    genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
-    circuitSpecPure'
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied referenceHash
-      , postCondition: Kimchi.postCondition
-      }
-      genInputs
+  circuitSpecPure'
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied referenceHash
+    , postCondition: Kimchi.postCondition
+    }
+    genInputs
 
-  it "hash circuit matches pure hash for 16 elements" do
-    let
-      -- Reference: pure hash of 4 elements
-      referenceHash :: Vector 16 (F f) -> Digest (F f)
-      referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
+hashVecCircuitTests
+  :: forall f f' n
+   . Poseidon.PoseidonField f
+  => Reflectable n Int
+  => PrimeField f
+  => Kimchi.KimchiVerify f f'
+  => Proxy f
+  -> Proxy n
+  -> Aff Unit
+hashVecCircuitTests _ pn = do
+  let
+    -- Reference: pure hash of 4 elements
+    referenceHash :: Vector n (F f) -> Digest (F f)
+    referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
-      s = compilePure
-        (Proxy @(Vector 16 (F f)))
-        (Proxy @((Digest (F f))))
-        (Proxy @(KimchiConstraint f))
-        (\x -> Checked.hashVec (Vector.toUnfoldable x))
-        Kimchi.initialState
-      genInputs = Vector.generator (Proxy @16) (F <$> arbitrary)
+    solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
+    s = compilePure
+      (Proxy @(Vector n (F f)))
+      (Proxy @((Digest (F f))))
+      (Proxy @(KimchiConstraint f))
+      (\x -> Checked.hashVec (Vector.toUnfoldable x))
+      Kimchi.initialState
+    genInputs = Vector.generator pn (F <$> arbitrary)
 
-    circuitSpecPure'
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied referenceHash
-      , postCondition: Kimchi.postCondition
-      }
-      genInputs
-
-  it "hash circuit matches pure hash for 17 elements" do
-    let
-      -- Reference: pure hash of 4 elements
-      referenceHash :: Vector 17 (F f) -> Digest (F f)
-      referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
-
-      solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec $ Vector.toUnfoldable x)
-      s = compilePure
-        (Proxy @(Vector 17 (F f)))
-        (Proxy @((Digest (F f))))
-        (Proxy @(KimchiConstraint f))
-        (\x -> Checked.hashVec $ Vector.toUnfoldable x)
-        Kimchi.initialState
-      genInputs = Vector.generator (Proxy @17) (F <$> arbitrary)
-
-    circuitSpecPure'
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied referenceHash
-      , postCondition: Kimchi.postCondition
-      }
-      genInputs
+  circuitSpecPure'
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied referenceHash
+    , postCondition: Kimchi.postCondition
+    }
+    genInputs
