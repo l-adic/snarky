@@ -97,6 +97,10 @@ export function _pallasGroupIdentity() {
     return napi.pallasGroupIdentity();
 }
 
+export function _pallasGroupGenerator() {
+    return napi.pallasGroupGenerator();
+}
+
 export function _pallasGroupRand(seed) {
     return napi.pallasGroupRand(seed);
 }
@@ -223,6 +227,10 @@ export function _vestaGroupAdd(p1) {
 
 export function _vestaGroupIdentity() {
     return napi.vestaGroupIdentity();
+}
+
+export function _vestaGroupGenerator() {
+    return napi.vestaGroupGenerator();
 }
 
 export function _vestaGroupRand(seed) {

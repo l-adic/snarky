@@ -25,9 +25,9 @@ pub use pallas::scalar_field::{
 // Note: Pallas base field functions removed - handled via Vesta scalar field cross-wiring
 
 pub use pallas::group::{
-    pallas_group_add, pallas_group_eq, pallas_group_identity, pallas_group_neg, pallas_group_rand,
-    pallas_group_scale, pallas_group_to_affine, pallas_group_to_string, pallas_group_weierstrass_a,
-    pallas_group_weierstrass_b,
+    pallas_group_add, pallas_group_eq, pallas_group_generator, pallas_group_identity,
+    pallas_group_neg, pallas_group_rand, pallas_group_scale, pallas_group_to_affine,
+    pallas_group_to_string, pallas_group_weierstrass_a, pallas_group_weierstrass_b,
 };
 
 // Vesta functions
@@ -42,7 +42,7 @@ pub use vesta::scalar_field::{
 // Note: Vesta base field functions removed - handled via Pallas scalar field cross-wiring
 
 pub use vesta::group::{
-    vesta_group_add, vesta_group_eq, vesta_group_identity, vesta_group_neg, vesta_group_rand,
-    vesta_group_scale, vesta_group_to_affine, vesta_group_to_string, vesta_group_weierstrass_a,
-    vesta_group_weierstrass_b,
+    vesta_group_add, vesta_group_eq, vesta_group_generator, vesta_group_identity, vesta_group_neg,
+    vesta_group_rand, vesta_group_scale, vesta_group_to_affine, vesta_group_to_string,
+    vesta_group_weierstrass_a, vesta_group_weierstrass_b,
 };

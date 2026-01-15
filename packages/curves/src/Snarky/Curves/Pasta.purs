@@ -16,7 +16,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class Generator, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -85,6 +85,7 @@ type PallasBaseField = VestaScalarField
 foreign import data PallasG :: Type
 foreign import _pallasGroupAdd :: PallasG -> PallasG -> PallasG
 foreign import _pallasGroupIdentity :: Unit -> PallasG
+foreign import _pallasGroupGenerator :: Unit -> PallasG
 foreign import _pallasGroupRand :: Int -> PallasG
 foreign import _pallasGroupEq :: PallasG -> PallasG -> Boolean
 foreign import _pallasGroupToString :: PallasG -> String
@@ -111,6 +112,9 @@ instance Arbitrary PallasG where
 instance FrModule PallasScalarField PallasG where
   scalarMul = _pallasGroupScale
   inverse = _pallasGroupNeg
+
+instance Generator PallasG where
+  generator = _pallasGroupGenerator unit
 
 instance WeierstrassCurve PallasBaseField PallasG where
   curveParams _ =
@@ -199,6 +203,7 @@ type VestaBaseField = PallasScalarField
 foreign import data VestaG :: Type
 foreign import _vestaGroupAdd :: VestaG -> VestaG -> VestaG
 foreign import _vestaGroupIdentity :: Unit -> VestaG
+foreign import _vestaGroupGenerator :: Unit -> VestaG
 foreign import _vestaGroupRand :: Int -> VestaG
 foreign import _vestaGroupEq :: VestaG -> VestaG -> Boolean
 foreign import _vestaGroupToString :: VestaG -> String
@@ -225,6 +230,9 @@ instance Arbitrary VestaG where
 instance FrModule VestaScalarField VestaG where
   scalarMul = _vestaGroupScale
   inverse = _vestaGroupNeg
+
+instance Generator VestaG where
+  generator = _vestaGroupGenerator unit
 
 instance WeierstrassCurve VestaBaseField VestaG where
   curveParams _ =
