@@ -89,8 +89,7 @@ spec = do
     -> Aff Unit
   checkEdgeCases pf = do
     x <- liftEffect $ randomSampleOne arbitrary
-    -- NOTE: empty array case is skipped due to known issue (see TODO in genLengths)
-    for_ [ [ zero ], [ zero, zero ], [ zero, zero, zero ], [ F x ], [ F x, zero ], [ F x, zero, zero ] ] \v ->
+    for_ [ [], [ zero ], [ zero, zero ], [ zero, zero, zero ], [ F x ], [ F x, zero ], [ F x, zero, zero ] ] \v ->
       reifyType (Array.length v) \pn -> do
         let v' = unsafePartial fromJust $ Vector.toVector' pn v
         Console.log $ "Testing edge case " <> show v'
@@ -99,8 +98,7 @@ spec = do
   genLengths :: Aff (Array Int)
   genLengths = liftEffect do
     ns <- randomSample' 3 $ chooseInt 1 17
-    --TODO: the test case for 0 is failing
-    pure $ 1 : 2 : Array.nub ns
+    pure $ 0 : 1 : 2 : Array.nub ns
 
 hashTests
   :: forall f

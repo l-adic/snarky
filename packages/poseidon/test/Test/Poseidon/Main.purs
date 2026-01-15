@@ -44,3 +44,20 @@ main = runSpecAndExitProcess [ consoleReporter ] do
           result2 = hash inputs
         in
           result1 === result2
+
+  describe "Zero-padding equivalence" do
+    it "hash [], [zero], and [zero,zero] are all equal (Pallas)" do
+      let
+        h0 = hash ([] :: Array Pallas.BaseField)
+        h1 = hash [ zero :: Pallas.BaseField ]
+        h2 = hash [ zero, zero :: Pallas.BaseField ]
+      h0 `shouldEqual` h1
+      h1 `shouldEqual` h2
+
+    it "hash [], [zero], and [zero,zero] are all equal (Vesta)" do
+      let
+        h0 = hash ([] :: Array Vesta.BaseField)
+        h1 = hash [ zero :: Vesta.BaseField ]
+        h2 = hash [ zero, zero :: Vesta.BaseField ]
+      h0 `shouldEqual` h1
+      h1 `shouldEqual` h2
