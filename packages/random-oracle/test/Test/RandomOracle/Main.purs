@@ -191,7 +191,6 @@ hashVecCircuitTests
   -> Aff Unit
 hashVecCircuitTests _ pn = do
   let
-    -- Reference: pure hash of 4 elements
     referenceHash :: Vector n (F f) -> Digest (F f)
     referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
 
