@@ -255,7 +255,7 @@ instance (GCircuitType f a avar, GCircuitType f b bvar) => GCircuitType f (Produ
 instance (GCheckedType avar c, GCheckedType bvar c) => GCheckedType (Product avar bvar) c where
   gCheck (Product a b) = gCheck a <> gCheck b
 
-instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Constructor name avar) where
+instance GCircuitType f a avar => GCircuitType f (Constructor name a) (Constructor name' avar) where
   gValueToFields (Constructor a) = gValueToFields @f @a a
   gFieldsToValue as = Constructor $ gFieldsToValue @f @a as
   gSizeInFields pf _ = gSizeInFields @f @a pf (Proxy @a)

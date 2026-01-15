@@ -101,6 +101,8 @@ addMany _tree@(MerkleTree mt@(MT.MerkleTree t)) xs =
 
 newtype Address (d :: Int) = Address BigInt
 
+derive newtype instance Show (Address d)
+
 newtype AddressVar d f = AddressVar (Vector d (BoolVar f))
 
 derive instance Newtype (AddressVar d f) _

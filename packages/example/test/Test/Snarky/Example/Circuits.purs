@@ -9,6 +9,7 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (mapWithIndex, (..))
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldl)
+import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(..))
 import Data.Int (pow)
 import Data.List as List
@@ -16,7 +17,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (Address(..))
+import Data.MerkleTree.Sized (Address(..), AddressVar)
 import Data.MerkleTree.Sized as SMT
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
@@ -33,20 +34,21 @@ import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Compile (compile, makeSolver)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..))
-import Snarky.Circuit.Types (class CheckedType, class CircuitType)
+import Snarky.Circuit.Types (class CheckedType, class CircuitType, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, fromBigInt, fromInt, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, fromInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Example.Circuits (class AccountMapM, transfer)
+import Snarky.Example.Circuits (class AccountMapM, createAccount, transfer)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, suchThat)
 import Test.Snarky.Circuit.Utils (circuitSpec', satisfied, unsatisfied)
@@ -269,6 +271,247 @@ genInvalidTransferOverdraft { tree } = do
   pure $ Transaction { from, to, amount }
 
 --------------------------------------------------------------------------------
+-- CreateAccount input type
+--
+-- Note: We need two separate types because Address d -> AddressVar d f
+-- involves different type constructors. The value type has Address d,
+-- while the var type needs AddressVar d f.
+
+-- | Value-level input for createAccount circuit
+newtype CreateAccountInput d f = CreateAccountInput { addr :: Address d, pubKey :: PublicKey (F f) }
+
+derive instance Newtype (CreateAccountInput d f) _
+derive instance Generic (CreateAccountInput d f) _
+
+-- | Var-level input for createAccount circuit
+newtype CreateAccountInputVar d f = CreateAccountInputVar { addr :: AddressVar d f, pubKey :: PublicKey (FVar f) }
+
+derive instance Newtype (CreateAccountInputVar d f) _
+derive instance Generic (CreateAccountInputVar d f) _
+
+instance
+  ( Reflectable d Int
+  , PrimeField f
+  ) =>
+  CircuitType f (CreateAccountInput d f) (CreateAccountInputVar d f) where
+  valueToFields = genericValueToFields
+  fieldsToValue = genericFieldsToValue
+  sizeInFields = genericSizeInFields
+  varToFields = genericVarToFields @(CreateAccountInput d f)
+  fieldsToVar = genericFieldsToVar @(CreateAccountInput d f)
+
+instance (BasicSystem f c) => CheckedType (CreateAccountInputVar d f) c where
+  check = genericCheck
+
+--------------------------------------------------------------------------------
+-- CreateAccount test data generation
+
+-- | Empty account: zero public key and zero balance
+emptyAccount :: forall f. Semiring f => Account f
+emptyAccount = Account
+  { publicKey: PublicKey zero
+  , tokenBalance: TokenAmount zero
+  }
+
+-- | Generate a merkle tree filled with empty accounts
+genEmptyTree
+  :: forall d f
+   . Reflectable d Int
+  => PoseidonField f
+  => Proxy d
+  -> TransferState d f
+genEmptyTree _ =
+  let
+    numElements = 2 `pow` (reflectType (Proxy @d))
+    -- All accounts are empty
+    accounts = map (const (emptyAccount :: Account (F f))) (0 .. (numElements - 1))
+
+    nea = unsafePartial fromJust $ NEA.fromArray accounts
+    { head: a, tail: as } = NEA.uncons nea
+
+    base :: SMT.MerkleTree d (Digest (F f)) (Account (F f))
+    base = SMT.create a
+    tree = SMT.addMany base (List.fromFoldable as)
+
+    -- Empty map since all accounts are empty
+    accountMap = Map.empty
+  in
+    { tree, accountMap }
+
+-- | Generate a valid createAccount input (at an empty slot)
+genValidCreateAccount
+  :: forall d f
+   . Reflectable d Int
+  => PoseidonField f
+  => TransferState d f
+  -> Gen (CreateAccountInput d f)
+genValidCreateAccount { tree } = do
+  let maxAddr = SMT.size tree - one
+  -- Pick a random address
+  addrIdx <- chooseBigInt zero maxAddr
+  let addr = Address addrIdx
+  -- Generate a random non-zero public key
+  pkVal <- fromInt <$> chooseInt 1 1000000
+  let pubKey = PublicKey $ F pkVal
+  pure $ CreateAccountInput { addr, pubKey }
+
+-- | Generate an invalid createAccount input (at an occupied slot)
+-- | First we set an account at a slot, then try to create another there
+genInvalidCreateAccountOccupied
+  :: forall d f
+   . Reflectable d Int
+  => PoseidonField f
+  => TransferState d f
+  -> Gen { input :: CreateAccountInput d f, modifiedState :: TransferState d f }
+genInvalidCreateAccountOccupied state@{ tree } = do
+  let maxAddr = SMT.size tree - one
+  -- Pick a random address
+  addrIdx <- chooseBigInt zero maxAddr
+  let addr = Address addrIdx
+  -- Generate an existing account with non-zero public key
+  existingPkVal <- fromInt <$> chooseInt 1 1000000
+  let existingAccount = Account
+        { publicKey: PublicKey $ F existingPkVal
+        , tokenBalance: TokenAmount $ F zero
+        }
+  -- Update tree with existing account
+  let tree' = unsafePartial fromJust $ SMT.set tree addr existingAccount
+  -- Generate a different public key for the new account attempt
+  newPkVal <- fromInt <$> chooseInt 1000001 2000000
+  let pubKey = PublicKey $ F newPkVal
+  pure
+    { input: CreateAccountInput { addr, pubKey }
+    , modifiedState: state { tree = tree' }
+    }
+
+--------------------------------------------------------------------------------
+-- CreateAccount spec
+
+createAccountSpec
+  :: forall f f' g' d
+   . Kimchi.KimchiVerify f f'
+  => CircuitGateConstructor f g'
+  => FieldSizeInBits f 255
+  => Reflectable d Int
+  => Ord f
+  => Proxy f
+  -> Proxy d
+  -> Aff Unit
+createAccountSpec _ pd = do
+  let initialState' = genEmptyTree pd :: TransferState d f
+
+  let
+    -- Test function: compute expected root after creating account
+    testFunction :: CreateAccountInput d f -> Digest (F f)
+    testFunction (CreateAccountInput { addr, pubKey }) =
+      let
+        newAccount = Account
+          { publicKey: pubKey
+          , tokenBalance: TokenAmount $ F zero
+          }
+        tree' = unsafePartial fromJust $ SMT.set initialState'.tree addr newAccount
+      in
+        SMT.root tree'
+
+    rootVar =
+      let
+        Digest (F r) = SMT.root initialState'.tree
+      in
+        Digest $ const_ r
+
+    circuit
+      :: forall t @m
+       . CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
+      => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+      => CircuitM f (KimchiConstraint f) t m
+      => CreateAccountInputVar d f
+      -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+    circuit (CreateAccountInputVar { addr, pubKey }) = createAccount addr rootVar pubKey
+
+    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+    s =
+      runTransferCompileM $
+        compile
+          (Proxy @(CreateAccountInput d f))
+          (Proxy @(Digest (F f)))
+          (Proxy @(KimchiConstraint f))
+          (circuit @(TransferCompileM d f))
+          initialState
+
+  ref <- liftEffect $ Ref.new initialState'
+
+  -- Reset state before each test case
+  let
+    natWithReset :: TransferRefM d f ~> Effect
+    natWithReset m = do
+      write initialState' ref
+      runTransferRefM ref m
+
+  Console.log "Checking createAccount with empty slot (valid)"
+  circuitSpec' natWithReset
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied testFunction
+    , postCondition: Kimchi.postCondition
+    }
+    (genValidCreateAccount initialState')
+
+  liftEffect $ write initialState' ref
+
+  Console.log "Checking createAccount at occupied slot (invalid)"
+  -- For the invalid case, we need to compile the circuit with the modified tree's root
+  -- The circuit should fail because the slot is not empty
+  invalidTest <- liftEffect $ randomSampleOne (genInvalidCreateAccountOccupied initialState')
+
+  let
+    -- Use the modified tree's root (where the slot is occupied)
+    modifiedRootVar =
+      let
+        Digest (F r) = SMT.root invalidTest.modifiedState.tree
+      in
+        Digest $ const_ r
+
+    -- Circuit with the modified root
+    invalidCircuit
+      :: forall t @m
+       . CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
+      => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
+      => CircuitM f (KimchiConstraint f) t m
+      => CreateAccountInputVar d f
+      -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+    invalidCircuit (CreateAccountInputVar { addr, pubKey }) = createAccount addr modifiedRootVar pubKey
+
+    invalidSolver :: SolverT f (KimchiConstraint f) _ (CreateAccountInput d f) (Digest (F f))
+    invalidSolver = makeSolver (Proxy @(KimchiConstraint f)) invalidCircuit
+    invalidS =
+      runTransferCompileM $
+        compile
+          (Proxy @(CreateAccountInput d f))
+          (Proxy @(Digest (F f)))
+          (Proxy @(KimchiConstraint f))
+          (invalidCircuit @(TransferCompileM d f))
+          initialState
+
+  -- Create a ref with the modified state (where slot is occupied)
+  modifiedRef <- liftEffect $ Ref.new invalidTest.modifiedState
+
+  let
+    natWithModified :: TransferRefM d f ~> Effect
+    natWithModified m = do
+      write invalidTest.modifiedState modifiedRef
+      runTransferRefM modifiedRef m
+
+  circuitSpec' natWithModified
+    { builtState: invalidS
+    , checker: eval
+    , solver: invalidSolver
+    , testFunction: unsatisfied
+    , postCondition: Kimchi.postCondition
+    }
+    (pure invalidTest.input)
+
+--------------------------------------------------------------------------------
 -- Transfer spec
 
 transferSpec
@@ -374,7 +617,15 @@ transferSpec _ pd = do
 -- Spec
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll genSize $
+spec = beforeAll genSize $ do
+  describe "CreateAccount Circuit Specs" do
+    describe "createAccount" do
+      it "Vesta" \d ->
+        reifyType d \pd ->
+          createAccountSpec (Proxy @Vesta.ScalarField) pd
+      it "Pallas" \d ->
+        reifyType d \pd ->
+          createAccountSpec (Proxy @Pallas.ScalarField) pd
   describe "Transfer Circuit Specs" do
     describe "valid transfer" do
       it "Vesta" \d ->
@@ -386,7 +637,7 @@ spec = beforeAll genSize $
   where
   genSize = liftEffect do
     d <- randomSampleOne $ chooseInt 3 6
-    Console.log $ "Running Transfer Circuit Spec with tree depth " <> show d
+    Console.log $ "Running Circuit Specs with tree depth " <> show d
     pure d
 
 --------------------------------------------------------------------------------
