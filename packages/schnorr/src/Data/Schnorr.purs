@@ -13,6 +13,7 @@ module Data.Schnorr
   , verify
   , isEven
   , hashMessage
+  , safeFieldCoerce
   ) where
 
 import Prelude
@@ -21,10 +22,32 @@ import Data.Array ((:))
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype)
+import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Curves.Class (class FrModule, class Generator, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+
+-- | Safe coercion between 255-bit fields via bit truncation.
+-- | Truncates to 254 bits to ensure the value is < 2^254, which is guaranteed
+-- | to fit in both Pasta field primes without modular reduction.
+-- | This matches Mina's approach for nonce derivation.
+safeFieldCoerce
+  :: forall f f'
+   . PrimeField f
+  => PrimeField f'
+  => FieldSizeInBits f 255
+  => FieldSizeInBits f' 255
+  => f
+  -> f'
+safeFieldCoerce x =
+  let
+    bits = unpackPure x -- Vector 255 Boolean, LSB first
+    truncated = Vector.take @254 bits -- Vector 254 Boolean (lower 254 bits)
+    padded = Vector.snoc truncated false -- Vector 255 Boolean with MSB = 0
+  in
+    packPure padded
 
 -- | Schnorr signature: (r, s) where:
 -- | - r is an x-coordinate (base field element)
@@ -66,7 +89,7 @@ hashMessage { x: px, y: py } r message =
 -- |
 -- | Algorithm:
 -- | 1. Compute public key: pk = [d] * G
--- | 2. Derive nonce: k' = H(pk_x, pk_y, H(message)) (in base field, coerced to scalar)
+-- | 2. Derive nonce: k' = H(pk_x, pk_y, H(message)) truncated to 254 bits
 -- | 3. Compute R = [k'] * G
 -- | 4. r = x-coordinate of R
 -- | 5. If y-coordinate of R is odd, k = -k', else k = k'
@@ -74,42 +97,41 @@ hashMessage { x: px, y: py } r message =
 -- | 7. s = k + e * d (in scalar field)
 -- | 8. Return (r, s)
 -- |
--- | Note: This uses coercion between base and scalar fields. For Pasta curves,
--- | both fields are 255-bit primes, so the coercion is safe modulo field size.
+-- | Note: The nonce is truncated to 254 bits to ensure it fits in both Pasta
+-- | field primes without modular reduction, matching Mina's approach.
 sign
   :: forall fb fs g
    . PoseidonField fb
   => PrimeField fb
   => PrimeField fs
+  => FieldSizeInBits fb 255
+  => FieldSizeInBits fs 255
   => WeierstrassCurve fb g
   => FrModule fs g
-  => Generator g
   => fs
   -> Array fb
   -> Maybe (Signature fb fs)
 sign privateKey message = do
   -- Compute public key: pk = d * G
-  let g = generator @g
-  publicKey <- toAffine $ scalarMul privateKey g
+  publicKey <- toAffine $ scalarMul privateKey (generator @_ @g)
 
   -- Derive nonce deterministically using Poseidon hash (in base field)
   -- k' = H(pk_x, pk_y, H(message))
   let
-    msgHash = Poseidon.hash message
-
     kPrimeBase :: fb
-    kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
+    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : message
 
-    -- Convert base field element to scalar field via BigInt
-    -- This properly handles the field conversion through the FFI
+    -- Convert base field to scalar field via bit truncation (254 bits)
+    -- This ensures the value fits in both fields without modular reduction,
+    -- matching Mina's approach for nonce derivation.
     kPrime :: fs
-    kPrime = fromBigInt (toBigInt kPrimeBase)
+    kPrime = safeFieldCoerce kPrimeBase
 
   -- Guard against zero nonce
   if kPrime == zero then Nothing
   else do
     -- Compute R = k' * G
-    { x: r, y: ry } <- toAffine $ scalarMul kPrime g
+    { x: r, y: ry } <- toAffine $ scalarMul kPrime (generator @_ @g)
 
     -- Normalize k based on y parity (BIP-340 style)
     let k = if isEven ry then kPrime else negate kPrime
@@ -141,15 +163,12 @@ verify
   => PrimeField fs
   => WeierstrassCurve fb g
   => FrModule fs g
-  => Generator g
   => Signature fb fs
   -> { x :: fb, y :: fb }
   -> Array fb
   -> Boolean
 verify (Signature { r, s }) publicKey message =
   let
-    g = generator @g
-
     -- Compute challenge hash: e = H(pk_x, pk_y, r, H(message)) (in base field)
     eBase :: fb
     eBase = hashMessage publicKey r message
@@ -163,7 +182,7 @@ verify (Signature { r, s }) publicKey message =
     pkPoint = fromAffine publicKey
 
     -- Compute R' = s*G - e*pk = s*G + (-e)*pk
-    sG = scalarMul s g
+    sG = scalarMul s generator
     ePk = scalarMul e pkPoint
     rPoint = sG <> inverse ePk
   in

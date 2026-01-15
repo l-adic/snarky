@@ -8,7 +8,6 @@
 -- | may come from different fields (base vs scalar).
 module Snarky.Circuit.Schnorr
   ( SignatureVar(..)
-  , mkSignatureVar
   , sigR
   , sigS
   , isEven
@@ -46,10 +45,6 @@ newtype SignatureVar f = SignatureVar
 
 derive instance Newtype (SignatureVar f) _
 derive instance Generic (SignatureVar f) _
-
--- | Create a SignatureVar from individual field variables.
-mkSignatureVar :: forall f. FVar f -> FVar f -> SignatureVar f
-mkSignatureVar r s = SignatureVar { r, s }
 
 -- | Extract the r component from a SignatureVar.
 sigR :: forall f. SignatureVar f -> FVar f

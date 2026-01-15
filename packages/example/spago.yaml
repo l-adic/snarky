@@ -23,6 +23,7 @@ package:
       - effect
       - exceptions
       - foldable-traversable
+      - gen
       - identity
       - integers
       - js-bigints

@@ -246,6 +246,7 @@
             "effect",
             "exceptions",
             "foldable-traversable",
+            "gen",
             "identity",
             "integers",
             "js-bigints",
@@ -877,19 +878,15 @@
           "dependencies": [
             "arrays",
             "curves",
-            "foldable-traversable",
             "js-bigints",
             "maybe",
             "newtype",
             "poseidon",
             "prelude",
-            "quickcheck",
             "random-oracle",
-            "safe-coerce",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
-            "tuples",
             "vector-sized"
           ],
           "build_plan": [
@@ -965,11 +962,10 @@
         "test": {
           "dependencies": [
             "aff",
-            "control",
             "effect",
-            "gen",
             "identity",
             "partial",
+            "quickcheck",
             "snarky-test-utils",
             "spec",
             "spec-node"

@@ -10,6 +10,7 @@ import Data.Identity (Identity)
 import Data.Maybe (Maybe(..), fromJust, isJust)
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable)
+import Data.Schnorr (safeFieldCoerce)
 import Data.Schnorr as Schnorr
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -30,7 +31,7 @@ import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
 import Snarky.Circuit.Types (class CircuitType, F(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class Generator, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -87,7 +88,6 @@ genValidSignature
   => Reflectable n Int
   => WeierstrassCurve f g
   => FrModule f' g
-  => Generator g
   => PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -97,11 +97,11 @@ genValidSignature
 genValidSignature pg pn = do
   -- Generate random private key (in scalar field f')
   privateKey <- arbitrary @f' `suchThat` \sk ->
-    isJust $ toAffine $ scalarMul sk (generator @g)
+    isJust $ toAffine $ scalarMul sk (generator @_ @g)
   let
     publicKey = unsafePartial fromJust
       $ toAffine
-      $ scalarMul privateKey (generator @g)
+      $ scalarMul privateKey (generator @_ @g)
   -- Generate random message field element (in base field f)
   message <- Vector.generateA @n (const arbitrary)
 
@@ -111,12 +111,12 @@ genValidSignature pg pn = do
     kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
 
     kPrime :: f'
-    kPrime = fromBigInt (toBigInt kPrimeBase)
+    kPrime = safeFieldCoerce kPrimeBase
 
   if kPrime == zero then
     genValidSignature pg pn
   else
-    case toAffine $ scalarMul kPrime (generator @g) of
+    case toAffine $ scalarMul kPrime (generator @_ @g) of
       Nothing -> genValidSignature pg pn
       Just { x: r, y: ry } -> do
         let
@@ -141,52 +141,6 @@ genValidSignature pg pn = do
           }
 
 --------------------------------------------------------------------------------
--- | Pure reference function for verification.
--- | This must match what the circuit computes, including the shift transformation
--- | used by scaleFast2 for scalar multiplication.
--- | f = base field of curve g (circuit field)
--- | f' = scalar field of curve g
-pureVerify
-  :: forall f f' g n
-   . PoseidonField f
-  => Reflectable n Int
-  => PrimeField f'
-  => WeierstrassCurve f g
-  => FrModule f' g
-  => Generator g
-  => PrimeField f
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => Proxy g
-  -> VerifyInput n (F f)
-  -> Boolean
-pureVerify _ (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, message }) =
-  let
-    publicKey = { x: case pk.x of F x -> x, y: case pk.y of F y -> y }
-
-    -- Apply fieldShift2 to match scaleFast2's internal transformation
-    -- The circuit uses scaleFast2 which shifts the scalar by 2^255
-    s :: f'
-    s = fieldShift2 sInBaseField
-
-    -- Compute e = H(pk_x, pk_y, r, msgHash)
-    eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
-
-    -- Apply fieldShift2 to e as well (circuit uses scaleFast2 for e*pk too)
-    e :: f'
-    e = fieldShift2 eBase
-
-    -- Compute R' = s*G - e*pk (using shifted values for scalarMul)
-    pkPoint = fromAffine @f @g publicKey
-    sG = scalarMul s (generator @g)
-    ePk = scalarMul e pkPoint
-    rPoint = sG <> inverse ePk
-  in
-    case toAffine rPoint of
-      Nothing -> false
-      Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
-
---------------------------------------------------------------------------------
 -- | Circuit specification for Schnorr verification
 verifySpec
   :: forall f f' g g' k l
@@ -198,7 +152,6 @@ verifySpec
   => PoseidonField f
   => WeierstrassCurve f g
   => FrModule f' g
-  => Generator g
   => PrimeField f
   => PrimeField f'
   => FieldSizeInBits f 255
@@ -209,20 +162,47 @@ verifySpec
   -> Aff Unit
 verifySpec _ pg pn = do
   let
-    -- Generator point (get the raw field coordinates)
-    genPointRaw :: AffinePoint f
-    genPointRaw = unsafePartial fromJust $ toAffine (generator @g)
-
     -- Generator as circuit constants
     genPointVar :: AffinePoint (FVar f)
     genPointVar =
-      { x: const_ genPointRaw.x
-      , y: const_ genPointRaw.y
-      }
+      let
+        { x, y } = unsafePartial fromJust $ toAffine (generator @_ @g)
+      in
+        { x: const_ x
+        , y: const_ y
+        }
 
-    -- Pure test function
+    -- | Pure reference function for verification.
+    -- | This must match what the circuit computes, including the shift transformation
+    -- | used by scaleFast2 for scalar multiplication.
+    -- | f = base field of curve g (circuit field)
+    -- | f' = scalar field of curve g
     testFunction :: VerifyInput k (F f) -> Boolean
-    testFunction = pureVerify pg
+    testFunction (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, message }) =
+      let
+        publicKey = { x: case pk.x of F x -> x, y: case pk.y of F y -> y }
+
+        -- Apply fieldShift2 to match scaleFast2's internal transformation
+        -- The circuit uses scaleFast2 which shifts the scalar by 2^255
+        s :: f'
+        s = fieldShift2 sInBaseField
+
+        -- Compute e = H(pk_x, pk_y, r, msgHash)
+        eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
+
+        -- Apply fieldShift2 to e as well (circuit uses scaleFast2 for e*pk too)
+        e :: f'
+        e = fieldShift2 eBase
+
+        -- Compute R' = s*G - e*pk (using shifted values for scalarMul)
+        pkPoint = fromAffine @f @g publicKey
+        sG = scalarMul s generator
+        ePk = scalarMul e pkPoint
+        rPoint = sG <> inverse ePk
+      in
+        case toAffine rPoint of
+          Nothing -> false
+          Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
     -- Circuit function
     circuit
@@ -237,7 +217,7 @@ verifySpec _ pg pn = do
         verifies @51 genPointVar sig publicKey message
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s = compilePure
+    st = compilePure
       (Proxy @(VerifyInput k (F f)))
       (Proxy @Boolean)
       (Proxy @(KimchiConstraint f))
@@ -247,15 +227,14 @@ verifySpec _ pg pn = do
     gen = genValidSignature pg pn
 
   circuitSpecPure'
-    { builtState: s
+    { builtState: st
     , checker: Kimchi.eval
     , solver: solver
     , testFunction: satisfied testFunction
     , postCondition: Kimchi.postCondition
     }
     gen
-
-  liftEffect $ verifyCircuit { s, gen, solver }
+  liftEffect $ verifyCircuit { s: st, gen, solver }
 
 --------------------------------------------------------------------------------
 -- | Test spec

@@ -133,6 +133,7 @@ foreign import _groupNeg :: G -> G
 foreign import _groupScale :: ScalarField -> G -> G
 foreign import _weierstrassA :: Unit -> BaseField
 foreign import _weierstrassB :: Unit -> BaseField
+foreign import _groupGenerator :: Unit -> G
 
 instance Semigroup G where
   append = _groupAdd
@@ -165,6 +166,7 @@ instance WeierstrassCurve BaseField G where
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
   fromAffine = _fromAffine
+  generator = _groupGenerator unit
 
 foreign import _toAffine
   :: forall a

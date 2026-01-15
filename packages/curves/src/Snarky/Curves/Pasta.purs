@@ -16,7 +16,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class Generator, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -113,9 +113,6 @@ instance FrModule PallasScalarField PallasG where
   scalarMul = _pallasGroupScale
   inverse = _pallasGroupNeg
 
-instance Generator PallasG where
-  generator = _pallasGroupGenerator unit
-
 instance WeierstrassCurve PallasBaseField PallasG where
   curveParams _ =
     { a: _pallasWeierstrassA unit
@@ -128,6 +125,7 @@ instance WeierstrassCurve PallasBaseField PallasG where
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
   fromAffine = _pallasFromAffine
+  generator = _pallasGroupGenerator unit
 
 foreign import _pallasToAffine
   :: forall a
@@ -231,9 +229,6 @@ instance FrModule VestaScalarField VestaG where
   scalarMul = _vestaGroupScale
   inverse = _vestaGroupNeg
 
-instance Generator VestaG where
-  generator = _vestaGroupGenerator unit
-
 instance WeierstrassCurve VestaBaseField VestaG where
   curveParams _ =
     { a: _vestaWeierstrassA unit
@@ -246,6 +241,7 @@ instance WeierstrassCurve VestaBaseField VestaG where
       , y: unsafePartial $ fromJust $ as Array.!! 1
       }
   fromAffine = _vestaFromAffine
+  generator = _vestaGroupGenerator unit
 
 foreign import _vestaToAffine
   :: forall a

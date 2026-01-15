@@ -200,3 +200,7 @@ export function _toAffine(just, nothing, value) {
 export function _fromAffine({x,y}) {
     return napi.bn254GroupFromAffine(x,y)
 }
+
+export function _groupGenerator() {
+    return napi.bn254GroupGenerator();
+}

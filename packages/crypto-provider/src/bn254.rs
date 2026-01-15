@@ -285,4 +285,9 @@ pub mod group {
         };
         p.into()
     }
+
+    #[napi]
+    pub fn bn254_group_generator() -> G {
+        External::new(Affine::generator())
+    }
 }
