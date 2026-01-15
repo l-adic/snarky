@@ -5,7 +5,9 @@
 -- | must have statically known sizes.
 module Snarky.Circuit.RandomOracle
   ( Digest(..)
+  , class Hashable
   , hash
+  , hashVec
   , hash2
   , update
   ) where
@@ -17,16 +19,17 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Generic.Rep (class Generic)
 import Data.Int (odd)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
+import Poseidon as Poseidon
 import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (F, Snarky)
+import Snarky.Circuit.DSL (F(..), Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
@@ -137,16 +140,40 @@ update initState inputs = do
 -- |
 -- | Example usage:
 -- | ```
--- | result <- hash @4 inputs  -- hash 4 elements
+-- | result <- hashVec @4 inputs  -- hash 4 elements
 -- | ```
-hash
+hashVec
   :: forall f t m n
    . PoseidonField f
   => Reflectable n Int
   => CircuitM f (KimchiConstraint f) t m
   => Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-hash inputs = do
+hashVec inputs = do
   finalState <- update initialState inputs
   -- Squeeze from position 0
   pure $ Digest $ Vector.index finalState (unsafeFinite 0)
+
+--------------------------------------------------------------------------------
+-- | Type class for hashing values to digests.
+-- |
+-- | This is used by merkle trees to hash leaf elements. The `Maybe` wrapper
+-- | allows distinguishing between hashing a value vs hashing "empty" (Nothing).
+class Hashable a hash where
+  hash :: Maybe a -> hash
+
+-- | Value-level hashing using Poseidon
+instance PoseidonField f => Hashable (F f) (Digest (F f)) where
+  hash = case _ of
+    Nothing -> Digest $ F $ Poseidon.hash []
+    Just (F a) -> Digest $ F $ Poseidon.hash [ a ]
+
+-- | Circuit-level hashing using Poseidon constraints
+instance
+  ( CircuitM f (KimchiConstraint f) t m
+  , PoseidonField f
+  ) =>
+  Hashable (FVar f) (Snarky (KimchiConstraint f) t m (Digest (FVar f))) where
+  hash = case _ of
+    Nothing -> hash2 (const_ zero) (const_ zero)
+    Just a -> hash2 a (const_ zero)
