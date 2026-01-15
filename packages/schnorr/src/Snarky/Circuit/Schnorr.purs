@@ -18,11 +18,12 @@ module Snarky.Circuit.Schnorr
 
 import Prelude
 
+import Data.Array ((:))
 import Data.Fin (unsafeFinite)
 import Data.Generic.Rep (class Generic)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
@@ -76,10 +77,8 @@ isEven y = do
 -- |
 -- | This version takes a pre-hashed message digest for simplicity.
 hashMessage
-  :: forall f t m @n _k
+  :: forall f t m @n
    . PoseidonField f
-  => Add 3 n _k
-  => Reflectable _k Int
   => CircuitM f (KimchiConstraint f) t m
   => Reflectable n Int
   => AffinePoint (FVar f)
@@ -88,9 +87,8 @@ hashMessage
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 hashMessage { x: px, y: py } r message = do
   let
-    as = px :< py :< r :< Vector.nil
-    inputs = as `Vector.append` message
-  hashVec @_k inputs
+    inputs = px : py : r : (Vector.toUnfoldable message)
+  hashVec inputs
 
 -- | Verify a Schnorr signature in a circuit, returning a boolean.
 -- |
@@ -99,10 +97,8 @@ hashMessage { x: px, y: py } r message = do
 -- | 2. R' = [s] * G - [e] * pk
 -- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
 verifies
-  :: forall f t m n l @nChunks sDiv2Bits bitsUsed _l _k
+  :: forall f t m n l @nChunks sDiv2Bits bitsUsed _l
    . PoseidonField f
-  => Add 3 l _k
-  => Reflectable _k Int
   => Reflectable l Int
   => FieldSizeInBits f n
   => Add bitsUsed _l n

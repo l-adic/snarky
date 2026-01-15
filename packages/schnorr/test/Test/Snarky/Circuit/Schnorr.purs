@@ -20,7 +20,6 @@ import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
@@ -143,11 +142,9 @@ genValidSignature pg pn = do
 --------------------------------------------------------------------------------
 -- | Circuit specification for Schnorr verification
 verifySpec
-  :: forall f f' g g' k l
+  :: forall f f' g g' k
    . KimchiVerify f f'
   => Reflectable k Int
-  => Add 3 k l
-  => Reflectable l Int
   => CircuitGateConstructor f g'
   => PoseidonField f
   => WeierstrassCurve f g
@@ -160,7 +157,7 @@ verifySpec
   -> Proxy g
   -> Proxy k
   -> Aff Unit
-verifySpec _ pg pn = do
+verifySpec _ pg _pk = do
   let
     -- Generator as circuit constants
     genPointVar :: AffinePoint (FVar f)
@@ -224,7 +221,7 @@ verifySpec _ pg pn = do
       circuit
       Kimchi.initialState
 
-    gen = genValidSignature pg pn
+    gen = genValidSignature pg _pk
 
   circuitSpecPure'
     { builtState: st

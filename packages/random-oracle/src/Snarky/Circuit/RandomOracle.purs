@@ -21,7 +21,6 @@ import Data.Generic.Rep (class Generic)
 import Data.Int (odd)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype)
-import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -35,7 +34,6 @@ import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-import Type.Proxy (Proxy(..))
 
 -- | Initial state for the sponge: all zeros
 initialState :: forall f. PrimeField f => Vector 3 (FVar f)
@@ -115,21 +113,19 @@ hash2 a b = do
 -- | The input vector is chunked into rate-sized blocks (2 elements each),
 -- | and each block is absorbed with a permutation.
 update
-  :: forall f t m n
+  :: forall f t m
    . PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable n Int
   => Vector 3 (FVar f)
-  -> Vector n (FVar f)
+  -> Array (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 update initState inputs = do
   let
     blocks :: Array (Vector 2 (FVar f))
     blocks =
       let
-        n = reflectType (Proxy @n)
-        inputsArray = Vector.toUnfoldable inputs
-        as = if odd n then inputsArray `Array.snoc` (const_ zero) else inputsArray
+        n = Array.length inputs
+        as = if odd n then inputs `Array.snoc` (const_ zero) else inputs
       in
         unsafePartial fromJust $ traverse (Vector.toVector @2) (Vector.chunk 2 as)
 
@@ -143,11 +139,10 @@ update initState inputs = do
 -- | result <- hashVec @4 inputs  -- hash 4 elements
 -- | ```
 hashVec
-  :: forall f t m @n
+  :: forall f t m
    . PoseidonField f
-  => Reflectable n Int
   => CircuitM f (KimchiConstraint f) t m
-  => Vector n (FVar f)
+  => Array (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 hashVec inputs = do
   finalState <- update initialState inputs
