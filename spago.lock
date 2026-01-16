@@ -602,8 +602,13 @@
         },
         "test": {
           "dependencies": [
+            "aff",
             "effect",
+            "either",
+            "node-buffer",
+            "node-fs",
             "quickcheck",
+            "simple-json",
             "spec",
             "spec-node",
             "spec-quickcheck"
@@ -673,6 +678,7 @@
             "record",
             "refs",
             "safe-coerce",
+            "simple-json",
             "spec",
             "spec-node",
             "spec-quickcheck",
@@ -684,7 +690,8 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "unsafe-coerce",
+            "variant"
           ]
         }
       },

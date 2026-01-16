@@ -482,6 +482,7 @@ dependencies = [
  "ark-snark",
  "ark-std",
  "bulletproofs",
+ "hex",
  "kimchi",
  "mina-curves",
  "mina-poseidon",

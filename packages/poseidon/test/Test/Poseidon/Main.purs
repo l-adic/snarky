@@ -2,21 +2,55 @@ module Test.Poseidon.Main where
 
 import Prelude
 
+import Data.Either (Either(..))
+import Data.Traversable (for_)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Node.Buffer as Buffer
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
 import Poseidon.Class (getMdsMatrix, getNumRounds, hash)
+import Simple.JSON as JSON
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (vestaScalarFieldFromHexLe, vestaScalarFieldToHexLe)
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck ((/==), (===))
-import Test.Spec (describe, it)
+import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
 
+-- | Test vector format from kimchi_test_vectors.json
+type TestVector =
+  { input :: Array String
+  , output :: String
+  }
+
+type TestVectors =
+  { name :: String
+  , test_vectors :: Array TestVector
+  }
+
+-- | Load and parse test vectors from JSON file
+loadTestVectors :: String -> Aff TestVectors
+loadTestVectors path = liftEffect do
+  buf <- FS.readFile path
+  str <- Buffer.toString UTF8 buf
+  case JSON.readJSON str of
+    Left _ -> do
+      -- Return empty on error, tests will fail appropriately
+      pure { name: "error", test_vectors: [] }
+    Right vectors -> pure vectors
+
 main :: Effect Unit
-main = runSpecAndExitProcess [ consoleReporter ] do
+main = runSpecAndExitProcess [ consoleReporter ] spec
+
+spec :: Spec Unit
+spec = do
   describe "Poseidon Parameters" do
     it "should have 55 rounds for both curves" do
       getNumRounds (Proxy :: Proxy Pallas.BaseField) `shouldEqual` 55
@@ -85,3 +119,16 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "hash [a, b, c] == hash [a, b, c, zero] for any a, b, c (Vesta)" do
       quickCheck \(a :: Vesta.BaseField) (b :: Vesta.BaseField) (c :: Vesta.BaseField) ->
         hash [ a, b, c ] === hash [ a, b, c, zero ]
+
+  -- Test vectors from proof-systems/poseidon/export_test_vectors/test_vectors/hex_kimchi.json
+  -- These use Pallas base field (= Vesta scalar field) with Kimchi parameters (55 rounds)
+  describe "Kimchi Test Vectors (Pallas BaseField)" do
+    it "matches reference implementation" do
+      vectors <- loadTestVectors "packages/poseidon/test/fixtures/kimchi_test_vectors.json"
+      vectors.name `shouldEqual` "kimchi"
+      for_ vectors.test_vectors \tv -> do
+        let
+          input = map vestaScalarFieldFromHexLe tv.input
+          result = hash input
+          resultHex = vestaScalarFieldToHexLe result
+        resultHex `shouldEqual` tv.output

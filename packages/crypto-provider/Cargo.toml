@@ -35,9 +35,10 @@ napi-derive = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 
-# utilities  
+# utilities
 num-bigint = { workspace = true }
 num-integer = { workspace = true }
+hex = { workspace = true }
 
 # serialization
 serde = { workspace = true }
