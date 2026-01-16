@@ -6,7 +6,8 @@ module Pickles.Linearization.Generator
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (foldl)
+import Data.List (List(..), (:))
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Partial.Unsafe (unsafePartial)
@@ -15,8 +16,10 @@ import Pickles.Linearization.Types
   , Column(..)
   , ConstantTerm(..)
   , CurrOrNext(..)
+  , FeatureFlag(..)
   , GateType(..)
   , Linearization
+  , LookupPattern(..)
   , PolishToken(..)
   )
 import PureScript.CST.Types (Expr, Module)
@@ -26,6 +29,7 @@ import Tidy.Codegen
   , declImport
   , declSignature
   , declValue
+  , defaultPrintOptions
   , exprApp
   , exprBool
   , exprCtor
@@ -37,7 +41,7 @@ import Tidy.Codegen
   , importTypeAll
   , letValue
   , module_
-  , printModule
+  , printModuleWithOptions
   , typeApp
   , typeArrow
   , typeCtor
@@ -57,35 +61,20 @@ instance Show CurveName where
 -- | Generate a complete PureScript module for a linearization
 generateModule :: CurveName -> Linearization -> String
 generateModule curve lin =
-  unsafePartial $ printModule $ buildModule curve lin
+  unsafePartial $ printModuleWithOptions printOptions $ buildModule curve lin
+  where
+  -- Use a large page width to minimize line breaks
+  printOptions = defaultPrintOptions { pageWidth = 100000 }
 
--- | Evaluation state during Polish notation processing
-type EvalState =
-  { stack :: Array (Expr Void) -- Expression stack
-  , store :: Array (Expr Void) -- Stored values (for Load)
+-- | Parser state for tracking stored values and let bindings
+type ParseState =
+  { store :: Array (Expr Void) -- Stored values (for Load)
   , bindings :: Array { name :: String, expr :: Expr Void } -- Let bindings to emit
   , nextVar :: Int -- Next variable number for bindings
   }
 
-initialState :: EvalState
-initialState = { stack: [], store: [], bindings: [], nextVar: 0 }
-
--- | Push an expression onto the stack
-push :: Expr Void -> EvalState -> EvalState
-push e s = s { stack = Array.snoc s.stack e }
-
--- | Pop an expression from the stack
-pop :: EvalState -> Maybe { expr :: Expr Void, state :: EvalState }
-pop s = do
-  { init, last } <- Array.unsnoc s.stack
-  pure { expr: last, state: s { stack = init } }
-
--- | Pop two expressions (for binary ops)
-pop2 :: EvalState -> Maybe { left :: Expr Void, right :: Expr Void, state :: EvalState }
-pop2 s = do
-  { expr: right, state: s1 } <- pop s
-  { expr: left, state: s2 } <- pop s1
-  pure { left, right, state: s2 }
+initialParseState :: ParseState
+initialParseState = { store: [], bindings: [], nextVar: 0 }
 
 -- | Build the CST module
 buildModule :: Partial => CurveName -> Linearization -> Module Void
@@ -102,6 +91,8 @@ buildModule curve lin =
         , importTypeAll "Column"
         , importTypeAll "CurrOrNext"
         , importTypeAll "GateType"
+        , importTypeAll "LookupPattern"
+        , importTypeAll "FeatureFlag"
         ]
     ]
 
@@ -136,116 +127,249 @@ buildModule curve lin =
     , Tuple "ifFeature" (binderVar "ifFeature")
     ]
 
+-- | Result of parsing: the expression stack and state
+-- | We track two stacks: main expression stack and conditional expressions
+type ParseResult =
+  { stack :: Array (Expr Void) -- Main expression stack (RPN operations)
+  , conditionals :: Array (Expr Void) -- Accumulated conditional (ifFeature) expressions
+  , state :: ParseState
+  }
+
 -- | Evaluate Polish notation tokens to produce an expression
+-- | Uses a recursive descent approach to handle SkipIf/SkipIfNot
 evaluatePolish :: Partial => Array PolishToken -> Expr Void
 evaluatePolish tokens =
   let
-    finalState = foldl evalToken initialState tokens
+    tokenList = List.fromFoldable tokens
+    result = evalTokens { stack: [], conditionals: [], state: initialParseState } tokenList
+    -- The main result is the last value on the stack
+    mainExpr = case Array.last result.stack of
+      Just e -> e
+      Nothing -> exprApp (exprIdent "field") [ exprString "0x0000000000000000000000000000000000000000000000000000000000000000" ]
+
+    -- Combine the main expression with all conditional expressions using add
+    -- This produces: add(mainExpr, add(cond1, add(cond2, ...)))
+    combineWithConditionals :: Expr Void -> Array (Expr Void) -> Expr Void
+    combineWithConditionals base conds = case Array.uncons conds of
+      Nothing -> base
+      Just { head: first, tail: rest } ->
+        exprApp (exprIdent "add") [ base, combineWithConditionals first rest ]
   in
-    case Array.last finalState.stack of
-      Just result -> wrapWithBindings finalState.bindings result
-      Nothing -> exprIdent "mempty" -- Empty expression
+    wrapWithBindings result.state.bindings (combineWithConditionals mainExpr result.conditionals)
 
--- | Wrap an expression with let bindings
-wrapWithBindings :: Partial => Array { name :: String, expr :: Expr Void } -> Expr Void -> Expr Void
-wrapWithBindings bindings body =
-  case Array.uncons bindings of
-    Nothing -> body
-    Just { head: b, tail: rest } ->
-      exprLet [ letValue b.name [] b.expr ] (wrapWithBindings rest body)
+-- | Recursively evaluate tokens, returning updated stack and remaining tokens
+evalTokens :: Partial => ParseResult -> List PolishToken -> ParseResult
+evalTokens result Nil = result
+evalTokens result (token : rest) =
+  let
+    newResult = evalToken result token rest
+  in
+    evalTokens newResult.result newResult.remaining
 
--- | Evaluate a single token
-evalToken :: Partial => EvalState -> PolishToken -> EvalState
-evalToken s = case _ of
+-- | Evaluate a single token, potentially consuming additional tokens for SkipIf/SkipIfNot
+evalToken
+  :: Partial
+  => ParseResult
+  -> PolishToken
+  -> List PolishToken
+  -> { result :: ParseResult, remaining :: List PolishToken }
+evalToken r token remaining = case token of
   -- Constants
   Constant EndoCoefficient ->
-    push (exprIdent "endoCoefficient") s
+    { result: pushStack (exprIdent "endoCoefficient") r, remaining }
 
   Constant (Mds { row, col }) ->
-    push (exprApp (exprIdent "mds") [ exprRecord [ Tuple "row" (exprInt row), Tuple "col" (exprInt col) ] ]) s
+    { result: pushStack
+        (exprApp (exprIdent "mds") [ exprRecord [ Tuple "row" (exprInt row), Tuple "col" (exprInt col) ] ])
+        r
+    , remaining
+    }
 
   Constant (Literal lit) ->
-    push (exprApp (exprIdent "field") [ exprString lit ]) s
+    { result: pushStack (exprApp (exprIdent "field") [ exprString lit ]) r, remaining }
 
   -- Challenges
-  Challenge Alpha -> push (exprApp (exprIdent "alphaPow") [ exprInt 1 ]) s
-  Challenge Beta -> push (exprIdent "beta") s
-  Challenge Gamma -> push (exprIdent "gamma") s
-  Challenge JointCombiner -> push (exprIdent "jointCombiner") s
+  Challenge Alpha -> { result: pushStack (exprApp (exprIdent "alphaPow") [ exprInt 1 ]) r, remaining }
+  Challenge Beta -> { result: pushStack (exprIdent "beta") r, remaining }
+  Challenge Gamma -> { result: pushStack (exprIdent "gamma") r, remaining }
+  Challenge JointCombiner -> { result: pushStack (exprIdent "jointCombiner") r, remaining }
 
   -- Cell access
   Cell { col, row } ->
-    push (exprApp (exprIdent "cell") [ exprApp (exprIdent "var") [ columnExpr col, rowExpr row ] ]) s
+    { result: pushStack
+        (exprApp (exprIdent "cell") [ exprApp (exprIdent "var") [ columnExpr col, rowExpr row ] ])
+        r
+    , remaining
+    }
 
   -- Stack operations
   Dup ->
-    case Array.last s.stack of
-      Just top -> push top s
-      Nothing -> s
+    case Array.last r.stack of
+      Just top -> { result: pushStack top r, remaining }
+      Nothing -> { result: r, remaining }
 
   -- Arithmetic
   Add ->
-    case pop2 s of
-      Just { left, right, state } ->
-        push (exprApp (exprIdent "add") [ left, right ]) state
-      Nothing -> s
+    case pop2Stack r of
+      Just { left, right, result: r' } ->
+        { result: pushStack (exprApp (exprIdent "add") [ left, right ]) r', remaining }
+      Nothing -> { result: r, remaining }
 
   Mul ->
-    case pop2 s of
-      Just { left, right, state } ->
-        push (exprApp (exprIdent "mul") [ left, right ]) state
-      Nothing -> s
+    case pop2Stack r of
+      Just { left, right, result: r' } ->
+        { result: pushStack (exprApp (exprIdent "mul") [ left, right ]) r', remaining }
+      Nothing -> { result: r, remaining }
 
   Sub ->
-    case pop2 s of
-      Just { left, right, state } ->
-        push (exprApp (exprIdent "sub") [ left, right ]) state
-      Nothing -> s
+    case pop2Stack r of
+      Just { left, right, result: r' } ->
+        { result: pushStack (exprApp (exprIdent "sub") [ left, right ]) r', remaining }
+      Nothing -> { result: r, remaining }
 
   Pow n ->
-    case pop s of
-      Just { expr, state } ->
-        push (exprApp (exprIdent "pow") [ expr, exprInt n ]) state
-      Nothing -> s
+    case popStack r of
+      Just { expr, result: r' } ->
+        { result: pushStack (exprApp (exprIdent "pow") [ expr, exprInt n ]) r', remaining }
+      Nothing -> { result: r, remaining }
 
   -- Store/Load for sharing subexpressions
   Store ->
-    case pop s of
-      Just { expr, state } ->
+    case popStack r of
+      Just { expr, result: r' } ->
         let
-          varName = "x_" <> show state.nextVar
-          newState = state
-            { store = Array.snoc state.store (exprIdent varName)
-            , bindings = Array.snoc state.bindings { name: varName, expr }
-            , nextVar = state.nextVar + 1
+          varName = "x_" <> show r'.state.nextVar
+          newState = r'.state
+            { store = Array.snoc r'.state.store (exprIdent varName)
+            , bindings = Array.snoc r'.state.bindings { name: varName, expr }
+            , nextVar = r'.state.nextVar + 1
             }
         in
-          push (exprIdent varName) newState
-      Nothing -> s
+          { result: pushStack (exprIdent varName) (r' { state = newState }), remaining }
+      Nothing -> { result: r, remaining }
 
   Load n ->
-    case Array.index s.store n of
-      Just storedExpr -> push storedExpr s
-      Nothing -> s
+    case Array.index r.state.store n of
+      Just storedExpr -> { result: pushStack storedExpr r, remaining }
+      Nothing -> { result: r, remaining }
 
   -- Special terms
   VanishesOnZeroKnowledgeAndPreviousRows ->
-    push (exprIdent "vanishesOnZeroKnowledgeAndPreviousRows") s
+    { result: pushStack (exprIdent "vanishesOnZeroKnowledgeAndPreviousRows") r, remaining }
 
   UnnormalizedLagrangeBasis { zk_rows, offset } ->
-    push
-      ( exprApp (exprIdent "unnormalizedLagrangeBasis")
-          [ exprRecord
-              [ Tuple "zkRows" (exprBool zk_rows)
-              , Tuple "offset" (exprInt offset)
-              ]
-          ]
-      )
-      s
+    { result: pushStack
+        ( exprApp (exprIdent "unnormalizedLagrangeBasis")
+            [ exprRecord
+                [ Tuple "zkRows" (exprBool zk_rows)
+                , Tuple "offset" (exprInt offset)
+                ]
+            ]
+        )
+        r
+    , remaining
+    }
 
-  -- Conditional execution (TODO: proper implementation needs token lookahead)
-  SkipIf _ _ -> s
-  SkipIfNot _ _ -> s
+  -- Conditional execution - SkipIfNot: if feature is NOT enabled, skip count tokens
+  -- For code generation, we include the code wrapped in ifFeature
+  --
+  -- The sub-expression is evaluated and wrapped in ifFeature.
+  -- Instead of pushing to the main stack (which would disrupt RPN flow),
+  -- we add it to the conditionals list to be combined at the end.
+  SkipIfNot flag count ->
+    let
+      -- Take 'count' tokens as the conditional sub-expression
+      subTokens = List.take count remaining
+      remainingAfter = List.drop count remaining
+      -- Evaluate the sub-expression with empty stack - it's self-contained
+      subResult = evalTokens { stack: [], conditionals: [], state: r.state } subTokens
+      -- Get the result (what the block produces)
+      subExpr = case Array.last subResult.stack of
+        Just e -> e
+        Nothing -> exprApp (exprIdent "field") [ exprString "0x0000000000000000000000000000000000000000000000000000000000000000" ]
+      -- Wrap in ifFeature - onTrue is the sub-expression, onFalse is zero
+      wrapped = exprApp (exprIdent "ifFeature")
+        [ exprRecord
+            [ Tuple "flag" (featureFlagExpr flag)
+            , Tuple "onTrue" (exprApp (exprIdent "const") [ subExpr ])
+            , Tuple "onFalse" (exprApp (exprIdent "const") ([ exprApp (exprIdent "field") [ exprString "0x0000000000000000000000000000000000000000000000000000000000000000" ] ]))
+            ]
+        ]
+      -- Add only this wrapped expression to conditionals
+      -- (nested conditionals are already inside the wrapped expression)
+      newConditionals = Array.snoc r.conditionals wrapped
+    in
+      { result: r { conditionals = newConditionals, state = subResult.state }, remaining: remainingAfter }
+
+  -- SkipIf: if feature IS enabled, skip count tokens (opposite of SkipIfNot)
+  SkipIf flag count ->
+    let
+      subTokens = List.take count remaining
+      remainingAfter = List.drop count remaining
+      -- Evaluate with empty stack - sub-expression is self-contained
+      subResult = evalTokens { stack: [], conditionals: [], state: r.state } subTokens
+      subExpr = case Array.last subResult.stack of
+        Just e -> e
+        Nothing -> exprApp (exprIdent "field") [ exprString "0x0000000000000000000000000000000000000000000000000000000000000000" ]
+      -- For SkipIf, onFalse has the expression (skip if true means execute if false)
+      wrapped = exprApp (exprIdent "ifFeature")
+        [ exprRecord
+            [ Tuple "flag" (featureFlagExpr flag)
+            , Tuple "onTrue" (exprApp (exprIdent "const") [ exprApp (exprIdent "field") [ exprString "0x0000000000000000000000000000000000000000000000000000000000000000" ] ])
+            , Tuple "onFalse" (exprApp (exprIdent "const") [ subExpr ])
+            ]
+        ]
+      -- Add only this wrapped expression to conditionals
+      newConditionals = Array.snoc r.conditionals wrapped
+    in
+      { result: r { conditionals = newConditionals, state = subResult.state }, remaining: remainingAfter }
+
+-- | Push onto stack
+pushStack :: Expr Void -> ParseResult -> ParseResult
+pushStack e r = r { stack = Array.snoc r.stack e }
+
+-- | Pop from stack
+popStack :: ParseResult -> Maybe { expr :: Expr Void, result :: ParseResult }
+popStack r = do
+  { init, last } <- Array.unsnoc r.stack
+  pure { expr: last, result: r { stack = init } }
+
+-- | Pop two from stack
+pop2Stack :: ParseResult -> Maybe { left :: Expr Void, right :: Expr Void, result :: ParseResult }
+pop2Stack r = do
+  { expr: right, result: r1 } <- popStack r
+  { expr: left, result: r2 } <- popStack r1
+  pure { left, right, result: r2 }
+
+-- | Wrap an expression with let bindings (single let block with all bindings)
+wrapWithBindings :: Partial => Array { name :: String, expr :: Expr Void } -> Expr Void -> Expr Void
+wrapWithBindings bindings body =
+  case Array.length bindings of
+    0 -> body
+    _ -> exprLet (map (\b -> letValue b.name [] b.expr) bindings) body
+
+-- | Generate expression for FeatureFlag
+featureFlagExpr :: Partial => FeatureFlag -> Expr Void
+featureFlagExpr = case _ of
+  FeatureForeignFieldAdd -> exprCtor "FeatureForeignFieldAdd"
+  FeatureForeignFieldMul -> exprCtor "FeatureForeignFieldMul"
+  FeatureLookupTables -> exprCtor "FeatureLookupTables"
+  FeatureRangeCheck0 -> exprCtor "FeatureRangeCheck0"
+  FeatureRangeCheck1 -> exprCtor "FeatureRangeCheck1"
+  FeatureRot -> exprCtor "FeatureRot"
+  FeatureRuntimeLookupTables -> exprCtor "FeatureRuntimeLookupTables"
+  FeatureXor -> exprCtor "FeatureXor"
+  FeatureLookupPattern pat -> exprApp (exprCtor "FeatureLookupPattern") [ lookupPatternExpr pat ]
+  FeatureLookupsPerRow n -> exprApp (exprCtor "FeatureLookupsPerRow") [ exprInt n ]
+  FeatureTableWidth n -> exprApp (exprCtor "FeatureTableWidth") [ exprInt n ]
+
+-- | Generate expression for LookupPattern
+lookupPatternExpr :: Partial => LookupPattern -> Expr Void
+lookupPatternExpr = case _ of
+  LookupPatternXor -> exprCtor "LookupPatternXor"
+  LookupPatternLookup -> exprCtor "LookupPatternLookup"
+  LookupPatternRangeCheck -> exprCtor "LookupPatternRangeCheck"
+  LookupPatternForeignFieldMul -> exprCtor "LookupPatternForeignFieldMul"
 
 -- | Generate expression for Column
 columnExpr :: Partial => Column -> Expr Void

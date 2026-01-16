@@ -7,6 +7,7 @@ module Snarky.Pickles.Linearization.Env
   , CurrOrNext(..)
   , GateType(..)
   , LookupPattern(..)
+  , FeatureFlag(..)
   , EvalPoint
   , Challenges
   , circuitEnv
@@ -54,6 +55,23 @@ data LookupPattern
 derive instance Eq LookupPattern
 derive instance Ord LookupPattern
 
+-- | Feature flags for conditional gate inclusion
+data FeatureFlag
+  = FeatureForeignFieldAdd
+  | FeatureForeignFieldMul
+  | FeatureLookupTables
+  | FeatureRangeCheck0
+  | FeatureRangeCheck1
+  | FeatureRot
+  | FeatureRuntimeLookupTables
+  | FeatureXor
+  | FeatureLookupPattern LookupPattern
+  | FeatureLookupsPerRow Int
+  | FeatureTableWidth Int
+
+derive instance Eq FeatureFlag
+derive instance Ord FeatureFlag
+
 -- | Column types in the constraint system
 data Column
   = Witness Int
@@ -93,7 +111,7 @@ type Env a =
   , jointCombiner :: a
   , beta :: a
   , gamma :: a
-  , ifFeature :: forall b. { flag :: Int, onTrue :: Unit -> b, onFalse :: Unit -> b } -> b
+  , ifFeature :: forall b. { flag :: FeatureFlag, onTrue :: Unit -> b, onFalse :: Unit -> b } -> b
   }
 
 -- | Evaluation point containing polynomial evaluations at zeta and zeta*omega

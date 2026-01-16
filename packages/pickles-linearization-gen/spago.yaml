@@ -5,7 +5,9 @@ package:
     - arrays
     - effect
     - either
+    - foldable-traversable
     - foreign
+    - lists
     - maybe
     - node-buffer
     - node-fs
@@ -17,6 +19,8 @@ package:
     - tuples
   build:
     strict: true
+  run:
+    main: Pickles.Linearization.Main
   test:
     main: Test.Pickles.Linearization.Main
     dependencies:

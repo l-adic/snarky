@@ -1,4 +1,4 @@
-module Main where
+module Pickles.Linearization.Main where
 
 import Prelude
 
