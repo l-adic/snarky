@@ -1,0 +1,16 @@
+[package]
+name = "gen-linearization"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "gen-linearization"
+path = "src/main.rs"
+
+[dependencies]
+kimchi = { workspace = true }
+mina-curves = { workspace = true }
+ark-ff = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+num-bigint = { workspace = true }

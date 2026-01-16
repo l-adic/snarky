@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization
 
 .DEFAULT_GOAL := help
 
@@ -98,6 +98,10 @@ cargo-fmt: ## Format all Rust code in workspace
 
 cargo-clippy: ## Run clippy lints on workspace
 	cargo clippy --workspace -- -D warnings
+
+gen-linearization: ## Generate Kimchi linearization JSON files
+	@mkdir -p packages/snarky-kimchi/generated
+	cargo run -p gen-linearization --release -- packages/snarky-kimchi/generated
 
 lint: ## Format, tidy, and lint all code (Rust + PureScript)
 	cargo fmt --all

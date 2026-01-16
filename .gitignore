@@ -47,3 +47,6 @@ Thumbs.db
 srs-cache/
 
 # Crypto provider symlink (removed - now using real crate)
+
+# Generated linearization files
+packages/snarky-kimchi/generated/
