@@ -112,6 +112,34 @@ pub mod scalar_field {
         Ok(External::new(result))
     }
 
+    /// Parse a field element from a little-endian hex string (as used in test vectors)
+    #[napi]
+    pub fn vesta_scalarfield_from_hex_le(hex: String) -> Result<FieldExternal> {
+        use ark_serialize::CanonicalDeserialize;
+
+        // Decode hex to bytes
+        let bytes = hex::decode(&hex)
+            .map_err(|e| Error::from_reason(format!("Invalid hex string: {e}")))?;
+
+        // Deserialize from little-endian bytes (arkworks canonical format)
+        let field_elem = VestaScalarField::deserialize_uncompressed(&bytes[..])
+            .map_err(|e| Error::from_reason(format!("Failed to deserialize field element: {e}")))?;
+
+        Ok(External::new(field_elem))
+    }
+
+    /// Serialize a field element to a little-endian hex string
+    #[napi]
+    pub fn vesta_scalarfield_to_hex_le(x: &FieldExternal) -> Result<String> {
+        use ark_serialize::CanonicalSerialize;
+
+        let mut bytes = Vec::new();
+        x.serialize_uncompressed(&mut bytes)
+            .map_err(|e| Error::from_reason(format!("Failed to serialize field element: {e}")))?;
+
+        Ok(hex::encode(&bytes))
+    }
+
     #[napi]
     pub fn vesta_endo_base() -> External<PallasScalarField> {
         use mina_curves::pasta::Vesta;

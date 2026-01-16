@@ -7,6 +7,9 @@ module Snarky.Curves.Pasta
     VestaScalarField
   , VestaBaseField
   , VestaG
+  , -- Hex serialization (for test vectors)
+    vestaScalarFieldFromHexLe
+  , vestaScalarFieldToHexLe
   ) where
 
 import Prelude
@@ -155,6 +158,8 @@ foreign import _vestaScalarFieldFromBigInt :: BigInt -> VestaScalarField
 foreign import _vestaScalarFieldToBigInt :: VestaScalarField -> BigInt
 foreign import _vestaScalarFieldPow :: VestaScalarField -> BigInt -> VestaScalarField
 foreign import _vestaScalarFieldModulus :: Unit -> BigInt
+foreign import _vestaScalarFieldFromHexLe :: String -> VestaScalarField
+foreign import _vestaScalarFieldToHexLe :: VestaScalarField -> String
 foreign import _vestaEndoBase :: Unit -> PallasScalarField
 foreign import _vestaEndoScalar :: Unit -> VestaScalarField
 
@@ -193,6 +198,14 @@ instance PrimeField VestaScalarField where
   modulus = _vestaScalarFieldModulus unit
 
 instance FieldSizeInBits VestaScalarField 255
+
+-- | Parse a VestaScalarField (= PallasBaseField) from little-endian hex string
+vestaScalarFieldFromHexLe :: String -> VestaScalarField
+vestaScalarFieldFromHexLe = _vestaScalarFieldFromHexLe
+
+-- | Serialize a VestaScalarField (= PallasBaseField) to little-endian hex string
+vestaScalarFieldToHexLe :: VestaScalarField -> String
+vestaScalarFieldToHexLe = _vestaScalarFieldToHexLe
 
 -- Vesta Base Field (= Pallas Scalar Field via cross-wiring)
 type VestaBaseField = PallasScalarField

@@ -7,8 +7,13 @@ package:
   test:
     main: Test.Poseidon.Main
     dependencies:
+      - aff
       - effect
+      - either
+      - node-buffer
+      - node-fs
       - quickcheck
+      - simple-json
       - spec
       - spec-node
       - spec-quickcheck

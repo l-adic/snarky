@@ -207,6 +207,14 @@ export function _vestaScalarFieldModulus() {
     return napi.vestaScalarfieldModulus();
 }
 
+export function _vestaScalarFieldFromHexLe(hex) {
+    return napi.vestaScalarfieldFromHexLe(hex);
+}
+
+export function _vestaScalarFieldToHexLe(x) {
+    return napi.vestaScalarfieldToHexLe(x);
+}
+
 // Note: Vesta base field functions removed - now handled via PallasScalarField type alias
 
 // Vesta Weierstrass Parameters

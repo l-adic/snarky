@@ -20,6 +20,7 @@ rand = { version = "0.8", features = ["std_rng"] }
 rand_chacha = "0.3"
 num-bigint = "0.4.4"
 num-integer = "0.1"
+hex = "0.4"
 napi = { version = "3.4.0", features = ["napi6"] }
 napi-derive = "3.3.0"
 napi-build = "2.2.4"
