@@ -559,18 +559,22 @@
             "node-process",
             "prelude",
             "simple-json",
+            "tidy-codegen",
             "tuples"
           ],
           "build_plan": [
             "aff",
+            "ansi",
             "arraybuffer-types",
             "arrays",
             "bifunctors",
+            "catenable-lists",
             "const",
             "contravariant",
             "control",
             "datetime",
             "distributive",
+            "dodo-printer",
             "effect",
             "either",
             "enums",
@@ -579,6 +583,7 @@
             "foldable-traversable",
             "foreign",
             "foreign-object",
+            "free",
             "functions",
             "functors",
             "gen",
@@ -586,6 +591,7 @@
             "integers",
             "invariant",
             "js-date",
+            "language-cst-parser",
             "lazy",
             "lists",
             "maybe",
@@ -614,11 +620,14 @@
             "st",
             "strings",
             "tailrec",
+            "tidy",
+            "tidy-codegen",
             "transformers",
             "tuples",
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
+            "unicode",
             "unsafe-coerce",
             "variant"
           ]
@@ -3152,6 +3161,25 @@
         "type-equality"
       ]
     },
+    "dodo-printer": {
+      "type": "registry",
+      "version": "2.2.3",
+      "integrity": "sha256-+XQtWgt+ybwvQb+QbJ60wm4/hxGRAQoSmeR+Se+ZT7I=",
+      "dependencies": [
+        "ansi",
+        "either",
+        "foldable-traversable",
+        "integers",
+        "lists",
+        "maybe",
+        "newtype",
+        "partial",
+        "prelude",
+        "safe-coerce",
+        "strings",
+        "tuples"
+      ]
+    },
     "effect": {
       "type": "registry",
       "version": "4.0.0",
@@ -3393,6 +3421,40 @@
         "foreign",
         "integers",
         "now"
+      ]
+    },
+    "language-cst-parser": {
+      "type": "registry",
+      "version": "0.14.1",
+      "integrity": "sha256-LJzh1ZTaKjcrHx95ZfO2La3w6Xb/IZQT3m2Nuj4n1dM=",
+      "dependencies": [
+        "arrays",
+        "const",
+        "control",
+        "effect",
+        "either",
+        "enums",
+        "foldable-traversable",
+        "free",
+        "functions",
+        "functors",
+        "identity",
+        "integers",
+        "lazy",
+        "lists",
+        "maybe",
+        "newtype",
+        "numbers",
+        "ordered-collections",
+        "partial",
+        "prelude",
+        "st",
+        "strings",
+        "transformers",
+        "tuples",
+        "typelevel-prelude",
+        "unfoldable",
+        "unsafe-coerce"
       ]
     },
     "lazy": {
@@ -3979,6 +4041,62 @@
         "refs"
       ]
     },
+    "tidy": {
+      "type": "registry",
+      "version": "0.11.1",
+      "integrity": "sha256-SaZquYd0iGmueAFjAqrTgdfWEAKPQUsLKanClbl5m5k=",
+      "dependencies": [
+        "arrays",
+        "control",
+        "dodo-printer",
+        "either",
+        "foldable-traversable",
+        "language-cst-parser",
+        "lists",
+        "maybe",
+        "newtype",
+        "ordered-collections",
+        "partial",
+        "prelude",
+        "strings",
+        "tuples"
+      ]
+    },
+    "tidy-codegen": {
+      "type": "registry",
+      "version": "4.0.1",
+      "integrity": "sha256-VOblhGfWSyi+6X0/u4XLmddq62F9PWJ4Sd0qhCgOQY4=",
+      "dependencies": [
+        "arrays",
+        "bifunctors",
+        "control",
+        "dodo-printer",
+        "effect",
+        "either",
+        "enums",
+        "foldable-traversable",
+        "free",
+        "identity",
+        "integers",
+        "language-cst-parser",
+        "lazy",
+        "lists",
+        "maybe",
+        "newtype",
+        "ordered-collections",
+        "partial",
+        "prelude",
+        "record",
+        "safe-coerce",
+        "st",
+        "strings",
+        "tidy",
+        "transformers",
+        "tuples",
+        "type-equality",
+        "unicode"
+      ]
+    },
     "transformers": {
       "type": "registry",
       "version": "6.1.0",
@@ -4036,6 +4154,16 @@
         "partial",
         "prelude",
         "tuples"
+      ]
+    },
+    "unicode": {
+      "type": "registry",
+      "version": "6.0.0",
+      "integrity": "sha256-QJnTVZpmihEAUiMeYrfkusVoziJWp2hJsgi9bMQLue8=",
+      "dependencies": [
+        "foldable-traversable",
+        "maybe",
+        "strings"
       ]
     },
     "unsafe-coerce": {

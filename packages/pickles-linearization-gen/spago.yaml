@@ -13,6 +13,7 @@ package:
     - node-process
     - prelude
     - simple-json
+    - tidy-codegen
     - tuples
   build:
     strict: true
