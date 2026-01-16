@@ -6,6 +6,7 @@ import Control.Monad.Gen (chooseInt)
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
+import Data.Maybe (fromJust)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
@@ -16,6 +17,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
+import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
@@ -30,8 +32,8 @@ import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary, (===))
-import Test.QuickCheck.Gen (randomSample')
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.QuickCheck.Gen (randomSample', randomSampleOne)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', circuitSpecPureInputs, satisfied)
 import Test.Spec (Spec, before, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 import Test.Spec.QuickCheck (quickCheck)
@@ -59,6 +61,9 @@ spec = do
           reifyType n \pn ->
             hashVecCircuitTests (Proxy :: Proxy Pallas.BaseField) pn
 
+      it "Can handle edge cases" do
+        checkEdgeCases (Proxy :: Proxy Pallas.BaseField)
+
     describe "Vesta" do
       hashTests (Proxy :: Proxy Vesta.BaseField)
       spongeTests (Proxy :: Proxy Vesta.BaseField)
@@ -71,13 +76,29 @@ spec = do
           Console.log $ "Checking for size " <> show n
           reifyType n \pn ->
             hashVecCircuitTests (Proxy :: Proxy Vesta.BaseField) pn
+      it "Can handle edge cases" do
+        checkEdgeCases (Proxy :: Proxy Vesta.BaseField)
 
   where
+  checkEdgeCases
+    :: forall f f'
+     . Poseidon.PoseidonField f
+    => PrimeField f
+    => Kimchi.KimchiVerify f f'
+    => Proxy f
+    -> Aff Unit
+  checkEdgeCases pf = do
+    x <- liftEffect $ randomSampleOne arbitrary
+    for_ [ [], [ zero ], [ zero, zero ], [ zero, zero, zero ], [ F x ], [ F x, zero ], [ F x, zero, zero ] ] \v ->
+      reifyType (Array.length v) \pn -> do
+        let v' = unsafePartial fromJust $ Vector.toVector' pn v
+        Console.log $ "Testing edge case " <> show v'
+        hashVecEdgeCase pf v'
+
   genLengths :: Aff (Array Int)
   genLengths = liftEffect do
     ns <- randomSample' 3 $ chooseInt 1 17
-    --TODO: the test case for 0 is failing
-    pure $ 1 : 2 : Array.nub ns
+    pure $ 0 : 1 : 2 : Array.nub ns
 
 hashTests
   :: forall f
@@ -94,6 +115,27 @@ hashTests _ = describe "Hash" do
   it "update then digest equals hash" do
     quickCheck \(inputs :: Array f) ->
       hash inputs === digest (update initialState inputs)
+
+  describe "edge cases" do
+    it "empty array" do
+      hash ([] :: Array f) `shouldEqual` Poseidon.hash []
+
+    it "[zero]" do
+      hash [ zero ] `shouldEqual` Poseidon.hash ([ zero ] :: Array f)
+
+    it "[zero, zero]" do
+      hash [ zero, zero ] `shouldEqual` Poseidon.hash ([ zero, zero ] :: Array f)
+
+    it "[zero, zero, zero]" do
+      hash [ zero, zero, zero ] `shouldEqual` Poseidon.hash ([ zero, zero, zero ] :: Array f)
+
+    it "[x] for arbitrary x" do
+      quickCheck \(x :: f) ->
+        hash [ x ] === Poseidon.hash [ x ]
+
+    it "[x, zero, zero] for arbitrary x" do
+      quickCheck \(x :: f) ->
+        hash [ x, zero, zero ] === Poseidon.hash [ x, zero, zero ]
 
 spongeTests
   :: forall f
@@ -211,3 +253,35 @@ hashVecCircuitTests _ pn = do
     , postCondition: Kimchi.postCondition
     }
     genInputs
+
+-- | Test hashVec circuit with a specific input
+hashVecEdgeCase
+  :: forall f f' n
+   . Poseidon.PoseidonField f
+  => Reflectable n Int
+  => PrimeField f
+  => Kimchi.KimchiVerify f f'
+  => Proxy f
+  -> Vector n (F f)
+  -> Aff Unit
+hashVecEdgeCase _ input = do
+  let
+    referenceHash :: Vector n (F f) -> Digest (F f)
+    referenceHash xs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable xs))
+
+    solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
+    s = compilePure
+      (Proxy @(Vector n (F f)))
+      (Proxy @((Digest (F f))))
+      (Proxy @(KimchiConstraint f))
+      (\x -> Checked.hashVec (Vector.toUnfoldable x))
+      Kimchi.initialState
+
+  circuitSpecPureInputs
+    { builtState: s
+    , checker: eval
+    , solver: solver
+    , testFunction: satisfied referenceHash
+    , postCondition: Kimchi.postCondition
+    }
+    [ input ]

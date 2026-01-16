@@ -112,6 +112,8 @@ hash2 a b = do
 -- |
 -- | The input vector is chunked into rate-sized blocks (2 elements each),
 -- | and each block is absorbed with a permutation.
+-- | For empty input, a single block of zeros is processed to match the
+-- | pure implementation behavior.
 update
   :: forall f t m
    . PoseidonField f
@@ -125,9 +127,12 @@ update initState inputs = do
     blocks =
       let
         n = Array.length inputs
+        -- Pad to even length
         as = if odd n then inputs `Array.snoc` (const_ zero) else inputs
+        -- Ensure at least one block for empty input (matching pure impl)
+        as' = if n == 0 then [ const_ zero, const_ zero ] else as
       in
-        unsafePartial fromJust $ traverse (Vector.toVector @2) (Vector.chunk 2 as)
+        unsafePartial fromJust $ traverse (Vector.toVector @2) (Vector.chunk 2 as')
 
   -- Fold over blocks, updating state with each
   foldM updateBlock initState blocks
