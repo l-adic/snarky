@@ -64,10 +64,10 @@ test-pickles: build-crypto gen-linearization ## Test pickles package (requires c
 	cd packages/pickles && npx spago test
 
 test-all: ## Test all packages with proper crypto provider
+	$(MAKE) build-ps
 	@echo "=== Generating Linearization Code ==="
 	$(MAKE) gen-linearization
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
-	$(MAKE) build-ps
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
 	@echo "=== Testing Poseidon Hash Package ==="
