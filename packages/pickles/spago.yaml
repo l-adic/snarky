@@ -1,0 +1,27 @@
+package:
+  name: pickles
+  dependencies:
+    - arrays
+    - control
+    - curves
+    - effect
+    - either
+    - foldable-traversable
+    - foreign
+    - js-bigints
+    - maybe
+    - poseidon
+    - prelude
+    - simple-json
+    - snarky
+    - snarky-curves
+    - tuples
+    - vector-sized
+  build:
+    strict: true
+  test:
+    main: Test.Pickles.Linearization
+    dependencies:
+      - quickcheck
+      - spec
+      - spec-node

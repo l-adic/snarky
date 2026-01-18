@@ -421,3 +421,5 @@ pub use kimchi::verify::{
     verify_pallas_varbasemul, verify_vesta_complete_add, verify_vesta_generic,
     verify_vesta_poseidon_gadget, verify_vesta_varbasemul,
 };
+
+pub use kimchi::test_linearization::{evaluate_pallas_linearization, evaluate_vesta_linearization};

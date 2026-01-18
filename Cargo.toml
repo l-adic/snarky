@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "packages/crypto-provider",
-    "packages/gen-linearization",
+    "packages/pickles-codegen/rust",
 ]
 
 [workspace.dependencies]
@@ -17,6 +17,7 @@ ark-r1cs-std = "0.5.0"
 ark-relations = "0.5.0"
 ark-serialize = "0.5.0"
 ark-snark = "0.5.0"
+ark-poly = "0.5.0"
 rand = { version = "0.8", features = ["std_rng"] }
 rand_chacha = "0.3"
 num-bigint = "0.4.4"

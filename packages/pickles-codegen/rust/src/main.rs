@@ -1,10 +1,11 @@
 //! Generate JSON files containing the Kimchi constraint linearization polynomials.
 //!
-//! Usage: gen-linearization <output-directory>
+//! Environment variables:
+//!   - LINEARIZATION_JSON_DIR: Directory to write output files
 //!
 //! Outputs:
-//!   - <output-directory>/linearization_fp.json (Pallas scalar field / Vesta base field)
-//!   - <output-directory>/linearization_fq.json (Vesta scalar field / Pallas base field)
+//!   - $LINEARIZATION_JSON_DIR/pallas_scalar_field.json
+//!   - $LINEARIZATION_JSON_DIR/vesta_scalar_field.json
 
 use ark_ff::PrimeField;
 use kimchi::{
@@ -54,7 +55,14 @@ fn constant_term_to_hex<F: PrimeField>(term: &ConstantTerm<F>) -> ConstantTermHe
         },
         ConstantTerm::Literal(x) => {
             let bigint: num_bigint::BigUint = (*x).into_bigint().into();
-            ConstantTermHex::Literal(format!("0x{bigint:0>64X}"))
+            let hex_str = format!("{bigint:X}");
+            // Ensure even number of hex digits for proper parsing
+            let padded = if hex_str.len() % 2 == 1 {
+                format!("0x0{hex_str}")
+            } else {
+                format!("0x{hex_str}")
+            };
+            ConstantTermHex::Literal(padded)
         }
     }
 }
@@ -119,14 +127,10 @@ fn generate_linearization_json<F: PrimeField>() -> String {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let output_dir_str = env::var("LINEARIZATION_JSON_DIR")
+        .expect("LINEARIZATION_JSON_DIR environment variable not set");
 
-    if args.len() != 2 {
-        eprintln!("Usage: {} <output-directory>", args[0]);
-        std::process::exit(1);
-    }
-
-    let output_dir = Path::new(&args[1]);
+    let output_dir = Path::new(&output_dir_str);
 
     if !output_dir.exists() {
         fs::create_dir_all(output_dir).expect("Failed to create output directory");

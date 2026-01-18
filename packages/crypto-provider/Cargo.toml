@@ -26,6 +26,7 @@ ark-r1cs-std = { workspace = true }
 ark-relations = { workspace = true }
 ark-serialize = { workspace = true }
 ark-snark = { workspace = true }
+ark-poly = { workspace = true }
 
 # napi
 napi = { workspace = true }

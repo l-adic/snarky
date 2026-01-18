@@ -1,13 +1,9 @@
 -- | Environment for evaluating Kimchi constraint linearization polynomials.
 -- | This record provides all operations and values needed to evaluate
 -- | the Polish notation expressions in the linearization.
-module Snarky.Pickles.Linearization.Env
+module Pickles.Linearization.Env
   ( Env
-  , Column(..)
-  , CurrOrNext(..)
-  , GateType(..)
-  , LookupPattern(..)
-  , FeatureFlag(..)
+  , module ReExports
   , EvalPoint
   , Challenges
   , circuitEnv
@@ -19,82 +15,22 @@ import Prelude
 import Data.Fin (unsafeFinite)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
+import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
+import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon.Class (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.CVar (CVar(..))
+import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Field (pow_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
+import Snarky.Circuit.DSL.Monad (mul_) as Circuit
 import Snarky.Circuit.Types (FVar)
-import Snarky.Curves.Class (class HasEndo, endoScalar, pow)
+import Snarky.Curves.Class (class HasEndo, endoBase, pow)
 import Type.Proxy (Proxy(..))
-
--- | Gate types used in Index columns
-data GateType
-  = CompleteAdd
-  | EndoMul
-  | EndoMulScalar
-  | ForeignFieldAdd
-  | ForeignFieldMul
-  | Generic
-  | Poseidon
-  | RangeCheck0
-  | RangeCheck1
-  | Rot64
-  | VarBaseMul
-  | Xor16
-
-derive instance Eq GateType
-derive instance Ord GateType
-
--- | Lookup pattern types
-data LookupPattern
-  = LookupPatternXor
-  | LookupPatternLookup
-  | LookupPatternRangeCheck
-  | LookupPatternForeignFieldMul
-
-derive instance Eq LookupPattern
-derive instance Ord LookupPattern
-
--- | Feature flags for conditional gate inclusion
-data FeatureFlag
-  = FeatureForeignFieldAdd
-  | FeatureForeignFieldMul
-  | FeatureLookupTables
-  | FeatureRangeCheck0
-  | FeatureRangeCheck1
-  | FeatureRot
-  | FeatureRuntimeLookupTables
-  | FeatureXor
-  | FeatureLookupPattern LookupPattern
-  | FeatureLookupsPerRow Int
-  | FeatureTableWidth Int
-
-derive instance Eq FeatureFlag
-derive instance Ord FeatureFlag
-
--- | Column types in the constraint system
-data Column
-  = Witness Int
-  | Coefficient Int
-  | Index GateType
-  | LookupAggreg
-  | LookupKindIndex Int
-  | LookupRuntimeSelector
-  | LookupRuntimeTable
-  | LookupSorted Int
-  | LookupTable
-
-derive instance Eq Column
-derive instance Ord Column
-
--- | Row offset (current or next)
-data CurrOrNext = Curr | Next
-
-derive instance Eq CurrOrNext
-derive instance Ord CurrOrNext
 
 -- | Environment providing operations for polynomial evaluation.
 -- | The type parameter 'a' is the field type being used.
+-- | Note: add/sub/mul are passed explicitly to avoid typeclass dictionary overhead
+-- | in large generated expressions.
 type Env a =
   { add :: a -> a -> a
   , sub :: a -> a -> a
@@ -119,7 +55,7 @@ type Env a =
 type EvalPoint a =
   { witness :: CurrOrNext -> Int -> a
   , coefficient :: Int -> a
-  , index :: GateType -> a
+  , index :: CurrOrNext -> GateType -> a -- Takes row for Curr/Next evaluation
   , lookupAggreg :: CurrOrNext -> a
   , lookupSorted :: CurrOrNext -> Int -> a
   , lookupTable :: CurrOrNext -> a
@@ -140,10 +76,12 @@ type Challenges a =
   }
 
 -- | Construct a field environment for direct evaluation of linearization polynomials
+-- | Note: HasEndo f f' constraint means f is our working field and endoBase gives us
+-- | the endo coefficient in that field (e.g., for Pallas base field, we get Pallas endo base)
 fieldEnv
-  :: forall f
+  :: forall f f'
    . PoseidonField f
-  => HasEndo f f
+  => HasEndo f f'
   => EvalPoint f
   -> Challenges f
   -> (String -> f) -- field literal parser
@@ -157,36 +95,39 @@ fieldEnv evalPoint challenges parseField =
   , cell: identity
   , alphaPow: \n -> pow challenges.alpha (fromInt n)
   , mds: \{ row, col } -> lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient: endoScalar
+  , endoCoefficient: endoBase
   , field: parseField
   , vanishesOnZeroKnowledgeAndPreviousRows: challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: challenges.unnormalizedLagrangeBasis
   , jointCombiner: challenges.jointCombiner
   , beta: challenges.beta
   , gamma: challenges.gamma
-  , ifFeature: \{ onTrue } -> onTrue unit
+  -- All features are treated as disabled for testing, matching Rust behavior.
+  -- SkipIfNot(feat): skip when feature disabled → use onFalse (push zero)
+  -- SkipIf(feat): don't skip when feature disabled → use onTrue (evaluated)
+  , ifFeature: \{ onFalse } -> onFalse unit
   }
 
 -- | Construct a circuit environment for evaluating linearization polynomials
 circuitEnv
-  :: forall f c t m
+  :: forall f f' c t m
    . CircuitM f c t m
   => PoseidonField f
-  => HasEndo f f
+  => HasEndo f f'
   => EvalPoint (FVar f)
   -> Challenges (FVar f)
   -> (String -> f) -- field literal parser
   -> Env (Snarky c t m (FVar f))
 circuitEnv evalPoint challenges parseField =
-  { add: \x y -> x + y
-  , sub: \x y -> x - y
-  , mul: \x y -> x * y
+  { add: \x y -> CVar.add_ <$> x <*> y
+  , sub: \x y -> CVar.sub_ <$> x <*> y
+  , mul: \x y -> join (Circuit.mul_ <$> x <*> y)
   , pow: \x n -> x >>= \v -> pow_ v n
   , var: \col row -> pure $ lookupCell evalPoint col row
   , cell: identity -- cell is identity since var already returns the value
   , alphaPow: \n -> pow_ challenges.alpha n
   , mds: \{ row, col } -> pure $ Const $ lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient: pure $ Const (endoScalar :: f)
+  , endoCoefficient: pure $ Const (endoBase :: f)
   , field: \hex -> pure $ Const $ parseField hex
   , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args
@@ -209,7 +150,7 @@ lookupCell :: forall a. EvalPoint a -> Column -> CurrOrNext -> a
 lookupCell ep col row = case col of
   Witness i -> ep.witness row i
   Coefficient i -> ep.coefficient i
-  Index g -> ep.index g
+  Index g -> ep.index row g -- Pass row to handle Curr/Next evaluation
   LookupAggreg -> ep.lookupAggreg row
   LookupSorted i -> ep.lookupSorted row i
   LookupTable -> ep.lookupTable row
