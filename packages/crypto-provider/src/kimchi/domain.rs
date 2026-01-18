@@ -21,25 +21,23 @@ use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 /// Where:
 /// - n is the domain size (2^domain_log2)
 /// - ω is the domain generator
-/// - i is the offset (possibly adjusted by zk_rows if zk_rows is true)
+/// - i is the offset (possibly adjusted by zk_rows)
 ///
-/// The `zk_rows` flag indicates whether to offset the index by the number of
-/// zero-knowledge rows (which shifts the index into the "padding" region).
+/// When `zk_rows > 0`, the index is computed as: domain_size - zk_rows + offset,
+/// which shifts the index into the zero-knowledge padding region.
 fn unnormalized_lagrange_basis<F: FftField>(
     domain_log2: u32,
-    zk_rows: bool,
+    zk_rows: u32,
     offset: i32,
     pt: F,
 ) -> F {
     let domain = Radix2EvaluationDomain::<F>::new(1 << domain_log2).expect("Invalid domain size");
 
     // Compute the actual index, accounting for zk_rows if needed
-    // When zk_rows is true, we're computing a Lagrange basis that accounts for
+    // When zk_rows > 0, we're computing a Lagrange basis that accounts for
     // the zero-knowledge rows at the end of the domain
-    let actual_offset = if zk_rows {
-        // Typically zk_rows = 3 in Kimchi, offset into the ZK region
-        let zk_rows_count = 3i32; // Standard Kimchi ZK rows
-        (domain.size() as i32) - zk_rows_count + offset
+    let actual_offset = if zk_rows > 0 {
+        (domain.size() as i32) - (zk_rows as i32) + offset
     } else {
         offset
     };
@@ -91,7 +89,7 @@ fn eval_vanishes_on_last_n_rows<F: FftField>(domain_log2: u32, n: u64, pt: F) ->
 #[napi]
 pub fn pallas_unnormalized_lagrange_basis(
     domain_log2: u32,
-    zk_rows: bool,
+    zk_rows: u32,
     offset: i32,
     pt: &PallasBaseFieldExternal,
 ) -> PallasBaseFieldExternal {
@@ -124,7 +122,7 @@ pub fn pallas_vanishes_on_zk_and_previous_rows(
 #[napi]
 pub fn vesta_unnormalized_lagrange_basis(
     domain_log2: u32,
-    zk_rows: bool,
+    zk_rows: u32,
     offset: i32,
     pt: &VestaBaseFieldExternal,
 ) -> VestaBaseFieldExternal {

@@ -92,7 +92,8 @@ buildChallenges alpha beta gamma jointCombiner zeta =
   , unnormalizedLagrangeBasis: \rowOffset ->
       FFI.pallasUnnormalizedLagrangeBasis
         { domainLog2
-        , zkRows: rowOffset.zkRows
+        -- Convert Boolean flag to actual zkRows count
+        , zkRows: if rowOffset.zkRows then zkRows else 0
         , offset: rowOffset.offset
         , pt: zeta
         }

@@ -65,9 +65,10 @@ evaluateVestaLinearization = evaluateVestaLinearizationImpl
 
 -- | Compute unnormalized Lagrange basis for Pallas base field
 -- | (pt^n - 1) / (pt - ω^i)
+-- | When zkRows > 0, offsets into the ZK padding region
 foreign import pallasUnnormalizedLagrangeBasisImpl
   :: { domainLog2 :: Int
-     , zkRows :: Boolean
+     , zkRows :: Int
      , offset :: Int
      , pt :: Pallas.BaseField
      }
@@ -75,7 +76,7 @@ foreign import pallasUnnormalizedLagrangeBasisImpl
 
 pallasUnnormalizedLagrangeBasis
   :: { domainLog2 :: Int
-     , zkRows :: Boolean
+     , zkRows :: Int
      , offset :: Int
      , pt :: Pallas.BaseField
      }
@@ -85,7 +86,7 @@ pallasUnnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasisImpl
 -- | Compute unnormalized Lagrange basis for Vesta base field
 foreign import vestaUnnormalizedLagrangeBasisImpl
   :: { domainLog2 :: Int
-     , zkRows :: Boolean
+     , zkRows :: Int
      , offset :: Int
      , pt :: Vesta.BaseField
      }
@@ -93,7 +94,7 @@ foreign import vestaUnnormalizedLagrangeBasisImpl
 
 vestaUnnormalizedLagrangeBasis
   :: { domainLog2 :: Int
-     , zkRows :: Boolean
+     , zkRows :: Int
      , offset :: Int
      , pt :: Vesta.BaseField
      }
