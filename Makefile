@@ -60,7 +60,12 @@ test-merkle-tree: build-crypto ## Test merkle-tree package
 test-example: build-crypto ## Test example package
 	cd packages/example && npx spago test
 
+test-pickles: build-crypto gen-linearization ## Test pickles package (requires codegen)
+	cd packages/pickles && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
+	@echo "=== Generating Linearization Code ==="
+	$(MAKE) gen-linearization
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) build-ps
 	$(MAKE) test-curves
@@ -77,8 +82,10 @@ test-all: ## Test all packages with proper crypto provider
 	$(MAKE) test-example
 	@echo "=== Testing Bulletproofs Backend ==="
 	$(MAKE) test-bulletproofs  
-	@echo "=== Testing Groth16 Backend ===" 
+	@echo "=== Testing Groth16 Backend ==="
 	$(MAKE) test-groth16
+	@echo "=== Testing Pickles Linearization ==="
+	$(MAKE) test-pickles
 	@echo "=== All tests completed successfully ==="
 
 test: test-all ## Test everything
@@ -99,9 +106,8 @@ cargo-fmt: ## Format all Rust code in workspace
 cargo-clippy: ## Run clippy lints on workspace
 	cargo clippy --workspace -- -D warnings
 
-gen-linearization: ## Generate Kimchi linearization JSON files
-	@mkdir -p packages/snarky-kimchi/generated
-	cargo run -p gen-linearization --release -- packages/snarky-kimchi/generated
+gen-linearization: build-crypto ## Generate Kimchi linearization PureScript modules
+	cd packages/pickles-codegen && $(MAKE) generate
 
 lint: ## Format, tidy, and lint all code (Rust + PureScript)
 	cargo fmt --all

@@ -21,7 +21,7 @@ generate: json purescript
 json:
 	@echo "==> Generating linearization JSON from Kimchi..."
 	@mkdir -p $(JSON_DIR)
-	cd ../.. && cargo run --release -p gen-linearization
+	cd ../.. && LINEARIZATION_JSON_DIR=$(CURDIR)/$(JSON_DIR) cargo run --release -p gen-linearization
 	@echo "==> JSON files generated in $(JSON_DIR)"
 
 # Step 2: Generate PureScript from JSON
