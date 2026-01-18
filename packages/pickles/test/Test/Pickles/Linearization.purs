@@ -183,8 +183,8 @@ spec = describe "Linearization Interpreter" do
           jointCombiner
           zeta
 
-      -- Call Rust evaluator (pure, despite returning Effect)
-      let rustResult = FFI.evaluatePallasLinearizationPure ffiInput
+      -- Call Rust evaluator
+      let rustResult = FFI.evaluatePallasLinearization ffiInput
 
       -- Both should produce the same result
       pure $ psResult === rustResult
