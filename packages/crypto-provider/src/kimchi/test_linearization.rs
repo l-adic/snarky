@@ -29,7 +29,7 @@ use kimchi::circuits::gate::CurrOrNext;
 use kimchi::circuits::wires::COLUMNS;
 use kimchi::linearization::{constraints_expr, linearization_columns};
 use kimchi::proof::PointEvaluations;
-use mina_curves::pasta::{Fp, Fq, Pallas, Vesta};
+use mina_curves::pasta::{Pallas, Vesta};
 use mina_poseidon::pasta::{fp_kimchi, fq_kimchi};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -37,8 +37,11 @@ use poly_commitment::ipa::endos;
 use std::collections::HashMap;
 use std::ops::Index;
 
-use crate::pasta::pallas::scalar_field::FieldExternal as FqExternal;
-use crate::pasta::vesta::scalar_field::FieldExternal as FpExternal;
+// Import field types with clear names
+use crate::pasta::types::{PallasBaseField, VestaBaseField};
+// External FFI types for field elements
+use crate::pasta::pallas::scalar_field::FieldExternal as VestaBaseFieldExternal;
+use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 
 /// Number of witness columns
 const WITNESS_COLS: usize = COLUMNS;
@@ -302,47 +305,47 @@ fn evaluate_polish_tokens<
 }
 
 /// Get the Pallas linearization constant term as Polish tokens
-fn get_pallas_linearization() -> Vec<PolishToken<Fp, Column, BerkeleyChallengeTerm>> {
-    let evaluated_cols = linearization_columns::<Fp>(None);
-    let (expr, _powers_of_alpha) = constraints_expr::<Fp>(None, true);
+fn get_pallas_linearization() -> Vec<PolishToken<PallasBaseField, Column, BerkeleyChallengeTerm>> {
+    let evaluated_cols = linearization_columns::<PallasBaseField>(None);
+    let (expr, _powers_of_alpha) = constraints_expr::<PallasBaseField>(None, true);
     let linearization = expr.linearize(evaluated_cols).unwrap();
     linearization.constant_term.to_polish()
 }
 
 /// Get the Vesta linearization constant term as Polish tokens
-fn get_vesta_linearization() -> Vec<PolishToken<Fq, Column, BerkeleyChallengeTerm>> {
-    let evaluated_cols = linearization_columns::<Fq>(None);
-    let (expr, _powers_of_alpha) = constraints_expr::<Fq>(None, true);
+fn get_vesta_linearization() -> Vec<PolishToken<VestaBaseField, Column, BerkeleyChallengeTerm>> {
+    let evaluated_cols = linearization_columns::<VestaBaseField>(None);
+    let (expr, _powers_of_alpha) = constraints_expr::<VestaBaseField>(None, true);
     let linearization = expr.linearize(evaluated_cols).unwrap();
     linearization.constant_term.to_polish()
 }
 
 /// Evaluate the Pallas linearization polynomial with given inputs
-/// All field elements are passed as External<Fp> (= VestaScalarField = Pallas base field)
+/// All field elements are passed as External<PallasBaseField> (= VestaScalarField = Pallas base field)
 #[napi]
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_pallas_linearization(
     // Challenges
-    alpha: &FpExternal,
-    beta: &FpExternal,
-    gamma: &FpExternal,
-    joint_combiner: &FpExternal,
+    alpha: &PallasBaseFieldExternal,
+    beta: &PallasBaseFieldExternal,
+    gamma: &PallasBaseFieldExternal,
+    joint_combiner: &PallasBaseFieldExternal,
     // Witness evaluations: flattened array [col0_curr, col0_next, col1_curr, col1_next, ...]
-    witness_evals: Vec<&FpExternal>,
+    witness_evals: Vec<&PallasBaseFieldExternal>,
     // Coefficient evaluations
-    coefficient_evals: Vec<&FpExternal>,
+    coefficient_evals: Vec<&PallasBaseFieldExternal>,
     // Index evaluations [poseidon_curr, poseidon_next, generic_curr, generic_next, ...]
-    poseidon_index: Vec<&FpExternal>,
-    generic_index: Vec<&FpExternal>,
-    varbasemul_index: Vec<&FpExternal>,
-    endomul_index: Vec<&FpExternal>,
-    endomul_scalar_index: Vec<&FpExternal>,
-    complete_add_index: Vec<&FpExternal>,
+    poseidon_index: Vec<&PallasBaseFieldExternal>,
+    generic_index: Vec<&PallasBaseFieldExternal>,
+    varbasemul_index: Vec<&PallasBaseFieldExternal>,
+    endomul_index: Vec<&PallasBaseFieldExternal>,
+    endomul_scalar_index: Vec<&PallasBaseFieldExternal>,
+    complete_add_index: Vec<&PallasBaseFieldExternal>,
     // Other inputs
-    vanishes_on_zk: &FpExternal,
-    zeta: &FpExternal,
+    vanishes_on_zk: &PallasBaseFieldExternal,
+    zeta: &PallasBaseFieldExternal,
     domain_log2: u32,
-) -> Result<FpExternal> {
+) -> Result<PallasBaseFieldExternal> {
     // Parse challenges
     let challenges = Challenges {
         alpha: **alpha,
@@ -352,7 +355,7 @@ pub fn evaluate_pallas_linearization(
     };
 
     // Build column evaluations
-    let mut evals = TestColumnEvaluations::<Fp>::new_zero();
+    let mut evals = TestColumnEvaluations::<PallasBaseField>::new_zero();
 
     // Parse witness evaluations (flattened: [col0_curr, col0_next, col1_curr, ...])
     for col in 0..WITNESS_COLS {
@@ -406,7 +409,7 @@ pub fn evaluate_pallas_linearization(
     }
 
     // Create domain
-    let domain = Radix2EvaluationDomain::<Fp>::new(1 << domain_log2)
+    let domain = Radix2EvaluationDomain::<PallasBaseField>::new(1 << domain_log2)
         .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid domain size"))?;
 
     // Create constants
@@ -437,31 +440,31 @@ pub fn evaluate_pallas_linearization(
 }
 
 /// Evaluate the Vesta linearization polynomial with given inputs
-/// All field elements are passed as External<Fq> (= PallasScalarField = Vesta base field)
+/// All field elements are passed as External<VestaBaseField> (= PallasScalarField = Vesta base field)
 #[napi]
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_vesta_linearization(
     // Challenges
-    alpha: &FqExternal,
-    beta: &FqExternal,
-    gamma: &FqExternal,
-    joint_combiner: &FqExternal,
+    alpha: &VestaBaseFieldExternal,
+    beta: &VestaBaseFieldExternal,
+    gamma: &VestaBaseFieldExternal,
+    joint_combiner: &VestaBaseFieldExternal,
     // Witness evaluations: flattened array [col0_curr, col0_next, col1_curr, col1_next, ...]
-    witness_evals: Vec<&FqExternal>,
+    witness_evals: Vec<&VestaBaseFieldExternal>,
     // Coefficient evaluations
-    coefficient_evals: Vec<&FqExternal>,
+    coefficient_evals: Vec<&VestaBaseFieldExternal>,
     // Index evaluations [poseidon_curr, poseidon_next, generic_curr, generic_next, ...]
-    poseidon_index: Vec<&FqExternal>,
-    generic_index: Vec<&FqExternal>,
-    varbasemul_index: Vec<&FqExternal>,
-    endomul_index: Vec<&FqExternal>,
-    endomul_scalar_index: Vec<&FqExternal>,
-    complete_add_index: Vec<&FqExternal>,
+    poseidon_index: Vec<&VestaBaseFieldExternal>,
+    generic_index: Vec<&VestaBaseFieldExternal>,
+    varbasemul_index: Vec<&VestaBaseFieldExternal>,
+    endomul_index: Vec<&VestaBaseFieldExternal>,
+    endomul_scalar_index: Vec<&VestaBaseFieldExternal>,
+    complete_add_index: Vec<&VestaBaseFieldExternal>,
     // Other inputs
-    vanishes_on_zk: &FqExternal,
-    zeta: &FqExternal,
+    vanishes_on_zk: &VestaBaseFieldExternal,
+    zeta: &VestaBaseFieldExternal,
     domain_log2: u32,
-) -> Result<FqExternal> {
+) -> Result<VestaBaseFieldExternal> {
     // Parse challenges
     let challenges = Challenges {
         alpha: **alpha,
@@ -471,7 +474,7 @@ pub fn evaluate_vesta_linearization(
     };
 
     // Build column evaluations
-    let mut evals = TestColumnEvaluations::<Fq>::new_zero();
+    let mut evals = TestColumnEvaluations::<VestaBaseField>::new_zero();
 
     // Parse witness evaluations (flattened: [col0_curr, col0_next, col1_curr, ...])
     for col in 0..WITNESS_COLS {
@@ -525,7 +528,7 @@ pub fn evaluate_vesta_linearization(
     }
 
     // Create domain
-    let domain = Radix2EvaluationDomain::<Fq>::new(1 << domain_log2)
+    let domain = Radix2EvaluationDomain::<VestaBaseField>::new(1 << domain_log2)
         .ok_or_else(|| Error::new(Status::InvalidArg, "Invalid domain size"))?;
 
     // Create constants

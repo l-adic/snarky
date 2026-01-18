@@ -8,11 +8,11 @@ use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-// Note on naming: Fp = Pallas base field = Vesta scalar field
-//                 Fq = Pallas scalar field = Vesta base field
-// The External types follow the same pattern as linearization.rs
-use crate::pasta::pallas::scalar_field::FieldExternal as FqExternal; // External<Fq>
-use crate::pasta::vesta::scalar_field::FieldExternal as FpExternal; // External<Fp>
+// External FFI types for field elements
+// Pallas circuits use PallasBaseField (= VestaScalarField)
+// Vesta circuits use VestaBaseField (= PallasScalarField)
+use crate::pasta::pallas::scalar_field::FieldExternal as VestaBaseFieldExternal;
+use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 
 /// Compute the unnormalized Lagrange basis polynomial evaluated at a point.
 ///
@@ -82,10 +82,10 @@ fn eval_vanishes_on_last_n_rows<F: FftField>(domain_log2: u32, n: u64, pt: F) ->
 }
 
 // ============================================================================
-// PALLAS (Fp = VestaScalarField = PallasBaseField) FFI
+// PALLAS circuits (use PallasBaseField)
 // ============================================================================
 
-/// Compute unnormalized Lagrange basis for Pallas base field (Fp).
+/// Compute unnormalized Lagrange basis for Pallas base field.
 ///
 /// Used in linearization evaluation for Pallas-based circuits.
 #[napi]
@@ -93,8 +93,8 @@ pub fn pallas_unnormalized_lagrange_basis(
     domain_log2: u32,
     zk_rows: bool,
     offset: i32,
-    pt: &FpExternal,
-) -> FpExternal {
+    pt: &PallasBaseFieldExternal,
+) -> PallasBaseFieldExternal {
     let result = unnormalized_lagrange_basis(domain_log2, zk_rows, offset, **pt);
     External::new(result)
 }
@@ -107,18 +107,18 @@ pub fn pallas_unnormalized_lagrange_basis(
 pub fn pallas_vanishes_on_zk_and_previous_rows(
     domain_log2: u32,
     zk_rows: u32,
-    pt: &FpExternal,
-) -> FpExternal {
+    pt: &PallasBaseFieldExternal,
+) -> PallasBaseFieldExternal {
     // Type inferred from pt
     let result = eval_vanishes_on_last_n_rows(domain_log2, (zk_rows + 1) as u64, **pt);
     External::new(result)
 }
 
 // ============================================================================
-// VESTA (Fq = PallasScalarField = VestaBaseField) FFI
+// VESTA circuits (use VestaBaseField)
 // ============================================================================
 
-/// Compute unnormalized Lagrange basis for Vesta base field (Fq).
+/// Compute unnormalized Lagrange basis for Vesta base field.
 ///
 /// Used in linearization evaluation for Vesta-based circuits.
 #[napi]
@@ -126,8 +126,8 @@ pub fn vesta_unnormalized_lagrange_basis(
     domain_log2: u32,
     zk_rows: bool,
     offset: i32,
-    pt: &FqExternal,
-) -> FqExternal {
+    pt: &VestaBaseFieldExternal,
+) -> VestaBaseFieldExternal {
     let result = unnormalized_lagrange_basis(domain_log2, zk_rows, offset, **pt);
     External::new(result)
 }
@@ -140,8 +140,8 @@ pub fn vesta_unnormalized_lagrange_basis(
 pub fn vesta_vanishes_on_zk_and_previous_rows(
     domain_log2: u32,
     zk_rows: u32,
-    pt: &FqExternal,
-) -> FqExternal {
+    pt: &VestaBaseFieldExternal,
+) -> VestaBaseFieldExternal {
     // Type inferred from pt
     let result = eval_vanishes_on_last_n_rows(domain_log2, (zk_rows + 1) as u64, **pt);
     External::new(result)
