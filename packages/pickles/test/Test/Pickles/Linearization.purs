@@ -1,5 +1,25 @@
 module Test.Pickles.Linearization where
 
+-- | This module tests the equivalence of the PureScript Kimchi linearization
+-- | interpreter against the Rust FFI evaluator.
+-- |
+-- | The `buildEvalPoint` function uses a `defaultVal` parameter. This parameter
+-- | serves as a fallback for any column evaluations that are not explicitly
+-- | provided by the test inputs (e.g., `witnessEvals`, `coeffEvals`,
+-- | `indexEvals`). For specific lookup-related evaluations, `defaultVal` is
+-- | always returned.
+-- |
+-- | By typically setting `defaultVal` to `zero` (the field's zero element),
+-- | this test effectively asserts the equivalence of the linearization
+-- | polynomial in a "vanilla" proof system configuration. In this configuration,
+-- | features like lookups, which are not explicitly provided or relevant to the
+-- | `constantTermTokens` being evaluated, are treated as "off" or "zeroed out".
+-- | This is consistent with the Rust FFI evaluator's internal logic, which
+-- | treats all feature flags as disabled to match the OCaml implementation.
+-- | For example, if the Kimchi linearization in `constantTermTokens` refers to
+-- | a lookup column, its value in this test will be zero, as if the lookup
+-- | feature were disabled.
+
 import Prelude
 
 import Data.Array as Array
