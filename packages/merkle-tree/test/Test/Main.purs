@@ -8,7 +8,9 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Data.MerkleTree as DynamicMerkleTree
 import Test.Data.MerkleTree.Sized as SizedMerkleTree
+import Test.Data.MerkleTree.Sparse as SparseMerkleTree
 import Test.Snarky.Circuit.MerkleTree as CircuitMerkleTree
+import Test.Snarky.Circuit.SparseMerkleTree as CircuitSparseMerkleTree
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -22,7 +24,9 @@ main = runSpecAndExitProcess'
     mapSpec nat do
       DynamicMerkleTree.spec
       SizedMerkleTree.spec
+      SparseMerkleTree.spec
     CircuitMerkleTree.spec
+    CircuitSparseMerkleTree.spec
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x
