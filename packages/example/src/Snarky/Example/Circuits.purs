@@ -1,39 +1,50 @@
 module Snarky.Example.Circuits
-  ( class AccountMapM
-  , getAccountId
+  ( addressFromPublicKey
   , getAccount
   , transfer
   ) where
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (Address)
+import Data.MerkleTree.Sized (AddressVar(..))
 import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, exists, read, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, unpack_)
 import Snarky.Circuit.DSL.Assert (assertEq)
 import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest)
+import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Example.Types (Account(..), PublicKey, TokenAmount(..), Transaction(..))
+import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
 
 --------------------------------------------------------------------------------
--- | Advice monad for looking up account addresses from public keys.
+-- | Compute the address for a public key by hashing it
 -- |
--- | This typeclass allows circuits to "conjure" an address from a public key
--- | during witness generation. The prover provides the mapping externally.
-class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
-  getAccountId :: PublicKey (F f) -> m (Address d)
+-- | The address is derived deterministically: address = hash(publicKey) mod 2^depth
+-- | This is computed in-circuit using Poseidon hash.
+addressFromPublicKey
+  :: forall d f t m n rest
+   . Reflectable d Int
+  => PoseidonField f
+  => FieldSizeInBits f n
+  => Add d rest n
+  => CircuitM f (KimchiConstraint f) t m
+  => PublicKey (FVar f)
+  -> Snarky (KimchiConstraint f) t m (AddressVar d f)
+addressFromPublicKey (PublicKey pk) = do
+  -- Hash the public key to get a field element
+  Digest h <- hashVec [ pk ]
+  -- Unpack to bits and take the first d bits as the address
+  allBits <- unpack_ h
+  pure $ AddressVar $ Vector.take @d allBits
 
 --------------------------------------------------------------------------------
 
@@ -61,15 +72,16 @@ assertU64 (TokenAmount v) = do
 -- |
 -- | This circuit:
 -- | 1. Takes the current root and expected public key as inputs
--- | 2. Conjures the address from the public key via AccountMapM
+-- | 2. Computes the address by hashing the public key
 -- | 3. Retrieves the account at that address
 -- | 4. Asserts the account's public key matches the expected public key
 -- | 5. Returns the account
 getAccount
-  :: forall t m f d
+  :: forall t m f d n rest
    . Reflectable d Int
   => PoseidonField f
-  => AccountMapM m f d
+  => FieldSizeInBits f n
+  => Add d rest n
   => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
   => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
@@ -77,10 +89,8 @@ getAccount
   -> PublicKey (FVar f)
   -> Snarky (KimchiConstraint f) t m (Account (FVar f))
 getAccount root expectedPubKey = do
-  -- Conjure the address from the public key
-  addr <- exists do
-    pk <- read expectedPubKey
-    lift $ getAccountId pk
+  -- Compute the address from the public key
+  addr :: AddressVar d f <- addressFromPublicKey expectedPubKey
   -- Get the account from the merkle tree
   account@(Account { publicKey }) <- CMT.get addr root
   -- Assert the public key matches
@@ -90,19 +100,20 @@ getAccount root expectedPubKey = do
 -- | Transfer tokens between accounts.
 -- |
 -- | This circuit:
--- | 1. Conjures addresses for both sender and receiver via AccountMapM
+-- | 1. Computes addresses for both sender and receiver by hashing their public keys
 -- | 2. Fetches sender account, verifies ownership, debits the amount
 -- | 3. Fetches receiver account, verifies ownership, credits the amount
 -- | 4. Returns the new merkle root
 -- |
 -- | Note: Does not check for overflow/underflow.
+-- | TODO: Handle transfer to new accounts (empty slots)
 transfer
-  :: forall t m f d n _k
+  :: forall t m f @d n _k _r
    . Reflectable d Int
   => PoseidonField f
   => FieldSizeInBits f n
   => Add 64 _k n
-  => AccountMapM m f d
+  => Add d _r n
   => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
   => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
@@ -110,13 +121,9 @@ transfer
   -> Transaction (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 transfer root (Transaction { from, to, amount }) = do
-  -- Conjure addresses for sender and receiver
-  fromAddr <- exists do
-    pk <- read from
-    lift $ getAccountId pk
-  toAddr <- exists do
-    pk <- read to
-    lift $ getAccountId pk
+  -- Compute addresses from public keys
+  fromAddr :: AddressVar d f <- addressFromPublicKey from
+  toAddr :: AddressVar d f <- addressFromPublicKey to
   -- Debit sender: verify ownership and subtract amount
   { root: root' } <- CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
     -- Verify sender owns this account
