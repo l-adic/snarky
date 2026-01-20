@@ -70,7 +70,7 @@ spec pc eval postCondition initialState = describe "Field Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -78,7 +78,7 @@ spec pc eval postCondition initialState = describe "Field Circuit Specs" do
           , postCondition: postCondition
           }
           same
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -144,7 +144,7 @@ spec pc eval postCondition initialState = describe "Field Circuit Specs" do
           (pure <<< sum_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: eval
         , solver: solver

@@ -213,7 +213,7 @@ hash2CircuitTests _ = do
       Kimchi.initialState
     genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
-  circuitSpecPure'
+  circuitSpecPure' 100
     { builtState: s
     , checker: eval
     , solver: solver
@@ -245,7 +245,7 @@ hashVecCircuitTests _ pn = do
       Kimchi.initialState
     genInputs = Vector.generator pn (F <$> arbitrary)
 
-  circuitSpecPure'
+  circuitSpecPure' 100
     { builtState: s
     , checker: eval
     , solver: solver

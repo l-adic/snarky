@@ -106,7 +106,7 @@ spec' _ curveName = do
       in
         do
           -- Test that circuit matches reference on random 128-bit boolean arrays
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Kimchi.eval
             , solver: solver

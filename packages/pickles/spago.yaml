@@ -1,31 +1,28 @@
 package:
-  name: random-oracle
+  name: pickles
   dependencies:
     - arrays
+    - control
     - curves
-    - enums
-    - foldable-traversable
-    - integers
+    - foreign
     - js-bigints
     - maybe
-    - newtype
-    - partial
     - poseidon
     - prelude
+    - simple-json
     - snarky
-    - snarky-kimchi
     - tuples
     - vector-sized
+  build:
+    strict: true
   test:
-    main: Test.RandomOracle.Main
+    main: Test.Pickles.Linearization
     dependencies:
-      - aff
-      - console
       - effect
-      - gen
       - newtype
+      - partial
       - quickcheck
+      - snarky-kimchi
       - snarky-test-utils
       - spec
       - spec-node
-      - spec-quickcheck

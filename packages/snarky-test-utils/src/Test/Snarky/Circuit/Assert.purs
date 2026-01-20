@@ -39,7 +39,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
         pure $ F a
     in
       do
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -47,7 +47,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
           , postCondition: postCondition
           }
           gen
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -73,7 +73,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -81,7 +81,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
           , postCondition: postCondition
           }
           distinct
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -107,7 +107,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F a) (F b)
     in
       do
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -115,7 +115,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
           , postCondition: postCondition
           }
           same
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -143,7 +143,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
         pure $ Tuple (F x) (F y)
     in
       do
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver
@@ -151,7 +151,7 @@ spec pc eval postCondition initialState = describe "Assertion Circuit Specs" do
           , postCondition: postCondition
           }
           squares
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: eval
           , solver: solver

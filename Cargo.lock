@@ -476,6 +476,7 @@ dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-groth16",
+ "ark-poly",
  "ark-r1cs-std",
  "ark-relations",
  "ark-serialize",
@@ -763,6 +764,18 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "gen-linearization"
+version = "0.1.0"
+dependencies = [
+ "ark-ff",
+ "kimchi",
+ "mina-curves",
+ "num-bigint",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

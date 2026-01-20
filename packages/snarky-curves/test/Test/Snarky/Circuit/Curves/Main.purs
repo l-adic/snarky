@@ -74,7 +74,7 @@ spec pg pc =
           pure $ Tuple { a: F a, b: F b } { x, y }
       in
         do
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Basic.eval
             , solver: solver
@@ -82,7 +82,7 @@ spec pg pc =
             , postCondition: nullPostCondition
             }
             offCurve
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Basic.eval
             , solver: solver
@@ -116,7 +116,7 @@ spec pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Basic.eval
             , solver: solver
@@ -124,7 +124,7 @@ spec pg pc =
             , postCondition: nullPostCondition
             }
             same
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Basic.eval
             , solver: solver
@@ -147,7 +147,7 @@ spec pg pc =
             initialState
         gen = genAffinePoint pg
       in
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: Basic.eval
           , solver: solver
@@ -181,7 +181,7 @@ spec pg pc =
                 pure $ tuple3 b p1 p2
             ]
       in
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: Basic.eval
           , solver: solver
@@ -214,7 +214,7 @@ spec pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
       in
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: Basic.eval
           , solver: solver
@@ -249,7 +249,7 @@ spec pg pc =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
       in
-        circuitSpecPure'
+        circuitSpecPure' 100
           { builtState: s
           , checker: Basic.eval
           , solver: solver

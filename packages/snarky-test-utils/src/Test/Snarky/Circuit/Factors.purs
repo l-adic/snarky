@@ -70,7 +70,7 @@ spec pc eval postCondition initialState = describe "Factors Specs" do
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' randomSampleOne
+    circuitSpec' 100 randomSampleOne
       { builtState: s
       , checker: eval
       , solver: solver

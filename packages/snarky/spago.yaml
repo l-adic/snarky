@@ -3,9 +3,7 @@ package:
   dependencies:
     - arrays
     - bifunctors
-    - console
     - curves
-    - effect
     - either
     - foldable-traversable
     - identity
@@ -26,6 +24,7 @@ package:
   test:
     main: Test.Snarky.Circuit.Main
     dependencies:
+      - effect
       - snarky-test-utils
       - spec
       - spec-node

@@ -81,7 +81,7 @@ endoSpec _ curveProxy curveName =
           scalar <- gen128BitElem
           pure $ Tuple p scalar
 
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: Kimchi.eval
         , solver: solver

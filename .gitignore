@@ -47,3 +47,8 @@ Thumbs.db
 srs-cache/
 
 # Crypto provider symlink (removed - now using real crate)
+
+# Generated linearization files
+packages/pickles/src/Pickles/Linearization/Pallas.purs
+packages/pickles/src/Pickles/Linearization/Vesta.purs
+packages/pickles-codegen/rust/output/

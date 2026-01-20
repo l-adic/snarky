@@ -223,7 +223,7 @@ verifySpec _ pg _pk = do
 
     gen = genValidSignature pg _pk
 
-  circuitSpecPure'
+  circuitSpecPure' 100
     { builtState: st
     , checker: Kimchi.eval
     , solver: solver

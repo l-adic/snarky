@@ -1,0 +1,25 @@
+package:
+  name: pickles-codegen
+  dependencies:
+    - aff
+    - arrays
+    - console
+    - effect
+    - either
+    - exceptions
+    - language-cst-parser
+    - maybe
+    - node-buffer
+    - node-fs
+    - node-path
+    - node-process
+    - partial
+    - pickles
+    - prelude
+    - simple-json
+    - tidy-codegen
+    - tuples
+  build:
+    strict: true
+  run:
+    main: Pickles.Linearization.Main

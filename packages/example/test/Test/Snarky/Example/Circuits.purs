@@ -141,7 +141,7 @@ transferSpec _ pd = do
       runTransferRefM ref m
 
   Console.log "Checking the Valid case"
-  circuitSpec' natWithReset
+  circuitSpec' 100 natWithReset
     { builtState: s
     , checker: eval
     , solver: solver
@@ -154,7 +154,7 @@ transferSpec _ pd = do
   liftEffect $ runTransferRefM ref $ verifyCircuitM { s, gen: genValidTransfer initialState', solver }
 
   Console.log "Checking the overdraft case"
-  circuitSpec' natWithReset
+  circuitSpec' 100 natWithReset
     { builtState: s
     , checker: eval
     , solver: solver

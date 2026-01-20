@@ -86,7 +86,7 @@ spec' testName pg pc =
           pure $ Tuple p1 p2
       in
         do
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Kimchi.eval
             , solver: solver
@@ -96,7 +96,7 @@ spec' testName pg pc =
             gen
           liftEffect $ verifyCircuit { s, gen, solver }
 
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Kimchi.eval
             , solver: solver

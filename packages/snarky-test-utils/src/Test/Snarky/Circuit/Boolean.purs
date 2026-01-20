@@ -150,7 +150,7 @@ spec pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (all_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: eval
         , solver: solver
@@ -172,7 +172,7 @@ spec pc eval postCondition initialState = describe "Boolean Circuit Specs" do
           (any_ <<< Vector.toUnfoldable)
           initialState
     in
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: eval
         , solver: solver
