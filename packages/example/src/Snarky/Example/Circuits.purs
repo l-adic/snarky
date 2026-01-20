@@ -1,50 +1,38 @@
 module Snarky.Example.Circuits
-  ( addressFromPublicKey
-  , getAccount
+  ( class AccountMapM
+  , getAccountId
   , transfer
   ) where
 
 import Prelude
 
+import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (AddressVar(..))
+import Data.MerkleTree.Sized (Address)
 import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertEqual_, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEqual_, exists, read, unpack_)
 import Snarky.Circuit.DSL.Assert (assertEq)
 import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Circuit.MerkleTree as CMT
-import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
+import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction(..))
+import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)
 
 --------------------------------------------------------------------------------
--- | Compute the address for a public key by hashing it
+-- | Advice monad for looking up account addresses from public keys.
 -- |
--- | The address is derived deterministically: address = hash(publicKey) mod 2^depth
--- | This is computed in-circuit using Poseidon hash.
-addressFromPublicKey
-  :: forall d f t m n rest
-   . Reflectable d Int
-  => PoseidonField f
-  => FieldSizeInBits f n
-  => Add d rest n
-  => CircuitM f (KimchiConstraint f) t m
-  => PublicKey (FVar f)
-  -> Snarky (KimchiConstraint f) t m (AddressVar d f)
-addressFromPublicKey (PublicKey pk) = do
-  -- Hash the public key to get a field element
-  Digest h <- hashVec [ pk ]
-  -- Unpack to bits and take the first d bits as the address
-  allBits <- unpack_ h
-  pure $ AddressVar $ Vector.take @d allBits
+-- | This typeclass allows circuits to "conjure" an address from a public key
+-- | during witness generation. The prover provides the mapping externally.
+class Monad m <= AccountMapM m f (d :: Int) | m -> f d where
+  getAccountId :: PublicKey (F f) -> m (Address d)
 
 --------------------------------------------------------------------------------
 
@@ -68,62 +56,40 @@ assertU64 (TokenAmount v) = do
   let higherBitsArray = Array.fromFoldable higherBits
   assertEqual_ (sum_ (coerce higherBitsArray)) (const_ zero)
 
--- | Get an account from the merkle tree and verify ownership.
--- |
--- | This circuit:
--- | 1. Takes the current root and expected public key as inputs
--- | 2. Computes the address by hashing the public key
--- | 3. Retrieves the account at that address
--- | 4. Asserts the account's public key matches the expected public key
--- | 5. Returns the account
-getAccount
-  :: forall t m f d n rest
-   . Reflectable d Int
-  => PoseidonField f
-  => FieldSizeInBits f n
-  => Add d rest n
-  => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
-  => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
-  => CircuitM f (KimchiConstraint f) t m
-  => Digest (FVar f)
-  -> PublicKey (FVar f)
-  -> Snarky (KimchiConstraint f) t m (Account (FVar f))
-getAccount root expectedPubKey = do
-  -- Compute the address from the public key
-  addr :: AddressVar d f <- addressFromPublicKey expectedPubKey
-  -- Get the account from the merkle tree
-  account@(Account { publicKey }) <- CMT.get addr root
-  -- Assert the public key matches
-  assertEq publicKey expectedPubKey
-  pure account
-
 -- | Transfer tokens between accounts.
 -- |
 -- | This circuit:
--- | 1. Computes addresses for both sender and receiver by hashing their public keys
--- | 2. Fetches sender account, verifies ownership, debits the amount
--- | 3. Fetches receiver account, verifies ownership, credits the amount
--- | 4. Returns the new merkle root
+-- | 1. Takes a transaction (public keys + amount)
+-- | 2. Looks up addresses from public keys via AccountMapM
+-- | 3. Fetches sender account, verifies ownership, debits the amount
+-- | 4. Fetches receiver account, verifies ownership, credits the amount
+-- | 5. Returns the new merkle root
 -- |
--- | Note: Does not check for overflow/underflow.
--- | TODO: Handle transfer to new accounts (empty slots)
+-- | Note: Addresses are assigned sequentially in Mina (not derived from public keys).
+-- | The circuit verifies the account at each address has the expected public key.
 transfer
-  :: forall t m f @d n _k _r
+  :: forall t m f @d n _k
    . Reflectable d Int
   => PoseidonField f
   => FieldSizeInBits f n
   => Add 64 _k n
-  => Add d _r n
+  => AccountMapM m f d
   => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
   => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => Digest (FVar f)
   -> Transaction (FVar f)
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
-transfer root (Transaction { from, to, amount }) = do
-  -- Compute addresses from public keys
-  fromAddr :: AddressVar d f <- addressFromPublicKey from
-  toAddr :: AddressVar d f <- addressFromPublicKey to
+transfer root { from, to, amount } = do
+  -- Look up addresses from public keys (via advice/witness)
+  -- The `exists` block witnesses the Address value as AddressVar circuit variables
+  fromAddr <- exists do
+    PublicKey (F fromPk) <- read from
+    lift $ getAccountId (PublicKey (F fromPk))
+  toAddr <- exists do
+    PublicKey (F toPk) <- read to
+    lift $ getAccountId (PublicKey (F toPk))
+
   -- Debit sender: verify ownership and subtract amount
   { root: root' } <- CMT.fetchAndUpdate fromAddr root \(Account acc) -> do
     -- Verify sender owns this account
@@ -132,6 +98,7 @@ transfer root (Transaction { from, to, amount }) = do
     newBalance <- pure acc.tokenBalance - pure amount
     assertU64 newBalance
     pure $ Account acc { tokenBalance = newBalance }
+
   -- Credit receiver: verify ownership and add amount
   { root: root'' } <- CMT.fetchAndUpdate toAddr root' \(Account acc) -> do
     -- Verify receiver owns this account
@@ -140,4 +107,5 @@ transfer root (Transaction { from, to, amount }) = do
     newBalance <- pure acc.tokenBalance + pure amount
     assertU64 newBalance
     pure $ Account acc { tokenBalance = newBalance }
+
   pure root''

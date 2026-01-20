@@ -21,6 +21,10 @@ import Test.QuickCheck.Gen (Gen, chooseInt)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
+-- | Tree depths to test - includes small and large depths
+treeDepths :: Array Int
+treeDepths = [ 1, 2, 4, 8, 16 ]
+
 -- | Generate a sparse tree with some random addresses populated
 genSparseTree
   :: forall @f d
@@ -50,7 +54,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
   describe "Empty tree properties" do
 
     it "empty tree has correct root (all default hashes)" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           -- Generate dummy value to fix the field type
           _ <- arbitrary @(F Vesta.ScalarField)
@@ -58,7 +62,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ emptyTreeRootLaw (Proxy @Vesta.ScalarField) pd
 
     it "get returns Nothing for any address in empty tree" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
           -- Generate dummy value to fix the field type
@@ -69,7 +73,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
   describe "Set operations" do
 
     it "set-get law: get after set returns the new value" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
@@ -78,7 +82,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ setGetLaw pd tree addr value
 
     it "set at arbitrary address works" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           reifyType depth \pd -> do
             tree <- genSparseTree @Vesta.ScalarField pd
@@ -87,7 +91,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ setArbitraryAddressLaw pd tree addr value
 
     it "set returns Nothing for out-of-bounds address" $ liftEffect do
-      for_ (Array.range 1 4) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           -- Address beyond capacity
           invalidAddr <- chooseInt (2 `pow` depth) (2 `pow` (depth + 1))
@@ -96,7 +100,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ setOutOfBoundsLaw pd invalidAddr value
 
     it "multiple sets at different addresses work correctly" $ liftEffect do
-      for_ (Array.range 2 4) \depth ->
+      for_ (Array.drop 1 treeDepths) \depth ->
         quickCheckGen $ do
           reifyType depth \pd -> do
             tree <- genSparseTree @Vesta.ScalarField pd
@@ -109,7 +113,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
   describe "Witness/Path properties" do
 
     it "witness produces correct root for set value" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
@@ -118,7 +122,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ witnessValidationLaw pd tree addr value
 
     it "witness for empty address uses default hashes" $ liftEffect do
-      for_ (Array.range 1 4) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
           -- Generate dummy value to fix the field type
@@ -127,7 +131,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ emptyWitnessLaw (Proxy @Vesta.ScalarField) pd addr
 
     it "implied root matches actual root after set" $ liftEffect do
-      for_ (Array.range 1 5) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           reifyType depth \pd -> do
             tree <- genSparseTree @Pallas.ScalarField pd
@@ -138,7 +142,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
   describe "Root computation" do
 
     it "setting same value twice doesn't change root" $ liftEffect do
-      for_ (Array.range 1 4) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
           value <- arbitrary @(F Vesta.ScalarField)
@@ -146,7 +150,7 @@ spec = describe "Sparse MerkleTree Property Laws" do
             pure $ idempotentSetLaw pd addr value
 
     it "setting then overwriting produces correct root" $ liftEffect do
-      for_ (Array.range 1 4) \depth ->
+      for_ (treeDepths) \depth ->
         quickCheckGen $ do
           addr <- chooseInt 0 ((2 `pow` depth) - 1)
           value1 <- arbitrary @(F Pallas.ScalarField)

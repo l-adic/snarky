@@ -170,7 +170,22 @@ root tree@(SparseMerkleTree state) =
     else
       computeRoot @a treeDepth state.values state.emptyHashes
 
+-- | Check if a subtree has any values in the given address range
+-- | addr is the leftmost address, subDepth is the height (so range is [addr, addr + 2^subDepth))
+-- | Uses Map.lookupGE for O(log n) lookup instead of O(n) scan
+hasValuesInRange :: forall a. Map BigInt a -> BigInt -> Int -> Boolean
+hasValuesInRange values addr subDepth =
+  let
+    rangeSize = BigInt.shl one (BigInt.fromInt subDepth)
+    endAddr = addr + rangeSize
+  in
+    -- Find smallest key >= addr, check if it's < endAddr
+    case Map.lookupGE addr values of
+      Just { key } -> key < endAddr
+      Nothing -> false
+
 -- | Compute root by building up the tree level by level
+-- | Optimized to use pre-computed empty hashes for empty subtrees
 computeRoot
   :: forall @a hash
    . MerkleHashable a hash
@@ -191,13 +206,17 @@ computeRoot treeDepth values emptyHashes =
     -- subDepth is the height of this subtree (0 = leaf level)
     computeSubtree :: BigInt -> Int -> hash
     computeSubtree addr subDepth =
-      if subDepth == 0 then
-        -- Leaf level
+      -- First check if this subtree has any values at all
+      if not (hasValuesInRange values addr subDepth) then
+        -- Empty subtree - use pre-computed hash
+        emptyHash subDepth
+      else if subDepth == 0 then
+        -- Leaf level with a value
         case Map.lookup addr values of
           Nothing -> emptyHash 0
           Just v -> hash @a (Just v)
       else
-        -- Internal node - check if subtree has any values
+        -- Internal node with at least one value somewhere below
         let
           halfSize = BigInt.shl one (BigInt.fromInt (subDepth - 1))
           leftAddr = addr
@@ -233,9 +252,14 @@ getWitness (Sized.Address addr) tree@(SparseMerkleTree state) =
       Nothing -> unsafeCrashWith $ "getWitness: Invalid depth " <> show d <> ", array length " <> show (Array.length state.emptyHashes)
 
     -- Compute hash of subtree rooted at given address with given subtree depth
+    -- Optimized to use pre-computed empty hashes for empty subtrees
     computeSubtree :: BigInt -> Int -> hash
     computeSubtree subAddr subDepth =
-      if subDepth == 0 then
+      -- First check if this subtree has any values at all
+      if not (hasValuesInRange state.values subAddr subDepth) then
+        -- Empty subtree - use pre-computed hash
+        emptyHash subDepth
+      else if subDepth == 0 then
         case Map.lookup subAddr state.values of
           Nothing -> emptyHash 0
           Just v -> hash @a (Just v)
