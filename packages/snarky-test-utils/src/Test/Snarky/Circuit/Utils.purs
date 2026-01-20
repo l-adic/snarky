@@ -19,7 +19,7 @@ import Snarky.Backend.Compile (Checker, SolverT, runSolverT)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck, withHelp)
+import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
 import Test.Spec.Assertions (fail)
 
@@ -115,7 +115,7 @@ circuitSpecPure
   => CircuitSpec f c r Identity a avar b
   -> Aff Unit
 circuitSpecPure arg =
-  circuitSpecPure' arg arbitrary
+  circuitSpecPure' 100 arg arbitrary
 
 circuitSpecPure'
   :: forall a b avar bvar f c r
@@ -124,15 +124,16 @@ circuitSpecPure'
   => PrimeField f
   => Eq b
   => Show b
-  => CircuitSpec f c r Identity a avar b
+  => Int
+  -> CircuitSpec f c r Identity a avar b
   -> Gen a
   -> Aff Unit
-circuitSpecPure' arg g = liftEffect
+circuitSpecPure' numTests arg g = liftEffect
   let
     spc = un Identity <<<
       runCircuitSpec arg
   in
-    quickCheck $
+    quickCheck' numTests $
       g <#> spc
 
 -- | Like circuitSpecPure' but takes an Array of specific test cases instead of a generator.
@@ -202,7 +203,7 @@ circuitSpec
   -> CircuitSpec f c r m a avar b
   -> Aff Unit
 circuitSpec nat spc =
-  circuitSpec' nat spc arbitrary
+  circuitSpec' 100 nat spc arbitrary
 
 circuitSpec'
   :: forall a avar b bvar f m c r
@@ -212,15 +213,16 @@ circuitSpec'
   => Eq b
   => Show b
   => Monad m
-  => (m ~> Effect)
+  => Int
+  -> (m ~> Effect)
   -> CircuitSpec f c r m a avar b
   -> Gen a
   -> Aff Unit
-circuitSpec' nat spec g =
+circuitSpec' numTests nat spec g =
   let
     spc = runCircuitSpec spec
   in
-    liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
+    liftEffect (quickCheck' numTests $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
 
 -- | Like circuitSpec' but allows the natural transformation to depend on the input.
 -- | This is useful for stateful circuits like merkle trees where the monad needs
@@ -233,12 +235,13 @@ circuitSpecStateful'
   => Eq b
   => Show b
   => Monad m
-  => (a -> m ~> Effect)
+  => Int
+  -> (a -> m ~> Effect)
   -> CircuitSpec f c r m a avar b
   -> Gen a
   -> Aff Unit
-circuitSpecStateful' nat spec g =
+circuitSpecStateful' numTests nat spec g =
   let
     spc = runCircuitSpec spec
   in
-    liftEffect (quickCheck $ g <#> \a -> unsafePerformEffect $ nat a $ spc a)
+    liftEffect (quickCheck' numTests $ g <#> \a -> unsafePerformEffect $ nat a $ spc a)

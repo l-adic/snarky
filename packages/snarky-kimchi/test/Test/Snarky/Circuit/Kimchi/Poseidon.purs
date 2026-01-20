@@ -56,7 +56,7 @@ spec' testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
         Kimchi.initialState
       genInputs = Vector.generator (Proxy @3) (F <$> arbitrary)
 
-    circuitSpecPure'
+    circuitSpecPure' 100
       { builtState: s
       , checker: eval
       , solver: solver

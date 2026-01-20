@@ -254,7 +254,7 @@ impliedRootSpec _ pd = do
         path = unsafePartial fromJust $ SMT.getPath tree addr
       pure $ Tuple addr (Tuple entryHash path)
 
-  circuitSpecPure'
+  circuitSpecPure' 100
     { builtState: s
     , checker: eval
     , solver: solver
@@ -314,7 +314,7 @@ getSpec _ pd = do
 
   ref <- liftEffect $ Ref.new tree
 
-  circuitSpec' (runMerkleRefM ref)
+  circuitSpec' 100 (runMerkleRefM ref)
     { builtState: s
     , checker: eval
     , solver: solver
@@ -407,7 +407,7 @@ fetchAndUpdateSpec _ pd = do
       write initialTree ref
       runMerkleRefM ref m
 
-  circuitSpec' natWithReset
+  circuitSpec' 100 natWithReset
     { builtState: s
     , checker: eval
     , solver: solver
@@ -488,7 +488,7 @@ updateSpec _ pd = do
       write initialTree ref
       runMerkleRefM ref m
 
-  circuitSpec' natWithReset
+  circuitSpec' 100 natWithReset
     { builtState: s
     , checker: eval
     , solver: solver

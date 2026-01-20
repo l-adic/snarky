@@ -67,7 +67,7 @@ spec = do
           pure $ Tuple p (Type1 t)
       in
         do
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Kimchi.eval
             , solver: solver
@@ -114,7 +114,7 @@ spec = do
           pure $ Tuple p t
       in
         do
-          circuitSpecPure'
+          circuitSpecPure' 100
             { builtState: s
             , checker: Kimchi.eval
             , solver: solver

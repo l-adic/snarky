@@ -356,7 +356,7 @@ spec = describe "Linearization Interpreter" do
         linearizationCircuit
         Kimchi.initialState
 
-    circuitSpecPure'
+    circuitSpecPure' 1
       { builtState
       , checker: Kimchi.eval
       , solver

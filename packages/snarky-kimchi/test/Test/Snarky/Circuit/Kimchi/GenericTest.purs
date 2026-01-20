@@ -73,7 +73,7 @@ spec' testName pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
 
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: Kimchi.eval
         , solver: solver

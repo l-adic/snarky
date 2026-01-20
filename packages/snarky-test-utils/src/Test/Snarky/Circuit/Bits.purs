@@ -85,7 +85,7 @@ spec pc eval postCondition initialState = describe "Bits Circuit Specs" do
           unpack_
           initialState
     in
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: eval
         , solver: solver
@@ -106,7 +106,7 @@ spec pc eval postCondition initialState = describe "Bits Circuit Specs" do
           (packUnpackCircuit)
           initialState
     in
-      circuitSpecPure'
+      circuitSpecPure' 100
         { builtState: s
         , checker: eval
         , solver: solver
