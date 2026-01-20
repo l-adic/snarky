@@ -12,11 +12,9 @@
 -- | - Efficient storage: only non-empty leaves are stored
 module Data.MerkleTree.Sparse
   ( SparseMerkleTree
-  , Address(..)
-  , Path(..)
   , empty
   , set
-  , set_
+  , unsafeSet
   , get
   , root
   , getWitness
@@ -24,49 +22,33 @@ module Data.MerkleTree.Sparse
   , depth
   , size
   , toUnfoldable
+  , module Sized
   ) where
 
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (class Foldable)
 import Data.List (List(..), (:))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.MerkleTree (ithBit)
 import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, defaultHash, hash, merge)
+import Data.MerkleTree.Sized (Address(..), Path(..)) as Sized
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (class Traversable)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (class Unfoldable)
-import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Type.Proxy (Proxy(..))
 
--- | Address in a sparse tree, constrained by depth
-newtype Address (d :: Int) = Address BigInt
-
-derive newtype instance Eq (Address d)
-derive newtype instance Ord (Address d)
-derive newtype instance Show (Address d)
-
--- | Path of sibling hashes from leaf to root
-newtype Path d hash = Path (Vector d hash)
-
-derive instance Functor (Path d)
-
-derive instance Foldable (Path d)
-
-derive instance Traversable (Path d)
-
 -- | Sparse Merkle tree with fixed depth
 -- |
 -- | Stores:
 -- | - `values`: Map from address (BigInt) to value
--- | - `emptyHashes`: Pre-computed hashes for empty subtrees at each level
+-- | - `emptyHashes`: Pre-computed hashes for empty subtrees at each level (size d+1)
 -- |   - emptyHashes[0] = hash(Nothing) -- empty leaf
 -- |   - emptyHashes[i+1] = merge(emptyHashes[i], emptyHashes[i])
 data SparseMerkleTree (d :: Int) hash a = SparseMerkleTree
@@ -83,14 +65,10 @@ empty
 empty =
   let
     treeDepth = reflectType (Proxy @d)
-    -- Compute empty hashes for each level
-    -- Level 0: hash of empty leaf
-    -- Level i+1: merge of two empty subtrees of level i
-    emptyHashesArr = computeEmptyHashes @a treeDepth
   in
     SparseMerkleTree
       { values: Map.empty
-      , emptyHashes: emptyHashesArr
+      , emptyHashes: computeEmptyHashes @a treeDepth
       }
 
 -- | Compute empty hashes for all levels 0..depth
@@ -102,18 +80,12 @@ computeEmptyHashes
   -> Array hash
 computeEmptyHashes treeDepth =
   let
-    -- Empty leaf hash
     h0 = defaultHash @a
 
-    -- Build array iteratively
     go :: Int -> hash -> Array hash -> Array hash
     go i prevHash acc =
       if i > treeDepth then acc
-      else
-        let
-          nextHash = merge prevHash prevHash
-        in
-          go (i + 1) nextHash (Array.snoc acc nextHash)
+      else go (i + 1) (merge prevHash prevHash) (Array.snoc acc (merge prevHash prevHash))
   in
     go 1 h0 [ h0 ]
 
@@ -140,11 +112,11 @@ set
   :: forall d hash a
    . Reflectable d Int
   => MerkleHashable a hash
-  => Address d
+  => Sized.Address d
   -> a
   -> SparseMerkleTree d hash a
   -> Maybe (SparseMerkleTree d hash a)
-set (Address addr) value tree@(SparseMerkleTree state) =
+set (Sized.Address addr) value tree@(SparseMerkleTree state) =
   let
     treeDepth = depth tree
     maxAddr = BigInt.shl one (BigInt.fromInt treeDepth)
@@ -152,18 +124,18 @@ set (Address addr) value tree@(SparseMerkleTree state) =
     if addr < zero || addr >= maxAddr then Nothing
     else Just $ SparseMerkleTree state { values = Map.insert addr value state.values }
 
--- | Set a value at the given address, throwing on out-of-bounds
-set_
+-- | Set a value at the given address, partial on out-of-bounds
+unsafeSet
   :: forall d hash a
-   . Reflectable d Int
+   . Partial
+  => Reflectable d Int
   => MerkleHashable a hash
-  => Address d
+  => Sized.Address d
   -> a
   -> SparseMerkleTree d hash a
   -> SparseMerkleTree d hash a
-set_ addr value tree =
+unsafeSet addr value tree =
   case set addr value tree of
-    Nothing -> unsafeCrashWith "Address out of bounds"
     Just t -> t
 
 -- | Get a value at the given address
@@ -172,13 +144,9 @@ set_ addr value tree =
 get
   :: forall d hash a
    . SparseMerkleTree d hash a
-  -> Address d
+  -> Sized.Address d
   -> Maybe a
-get (SparseMerkleTree { values }) (Address addr) = Map.lookup addr values
-
--- | Check if i-th bit is set (0-indexed from least significant)
-ithBit :: BigInt -> Int -> Boolean
-ithBit n i = BigInt.and (BigInt.shr n (BigInt.fromInt i)) one == one
+get (SparseMerkleTree { values }) (Sized.Address addr) = Map.lookup addr values
 
 -- | Compute the root hash of the sparse tree
 -- |
@@ -251,10 +219,10 @@ getWitness
   :: forall d hash a
    . Reflectable d Int
   => MerkleHashable a hash
-  => Address d
+  => Sized.Address d
   -> SparseMerkleTree d hash a
-  -> Path d hash
-getWitness (Address addr) tree@(SparseMerkleTree state) =
+  -> Sized.Path d hash
+getWitness (Sized.Address addr) tree@(SparseMerkleTree state) =
   let
     treeDepth = depth tree
 
@@ -308,7 +276,7 @@ getWitness (Address addr) tree@(SparseMerkleTree state) =
   in
     case Vector.toVector @d pathArray of
       Nothing -> unsafeCrashWith $ "Invalid path length: expected " <> show treeDepth <> " but got " <> show (Array.length pathArray)
-      Just v -> Path v
+      Just v -> Sized.Path v
 
 -- | Compute the implied root from a value hash and its witness
 -- |
@@ -317,11 +285,11 @@ getWitness (Address addr) tree@(SparseMerkleTree state) =
 impliedRoot
   :: forall d hash
    . MergeHash hash
-  => Address d
+  => Sized.Address d
   -> hash
-  -> Path d hash
+  -> Sized.Path d hash
   -> hash
-impliedRoot (Address addr0) entryHash (Path path0) =
+impliedRoot (Sized.Address addr0) entryHash (Sized.Path path0) =
   let
     go :: hash -> Int -> List hash -> hash
     go acc _ Nil = acc
@@ -339,6 +307,6 @@ toUnfoldable
   :: forall d hash a f
    . Unfoldable f
   => SparseMerkleTree d hash a
-  -> f { address :: Address d, value :: a }
+  -> f { address :: Sized.Address d, value :: a }
 toUnfoldable (SparseMerkleTree { values }) =
-  Array.toUnfoldable $ map (\(Tuple k v) -> { address: Address k, value: v }) (Map.toUnfoldable values :: Array _)
+  Array.toUnfoldable $ map (\(Tuple k v) -> { address: Sized.Address k, value: v }) (Map.toUnfoldable values :: Array _)
