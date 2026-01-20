@@ -16,7 +16,6 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (Address(..), Path(..))
 import Data.MerkleTree.Sparse as Sparse
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable)
@@ -42,12 +41,12 @@ import Snarky.Example.Types (Account, PublicKey(..))
 -- | Like Mina, we maintain a separate map from public key to address
 type TransferState d f =
   { tree :: Sparse.SparseMerkleTree d (Digest (F f)) (Account (F f))
-  , accountMap :: Map BigInt (Address d) -- public key (as BigInt) -> address
+  , accountMap :: Map BigInt (Sparse.Address d) -- public key (as BigInt) -> address
   , nextAddress :: BigInt -- next address to assign
   }
 
 -- | Look up the address for a public key
-lookupAddress :: forall d f. PrimeField f => TransferState d f -> PublicKey (F f) -> Maybe (Address d)
+lookupAddress :: forall d f. PrimeField f => TransferState d f -> PublicKey (F f) -> Maybe (Sparse.Address d)
 lookupAddress state (PublicKey (F pk)) = Map.lookup (toBigInt pk) state.accountMap
 
 -- | Ref to the transfer state
@@ -78,10 +77,6 @@ modifyStateRef f = TransferRefM $ ask >>= \ref -> liftEffect do
   state <- read ref
   write (f state) ref
 
--- | Convert between Sized.Path and Sparse.Path (structurally identical)
-fromSparsePath :: forall d hash. Sparse.Path d hash -> Path d hash
-fromSparsePath (Sparse.Path v) = Path v
-
 -- | MerkleRequestM instance for TransferRefM (using sparse tree)
 instance
   ( Reflectable d Int
@@ -91,22 +86,21 @@ instance
   , MerkleHashable (Account (F f)) (Digest (F f))
   ) =>
   CMT.MerkleRequestM (TransferRefM d f) f (Account (F f)) c d (Account (FVar f)) where
-  getElement (Address addr) = do
+  getElement (Sparse.Address addr) = do
     { tree } <- getStateRef
     let
       sparseAddr = Sparse.Address addr
       mval = Sparse.get tree sparseAddr
       path = Sparse.getWitness sparseAddr tree
     case mval of
-      Just v -> pure { value: v, path: fromSparsePath path }
+      Just v -> pure { value: v, path }
       Nothing -> throwError $ error "getElement: address not set in sparse tree"
 
-  getPath (Address addr) = do
+  getPath (Sparse.Address addr) = do
     { tree } <- getStateRef
-    let sparseAddr = Sparse.Address addr
-    pure $ fromSparsePath $ Sparse.getWitness sparseAddr tree
+    pure $ Sparse.getWitness (Sparse.Address addr) tree
 
-  setValue (Address addr) v = do
+  setValue (Sparse.Address addr) v = do
     { tree } <- getStateRef
     case Sparse.set (Sparse.Address addr) v tree of
       Just tree' -> modifyStateRef \state -> state { tree = tree' }

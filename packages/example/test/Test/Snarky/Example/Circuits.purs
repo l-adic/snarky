@@ -9,7 +9,6 @@ import Data.Foldable (foldl, for_)
 import Data.Map as Map
 import Data.Maybe (fromJust)
 import Data.MerkleTree.Hashable (class MerkleHashable)
-import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sparse as Sparse
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Set as Set
@@ -183,11 +182,9 @@ genTreeWithAccounts
   => PrimeField f
   => Gen (TransferState d f)
 genTreeWithAccounts = do
-  -- Generate accounts with random public keys and large balances
-  accounts <- for (0 .. (numAccounts - 1)) \i -> do
-    -- Use i as the public key seed - this is deterministic but gives distinct keys
-    let pk = PublicKey $ F $ fromInt (i + 1000) -- offset to avoid collisions with small numbers
-    -- Give each account a large balance
+  -- Generate accounts with distinct public keys and large balances
+  accounts <- for (1 .. numAccounts) \i -> do
+    let pk = PublicKey $ F $ fromInt i
     balance <- TokenAmount <<< F <<< fromInt <$> chooseInt 1000000 9999999
     pure $ Tuple pk (Account { publicKey: pk, tokenBalance: balance })
 
@@ -196,7 +193,7 @@ genTreeWithAccounts = do
   let
     insertAccount { tree, accountMap, nextAddress } (Tuple (PublicKey (F pk)) acc) =
       let
-        addr = Address nextAddress
+        addr = Sparse.Address nextAddress
       in
         { tree: unsafePartial fromJust $ Sparse.set addr acc tree
         , accountMap: Map.insert (toBigInt pk) addr accountMap
