@@ -2,7 +2,7 @@ module Snarky.Example.Types
   ( PublicKey(..)
   , TokenAmount(..)
   , Account(..)
-  , Transaction(..)
+  , Transaction
   ) where
 
 import Prelude
@@ -128,22 +128,11 @@ instance
   MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
 
 --------------------------------------------------------------------------------
--- | Transaction type representing a transfer between accounts
-newtype Transaction f = Transaction { from :: PublicKey f, to :: PublicKey f, amount :: TokenAmount f }
-
-derive instance Newtype (Transaction f) _
-derive instance Generic (Transaction f) _
-derive newtype instance Show f => Show (Transaction f)
-derive instance Eq f => Eq (Transaction f)
-derive newtype instance Arbitrary f => Arbitrary (Transaction f)
-derive instance Functor Transaction
-
-instance CircuitType f (Transaction (F f)) (Transaction (FVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(Transaction (F f))
-  fieldsToVar = genericFieldsToVar @(Transaction (F f))
-
-instance CheckedType (Transaction (FVar f)) c where
-  check = genericCheck
+-- | Transaction type representing a transfer between accounts.
+-- | Just specifies the public keys and amount - addresses are an internal detail
+-- | that the prover looks up from the account map.
+type Transaction f =
+  { from :: PublicKey f
+  , to :: PublicKey f
+  , amount :: TokenAmount f
+  }
