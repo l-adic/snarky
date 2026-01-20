@@ -3,16 +3,15 @@ module Test.Pickles.Linearization where
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap, wrap)
-import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (sequence)
+import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, toUnfoldable)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Linearization.Env (Challenges, Env, EvalPoint, circuitEnv, fieldEnv)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
@@ -163,15 +162,13 @@ buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointC
 
 -- | Generate a sized vector of arbitrary field elements
 genFieldVector :: forall n. Reflectable n Int => Proxy n -> Gen (Vector n Pallas.BaseField)
-genFieldVector p =
-  let
-    n = reflectType p
-  in
-    unsafePartial $ fromJust <<< Vector.toVector <$> (Array.fromFoldable <$> sequence (Array.replicate n arbitrary))
+genFieldVector p = Vector.generator p arbitrary
 
 -- | Parse hex string to field element using BigInt
 parseHex :: forall f. PrimeField f => String -> f
-parseHex hex = fromMaybe zero (fromBigInt <$> BigInt.fromString hex)
+parseHex hex = case fromBigInt <$> BigInt.fromString hex of
+  Nothing -> unsafeCrashWith $ "Failed to pase Hex to BigInt: " <> hex
+  Just a -> a
 
 -- | Input record for linearization circuit test (VALUE type)
 -- | All sizes are statically known from Kimchi protocol parameters
