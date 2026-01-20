@@ -5,13 +5,13 @@ module Test.Snarky.Example.Circuits
 import Prelude
 
 import Data.Array (length, (!!), (..))
-import Data.Foldable (foldl)
+import Data.Foldable (foldl, for_)
 import Data.Map as Map
 import Data.Maybe (fromJust)
 import Data.MerkleTree.Hashable (class MerkleHashable)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sparse as Sparse
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reifyType)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -48,25 +48,26 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 -- Spec
 
+-- | Tree depths to test
+treeDepths :: Array Int
+treeDepths = [ 4, 8 ]
+
 spec :: SpecT Aff Unit Aff Unit
 spec =
   describe "Transfer Circuit Specs" do
-    describe "depth 4" do
-      it "Vesta" $ transferSpec (Proxy @Vesta.ScalarField) (Proxy @4)
-      it "Pallas" $ transferSpec (Proxy @Pallas.ScalarField) (Proxy @4)
-    describe "depth 8" do
-      it "Vesta" $ transferSpec (Proxy @Vesta.ScalarField) (Proxy @8)
-      it "Pallas" $ transferSpec (Proxy @Pallas.ScalarField) (Proxy @8)
+    for_ treeDepths \depth ->
+      describe ("depth " <> show depth) do
+        it "Vesta" $ reifyType depth (transferSpec (Proxy @Vesta.ScalarField))
+        it "Pallas" $ reifyType depth (transferSpec (Proxy @Pallas.ScalarField))
 
 transferSpec
-  :: forall f f' g' d _k _r
+  :: forall f f' g' d _k
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => FieldSizeInBits f 255
   => Reflectable d Int
   => PrimeField f
   => Add 64 _k 255
-  => Add d _r 255
   => Ord f
   => Proxy f
   -> Proxy d
@@ -110,12 +111,11 @@ transferSpec _ _ = do
 
     -- The circuit takes a Transaction and looks up addresses via AccountMapM
     circuit
-      :: forall t @m _k1 _r1
+      :: forall t @m _k1
        . Reflectable d Int
       => PoseidonField f
       => FieldSizeInBits f 255
       => Add 64 _k1 255
-      => Add d _r1 255
       => AccountMapM m f d
       => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
       => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
