@@ -10,6 +10,7 @@ package:
       - aff
       - effect
       - either
+      - foldable-traversable
       - node-buffer
       - node-fs
       - quickcheck

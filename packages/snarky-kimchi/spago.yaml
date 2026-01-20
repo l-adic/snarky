@@ -3,8 +3,6 @@ package:
   dependencies:
     - arrays
     - bifunctors
-    - foreign
-    - simple-json
     - curves
     - effect
     - either
@@ -32,7 +30,6 @@ package:
     - tuples
     - union-find
     - vector-sized
-    - debug
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
@@ -44,4 +41,3 @@ package:
       - snarky-test-utils
       - spec
       - spec-node
-      - debug

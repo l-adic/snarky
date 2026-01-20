@@ -4,9 +4,6 @@ package:
     - arrays
     - control
     - curves
-    - effect
-    - either
-    - foldable-traversable
     - foreign
     - js-bigints
     - maybe
@@ -14,7 +11,6 @@ package:
     - prelude
     - simple-json
     - snarky
-    - snarky-curves
     - tuples
     - vector-sized
   build:
@@ -22,6 +18,7 @@ package:
   test:
     main: Test.Pickles.Linearization
     dependencies:
+      - effect
       - newtype
       - partial
       - quickcheck
