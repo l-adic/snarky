@@ -639,7 +639,11 @@
         },
         "test": {
           "dependencies": [
+            "newtype",
+            "partial",
             "quickcheck",
+            "snarky-kimchi",
+            "snarky-test-utils",
             "spec",
             "spec-node"
           ],
@@ -657,7 +661,9 @@
             "const",
             "contravariant",
             "control",
+            "curves",
             "datetime",
+            "debug",
             "distributive",
             "effect",
             "either",
@@ -676,6 +682,7 @@
             "identity",
             "integers",
             "invariant",
+            "js-bigints",
             "js-date",
             "lazy",
             "lcg",
@@ -700,6 +707,7 @@
             "parallel",
             "partial",
             "pipes",
+            "poseidon",
             "posix-types",
             "prelude",
             "profunctor",
@@ -708,8 +716,14 @@
             "record",
             "refs",
             "safe-coerce",
+            "simple-json",
+            "snarky",
+            "snarky-curves",
+            "snarky-kimchi",
+            "snarky-test-utils",
             "spec",
             "spec-node",
+            "spec-quickcheck",
             "st",
             "strings",
             "tailrec",
@@ -718,7 +732,10 @@
             "type-equality",
             "typelevel-prelude",
             "unfoldable",
-            "unsafe-coerce"
+            "union-find",
+            "unsafe-coerce",
+            "variant",
+            "vector-sized"
           ]
         }
       },

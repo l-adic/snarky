@@ -22,6 +22,10 @@ package:
   test:
     main: Test.Pickles.Linearization
     dependencies:
+      - newtype
+      - partial
       - quickcheck
+      - snarky-kimchi
+      - snarky-test-utils
       - spec
       - spec-node

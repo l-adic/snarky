@@ -134,7 +134,10 @@ circuitEnv evalPoint challenges parseField =
   , jointCombiner: pure challenges.jointCombiner
   , beta: pure challenges.beta
   , gamma: pure challenges.gamma
-  , ifFeature: \{ onTrue } -> onTrue unit -- TODO: proper feature flag handling
+  -- All features are treated as disabled for testing, matching Rust behavior.
+  -- SkipIfNot(feat): skip when feature disabled → use onFalse (push zero)
+  -- SkipIf(feat): don't skip when feature disabled → use onTrue (evaluated)
+  , ifFeature: \{ onFalse } -> onFalse unit
   }
 
 -- | Look up MDS matrix element

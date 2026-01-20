@@ -26,7 +26,7 @@ initialState :: forall a. EvalState a
 initialState = { stack: [], store: [], position: 0 }
 
 -- | Evaluate a Polish notation token array with the given environment
-evaluate :: forall a. Show a => Array PolishToken -> Env a -> a
+evaluate :: forall a. Array PolishToken -> Env a -> a
 evaluate tokens env =
   let
     finalState = evalLoop tokens initialState
