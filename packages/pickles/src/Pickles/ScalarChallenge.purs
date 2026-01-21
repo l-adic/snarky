@@ -30,6 +30,7 @@ import Data.Maybe (Maybe)
 import Data.Newtype (class Newtype)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import JS.BigInt as BigInt
 import Pickles.Linearization.Types (FeatureFlag)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -43,7 +44,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField, toFieldCo
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
 
 -------------------------------------------------------------------------------
 -- | Challenge Types
@@ -102,16 +103,13 @@ lowest128BitsConstant x =
     -- Unpack to bits (LSB first), take first 128
     bits :: Vector 128 Boolean
     bits = Vector.take @128 $ unpackPure x
+    two = fromInt 2
   in
     -- Pack back to field element
     foldlWithIndex
-      (\i acc b -> if b then acc + pow2 (getFinite i) else acc)
+      (\i acc b -> if b then acc + pow two (BigInt.fromInt $ getFinite i) else acc)
       zero
       bits
-  where
-  pow2 :: Int -> f
-  pow2 0 = one
-  pow2 n = fromInt 2 * pow2 (n - 1)
 
 -- | Squeeze a challenge from the sponge (pure version).
 -- | Returns the lowest 128 bits of the squeezed field element.
