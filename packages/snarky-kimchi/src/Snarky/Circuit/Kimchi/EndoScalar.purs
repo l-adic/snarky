@@ -1,8 +1,13 @@
-module Snarky.Circuit.Kimchi.EndoScalar where
+module Snarky.Circuit.Kimchi.EndoScalar
+  ( ScalarChallenge(..)
+  , toField
+  , toFieldConstant
+  ) where
 
 import Prelude
 
 import Data.Fin (unsafeFinite)
+import Data.Newtype (class Newtype)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, chunks, (!!))
@@ -14,9 +19,14 @@ import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snark
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt)
 
 newtype ScalarChallenge f = ScalarChallenge f
+
+derive instance Newtype (ScalarChallenge f) _
+derive instance Eq f => Eq (ScalarChallenge f)
+derive instance Ord f => Ord (ScalarChallenge f)
+derive newtype instance Show f => Show (ScalarChallenge f)
 
 toField
   :: forall f t m n _l
@@ -84,3 +94,41 @@ toField (ScalarChallenge scalar) endo = do
     | x == fromInt 2 = zero
     | x == fromInt 3 = zero
     | otherwise = unsafeThrow ("Unexpected bF application: " <> show x)
+
+-- | Pure/constant version of endomorphism scalar decomposition.
+-- | Given a 128-bit scalar and the endomorphism coefficient, computes
+-- | `a * endo + b` where (a, b) is the decomposition of the scalar.
+toFieldConstant
+  :: forall f n _l
+   . PrimeField f
+  => FieldSizeInBits f n
+  => Add 128 _l n
+  => f
+  -> f
+  -> f
+toFieldConstant scalar endo =
+  let
+    bits :: Vector 128 Boolean
+    bits = Vector.reverse $ Vector.take @128 $ unpackPure scalar
+
+    chunked :: Vector 64 (Vector 2 Boolean)
+    chunked = Vector.chunks @2 bits
+
+    processChunk
+      :: { a :: f, b :: f }
+      -> Vector 2 Boolean
+      -> { a :: f, b :: f }
+    processChunk st v =
+      let
+        bitEven = v !! unsafeFinite 1
+        bitOdd = v !! unsafeFinite 0
+        s = if bitEven then one else -one
+      in
+        if bitOdd then { a: double st.a + s, b: double st.b }
+        else { a: double st.a, b: double st.b + s }
+
+    { a, b } = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunked
+  in
+    a * endo + b
+  where
+  double x = x + x

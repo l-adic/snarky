@@ -4,7 +4,7 @@ module Test.Snarky.Circuit.SparseMerkleTree
 
 import Prelude
 
-import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Reader (ReaderT, ask)
 import Data.Generic.Rep (class Generic)
 import Data.Identity (Identity(..))
 import Data.Int (pow)
@@ -59,9 +59,6 @@ derive newtype instance Applicative (SparseMerkleRefM d f v)
 derive newtype instance Bind (SparseMerkleRefM d f v)
 derive newtype instance Monad (SparseMerkleRefM d f v)
 derive newtype instance MonadEffect (SparseMerkleRefM d f v)
-
-runSparseMerkleRefM :: forall d f v. SparseTreeRef d f v -> SparseMerkleRefM d f v ~> Effect
-runSparseMerkleRefM tree (SparseMerkleRefM m) = runReaderT m tree
 
 getSparseTreeRef :: forall d f v. SparseMerkleRefM d f v (Sparse.SparseMerkleTree d (Digest (F f)) v)
 getSparseTreeRef = SparseMerkleRefM $ ask >>= \ref -> liftEffect $ read ref
@@ -125,9 +122,6 @@ derive newtype instance Apply (SparseCompileM d f)
 derive newtype instance Applicative (SparseCompileM d f)
 derive newtype instance Bind (SparseCompileM d f)
 derive newtype instance Monad (SparseCompileM d f)
-
-runSparseCompileM :: forall d f a. SparseCompileM d f a -> a
-runSparseCompileM (SparseCompileM m) = un Identity m
 
 -- | Instance for compilation phase - throws on any request
 instance

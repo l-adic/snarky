@@ -13,6 +13,14 @@ use mina_curves::pasta::{Fp as PallasBaseField, Fq as VestaBaseField};
 use crate::pasta::pallas::scalar_field::FieldExternal as VestaBaseFieldExternal;
 use crate::pasta::vesta::scalar_field::FieldExternal as PallasBaseFieldExternal;
 
+/// Opaque handle to a Pallas ArithmeticSponge
+pub type PallasSpongeExternal =
+    External<ArithmeticSponge<PallasBaseField, PlonkSpongeConstantsKimchi>>;
+
+/// Opaque handle to a Vesta ArithmeticSponge
+pub type VestaSpongeExternal =
+    External<ArithmeticSponge<VestaBaseField, PlonkSpongeConstantsKimchi>>;
+
 mod generic {
     use ark_ff::{Field, PrimeField};
     use core::cmp::min;
@@ -144,6 +152,27 @@ pub mod pallas {
         External::new(sponge.squeeze())
     }
 
+    /// Full Poseidon permutation (all 55 rounds) on a 3-element state.
+    /// This is used for testing the sponge implementation.
+    #[napi]
+    pub fn pallas_poseidon_permute(
+        state: Vec<&PallasBaseFieldExternal>,
+    ) -> Vec<PallasBaseFieldExternal> {
+        let params = fp_kimchi::static_params();
+        let mut state_vec: Vec<PallasBaseField> = state.iter().map(|&s| **s).collect();
+        let num_rounds = params.round_constants.len();
+
+        for round_idx in 0..num_rounds {
+            full_round::<PallasBaseField, PlonkSpongeConstantsKimchi>(
+                params,
+                &mut state_vec,
+                round_idx,
+            );
+        }
+
+        state_vec.into_iter().map(External::new).collect()
+    }
+
     /// Convert domain string to field element (mina-hasher compatible)
     #[napi]
     pub fn pallas_domain_prefix_to_field(domain: String) -> PallasBaseFieldExternal {
@@ -159,6 +188,31 @@ pub mod pallas {
             params, &domain,
         );
         state.into_iter().map(External::new).collect()
+    }
+
+    /// Create a new Pallas sponge (thin wrapper around ArithmeticSponge::new)
+    #[napi]
+    pub fn pallas_sponge_create() -> PallasSpongeExternal {
+        let params = fp_kimchi::static_params();
+        External::new(ArithmeticSponge::<
+            PallasBaseField,
+            PlonkSpongeConstantsKimchi,
+        >::new(params))
+    }
+
+    /// Absorb a single element into the sponge (thin wrapper around Sponge::absorb)
+    #[napi]
+    pub fn pallas_sponge_absorb(
+        sponge: &mut PallasSpongeExternal,
+        input: &PallasBaseFieldExternal,
+    ) {
+        sponge.absorb(&[**input]);
+    }
+
+    /// Squeeze a single element from the sponge (thin wrapper around Sponge::squeeze)
+    #[napi]
+    pub fn pallas_sponge_squeeze(sponge: &mut PallasSpongeExternal) -> PallasBaseFieldExternal {
+        External::new(sponge.squeeze())
     }
 }
 
@@ -232,6 +286,27 @@ pub mod vesta {
         External::new(sponge.squeeze())
     }
 
+    /// Full Poseidon permutation (all 55 rounds) on a 3-element state.
+    /// This is used for testing the sponge implementation.
+    #[napi]
+    pub fn vesta_poseidon_permute(
+        state: Vec<&VestaBaseFieldExternal>,
+    ) -> Vec<VestaBaseFieldExternal> {
+        let params = fq_kimchi::static_params();
+        let mut state_vec: Vec<VestaBaseField> = state.iter().map(|&s| **s).collect();
+        let num_rounds = params.round_constants.len();
+
+        for round_idx in 0..num_rounds {
+            full_round::<VestaBaseField, PlonkSpongeConstantsKimchi>(
+                params,
+                &mut state_vec,
+                round_idx,
+            );
+        }
+
+        state_vec.into_iter().map(External::new).collect()
+    }
+
     /// Convert domain string to field element (mina-hasher compatible)
     #[napi]
     pub fn vesta_domain_prefix_to_field(domain: String) -> VestaBaseFieldExternal {
@@ -247,6 +322,25 @@ pub mod vesta {
             params, &domain,
         );
         state.into_iter().map(External::new).collect()
+    }
+
+    /// Create a new Vesta sponge (thin wrapper around ArithmeticSponge::new)
+    #[napi]
+    pub fn vesta_sponge_create() -> VestaSpongeExternal {
+        let params = fq_kimchi::static_params();
+        External::new(ArithmeticSponge::<VestaBaseField, PlonkSpongeConstantsKimchi>::new(params))
+    }
+
+    /// Absorb a single element into the sponge (thin wrapper around Sponge::absorb)
+    #[napi]
+    pub fn vesta_sponge_absorb(sponge: &mut VestaSpongeExternal, input: &VestaBaseFieldExternal) {
+        sponge.absorb(&[**input]);
+    }
+
+    /// Squeeze a single element from the sponge (thin wrapper around Sponge::squeeze)
+    #[napi]
+    pub fn vesta_sponge_squeeze(sponge: &mut VestaSpongeExternal) -> VestaBaseFieldExternal {
+        External::new(sponge.squeeze())
     }
 }
 

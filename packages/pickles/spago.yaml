@@ -4,20 +4,25 @@ package:
     - arrays
     - control
     - curves
+    - foldable-traversable
     - foreign
     - js-bigints
     - maybe
+    - newtype
     - poseidon
     - prelude
+    - random-oracle
     - simple-json
     - snarky
+    - snarky-kimchi
     - tuples
     - vector-sized
   build:
     strict: true
   test:
-    main: Test.Pickles.Linearization
+    main: Test.Pickles.Main
     dependencies:
+      - aff
       - effect
       - newtype
       - partial
@@ -26,3 +31,4 @@ package:
       - snarky-test-utils
       - spec
       - spec-node
+      - spec-quickcheck
