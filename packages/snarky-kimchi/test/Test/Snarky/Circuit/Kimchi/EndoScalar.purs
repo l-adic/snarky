@@ -1,68 +1,27 @@
 module Test.Snarky.Circuit.Kimchi.EndoScalar
   ( circuit
   , spec
-  , toFieldConstant
   ) where
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
 import Data.Newtype (over)
-import Data.Traversable (foldl)
-import Data.Vector (Vector, (!!))
-import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.DSL.Bits (unpackPure)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField)
+import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField, toFieldConstant)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-toFieldConstant
-  :: forall f n _l
-   . PrimeField f
-  => FieldSizeInBits f n
-  => Add 128 _l n
-  => f
-  -> f
-  -> f
-toFieldConstant f endo =
-  let
-    bits :: Vector 128 Boolean
-    bits = Vector.reverse $ Vector.take @128 $ unpackPure f
-
-    chunks :: Vector 64 (Vector 2 Boolean)
-    chunks = Vector.chunks @2 bits
-
-    processChunk
-      :: { a :: f, b :: f }
-      -> Vector 2 Boolean
-      -> { a :: f, b :: f }
-    processChunk st v =
-      let
-        bitEven = v !! unsafeFinite 1
-        bitOdd = v !! unsafeFinite 0
-        s = if bitEven then one else -one
-      in
-        if bitOdd then { a: double st.a + s, b: double st.b }
-        else { a: double st.a, b: double st.b + s }
-
-    { a, b } = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunks
-  in
-    a * endo + b
-  where
-  double x = x + x
 
 circuit
   :: forall f f' t m n _l

@@ -23,7 +23,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
 import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
