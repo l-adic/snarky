@@ -9,6 +9,7 @@ package:
     - js-bigints
     - maybe
     - newtype
+    - partial
     - poseidon
     - prelude
     - random-oracle

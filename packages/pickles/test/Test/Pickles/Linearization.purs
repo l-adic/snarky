@@ -23,21 +23,19 @@ module Test.Pickles.Linearization where
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, toUnfoldable)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Linearization.Env (Challenges, Env, EvalPoint, circuitEnv, fieldEnv)
+import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), PolishToken)
+import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
+import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.CVar (CVar(..))
@@ -45,7 +43,7 @@ import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
+import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary, quickCheckGen, (===))
@@ -125,89 +123,8 @@ vestaLinearizationFFI =
   }
 
 -------------------------------------------------------------------------------
--- | Helper functions (parameterized)
+-- | Helper functions (test-specific)
 -------------------------------------------------------------------------------
-
--- | Build EvalPoint from witness/coefficient/index vectors
--- | Witness: 30 elements (15 cols × 2 curr/next)
--- | Coefficients: 15 elements
--- | Index: 12 elements (6 gate types × 2 curr/next)
-buildEvalPoint
-  :: forall a
-   . { witnessEvals :: Vector 30 a
-     , coeffEvals :: Vector 15 a
-     , indexEvals :: Vector 12 a
-     , defaultVal :: a
-     }
-  -> EvalPoint a
-buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
-  let
-    -- Convert to arrays for Int-based indexing
-    witnessArr = toUnfoldable witnessEvals :: Array a
-    coeffArr = toUnfoldable coeffEvals :: Array a
-    indexArr = toUnfoldable indexEvals :: Array a
-  in
-    { witness: \row col ->
-        let
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = col * 2 + rowOffset
-        in
-          fromMaybe defaultVal (Array.index witnessArr idx)
-    , coefficient: \col ->
-        fromMaybe defaultVal (Array.index coeffArr col)
-    , index: \row gt ->
-        let
-          gateIdx = case gt of
-            Poseidon -> 0
-            Generic -> 1
-            VarBaseMul -> 2
-            EndoMul -> 3
-            EndoMulScalar -> 4
-            CompleteAdd -> 5
-            _ -> 0
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = gateIdx * 2 + rowOffset
-        in
-          fromMaybe defaultVal (Array.index indexArr idx)
-    , lookupAggreg: \_ -> defaultVal
-    , lookupSorted: \_ _ -> defaultVal
-    , lookupTable: \_ -> defaultVal
-    , lookupRuntimeTable: \_ -> defaultVal
-    , lookupRuntimeSelector: \_ -> defaultVal
-    , lookupKindIndex: \_ -> defaultVal
-    }
-
--- | Build Challenges with precomputed domain-dependent values
--- | The two UnnormalizedLagrangeBasis calls in the linearization are:
--- |   { zk_rows: false, offset: 0 }
--- |   { zk_rows: true, offset: -1 }
-buildChallenges
-  :: forall a
-   . { alpha :: a
-     , beta :: a
-     , gamma :: a
-     , jointCombiner :: a
-     , vanishesOnZk :: a
-     , lagrangeFalse0 :: a -- unnormalizedLagrangeBasis(false, 0)
-     , lagrangeTrue1 :: a -- unnormalizedLagrangeBasis(true, -1)
-     }
-  -> Challenges a
-buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 } =
-  { alpha
-  , beta
-  , gamma
-  , jointCombiner
-  , vanishesOnZeroKnowledgeAndPreviousRows: vanishesOnZk
-  , unnormalizedLagrangeBasis: \{ zkRows: zk, offset } ->
-      -- Match the two known calls in the linearization expression
-      if not zk && offset == 0 then lagrangeFalse0
-      else if zk && offset == (-1) then lagrangeTrue1
-      else lagrangeFalse0 -- Default (shouldn't happen)
-  }
 
 -- | Build FFI input from vectors and challenges (parameterized)
 buildFFIInput
@@ -263,12 +180,6 @@ buildFFIInput ffi { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jo
 -- | Generate a sized vector of arbitrary field elements
 genFieldVector :: forall f n. PrimeField f => Reflectable n Int => Proxy n -> Gen (Vector n f)
 genFieldVector p = Vector.generator p arbitrary
-
--- | Parse hex string to field element using BigInt
-parseHex :: forall f. PrimeField f => String -> f
-parseHex hex = case fromBigInt <$> BigInt.fromString hex of
-  Nothing -> unsafeCrashWith $ "Failed to parse Hex to BigInt: " <> hex
-  Just a -> a
 
 -------------------------------------------------------------------------------
 -- | Parameterized test types and functions
