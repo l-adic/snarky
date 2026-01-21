@@ -4,6 +4,7 @@ package:
     - arrays
     - control
     - curves
+    - foldable-traversable
     - foreign
     - js-bigints
     - maybe
@@ -21,6 +22,7 @@ package:
   test:
     main: Test.Pickles.Main
     dependencies:
+      - aff
       - effect
       - newtype
       - partial

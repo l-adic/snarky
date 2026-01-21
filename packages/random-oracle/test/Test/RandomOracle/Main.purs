@@ -46,6 +46,14 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
 
+-- | Record type to abstract over sponge FFI operations
+type SpongeFFI f sponge =
+  { permute :: Vector 3 f -> Vector 3 f
+  , spongeCreate :: Effect sponge
+  , spongeAbsorb :: sponge -> f -> Effect Unit
+  , spongeSqueeze :: sponge -> Effect f
+  }
+
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] spec
 
@@ -92,103 +100,82 @@ spec = do
 
     -- Test that our PureScript sponge matches Rust ArithmeticSponge via FFI
     describe "Sponge matches Rust FFI" do
-      spongeFFITests
+      describe "Pallas" do
+        spongeFFITests (Proxy @Pallas.BaseField) pallasSpongeFFI
+      describe "Vesta" do
+        spongeFFITests (Proxy @Vesta.BaseField) vestaSpongeFFI
 
   where
-  spongeFFITests :: Spec Unit
-  spongeFFITests = do
-    describe "permute" do
-      it "PureScript permute matches Rust FFI (Pallas)" do
-        quickCheck \(a :: Pallas.BaseField) (b :: Pallas.BaseField) (c :: Pallas.BaseField) ->
-          let
-            state :: Vector 3 Pallas.BaseField
-            state = a :< b :< c :< Vector.nil
-            psResult = Sponge.permute state
-            ffiResult = PallasSpongeFFI.permute state
-          in
-            psResult === ffiResult
+  pallasSpongeFFI :: SpongeFFI Pallas.BaseField PallasSpongeFFI.PallasSponge
+  pallasSpongeFFI =
+    { permute: PallasSpongeFFI.permute
+    , spongeCreate: PallasSpongeFFI.spongeCreate
+    , spongeAbsorb: PallasSpongeFFI.spongeAbsorb
+    , spongeSqueeze: PallasSpongeFFI.spongeSqueeze
+    }
 
-      it "PureScript permute matches Rust FFI (Vesta)" do
-        quickCheck \(a :: Vesta.BaseField) (b :: Vesta.BaseField) (c :: Vesta.BaseField) ->
+  vestaSpongeFFI :: SpongeFFI Vesta.BaseField VestaSpongeFFI.VestaSponge
+  vestaSpongeFFI =
+    { permute: VestaSpongeFFI.permute
+    , spongeCreate: VestaSpongeFFI.spongeCreate
+    , spongeAbsorb: VestaSpongeFFI.spongeAbsorb
+    , spongeSqueeze: VestaSpongeFFI.spongeSqueeze
+    }
+
+  spongeFFITests
+    :: forall f sponge
+     . Poseidon.PoseidonField f
+    => Eq f
+    => Show f
+    => Proxy f
+    -> SpongeFFI f sponge
+    -> Spec Unit
+  spongeFFITests _ ffi = do
+    describe "permute" do
+      it "PureScript permute matches Rust FFI" do
+        quickCheck \(a :: f) (b :: f) (c :: f) ->
           let
-            state :: Vector 3 Vesta.BaseField
+            state :: Vector 3 f
             state = a :< b :< c :< Vector.nil
             psResult = Sponge.permute state
-            ffiResult = VestaSpongeFFI.permute state
+            ffiResult = ffi.permute state
           in
             psResult === ffiResult
 
     describe "absorb/squeeze" do
-      it "absorb then squeeze matches Rust sponge (Pallas)" do
-        a <- liftEffect $ randomSampleOne arbitrary
+      it "absorb then squeeze matches Rust sponge" do
+        a <- liftEffect $ randomSampleOne (arbitrary @f)
         b <- liftEffect $ randomSampleOne arbitrary
         let
           psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb (a :: Pallas.BaseField) psSponge
+          psSponge1 = Sponge.absorb a psSponge
           psSponge2 = Sponge.absorb b psSponge1
           { result: psResult } = Sponge.squeeze psSponge2
         rustResult <- liftEffect do
-          rustSponge <- PallasSpongeFFI.spongeCreate
-          PallasSpongeFFI.spongeAbsorb rustSponge a
-          PallasSpongeFFI.spongeAbsorb rustSponge b
-          PallasSpongeFFI.spongeSqueeze rustSponge
+          rustSponge <- ffi.spongeCreate
+          ffi.spongeAbsorb rustSponge a
+          ffi.spongeAbsorb rustSponge b
+          ffi.spongeSqueeze rustSponge
         psResult `shouldEqual` rustResult
 
-      it "absorb then squeeze matches Rust sponge (Vesta)" do
-        a <- liftEffect $ randomSampleOne arbitrary
-        b <- liftEffect $ randomSampleOne arbitrary
-        let
-          psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb (a :: Vesta.BaseField) psSponge
-          psSponge2 = Sponge.absorb b psSponge1
-          { result: psResult } = Sponge.squeeze psSponge2
-        rustResult <- liftEffect do
-          rustSponge <- VestaSpongeFFI.spongeCreate
-          VestaSpongeFFI.spongeAbsorb rustSponge a
-          VestaSpongeFFI.spongeAbsorb rustSponge b
-          VestaSpongeFFI.spongeSqueeze rustSponge
-        psResult `shouldEqual` rustResult
-
-      it "multiple absorb/squeeze cycles match Rust (Pallas)" do
-        a <- liftEffect $ randomSampleOne arbitrary
+      it "multiple absorb/squeeze cycles match Rust" do
+        a <- liftEffect $ randomSampleOne (arbitrary @f)
         b <- liftEffect $ randomSampleOne arbitrary
         c <- liftEffect $ randomSampleOne arbitrary
         let
           psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb (a :: Pallas.BaseField) psSponge
+          psSponge1 = Sponge.absorb a psSponge
           psSponge2 = Sponge.absorb b psSponge1
           psSponge3 = Sponge.absorb c psSponge2
           { result: psR1, sponge: psSponge4 } = Sponge.squeeze psSponge3
           { result: psR2 } = Sponge.squeeze psSponge4
         { r1: rustR1, r2: rustR2 } <- liftEffect do
-          rustSponge <- PallasSpongeFFI.spongeCreate
-          PallasSpongeFFI.spongeAbsorb rustSponge a
-          PallasSpongeFFI.spongeAbsorb rustSponge b
-          PallasSpongeFFI.spongeAbsorb rustSponge c
-          r1 <- PallasSpongeFFI.spongeSqueeze rustSponge
-          r2 <- PallasSpongeFFI.spongeSqueeze rustSponge
-          pure { r1, r2 }
-        psR1 `shouldEqual` rustR1
-        psR2 `shouldEqual` rustR2
-
-      it "multiple absorb/squeeze cycles match Rust (Vesta)" do
-        a <- liftEffect $ randomSampleOne arbitrary
-        b <- liftEffect $ randomSampleOne arbitrary
-        c <- liftEffect $ randomSampleOne arbitrary
-        let
-          psSponge = Sponge.create Sponge.initialState
-          psSponge1 = Sponge.absorb (a :: Vesta.BaseField) psSponge
-          psSponge2 = Sponge.absorb b psSponge1
-          psSponge3 = Sponge.absorb c psSponge2
-          { result: psR1, sponge: psSponge4 } = Sponge.squeeze psSponge3
-          { result: psR2 } = Sponge.squeeze psSponge4
-        { r1: rustR1, r2: rustR2 } <- liftEffect do
-          rustSponge <- VestaSpongeFFI.spongeCreate
-          VestaSpongeFFI.spongeAbsorb rustSponge a
-          VestaSpongeFFI.spongeAbsorb rustSponge b
-          VestaSpongeFFI.spongeAbsorb rustSponge c
-          r1 <- VestaSpongeFFI.spongeSqueeze rustSponge
-          r2 <- VestaSpongeFFI.spongeSqueeze rustSponge
+          rustSponge <- ffi.spongeCreate
+          ffi.spongeAbsorb rustSponge a
+          ffi.spongeAbsorb rustSponge b
+          ffi.spongeAbsorb rustSponge c
+          r1 <- ffi.spongeSqueeze rustSponge
+          r2 <- ffi.spongeSqueeze rustSponge
           pure { r1, r2 }
         psR1 `shouldEqual` rustR1
         psR2 `shouldEqual` rustR2

@@ -25,9 +25,7 @@ package:
       - foldable-traversable
       - gen
       - identity
-      - integers
       - js-bigints
-      - lists
       - ordered-collections
       - partial
       - refs

@@ -28,6 +28,7 @@ package:
     - lists
     - maybe
     - newtype
+    - ordered-collections
     - partial
     - poseidon
     - prelude

@@ -3,8 +3,6 @@ module Test.Pickles.ScalarChallenge where
 import Prelude
 
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
-import Data.Vector as Vector
 import Effect.Aff (Aff)
 import JS.BigInt as BigInt
 import Pickles.ScalarChallenge (Challenge(..), ScalarChallenge(..), lowest128Bits, lowest128BitsConstant, squeezeChallenge, squeezeChallengePure, squeezeScalar, squeezeScalarPure)
@@ -34,88 +32,65 @@ max128Bits = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128) - BigInt.fromInt
 fitsIn128Bits :: BigInt.BigInt -> Boolean
 fitsIn128Bits bi = bi >= BigInt.fromInt 0 && bi <= max128Bits
 
--- | Create a test sponge state for Pallas
-testStatePallas :: Vector 3 Pallas.BaseField
-testStatePallas = one :< (one + one) :< (one + one + one) :< Vector.nil
-
--- | Create a test sponge state for Vesta
-testStateVesta :: Vector 3 Vesta.BaseField
-testStateVesta = one :< (one + one) :< (one + one + one) :< Vector.nil
-
 spec :: Spec Unit
 spec = do
   describe "Pickles.ScalarChallenge" do
-    describe "lowest128BitsConstant" do
-      it "returns value that fits in 128 bits (Pallas)" $
-        quickCheck propLowest128BitsFitsPallas
-      it "returns value that fits in 128 bits (Vesta)" $
-        quickCheck propLowest128BitsFitsVesta
-      it "is idempotent for small values (Pallas)" $
-        quickCheck propIdempotentSmallPallas
-      it "is idempotent for small values (Vesta)" $
-        quickCheck propIdempotentSmallVesta
+    describe "Pallas" do
+      scalarChallengeTests (Proxy @Pallas.BaseField)
+    describe "Vesta" do
+      scalarChallengeTests (Proxy @Vesta.BaseField)
 
-    describe "squeezeChallengePure" do
-      it "produces deterministic output (Pallas)" do
-        let
-          sponge = Sponge.create testStatePallas
-          { result: Challenge r1 } = squeezeChallengePure sponge
-          { result: Challenge r2 } = squeezeChallengePure sponge
-        r1 `shouldEqual` r2
+-- | All scalar challenge tests parameterized by field type
+scalarChallengeTests
+  :: forall f f'
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => Kimchi.KimchiVerify f f'
+  => Proxy f
+  -> Spec Unit
+scalarChallengeTests pf = do
+  describe "lowest128BitsConstant" do
+    it "returns value that fits in 128 bits" $
+      quickCheck (propLowest128BitsFits pf)
+    it "is idempotent for small values" $
+      quickCheck (propIdempotentSmall pf)
 
-      it "produces deterministic output (Vesta)" do
-        let
-          sponge = Sponge.create testStateVesta
-          { result: Challenge r1 } = squeezeChallengePure sponge
-          { result: Challenge r2 } = squeezeChallengePure sponge
-        r1 `shouldEqual` r2
+  describe "squeezeChallengePure" do
+    it "produces deterministic output" do
+      let
+        sponge :: Sponge.Sponge f
+        sponge = Sponge.create Sponge.initialState
+        { result: Challenge r1 } = squeezeChallengePure sponge
+        { result: Challenge r2 } = squeezeChallengePure sponge
+      r1 `shouldEqual` r2
 
-      it "produces value in 128-bit range (Pallas)" do
-        let
-          sponge = Sponge.create testStatePallas
-          { result: Challenge result } = squeezeChallengePure sponge
-        toBigInt result `shouldSatisfy` fitsIn128Bits
+    it "produces value in 128-bit range" do
+      let
+        sponge :: Sponge.Sponge f
+        sponge = Sponge.create Sponge.initialState
+        { result: Challenge result } = squeezeChallengePure sponge
+      toBigInt result `shouldSatisfy` fitsIn128Bits
 
-      it "produces value in 128-bit range (Vesta)" do
-        let
-          sponge = Sponge.create testStateVesta
-          { result: Challenge result } = squeezeChallengePure sponge
-        toBigInt result `shouldSatisfy` fitsIn128Bits
+  describe "squeezeScalarPure" do
+    it "produces deterministic output" do
+      let
+        sponge :: Sponge.Sponge f
+        sponge = Sponge.create Sponge.initialState
+        { result: ScalarChallenge r1 } = squeezeScalarPure sponge
+        { result: ScalarChallenge r2 } = squeezeScalarPure sponge
+      r1 `shouldEqual` r2
 
-    describe "squeezeScalarPure" do
-      it "produces deterministic output (Pallas)" do
-        let
-          sponge = Sponge.create testStatePallas
-          { result: ScalarChallenge r1 } = squeezeScalarPure sponge
-          { result: ScalarChallenge r2 } = squeezeScalarPure sponge
-        r1 `shouldEqual` r2
+  describe "Circuit versions match pure" do
+    it "lowest128Bits matches lowest128BitsConstant" $
+      circuitLowest128BitsTest pf
+    it "squeezeChallenge matches squeezeChallengePure" $
+      circuitSqueezeChallengeTest pf
+    it "squeezeScalar matches squeezeScalarPure" $
+      circuitSqueezeScalarTest pf
 
-      it "produces deterministic output (Vesta)" do
-        let
-          sponge = Sponge.create testStateVesta
-          { result: ScalarChallenge r1 } = squeezeScalarPure sponge
-          { result: ScalarChallenge r2 } = squeezeScalarPure sponge
-        r1 `shouldEqual` r2
-
-    describe "Circuit versions match pure (Pallas)" do
-      it "lowest128Bits matches lowest128BitsConstant" $
-        circuitLowest128BitsTest (Proxy :: Proxy Pallas.BaseField)
-      it "squeezeChallenge matches squeezeChallengePure" $
-        circuitSqueezeChallengeTest (Proxy :: Proxy Pallas.BaseField)
-      it "squeezeScalar matches squeezeScalarPure" $
-        circuitSqueezeScalarTest (Proxy :: Proxy Pallas.BaseField)
-
-    describe "Circuit versions match pure (Vesta)" do
-      it "lowest128Bits matches lowest128BitsConstant" $
-        circuitLowest128BitsTest (Proxy :: Proxy Vesta.BaseField)
-      it "squeezeChallenge matches squeezeChallengePure" $
-        circuitSqueezeChallengeTest (Proxy :: Proxy Vesta.BaseField)
-      it "squeezeScalar matches squeezeScalarPure" $
-        circuitSqueezeScalarTest (Proxy :: Proxy Vesta.BaseField)
-
--- | Property: lowest128BitsConstant returns a value that fits in 128 bits (Pallas)
-propLowest128BitsFitsPallas :: Pallas.ScalarField -> Result
-propLowest128BitsFitsPallas x =
+-- | Property: lowest128BitsConstant returns a value that fits in 128 bits
+propLowest128BitsFits :: forall f. PrimeField f => FieldSizeInBits f 255 => Proxy f -> f -> Result
+propLowest128BitsFits _ x =
   let
     result = lowest128BitsConstant x
     resultBigInt = toBigInt result
@@ -123,29 +98,9 @@ propLowest128BitsFitsPallas x =
     if fitsIn128Bits resultBigInt then Success
     else Failed $ "Result " <> show result <> " does not fit in 128 bits"
 
--- | Property: lowest128BitsConstant returns a value that fits in 128 bits (Vesta)
-propLowest128BitsFitsVesta :: Vesta.ScalarField -> Result
-propLowest128BitsFitsVesta x =
-  let
-    result = lowest128BitsConstant x
-    resultBigInt = toBigInt result
-  in
-    if fitsIn128Bits resultBigInt then Success
-    else Failed $ "Result " <> show result <> " does not fit in 128 bits"
-
--- | Property: for values < 2^128, lowest128BitsConstant is identity (Pallas)
-propIdempotentSmallPallas :: Pallas.ScalarField -> Result
-propIdempotentSmallPallas x =
-  let
-    xBigInt = toBigInt x
-    lo = lowest128BitsConstant x
-  in
-    if xBigInt <= max128Bits then lo === x
-    else Success -- Skip large values
-
--- | Property: for values < 2^128, lowest128BitsConstant is identity (Vesta)
-propIdempotentSmallVesta :: Vesta.ScalarField -> Result
-propIdempotentSmallVesta x =
+-- | Property: for values < 2^128, lowest128BitsConstant is identity
+propIdempotentSmall :: forall f. PrimeField f => FieldSizeInBits f 255 => Proxy f -> f -> Result
+propIdempotentSmall _ x =
   let
     xBigInt = toBigInt x
     lo = lowest128BitsConstant x

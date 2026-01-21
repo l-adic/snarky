@@ -248,9 +248,7 @@
             "foldable-traversable",
             "gen",
             "identity",
-            "integers",
             "js-bigints",
-            "lists",
             "ordered-collections",
             "partial",
             "refs",
@@ -356,6 +354,7 @@
             "lists",
             "maybe",
             "newtype",
+            "ordered-collections",
             "partial",
             "poseidon",
             "prelude",
@@ -550,6 +549,7 @@
             "arrays",
             "control",
             "curves",
+            "foldable-traversable",
             "foreign",
             "js-bigints",
             "maybe",
@@ -641,6 +641,7 @@
         },
         "test": {
           "dependencies": [
+            "aff",
             "effect",
             "newtype",
             "partial",
@@ -1029,7 +1030,6 @@
             "prelude",
             "snarky",
             "snarky-kimchi",
-            "tuples",
             "vector-sized"
           ],
           "build_plan": [
@@ -1112,7 +1112,8 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck"
+            "spec-quickcheck",
+            "tuples"
           ],
           "build_plan": [
             "aff",
