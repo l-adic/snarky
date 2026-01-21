@@ -194,12 +194,18 @@ pub mod pallas {
     #[napi]
     pub fn pallas_sponge_create() -> PallasSpongeExternal {
         let params = fp_kimchi::static_params();
-        External::new(ArithmeticSponge::<PallasBaseField, PlonkSpongeConstantsKimchi>::new(params))
+        External::new(ArithmeticSponge::<
+            PallasBaseField,
+            PlonkSpongeConstantsKimchi,
+        >::new(params))
     }
 
     /// Absorb a single element into the sponge (thin wrapper around Sponge::absorb)
     #[napi]
-    pub fn pallas_sponge_absorb(sponge: &mut PallasSpongeExternal, input: &PallasBaseFieldExternal) {
+    pub fn pallas_sponge_absorb(
+        sponge: &mut PallasSpongeExternal,
+        input: &PallasBaseFieldExternal,
+    ) {
         sponge.absorb(&[**input]);
     }
 
