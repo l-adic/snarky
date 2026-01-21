@@ -26,7 +26,6 @@ import Data.Fin (Finite, unsafeFinite)
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (fromJust)
 import Data.Show.Generic (genericShow)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -64,8 +63,8 @@ type Sponge f =
 initialState :: forall f. Semiring f => Vector 3 f
 initialState = Vector.generate (const zero)
 
--- | Create a new sponge with optional initial state
-create :: forall f. Semiring f => Vector 3 f -> Sponge f
+-- | Create a new sponge with the given initial state
+create :: forall f. Vector 3 f -> Sponge f
 create init =
   { state: init
   , spongeState: Absorbed (unsafeFinite 0)
@@ -112,7 +111,7 @@ absorb x sponge = case sponge.spongeState of
   p1 = unsafeFinite 1
 
 -- | Squeeze a field element from the sponge
-squeeze :: forall f. PoseidonField f => Sponge f -> Tuple f (Sponge f)
+squeeze :: forall f. PoseidonField f => Sponge f -> { result :: f, sponge :: Sponge f }
 squeeze sponge = case sponge.spongeState of
   Squeezed n ->
     if n == rate then
@@ -121,7 +120,7 @@ squeeze sponge = case sponge.spongeState of
         newState = permute sponge.state
         result = Vector.index newState p0
       in
-        Tuple result { state: newState, spongeState: Squeezed p1 }
+        { result, sponge: { state: newState, spongeState: Squeezed p1 } }
     else
       -- Return from current position
       let
@@ -129,14 +128,14 @@ squeeze sponge = case sponge.spongeState of
         -- must be < rate == 2
         pNext = unsafePartial fromJust $ succ n
       in
-        Tuple result { state: sponge.state, spongeState: Squeezed pNext }
+        { result, sponge: { state: sponge.state, spongeState: Squeezed pNext } }
   Absorbed _ ->
     -- Coming from absorbed state, permute first
     let
       newState = permute sponge.state
       result = Vector.index newState p0
     in
-      Tuple result { state: newState, spongeState: Squeezed p1 }
+      { result, sponge: { state: newState, spongeState: Squeezed p1 } }
   where
   p0 :: Finite 3
   p0 = unsafeFinite 0
