@@ -11,7 +11,6 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
@@ -24,7 +23,7 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
-import Snarky.Curves.Class (class FieldSizeInBits, fromInt, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
@@ -121,29 +120,10 @@ scaleFast1 p t = do
   { g } <- varBaseMul @n @nChunks p t
   pure g
 
-scaleFast2'
-  :: forall t m f @n @nChunks sDiv2Bits bitsUsed _l
-   . FieldSizeInBits f n
-  => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
-  => Mul 5 nChunks bitsUsed
-  => Reflectable bitsUsed Int
-  => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
-  => AffinePoint (FVar f)
-  -> Type2 (FVar f)
-  -> BoolVar f
-  -> Snarky (KimchiConstraint f) t m
-       (AffinePoint (FVar f))
-scaleFast2' base (Type2 sDiv2) sOdd = do
-  { g, lsbBits } <- varBaseMul @n @nChunks base (Type1 sDiv2)
-  let { after } = Vector.splitAt @sDiv2Bits lsbBits
-  traverse_ (\x -> assertEqual_ x (const_ zero)) after
-  EllipticCurve.if_ sOdd g =<< do
-    negBase <- EllipticCurve.negate base
-    { p } <- addComplete g negBase
-    pure p
-
+-- | Scale a point by a scalar using the Type2 split representation.
+-- | The scalar s is already split into (sDiv2, sOdd) where s = 2*sDiv2 + sOdd.
+-- | This allows efficient scalar multiplication when the scalar field
+-- | is larger than the circuit field (foreign field case).
 scaleFast2
   :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
    . FieldSizeInBits f n
@@ -154,19 +134,14 @@ scaleFast2
   => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
-  -> FVar f
+  -> Type2 (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2 base s = do
-  { sDiv2, sOdd } <- exists do
-    sVal <- readCVar s
-    let
-      sBigInt = toBigInt sVal
-      sOdd = BigInt.odd sBigInt
-    pure
-      { sDiv2: (if sOdd then sVal - one else sVal) / fromInt 2
-      , sOdd: BigInt.odd sBigInt
-      }
-  assertEqual_ s =<< do
-    pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
-  scaleFast2' @n @nChunks base (Type2 sDiv2) sOdd
+scaleFast2 base (Type2 { sDiv2, sOdd }) = do
+  { g, lsbBits } <- varBaseMul @n @nChunks base (Type1 sDiv2)
+  let { after } = Vector.splitAt @sDiv2Bits lsbBits
+  traverse_ (\x -> assertEqual_ x (const_ zero)) after
+  EllipticCurve.if_ sOdd g =<< do
+    negBase <- EllipticCurve.negate base
+    { p } <- addComplete g negBase
+    pure p

@@ -6,22 +6,20 @@ import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
-import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
-import Snarky.Circuit.Types (F, FVar)
+import Snarky.Circuit.Types (BoolVar, F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Types.Shifted (class Shifted, Type1(..))
+import Snarky.Types.Shifted (Type1(..), Type2(..), fromShifted, toShifted)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
@@ -34,10 +32,12 @@ spec = do
     it "varBaseMul Circuit is Valid for Type1" $ unsafePartial $
       let
         f :: Tuple (AffinePoint (F Pallas.BaseField)) (Type1 (F Pallas.BaseField)) -> AffinePoint (F Pallas.BaseField)
-        f (Tuple { x: F x, y: F y } (Type1 (F t))) =
+        f (Tuple { x: F x, y: F y } shifted) =
           let
             base = fromAffine { x, y }
-            result = scalarMul (fieldShift1 t) base
+            -- Use fromShifted to get the effective scalar
+            F scalar = fromShifted shifted
+            result = scalarMul scalar base
             { x, y } = unsafePartial $ fromJust $ toAffine @Pallas.BaseField @Pallas.G result
           in
             { x: F x, y: F y }
@@ -60,7 +60,7 @@ spec = do
             (uncurry circuit)
             Kimchi.initialState
 
-        gen :: Shifted Type1 Pallas.BaseField => Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type1 (F Pallas.BaseField)))
+        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type1 (F Pallas.BaseField)))
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
           t <- arbitrary
@@ -80,11 +80,12 @@ spec = do
   describe "VarBaseMul Type2" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial $
       let
-        f :: Tuple (AffinePoint (F Vesta.BaseField)) (F Vesta.BaseField) -> AffinePoint (F Vesta.BaseField)
-        f = uncurry \{ x: F x, y: F y } (F t) ->
+        f :: Tuple (AffinePoint (F Vesta.BaseField)) (Type2 (F Vesta.BaseField) Boolean) -> AffinePoint (F Vesta.BaseField)
+        f = uncurry \{ x: F x, y: F y } shifted ->
           let
             base = fromAffine @Vesta.BaseField @Vesta.G { x, y }
-            result = scalarMul (fieldShift2 t) base
+            F effectiveScalar = fromShifted shifted
+            result = scalarMul effectiveScalar base
             { x, y } = unsafePartial $ fromJust $ toAffine @Vesta.BaseField result
           in
             { x: F x, y: F y }
@@ -94,24 +95,22 @@ spec = do
           :: forall t
            . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
           => AffinePoint (FVar Vesta.BaseField)
-          -> FVar Vesta.BaseField
+          -> Type2 (FVar Vesta.BaseField) (BoolVar Vesta.BaseField)
           -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (AffinePoint (FVar Vesta.BaseField))
-        circuit p t = do
-          g <- scaleFast2 @51 p t
-          pure g
+        circuit p t = scaleFast2 @51 p t
         s =
           compilePure
-            (Proxy @(Tuple (AffinePoint (F Vesta.BaseField)) (F Vesta.BaseField)))
+            (Proxy @(Tuple (AffinePoint (F Vesta.BaseField)) (Type2 (F Vesta.BaseField) Boolean)))
             (Proxy @(AffinePoint (F Vesta.BaseField)))
             (Proxy @(KimchiConstraint Vesta.BaseField))
             (uncurry circuit)
             Kimchi.initialState
 
-        gen :: Gen (Tuple (AffinePoint (F Vesta.BaseField)) (F Vesta.BaseField))
+        gen :: Gen (Tuple (AffinePoint (F Vesta.BaseField)) (Type2 (F Vesta.BaseField) Boolean))
         gen = do
           p <- EC.genAffinePoint (Proxy @Vesta.G)
-          t <- arbitrary
-          pure $ Tuple p t
+          s <- arbitrary @(F Vesta.ScalarField)
+          pure $ Tuple p (toShifted s)
       in
         do
           circuitSpecPure' 100
@@ -123,26 +122,3 @@ spec = do
             }
             gen
           liftEffect $ verifyCircuit { s, gen, solver }
-
--- | Shift field element for Type1 scalar multiplication
--- | Result: 2*t + 1 + 2^255 (ensures high bit is set for constant-time scalar mul)
-fieldShift1 :: forall f f' n. FieldSizeInBits f n => FieldSizeInBits f' n => PrimeField f' => f -> f'
-fieldShift1 t =
-  let
-    coerceViaBits :: f -> f'
-    coerceViaBits = packPure <<< unpackPure
-    two = one + one
-    twoToThe255 = fromBigInt $ toBigInt (one :: Vesta.BaseField) `shl` fromInt 255
-  in
-    (two * coerceViaBits t) + one + twoToThe255
-
--- | Shift field element for Type2 scalar multiplication
--- | Result: t + 2^255 (ensures high bit is set for constant-time scalar mul)
-fieldShift2 :: forall f f' n. FieldSizeInBits f n => FieldSizeInBits f' n => PrimeField f' => f -> f'
-fieldShift2 t =
-  let
-    coerceViaBits :: f -> f'
-    coerceViaBits = packPure <<< unpackPure
-    twoToThe255 = fromBigInt $ toBigInt (one :: Pallas.BaseField) `shl` fromInt 255
-  in
-    coerceViaBits t + twoToThe255
