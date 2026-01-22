@@ -81,23 +81,19 @@ genValidSignature
   -> Proxy n
   -> Gen (VerifyInput n (F f) Boolean)
 genValidSignature pg pn = do
-  -- Generate random private key (in scalar field f')
   privateKey <- arbitrary @f' `suchThat` \sk ->
     isJust $ toAffine $ scalarMul sk (generator @_ @g)
   let
     publicKey = unsafePartial fromJust
       $ toAffine
       $ scalarMul privateKey (generator @_ @g)
-  -- Generate random message field element (in base field f)
   message <- Vector.generateA @n (const arbitrary)
-
-  -- Compute public key first (this ties the curve type g)
-
   let
-    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
-
-    kPrime :: f'
-    kPrime = truncateFieldCoerce kPrimeBase
+    kPrime =
+      let
+        kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
+      in
+        truncateFieldCoerce kPrimeBase
 
   if kPrime == zero then
     genValidSignature pg pn
@@ -107,15 +103,15 @@ genValidSignature pg pn = do
       Just { x: r, y: ry } -> do
         let
           k = if Schnorr.isEven ry then kPrime else negate kPrime
-          eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
 
-          e :: f'
-          e = truncateFieldCoerce eBase
+          e =
+            let
+              eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
+            in
+              truncateFieldCoerce eBase
 
-          s :: f'
           s = k + e * privateKey
 
-          -- Convert s to Type2 representation using toShifted
           sigS :: Type2 (F f) Boolean
           sigS = toShifted (F s)
 
@@ -167,19 +163,16 @@ verifySpec _ pg _pk = do
       let
         publicKey = { x: case pk.x of F x -> x, y: case pk.y of F y -> y }
 
-        -- Get effective scalar from Type2 using fromShifted
-        s :: f'
         s = case fromShifted sigS of F x -> x
 
-        -- Compute e = H(pk_x, pk_y, r, msgHash)
-        eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
-
         -- e is a circuit field hash, split to Type2 and get effective scalar via Shifted
-        -- This mirrors what the circuit does with splitFieldVar
         e :: f'
-        e = case fromShifted (splitField (F eBase)) of F x -> x
+        e =
+          let
+            eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
+          in
+            case fromShifted (splitField (F eBase)) of F x -> x
 
-        -- Compute R' = s*G - e*pk (using shifted values for scalarMul)
         pkPoint = fromAffine @f @g publicKey
         sG = scalarMul s generator
         ePk = scalarMul e pkPoint
@@ -189,7 +182,6 @@ verifySpec _ pg _pk = do
           Nothing -> false
           Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
-    -- Circuit function
     circuit
       :: forall t
        . CircuitM f (KimchiConstraint f) t Identity
@@ -197,9 +189,9 @@ verifySpec _ pg _pk = do
       -> Snarky (KimchiConstraint f) t Identity (BoolVar f)
     circuit (VerifyInput { sigR, sigS, publicKey, message }) =
       let
-        sig = SignatureVar { r: sigR, s: sigS }
+        signature = SignatureVar { r: sigR, s: sigS }
       in
-        verifies @51 genPointVar sig publicKey message
+        verifies @51 genPointVar { signature, publicKey, message }
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
     st = compilePure

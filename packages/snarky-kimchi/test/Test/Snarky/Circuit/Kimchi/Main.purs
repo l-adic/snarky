@@ -15,6 +15,7 @@ import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
 import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
+import Test.Snarky.Types.Shifted as ShiftedTests
 import Test.Spec (Spec, describe)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -42,3 +43,4 @@ spec = do
   VarBaseMulTests.spec
   EndoMulTests.spec
   EndoScalarTests.spec
+  ShiftedTests.spec

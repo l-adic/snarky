@@ -13,7 +13,6 @@ module Snarky.Circuit.Schnorr
   , isEven
   , hashMessage
   , verifies
-  , assertVerifies
   ) where
 
 import Prelude
@@ -28,7 +27,7 @@ import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, assert_, not_, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, not_, unpack_)
 import Snarky.Circuit.DSL.Field (equals_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
@@ -58,7 +57,6 @@ sigS :: forall f. SignatureVar f -> Type2 (FVar f) (BoolVar f)
 sigS (SignatureVar { s }) = s
 
 -- | Check if a field element is even (LSB is 0) in a circuit.
--- | Returns a BoolVar that is true if the field element is even.
 isEven
   :: forall f t m n
    . CircuitM f (KimchiConstraint f) t m
@@ -66,18 +64,11 @@ isEven
   => FVar f
   -> Snarky (KimchiConstraint f) t m (BoolVar f)
 isEven y = do
-  -- Unpack to get the bits (LSB first)
   bits <- unpack_ y
-  -- The first bit is the LSB; even if LSB == 0
-  let lsb = Vector.index bits (unsafeFinite 0)
-  -- Return NOT lsb (true if even)
-  pure $ not_ lsb
+  pure $ not_ $ Vector.index bits (unsafeFinite 0)
 
 -- | Hash the message for signature verification in a circuit.
--- |
--- | e = H(pk_x, pk_y, r, H(message))
--- |
--- | This version takes a pre-hashed message digest for simplicity.
+-- | e = H(pk_x, pk_y, r, message)
 hashMessage
   :: forall f t m @n
    . PoseidonField f
@@ -95,7 +86,7 @@ hashMessage { x: px, y: py } r message = do
 -- | Verify a Schnorr signature in a circuit, returning a boolean.
 -- |
 -- | Algorithm:
--- | 1. e = H(pk_x, pk_y, r, H(message))
+-- | 1. e = H(pk_x, pk_y, r, message)
 -- | 2. R' = [s] * G - [e] * pk
 -- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
 verifies
@@ -110,52 +101,16 @@ verifies
   => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
-  -> SignatureVar f
-  -> AffinePoint (FVar f)
-  -> Vector l (FVar f)
+  -> { signature :: SignatureVar f
+     , publicKey :: AffinePoint (FVar f)
+     , message :: Vector l (FVar f)
+     }
   -> Snarky (KimchiConstraint f) t m (BoolVar f)
-verifies gen (SignatureVar { r, s }) publicKey message = do
-  -- Step 1: Compute challenge hash e = H(pk_x, pk_y, r, H(message))
+verifies gen { signature: SignatureVar { r, s }, publicKey, message } = do
   Digest e <- hashMessage @l publicKey r message
-
-  -- Step 2: Compute R' = [s] * G - [e] * pk
-  -- s is already Type2, e needs to be split (it's a circuit field hash output)
   eSplit <- splitFieldVar e
-  -- First compute s*G
   sG <- scaleFast2 @nChunks gen s
-  -- Then compute e*pk
   ePk <- scaleFast2 @nChunks publicKey eSplit
-  -- Negate e*pk to get -e*pk
   negEPk <- EllipticCurve.negate ePk
-  -- Add s*G + (-e*pk) to get R'
   { p: rPoint } <- addComplete sG negEPk
-
-  -- Step 3: Check that y-coordinate of R' is even AND x-coordinate equals r
-  yIsEven <- isEven rPoint.y
-  xEqualsR <- equals_ rPoint.x r
-
-  and_ yIsEven xEqualsR
-
--- | Assert that a Schnorr signature is valid in a circuit.
--- |
--- | This is like `verifies` but asserts the result rather than returning it.
-assertVerifies
-  :: forall f t m n @nChunks sDiv2Bits bitsUsed _l _k
-   . PoseidonField f
-  => Add 3 n _k
-  => Reflectable _k Int
-  => FieldSizeInBits f n
-  => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
-  => Mul 5 nChunks bitsUsed
-  => Reflectable bitsUsed Int
-  => Reflectable sDiv2Bits Int
-  => CircuitM f (KimchiConstraint f) t m
-  => AffinePoint (FVar f)
-  -> SignatureVar f
-  -> AffinePoint (FVar f)
-  -> Vector n (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
-assertVerifies gen sig publicKey message = do
-  result <- verifies @nChunks gen sig publicKey message
-  assert_ result
+  isEven rPoint.y && equals_ rPoint.x r
