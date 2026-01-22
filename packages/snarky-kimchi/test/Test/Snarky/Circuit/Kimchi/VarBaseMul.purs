@@ -19,7 +19,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Types.Shifted (Type1(..), Type2(..), fromShifted, toShifted)
+import Snarky.Types.Shifted (Type1(..), Type2, fromShifted, toShifted)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)

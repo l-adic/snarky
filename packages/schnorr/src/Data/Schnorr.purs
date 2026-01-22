@@ -13,7 +13,7 @@ module Data.Schnorr
   , verify
   , isEven
   , hashMessage
-  , safeFieldCoerce
+  , truncateFieldCoerce
   ) where
 
 import Prelude
@@ -29,11 +29,12 @@ import Poseidon as Poseidon
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 
--- | Safe coercion between 255-bit fields via bit truncation.
--- | Truncates to 254 bits to ensure the value is < 2^254, which is guaranteed
--- | to fit in both Pasta field primes without modular reduction.
--- | This matches Mina's approach for nonce derivation.
-safeFieldCoerce
+-- | Truncating coercion between 255-bit fields.
+-- | WARNING: This truncates to 254 bits, discarding the MSB. For values >= 2^254,
+-- | the result will differ from the input. Only use when:
+-- | - You know the value is < 2^254, or
+-- | - You don't care about truncation (e.g., nonce derivation where any 254-bit value works)
+truncateFieldCoerce
   :: forall f f'
    . PrimeField f
   => PrimeField f'
@@ -41,7 +42,7 @@ safeFieldCoerce
   => FieldSizeInBits f' 255
   => f
   -> f'
-safeFieldCoerce x =
+truncateFieldCoerce x =
   let
     bits = unpackPure x -- Vector 255 Boolean, LSB first
     truncated = Vector.take @254 bits -- Vector 254 Boolean (lower 254 bits)
@@ -125,7 +126,7 @@ sign privateKey message = do
     -- This ensures the value fits in both fields without modular reduction,
     -- matching Mina's approach for nonce derivation.
     kPrime :: fs
-    kPrime = safeFieldCoerce kPrimeBase
+    kPrime = truncateFieldCoerce kPrimeBase
 
   -- Guard against zero nonce
   if kPrime == zero then Nothing

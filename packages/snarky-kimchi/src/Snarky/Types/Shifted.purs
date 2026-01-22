@@ -4,6 +4,7 @@ module Snarky.Types.Shifted
   , class Shifted
   , fromShifted
   , toShifted
+  , splitField
   , joinField
   ) where
 
@@ -99,7 +100,9 @@ instance Shifted (F Pallas.ScalarField) (Type1 (F Pallas.BaseField)) where
 instance Shifted (F Vesta.ScalarField) (Type2 (F Vesta.BaseField) Boolean) where
   toShifted (F s) =
     let
-      { sDiv2, sOdd } = splitField s
+      sBigInt = toBigInt s
+      sOdd = BigInt.odd sBigInt
+      sDiv2 = (if sOdd then s - one else s) / fromBigInt (fromInt 2)
 
       -- sDiv2 is 254 bits, safe to coerce to smaller field
       sDiv2Small :: Vesta.BaseField
@@ -153,16 +156,17 @@ instance PrimeField f => CircuitType f (Type2 (F f) Boolean) (Type2 (FVar f) (Bo
 instance BasicSystem f c => CheckedType (Type2 (FVar f) (BoolVar f)) c where
   check = genericCheck
 
--- | Split a field element into (sDiv2, sOdd) where s = 2*sDiv2 + sOdd
--- | This is a pure operation on field values
-splitField :: forall f. PrimeField f => f -> { sDiv2 :: f, sOdd :: Boolean }
-splitField s =
+-- | Split a field element into Type2 representation where s = 2*sDiv2 + sOdd
+-- | This is used when you have a circuit field value (e.g., a hash output)
+-- | and need to compute the effective scalar for scaleFast2.
+splitField :: forall f. PrimeField f => F f -> Type2 (F f) Boolean
+splitField (F s) =
   let
     sBigInt = toBigInt s
     sOdd = BigInt.odd sBigInt
     sDiv2 = (if sOdd then s - one else s) / fromBigInt (fromInt 2)
   in
-    { sDiv2, sOdd }
+    Type2 { sDiv2: F sDiv2, sOdd }
 
 -- | Join (sDiv2, sOdd) back into a field element: s = 2*sDiv2 + sOdd
 joinField :: forall f. PrimeField f => { sDiv2 :: f, sOdd :: Boolean } -> f

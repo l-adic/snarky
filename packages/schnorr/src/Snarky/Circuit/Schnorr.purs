@@ -31,17 +31,19 @@ import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, assert_, not_, unpack_)
 import Snarky.Circuit.DSL.Field (equals_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type2)
 
 -- | Circuit variable type for Schnorr signatures.
--- | Both r and s are represented as field elements in the circuit.
+-- | r is the x-coordinate of R (circuit field element).
+-- | s is a scalar field element represented as Type2 (for foreign field case).
 newtype SignatureVar f = SignatureVar
   { r :: FVar f
-  , s :: FVar f
+  , s :: Type2 (FVar f) (BoolVar f)
   }
 
 derive instance Newtype (SignatureVar f) _
@@ -52,7 +54,7 @@ sigR :: forall f. SignatureVar f -> FVar f
 sigR (SignatureVar { r }) = r
 
 -- | Extract the s component from a SignatureVar.
-sigS :: forall f. SignatureVar f -> FVar f
+sigS :: forall f. SignatureVar f -> Type2 (FVar f) (BoolVar f)
 sigS (SignatureVar { s }) = s
 
 -- | Check if a field element is even (LSB is 0) in a circuit.
@@ -117,10 +119,12 @@ verifies gen (SignatureVar { r, s }) publicKey message = do
   Digest e <- hashMessage @l publicKey r message
 
   -- Step 2: Compute R' = [s] * G - [e] * pk
+  -- s is already Type2, e needs to be split (it's a circuit field hash output)
+  eSplit <- splitFieldVar e
   -- First compute s*G
   sG <- scaleFast2 @nChunks gen s
   -- Then compute e*pk
-  ePk <- scaleFast2 @nChunks publicKey e
+  ePk <- scaleFast2 @nChunks publicKey eSplit
   -- Negate e*pk to get -e*pk
   negEPk <- EllipticCurve.negate ePk
   -- Add s*G + (-e*pk) to get R'
