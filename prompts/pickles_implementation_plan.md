@@ -4,19 +4,24 @@ The new approach is to identify the smallest, most atomic components of the syst
 
 **Phase 1: Foundational Tools & Primitives**
 
+**Status: Completed**
+
 These are the smallest, most self-contained building blocks. Each is a perfect candidate for a small PR.
 
 1.  **Unit: Poseidon Sponge.**
+    *   **Status: Completed**
     *   **Goal:** Implement the Poseidon sponge function for both the `Tick` and `Tock` fields. This is a pure computational unit.
     *   **Implementation:** `src/lib/pickles/Sponge.purs`
     *   **Test:** `test/lib/pickles/Sponge.purs`. The test will be to assert that for a given sequence of field element inputs, the sponge produces a known, pre-computed output. We can get these "test vectors" from the OCaml source or other Mina repositories.
 
 2.  **Unit: Scalar Challenge Generation.**
+    *   **Status: Completed**
     *   **Goal:** Create the `ScalarChallenge` module that uses the sponge to derive the various challenges (`alpha`, `beta`, `gamma`, etc.) from a transcript.
     *   **Implementation:** `src/lib/pickles/ScalarChallenge.purs`
     *   **Test:** `test/lib/pickles/ScalarChallenge.purs`. This test will feed a dummy transcript to the functions and assert that the correct, structured challenges are squeezed out. Depends only on the Sponge unit.
 
 3.  **Unit: Foreign Field Arithmetic Gadgets.**
+    *   **Status: Postponed** (Current belief is that this is not needed for the initial implementation).
     *   **Goal:** Implement the basic in-circuit gadgets for emulated "foreign field" addition and multiplication. These are essential for the "Wrap" circuit to reason about the "Step" proof's native field.
     *   **Implementation:** `src/lib/pickles/ForeignField.purs`
     *   **Test:** `test/lib/pickles/ForeignField.purs`. Use `circuitSpec` to create two circuits: one for `add` and one for `mul`. The tests will prove that for public inputs `a` and `b`, the circuit correctly computes `c = a + b` (or `c = a * b`) in the foreign field.
@@ -26,9 +31,17 @@ These are the smallest, most self-contained building blocks. Each is a perfect c
 The core of Pickles is a PLONK verifier implemented as a circuit. We will break down the verifier's checks into individual, testable circuits.
 
 1.  **Unit: Gate Constraint Evaluation Circuit.**
-    *   **Goal:** A circuit that takes wire polynomial evaluations (`w`) and gate selectors (`s`) as public input and checks that they satisfy the Kimchi gate equations (e.g., `s.add * (w[0] + w[1] - w[2]) = 0`).
-    *   **Implementation:** `src/lib/pickles/plonk_checks/GateConstraints.purs`
-    *   **Test:** `test/lib/pickles/plonk_checks/GateConstraints.purs`. The `circuitSpec` will prove that the circuit passes for inputs that satisfy the equations and fails for those that don't.
+    *   **Goal:** A circuit that takes wire polynomial evaluations (`w`) and gate selectors (`s`) as public input and checks that they satisfy the Kimchi gate equations.
+    *   **Strategy:** We will not re-implement the constraint math from scratch. Instead, we will leverage the existing PureScript "linearization" modules (`packages/pickles/src/Pickles/Linearization/`). These modules contain an Abstract Syntax Tree (AST) that represents the full Kimchi constraint polynomial, which has already been translated from the official OCaml implementation. Our task is to evaluate this AST within a circuit.
+    *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/GateConstraints.purs`
+        *   Define a function `checkGateConstraints` which will be a `Snarky` circuit.
+        *   The function will take the necessary proof components as in-circuit variables (`FVar`), including witness evaluations, selector evaluations, and challenges.
+        *   It will construct an in-circuit `Linearization.Env.Env`. This environment will map the AST variables to the corresponding in-circuit `FVar` values.
+        *   It will use `Linearization.Interpreter.interpret` to evaluate the main constraint polynomial AST using the in-circuit `Env`.
+        *   It will assert that the final computed value is equal to zero.
+    *   **Test:** `test/lib/pickles/plonk_checks/GateConstraints.purs`.
+        *   The `circuitSpec` will test the `checkGateConstraints` circuit.
+        *   The test will require a valid witness (a set of evaluations that satisfy the constraints) to prove the success case. An invalid witness will be used to prove the failure case.
 
 2.  **Unit: Permutation Argument Verification Circuit.**
     *   **Goal:** A circuit that verifies the copy constraints (permutation argument) of the PLONK proof.

@@ -25,11 +25,15 @@ package:
     dependencies:
       - aff
       - effect
+      - either
+      - exceptions
       - newtype
       - partial
       - quickcheck
+      - schnorr
       - snarky-kimchi
       - snarky-test-utils
       - spec
       - spec-node
       - spec-quickcheck
+      - transformers

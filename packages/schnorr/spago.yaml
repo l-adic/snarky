@@ -6,8 +6,10 @@ package:
     - js-bigints
     - maybe
     - newtype
+    - partial
     - poseidon
     - prelude
+    - quickcheck
     - random-oracle
     - snarky
     - snarky-curves
