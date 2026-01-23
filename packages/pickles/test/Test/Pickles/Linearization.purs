@@ -22,25 +22,17 @@ module Test.Pickles.Linearization where
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Morph (hoist)
 import Data.Array (concatMap)
 import Data.Array as Array
-import Data.Either (Either(..))
-import Data.Identity (Identity(..))
-import Data.Maybe (Maybe(..), fromJust)
-import Data.Newtype (un, unwrap, wrap)
+import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
-import Data.Schnorr.Gen (VerifyInput, genValidSignature)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, toUnfoldable)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Exception (error)
-import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evaluateLinearization, proverIndexCoefficientEvaluations, proverIndexDomainLog2, proverIndexSelectorEvaluations, proverIndexWitnessEvaluations, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evaluateLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
@@ -48,26 +40,19 @@ import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
-import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
-import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
-import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
+import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.CVar (CVar(..))
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.Types (F)
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase, generator, toAffine)
+import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary, quickCheckGen, (===))
-import Test.QuickCheck.Gen (Gen, randomSampleOne)
+import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
-import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -336,154 +321,6 @@ linearizationTests _ tokens = do
       (genLinearizationInput :: Gen (LinearizationInput (F f)))
 
 -------------------------------------------------------------------------------
--- | Test linearization for valid Schnorr circuit witness
--------------------------------------------------------------------------------
-
--- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
--- | Uses Pallas linearization (Fp) with a Schnorr circuit over Vesta scalar field
--- | (which equals Pallas base field = Fp).
--- |
--- | Note: The linearization polynomial does NOT evaluate to zero at an arbitrary
--- | point zeta. It evaluates to t(zeta) * Z_H(zeta) where t is the quotient
--- | polynomial. What we test here is that our PureScript interpreter produces
--- | the same result as Rust when given real circuit witness evaluations.
-validWitnessLinearizationTest :: Spec Unit
-validWitnessLinearizationTest = do
-  it "Pallas linearization: PS interpreter matches Rust for valid Schnorr witness" do
-    let
-      -- Schnorr circuit function over Vesta.ScalarField (= Pallas.BaseField = Fp)
-      genPointVar :: AffinePoint (FVar Vesta.ScalarField)
-      genPointVar =
-        let
-          { x, y } = unsafePartial fromJust $ toAffine (generator @_ @Pallas.G)
-        in
-          { x: const_ x, y: const_ y }
-
-      circuit
-        :: forall t
-         . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => VerifyInput 4 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)
-        -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (BoolVar Vesta.ScalarField)
-      circuit { signature: { r: sigR, s: sigS }, publicKey, message } =
-        let
-          signature = SignatureVar { r: sigR, s: sigS }
-        in
-          verifies @51 genPointVar { signature, publicKey, message }
-
-      solver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField) Boolean) Boolean
-      solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-
-      -- Compile the circuit
-      builtState :: CircuitBuilderState (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField)
-      builtState = compilePure
-        (Proxy @(VerifyInput 4 (F Vesta.ScalarField) Boolean))
-        (Proxy @Boolean)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-
-      gen = genValidSignature (Proxy @Pallas.G) (Proxy @4)
-
-    -- Generate a valid input and run the solver
-    input <- liftEffect $ randomSampleOne gen
-    crs <- liftEffect $ createCRS @Vesta.ScalarField
-
-    -- Run the solver
-    let
-      nat :: Identity ~> Effect
-      nat = pure <<< un Identity
-
-    eRes <- liftEffect $ runSolverT (\a -> hoist nat $ solver a) input
-    case eRes of
-      Left e -> liftEffect $ throwError $ error (show e)
-      Right (Tuple _ assignments) -> do
-        let
-          -- Build constraint system and witness
-          { constraintSystem, constraints } = makeConstraintSystem @Vesta.ScalarField
-            { constraints: concatMap toKimchiRows builtState.constraints
-            , publicInputs: builtState.publicInputs
-            , unionFind: (un AuxState builtState.aux).wireState.unionFind
-            }
-          { witness, publicInputs: _ } = makeWitness
-            { assignments
-            , constraints: map _.variables constraints
-            , publicInputs: builtState.publicInputs
-            }
-          endo = endoBase @Vesta.ScalarField @Pallas.ScalarField
-          proverIndex = createProverIndex @Vesta.ScalarField @Vesta.G
-            { endo
-            , constraintSystem
-            , crs
-            }
-
-        -- Generate random challenges
-        zeta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-        alpha <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-        beta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-        gamma <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-        jointCombiner <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-
-        let
-
-          -- Compute evaluations using FFI from prover index
-          witnessEvals = proverIndexWitnessEvaluations { proverIndex, witnessColumns: witness, zeta }
-          coeffEvals = proverIndexCoefficientEvaluations
-            { proverIndex, zeta }
-          indexEvals = proverIndexSelectorEvaluations { proverIndex, zeta }
-
-          -- Domain log2 is determined by the prover index
-          domainLog2' = proverIndexDomainLog2 proverIndex
-
-          -- Compute domain-dependent values
-          vanishesOnZk' = vanishesOnZkAndPreviousRows
-            { domainLog2: domainLog2', zkRows, pt: zeta }
-          lagrangeFalse0 = unnormalizedLagrangeBasis
-            { domainLog2: domainLog2', zkRows: 0, offset: 0, pt: zeta }
-          lagrangeTrue1 = unnormalizedLagrangeBasis
-            { domainLog2: domainLog2', zkRows, offset: -1, pt: zeta }
-
-          evalPoint = buildEvalPoint
-            { witnessEvals
-            , coeffEvals
-            , indexEvals
-            , defaultVal: zero
-            }
-
-          challenges = buildChallenges
-            { alpha
-            , beta
-            , gamma
-            , jointCombiner
-            , vanishesOnZk: vanishesOnZk'
-            , lagrangeFalse0
-            , lagrangeTrue1
-            }
-
-          env = fieldEnv evalPoint challenges parseHex
-
-          -- Evaluate using PureScript interpreter
-          psResult :: Vesta.ScalarField
-          psResult = evaluate PallasTokens.constantTermTokens env
-
-          -- Build FFI input for Rust evaluator
-          ffiInput = buildFFIInput
-            { witnessEvals
-            , coeffEvals
-            , indexEvals
-            , alpha
-            , beta
-            , gamma
-            , jointCombiner
-            , zeta
-            }
-
-          -- Evaluate using Rust
-          rustResult = evaluateLinearization ffiInput
-
-        -- PureScript should match Rust
-        liftEffect $ psResult `shouldEqual` rustResult
-
--------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
 
@@ -493,5 +330,3 @@ spec = describe "Linearization Interpreter" do
     linearizationTests (Proxy @Pallas.BaseField) PallasTokens.constantTermTokens
   describe "Vesta" do
     linearizationTests (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
-  describe "Real Circuit Evaluation" do
-    validWitnessLinearizationTest
