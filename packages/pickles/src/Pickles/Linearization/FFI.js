@@ -43,27 +43,6 @@ export const pallasVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
 export const vestaVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
   crypto.vestaVanishesOnZkAndPreviousRows(domainLog2, zkRows, pt);
 
-// Witness to polynomial evaluations
-export const pallasWitnessToEvaluations = ({ witness, zeta, domainLog2 }) =>
-  crypto.pallasWitnessToEvaluations(witness, zeta, domainLog2);
-
-export const vestaWitnessToEvaluations = ({ witness, zeta, domainLog2 }) =>
-  crypto.vestaWitnessToEvaluations(witness, zeta, domainLog2);
-
-// Gates to coefficient polynomial evaluations
-export const pallasGatesToCoefficientEvaluations = ({ gates, zeta, domainLog2 }) =>
-  crypto.pallasGatesToCoefficientEvaluations(gates, zeta, domainLog2);
-
-export const vestaGatesToCoefficientEvaluations = ({ gates, zeta, domainLog2 }) =>
-  crypto.vestaGatesToCoefficientEvaluations(gates, zeta, domainLog2);
-
-// Gates to selector polynomial evaluations
-export const pallasGatesToSelectorEvaluations = ({ gates, zeta, domainLog2 }) =>
-  crypto.pallasGatesToSelectorEvaluations(gates, zeta, domainLog2);
-
-export const vestaGatesToSelectorEvaluations = ({ gates, zeta, domainLog2 }) =>
-  crypto.vestaGatesToSelectorEvaluations(gates, zeta, domainLog2);
-
 // Prover index polynomial evaluations
 export const pallasProverIndexWitnessEvaluations = ({ proverIndex, witnessColumns, zeta }) =>
   pairEvals(crypto.pallasProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));

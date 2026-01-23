@@ -5,9 +5,6 @@ module Pickles.Linearization.FFI
   , evaluateLinearization
   , unnormalizedLagrangeBasis
   , vanishesOnZkAndPreviousRows
-  , witnessToEvaluations
-  , gatesToCoefficientEvaluations
-  , gatesToSelectorEvaluations
   , proverIndexWitnessEvaluations
   , proverIndexCoefficientEvaluations
   , proverIndexSelectorEvaluations
@@ -15,7 +12,7 @@ module Pickles.Linearization.FFI
   , PointEval
   ) where
 
-import Snarky.Backend.Kimchi.Types (Gate, ProverIndex)
+import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
@@ -49,9 +46,6 @@ class LinearizationFFI f g | f -> g where
   evaluateLinearization :: LinearizationInput f -> f
   unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
   vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
-  witnessToEvaluations :: { witness :: Array (Array f), zeta :: f, domainLog2 :: Int } -> Array f
-  gatesToCoefficientEvaluations :: { gates :: Array (Gate f), zeta :: f, domainLog2 :: Int } -> Array f
-  gatesToSelectorEvaluations :: { gates :: Array (Gate f), zeta :: f, domainLog2 :: Int } -> Array f
   proverIndexWitnessEvaluations :: { proverIndex :: ProverIndex g f, witnessColumns :: Array (Array f), zeta :: f } -> Array (PointEval f)
   proverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Array f
   proverIndexSelectorEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Array (PointEval f)
@@ -68,15 +62,6 @@ foreign import vestaUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: 
 
 foreign import pallasVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
-
-foreign import pallasWitnessToEvaluations :: { witness :: Array (Array Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
-foreign import vestaWitnessToEvaluations :: { witness :: Array (Array Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
-
-foreign import pallasGatesToCoefficientEvaluations :: { gates :: Array (Gate Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
-foreign import vestaGatesToCoefficientEvaluations :: { gates :: Array (Gate Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
-
-foreign import pallasGatesToSelectorEvaluations :: { gates :: Array (Gate Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
-foreign import vestaGatesToSelectorEvaluations :: { gates :: Array (Gate Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
 
 foreign import pallasProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, witnessColumns :: Array (Array Pallas.BaseField), zeta :: Pallas.BaseField } -> Array (PointEval Pallas.BaseField)
 foreign import vestaProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, witnessColumns :: Array (Array Vesta.BaseField), zeta :: Vesta.BaseField } -> Array (PointEval Vesta.BaseField)
@@ -95,9 +80,6 @@ instance LinearizationFFI Pallas.BaseField Vesta.G where
   evaluateLinearization = evaluatePallasLinearization
   unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
-  witnessToEvaluations = pallasWitnessToEvaluations
-  gatesToCoefficientEvaluations = pallasGatesToCoefficientEvaluations
-  gatesToSelectorEvaluations = pallasGatesToSelectorEvaluations
   proverIndexWitnessEvaluations = pallasProverIndexWitnessEvaluations
   proverIndexCoefficientEvaluations = pallasProverIndexCoefficientEvaluations
   proverIndexSelectorEvaluations = pallasProverIndexSelectorEvaluations
@@ -106,9 +88,6 @@ instance LinearizationFFI Vesta.BaseField Pallas.G where
   evaluateLinearization = evaluateVestaLinearization
   unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
-  witnessToEvaluations = vestaWitnessToEvaluations
-  gatesToCoefficientEvaluations = vestaGatesToCoefficientEvaluations
-  gatesToSelectorEvaluations = vestaGatesToSelectorEvaluations
   proverIndexWitnessEvaluations = vestaProverIndexWitnessEvaluations
   proverIndexCoefficientEvaluations = vestaProverIndexCoefficientEvaluations
   proverIndexSelectorEvaluations = vestaProverIndexSelectorEvaluations
