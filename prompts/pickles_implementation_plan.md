@@ -31,32 +31,52 @@ These are the smallest, most self-contained building blocks. Each is a perfect c
 The core of Pickles is a PLONK verifier implemented as a circuit. We will break down the verifier's checks into individual, testable circuits.
 
 1.  **Unit: Gate Constraint Evaluation Circuit.**
+    *   **Status: Completed**
     *   **Goal:** A circuit that takes wire polynomial evaluations (`w`) and gate selectors (`s`) as public input and checks that they satisfy the Kimchi gate equations.
-    *   **Strategy:** We will not re-implement the constraint math from scratch. Instead, we will leverage the existing PureScript "linearization" modules (`packages/pickles/src/Pickles/Linearization/`). These modules contain an Abstract Syntax Tree (AST) that represents the full Kimchi constraint polynomial, which has already been translated from the official OCaml implementation. Our task is to evaluate this AST within a circuit.
+    *   **Strategy:** We leveraged the existing PureScript "linearization" modules (`packages/pickles/src/Pickles/Linearization/`). These modules contain an AST representing the full Kimchi constraint polynomial, translated from the official OCaml implementation. The AST is evaluated within a circuit using a generic interpreter.
     *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/GateConstraints.purs`
-        *   Define a function `checkGateConstraints` which will be a `Snarky` circuit.
-        *   The function will take the necessary proof components as in-circuit variables (`FVar`), including witness evaluations, selector evaluations, and challenges.
-        *   It will construct an in-circuit `Linearization.Env.Env`. This environment will map the AST variables to the corresponding in-circuit `FVar` values.
-        *   It will use `Linearization.Interpreter.interpret` to evaluate the main constraint polynomial AST using the in-circuit `Env`.
-        *   It will assert that the final computed value is equal to zero.
-    *   **Test:** `test/lib/pickles/plonk_checks/GateConstraints.purs`.
-        *   The `circuitSpec` will test the `checkGateConstraints` circuit.
-        *   The test will require a valid witness (a set of evaluations that satisfy the constraints) to prove the success case. An invalid witness will be used to prove the failure case.
+        *   `checkGateConstraints`: a `Snarky` circuit that evaluates the linearization polynomial AST using in-circuit `FVar` values and asserts the result equals zero.
+        *   `evaluateGateConstraints`: evaluates and returns the result without asserting (for composability).
+        *   `GateConstraintInput`: uses `PointEval f = { zeta, omegaTimesZeta }` for structured polynomial evaluations at two points, with `Vector 15 (PointEval f)` for witness evals and `Vector 6 (PointEval f)` for selector evals.
+    *   **FFI Infrastructure:** `packages/pickles/src/Pickles/Linearization/FFI.purs`
+        *   `LinearizationFFI` typeclass with instances for Pallas and Vesta, providing: `evaluateLinearization`, `unnormalizedLagrangeBasis`, `vanishesOnZkAndPreviousRows`, `proverIndexDomainLog2`, `proverIndexWitnessEvaluations`, `proverIndexCoefficientEvaluations`, `proverIndexSelectorEvaluations`.
+        *   Rust implementations use generic `<F: PrimeField>` functions with thin `#[napi]` wrappers per curve, eliminating duplication.
+    *   **Test:** `packages/pickles/test/Test/Pickles/Linearization.purs`
+        *   QuickCheck: PureScript interpreter matches Rust evaluator on arbitrary inputs (100 samples per curve).
+        *   Circuit: `circuitSpec` verifies the in-circuit evaluation matches field-level evaluation.
+        *   Valid witness: PS matches Rust when given real polynomial evaluations from a Schnorr circuit prover index.
 
-2.  **Unit: Permutation Argument Verification Circuit.**
-    *   **Goal:** A circuit that verifies the copy constraints (permutation argument) of the PLONK proof.
-    *   **Implementation:** `src/lib/pickles/plonk_checks/Permutation.purs`
-    *   **Test:** `test/lib/pickles/plonk_checks/Permutation.purs`. `circuitSpec` will test this with a set of evaluations that correctly respect the permutation.
+2.  **Unit: Permutation Argument Circuit.**
+    *   **Goal:** A circuit that computes the permutation contribution to the full linearization check. This is separate from the gate constraint constant_term — the OCaml implementation (`plonk_checks.ml` lines 349-440) computes it independently.
+    *   **Architecture:** The full verification equation is `ft_eval0 = perm_contribution - constant_term + boundary_quotient = 0`. Phase 2.1 handles `constant_term`. This unit handles the permutation terms.
+    *   **What it computes:**
+        *   The permutation contribution: `∏(beta*sigma_i + w_i + gamma) * z(zeta*omega) * alpha^21 * zkp - ∏(beta*zeta*shift_i + w_i + gamma) * z(zeta) * alpha^21 * zkp`
+        *   The `perm` scalar (coefficient for z(x) in the full linearization): `-(z(zeta*omega) * beta * alpha^21 * zkp * ∏(gamma + beta*sigma_i + w_i))`
+        *   The boundary quotient: `L_1(zeta) * (z(zeta) - 1)` contribution
+    *   **New inputs needed (beyond GateConstraintInput):**
+        *   `z(zeta)`, `z(zeta*omega)` — permutation polynomial evaluations (PointEval)
+        *   `sigma_i(zeta)` for 7 permutation columns — permutation polynomial evaluations
+        *   Column shift constants (derived from domain generator)
+        *   `perm_alpha0 = 21` — the alpha power offset for permutation terms
+    *   **OCaml reference:** `mina/src/lib/pickles/plonk_checks/plonk_checks.ml` (`ft_eval0` and `derive_plonk` functions)
+    *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/Permutation.purs`
+    *   **Test:** `circuitSpec` with valid permutation polynomial evaluations from a prover index (same pattern as gate constraint tests).
 
 3.  **Unit: Polynomial Commitment Verification Circuit.**
-    *   **Goal:** A circuit that verifies the batch-opening proof for the polynomial commitments. This is the `e(P, Q) = ...` check and is the most complex part of the verifier.
-    *   **Implementation:** `src/lib/pickles/plonk_checks/Commitments.purs`
-    *   **Test:** `test/lib/pickles/plonk_checks/Commitments.purs`. This will be a complex test, but the goal is to use `circuitSpec` to prove the circuit passes for a known-valid opening.
+    *   **Goal:** A circuit that verifies the batch-opening proof for the polynomial commitments (IPA inner product argument). This checks that claimed polynomial evaluations are consistent with their commitments.
+    *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/Commitments.purs`
+    *   **Test:** `circuitSpec` with a known-valid opening proof.
 
-4.  **Unit: Composed Kimchi Verifier Circuit.**
-    *   **Goal:** Combine the above three circuits into a single, unified `verifyKimchi` circuit. This circuit's public input will be a full (if minimal) Kimchi proof and verification key.
-    *   **Implementation:** `src/lib/pickles/plonk_checks/Verifier.purs`
-    *   **Test:** `test/lib/pickles/plonk_checks/Verifier.purs`. Test that this composite circuit can successfully verify a known-valid Kimchi proof.
+4.  **Unit: Composed `ft_eval0` Check (Full Linearization).**
+    *   **Goal:** Combine gate constraints (constant_term), permutation contribution, and boundary quotient into the full `ft_eval0 = 0` check. This is the core PLONK verification equation.
+    *   **Architecture:** `ft_eval0 = perm_contribution - constant_term + boundary_quotient`. Each piece is computed by its respective unit; this composes them and asserts the sum equals zero.
+    *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/FtEval.purs`
+    *   **Test:** End-to-end test with a real proof's evaluations showing `ft_eval0 = 0`.
+
+5.  **Unit: Composed Kimchi Verifier Circuit.**
+    *   **Goal:** Combine the `ft_eval0` check with polynomial commitment verification into a unified `verifyKimchi` circuit.
+    *   **Implementation:** `packages/pickles/src/Pickles/PlonkChecks/Verifier.purs`
+    *   **Test:** Test that this composite circuit can verify a known-valid Kimchi proof.
 
 **Phase 3: Assembling the Step & Wrap Circuits**
 
