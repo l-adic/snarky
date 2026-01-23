@@ -376,7 +376,7 @@ pub fn pallas_prover_index_witness_evaluations(
     witness_columns: Vec<Vec<&VestaFieldExternal>>,
     zeta: &VestaFieldExternal,
 ) -> Result<Vec<VestaFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
 
     let cs = &prover_index.cs;
@@ -387,8 +387,8 @@ pub fn pallas_prover_index_witness_evaluations(
     let zeta_omega = zeta_val * omega;
 
     let mut result = Vec::with_capacity(COLUMNS * 2);
-    for col in 0..COLUMNS {
-        let mut col_vals: Vec<VestaScalarField> = witness_columns[col].iter().map(|x| ***x).collect();
+    for col_data in witness_columns.iter().take(COLUMNS) {
+        let mut col_vals: Vec<VestaScalarField> = col_data.iter().map(|x| ***x).collect();
         col_vals.resize(domain_size, VestaScalarField::zero());
         let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
         result.push(External::new(poly.evaluate(&zeta_val)));
@@ -404,7 +404,7 @@ pub fn pallas_prover_index_coefficient_evaluations(
     prover_index: &VestaProverIndexExternal,
     zeta: &VestaFieldExternal,
 ) -> Result<Vec<VestaFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
 
     let cs = &prover_index.cs;
@@ -426,8 +426,8 @@ pub fn pallas_prover_index_coefficient_evaluations(
     }
 
     let mut result = Vec::with_capacity(coeff_cols);
-    for col_idx in 0..coeff_cols {
-        let mut col_vals = coeff_columns[col_idx].clone();
+    for col_vals in &coeff_columns {
+        let mut col_vals = col_vals.clone();
         col_vals.resize(domain_size, VestaScalarField::zero());
         let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
         result.push(External::new(poly.evaluate(&zeta_val)));
@@ -442,7 +442,7 @@ pub fn pallas_prover_index_selector_evaluations(
     prover_index: &VestaProverIndexExternal,
     zeta: &VestaFieldExternal,
 ) -> Result<Vec<VestaFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
     use kimchi::circuits::gate::GateType;
 
@@ -484,13 +484,14 @@ pub fn pallas_prover_index_selector_evaluations(
 }
 
 /// Compute witness polynomial evaluations from a Pallas prover index (for Vesta linearization).
+/// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
 #[napi]
 pub fn vesta_prover_index_witness_evaluations(
     prover_index: &PallasProverIndexExternal,
     witness_columns: Vec<Vec<&PallasFieldExternal>>,
     zeta: &PallasFieldExternal,
 ) -> Result<Vec<PallasFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
 
     let cs = &prover_index.cs;
@@ -501,8 +502,8 @@ pub fn vesta_prover_index_witness_evaluations(
     let zeta_omega = zeta_val * omega;
 
     let mut result = Vec::with_capacity(COLUMNS * 2);
-    for col in 0..COLUMNS {
-        let mut col_vals: Vec<PallasScalarField> = witness_columns[col].iter().map(|x| ***x).collect();
+    for col_data in witness_columns.iter().take(COLUMNS) {
+        let mut col_vals: Vec<PallasScalarField> = col_data.iter().map(|x| ***x).collect();
         col_vals.resize(domain_size, PallasScalarField::zero());
         let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
         result.push(External::new(poly.evaluate(&zeta_val)));
@@ -517,7 +518,7 @@ pub fn vesta_prover_index_coefficient_evaluations(
     prover_index: &PallasProverIndexExternal,
     zeta: &PallasFieldExternal,
 ) -> Result<Vec<PallasFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
 
     let cs = &prover_index.cs;
@@ -539,8 +540,8 @@ pub fn vesta_prover_index_coefficient_evaluations(
     }
 
     let mut result = Vec::with_capacity(coeff_cols);
-    for col_idx in 0..coeff_cols {
-        let mut col_vals = coeff_columns[col_idx].clone();
+    for col_vals in &coeff_columns {
+        let mut col_vals = col_vals.clone();
         col_vals.resize(domain_size, PallasScalarField::zero());
         let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
         result.push(External::new(poly.evaluate(&zeta_val)));
@@ -554,7 +555,7 @@ pub fn vesta_prover_index_selector_evaluations(
     prover_index: &PallasProverIndexExternal,
     zeta: &PallasFieldExternal,
 ) -> Result<Vec<PallasFieldExternal>> {
-    use ark_ff::{FftField, Zero};
+    use ark_ff::Zero;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial};
     use kimchi::circuits::gate::GateType;
 

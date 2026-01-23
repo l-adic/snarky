@@ -580,7 +580,11 @@ pub fn pallas_witness_to_evaluations(
     if witness.len() != COLUMNS {
         return Err(Error::new(
             Status::InvalidArg,
-            format!("Expected {} witness columns, got {}", COLUMNS, witness.len()),
+            format!(
+                "Expected {} witness columns, got {}",
+                COLUMNS,
+                witness.len()
+            ),
         ));
     }
 
@@ -595,9 +599,9 @@ pub fn pallas_witness_to_evaluations(
 
     let mut result = Vec::with_capacity(COLUMNS * 2);
 
-    for col in 0..COLUMNS {
+    for col_data in witness.iter().take(COLUMNS) {
         // Pad column to domain size
-        let mut col_evals: Vec<PallasBaseField> = witness[col].iter().map(|x| ***x).collect();
+        let mut col_evals: Vec<PallasBaseField> = col_data.iter().map(|x| ***x).collect();
         col_evals.resize(domain_size, PallasBaseField::zero());
 
         // Interpolate to get polynomial
@@ -624,7 +628,11 @@ pub fn vesta_witness_to_evaluations(
     if witness.len() != COLUMNS {
         return Err(Error::new(
             Status::InvalidArg,
-            format!("Expected {} witness columns, got {}", COLUMNS, witness.len()),
+            format!(
+                "Expected {} witness columns, got {}",
+                COLUMNS,
+                witness.len()
+            ),
         ));
     }
 
@@ -639,9 +647,9 @@ pub fn vesta_witness_to_evaluations(
 
     let mut result = Vec::with_capacity(COLUMNS * 2);
 
-    for col in 0..COLUMNS {
+    for col_data in witness.iter().take(COLUMNS) {
         // Pad column to domain size
-        let mut col_evals: Vec<VestaBaseField> = witness[col].iter().map(|x| ***x).collect();
+        let mut col_evals: Vec<VestaBaseField> = col_data.iter().map(|x| ***x).collect();
         col_evals.resize(domain_size, VestaBaseField::zero());
 
         // Interpolate to get polynomial
@@ -681,7 +689,8 @@ pub fn pallas_gates_to_coefficient_evaluations(
     let num_gates = gates.len();
 
     // Initialize coefficient columns (15 columns, one per coefficient index)
-    let mut coeff_columns: Vec<Vec<PallasBaseField>> = vec![vec![PallasBaseField::zero(); num_gates]; COEFF_COLS];
+    let mut coeff_columns: Vec<Vec<PallasBaseField>> =
+        vec![vec![PallasBaseField::zero(); num_gates]; COEFF_COLS];
 
     // Extract coefficients from each gate into columns
     for (row, gate) in gates.iter().enumerate() {
@@ -694,9 +703,9 @@ pub fn pallas_gates_to_coefficient_evaluations(
 
     // Interpolate and evaluate each coefficient column
     let mut result = Vec::with_capacity(COEFF_COLS);
-    for col_idx in 0..COEFF_COLS {
+    for col_data in &coeff_columns {
         // Pad to domain size
-        let mut col_evals = coeff_columns[col_idx].clone();
+        let mut col_evals = col_data.clone();
         col_evals.resize(domain_size, PallasBaseField::zero());
 
         // Interpolate to polynomial
@@ -794,7 +803,8 @@ pub fn vesta_gates_to_coefficient_evaluations(
     let num_gates = gates.len();
 
     // Initialize coefficient columns
-    let mut coeff_columns: Vec<Vec<VestaBaseField>> = vec![vec![VestaBaseField::zero(); num_gates]; COEFF_COLS];
+    let mut coeff_columns: Vec<Vec<VestaBaseField>> =
+        vec![vec![VestaBaseField::zero(); num_gates]; COEFF_COLS];
 
     // Extract coefficients from each gate into columns
     for (row, gate) in gates.iter().enumerate() {
@@ -807,8 +817,8 @@ pub fn vesta_gates_to_coefficient_evaluations(
 
     // Interpolate and evaluate each coefficient column
     let mut result = Vec::with_capacity(COEFF_COLS);
-    for col_idx in 0..COEFF_COLS {
-        let mut col_evals = coeff_columns[col_idx].clone();
+    for col_data in &coeff_columns {
+        let mut col_evals = col_data.clone();
         col_evals.resize(domain_size, VestaBaseField::zero());
         let poly = Evaluations::from_vec_and_domain(col_evals, domain).interpolate();
         let eval_zeta = poly.evaluate(&zeta_val);
@@ -869,4 +879,3 @@ pub fn vesta_gates_to_selector_evaluations(
 
     Ok(result)
 }
-

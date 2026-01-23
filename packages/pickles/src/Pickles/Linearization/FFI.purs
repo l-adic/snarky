@@ -1,351 +1,114 @@
--- | FFI bindings to Rust linearization evaluator for testing
+-- | FFI bindings to Rust linearization evaluator for testing.
+-- | Exposes a typeclass `LinearizationFFI` with instances for Pallas and Vesta.
 module Pickles.Linearization.FFI
-  ( evaluatePallasLinearization
-  , evaluateVestaLinearization
-  , PallasLinearizationInput
-  , VestaLinearizationInput
-  , pallasUnnormalizedLagrangeBasis
-  , vestaUnnormalizedLagrangeBasis
-  , pallasVanishesOnZkAndPreviousRows
-  , vestaVanishesOnZkAndPreviousRows
-  , pallasWitnessToEvaluations
-  , vestaWitnessToEvaluations
-  , pallasGatesToCoefficientEvaluations
-  , pallasGatesToSelectorEvaluations
-  , vestaGatesToCoefficientEvaluations
-  , vestaGatesToSelectorEvaluations
-  , pallasProverIndexWitnessEvaluations
-  , pallasProverIndexCoefficientEvaluations
-  , pallasProverIndexSelectorEvaluations
-  , vestaProverIndexWitnessEvaluations
-  , vestaProverIndexCoefficientEvaluations
-  , vestaProverIndexSelectorEvaluations
+  ( class LinearizationFFI
+  , evaluateLinearization
+  , unnormalizedLagrangeBasis
+  , vanishesOnZkAndPreviousRows
+  , witnessToEvaluations
+  , gatesToCoefficientEvaluations
+  , gatesToSelectorEvaluations
+  , proverIndexWitnessEvaluations
+  , proverIndexCoefficientEvaluations
+  , proverIndexSelectorEvaluations
+  , LinearizationInput
+  , PointEval
   ) where
 
 import Snarky.Backend.Kimchi.Types (Gate, ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
--- | Input record for Pallas linearization evaluation
-type PallasLinearizationInput =
-  { alpha :: Pallas.BaseField
-  , beta :: Pallas.BaseField
-  , gamma :: Pallas.BaseField
-  , jointCombiner :: Pallas.BaseField
-  , witnessEvals :: Array Pallas.BaseField
-  , coefficientEvals :: Array Pallas.BaseField
-  , poseidonIndex :: Array Pallas.BaseField
-  , genericIndex :: Array Pallas.BaseField
-  , varbasemulIndex :: Array Pallas.BaseField
-  , endomulIndex :: Array Pallas.BaseField
-  , endomulScalarIndex :: Array Pallas.BaseField
-  , completeAddIndex :: Array Pallas.BaseField
-  , vanishesOnZk :: Pallas.BaseField
-  , zeta :: Pallas.BaseField
+-- | Input record for linearization evaluation
+type LinearizationInput f =
+  { alpha :: f
+  , beta :: f
+  , gamma :: f
+  , jointCombiner :: f
+  , witnessEvals :: Array f
+  , coefficientEvals :: Array f
+  , poseidonIndex :: Array f
+  , genericIndex :: Array f
+  , varbasemulIndex :: Array f
+  , endomulIndex :: Array f
+  , endomulScalarIndex :: Array f
+  , completeAddIndex :: Array f
+  , vanishesOnZk :: f
+  , zeta :: f
   , domainLog2 :: Int
   }
 
--- | Evaluate Pallas linearization using Rust/Kimchi
-foreign import evaluatePallasLinearizationImpl :: PallasLinearizationInput -> Pallas.BaseField
+-- | Polynomial evaluation at two points: zeta and zeta*omega
+type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 
-evaluatePallasLinearization :: PallasLinearizationInput -> Pallas.BaseField
-evaluatePallasLinearization = evaluatePallasLinearizationImpl
-
--- | Input record for Vesta linearization evaluation
-type VestaLinearizationInput =
-  { alpha :: Vesta.BaseField
-  , beta :: Vesta.BaseField
-  , gamma :: Vesta.BaseField
-  , jointCombiner :: Vesta.BaseField
-  , witnessEvals :: Array Vesta.BaseField
-  , coefficientEvals :: Array Vesta.BaseField
-  , poseidonIndex :: Array Vesta.BaseField
-  , genericIndex :: Array Vesta.BaseField
-  , varbasemulIndex :: Array Vesta.BaseField
-  , endomulIndex :: Array Vesta.BaseField
-  , endomulScalarIndex :: Array Vesta.BaseField
-  , completeAddIndex :: Array Vesta.BaseField
-  , vanishesOnZk :: Vesta.BaseField
-  , zeta :: Vesta.BaseField
-  , domainLog2 :: Int
-  }
-
--- | Evaluate Vesta linearization using Rust/Kimchi
-foreign import evaluateVestaLinearizationImpl :: VestaLinearizationInput -> Vesta.BaseField
-
-evaluateVestaLinearization :: VestaLinearizationInput -> Vesta.BaseField
-evaluateVestaLinearization = evaluateVestaLinearizationImpl
-
--- | Compute unnormalized Lagrange basis for Pallas base field
--- | (pt^n - 1) / (pt - ω^i)
--- | When zkRows > 0, offsets into the ZK padding region
-foreign import pallasUnnormalizedLagrangeBasisImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-
-pallasUnnormalizedLagrangeBasis
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-pallasUnnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasisImpl
-
--- | Compute unnormalized Lagrange basis for Vesta base field
-foreign import vestaUnnormalizedLagrangeBasisImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-
-vestaUnnormalizedLagrangeBasis
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-vestaUnnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasisImpl
-
--- | Compute vanishes on ZK and previous rows for Pallas base field
--- | ∏_{j=0}^{zkRows} (pt - ω^(n - zkRows - 1 + j))
-foreign import pallasVanishesOnZkAndPreviousRowsImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-
-pallasVanishesOnZkAndPreviousRows
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-pallasVanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRowsImpl
-
--- | Compute vanishes on ZK and previous rows for Vesta base field
-foreign import vestaVanishesOnZkAndPreviousRowsImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-
-vestaVanishesOnZkAndPreviousRows
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-vestaVanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRowsImpl
-
--- | Compute polynomial evaluations from a Pallas witness matrix.
--- | Given 15 witness columns, interpolates each into a polynomial and
--- | evaluates at zeta and zeta*omega.
--- | Returns flattened array: [col0_zeta, col0_zeta_omega, col1_zeta, ...]
-foreign import pallasWitnessToEvaluationsImpl
-  :: Array (Array Pallas.BaseField)
-  -> Pallas.BaseField
-  -> Int
-  -> Array Pallas.BaseField
-
-pallasWitnessToEvaluations
-  :: { witness :: Array (Array Pallas.BaseField)
-     , zeta :: Pallas.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Pallas.BaseField
-pallasWitnessToEvaluations { witness, zeta, domainLog2 } =
-  pallasWitnessToEvaluationsImpl witness zeta domainLog2
-
--- | Compute polynomial evaluations from a Vesta witness matrix.
-foreign import vestaWitnessToEvaluationsImpl
-  :: Array (Array Vesta.BaseField)
-  -> Vesta.BaseField
-  -> Int
-  -> Array Vesta.BaseField
-
-vestaWitnessToEvaluations
-  :: { witness :: Array (Array Vesta.BaseField)
-     , zeta :: Vesta.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Vesta.BaseField
-vestaWitnessToEvaluations { witness, zeta, domainLog2 } =
-  vestaWitnessToEvaluationsImpl witness zeta domainLog2
-
--- | Compute coefficient polynomial evaluations from Vesta circuit gates.
--- | For Pallas linearization (which verifies Vesta circuits), we need coefficient
--- | evaluations in Fp (= Pallas.BaseField = Vesta.ScalarField).
--- | Note: Vesta gates use Vesta.ScalarField which equals Pallas.BaseField,
--- | so the field types align correctly.
--- | Returns array of 15 coefficient evaluations at zeta.
-foreign import pallasGatesToCoefficientEvaluationsImpl
-  :: Array (Gate Vesta.ScalarField)
-  -> Pallas.BaseField
-  -> Int
-  -> Array Pallas.BaseField
-
-pallasGatesToCoefficientEvaluations
-  :: { gates :: Array (Gate Vesta.ScalarField)
-     , zeta :: Pallas.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Pallas.BaseField
-pallasGatesToCoefficientEvaluations { gates, zeta, domainLog2 } =
-  pallasGatesToCoefficientEvaluationsImpl gates zeta domainLog2
-
--- | Compute selector polynomial evaluations from Vesta circuit gates.
--- | Returns flattened array: [poseidon_zeta, poseidon_zeta_omega, generic_zeta, ...]
-foreign import pallasGatesToSelectorEvaluationsImpl
-  :: Array (Gate Vesta.ScalarField)
-  -> Pallas.BaseField
-  -> Int
-  -> Array Pallas.BaseField
-
-pallasGatesToSelectorEvaluations
-  :: { gates :: Array (Gate Vesta.ScalarField)
-     , zeta :: Pallas.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Pallas.BaseField
-pallasGatesToSelectorEvaluations { gates, zeta, domainLog2 } =
-  pallasGatesToSelectorEvaluationsImpl gates zeta domainLog2
-
--- | Compute coefficient polynomial evaluations from Pallas circuit gates.
--- | For Vesta linearization (which verifies Pallas circuits).
-foreign import vestaGatesToCoefficientEvaluationsImpl
-  :: Array (Gate Pallas.ScalarField)
-  -> Vesta.BaseField
-  -> Int
-  -> Array Vesta.BaseField
-
-vestaGatesToCoefficientEvaluations
-  :: { gates :: Array (Gate Pallas.ScalarField)
-     , zeta :: Vesta.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Vesta.BaseField
-vestaGatesToCoefficientEvaluations { gates, zeta, domainLog2 } =
-  vestaGatesToCoefficientEvaluationsImpl gates zeta domainLog2
-
--- | Compute selector polynomial evaluations from Pallas circuit gates.
-foreign import vestaGatesToSelectorEvaluationsImpl
-  :: Array (Gate Pallas.ScalarField)
-  -> Vesta.BaseField
-  -> Int
-  -> Array Vesta.BaseField
-
-vestaGatesToSelectorEvaluations
-  :: { gates :: Array (Gate Pallas.ScalarField)
-     , zeta :: Vesta.BaseField
-     , domainLog2 :: Int
-     }
-  -> Array Vesta.BaseField
-vestaGatesToSelectorEvaluations { gates, zeta, domainLog2 } =
-  vestaGatesToSelectorEvaluationsImpl gates zeta domainLog2
+-- | Typeclass encapsulating all linearization FFI operations for a given field.
+-- | `f` is the evaluation field, `g` is the curve group of the circuit being verified.
+-- | For Pallas linearization (Fp): f = Pallas.BaseField, g = Vesta.G
+-- | For Vesta linearization (Fq): f = Vesta.BaseField, g = Pallas.G
+class LinearizationFFI f g | f -> g where
+  evaluateLinearization :: LinearizationInput f -> f
+  unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
+  vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
+  witnessToEvaluations :: { witness :: Array (Array f), zeta :: f, domainLog2 :: Int } -> Array f
+  gatesToCoefficientEvaluations :: { gates :: Array (Gate f), zeta :: f, domainLog2 :: Int } -> Array f
+  gatesToSelectorEvaluations :: { gates :: Array (Gate f), zeta :: f, domainLog2 :: Int } -> Array f
+  proverIndexWitnessEvaluations :: { proverIndex :: ProverIndex g f, witnessColumns :: Array (Array f), zeta :: f } -> Array (PointEval f)
+  proverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Array f
+  proverIndexSelectorEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Array (PointEval f)
 
 --------------------------------------------------------------------------------
--- Prover Index evaluation functions (for linearization testing with valid witnesses)
+-- Private foreign imports
 --------------------------------------------------------------------------------
 
--- | Compute witness polynomial evaluations from a Vesta prover index.
--- | For Pallas linearization (which verifies Vesta circuits).
--- | Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
-foreign import pallasProverIndexWitnessEvaluationsImpl
-  :: ProverIndex Vesta.G Vesta.ScalarField
-  -> Array (Array Vesta.ScalarField)
-  -> Vesta.ScalarField
-  -> Array Vesta.ScalarField
+foreign import evaluatePallasLinearization :: LinearizationInput Pallas.BaseField -> Pallas.BaseField
+foreign import evaluateVestaLinearization :: LinearizationInput Vesta.BaseField -> Vesta.BaseField
 
-pallasProverIndexWitnessEvaluations
-  :: { proverIndex :: ProverIndex Vesta.G Vesta.ScalarField
-     , witnessColumns :: Array (Array Vesta.ScalarField)
-     , zeta :: Vesta.ScalarField
-     }
-  -> Array Vesta.ScalarField
-pallasProverIndexWitnessEvaluations { proverIndex, witnessColumns, zeta } =
-  pallasProverIndexWitnessEvaluationsImpl proverIndex witnessColumns zeta
+foreign import pallasUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
+foreign import vestaUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
 
--- | Compute coefficient polynomial evaluations from a Vesta prover index.
--- | Returns 15 coefficient evaluations at zeta.
-foreign import pallasProverIndexCoefficientEvaluationsImpl
-  :: ProverIndex Vesta.G Vesta.ScalarField
-  -> Vesta.ScalarField
-  -> Array Vesta.ScalarField
+foreign import pallasVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
+foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
 
-pallasProverIndexCoefficientEvaluations
-  :: { proverIndex :: ProverIndex Vesta.G Vesta.ScalarField
-     , zeta :: Vesta.ScalarField
-     }
-  -> Array Vesta.ScalarField
-pallasProverIndexCoefficientEvaluations { proverIndex, zeta } =
-  pallasProverIndexCoefficientEvaluationsImpl proverIndex zeta
+foreign import pallasWitnessToEvaluations :: { witness :: Array (Array Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
+foreign import vestaWitnessToEvaluations :: { witness :: Array (Array Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
 
--- | Compute selector polynomial evaluations from a Vesta prover index.
--- | Returns 12 values: 6 gate types × 2 points (zeta, zeta*omega).
-foreign import pallasProverIndexSelectorEvaluationsImpl
-  :: ProverIndex Vesta.G Vesta.ScalarField
-  -> Vesta.ScalarField
-  -> Array Vesta.ScalarField
+foreign import pallasGatesToCoefficientEvaluations :: { gates :: Array (Gate Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
+foreign import vestaGatesToCoefficientEvaluations :: { gates :: Array (Gate Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
 
-pallasProverIndexSelectorEvaluations
-  :: { proverIndex :: ProverIndex Vesta.G Vesta.ScalarField
-     , zeta :: Vesta.ScalarField
-     }
-  -> Array Vesta.ScalarField
-pallasProverIndexSelectorEvaluations { proverIndex, zeta } =
-  pallasProverIndexSelectorEvaluationsImpl proverIndex zeta
+foreign import pallasGatesToSelectorEvaluations :: { gates :: Array (Gate Pallas.BaseField), zeta :: Pallas.BaseField, domainLog2 :: Int } -> Array Pallas.BaseField
+foreign import vestaGatesToSelectorEvaluations :: { gates :: Array (Gate Vesta.BaseField), zeta :: Vesta.BaseField, domainLog2 :: Int } -> Array Vesta.BaseField
 
--- | Compute witness polynomial evaluations from a Pallas prover index.
--- | For Vesta linearization (which verifies Pallas circuits).
-foreign import vestaProverIndexWitnessEvaluationsImpl
-  :: ProverIndex Pallas.G Pallas.ScalarField
-  -> Array (Array Pallas.ScalarField)
-  -> Pallas.ScalarField
-  -> Array Pallas.ScalarField
+foreign import pallasProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, witnessColumns :: Array (Array Pallas.BaseField), zeta :: Pallas.BaseField } -> Array (PointEval Pallas.BaseField)
+foreign import vestaProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, witnessColumns :: Array (Array Vesta.BaseField), zeta :: Vesta.BaseField } -> Array (PointEval Vesta.BaseField)
 
-vestaProverIndexWitnessEvaluations
-  :: { proverIndex :: ProverIndex Pallas.G Pallas.ScalarField
-     , witnessColumns :: Array (Array Pallas.ScalarField)
-     , zeta :: Pallas.ScalarField
-     }
-  -> Array Pallas.ScalarField
-vestaProverIndexWitnessEvaluations { proverIndex, witnessColumns, zeta } =
-  vestaProverIndexWitnessEvaluationsImpl proverIndex witnessColumns zeta
+foreign import pallasProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Array Pallas.BaseField
+foreign import vestaProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Array Vesta.BaseField
 
--- | Compute coefficient polynomial evaluations from a Pallas prover index.
-foreign import vestaProverIndexCoefficientEvaluationsImpl
-  :: ProverIndex Pallas.G Pallas.ScalarField
-  -> Pallas.ScalarField
-  -> Array Pallas.ScalarField
+foreign import pallasProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Array (PointEval Pallas.BaseField)
+foreign import vestaProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Array (PointEval Vesta.BaseField)
 
-vestaProverIndexCoefficientEvaluations
-  :: { proverIndex :: ProverIndex Pallas.G Pallas.ScalarField
-     , zeta :: Pallas.ScalarField
-     }
-  -> Array Pallas.ScalarField
-vestaProverIndexCoefficientEvaluations { proverIndex, zeta } =
-  vestaProverIndexCoefficientEvaluationsImpl proverIndex zeta
+--------------------------------------------------------------------------------
+-- Instances
+--------------------------------------------------------------------------------
 
--- | Compute selector polynomial evaluations from a Pallas prover index.
-foreign import vestaProverIndexSelectorEvaluationsImpl
-  :: ProverIndex Pallas.G Pallas.ScalarField
-  -> Pallas.ScalarField
-  -> Array Pallas.ScalarField
+instance LinearizationFFI Pallas.BaseField Vesta.G where
+  evaluateLinearization = evaluatePallasLinearization
+  unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
+  vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
+  witnessToEvaluations = pallasWitnessToEvaluations
+  gatesToCoefficientEvaluations = pallasGatesToCoefficientEvaluations
+  gatesToSelectorEvaluations = pallasGatesToSelectorEvaluations
+  proverIndexWitnessEvaluations = pallasProverIndexWitnessEvaluations
+  proverIndexCoefficientEvaluations = pallasProverIndexCoefficientEvaluations
+  proverIndexSelectorEvaluations = pallasProverIndexSelectorEvaluations
 
-vestaProverIndexSelectorEvaluations
-  :: { proverIndex :: ProverIndex Pallas.G Pallas.ScalarField
-     , zeta :: Pallas.ScalarField
-     }
-  -> Array Pallas.ScalarField
-vestaProverIndexSelectorEvaluations { proverIndex, zeta } =
-  vestaProverIndexSelectorEvaluationsImpl proverIndex zeta
+instance LinearizationFFI Vesta.BaseField Pallas.G where
+  evaluateLinearization = evaluateVestaLinearization
+  unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
+  vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
+  witnessToEvaluations = vestaWitnessToEvaluations
+  gatesToCoefficientEvaluations = vestaGatesToCoefficientEvaluations
+  gatesToSelectorEvaluations = vestaGatesToSelectorEvaluations
+  proverIndexWitnessEvaluations = vestaProverIndexWitnessEvaluations
+  proverIndexCoefficientEvaluations = vestaProverIndexCoefficientEvaluations
+  proverIndexSelectorEvaluations = vestaProverIndexSelectorEvaluations
