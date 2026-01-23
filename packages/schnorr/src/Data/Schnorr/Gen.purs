@@ -2,7 +2,6 @@
 module Data.Schnorr.Gen
   ( VerifyInput
   , genValidSignature
-  , coerceViaBits
   ) where
 
 import Prelude
@@ -16,7 +15,6 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromBigInt, generator, scalarMul, toAffine, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -36,10 +34,6 @@ type VerifyInput n a b =
   , publicKey :: AffinePoint a
   , message :: Vector n a
   }
-
--- | Convert between fields via bit representation (preserves integer value)
-coerceViaBits :: forall f f'. PrimeField f => PrimeField f' => FieldSizeInBits f 255 => FieldSizeInBits f' 255 => f -> f'
-coerceViaBits = packPure <<< unpackPure
 
 -- | Generate a valid signature for testing using the library's sign function.
 -- | Returns VerifyInput with all values in the circuit field (base field).

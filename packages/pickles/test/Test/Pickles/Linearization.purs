@@ -135,33 +135,19 @@ genFieldVector p = Vector.generator p arbitrary
 -- | Parameterized test types and functions
 -------------------------------------------------------------------------------
 
--- | Input record for linearization circuit test (VALUE type)
--- | All sizes are statically known from Kimchi protocol parameters
-type LinearizationInput f =
-  { witnessEvals :: Vector 15 (PointEval (F f))
-  , coeffEvals :: Vector 15 (F f)
-  , indexEvals :: Vector 6 (PointEval (F f))
-  , alpha :: F f
-  , beta :: F f
-  , gamma :: F f
-  , jointCombiner :: F f
-  , vanishesOnZk :: F f
-  , lagrangeFalse0 :: F f -- UnnormalizedLagrangeBasis(false, 0)
-  , lagrangeTrue1 :: F f -- UnnormalizedLagrangeBasis(true, -1)
-  }
-
--- | VAR type corresponding to LinearizationInput
-type LinearizationInputVar f =
-  { witnessEvals :: Vector 15 (PointEval (FVar f))
-  , coeffEvals :: Vector 15 (FVar f)
-  , indexEvals :: Vector 6 (PointEval (FVar f))
-  , alpha :: FVar f
-  , beta :: FVar f
-  , gamma :: FVar f
-  , jointCombiner :: FVar f
-  , vanishesOnZk :: FVar f
-  , lagrangeFalse0 :: FVar f
-  , lagrangeTrue1 :: FVar f
+-- | Input record for linearization test, parameterized by element type.
+-- | Use as `LinearizationInput (F f)` for values or `LinearizationInput (FVar f)` for circuit variables.
+type LinearizationInput a =
+  { witnessEvals :: Vector 15 (PointEval a)
+  , coeffEvals :: Vector 15 a
+  , indexEvals :: Vector 6 (PointEval a)
+  , alpha :: a
+  , beta :: a
+  , gamma :: a
+  , jointCombiner :: a
+  , vanishesOnZk :: a
+  , lagrangeFalse0 :: a
+  , lagrangeTrue1 :: a
   }
 
 -- | Circuit that evaluates the linearization polynomial (parameterized)
@@ -172,7 +158,7 @@ linearizationCircuit
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => Array PolishToken
-  -> LinearizationInputVar f
+  -> LinearizationInput (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
 linearizationCircuit tokens input =
   let
@@ -204,7 +190,7 @@ linearizationReference
   => PoseidonField f
   => HasEndo f f'
   => Array PolishToken
-  -> LinearizationInput f
+  -> LinearizationInput (F f)
   -> F f
 linearizationReference tokens input =
   let
@@ -242,7 +228,7 @@ genLinearizationInput
   :: forall f g
    . PrimeField f
   => LinearizationFFI f g
-  => Gen (LinearizationInput f)
+  => Gen (LinearizationInput (F f))
 genLinearizationInput = do
   witnessEvals <- Vector.generator (Proxy @15) genPointEval
   coeffEvals <- map wrap <$> genFieldVector (Proxy @15)
@@ -327,14 +313,14 @@ linearizationTests _ tokens = do
       circuit
         :: forall t m
          . CircuitM f (KimchiConstraint f) t m
-        => LinearizationInputVar f
+        => LinearizationInput (FVar f)
         -> Snarky (KimchiConstraint f) t m (FVar f)
       circuit = linearizationCircuit tokens
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
       builtState = compilePure
-        (Proxy @(LinearizationInput f))
+        (Proxy @(LinearizationInput (F f)))
         (Proxy @(F f))
         (Proxy @(KimchiConstraint f))
         circuit
@@ -347,7 +333,7 @@ linearizationTests _ tokens = do
       , testFunction: satisfied (linearizationReference tokens)
       , postCondition: Kimchi.postCondition
       }
-      (genLinearizationInput :: Gen (LinearizationInput f))
+      (genLinearizationInput :: Gen (LinearizationInput (F f)))
 
 -------------------------------------------------------------------------------
 -- | Test linearization for valid Schnorr circuit witness
