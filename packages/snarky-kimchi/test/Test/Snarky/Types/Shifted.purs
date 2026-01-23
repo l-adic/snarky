@@ -118,8 +118,8 @@ spec = do
     describe "Type1 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField)
-      it "fromShifted (toShifted s) == s + 2^n (danger zone)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField <$> genDangerZone)
+      it "fromShifted (toShifted s) == s (danger zone)" $
+        quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField <$> genDangerZone)
 
     describe "Type2 Shifted (same-field, adds 2^n)" do
       it "fromShifted (toShifted s) == s + 2^n (Vesta.BaseField)" $
