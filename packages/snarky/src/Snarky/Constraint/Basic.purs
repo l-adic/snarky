@@ -21,7 +21,7 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Partial.Unsafe (unsafeCrashWith)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (CVar, EvaluationError(..), Variable, add_, scale_, v0)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Curves.Class (class PrimeField)
@@ -82,7 +82,7 @@ genWithAssignments pf =
         b :: f
         b = case eres of
           Left (e :: EvaluationError) ->
-            unsafeCrashWith $ "Unexpected error when generating boolean cvar" <> show e
+            unsafeThrow $ "Unexpected error when generating boolean cvar" <> show e
           Right a -> a
       cvar' <-
         if b == zero || b == one then pure cvar
@@ -109,7 +109,7 @@ genWithAssignments pf =
             else if l == zero then (scale_ zero right)
             else (scale_ (l / r) right)
       case eres of
-        Left (e :: EvaluationError) -> unsafeCrashWith $ "Unexpected error when generating r1cs: " <> show e
+        Left (e :: EvaluationError) -> unsafeThrow $ "Unexpected error when generating r1cs: " <> show e
         Right right' ->
           pure
             { basic: Equal left right'
@@ -134,7 +134,7 @@ genWithAssignments pf =
             else scale_ (l * r / o) output
       case eres of
         Left (e :: EvaluationError) ->
-          unsafeCrashWith $ "Unexpected error when generating r1cs: " <> (show @EvaluationError e)
+          unsafeThrow $ "Unexpected error when generating r1cs: " <> (show @EvaluationError e)
         Right output' ->
           pure
             { basic: R1CS { left, right, output: output' }
