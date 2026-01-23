@@ -10,13 +10,12 @@ import Data.Identity (Identity)
 import Data.Maybe (Maybe(..), fromJust, isJust)
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable)
-import Data.Schnorr (safeFieldCoerce)
+import Data.Schnorr (truncateFieldCoerce)
 import Data.Schnorr as Schnorr
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import JS.BigInt (fromInt, shl)
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
@@ -24,16 +23,16 @@ import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
 import Snarky.Circuit.Types (class CircuitType, F(..), genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, generator, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (class Shifted, Type2, fromShifted, splitField, toShifted)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
@@ -42,42 +41,29 @@ import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- | Input type for Schnorr verification circuit
--- | All values are in the circuit field f (base field of curve g)
-newtype VerifyInput n a = VerifyInput
+-- | sigR is the x-coordinate of R (circuit field element)
+-- | sigS is the signature s component as Type2 (scalar field element in circuit representation)
+-- | publicKey and message are in the circuit field
+newtype VerifyInput n a b = VerifyInput
   { sigR :: a
-  , sigS :: a
+  , sigS :: Type2 a b
   , publicKey :: AffinePoint a
   , message :: Vector n a
   }
 
-derive instance Newtype (VerifyInput n a) _
-derive instance Generic (VerifyInput n a) _
+derive instance Newtype (VerifyInput n a b) _
+derive instance Generic (VerifyInput n a b) _
 
-instance Reflectable n Int => CircuitType f (VerifyInput n (F f)) (VerifyInput n (FVar f)) where
+instance (Reflectable n Int, PrimeField f) => CircuitType f (VerifyInput n (F f) Boolean) (VerifyInput n (FVar f) (BoolVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(VerifyInput n (F f))
-  fieldsToVar = genericFieldsToVar @(VerifyInput n (F f))
-
---------------------------------------------------------------------------------
--- | Convert between fields via bit representation (preserves integer value)
-coerceViaBits :: forall f f'. PrimeField f => PrimeField f' => FieldSizeInBits f 255 => FieldSizeInBits f' 255 => f -> f'
-coerceViaBits = packPure <<< unpackPure
-
--- | Apply the shift transformation used by scaleFast2 in the circuit.
--- | When the circuit computes [s]*G using scaleFast2, it internally shifts the value.
--- | The pure scalarMul needs the same shift to produce matching results.
-fieldShift2 :: forall f f'. FieldSizeInBits f 255 => FieldSizeInBits f' 255 => PrimeField f' => f -> f'
-fieldShift2 t =
-  let
-    twoToThe255 = fromBigInt $ one `shl` fromInt 255
-  in
-    coerceViaBits t + twoToThe255
+  varToFields = genericVarToFields @(VerifyInput n (F f) Boolean)
+  fieldsToVar = genericFieldsToVar @(VerifyInput n (F f) Boolean)
 
 --------------------------------------------------------------------------------
 -- | Generate a valid signature for testing using the library's sign function.
--- | Returns VerifyInput with all values in the circuit field (base field).
+-- | Returns VerifyInput with sigS as Type2 (proper scalar field representation).
 -- | f = base field of curve g (circuit field)
 -- | f' = scalar field of curve g
 genValidSignature
@@ -90,27 +76,24 @@ genValidSignature
   => PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
+  => Shifted (F f') (Type2 (F f) Boolean)
   => Proxy g
   -> Proxy n
-  -> Gen (VerifyInput n (F f))
+  -> Gen (VerifyInput n (F f) Boolean)
 genValidSignature pg pn = do
-  -- Generate random private key (in scalar field f')
   privateKey <- arbitrary @f' `suchThat` \sk ->
     isJust $ toAffine $ scalarMul sk (generator @_ @g)
   let
     publicKey = unsafePartial fromJust
       $ toAffine
       $ scalarMul privateKey (generator @_ @g)
-  -- Generate random message field element (in base field f)
   message <- Vector.generateA @n (const arbitrary)
-
-  -- Compute public key first (this ties the curve type g)
-
   let
-    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
-
-    kPrime :: f'
-    kPrime = safeFieldCoerce kPrimeBase
+    kPrime =
+      let
+        kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
+      in
+        truncateFieldCoerce kPrimeBase
 
   if kPrime == zero then
     genValidSignature pg pn
@@ -120,21 +103,21 @@ genValidSignature pg pn = do
       Just { x: r, y: ry } -> do
         let
           k = if Schnorr.isEven ry then kPrime else negate kPrime
-          eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
 
-          e :: f'
-          e = fromBigInt (toBigInt eBase)
+          e =
+            let
+              eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
+            in
+              truncateFieldCoerce eBase
 
-          s :: f'
           s = k + e * privateKey
 
-          -- Convert s from scalar field to base field via bits
-          sInBaseField :: f
-          sInBaseField = coerceViaBits s
+          sigS :: Type2 (F f) Boolean
+          sigS = toShifted (F s)
 
         pure $ VerifyInput
           { sigR: F r
-          , sigS: F sInBaseField
+          , sigS
           , publicKey: { x: F publicKey.x, y: F publicKey.y }
           , message: map F message
           }
@@ -153,6 +136,7 @@ verifySpec
   => PrimeField f'
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
+  => Shifted (F f') (Type2 (F f) Boolean)
   => Proxy f
   -> Proxy g
   -> Proxy k
@@ -174,24 +158,21 @@ verifySpec _ pg _pk = do
     -- | used by scaleFast2 for scalar multiplication.
     -- | f = base field of curve g (circuit field)
     -- | f' = scalar field of curve g
-    testFunction :: VerifyInput k (F f) -> Boolean
-    testFunction (VerifyInput { sigR: F r, sigS: F sInBaseField, publicKey: pk, message }) =
+    testFunction :: VerifyInput k (F f) Boolean -> Boolean
+    testFunction (VerifyInput { sigR: F r, sigS, publicKey: pk, message }) =
       let
         publicKey = { x: case pk.x of F x -> x, y: case pk.y of F y -> y }
 
-        -- Apply fieldShift2 to match scaleFast2's internal transformation
-        -- The circuit uses scaleFast2 which shifts the scalar by 2^255
-        s :: f'
-        s = fieldShift2 sInBaseField
+        s = case fromShifted sigS of F x -> x
 
-        -- Compute e = H(pk_x, pk_y, r, msgHash)
-        eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
-
-        -- Apply fieldShift2 to e as well (circuit uses scaleFast2 for e*pk too)
+        -- e is a circuit field hash, split to Type2 and get effective scalar via Shifted
         e :: f'
-        e = fieldShift2 eBase
+        e =
+          let
+            eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : (un F <$> Vector.toUnfoldable message)
+          in
+            case fromShifted (splitField (F eBase)) of F x -> x
 
-        -- Compute R' = s*G - e*pk (using shifted values for scalarMul)
         pkPoint = fromAffine @f @g publicKey
         sG = scalarMul s generator
         ePk = scalarMul e pkPoint
@@ -201,21 +182,20 @@ verifySpec _ pg _pk = do
           Nothing -> false
           Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
-    -- Circuit function
     circuit
       :: forall t
        . CircuitM f (KimchiConstraint f) t Identity
-      => VerifyInput k (FVar f)
+      => VerifyInput k (FVar f) (BoolVar f)
       -> Snarky (KimchiConstraint f) t Identity (BoolVar f)
     circuit (VerifyInput { sigR, sigS, publicKey, message }) =
       let
-        sig = SignatureVar { r: sigR, s: sigS }
+        signature = SignatureVar { r: sigR, s: sigS }
       in
-        verifies @51 genPointVar sig publicKey message
+        verifies @51 genPointVar { signature, publicKey, message }
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
     st = compilePure
-      (Proxy @(VerifyInput k (F f)))
+      (Proxy @(VerifyInput k (F f) Boolean))
       (Proxy @Boolean)
       (Proxy @(KimchiConstraint f))
       circuit
@@ -235,13 +215,10 @@ verifySpec _ pg _pk = do
 
 --------------------------------------------------------------------------------
 -- | Test spec
--- | For Pallas curve: base field = VestaScalarField, scalar field = PallasScalarField
--- | For Vesta curve: base field = PallasScalarField, scalar field = VestaScalarField
+-- | Uses Vesta curve where scalar field (Pallas.BaseField) > circuit field (Vesta.BaseField)
+-- | This is the foreign field case that scaleFast2 is designed for.
 spec :: Spec Unit
 spec = describe "Snarky.Circuit.Schnorr" do
   describe "verifies" do
-    it "Pallas curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) (Proxy @4)
-
     it "Vesta curve verification circuit matches pure implementation" do
       verifySpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) (Proxy @5)

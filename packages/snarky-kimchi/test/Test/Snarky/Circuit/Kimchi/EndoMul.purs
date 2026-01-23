@@ -50,7 +50,7 @@ endoSpec _ curveProxy curveName =
         f (Tuple { x: F x, y: F y } (F scalar)) =
           let
             base = fromAffine @f @g { x, y }
-            result = scalarMul (shift scalar) base
+            result = scalarMul (safeFieldCoerce scalar) base
             { x, y } = unsafePartial $ fromJust $ toAffine @f result
           in
             { x: F x, y: F y }
@@ -92,7 +92,8 @@ endoSpec _ curveProxy curveName =
 
       liftEffect $ verifyCircuit { s, gen, solver }
   where
-  shift f = toFieldConstant (coerceViaBits f) (endoScalar)
+  -- This works because the input has only 128 bits
+  safeFieldCoerce f = toFieldConstant (coerceViaBits f) (endoScalar)
 
     where
     coerceViaBits :: f -> f'
