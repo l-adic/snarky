@@ -43,6 +43,13 @@ export const pallasVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
 export const vestaVanishesOnZkAndPreviousRows = ({ domainLog2, zkRows, pt }) =>
   crypto.vestaVanishesOnZkAndPreviousRows(domainLog2, zkRows, pt);
 
+// Prover index domain
+export const pallasProverIndexDomainLog2 = (proverIndex) =>
+  crypto.pallasProverIndexDomainLog2(proverIndex);
+
+export const vestaProverIndexDomainLog2 = (proverIndex) =>
+  crypto.vestaProverIndexDomainLog2(proverIndex);
+
 // Prover index polynomial evaluations
 export const pallasProverIndexWitnessEvaluations = ({ proverIndex, witnessColumns, zeta }) =>
   pairEvals(crypto.pallasProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));

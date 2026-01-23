@@ -23,6 +23,7 @@ use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExter
 use super::super::pasta::types::{PallasScalarField, VestaScalarField};
 use super::super::pasta::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 use ark_ff::PrimeField;
+use ark_poly::EvaluationDomain;
 
 pub type WireExternal = External<Wire>;
 pub type GateWiresExternal = External<GateWires>;
@@ -453,6 +454,18 @@ pub fn vesta_prover_index_verify(
     });
     let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
     generic::prover_index_verify(&**prover_index, &witness, &public)
+}
+
+/// Get the domain log2 size from a Vesta prover index (for Pallas linearization).
+#[napi]
+pub fn pallas_prover_index_domain_log2(prover_index: &VestaProverIndexExternal) -> u32 {
+    prover_index.cs.domain.d1.log_size_of_group() as u32
+}
+
+/// Get the domain log2 size from a Pallas prover index (for Vesta linearization).
+#[napi]
+pub fn vesta_prover_index_domain_log2(prover_index: &PallasProverIndexExternal) -> u32 {
+    prover_index.cs.domain.d1.log_size_of_group() as u32
 }
 
 /// Compute witness polynomial evaluations from a Vesta prover index.

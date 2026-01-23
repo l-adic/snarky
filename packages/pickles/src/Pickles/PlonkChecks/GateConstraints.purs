@@ -29,6 +29,7 @@ import Data.Vector (Vector, toUnfoldable)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Linearization.Env (Challenges, EvalPoint, circuitEnv)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), PolishToken)
 import Poseidon (class PoseidonField)
@@ -44,19 +45,19 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
 
 -- | Input record for gate constraint verification.
 -- | All sizes are statically known from Kimchi protocol parameters:
--- | - 15 witness columns × 2 (current + next row) = 30 evaluations
--- | - 15 coefficient columns = 15 evaluations
--- | - 6 gate types × 2 (current + next row) = 12 index evaluations
+-- | - 15 witness columns, each with evaluations at zeta and zeta*omega
+-- | - 15 coefficient columns = 15 evaluations (at zeta only)
+-- | - 6 gate types, each with evaluations at zeta and zeta*omega
 -- |
 -- | Use as `GateConstraintInput (F f)` for values or
 -- | `GateConstraintInput (FVar f)` for circuit variables.
 type GateConstraintInput f =
   { -- Wire polynomial evaluations at zeta and zeta*omega
-    witnessEvals :: Vector 30 f
+    witnessEvals :: Vector 15 (PointEval f)
   , -- Coefficient polynomial evaluations at zeta
     coeffEvals :: Vector 15 f
   , -- Gate selector evaluations at zeta and zeta*omega
-    indexEvals :: Vector 12 f
+    indexEvals :: Vector 6 (PointEval f)
   , -- Protocol challenges from Fiat-Shamir transcript
     alpha :: f
   , beta :: f
@@ -78,26 +79,26 @@ type GateConstraintInput f =
 -- | Maps column lookups to the appropriate vector elements.
 buildEvalPoint
   :: forall a
-   . { witnessEvals :: Vector 30 a
+   . { witnessEvals :: Vector 15 (PointEval a)
      , coeffEvals :: Vector 15 a
-     , indexEvals :: Vector 12 a
+     , indexEvals :: Vector 6 (PointEval a)
      , defaultVal :: a
      }
   -> EvalPoint a
 buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
   let
-    witnessArr = toUnfoldable witnessEvals :: Array a
+    witnessArr = toUnfoldable witnessEvals :: Array (PointEval a)
     coeffArr = toUnfoldable coeffEvals :: Array a
-    indexArr = toUnfoldable indexEvals :: Array a
+    indexArr = toUnfoldable indexEvals :: Array (PointEval a)
+
+    pointEvalAt :: Array (PointEval a) -> Int -> CurrOrNext -> a
+    pointEvalAt arr idx row = fromMaybe defaultVal do
+      pe <- Array.index arr idx
+      pure case row of
+        Curr -> pe.zeta
+        Next -> pe.omegaTimesZeta
   in
-    { witness: \row col ->
-        let
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = col * 2 + rowOffset
-        in
-          fromMaybe defaultVal (Array.index witnessArr idx)
+    { witness: \row col -> pointEvalAt witnessArr col row
     , coefficient: \col ->
         fromMaybe defaultVal (Array.index coeffArr col)
     , index: \row gt ->
@@ -110,12 +111,8 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
             EndoMulScalar -> 4
             CompleteAdd -> 5
             _ -> 0
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = gateIdx * 2 + rowOffset
         in
-          fromMaybe defaultVal (Array.index indexArr idx)
+          pointEvalAt indexArr gateIdx row
     , lookupAggreg: \_ -> defaultVal
     , lookupSorted: \_ _ -> defaultVal
     , lookupTable: \_ -> defaultVal

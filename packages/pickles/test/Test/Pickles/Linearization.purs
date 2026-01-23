@@ -28,7 +28,7 @@ import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Identity (Identity(..))
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
@@ -40,7 +40,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, evaluateLinearization, proverIndexCoefficientEvaluations, proverIndexSelectorEvaluations, proverIndexWitnessEvaluations, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evaluateLinearization, proverIndexCoefficientEvaluations, proverIndexDomainLog2, proverIndexSelectorEvaluations, proverIndexWitnessEvaluations, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
@@ -92,9 +92,9 @@ zkRows = 3
 buildFFIInput
   :: forall f g
    . LinearizationFFI f g
-  => { witnessEvals :: Vector 30 f
+  => { witnessEvals :: Vector 15 (PointEval f)
      , coeffEvals :: Vector 15 f
-     , indexEvals :: Vector 12 f
+     , indexEvals :: Vector 6 (PointEval f)
      , alpha :: f
      , beta :: f
      , gamma :: f
@@ -104,21 +104,24 @@ buildFFIInput
   -> FFI.LinearizationInput f
 buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta } =
   let
-    witnessArr = toUnfoldable witnessEvals :: Array f
-    indexArr = toUnfoldable indexEvals :: Array f
+    indexArr = toUnfoldable indexEvals :: Array (PointEval f)
+    pointEvalToArray pe = [ pe.zeta, pe.omegaTimesZeta ]
+    indexAt i = case Array.index indexArr i of
+      Just pe -> pointEvalToArray pe
+      Nothing -> []
   in
     { alpha
     , beta
     , gamma
     , jointCombiner
-    , witnessEvals: witnessArr
+    , witnessEvals: concatMap pointEvalToArray (toUnfoldable witnessEvals :: Array (PointEval f))
     , coefficientEvals: toUnfoldable coeffEvals
-    , poseidonIndex: Array.slice 0 2 indexArr
-    , genericIndex: Array.slice 2 4 indexArr
-    , varbasemulIndex: Array.slice 4 6 indexArr
-    , endomulIndex: Array.slice 6 8 indexArr
-    , endomulScalarIndex: Array.slice 8 10 indexArr
-    , completeAddIndex: Array.slice 10 12 indexArr
+    , poseidonIndex: indexAt 0
+    , genericIndex: indexAt 1
+    , varbasemulIndex: indexAt 2
+    , endomulIndex: indexAt 3
+    , endomulScalarIndex: indexAt 4
+    , completeAddIndex: indexAt 5
     , vanishesOnZk: vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
     , zeta
     , domainLog2
@@ -135,9 +138,9 @@ genFieldVector p = Vector.generator p arbitrary
 -- | Input record for linearization circuit test (VALUE type)
 -- | All sizes are statically known from Kimchi protocol parameters
 type LinearizationInput f =
-  { witnessEvals :: Vector 30 (F f)
+  { witnessEvals :: Vector 15 (PointEval (F f))
   , coeffEvals :: Vector 15 (F f)
-  , indexEvals :: Vector 12 (F f)
+  , indexEvals :: Vector 6 (PointEval (F f))
   , alpha :: F f
   , beta :: F f
   , gamma :: F f
@@ -149,9 +152,9 @@ type LinearizationInput f =
 
 -- | VAR type corresponding to LinearizationInput
 type LinearizationInputVar f =
-  { witnessEvals :: Vector 30 (FVar f)
+  { witnessEvals :: Vector 15 (PointEval (FVar f))
   , coeffEvals :: Vector 15 (FVar f)
-  , indexEvals :: Vector 12 (FVar f)
+  , indexEvals :: Vector 6 (PointEval (FVar f))
   , alpha :: FVar f
   , beta :: FVar f
   , gamma :: FVar f
@@ -205,10 +208,11 @@ linearizationReference
   -> F f
 linearizationReference tokens input =
   let
+    unwrapPointEval pe = { zeta: unwrap pe.zeta, omegaTimesZeta: unwrap pe.omegaTimesZeta }
     evalPoint = buildEvalPoint
-      { witnessEvals: map unwrap input.witnessEvals
+      { witnessEvals: map unwrapPointEval input.witnessEvals
       , coeffEvals: map unwrap input.coeffEvals
-      , indexEvals: map unwrap input.indexEvals
+      , indexEvals: map unwrapPointEval input.indexEvals
       , defaultVal: zero
       }
 
@@ -226,6 +230,13 @@ linearizationReference tokens input =
   in
     wrap $ evaluate tokens env
 
+-- | Generate an arbitrary PointEval
+genPointEval :: forall f. PrimeField f => Gen (PointEval f)
+genPointEval = do
+  zeta <- arbitrary
+  omegaTimesZeta <- arbitrary
+  pure { zeta, omegaTimesZeta }
+
 -- | Generate arbitrary LinearizationInput using FFI for domain-dependent values
 genLinearizationInput
   :: forall f g
@@ -233,9 +244,9 @@ genLinearizationInput
   => LinearizationFFI f g
   => Gen (LinearizationInput f)
 genLinearizationInput = do
-  witnessEvals <- map wrap <$> genFieldVector (Proxy @30)
+  witnessEvals <- Vector.generator (Proxy @15) genPointEval
   coeffEvals <- map wrap <$> genFieldVector (Proxy @15)
-  indexEvals <- map wrap <$> genFieldVector (Proxy @12)
+  indexEvals <- Vector.generator (Proxy @6) genPointEval
   alpha <- wrap <$> arbitrary
   beta <- wrap <$> arbitrary
   gamma <- wrap <$> arbitrary
@@ -279,9 +290,9 @@ linearizationTests _ tokens = do
   it "PureScript interpreter matches Rust evaluator on arbitrary inputs" do
     liftEffect $ quickCheckGen do
       -- Generate arbitrary field elements
-      (witnessEvals :: Vector 30 f) <- genFieldVector (Proxy @30)
+      (witnessEvals :: Vector 15 (PointEval f)) <- Vector.generator (Proxy @15) genPointEval
       coeffEvals <- genFieldVector (Proxy @15)
-      indexEvals <- genFieldVector (Proxy @12)
+      (indexEvals :: Vector 6 (PointEval f)) <- Vector.generator (Proxy @6) genPointEval
       alpha <- arbitrary
       beta <- arbitrary
       gamma <- arbitrary
@@ -427,20 +438,15 @@ validWitnessLinearizationTest = do
         jointCombiner <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
 
         let
-          -- Get witness columns as Array (Array f) for FFI
-          witnessColumns :: Array (Array Vesta.ScalarField)
-          witnessColumns = toUnfoldable witness
 
           -- Compute evaluations using FFI from prover index
-          witnessEvals = concatMap (\r -> [ r.zeta, r.omegaTimesZeta ])
-            $ proverIndexWitnessEvaluations { proverIndex, witnessColumns, zeta }
+          witnessEvals = proverIndexWitnessEvaluations { proverIndex, witnessColumns: witness, zeta }
           coeffEvals = proverIndexCoefficientEvaluations
             { proverIndex, zeta }
-          indexEvals = concatMap (\r -> [ r.zeta, r.omegaTimesZeta ])
-            $ proverIndexSelectorEvaluations { proverIndex, zeta }
+          indexEvals = proverIndexSelectorEvaluations { proverIndex, zeta }
 
-          -- Domain log2 is determined by the circuit size
-          domainLog2' = 16
+          -- Domain log2 is determined by the prover index
+          domainLog2' = proverIndexDomainLog2 proverIndex
 
           -- Compute domain-dependent values
           vanishesOnZk' = vanishesOnZkAndPreviousRows
@@ -450,15 +456,10 @@ validWitnessLinearizationTest = do
           lagrangeTrue1 = unnormalizedLagrangeBasis
             { domainLog2: domainLog2', zkRows, offset: -1, pt: zeta }
 
-          -- Build PureScript evaluation structures
-          witnessEvalsV = unsafePartial fromJust $ Vector.toVector @30 witnessEvals
-          coeffEvalsV = unsafePartial fromJust $ Vector.toVector @15 coeffEvals
-          indexEvalsV = unsafePartial fromJust $ Vector.toVector @12 indexEvals
-
           evalPoint = buildEvalPoint
-            { witnessEvals: witnessEvalsV
-            , coeffEvals: coeffEvalsV
-            , indexEvals: indexEvalsV
+            { witnessEvals
+            , coeffEvals
+            , indexEvals
             , defaultVal: zero
             }
 
@@ -480,9 +481,9 @@ validWitnessLinearizationTest = do
 
           -- Build FFI input for Rust evaluator
           ffiInput = buildFFIInput
-            { witnessEvals: witnessEvalsV
-            , coeffEvals: coeffEvalsV
-            , indexEvals: indexEvalsV
+            { witnessEvals
+            , coeffEvals
+            , indexEvals
             , alpha
             , beta
             , gamma
