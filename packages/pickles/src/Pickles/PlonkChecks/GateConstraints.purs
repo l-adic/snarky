@@ -23,11 +23,12 @@ module Pickles.PlonkChecks.GateConstraints
 
 import Prelude
 
-import Data.Array as Array
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Vector (Vector, toUnfoldable)
+import Data.Fin (Finite, unsafeFinite)
+import Data.Maybe (Maybe(..))
+import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector, (!!))
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Linearization.Env (Challenges, EvalPoint, circuitEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
@@ -87,20 +88,17 @@ buildEvalPoint
   -> EvalPoint a
 buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
   let
-    witnessArr = toUnfoldable witnessEvals :: Array (PointEval a)
-    coeffArr = toUnfoldable coeffEvals :: Array a
-    indexArr = toUnfoldable indexEvals :: Array (PointEval a)
-
-    pointEvalAt :: Array (PointEval a) -> Int -> CurrOrNext -> a
-    pointEvalAt arr idx row = fromMaybe defaultVal do
-      pe <- Array.index arr idx
-      pure case row of
-        Curr -> pe.zeta
-        Next -> pe.omegaTimesZeta
+    pointEvalAt :: forall n. Reflectable n Int => Vector n (PointEval a) -> Finite n -> CurrOrNext -> a
+    pointEvalAt v col row =
+      let
+        a = v !! col
+      in
+        case row of
+          Curr -> a.zeta
+          Next -> a.omegaTimesZeta
   in
-    { witness: \row col -> pointEvalAt witnessArr col row
-    , coefficient: \col ->
-        fromMaybe defaultVal (Array.index coeffArr col)
+    { witness: \row col -> pointEvalAt witnessEvals col row
+    , coefficient: \col -> coeffEvals !! col
     , index: \row gt ->
         let
           gateIdx = case gt of
@@ -112,7 +110,7 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
             CompleteAdd -> 5
             _ -> 0
         in
-          pointEvalAt indexArr gateIdx row
+          pointEvalAt indexEvals (unsafeFinite gateIdx) row
     , lookupAggreg: \_ -> defaultVal
     , lookupSorted: \_ _ -> defaultVal
     , lookupTable: \_ -> defaultVal
@@ -151,7 +149,7 @@ buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse
 -- | Parse hex string to field element.
 parseHex :: forall f. PrimeField f => String -> f
 parseHex hex = case fromBigInt <$> BigInt.fromString hex of
-  Nothing -> unsafeCrashWith $ "Failed to parse Hex to BigInt: " <> hex
+  Nothing -> unsafeThrow $ "Failed to parse Hex to BigInt: " <> hex
   Just a -> a
 
 -------------------------------------------------------------------------------

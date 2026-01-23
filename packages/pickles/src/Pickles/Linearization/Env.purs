@@ -12,7 +12,7 @@ module Pickles.Linearization.Env
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Fin (Finite, unsafeFinite)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
@@ -53,8 +53,8 @@ type Env a =
 -- | Evaluation point containing polynomial evaluations at zeta and zeta*omega
 -- | Type parameter 'a' is the value type (e.g., `f` for direct field values, `FVar f` for circuit variables)
 type EvalPoint a =
-  { witness :: CurrOrNext -> Int -> a
-  , coefficient :: Int -> a
+  { witness :: CurrOrNext -> Finite 15 -> a
+  , coefficient :: Finite 15 -> a
   , index :: CurrOrNext -> GateType -> a -- Takes row for Curr/Next evaluation
   , lookupAggreg :: CurrOrNext -> a
   , lookupSorted :: CurrOrNext -> Int -> a
@@ -151,8 +151,8 @@ lookupMds p row col =
 -- | Look up a cell value from the evaluation point
 lookupCell :: forall a. EvalPoint a -> Column -> CurrOrNext -> a
 lookupCell ep col row = case col of
-  Witness i -> ep.witness row i
-  Coefficient i -> ep.coefficient i
+  Witness i -> ep.witness row (unsafeFinite i)
+  Coefficient i -> ep.coefficient (unsafeFinite i)
   Index g -> ep.index row g -- Pass row to handle Curr/Next evaluation
   LookupAggreg -> ep.lookupAggreg row
   LookupSorted i -> ep.lookupSorted row i
