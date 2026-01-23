@@ -41,3 +41,4 @@ package:
       - snarky-test-utils
       - spec
       - spec-node
+      - spec-quickcheck

@@ -62,7 +62,7 @@ export function _pallasFromBigInt(bigint) {
 }
 
 export function _pallasModulus() {
-    return napi.pallasScalarfieldModulus();
+    return BigInt(napi.pallasScalarfieldModulus());
 }
 
 export function _pallasToBigInt(x) {
@@ -204,7 +204,7 @@ export function _vestaScalarFieldPow(base) {
 }
 
 export function _vestaScalarFieldModulus() {
-    return napi.vestaScalarfieldModulus();
+    return BigInt(napi.vestaScalarfieldModulus());
 }
 
 export function _vestaScalarFieldFromHexLe(hex) {

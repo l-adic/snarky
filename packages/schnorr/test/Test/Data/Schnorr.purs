@@ -14,74 +14,49 @@ import Snarky.Curves.Pasta (PallasBaseField, PallasG, PallasScalarField)
 import Test.QuickCheck (Result(..), quickCheck, withHelp)
 import Test.Spec (Spec, describe, it)
 
--- | For Pallas curve:
--- | - Base field = PallasBaseField (= VestaScalarField)
--- | - Scalar field = PallasScalarField
--- | So Signature type is: Signature PallasBaseField PallasScalarField
 type PallasSignature = Schnorr.Signature PallasBaseField PallasScalarField
 
--- | Get Pallas generator
 pallasGen :: PallasG
 pallasGen = generator
 
--- | Helper to sign with Pallas curve.
--- | We inline the implementation to avoid ambiguous type issues.
 signPallas :: PallasScalarField -> Array PallasBaseField -> Maybe PallasSignature
 signPallas privateKey message = do
-  -- Compute public key: pk = d * G (using PallasG explicitly)
   publicKey <- toAffine $ scalarMul privateKey (pallasGen :: PallasG)
-
-  -- Derive nonce deterministically using Poseidon hash (in base field)
   let
     msgHash = Poseidon.hash message
 
-    kPrimeBase :: PallasBaseField
-    kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
-
-    -- Convert to scalar field via BigInt
     kPrime :: PallasScalarField
-    kPrime = fromBigInt (toBigInt kPrimeBase)
+    kPrime =
+      let
+        kPrimeBase = Poseidon.hash [ publicKey.x, publicKey.y, msgHash ]
+      in
+        fromBigInt (toBigInt kPrimeBase)
 
-  -- Guard against zero nonce
   if kPrime == zero then Nothing
   else do
-    -- Compute R = k' * G
     { x: r, y: ry } <- toAffine $ scalarMul kPrime (pallasGen :: PallasG)
-
-    -- Normalize k based on y parity
-    let k = if Schnorr.isEven ry then kPrime else negate kPrime
-
-    -- Compute challenge hash (in base field)
     let
-      eBase :: PallasBaseField
-      eBase = Schnorr.hashMessage publicKey r message
-
-      -- Convert to scalar field via BigInt
-      e :: PallasScalarField
-      e = fromBigInt (toBigInt eBase)
-
-    -- Compute s = k + e * d (all in scalar field)
-    let s = k + e * privateKey
-
+      k = if Schnorr.isEven ry then kPrime else negate kPrime
+      e =
+        let
+          eBase = Schnorr.hashMessage publicKey r message
+        in
+          fromBigInt (toBigInt eBase)
+      s = k + e * privateKey
     pure $ Signature { r, s }
 
--- | Helper to verify with Pallas curve.
 verifyPallas :: PallasSignature -> { x :: PallasBaseField, y :: PallasBaseField } -> Array PallasBaseField -> Boolean
 verifyPallas (Signature { r, s }) publicKey message =
   let
-    -- Compute challenge hash (in base field)
-    eBase :: PallasBaseField
-    eBase = Schnorr.hashMessage publicKey r message
-
-    -- Convert to scalar field via BigInt
     e :: PallasScalarField
-    e = fromBigInt (toBigInt eBase)
+    e =
+      let
+        eBase = Schnorr.hashMessage publicKey r message
+      in
+        fromBigInt (toBigInt eBase)
 
-    -- Reconstruct the public key point
     pkPoint :: PallasG
     pkPoint = fromAffine publicKey
-
-    -- Compute R' = s*G - e*pk (using scalar field values)
     sG = scalarMul s (pallasGen :: PallasG)
     ePk = scalarMul e pkPoint
     rPoint = sG <> inverse ePk
@@ -90,7 +65,6 @@ verifyPallas (Signature { r, s }) publicKey message =
       Nothing -> false
       Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
--- | Pure (non-circuit) tests for Schnorr signatures using Pallas curve.
 spec :: Spec Unit
 spec = describe "Data.Schnorr (Pallas curve)" do
 
@@ -186,7 +160,7 @@ verifyRejectsTamperedS privateKey msgField tamperedS =
   case signPallas privateKey [ msgField ] of
     Nothing -> withHelp false "Failed to create signature"
     Just (Signature { r, s }) ->
-      if s == tamperedS then Success -- Skip if s is the same
+      if s == tamperedS then Success
       else
         let
           pkPoint = scalarMul privateKey pallasGen

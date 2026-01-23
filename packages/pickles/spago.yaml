@@ -27,10 +27,13 @@ package:
       - effect
       - either
       - exceptions
+      - identity
+      - mmorph
       - newtype
       - partial
       - quickcheck
       - schnorr
+      - snarky-curves
       - snarky-kimchi
       - snarky-test-utils
       - spec

@@ -646,10 +646,13 @@
             "effect",
             "either",
             "exceptions",
+            "identity",
+            "mmorph",
             "newtype",
             "partial",
             "quickcheck",
             "schnorr",
+            "snarky-curves",
             "snarky-kimchi",
             "snarky-test-utils",
             "spec",
@@ -2174,7 +2177,8 @@
             "quickcheck",
             "snarky-test-utils",
             "spec",
-            "spec-node"
+            "spec-node",
+            "spec-quickcheck"
           ],
           "build_plan": [
             "aff",

@@ -435,21 +435,21 @@ validWitnessLinearizationTest = do
       circuit
         :: forall t
          . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => VerifyInput 4 (FVar Vesta.ScalarField)
+        => VerifyInput 4 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)
         -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (BoolVar Vesta.ScalarField)
-      circuit { signature: {r: sigR, s: sigS}, publicKey, message } =
+      circuit { signature: { r: sigR, s: sigS }, publicKey, message } =
         let
-          sig = SignatureVar { r: sigR, s: sigS }
+          signature = SignatureVar { r: sigR, s: sigS }
         in
-          verifies @51 genPointVar sig publicKey message
+          verifies @51 genPointVar { signature, publicKey, message }
 
-      solver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField)) Boolean
+      solver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField) Boolean) Boolean
       solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
 
       -- Compile the circuit
       builtState :: CircuitBuilderState (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField)
       builtState = compilePure
-        (Proxy @(VerifyInput 4 (F Vesta.ScalarField)))
+        (Proxy @(VerifyInput 4 (F Vesta.ScalarField) Boolean))
         (Proxy @Boolean)
         (Proxy @(KimchiConstraint Vesta.ScalarField))
         circuit
