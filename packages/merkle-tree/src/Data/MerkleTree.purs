@@ -33,9 +33,9 @@ import Data.MerkleTree.Hashable (class Hashable, class MergeHash, class MerkleHa
 import Data.MerkleTree.Hashable (class MergeHash, class MerkleHashable, FreeHash(..), defaultHash, hash, merge)
 import Data.Traversable (class Traversable)
 import Data.Unfoldable (class Unfoldable, class Unfoldable1)
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
 
 -- Address uses BigInt to handle large tree depths
 newtype Address = Address BigInt
@@ -158,8 +158,7 @@ add_ mt@(MerkleTree t) value =
         }
 
 -- Insert element at given address using mask for navigation
--- NB: the unsafeCrashWith here is justified because we
--- generate fresh addresses.
+-- NB: the unsafeThrow here is justified because we generate fresh addresses.
 insert
   :: forall hash a
    . MerkleHashable a hash
@@ -175,7 +174,7 @@ insert tree0 mask0 (Address address) v =
       if mask == zero then
         case tree of
           Empty -> Leaf (hash (Just v)) v
-          NonEmpty _ -> unsafeCrashWith "impossible: cannot insert new leaf in occupied slot"
+          NonEmpty _ -> unsafeThrow "impossible: cannot insert new leaf in occupied slot"
       else
         let
           goLeft = BigInt.and mask address == zero
@@ -205,7 +204,7 @@ insert tree0 mask0 (Address address) v =
                 in
                   Node (merge (treeHash tl) (nonEmptyHash tr')) tl (NonEmpty tr')
             NonEmpty (Leaf _ _) ->
-              unsafeCrashWith "impossible: cannot insert past leaf"
+              unsafeThrow "impossible: cannot insert past leaf"
   in
     go mask0 (NonEmpty tree0)
 

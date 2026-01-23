@@ -37,7 +37,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse)
-import Partial.Unsafe (unsafeCrashWith)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
@@ -257,7 +257,7 @@ inv_
   -> Snarky c t m (FVar f)
 inv_ = case _ of
   Const a -> pure
-    if a == zero then unsafeCrashWith "inv: expected nonzero arg"
+    if a == zero then unsafeThrow "inv: expected nonzero arg"
     else Const (recip a)
   a -> do
     aInv <- exists do

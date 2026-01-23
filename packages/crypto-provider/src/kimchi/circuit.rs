@@ -23,6 +23,7 @@ use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExter
 use super::super::pasta::types::{PallasScalarField, VestaScalarField};
 use super::super::pasta::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 use ark_ff::PrimeField;
+use ark_poly::EvaluationDomain;
 
 pub type WireExternal = External<Wire>;
 pub type GateWiresExternal = External<GateWires>;
@@ -48,6 +49,7 @@ pub type VestaProverIndexExternal = External<
 // Generic implementations for circuit operations
 mod generic {
     use super::*;
+    use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
     use kimchi::curve::KimchiCurve;
 
     pub fn circuit_gate_new<F: PrimeField>(
@@ -90,6 +92,92 @@ mod generic {
                 false
             }
         }
+    }
+
+    pub fn witness_evaluations<F: PrimeField>(
+        domain: Radix2EvaluationDomain<F>,
+        witness_columns: Vec<Vec<F>>,
+        zeta: F,
+    ) -> Vec<F> {
+        let domain_size = domain.size();
+        let omega = domain.group_gen();
+        let zeta_omega = zeta * omega;
+
+        let mut result = Vec::with_capacity(COLUMNS * 2);
+        for col_data in witness_columns.iter().take(COLUMNS) {
+            let mut col_vals = col_data.clone();
+            col_vals.resize(domain_size, F::zero());
+            let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
+            result.push(poly.evaluate(&zeta));
+            result.push(poly.evaluate(&zeta_omega));
+        }
+        result
+    }
+
+    pub fn coefficient_evaluations<F: PrimeField>(
+        domain: Radix2EvaluationDomain<F>,
+        gates: &[CircuitGate<F>],
+        zeta: F,
+    ) -> Vec<F> {
+        let domain_size = domain.size();
+        let num_gates = gates.len();
+        let coeff_cols = 15usize;
+
+        let mut coeff_columns: Vec<Vec<F>> = vec![vec![F::zero(); num_gates]; coeff_cols];
+        for (row, gate) in gates.iter().enumerate() {
+            for (col_idx, coeff) in gate.coeffs.iter().enumerate() {
+                if col_idx < coeff_cols {
+                    coeff_columns[col_idx][row] = *coeff;
+                }
+            }
+        }
+
+        let mut result = Vec::with_capacity(coeff_cols);
+        for col_vals in &coeff_columns {
+            let mut col_vals = col_vals.clone();
+            col_vals.resize(domain_size, F::zero());
+            let poly = Evaluations::from_vec_and_domain(col_vals, domain).interpolate();
+            result.push(poly.evaluate(&zeta));
+        }
+        result
+    }
+
+    pub fn selector_evaluations<F: PrimeField>(
+        domain: Radix2EvaluationDomain<F>,
+        gates: &[CircuitGate<F>],
+        zeta: F,
+    ) -> Vec<F> {
+        let domain_size = domain.size();
+        let omega = domain.group_gen();
+        let zeta_omega = zeta * omega;
+
+        let gate_types = [
+            GateType::Poseidon,
+            GateType::Generic,
+            GateType::VarBaseMul,
+            GateType::EndoMul,
+            GateType::EndoMulScalar,
+            GateType::CompleteAdd,
+        ];
+
+        let mut result = Vec::with_capacity(gate_types.len() * 2);
+        for gate_type in gate_types.iter() {
+            let mut selector: Vec<F> = gates
+                .iter()
+                .map(|g| {
+                    if g.typ == *gate_type {
+                        F::from(1u64)
+                    } else {
+                        F::zero()
+                    }
+                })
+                .collect();
+            selector.resize(domain_size, F::zero());
+            let poly = Evaluations::from_vec_and_domain(selector, domain).interpolate();
+            result.push(poly.evaluate(&zeta));
+            result.push(poly.evaluate(&zeta_omega));
+        }
+        result
     }
 }
 
@@ -366,4 +454,94 @@ pub fn vesta_prover_index_verify(
     });
     let public: Vec<VestaScalarField> = public_inputs.iter().map(|f| ***f).collect();
     generic::prover_index_verify(&**prover_index, &witness, &public)
+}
+
+/// Get the domain log2 size from a Vesta prover index (for Pallas linearization).
+#[napi]
+pub fn pallas_prover_index_domain_log2(prover_index: &VestaProverIndexExternal) -> u32 {
+    prover_index.cs.domain.d1.log_size_of_group() as u32
+}
+
+/// Get the domain log2 size from a Pallas prover index (for Vesta linearization).
+#[napi]
+pub fn vesta_prover_index_domain_log2(prover_index: &PallasProverIndexExternal) -> u32 {
+    prover_index.cs.domain.d1.log_size_of_group() as u32
+}
+
+/// Compute witness polynomial evaluations from a Vesta prover index.
+/// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_prover_index_witness_evaluations(
+    prover_index: &VestaProverIndexExternal,
+    witness_columns: Vec<Vec<&VestaFieldExternal>>,
+    zeta: &VestaFieldExternal,
+) -> Result<Vec<VestaFieldExternal>> {
+    let cols: Vec<Vec<VestaScalarField>> = witness_columns
+        .iter()
+        .map(|col| col.iter().map(|x| ***x).collect())
+        .collect();
+    let result = generic::witness_evaluations(prover_index.cs.domain.d1, cols, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute coefficient polynomial evaluations from a Vesta prover index.
+/// Returns 15 coefficient evaluations at zeta.
+#[napi]
+pub fn pallas_prover_index_coefficient_evaluations(
+    prover_index: &VestaProverIndexExternal,
+    zeta: &VestaFieldExternal,
+) -> Result<Vec<VestaFieldExternal>> {
+    let result =
+        generic::coefficient_evaluations(prover_index.cs.domain.d1, &prover_index.cs.gates, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute selector polynomial evaluations from a Vesta prover index.
+/// Returns 12 values: 6 gate types × 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_prover_index_selector_evaluations(
+    prover_index: &VestaProverIndexExternal,
+    zeta: &VestaFieldExternal,
+) -> Result<Vec<VestaFieldExternal>> {
+    let result =
+        generic::selector_evaluations(prover_index.cs.domain.d1, &prover_index.cs.gates, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute witness polynomial evaluations from a Pallas prover index (for Vesta linearization).
+/// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
+#[napi]
+pub fn vesta_prover_index_witness_evaluations(
+    prover_index: &PallasProverIndexExternal,
+    witness_columns: Vec<Vec<&PallasFieldExternal>>,
+    zeta: &PallasFieldExternal,
+) -> Result<Vec<PallasFieldExternal>> {
+    let cols: Vec<Vec<PallasScalarField>> = witness_columns
+        .iter()
+        .map(|col| col.iter().map(|x| ***x).collect())
+        .collect();
+    let result = generic::witness_evaluations(prover_index.cs.domain.d1, cols, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute coefficient polynomial evaluations from a Pallas prover index.
+#[napi]
+pub fn vesta_prover_index_coefficient_evaluations(
+    prover_index: &PallasProverIndexExternal,
+    zeta: &PallasFieldExternal,
+) -> Result<Vec<PallasFieldExternal>> {
+    let result =
+        generic::coefficient_evaluations(prover_index.cs.domain.d1, &prover_index.cs.gates, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute selector polynomial evaluations from a Pallas prover index.
+#[napi]
+pub fn vesta_prover_index_selector_evaluations(
+    prover_index: &PallasProverIndexExternal,
+    zeta: &PallasFieldExternal,
+) -> Result<Vec<PallasFieldExternal>> {
+    let result =
+        generic::selector_evaluations(prover_index.cs.domain.d1, &prover_index.cs.gates, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
 }

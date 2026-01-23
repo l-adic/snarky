@@ -22,33 +22,52 @@ module Test.Pickles.Linearization where
 
 import Prelude
 
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Morph (hoist)
+import Data.Array (concatMap)
 import Data.Array as Array
-import Data.Maybe (Maybe(..), fromMaybe)
-import Data.Newtype (unwrap, wrap)
+import Data.Either (Either(..))
+import Data.Identity (Identity(..))
+import Data.Maybe (Maybe(..), fromJust)
+import Data.Newtype (un, unwrap, wrap)
 import Data.Reflectable (class Reflectable)
+import Data.Schnorr.Gen (VerifyInput, genValidSignature)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, toUnfoldable)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Linearization.Env (Challenges, Env, EvalPoint, circuitEnv, fieldEnv)
+import Effect.Exception (error)
+import Partial.Unsafe (unsafePartial)
+import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evaluateLinearization, proverIndexCoefficientEvaluations, proverIndexDomainLog2, proverIndexSelectorEvaluations, proverIndexWitnessEvaluations, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), PolishToken)
-import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Pickles.Linearization.Types (PolishToken)
+import Pickles.Linearization.Vesta as VestaTokens
+import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
+import Poseidon (class PoseidonField)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
+import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
+import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
+import Snarky.Circuit.CVar (CVar(..), const_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
+import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
 import Snarky.Circuit.Types (F)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class PrimeField, fromBigInt)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary, quickCheckGen, (===))
-import Test.QuickCheck.Gen (Gen)
+import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -65,170 +84,83 @@ domainLog2 = 16
 zkRows :: Int
 zkRows = 3
 
--- | Build EvalPoint from witness/coefficient/index vectors
--- | Witness: 30 elements (15 cols × 2 curr/next)
--- | Coefficients: 15 elements
--- | Index: 12 elements (6 gate types × 2 curr/next)
-buildEvalPoint
-  :: forall a
-   . { witnessEvals :: Vector 30 a
-     , coeffEvals :: Vector 15 a
-     , indexEvals :: Vector 12 a
-     , defaultVal :: a
-     }
-  -> EvalPoint a
-buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
-  let
-    -- Convert to arrays for Int-based indexing
-    witnessArr = toUnfoldable witnessEvals :: Array a
-    coeffArr = toUnfoldable coeffEvals :: Array a
-    indexArr = toUnfoldable indexEvals :: Array a
-  in
-    { witness: \row col ->
-        let
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = col * 2 + rowOffset
-        in
-          fromMaybe defaultVal (Array.index witnessArr idx)
-    , coefficient: \col ->
-        fromMaybe defaultVal (Array.index coeffArr col)
-    , index: \row gt ->
-        let
-          gateIdx = case gt of
-            Poseidon -> 0
-            Generic -> 1
-            VarBaseMul -> 2
-            EndoMul -> 3
-            EndoMulScalar -> 4
-            CompleteAdd -> 5
-            _ -> 0
-          rowOffset = case row of
-            Curr -> 0
-            Next -> 1
-          idx = gateIdx * 2 + rowOffset
-        in
-          fromMaybe defaultVal (Array.index indexArr idx)
-    , lookupAggreg: \_ -> defaultVal
-    , lookupSorted: \_ _ -> defaultVal
-    , lookupTable: \_ -> defaultVal
-    , lookupRuntimeTable: \_ -> defaultVal
-    , lookupRuntimeSelector: \_ -> defaultVal
-    , lookupKindIndex: \_ -> defaultVal
-    }
+-------------------------------------------------------------------------------
+-- | Helper functions (test-specific)
+-------------------------------------------------------------------------------
 
--- | Build Challenges with precomputed domain-dependent values
--- | The two UnnormalizedLagrangeBasis calls in the linearization are:
--- |   { zk_rows: false, offset: 0 }
--- |   { zk_rows: true, offset: -1 }
-buildChallenges
-  :: forall a
-   . { alpha :: a
-     , beta :: a
-     , gamma :: a
-     , jointCombiner :: a
-     , vanishesOnZk :: a
-     , lagrangeFalse0 :: a -- unnormalizedLagrangeBasis(false, 0)
-     , lagrangeTrue1 :: a -- unnormalizedLagrangeBasis(true, -1)
-     }
-  -> Challenges a
-buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 } =
-  { alpha
-  , beta
-  , gamma
-  , jointCombiner
-  , vanishesOnZeroKnowledgeAndPreviousRows: vanishesOnZk
-  , unnormalizedLagrangeBasis: \{ zkRows: zk, offset } ->
-      -- Match the two known calls in the linearization expression
-      if not zk && offset == 0 then lagrangeFalse0
-      else if zk && offset == (-1) then lagrangeTrue1
-      else lagrangeFalse0 -- Default (shouldn't happen)
-  }
-
--- | Build FFI input from vectors and challenges (for Rust comparison test)
+-- | Build FFI input from vectors and challenges
 buildFFIInput
-  :: { witnessEvals :: Vector 30 Pallas.BaseField
-     , coeffEvals :: Vector 15 Pallas.BaseField
-     , indexEvals :: Vector 12 Pallas.BaseField
-     , alpha :: Pallas.BaseField
-     , beta :: Pallas.BaseField
-     , gamma :: Pallas.BaseField
-     , jointCombiner :: Pallas.BaseField
-     , zeta :: Pallas.BaseField
+  :: forall f g
+   . LinearizationFFI f g
+  => { witnessEvals :: Vector 15 (PointEval f)
+     , coeffEvals :: Vector 15 f
+     , indexEvals :: Vector 6 (PointEval f)
+     , alpha :: f
+     , beta :: f
+     , gamma :: f
+     , jointCombiner :: f
+     , zeta :: f
      }
-  -> FFI.PallasLinearizationInput
+  -> FFI.LinearizationInput f
 buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta } =
   let
-    witnessArr = toUnfoldable witnessEvals :: Array Pallas.BaseField
-    indexArr = toUnfoldable indexEvals :: Array Pallas.BaseField
+    indexArr = toUnfoldable indexEvals :: Array (PointEval f)
+    pointEvalToArray pe = [ pe.zeta, pe.omegaTimesZeta ]
+    indexAt i = case Array.index indexArr i of
+      Just pe -> pointEvalToArray pe
+      Nothing -> []
   in
     { alpha
     , beta
     , gamma
     , jointCombiner
-    , witnessEvals: witnessArr
+    , witnessEvals: concatMap pointEvalToArray (toUnfoldable witnessEvals :: Array (PointEval f))
     , coefficientEvals: toUnfoldable coeffEvals
-    , poseidonIndex: Array.slice 0 2 indexArr
-    , genericIndex: Array.slice 2 4 indexArr
-    , varbasemulIndex: Array.slice 4 6 indexArr
-    , endomulIndex: Array.slice 6 8 indexArr
-    , endomulScalarIndex: Array.slice 8 10 indexArr
-    , completeAddIndex: Array.slice 10 12 indexArr
-    , vanishesOnZk: FFI.pallasVanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
+    , poseidonIndex: indexAt 0
+    , genericIndex: indexAt 1
+    , varbasemulIndex: indexAt 2
+    , endomulIndex: indexAt 3
+    , endomulScalarIndex: indexAt 4
+    , completeAddIndex: indexAt 5
+    , vanishesOnZk: vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
     , zeta
     , domainLog2
     }
 
 -- | Generate a sized vector of arbitrary field elements
-genFieldVector :: forall n. Reflectable n Int => Proxy n -> Gen (Vector n Pallas.BaseField)
+genFieldVector :: forall f n. PrimeField f => Reflectable n Int => Proxy n -> Gen (Vector n f)
 genFieldVector p = Vector.generator p arbitrary
 
--- | Parse hex string to field element using BigInt
-parseHex :: forall f. PrimeField f => String -> f
-parseHex hex = case fromBigInt <$> BigInt.fromString hex of
-  Nothing -> unsafeCrashWith $ "Failed to pase Hex to BigInt: " <> hex
-  Just a -> a
+-------------------------------------------------------------------------------
+-- | Parameterized test types and functions
+-------------------------------------------------------------------------------
 
--- | Input record for linearization circuit test (VALUE type)
--- | All sizes are statically known from Kimchi protocol parameters
--- | Using a type alias (not newtype) so CircuitType instance for Record applies
-type LinearizationInput =
-  { witnessEvals :: Vector 30 (F Pallas.BaseField)
-  , coeffEvals :: Vector 15 (F Pallas.BaseField)
-  , indexEvals :: Vector 12 (F Pallas.BaseField)
-  , alpha :: F Pallas.BaseField
-  , beta :: F Pallas.BaseField
-  , gamma :: F Pallas.BaseField
-  , jointCombiner :: F Pallas.BaseField
-  , vanishesOnZk :: F Pallas.BaseField
-  , lagrangeFalse0 :: F Pallas.BaseField -- UnnormalizedLagrangeBasis(false, 0)
-  , lagrangeTrue1 :: F Pallas.BaseField -- UnnormalizedLagrangeBasis(true, -1)
+-- | Input record for linearization test, parameterized by element type.
+-- | Use as `LinearizationInput (F f)` for values or `LinearizationInput (FVar f)` for circuit variables.
+type LinearizationInput a =
+  { witnessEvals :: Vector 15 (PointEval a)
+  , coeffEvals :: Vector 15 a
+  , indexEvals :: Vector 6 (PointEval a)
+  , alpha :: a
+  , beta :: a
+  , gamma :: a
+  , jointCombiner :: a
+  , vanishesOnZk :: a
+  , lagrangeFalse0 :: a
+  , lagrangeTrue1 :: a
   }
 
--- | VAR type corresponding to LinearizationInput
--- | This is what the circuit function receives
-type LinearizationInputVar =
-  { witnessEvals :: Vector 30 (FVar Pallas.BaseField)
-  , coeffEvals :: Vector 15 (FVar Pallas.BaseField)
-  , indexEvals :: Vector 12 (FVar Pallas.BaseField)
-  , alpha :: FVar Pallas.BaseField
-  , beta :: FVar Pallas.BaseField
-  , gamma :: FVar Pallas.BaseField
-  , jointCombiner :: FVar Pallas.BaseField
-  , vanishesOnZk :: FVar Pallas.BaseField
-  , lagrangeFalse0 :: FVar Pallas.BaseField
-  , lagrangeTrue1 :: FVar Pallas.BaseField
-  }
-
--- | Circuit that evaluates the linearization polynomial
--- | Takes circuit variables and returns a circuit variable
+-- | Circuit that evaluates the linearization polynomial (parameterized)
 linearizationCircuit
-  :: forall t m
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
-  => LinearizationInputVar
-  -> Snarky (KimchiConstraint Pallas.BaseField) t m (FVar Pallas.BaseField)
-linearizationCircuit input =
+  :: forall f f' t m
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => CircuitM f (KimchiConstraint f) t m
+  => Array PolishToken
+  -> LinearizationInput (FVar f)
+  -> Snarky (KimchiConstraint f) t m (FVar f)
+linearizationCircuit tokens input =
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -249,17 +181,24 @@ linearizationCircuit input =
 
     env = circuitEnv evalPoint challenges parseHex
   in
-    -- Evaluate the linearization polynomial using circuit operations
-    evaluate PallasTokens.constantTermTokens env
+    evaluate tokens env
 
--- | Reference function for field evaluation
-linearizationReference :: LinearizationInput -> F Pallas.BaseField
-linearizationReference input =
+-- | Reference function for field evaluation (parameterized)
+linearizationReference
+  :: forall f f'
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => Array PolishToken
+  -> LinearizationInput (F f)
+  -> F f
+linearizationReference tokens input =
   let
+    unwrapPointEval pe = { zeta: unwrap pe.zeta, omegaTimesZeta: unwrap pe.omegaTimesZeta }
     evalPoint = buildEvalPoint
-      { witnessEvals: map unwrap input.witnessEvals
+      { witnessEvals: map unwrapPointEval input.witnessEvals
       , coeffEvals: map unwrap input.coeffEvals
-      , indexEvals: map unwrap input.indexEvals
+      , indexEvals: map unwrapPointEval input.indexEvals
       , defaultVal: zero
       }
 
@@ -275,25 +214,36 @@ linearizationReference input =
 
     env = fieldEnv evalPoint challenges parseHex
   in
-    wrap $ evaluate PallasTokens.constantTermTokens env
+    wrap $ evaluate tokens env
+
+-- | Generate an arbitrary PointEval
+genPointEval :: forall f. PrimeField f => Gen (PointEval f)
+genPointEval = do
+  zeta <- arbitrary
+  omegaTimesZeta <- arbitrary
+  pure { zeta, omegaTimesZeta }
 
 -- | Generate arbitrary LinearizationInput using FFI for domain-dependent values
-genLinearizationInput :: Gen LinearizationInput
+genLinearizationInput
+  :: forall f g
+   . PrimeField f
+  => LinearizationFFI f g
+  => Gen (LinearizationInput (F f))
 genLinearizationInput = do
-  witnessEvals <- map wrap <$> genFieldVector (Proxy @30)
+  witnessEvals <- Vector.generator (Proxy @15) genPointEval
   coeffEvals <- map wrap <$> genFieldVector (Proxy @15)
-  indexEvals <- map wrap <$> genFieldVector (Proxy @12)
+  indexEvals <- Vector.generator (Proxy @6) genPointEval
   alpha <- wrap <$> arbitrary
   beta <- wrap <$> arbitrary
   gamma <- wrap <$> arbitrary
   jointCombiner <- wrap <$> arbitrary
-  zeta <- arbitrary :: Gen Pallas.BaseField
+  zeta <- arbitrary
 
   -- Compute domain-dependent values using FFI
   let
-    vanishesOnZk = wrap $ FFI.pallasVanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
-    lagrangeFalse0 = wrap $ FFI.pallasUnnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zeta }
-    lagrangeTrue1 = wrap $ FFI.pallasUnnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zeta }
+    vanishesOnZk = wrap $ vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
+    lagrangeFalse0 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zeta }
+    lagrangeTrue1 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zeta }
 
   pure
     { witnessEvals
@@ -308,14 +258,27 @@ genLinearizationInput = do
     , lagrangeTrue1
     }
 
-spec :: Spec Unit
-spec = describe "Linearization Interpreter" do
+-------------------------------------------------------------------------------
+-- | Parameterized test suite
+-------------------------------------------------------------------------------
+
+linearizationTests
+  :: forall f f' g
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => Kimchi.KimchiVerify f f'
+  => LinearizationFFI f g
+  => Proxy f
+  -> Array PolishToken
+  -> Spec Unit
+linearizationTests _ tokens = do
   it "PureScript interpreter matches Rust evaluator on arbitrary inputs" do
     liftEffect $ quickCheckGen do
       -- Generate arbitrary field elements
-      witnessEvals <- genFieldVector (Proxy @30)
+      (witnessEvals :: Vector 15 (PointEval f)) <- Vector.generator (Proxy @15) genPointEval
       coeffEvals <- genFieldVector (Proxy @15)
-      indexEvals <- genFieldVector (Proxy @12)
+      (indexEvals :: Vector 6 (PointEval f)) <- Vector.generator (Proxy @6) genPointEval
       alpha <- arbitrary
       beta <- arbitrary
       gamma <- arbitrary
@@ -324,43 +287,211 @@ spec = describe "Linearization Interpreter" do
 
       -- Build PureScript structures using FFI for domain values
       let
-        vanishesOnZk = FFI.pallasVanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
-        lagrangeFalse0 = FFI.pallasUnnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zeta }
-        lagrangeTrue1 = FFI.pallasUnnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zeta }
+        vanishesOnZk' = vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
+        lagrangeFalse0 = unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zeta }
+        lagrangeTrue1 = unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zeta }
 
       let evalPoint = buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal: zero }
-      let challenges = buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 }
+      let challenges = buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk: vanishesOnZk', lagrangeFalse0, lagrangeTrue1 }
       let env = fieldEnv evalPoint challenges parseHex
       let
-        psResult = (evaluate :: Array PolishToken -> Env Pallas.BaseField -> Pallas.BaseField)
-          PallasTokens.constantTermTokens
+        psResult = (evaluate :: Array PolishToken -> Env f -> f)
+          tokens
           env
 
       -- Build FFI input for Rust
       let ffiInput = buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta }
 
       -- Call Rust evaluator
-      let rustResult = FFI.evaluatePallasLinearization ffiInput
+      let rustResult = evaluateLinearization ffiInput
 
       -- Both should produce the same result
       pure $ psResult === rustResult
 
   it "Circuit evaluation matches field evaluation" do
     let
-      solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) linearizationCircuit
+      circuit
+        :: forall t m
+         . CircuitM f (KimchiConstraint f) t m
+        => LinearizationInput (FVar f)
+        -> Snarky (KimchiConstraint f) t m (FVar f)
+      circuit = linearizationCircuit tokens
+
+      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
       builtState = compilePure
-        (Proxy @LinearizationInput)
-        (Proxy @(F Pallas.BaseField))
-        (Proxy @(KimchiConstraint Pallas.BaseField))
-        linearizationCircuit
+        (Proxy @(LinearizationInput (F f)))
+        (Proxy @(F f))
+        (Proxy @(KimchiConstraint f))
+        circuit
         Kimchi.initialState
 
     circuitSpecPure' 1
       { builtState
       , checker: Kimchi.eval
       , solver
-      , testFunction: satisfied linearizationReference
+      , testFunction: satisfied (linearizationReference tokens)
       , postCondition: Kimchi.postCondition
       }
-      genLinearizationInput
+      (genLinearizationInput :: Gen (LinearizationInput (F f)))
+
+-------------------------------------------------------------------------------
+-- | Test linearization for valid Schnorr circuit witness
+-------------------------------------------------------------------------------
+
+-- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
+-- | Uses Pallas linearization (Fp) with a Schnorr circuit over Vesta scalar field
+-- | (which equals Pallas base field = Fp).
+-- |
+-- | Note: The linearization polynomial does NOT evaluate to zero at an arbitrary
+-- | point zeta. It evaluates to t(zeta) * Z_H(zeta) where t is the quotient
+-- | polynomial. What we test here is that our PureScript interpreter produces
+-- | the same result as Rust when given real circuit witness evaluations.
+validWitnessLinearizationTest :: Spec Unit
+validWitnessLinearizationTest = do
+  it "Pallas linearization: PS interpreter matches Rust for valid Schnorr witness" do
+    let
+      -- Schnorr circuit function over Vesta.ScalarField (= Pallas.BaseField = Fp)
+      genPointVar :: AffinePoint (FVar Vesta.ScalarField)
+      genPointVar =
+        let
+          { x, y } = unsafePartial fromJust $ toAffine (generator @_ @Pallas.G)
+        in
+          { x: const_ x, y: const_ y }
+
+      circuit
+        :: forall t
+         . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+        => VerifyInput 4 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)
+        -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (BoolVar Vesta.ScalarField)
+      circuit { signature: { r: sigR, s: sigS }, publicKey, message } =
+        let
+          signature = SignatureVar { r: sigR, s: sigS }
+        in
+          verifies @51 genPointVar { signature, publicKey, message }
+
+      solver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField) Boolean) Boolean
+      solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+
+      -- Compile the circuit
+      builtState :: CircuitBuilderState (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField)
+      builtState = compilePure
+        (Proxy @(VerifyInput 4 (F Vesta.ScalarField) Boolean))
+        (Proxy @Boolean)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
+
+      gen = genValidSignature (Proxy @Pallas.G) (Proxy @4)
+
+    -- Generate a valid input and run the solver
+    input <- liftEffect $ randomSampleOne gen
+    crs <- liftEffect $ createCRS @Vesta.ScalarField
+
+    -- Run the solver
+    let
+      nat :: Identity ~> Effect
+      nat = pure <<< un Identity
+
+    eRes <- liftEffect $ runSolverT (\a -> hoist nat $ solver a) input
+    case eRes of
+      Left e -> liftEffect $ throwError $ error (show e)
+      Right (Tuple _ assignments) -> do
+        let
+          -- Build constraint system and witness
+          { constraintSystem, constraints } = makeConstraintSystem @Vesta.ScalarField
+            { constraints: concatMap toKimchiRows builtState.constraints
+            , publicInputs: builtState.publicInputs
+            , unionFind: (un AuxState builtState.aux).wireState.unionFind
+            }
+          { witness, publicInputs: _ } = makeWitness
+            { assignments
+            , constraints: map _.variables constraints
+            , publicInputs: builtState.publicInputs
+            }
+          endo = endoBase @Vesta.ScalarField @Pallas.ScalarField
+          proverIndex = createProverIndex @Vesta.ScalarField @Vesta.G
+            { endo
+            , constraintSystem
+            , crs
+            }
+
+        -- Generate random challenges
+        zeta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
+        alpha <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
+        beta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
+        gamma <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
+        jointCombiner <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
+
+        let
+
+          -- Compute evaluations using FFI from prover index
+          witnessEvals = proverIndexWitnessEvaluations { proverIndex, witnessColumns: witness, zeta }
+          coeffEvals = proverIndexCoefficientEvaluations
+            { proverIndex, zeta }
+          indexEvals = proverIndexSelectorEvaluations { proverIndex, zeta }
+
+          -- Domain log2 is determined by the prover index
+          domainLog2' = proverIndexDomainLog2 proverIndex
+
+          -- Compute domain-dependent values
+          vanishesOnZk' = vanishesOnZkAndPreviousRows
+            { domainLog2: domainLog2', zkRows, pt: zeta }
+          lagrangeFalse0 = unnormalizedLagrangeBasis
+            { domainLog2: domainLog2', zkRows: 0, offset: 0, pt: zeta }
+          lagrangeTrue1 = unnormalizedLagrangeBasis
+            { domainLog2: domainLog2', zkRows, offset: -1, pt: zeta }
+
+          evalPoint = buildEvalPoint
+            { witnessEvals
+            , coeffEvals
+            , indexEvals
+            , defaultVal: zero
+            }
+
+          challenges = buildChallenges
+            { alpha
+            , beta
+            , gamma
+            , jointCombiner
+            , vanishesOnZk: vanishesOnZk'
+            , lagrangeFalse0
+            , lagrangeTrue1
+            }
+
+          env = fieldEnv evalPoint challenges parseHex
+
+          -- Evaluate using PureScript interpreter
+          psResult :: Vesta.ScalarField
+          psResult = evaluate PallasTokens.constantTermTokens env
+
+          -- Build FFI input for Rust evaluator
+          ffiInput = buildFFIInput
+            { witnessEvals
+            , coeffEvals
+            , indexEvals
+            , alpha
+            , beta
+            , gamma
+            , jointCombiner
+            , zeta
+            }
+
+          -- Evaluate using Rust
+          rustResult = evaluateLinearization ffiInput
+
+        -- PureScript should match Rust
+        liftEffect $ psResult `shouldEqual` rustResult
+
+-------------------------------------------------------------------------------
+-- | Main spec
+-------------------------------------------------------------------------------
+
+spec :: Spec Unit
+spec = describe "Linearization Interpreter" do
+  describe "Pallas" do
+    linearizationTests (Proxy @Pallas.BaseField) PallasTokens.constantTermTokens
+  describe "Vesta" do
+    linearizationTests (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
+  describe "Real Circuit Evaluation" do
+    validWitnessLinearizationTest

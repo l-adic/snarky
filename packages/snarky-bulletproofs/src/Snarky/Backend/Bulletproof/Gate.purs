@@ -28,7 +28,7 @@ import Data.Set as Set
 import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
-import Partial.Unsafe (unsafeCrashWith)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Constraint.Bulletproofs (R1CS(..))
@@ -101,7 +101,7 @@ makeGateExpression index (R1CS { left, right, output }) = do
           { varPlacements } <- get
           prev <- for terms \(Tuple v f) -> do
             case Map.lookup v varPlacements of
-              Nothing -> unsafeCrashWith $ "The impossible happened, missing variable " <> show v
+              Nothing -> unsafeThrow $ "The impossible happened, missing variable " <> show v
               Just x -> pure x { coeff = f * x.coeff }
           pure $ Array.cons { index, placement, coeff: -one } prev
       pure $ maybe xs (\x -> x <> xs) constantTerm

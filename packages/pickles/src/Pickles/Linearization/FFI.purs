@@ -1,135 +1,101 @@
--- | FFI bindings to Rust linearization evaluator for testing
+-- | FFI bindings to Rust linearization evaluator for testing.
+-- | Exposes a typeclass `LinearizationFFI` with instances for Pallas and Vesta.
 module Pickles.Linearization.FFI
-  ( evaluatePallasLinearization
-  , evaluateVestaLinearization
-  , PallasLinearizationInput
-  , VestaLinearizationInput
-  , pallasUnnormalizedLagrangeBasis
-  , vestaUnnormalizedLagrangeBasis
-  , pallasVanishesOnZkAndPreviousRows
-  , vestaVanishesOnZkAndPreviousRows
+  ( class LinearizationFFI
+  , evaluateLinearization
+  , unnormalizedLagrangeBasis
+  , vanishesOnZkAndPreviousRows
+  , proverIndexDomainLog2
+  , proverIndexWitnessEvaluations
+  , proverIndexCoefficientEvaluations
+  , proverIndexSelectorEvaluations
+  , LinearizationInput
+  , PointEval
   ) where
 
+import Data.Vector (Vector)
+import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
--- | Input record for Pallas linearization evaluation
-type PallasLinearizationInput =
-  { alpha :: Pallas.BaseField
-  , beta :: Pallas.BaseField
-  , gamma :: Pallas.BaseField
-  , jointCombiner :: Pallas.BaseField
-  , witnessEvals :: Array Pallas.BaseField
-  , coefficientEvals :: Array Pallas.BaseField
-  , poseidonIndex :: Array Pallas.BaseField
-  , genericIndex :: Array Pallas.BaseField
-  , varbasemulIndex :: Array Pallas.BaseField
-  , endomulIndex :: Array Pallas.BaseField
-  , endomulScalarIndex :: Array Pallas.BaseField
-  , completeAddIndex :: Array Pallas.BaseField
-  , vanishesOnZk :: Pallas.BaseField
-  , zeta :: Pallas.BaseField
+-- | Input record for linearization evaluation
+type LinearizationInput f =
+  { alpha :: f
+  , beta :: f
+  , gamma :: f
+  , jointCombiner :: f
+  , witnessEvals :: Array f
+  , coefficientEvals :: Array f
+  , poseidonIndex :: Array f
+  , genericIndex :: Array f
+  , varbasemulIndex :: Array f
+  , endomulIndex :: Array f
+  , endomulScalarIndex :: Array f
+  , completeAddIndex :: Array f
+  , vanishesOnZk :: f
+  , zeta :: f
   , domainLog2 :: Int
   }
 
--- | Evaluate Pallas linearization using Rust/Kimchi
-foreign import evaluatePallasLinearizationImpl :: PallasLinearizationInput -> Pallas.BaseField
+-- | Polynomial evaluation at two points: zeta and zeta*omega
+type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 
-evaluatePallasLinearization :: PallasLinearizationInput -> Pallas.BaseField
-evaluatePallasLinearization = evaluatePallasLinearizationImpl
+-- | Typeclass encapsulating all linearization FFI operations for a given field.
+-- | `f` is the evaluation field, `g` is the curve group of the circuit being verified.
+-- | For Pallas linearization (Fp): f = Pallas.BaseField, g = Vesta.G
+-- | For Vesta linearization (Fq): f = Vesta.BaseField, g = Pallas.G
+class LinearizationFFI f g | f -> g where
+  evaluateLinearization :: LinearizationInput f -> f
+  unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
+  vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
+  proverIndexDomainLog2 :: ProverIndex g f -> Int
+  proverIndexWitnessEvaluations :: { proverIndex :: ProverIndex g f, witnessColumns :: Vector 15 (Array f), zeta :: f } -> Vector 15 (PointEval f)
+  proverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Vector 15 f
+  proverIndexSelectorEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Vector 6 (PointEval f)
 
--- | Input record for Vesta linearization evaluation
-type VestaLinearizationInput =
-  { alpha :: Vesta.BaseField
-  , beta :: Vesta.BaseField
-  , gamma :: Vesta.BaseField
-  , jointCombiner :: Vesta.BaseField
-  , witnessEvals :: Array Vesta.BaseField
-  , coefficientEvals :: Array Vesta.BaseField
-  , poseidonIndex :: Array Vesta.BaseField
-  , genericIndex :: Array Vesta.BaseField
-  , varbasemulIndex :: Array Vesta.BaseField
-  , endomulIndex :: Array Vesta.BaseField
-  , endomulScalarIndex :: Array Vesta.BaseField
-  , completeAddIndex :: Array Vesta.BaseField
-  , vanishesOnZk :: Vesta.BaseField
-  , zeta :: Vesta.BaseField
-  , domainLog2 :: Int
-  }
+--------------------------------------------------------------------------------
+-- Private foreign imports
+--------------------------------------------------------------------------------
 
--- | Evaluate Vesta linearization using Rust/Kimchi
-foreign import evaluateVestaLinearizationImpl :: VestaLinearizationInput -> Vesta.BaseField
+foreign import evaluatePallasLinearization :: LinearizationInput Pallas.BaseField -> Pallas.BaseField
+foreign import evaluateVestaLinearization :: LinearizationInput Vesta.BaseField -> Vesta.BaseField
 
-evaluateVestaLinearization :: VestaLinearizationInput -> Vesta.BaseField
-evaluateVestaLinearization = evaluateVestaLinearizationImpl
+foreign import pallasUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
+foreign import vestaUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
 
--- | Compute unnormalized Lagrange basis for Pallas base field
--- | (pt^n - 1) / (pt - ω^i)
--- | When zkRows > 0, offsets into the ZK padding region
-foreign import pallasUnnormalizedLagrangeBasisImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
+foreign import pallasVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
+foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
 
-pallasUnnormalizedLagrangeBasis
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-pallasUnnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasisImpl
+foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
+foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
 
--- | Compute unnormalized Lagrange basis for Vesta base field
-foreign import vestaUnnormalizedLagrangeBasisImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
+foreign import pallasProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, witnessColumns :: Vector 15 (Array Pallas.BaseField), zeta :: Pallas.BaseField } -> Vector 15 (PointEval Pallas.BaseField)
+foreign import vestaProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, witnessColumns :: Vector 15 (Array Vesta.BaseField), zeta :: Vesta.BaseField } -> Vector 15 (PointEval Vesta.BaseField)
 
-vestaUnnormalizedLagrangeBasis
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , offset :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-vestaUnnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasisImpl
+foreign import pallasProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Vector 15 Pallas.BaseField
+foreign import vestaProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Vector 15 Vesta.BaseField
 
--- | Compute vanishes on ZK and previous rows for Pallas base field
--- | ∏_{j=0}^{zkRows} (pt - ω^(n - zkRows - 1 + j))
-foreign import pallasVanishesOnZkAndPreviousRowsImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
+foreign import pallasProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Vector 6 (PointEval Pallas.BaseField)
+foreign import vestaProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Vector 6 (PointEval Vesta.BaseField)
 
-pallasVanishesOnZkAndPreviousRows
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Pallas.BaseField
-     }
-  -> Pallas.BaseField
-pallasVanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRowsImpl
+--------------------------------------------------------------------------------
+-- Instances
+--------------------------------------------------------------------------------
 
--- | Compute vanishes on ZK and previous rows for Vesta base field
-foreign import vestaVanishesOnZkAndPreviousRowsImpl
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
+instance LinearizationFFI Pallas.BaseField Vesta.G where
+  evaluateLinearization = evaluatePallasLinearization
+  unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
+  vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
+  proverIndexDomainLog2 = pallasProverIndexDomainLog2
+  proverIndexWitnessEvaluations = pallasProverIndexWitnessEvaluations
+  proverIndexCoefficientEvaluations = pallasProverIndexCoefficientEvaluations
+  proverIndexSelectorEvaluations = pallasProverIndexSelectorEvaluations
 
-vestaVanishesOnZkAndPreviousRows
-  :: { domainLog2 :: Int
-     , zkRows :: Int
-     , pt :: Vesta.BaseField
-     }
-  -> Vesta.BaseField
-vestaVanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRowsImpl
+instance LinearizationFFI Vesta.BaseField Pallas.G where
+  evaluateLinearization = evaluateVestaLinearization
+  unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
+  vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
+  proverIndexDomainLog2 = vestaProverIndexDomainLog2
+  proverIndexWitnessEvaluations = vestaProverIndexWitnessEvaluations
+  proverIndexCoefficientEvaluations = vestaProverIndexCoefficientEvaluations
+  proverIndexSelectorEvaluations = vestaProverIndexSelectorEvaluations

@@ -21,7 +21,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Partial.Unsafe (unsafeCrashWith)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
@@ -49,7 +49,7 @@ assertEqual_
 assertEqual_ x y = case x, y of
   Const f, Const g ->
     if f == g then pure unit
-    else unsafeCrashWith $ "assertEqual: constants " <> show f <> " != " <> show g
+    else unsafeThrow $ "assertEqual: constants " <> show f <> " != " <> show g
   _, _ -> do
     addConstraint $ equal x y
 

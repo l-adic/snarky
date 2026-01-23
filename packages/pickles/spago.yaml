@@ -9,6 +9,7 @@ package:
     - js-bigints
     - maybe
     - newtype
+    - partial
     - poseidon
     - prelude
     - random-oracle
@@ -24,11 +25,18 @@ package:
     dependencies:
       - aff
       - effect
+      - either
+      - exceptions
+      - identity
+      - mmorph
       - newtype
       - partial
       - quickcheck
+      - schnorr
+      - snarky-curves
       - snarky-kimchi
       - snarky-test-utils
       - spec
       - spec-node
       - spec-quickcheck
+      - transformers

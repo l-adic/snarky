@@ -554,6 +554,7 @@
             "js-bigints",
             "maybe",
             "newtype",
+            "partial",
             "poseidon",
             "prelude",
             "random-oracle",
@@ -643,14 +644,21 @@
           "dependencies": [
             "aff",
             "effect",
+            "either",
+            "exceptions",
+            "identity",
+            "mmorph",
             "newtype",
             "partial",
             "quickcheck",
+            "schnorr",
+            "snarky-curves",
             "snarky-kimchi",
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck"
+            "spec-quickcheck",
+            "transformers"
           ],
           "build_plan": [
             "aff",
@@ -717,9 +725,11 @@
             "profunctor",
             "quickcheck",
             "random",
+            "random-oracle",
             "record",
             "refs",
             "safe-coerce",
+            "schnorr",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
@@ -1209,8 +1219,10 @@
             "js-bigints",
             "maybe",
             "newtype",
+            "partial",
             "poseidon",
             "prelude",
+            "quickcheck",
             "random-oracle",
             "snarky",
             "snarky-curves",
@@ -2165,7 +2177,8 @@
             "quickcheck",
             "snarky-test-utils",
             "spec",
-            "spec-node"
+            "spec-node",
+            "spec-quickcheck"
           ],
           "build_plan": [
             "aff",
