@@ -50,7 +50,7 @@ import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (endoBase, fromInt, generator, pow, toAffine)
+import Snarky.Curves.Class (endoBase, fromBigInt, generator, pow, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -232,9 +232,8 @@ computePublicEval
 computePublicEval publicInputs domainLog2 zeta =
   let
     omega = ProofFFI.domainGenerator domainLog2
-    domainSize = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
-    nField = pow (fromInt 2 :: Vesta.ScalarField) (BigInt.fromInt domainLog2)
-    zetaToNMinus1 = pow zeta domainSize - one
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+    zetaToNMinus1 = pow zeta n - one
     { acc } = foldl
       ( \{ acc: a, omegaPow } p ->
           { acc: a + omegaPow * p / (zeta - omegaPow)
@@ -244,7 +243,7 @@ computePublicEval publicInputs domainLog2 zeta =
       { acc: zero, omegaPow: one }
       publicInputs
   in
-    zetaToNMinus1 * acc / nField
+    zetaToNMinus1 * acc / fromBigInt n
 
 -- | Test that PureScript permContribution matches the oracle ft_eval0 value.
 -- |
@@ -304,12 +303,12 @@ permutationTest = do
 
         -- Compute domain-related values for permutation
         let
-          domainSize = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+          n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
           omega = ProofFFI.domainGenerator domainLog2
-          zetaToNMinus1 = pow oracles.zeta domainSize - one
+          zetaToNMinus1 = pow oracles.zeta n - one
           zkPoly = ProofFFI.permutationVanishingPolynomial
             { domainLog2, zkRows, pt: oracles.zeta }
-          omegaToMinusZkRows = pow omega (domainSize - BigInt.fromInt zkRows)
+          omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
 
         -- Build permutation input and compute contribution
         let
