@@ -11,22 +11,27 @@ const pairEvals = (flat) => {
   return result;
 };
 
+// Helper: flatten a PointEval record to [zeta, omegaTimesZeta]
+const flattenPointEval = (pe) => [pe.zeta, pe.omegaTimesZeta];
+
 // Linearization evaluation
 export const evaluatePallasLinearization = (input) =>
   crypto.evaluatePallasLinearization(
     input.alpha, input.beta, input.gamma, input.jointCombiner,
-    input.witnessEvals, input.coefficientEvals,
-    input.poseidonIndex, input.genericIndex, input.varbasemulIndex,
-    input.endomulIndex, input.endomulScalarIndex, input.completeAddIndex,
+    input.witnessEvals.flatMap(flattenPointEval), input.coefficientEvals,
+    flattenPointEval(input.poseidonIndex), flattenPointEval(input.genericIndex),
+    flattenPointEval(input.varbasemulIndex), flattenPointEval(input.endomulIndex),
+    flattenPointEval(input.endomulScalarIndex), flattenPointEval(input.completeAddIndex),
     input.vanishesOnZk, input.zeta, input.domainLog2
   );
 
 export const evaluateVestaLinearization = (input) =>
   crypto.evaluateVestaLinearization(
     input.alpha, input.beta, input.gamma, input.jointCombiner,
-    input.witnessEvals, input.coefficientEvals,
-    input.poseidonIndex, input.genericIndex, input.varbasemulIndex,
-    input.endomulIndex, input.endomulScalarIndex, input.completeAddIndex,
+    input.witnessEvals.flatMap(flattenPointEval), input.coefficientEvals,
+    flattenPointEval(input.poseidonIndex), flattenPointEval(input.genericIndex),
+    flattenPointEval(input.varbasemulIndex), flattenPointEval(input.endomulIndex),
+    flattenPointEval(input.endomulScalarIndex), flattenPointEval(input.completeAddIndex),
     input.vanishesOnZk, input.zeta, input.domainLog2
   );
 
@@ -51,20 +56,20 @@ export const vestaProverIndexDomainLog2 = (proverIndex) =>
   crypto.vestaProverIndexDomainLog2(proverIndex);
 
 // Prover index polynomial evaluations
-export const pallasProverIndexWitnessEvaluations = ({ proverIndex, witnessColumns, zeta }) =>
+export const pallasProverIndexWitnessEvaluations = (proverIndex) => (witnessColumns) => (zeta) =>
   pairEvals(crypto.pallasProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));
 
-export const pallasProverIndexCoefficientEvaluations = ({ proverIndex, zeta }) =>
+export const pallasProverIndexCoefficientEvaluations = (proverIndex) => (zeta) =>
   crypto.pallasProverIndexCoefficientEvaluations(proverIndex, zeta);
 
-export const pallasProverIndexSelectorEvaluations = ({ proverIndex, zeta }) =>
+export const pallasProverIndexSelectorEvaluations = (proverIndex) => (zeta) =>
   pairEvals(crypto.pallasProverIndexSelectorEvaluations(proverIndex, zeta));
 
-export const vestaProverIndexWitnessEvaluations = ({ proverIndex, witnessColumns, zeta }) =>
+export const vestaProverIndexWitnessEvaluations = (proverIndex) => (witnessColumns) => (zeta) =>
   pairEvals(crypto.vestaProverIndexWitnessEvaluations(proverIndex, witnessColumns, zeta));
 
-export const vestaProverIndexCoefficientEvaluations = ({ proverIndex, zeta }) =>
+export const vestaProverIndexCoefficientEvaluations = (proverIndex) => (zeta) =>
   crypto.vestaProverIndexCoefficientEvaluations(proverIndex, zeta);
 
-export const vestaProverIndexSelectorEvaluations = ({ proverIndex, zeta }) =>
+export const vestaProverIndexSelectorEvaluations = (proverIndex) => (zeta) =>
   pairEvals(crypto.vestaProverIndexSelectorEvaluations(proverIndex, zeta));

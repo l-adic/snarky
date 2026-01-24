@@ -5,6 +5,7 @@ package:
     - bifunctors
     - curves
     - either
+    - exceptions
     - foldable-traversable
     - identity
     - js-bigints

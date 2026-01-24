@@ -36,7 +36,7 @@ module Data.Vector
 import Prelude
 
 import Control.Monad.Gen (class MonadGen)
-import Data.Array ((:))
+import Data.Array (foldMap, (:))
 import Data.Array as A
 import Data.Array as Array
 import Data.Fin (Finite, finites, getFinite, unsafeFinite)
@@ -116,11 +116,10 @@ toVector' _ = toVector
 
 concat
   :: forall n m k a
-   . Add n m k
-  => Vector n a
-  -> Vector m a
+   . Mul n m k
+  => Vector n (Vector m a)
   -> Vector k a
-concat (Vector as) (Vector as') = Vector (as <> as')
+concat (Vector as) = Vector (foldMap toUnfoldable as)
 
 flatten
   :: forall n m k a

@@ -1,4 +1,12 @@
-module Test.Pickles.E2E where
+module Test.Pickles.E2E
+  ( computePublicEval
+  , gateConstraintTest
+  , permutationTest
+  , schnorrBuiltState
+  , schnorrCircuit
+  , schnorrSolver
+  , spec
+  ) where
 
 -- | End-to-end tests using a real Schnorr circuit.
 -- | Builds a circuit, generates a valid witness, creates a prover index,
@@ -12,15 +20,13 @@ import Prelude
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
 import Data.Array (concatMap)
-import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Newtype (un)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Tuple (Tuple(..))
-import Data.Vector (toUnfoldable)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
@@ -28,8 +34,7 @@ import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Env (fieldEnv)
-import Pickles.Linearization.FFI (PointEval, evaluateLinearization, proverIndexCoefficientEvaluations, proverIndexDomainLog2, proverIndexSelectorEvaluations, proverIndexWitnessEvaluations, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
-import Pickles.Linearization.FFI as FFI
+import Pickles.Linearization.FFI (evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
@@ -49,6 +54,7 @@ import Snarky.Curves.Class (endoBase, fromInt, generator, pow, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (randomSampleOne)
@@ -94,47 +100,6 @@ schnorrBuiltState = compilePure
 -- | Solver for the Schnorr circuit.
 schnorrSolver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField) Boolean) Boolean
 schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorrCircuit
-
--------------------------------------------------------------------------------
--- | FFI input construction
--------------------------------------------------------------------------------
-
--- | Build FFI LinearizationInput from evaluations and challenges.
-buildFFIInput
-  :: { witnessEvals :: Array (PointEval Vesta.ScalarField)
-     , coeffEvals :: Array Vesta.ScalarField
-     , indexEvals :: Array (PointEval Vesta.ScalarField)
-     , alpha :: Vesta.ScalarField
-     , beta :: Vesta.ScalarField
-     , gamma :: Vesta.ScalarField
-     , jointCombiner :: Vesta.ScalarField
-     , zeta :: Vesta.ScalarField
-     , domainLog2 :: Int
-     }
-  -> FFI.LinearizationInput Vesta.ScalarField
-buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta, domainLog2 } =
-  let
-    pointEvalToArray pe = [ pe.zeta, pe.omegaTimesZeta ]
-    indexAt i = case Array.index indexEvals i of
-      Just pe -> pointEvalToArray pe
-      Nothing -> []
-  in
-    { alpha
-    , beta
-    , gamma
-    , jointCombiner
-    , witnessEvals: concatMap pointEvalToArray witnessEvals
-    , coefficientEvals: coeffEvals
-    , poseidonIndex: indexAt 0
-    , genericIndex: indexAt 1
-    , varbasemulIndex: indexAt 2
-    , endomulIndex: indexAt 3
-    , endomulScalarIndex: indexAt 4
-    , completeAddIndex: indexAt 5
-    , vanishesOnZk: vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
-    , zeta
-    , domainLog2
-    }
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -194,9 +159,9 @@ gateConstraintTest = do
 
         let
           -- Compute evaluations using FFI from prover index
-          witnessEvals = proverIndexWitnessEvaluations { proverIndex, witnessColumns: witness, zeta }
-          coeffEvals = proverIndexCoefficientEvaluations { proverIndex, zeta }
-          indexEvals = proverIndexSelectorEvaluations { proverIndex, zeta }
+          witnessEvals = evalWitnessPolys proverIndex witness zeta
+          coeffEvals = evalCoefficientPolys proverIndex zeta
+          indexEvals = evalSelectorPolys proverIndex zeta
 
           -- Domain log2 from prover index
           domainLog2 = proverIndexDomainLog2 proverIndex
@@ -234,9 +199,9 @@ gateConstraintTest = do
 
           -- Build FFI input for Rust evaluator
           ffiInput = buildFFIInput
-            { witnessEvals: toUnfoldable witnessEvals
-            , coeffEvals: toUnfoldable coeffEvals
-            , indexEvals: toUnfoldable indexEvals
+            { witnessEvals
+            , coeffEvals
+            , indexEvals
             , alpha
             , beta
             , gamma
@@ -246,7 +211,7 @@ gateConstraintTest = do
             }
 
           -- Evaluate using Rust
-          rustResult = evaluateLinearization ffiInput
+          rustResult = evalLinearization ffiInput
 
         -- PureScript should match Rust
         liftEffect $ psResult `shouldEqual` rustResult
@@ -267,9 +232,9 @@ computePublicEval
 computePublicEval publicInputs domainLog2 zeta =
   let
     omega = ProofFFI.domainGenerator domainLog2
-    nBigInt = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+    domainSize = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
     nField = pow (fromInt 2 :: Vesta.ScalarField) (BigInt.fromInt domainLog2)
-    zetaToNMinus1 = pow zeta nBigInt - one
+    zetaToNMinus1 = pow zeta domainSize - one
     { acc } = foldl
       ( \{ acc: a, omegaPow } p ->
           { acc: a + omegaPow * p / (zeta - omegaPow)
@@ -339,12 +304,12 @@ permutationTest = do
 
         -- Compute domain-related values for permutation
         let
-          nBigInt = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+          domainSize = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
           omega = ProofFFI.domainGenerator domainLog2
-          zetaToNMinus1 = pow oracles.zeta nBigInt - one
+          zetaToNMinus1 = pow oracles.zeta domainSize - one
           zkPoly = ProofFFI.permutationVanishingPolynomial
             { domainLog2, zkRows, pt: oracles.zeta }
-          omegaToMinusZkRows = pow omega (nBigInt - BigInt.fromInt zkRows)
+          omegaToMinusZkRows = pow omega (domainSize - BigInt.fromInt zkRows)
 
         -- Build permutation input and compute contribution
         let
@@ -365,8 +330,8 @@ permutationTest = do
 
         -- Compute gate constraints using proof witness evals
         let
-          coeffEvals = proverIndexCoefficientEvaluations { proverIndex, zeta: oracles.zeta }
-          indexEvals = proverIndexSelectorEvaluations { proverIndex, zeta: oracles.zeta }
+          coeffEvals = evalCoefficientPolys proverIndex oracles.zeta
+          indexEvals = evalSelectorPolys proverIndex oracles.zeta
           vanishesOnZk' = vanishesOnZkAndPreviousRows
             { domainLog2, zkRows, pt: oracles.zeta }
           lagrangeFalse0 = unnormalizedLagrangeBasis

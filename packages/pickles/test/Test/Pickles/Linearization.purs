@@ -22,17 +22,15 @@ module Test.Pickles.Linearization where
 
 import Prelude
 
-import Data.Array (concatMap)
-import Data.Array as Array
-import Data.Maybe (Maybe(..))
+import Data.Fin (unsafeFinite)
 import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector, toUnfoldable)
+import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evaluateLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evalLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
@@ -75,7 +73,7 @@ zkRows = 3
 
 -- | Build FFI input from vectors and challenges
 buildFFIInput
-  :: forall f g
+  :: forall f g r
    . LinearizationFFI f g
   => { witnessEvals :: Vector 15 (PointEval f)
      , coeffEvals :: Vector 15 f
@@ -85,28 +83,25 @@ buildFFIInput
      , gamma :: f
      , jointCombiner :: f
      , zeta :: f
+     | r
      }
   -> FFI.LinearizationInput f
 buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta } =
   let
-    indexArr = toUnfoldable indexEvals :: Array (PointEval f)
-    pointEvalToArray pe = [ pe.zeta, pe.omegaTimesZeta ]
-    indexAt i = case Array.index indexArr i of
-      Just pe -> pointEvalToArray pe
-      Nothing -> []
+    index = unsafeFinite @6
   in
     { alpha
     , beta
     , gamma
     , jointCombiner
-    , witnessEvals: concatMap pointEvalToArray (toUnfoldable witnessEvals :: Array (PointEval f))
-    , coefficientEvals: toUnfoldable coeffEvals
-    , poseidonIndex: indexAt 0
-    , genericIndex: indexAt 1
-    , varbasemulIndex: indexAt 2
-    , endomulIndex: indexAt 3
-    , endomulScalarIndex: indexAt 4
-    , completeAddIndex: indexAt 5
+    , witnessEvals
+    , coefficientEvals: coeffEvals
+    , poseidonIndex: indexEvals !! index 0
+    , genericIndex: indexEvals !! index 1
+    , varbasemulIndex: indexEvals !! index 2
+    , endomulIndex: indexEvals !! index 3
+    , endomulScalarIndex: indexEvals !! index 4
+    , completeAddIndex: indexEvals !! index 5
     , vanishesOnZk: vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
     , zeta
     , domainLog2
@@ -288,7 +283,7 @@ linearizationTests _ tokens = do
       let ffiInput = buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointCombiner, zeta }
 
       -- Call Rust evaluator
-      let rustResult = evaluateLinearization ffiInput
+      let rustResult = evalLinearization ffiInput
 
       -- Both should produce the same result
       pure $ psResult === rustResult

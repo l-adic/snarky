@@ -101,16 +101,18 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
     , coefficient: \col -> coeffEvals !! col
     , index: \row gt ->
         let
+          index :: Int -> Finite 6
+          index = unsafeFinite
           gateIdx = case gt of
-            Poseidon -> 0
-            Generic -> 1
-            VarBaseMul -> 2
-            EndoMul -> 3
-            EndoMulScalar -> 4
-            CompleteAdd -> 5
-            _ -> 0
+            Poseidon -> index 0
+            Generic -> index 1
+            VarBaseMul -> index 2
+            EndoMul -> index 3
+            EndoMulScalar -> index 4
+            CompleteAdd -> index 5
+            _ -> index 0
         in
-          pointEvalAt indexEvals (unsafeFinite gateIdx) row
+          pointEvalAt indexEvals gateIdx row
     , lookupAggreg: \_ -> defaultVal
     , lookupSorted: \_ _ -> defaultVal
     , lookupTable: \_ -> defaultVal

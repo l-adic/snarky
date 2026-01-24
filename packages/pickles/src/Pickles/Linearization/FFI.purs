@@ -2,13 +2,13 @@
 -- | Exposes a typeclass `LinearizationFFI` with instances for Pallas and Vesta.
 module Pickles.Linearization.FFI
   ( class LinearizationFFI
-  , evaluateLinearization
+  , evalLinearization
   , unnormalizedLagrangeBasis
   , vanishesOnZkAndPreviousRows
   , proverIndexDomainLog2
-  , proverIndexWitnessEvaluations
-  , proverIndexCoefficientEvaluations
-  , proverIndexSelectorEvaluations
+  , evalWitnessPolys
+  , evalCoefficientPolys
+  , evalSelectorPolys
   , LinearizationInput
   , PointEval
   ) where
@@ -24,14 +24,14 @@ type LinearizationInput f =
   , beta :: f
   , gamma :: f
   , jointCombiner :: f
-  , witnessEvals :: Array f
-  , coefficientEvals :: Array f
-  , poseidonIndex :: Array f
-  , genericIndex :: Array f
-  , varbasemulIndex :: Array f
-  , endomulIndex :: Array f
-  , endomulScalarIndex :: Array f
-  , completeAddIndex :: Array f
+  , witnessEvals :: Vector 15 (PointEval f)
+  , coefficientEvals :: Vector 15 f
+  , poseidonIndex :: PointEval f
+  , genericIndex :: PointEval f
+  , varbasemulIndex :: PointEval f
+  , endomulIndex :: PointEval f
+  , endomulScalarIndex :: PointEval f
+  , completeAddIndex :: PointEval f
   , vanishesOnZk :: f
   , zeta :: f
   , domainLog2 :: Int
@@ -45,13 +45,13 @@ type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 -- | For Pallas linearization (Fp): f = Pallas.BaseField, g = Vesta.G
 -- | For Vesta linearization (Fq): f = Vesta.BaseField, g = Pallas.G
 class LinearizationFFI f g | f -> g where
-  evaluateLinearization :: LinearizationInput f -> f
+  evalLinearization :: LinearizationInput f -> f
   unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
   vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   proverIndexDomainLog2 :: ProverIndex g f -> Int
-  proverIndexWitnessEvaluations :: { proverIndex :: ProverIndex g f, witnessColumns :: Vector 15 (Array f), zeta :: f } -> Vector 15 (PointEval f)
-  proverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Vector 15 f
-  proverIndexSelectorEvaluations :: { proverIndex :: ProverIndex g f, zeta :: f } -> Vector 6 (PointEval f)
+  evalWitnessPolys :: ProverIndex g f -> Vector 15 (Array f) -> f -> Vector 15 (PointEval f)
+  evalCoefficientPolys :: ProverIndex g f -> f -> Vector 15 f
+  evalSelectorPolys :: ProverIndex g f -> f -> Vector 6 (PointEval f)
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -69,33 +69,33 @@ foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :
 foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
 foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
 
-foreign import pallasProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, witnessColumns :: Vector 15 (Array Pallas.BaseField), zeta :: Pallas.BaseField } -> Vector 15 (PointEval Pallas.BaseField)
-foreign import vestaProverIndexWitnessEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, witnessColumns :: Vector 15 (Array Vesta.BaseField), zeta :: Vesta.BaseField } -> Vector 15 (PointEval Vesta.BaseField)
+foreign import pallasProverIndexWitnessEvaluations :: ProverIndex Vesta.G Pallas.BaseField -> Vector 15 (Array Pallas.BaseField) -> Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
+foreign import vestaProverIndexWitnessEvaluations :: ProverIndex Pallas.G Vesta.BaseField -> Vector 15 (Array Vesta.BaseField) -> Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
 
-foreign import pallasProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Vector 15 Pallas.BaseField
-foreign import vestaProverIndexCoefficientEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Vector 15 Vesta.BaseField
+foreign import pallasProverIndexCoefficientEvaluations :: ProverIndex Vesta.G Pallas.BaseField -> Pallas.BaseField -> Vector 15 Pallas.BaseField
+foreign import vestaProverIndexCoefficientEvaluations :: ProverIndex Pallas.G Vesta.BaseField -> Vesta.BaseField -> Vector 15 Vesta.BaseField
 
-foreign import pallasProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, zeta :: Pallas.BaseField } -> Vector 6 (PointEval Pallas.BaseField)
-foreign import vestaProverIndexSelectorEvaluations :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, zeta :: Vesta.BaseField } -> Vector 6 (PointEval Vesta.BaseField)
+foreign import pallasProverIndexSelectorEvaluations :: ProverIndex Vesta.G Pallas.BaseField -> Pallas.BaseField -> Vector 6 (PointEval Pallas.BaseField)
+foreign import vestaProverIndexSelectorEvaluations :: ProverIndex Pallas.G Vesta.BaseField -> Vesta.BaseField -> Vector 6 (PointEval Vesta.BaseField)
 
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
 
 instance LinearizationFFI Pallas.BaseField Vesta.G where
-  evaluateLinearization = evaluatePallasLinearization
+  evalLinearization = evaluatePallasLinearization
   unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
   proverIndexDomainLog2 = pallasProverIndexDomainLog2
-  proverIndexWitnessEvaluations = pallasProverIndexWitnessEvaluations
-  proverIndexCoefficientEvaluations = pallasProverIndexCoefficientEvaluations
-  proverIndexSelectorEvaluations = pallasProverIndexSelectorEvaluations
+  evalWitnessPolys = pallasProverIndexWitnessEvaluations
+  evalCoefficientPolys = pallasProverIndexCoefficientEvaluations
+  evalSelectorPolys = pallasProverIndexSelectorEvaluations
 
 instance LinearizationFFI Vesta.BaseField Pallas.G where
-  evaluateLinearization = evaluateVestaLinearization
+  evalLinearization = evaluateVestaLinearization
   unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
   proverIndexDomainLog2 = vestaProverIndexDomainLog2
-  proverIndexWitnessEvaluations = vestaProverIndexWitnessEvaluations
-  proverIndexCoefficientEvaluations = vestaProverIndexCoefficientEvaluations
-  proverIndexSelectorEvaluations = vestaProverIndexSelectorEvaluations
+  evalWitnessPolys = vestaProverIndexWitnessEvaluations
+  evalCoefficientPolys = vestaProverIndexCoefficientEvaluations
+  evalSelectorPolys = vestaProverIndexSelectorEvaluations
