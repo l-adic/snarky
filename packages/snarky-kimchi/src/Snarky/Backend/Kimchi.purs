@@ -76,14 +76,16 @@ makeWireMapping
 makeWireMapping uf variablePlacement =
   let
     -- mapping from the canonical root to the list
-    -- of all cells equivalent to that root
+    -- of all cells equivalent to that root,
+    -- filtered to only include permutation columns (0-6)
     m =
       foldl
         ( \acc (Tuple var cells) ->
             let
               root = getRoot var
+              permCells = Array.filter (\(Tuple _ j) -> j < 7) cells
             in
-              Map.insertWith append root cells acc
+              Map.insertWith append root permCells acc
         )
         Map.empty
         (Map.toUnfoldable variablePlacement :: Array _)
@@ -97,12 +99,7 @@ makeWireMapping uf variablePlacement =
         )
         (Map.values m)
   in
-    uncurry wireNew <$>
-      Map.filterWithKey
-        ( \(Tuple _ j) (Tuple _ j') ->
-            j < 7 && j' < 7
-        )
-        (Map.unions classes)
+    uncurry wireNew <$> Map.unions classes
   where
   rotateLeft xs = case Array.uncons xs of
     Just { head, tail } -> tail `Array.snoc` head

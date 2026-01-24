@@ -10,7 +10,9 @@ use napi_derive::napi;
 use kimchi::circuits::constraints::ConstraintSystem;
 use kimchi::circuits::gate::{CircuitGate, GateType};
 use kimchi::circuits::wires::{GateWires, Wire, COLUMNS, PERMUTS};
+use kimchi::proof::ProverProof;
 use kimchi::prover_index::ProverIndex;
+use poly_commitment::commitment::CommitmentCurve;
 use poly_commitment::ipa::OpeningProof;
 use poly_commitment::{ipa::SRS, precomputed_srs::TestSRS};
 use serde;
@@ -20,10 +22,14 @@ use std::sync::Arc;
 
 // Import field types from our pasta module
 use super::super::pasta::pallas::scalar_field::FieldExternal as PallasFieldExternal;
-use super::super::pasta::types::{PallasScalarField, VestaScalarField};
+use super::super::pasta::types::{
+    PallasConfig, PallasGroup, PallasScalarField, VestaConfig, VestaGroup, VestaScalarField,
+};
 use super::super::pasta::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 use ark_ff::PrimeField;
 use ark_poly::EvaluationDomain;
+use mina_poseidon::constants::PlonkSpongeConstantsKimchi;
+use mina_poseidon::sponge::{DefaultFqSponge, DefaultFrSponge};
 
 pub type WireExternal = External<Wire>;
 pub type GateWiresExternal = External<GateWires>;
@@ -45,12 +51,23 @@ pub type VestaProverIndexExternal = External<
         OpeningProof<super::super::pasta::types::VestaGroup>,
     >,
 >;
+pub type PallasProofExternal = External<ProverProof<PallasGroup, OpeningProof<PallasGroup>>>;
+pub type VestaProofExternal = External<ProverProof<VestaGroup, OpeningProof<VestaGroup>>>;
+
+// Sponge type aliases for each curve
+type VestaBaseSponge = DefaultFqSponge<VestaConfig, PlonkSpongeConstantsKimchi>;
+type VestaScalarSponge = DefaultFrSponge<VestaScalarField, PlonkSpongeConstantsKimchi>;
+type PallasBaseSponge = DefaultFqSponge<PallasConfig, PlonkSpongeConstantsKimchi>;
+type PallasScalarSponge = DefaultFrSponge<PallasScalarField, PlonkSpongeConstantsKimchi>;
 
 // Generic implementations for circuit operations
 mod generic {
     use super::*;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
+    use ark_std::One;
     use kimchi::curve::KimchiCurve;
+    use kimchi::groupmap::GroupMap;
+    use poly_commitment::SRS as SRSTrait;
 
     pub fn circuit_gate_new<F: PrimeField>(
         gate_kind: &str,
@@ -178,6 +195,147 @@ mod generic {
             result.push(poly.evaluate(&zeta_omega));
         }
         result
+    }
+
+    /// Get the 7 domain shift values from a prover index.
+    pub fn prover_index_shifts<G: KimchiCurve>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        prover_index.cs.shift.to_vec()
+    }
+
+    /// Run the Kimchi prover to create a proof.
+    pub fn create_proof<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        witness: [Vec<G::ScalarField>; COLUMNS],
+    ) -> Result<ProverProof<G, OpeningProof<G>>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let group_map = <G as CommitmentCurve>::Map::setup();
+        ProverProof::create::<EFqSponge, EFrSponge, _>(
+            &group_map,
+            witness,
+            &[], // no runtime tables
+            prover_index,
+            &mut rand::rngs::OsRng,
+        )
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Proof creation failed: {e:?}"),
+            )
+        })
+    }
+
+    /// Extract witness polynomial evaluations from a proof.
+    /// Returns 30 values: 15 columns × 2 points (zeta, zeta*omega).
+    pub fn proof_witness_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::with_capacity(COLUMNS * 2);
+        for w_eval in &proof.evals.w {
+            result.push(w_eval.zeta[0]);
+            result.push(w_eval.zeta_omega[0]);
+        }
+        result
+    }
+
+    /// Extract permutation polynomial (z) evaluations from a proof.
+    /// Returns 2 values: z(zeta), z(zeta*omega).
+    pub fn proof_z_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        vec![proof.evals.z.zeta[0], proof.evals.z.zeta_omega[0]]
+    }
+
+    /// Extract sigma polynomial evaluations from a proof.
+    /// Returns 12 values: 6 sigma columns × 2 points (zeta, zeta*omega).
+    pub fn proof_sigma_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::with_capacity((PERMUTS - 1) * 2);
+        for s_eval in &proof.evals.s {
+            result.push(s_eval.zeta[0]);
+            result.push(s_eval.zeta_omega[0]);
+        }
+        result
+    }
+
+    /// Run the verifier's Fiat-Shamir oracle computation.
+    /// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
+    pub fn proof_oracles<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::ScalarField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let verifier_index = prover_index.verifier_index();
+
+        // Compute public input commitment (same logic as batch_verify)
+        let public_comm = {
+            let lgr_comm = verifier_index
+                .srs()
+                .get_lagrange_basis(verifier_index.domain);
+            let com: Vec<_> = lgr_comm.iter().take(verifier_index.public).collect();
+            if public_input.is_empty() {
+                poly_commitment::commitment::PolyComm::new(vec![verifier_index
+                    .srs()
+                    .blinding_commitment()])
+            } else {
+                let elm: Vec<_> = public_input.iter().map(|s| -*s).collect();
+                let public_comm =
+                    poly_commitment::commitment::PolyComm::<G>::multi_scalar_mul(&com, &elm);
+                verifier_index
+                    .srs()
+                    .mask_custom(
+                        public_comm.clone(),
+                        &public_comm.map(|_| G::ScalarField::one()),
+                    )
+                    .unwrap()
+                    .commitment
+            }
+        };
+
+        let oracles_result = proof
+            .oracles::<EFqSponge, EFrSponge>(&verifier_index, &public_comm, Some(public_input))
+            .map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Oracle computation failed: {e:?}"),
+                )
+            })?;
+
+        // Return [alpha, beta, gamma, zeta, ft_eval0]
+        Ok(vec![
+            oracles_result.oracles.alpha,
+            oracles_result.oracles.beta,
+            oracles_result.oracles.gamma,
+            oracles_result.oracles.zeta,
+            oracles_result.ft_eval0,
+        ])
     }
 }
 
@@ -543,5 +701,161 @@ pub fn vesta_prover_index_selector_evaluations(
 ) -> Result<Vec<PallasFieldExternal>> {
     let result =
         generic::selector_evaluations(prover_index.cs.domain.d1, &prover_index.cs.gates, **zeta);
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+// ─── Proof creation and oracle computation ───────────────────────────────────
+
+/// Get the 7 shift values from a Vesta prover index (for Pallas linearization).
+#[napi]
+pub fn pallas_prover_index_shifts(
+    prover_index: &VestaProverIndexExternal,
+) -> Vec<VestaFieldExternal> {
+    generic::prover_index_shifts(&**prover_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get the 7 shift values from a Pallas prover index (for Vesta linearization).
+#[napi]
+pub fn vesta_prover_index_shifts(
+    prover_index: &PallasProverIndexExternal,
+) -> Vec<PallasFieldExternal> {
+    generic::prover_index_shifts(&**prover_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Create a proof using a Vesta prover index (Pallas/Fp circuits).
+#[napi]
+pub fn pallas_create_proof(
+    prover_index: &VestaProverIndexExternal,
+    witness_columns: Vec<Vec<&VestaFieldExternal>>,
+) -> Result<VestaProofExternal> {
+    let witness: [Vec<VestaScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    let proof = generic::create_proof::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        witness,
+    )?;
+    Ok(External::new(proof))
+}
+
+/// Create a proof using a Pallas prover index (Vesta/Fq circuits).
+#[napi]
+pub fn vesta_create_proof(
+    prover_index: &PallasProverIndexExternal,
+    witness_columns: Vec<Vec<&PallasFieldExternal>>,
+) -> Result<PallasProofExternal> {
+    let witness: [Vec<PallasScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    let proof = generic::create_proof::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        witness,
+    )?;
+    Ok(External::new(proof))
+}
+
+/// Extract witness evaluations from a Vesta proof (Pallas/Fp circuits).
+/// Returns 30 values: 15 columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_proof_witness_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_witness_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract witness evaluations from a Pallas proof (Vesta/Fq circuits).
+/// Returns 30 values: 15 columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn vesta_proof_witness_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_witness_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract z (permutation polynomial) evaluations from a Vesta proof.
+/// Returns 2 values: z(zeta), z(zeta*omega).
+#[napi]
+pub fn pallas_proof_z_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_z_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract z (permutation polynomial) evaluations from a Pallas proof.
+/// Returns 2 values: z(zeta), z(zeta*omega).
+#[napi]
+pub fn vesta_proof_z_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_z_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract sigma evaluations from a Vesta proof (Pallas/Fp circuits).
+/// Returns 12 values: 6 sigma columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_proof_sigma_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_sigma_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract sigma evaluations from a Pallas proof (Vesta/Fq circuits).
+/// Returns 12 values: 6 sigma columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn vesta_proof_sigma_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_sigma_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Run Fiat-Shamir oracle computation on a Vesta proof (Pallas/Fp circuits).
+/// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
+#[napi]
+pub fn pallas_proof_oracles(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_oracles::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Run Fiat-Shamir oracle computation on a Pallas proof (Vesta/Fq circuits).
+/// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
+#[napi]
+pub fn vesta_proof_oracles(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_oracles::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
     Ok(result.into_iter().map(External::new).collect())
 }

@@ -144,3 +144,45 @@ pub fn vesta_vanishes_on_zk_and_previous_rows(
     let result = eval_vanishes_on_last_n_rows(domain_log2, (zk_rows + 1) as u64, **pt);
     External::new(result)
 }
+
+/// Compute the permutation vanishing polynomial for Pallas.
+/// This is vanishes_on_last_n_rows(domain, zk_rows, pt), NOT zk_rows+1.
+#[napi]
+pub fn pallas_permutation_vanishing_polynomial(
+    domain_log2: u32,
+    zk_rows: u32,
+    pt: &PallasBaseFieldExternal,
+) -> PallasBaseFieldExternal {
+    let result = eval_vanishes_on_last_n_rows(domain_log2, zk_rows as u64, **pt);
+    External::new(result)
+}
+
+/// Compute the permutation vanishing polynomial for Vesta.
+/// This is vanishes_on_last_n_rows(domain, zk_rows, pt), NOT zk_rows+1.
+#[napi]
+pub fn vesta_permutation_vanishing_polynomial(
+    domain_log2: u32,
+    zk_rows: u32,
+    pt: &VestaBaseFieldExternal,
+) -> VestaBaseFieldExternal {
+    let result = eval_vanishes_on_last_n_rows(domain_log2, zk_rows as u64, **pt);
+    External::new(result)
+}
+
+/// Get the domain generator (omega) for Pallas.
+#[napi]
+pub fn pallas_domain_generator(domain_log2: u32) -> PallasBaseFieldExternal {
+    use crate::pasta::types::PallasBaseField;
+    let domain =
+        Radix2EvaluationDomain::<PallasBaseField>::new(1 << domain_log2).expect("Invalid domain");
+    External::new(domain.group_gen)
+}
+
+/// Get the domain generator (omega) for Vesta.
+#[napi]
+pub fn vesta_domain_generator(domain_log2: u32) -> VestaBaseFieldExternal {
+    use crate::pasta::types::VestaBaseField;
+    let domain =
+        Radix2EvaluationDomain::<VestaBaseField>::new(1 << domain_log2).expect("Invalid domain");
+    External::new(domain.group_gen)
+}

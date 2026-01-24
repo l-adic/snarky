@@ -4,12 +4,12 @@ package:
     - arrays
     - control
     - curves
+    - exceptions
     - foldable-traversable
     - foreign
     - js-bigints
     - maybe
     - newtype
-    - partial
     - poseidon
     - prelude
     - random-oracle
