@@ -29,7 +29,6 @@ import Pickles.Linearization.FFI (PointEval)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.DSL.Field (pow_)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -159,11 +158,11 @@ permContribution input =
 -- |
 -- | perm = -(z(zeta*omega) * beta * alpha^21 * zkp * ∏_{i=0}^{5}(gamma + beta*sigma_i + w_i))
 permScalarCircuit
-  :: forall f t m
+  :: forall f c t m
    . PrimeField f
-  => CircuitM f (KimchiConstraint f) t m
+  => CircuitM f c t m
   => PermutationInput (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky c t m (FVar f)
 permScalarCircuit input = do
   -- alpha^21
   alphaPow21 <- pow_ input.alpha permAlpha0
