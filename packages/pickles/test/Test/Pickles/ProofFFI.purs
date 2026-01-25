@@ -7,6 +7,8 @@ module Test.Pickles.ProofFFI
   , proofZEvals
   , proofSigmaEvals
   , proofOracles
+  , proofBulletproofChallenges
+  , verifyOpeningProof
   , permutationVanishingPolynomial
   , domainGenerator
   , Proof
@@ -32,6 +34,12 @@ type OraclesResult f =
   , gamma :: f
   , zeta :: f
   , ftEval0 :: f
+  , v :: f               -- polyscale
+  , u :: f               -- evalscale
+  , combinedInnerProduct :: f
+  , ftEval1 :: f
+  , publicEvalZeta :: f
+  , publicEvalZetaOmega :: f
   }
 
 -- | Typeclass for proof-related FFI operations.
@@ -44,7 +52,9 @@ class ProofFFI f g | f -> g where
   proofWitnessEvals :: Proof g f -> Vector 15 (PointEval f)
   proofZEvals :: Proof g f -> PointEval f
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
-  proofOracles :: { proverIndex :: ProverIndex g f, proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
+  proofOracles :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
+  proofBulletproofChallenges :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
+  verifyOpeningProof :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
 
@@ -67,8 +77,14 @@ foreign import vestaProofZEvals :: Proof Pallas.G Vesta.BaseField -> PointEval V
 foreign import pallasProofSigmaEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (PointEval Pallas.BaseField)
 foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (PointEval Vesta.BaseField)
 
-foreign import pallasProofOracles :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
-foreign import vestaProofOracles :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
+foreign import pallasProofOracles :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
+foreign import vestaProofOracles :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
+
+foreign import pallasProofBulletproofChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
+foreign import vestaProofBulletproofChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
+
+foreign import pallasVerifyOpeningProof :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
+foreign import vestaVerifyOpeningProof :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
 
 foreign import pallasPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
@@ -87,6 +103,8 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   proofZEvals = pallasProofZEvals
   proofSigmaEvals = pallasProofSigmaEvals
   proofOracles = pallasProofOracles
+  proofBulletproofChallenges = pallasProofBulletproofChallenges
+  verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
 
@@ -97,5 +115,7 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   proofZEvals = vestaProofZEvals
   proofSigmaEvals = vestaProofSigmaEvals
   proofOracles = vestaProofOracles
+  proofBulletproofChallenges = vestaProofBulletproofChallenges
+  verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator

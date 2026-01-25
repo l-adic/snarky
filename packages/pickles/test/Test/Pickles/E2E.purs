@@ -291,7 +291,7 @@ permutationTest = do
         -- Create a real proof and get oracles via Fiat-Shamir
         let
           proof = ProofFFI.createProof { proverIndex, witness }
-          oracles = ProofFFI.proofOracles { proverIndex, proof, publicInput: publicInputs }
+          oracles = ProofFFI.proofOracles proverIndex { proof, publicInput: publicInputs }
 
         -- Get proof evaluations
         let
