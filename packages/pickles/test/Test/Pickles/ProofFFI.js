@@ -121,3 +121,10 @@ export const pallasDomainGenerator = (domainLog2) =>
 
 export const vestaDomainGenerator = (domainLog2) =>
   crypto.vestaDomainGenerator(domainLog2);
+
+// Compute b0 = b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+export const pallasComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
+  crypto.pallasComputeB0(challenges, zeta, zetaOmega, evalscale);
+
+export const vestaComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
+  crypto.vestaComputeB0(challenges, zeta, zetaOmega, evalscale);

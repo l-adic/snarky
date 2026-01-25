@@ -461,6 +461,21 @@ mod generic {
             }
         }
     }
+
+    /// Compute b0 = sum_i (evalscale^i * b_poly(challenges, evaluation_points[i]))
+    /// For our case with two evaluation points (zeta, zeta_omega):
+    ///   b0 = b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+    ///
+    /// This is the "b" value used in the IPA verification equation.
+    pub fn compute_b0<F: ark_ff::Field>(
+        challenges: &[F],
+        zeta: F,
+        zeta_omega: F,
+        evalscale: F,
+    ) -> F {
+        use poly_commitment::commitment::b_poly;
+        b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+    }
 }
 
 #[napi]
@@ -1070,4 +1085,32 @@ pub fn vesta_verify_opening_proof(
         &**proof,
         &public,
     )
+}
+
+/// Compute b0 for a Vesta proof (Pallas/Fp circuits).
+/// b0 = b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+#[napi]
+pub fn pallas_compute_b0(
+    challenges: Vec<&VestaFieldExternal>,
+    zeta: &VestaFieldExternal,
+    zeta_omega: &VestaFieldExternal,
+    evalscale: &VestaFieldExternal,
+) -> VestaFieldExternal {
+    let chals: Vec<VestaScalarField> = challenges.iter().map(|c| ***c).collect();
+    let result = generic::compute_b0(&chals, **zeta, **zeta_omega, **evalscale);
+    External::new(result)
+}
+
+/// Compute b0 for a Pallas proof (Vesta/Fq circuits).
+/// b0 = b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+#[napi]
+pub fn vesta_compute_b0(
+    challenges: Vec<&PallasFieldExternal>,
+    zeta: &PallasFieldExternal,
+    zeta_omega: &PallasFieldExternal,
+    evalscale: &PallasFieldExternal,
+) -> PallasFieldExternal {
+    let chals: Vec<PallasScalarField> = challenges.iter().map(|c| ***c).collect();
+    let result = generic::compute_b0(&chals, **zeta, **zeta_omega, **evalscale);
+    External::new(result)
 }

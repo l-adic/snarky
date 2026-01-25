@@ -32,7 +32,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.Commitments (combinedInnerProduct)
+import Pickles.Commitments (combinedInnerProduct, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
@@ -387,6 +387,44 @@ openingProofTest ctx = do
   let verified = ProofFFI.verifyOpeningProof ctx.proverIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
   liftEffect $ verified `shouldEqual` true
 
+-- | Domain log2 for the Schnorr circuit (number of IPA rounds).
+-- | This is the size of the bulletproof challenges vector.
+type SchnorrDomainLog2 = 16
+
+-- | Test that PureScript computeB matches the Rust FFI computeB0.
+computeBTest :: TestContext -> Aff Unit
+computeBTest ctx = do
+  let
+    -- Get bulletproof challenges from the proof
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Convert to type-safe vector (unsafe partial since we trust the FFI)
+    challenges :: Vector SchnorrDomainLog2 Vesta.ScalarField
+    challenges = unsafePartial $ fromJust $ Vector.toVector challengesArray
+
+    -- Compute zeta * omega for the second evaluation point
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+    zetaOmega = ctx.oracles.zeta * omega
+
+    -- Compute using PureScript
+    psResult = computeB challenges
+      { zeta: ctx.oracles.zeta
+      , zetaOmega
+      , evalscale: ctx.oracles.u
+      }
+
+    -- Compute using Rust FFI
+    rustResult = ProofFFI.computeB0
+      { challenges: challengesArray
+      , zeta: ctx.oracles.zeta
+      , zetaOmega
+      , evalscale: ctx.oracles.u
+      }
+
+  -- Compare PureScript vs Rust
+  liftEffect $ psResult `shouldEqual` rustResult
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -398,3 +436,4 @@ spec = beforeAll createTestContext $
     it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
     it "opening proof verifies" openingProofTest
+    it "PS computeB matches Rust computeB0" computeBTest
