@@ -50,6 +50,13 @@ export const pallasProofSigmaEvals = (proof) =>
 export const vestaProofSigmaEvals = (proof) =>
   pairEvals(crypto.vestaProofSigmaEvals(proof));
 
+// Proof evaluations - coefficient
+export const pallasProofCoefficientEvals = (proof) =>
+  pairEvals(crypto.pallasProofCoefficientEvals(proof));
+
+export const vestaProofCoefficientEvals = (proof) =>
+  pairEvals(crypto.vestaProofCoefficientEvals(proof));
+
 // Proof oracles (Fiat-Shamir)
 // Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 //                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]

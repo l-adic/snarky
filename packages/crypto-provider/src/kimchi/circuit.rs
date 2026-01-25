@@ -168,13 +168,15 @@ mod generic {
         let omega = domain.group_gen();
         let zeta_omega = zeta * omega;
 
+        // Order must match Kimchi verifier's column ordering for combined_inner_product
+        // See kimchi/src/verifier.rs lines 485-490
         let gate_types = [
-            GateType::Poseidon,
             GateType::Generic,
+            GateType::Poseidon,
+            GateType::CompleteAdd,
             GateType::VarBaseMul,
             GateType::EndoMul,
             GateType::EndoMulScalar,
-            GateType::CompleteAdd,
         ];
 
         let mut result = Vec::with_capacity(gate_types.len() * 2);
@@ -274,6 +276,22 @@ mod generic {
         for s_eval in &proof.evals.s {
             result.push(s_eval.zeta[0]);
             result.push(s_eval.zeta_omega[0]);
+        }
+        result
+    }
+
+    /// Extract coefficient polynomial evaluations from a proof.
+    /// Returns 30 values: 15 coefficient columns × 2 points (zeta, zeta*omega).
+    pub fn proof_coefficient_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::with_capacity(COLUMNS * 2);
+        for c_eval in &proof.evals.coefficients {
+            result.push(c_eval.zeta[0]);
+            result.push(c_eval.zeta_omega[0]);
         }
         result
     }
@@ -928,6 +946,26 @@ pub fn pallas_proof_sigma_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExt
 #[napi]
 pub fn vesta_proof_sigma_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
     generic::proof_sigma_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract coefficient evaluations from a Vesta proof (Pallas/Fp circuits).
+/// Returns 30 values: 15 coefficient columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_proof_coefficient_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_coefficient_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract coefficient evaluations from a Pallas proof (Vesta/Fq circuits).
+/// Returns 30 values: 15 coefficient columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_coefficient_evals(&**proof)
         .into_iter()
         .map(External::new)
         .collect()

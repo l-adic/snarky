@@ -102,13 +102,16 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
         let
           index :: Int -> Finite 6
           index = unsafeFinite
+          -- Gate order matches Kimchi verifier's column ordering:
+          -- Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar
+          -- See kimchi/src/verifier.rs lines 485-490
           gateIdx = case gt of
-            Poseidon -> index 0
-            Generic -> index 1
-            VarBaseMul -> index 2
-            EndoMul -> index 3
-            EndoMulScalar -> index 4
-            CompleteAdd -> index 5
+            Generic -> index 0
+            Poseidon -> index 1
+            CompleteAdd -> index 2
+            VarBaseMul -> index 3
+            EndoMul -> index 4
+            EndoMulScalar -> index 5
             _ -> index 0
         in
           pointEvalAt indexEvals gateIdx row
