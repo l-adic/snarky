@@ -298,6 +298,7 @@ mod generic {
 
     /// Helper: compute oracles result from prover index and proof.
     /// Returns (verifier_index, oracles_result).
+    #[allow(clippy::type_complexity)]
     fn compute_oracles<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
@@ -421,9 +422,7 @@ mod generic {
         )]);
 
         // Get the challenges using the endomorphism coefficient
-        let challenges = proof
-            .proof
-            .challenges(&verifier_index.endo, &mut fq_sponge);
+        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
 
         Ok(challenges.chal)
     }
@@ -1016,12 +1015,11 @@ pub fn pallas_proof_bulletproof_challenges(
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
-    let result =
-        generic::proof_bulletproof_challenges::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-            &**prover_index,
-            &**proof,
-            &public,
-        )?;
+    let result = generic::proof_bulletproof_challenges::<
+        VestaGroup,
+        VestaBaseSponge,
+        VestaScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
     Ok(result.into_iter().map(External::new).collect())
 }
 
@@ -1034,12 +1032,11 @@ pub fn vesta_proof_bulletproof_challenges(
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
-    let result =
-        generic::proof_bulletproof_challenges::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-            &**prover_index,
-            &**proof,
-            &public,
-        )?;
+    let result = generic::proof_bulletproof_challenges::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
     Ok(result.into_iter().map(External::new).collect())
 }
 
