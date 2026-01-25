@@ -50,16 +50,63 @@ export const pallasProofSigmaEvals = (proof) =>
 export const vestaProofSigmaEvals = (proof) =>
   pairEvals(crypto.vestaProofSigmaEvals(proof));
 
+// Proof evaluations - coefficient
+export const pallasProofCoefficientEvals = (proof) =>
+  pairEvals(crypto.pallasProofCoefficientEvals(proof));
+
+export const vestaProofCoefficientEvals = (proof) =>
+  pairEvals(crypto.vestaProofCoefficientEvals(proof));
+
 // Proof oracles (Fiat-Shamir)
-export const pallasProofOracles = ({ proverIndex, proof, publicInput }) => {
+// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+//                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
+export const pallasProofOracles = (proverIndex) => ({ proof, publicInput }) => {
   const flat = crypto.pallasProofOracles(proverIndex, proof, publicInput);
-  return { alpha: flat[0], beta: flat[1], gamma: flat[2], zeta: flat[3], ftEval0: flat[4] };
+  return {
+    alpha: flat[0],
+    beta: flat[1],
+    gamma: flat[2],
+    zeta: flat[3],
+    ftEval0: flat[4],
+    v: flat[5],
+    u: flat[6],
+    combinedInnerProduct: flat[7],
+    ftEval1: flat[8],
+    publicEvalZeta: flat[9],
+    publicEvalZetaOmega: flat[10]
+  };
 };
 
-export const vestaProofOracles = ({ proverIndex, proof, publicInput }) => {
+export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
   const flat = crypto.vestaProofOracles(proverIndex, proof, publicInput);
-  return { alpha: flat[0], beta: flat[1], gamma: flat[2], zeta: flat[3], ftEval0: flat[4] };
+  return {
+    alpha: flat[0],
+    beta: flat[1],
+    gamma: flat[2],
+    zeta: flat[3],
+    ftEval0: flat[4],
+    v: flat[5],
+    u: flat[6],
+    combinedInnerProduct: flat[7],
+    ftEval1: flat[8],
+    publicEvalZeta: flat[9],
+    publicEvalZetaOmega: flat[10]
+  };
 };
+
+// Bulletproof challenges (IPA)
+export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.pallasProofBulletproofChallenges(proverIndex, proof, publicInput);
+
+export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
+
+// Verify opening proof
+export const pallasVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.pallasVerifyOpeningProof(proverIndex, proof, publicInput);
+
+export const vestaVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.vestaVerifyOpeningProof(proverIndex, proof, publicInput);
 
 // Permutation vanishing polynomial
 export const pallasPermutationVanishingPolynomial = ({ domainLog2, zkRows, pt }) =>

@@ -96,12 +96,14 @@ buildFFIInput { witnessEvals, coeffEvals, indexEvals, alpha, beta, gamma, jointC
     , jointCombiner
     , witnessEvals
     , coefficientEvals: coeffEvals
-    , poseidonIndex: indexEvals !! index 0
-    , genericIndex: indexEvals !! index 1
-    , varbasemulIndex: indexEvals !! index 2
-    , endomulIndex: indexEvals !! index 3
-    , endomulScalarIndex: indexEvals !! index 4
-    , completeAddIndex: indexEvals !! index 5
+    -- Index order matches Kimchi verifier: Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar
+    -- See kimchi/src/verifier.rs lines 485-490
+    , genericIndex: indexEvals !! index 0
+    , poseidonIndex: indexEvals !! index 1
+    , completeAddIndex: indexEvals !! index 2
+    , varbasemulIndex: indexEvals !! index 3
+    , endomulIndex: indexEvals !! index 4
+    , endomulScalarIndex: indexEvals !! index 5
     , vanishesOnZk: vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
     , zeta
     , domainLog2

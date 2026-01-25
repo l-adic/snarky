@@ -100,16 +100,20 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
     , coefficient: \col -> coeffEvals !! col
     , index: \row gt ->
         let
-          index :: Int -> Finite 6
-          index = unsafeFinite
+          idx :: Int -> Finite 6
+          idx = unsafeFinite
+          -- Gate order matches Kimchi verifier's column ordering:
+          -- Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar
+          -- See kimchi/src/verifier.rs lines 485-490
+          -- Only these 6 gate types are supported; others require additional FFI support.
           gateIdx = case gt of
-            Poseidon -> index 0
-            Generic -> index 1
-            VarBaseMul -> index 2
-            EndoMul -> index 3
-            EndoMulScalar -> index 4
-            CompleteAdd -> index 5
-            _ -> index 0
+            Generic -> idx 0
+            Poseidon -> idx 1
+            CompleteAdd -> idx 2
+            VarBaseMul -> idx 3
+            EndoMul -> idx 4
+            EndoMulScalar -> idx 5
+            _ -> unsafeThrow $ "buildEvalPoint: unsupported gate type " <> show gt
         in
           pointEvalAt indexEvals gateIdx row
     , lookupAggreg: \_ -> defaultVal

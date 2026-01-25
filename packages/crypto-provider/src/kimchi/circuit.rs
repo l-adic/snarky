@@ -64,7 +64,7 @@ type PallasScalarSponge = DefaultFrSponge<PallasScalarField, PlonkSpongeConstant
 mod generic {
     use super::*;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
-    use ark_std::One;
+    use ark_std::{One, Zero};
     use kimchi::curve::KimchiCurve;
     use kimchi::groupmap::GroupMap;
     use poly_commitment::SRS as SRSTrait;
@@ -168,13 +168,15 @@ mod generic {
         let omega = domain.group_gen();
         let zeta_omega = zeta * omega;
 
+        // Order must match Kimchi verifier's column ordering for combined_inner_product
+        // See kimchi/src/verifier.rs lines 485-490
         let gate_types = [
-            GateType::Poseidon,
             GateType::Generic,
+            GateType::Poseidon,
+            GateType::CompleteAdd,
             GateType::VarBaseMul,
             GateType::EndoMul,
             GateType::EndoMulScalar,
-            GateType::CompleteAdd,
         ];
 
         let mut result = Vec::with_capacity(gate_types.len() * 2);
@@ -278,13 +280,33 @@ mod generic {
         result
     }
 
-    /// Run the verifier's Fiat-Shamir oracle computation.
-    /// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
-    pub fn proof_oracles<G, EFqSponge, EFrSponge>(
+    /// Extract coefficient polynomial evaluations from a proof.
+    /// Returns 30 values: 15 coefficient columns × 2 points (zeta, zeta*omega).
+    pub fn proof_coefficient_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::with_capacity(COLUMNS * 2);
+        for c_eval in &proof.evals.coefficients {
+            result.push(c_eval.zeta[0]);
+            result.push(c_eval.zeta_omega[0]);
+        }
+        result
+    }
+
+    /// Helper: compute oracles result from prover index and proof.
+    /// Returns (verifier_index, oracles_result).
+    #[allow(clippy::type_complexity)]
+    fn compute_oracles<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
-    ) -> Result<Vec<G::ScalarField>>
+    ) -> Result<(
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>,
+        kimchi::oracles::OraclesResult<G, EFqSponge>,
+    )>
     where
         G: KimchiCurve,
         G::BaseField: PrimeField,
@@ -328,14 +350,116 @@ mod generic {
                 )
             })?;
 
-        // Return [alpha, beta, gamma, zeta, ft_eval0]
+        Ok((verifier_index, oracles_result))
+    }
+
+    /// Run the verifier's Fiat-Shamir oracle computation.
+    /// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+    ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
+    pub fn proof_oracles<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::ScalarField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let (_, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
+        // Each is a Vec because of chunking, but for non-chunked we just take [0]
+        let public_eval_zeta = oracles_result.public_evals[0]
+            .first()
+            .copied()
+            .unwrap_or(G::ScalarField::zero());
+        let public_eval_zeta_omega = oracles_result.public_evals[1]
+            .first()
+            .copied()
+            .unwrap_or(G::ScalarField::zero());
+
         Ok(vec![
             oracles_result.oracles.alpha,
             oracles_result.oracles.beta,
             oracles_result.oracles.gamma,
             oracles_result.oracles.zeta,
             oracles_result.ft_eval0,
+            oracles_result.oracles.v,
+            oracles_result.oracles.u,
+            oracles_result.combined_inner_product,
+            proof.ft_eval1,
+            public_eval_zeta,
+            public_eval_zeta_omega,
         ])
+    }
+
+    /// Extract bulletproof challenges from a proof.
+    /// These are the IPA challenges after applying the endomorphism.
+    /// Returns d values where d = domain_log2 (number of IPA rounds).
+    pub fn proof_bulletproof_challenges<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::ScalarField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let (verifier_index, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // Get the sponge from oracles, absorb combined_inner_product, then get challenges
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // Get the challenges using the endomorphism coefficient
+        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+
+        Ok(challenges.chal)
+    }
+
+    /// Verify the opening proof using batch_verify.
+    /// Returns true if verification succeeds.
+    pub fn verify_opening_proof<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> bool
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let verifier_index = prover_index.verifier_index();
+        let group_map = <G as CommitmentCurve>::Map::setup();
+
+        let context = kimchi::verifier::Context {
+            verifier_index: &verifier_index,
+            proof,
+            public_input,
+        };
+
+        match kimchi::verifier::batch_verify::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
+            &group_map,
+            &[context],
+        ) {
+            Ok(()) => true,
+            Err(e) => {
+                eprintln!("Opening proof verification failed: {e:?}");
+                false
+            }
+        }
     }
 }
 
@@ -826,8 +950,29 @@ pub fn vesta_proof_sigma_evals(proof: &PallasProofExternal) -> Vec<PallasFieldEx
         .collect()
 }
 
+/// Extract coefficient evaluations from a Vesta proof (Pallas/Fp circuits).
+/// Returns 30 values: 15 coefficient columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn pallas_proof_coefficient_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_coefficient_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract coefficient evaluations from a Pallas proof (Vesta/Fq circuits).
+/// Returns 30 values: 15 coefficient columns x 2 points (zeta, zeta*omega).
+#[napi]
+pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_coefficient_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
 /// Run Fiat-Shamir oracle computation on a Vesta proof (Pallas/Fp circuits).
-/// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
+/// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
 #[napi]
 pub fn pallas_proof_oracles(
     prover_index: &VestaProverIndexExternal,
@@ -844,7 +989,8 @@ pub fn pallas_proof_oracles(
 }
 
 /// Run Fiat-Shamir oracle computation on a Pallas proof (Vesta/Fq circuits).
-/// Returns 5 values: [alpha, beta, gamma, zeta, ft_eval0].
+/// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
 #[napi]
 pub fn vesta_proof_oracles(
     prover_index: &PallasProverIndexExternal,
@@ -858,4 +1004,70 @@ pub fn vesta_proof_oracles(
         &public,
     )?;
     Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Extract bulletproof challenges from a Vesta proof (Pallas/Fp circuits).
+/// Returns d values where d = domain_log2 (number of IPA rounds).
+#[napi]
+pub fn pallas_proof_bulletproof_challenges(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_bulletproof_challenges::<
+        VestaGroup,
+        VestaBaseSponge,
+        VestaScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Extract bulletproof challenges from a Pallas proof (Vesta/Fq circuits).
+/// Returns d values where d = domain_log2 (number of IPA rounds).
+#[napi]
+pub fn vesta_proof_bulletproof_challenges(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_bulletproof_challenges::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Verify opening proof for a Vesta proof (Pallas/Fp circuits).
+/// Returns true if verification succeeds.
+#[napi]
+pub fn pallas_verify_opening_proof(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> bool {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::verify_opening_proof::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
+}
+
+/// Verify opening proof for a Pallas proof (Vesta/Fq circuits).
+/// Returns true if verification succeeds.
+#[napi]
+pub fn vesta_verify_opening_proof(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> bool {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::verify_opening_proof::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
 }
