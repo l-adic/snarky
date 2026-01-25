@@ -33,30 +33,9 @@ spec = do
       permutationTests (Proxy :: Proxy Vesta.BaseField)
 
 -------------------------------------------------------------------------------
--- | Reference function
+-- | Reference functions
+-- | Since F f has PrimeField instance, we can use the plain functions directly.
 -------------------------------------------------------------------------------
-
--- | Reference function: unwrap F wrappers, compute permScalar, wrap result.
-permScalarReference
-  :: forall f. PrimeField f => PermutationInput (F f) -> F f
-permScalarReference input =
-  let
-    unwrapPointEval pe = { zeta: unwrap pe.zeta, omegaTimesZeta: unwrap pe.omegaTimesZeta }
-    unwrapped =
-      { w: map unwrap input.w
-      , sigma: map unwrap input.sigma
-      , z: unwrapPointEval input.z
-      , shifts: map unwrap input.shifts
-      , alpha: unwrap input.alpha
-      , beta: unwrap input.beta
-      , gamma: unwrap input.gamma
-      , zkPolynomial: unwrap input.zkPolynomial
-      , zetaToNMinus1: unwrap input.zetaToNMinus1
-      , omegaToMinusZkRows: unwrap input.omegaToMinusZkRows
-      , zeta: unwrap input.zeta
-      }
-  in
-    wrap $ permScalar unwrapped
 
 -------------------------------------------------------------------------------
 -- | Generator
@@ -126,7 +105,7 @@ permutationTests _ = do
       { builtState
       , checker: Kimchi.eval
       , solver
-      , testFunction: satisfied (permScalarReference :: PermutationInput (F f) -> F f)
+      , testFunction: satisfied (permScalar :: PermutationInput (F f) -> F f)
       , postCondition: Kimchi.postCondition
       }
       (genPermutationInput :: Gen (PermutationInput (F f)))
