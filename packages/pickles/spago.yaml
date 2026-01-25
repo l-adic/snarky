@@ -32,6 +32,7 @@ package:
       - newtype
       - partial
       - quickcheck
+      - safe-coerce
       - schnorr
       - snarky-curves
       - snarky-kimchi

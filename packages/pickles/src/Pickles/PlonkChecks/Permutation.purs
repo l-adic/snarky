@@ -14,6 +14,7 @@ module Pickles.PlonkChecks.Permutation
   , permScalar
   , permScalarCircuit
   , permContribution
+  , permContributionCircuit
   , permAlpha0
   ) where
 
@@ -29,7 +30,6 @@ import Pickles.Linearization.FFI (PointEval)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.DSL.Field (pow_)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -159,11 +159,11 @@ permContribution input =
 -- |
 -- | perm = -(z(zeta*omega) * beta * alpha^21 * zkp * ∏_{i=0}^{5}(gamma + beta*sigma_i + w_i))
 permScalarCircuit
-  :: forall f t m
+  :: forall f c t m
    . PrimeField f
-  => CircuitM f (KimchiConstraint f) t m
+  => CircuitM f c t m
   => PermutationInput (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky c t m (FVar f)
 permScalarCircuit input = do
   -- alpha^21
   alphaPow21 <- pow_ input.alpha permAlpha0
@@ -187,4 +187,80 @@ permScalarCircuit input = do
 
   -- Negate
   pure (CVar.negate_ result)
+
+-- | Compute the full permutation contribution in-circuit.
+-- | This includes both product terms and the boundary quotient.
+-- | Uses the DivisionRing instance for `Snarky c t m (FVar f)` to handle
+-- | division via witness generation.
+-- |
+-- | Reference: ft_eval0 in plonk_checks.ml
+permContributionCircuit
+  :: forall f c t m
+   . PrimeField f
+  => CircuitM f c t m
+  => PermutationInput (FVar f)
+  -> Snarky c t m (FVar f)
+permContributionCircuit input = do
+  -- Compute alpha powers
+  alphaPow21 <- pow_ input.alpha permAlpha0
+  alphaPow22 <- pure alphaPow21 * pure input.alpha
+  alphaPow23 <- pure alphaPow22 * pure input.alpha
+
+  -- Term 1: product with sigma evaluations
+  -- init = (w[6] + gamma) * z(zeta*omega) * alpha^21 * zkp
+  let w6 = input.w !! unsafeFinite 6
+  term1Init <- (pure w6 + pure input.gamma)
+    * pure input.z.omegaTimesZeta
+    * pure alphaPow21
+    * pure input.zkPolynomial
+
+  -- fold: ∏_{i=0}^{5}(beta*sigma_i + w_i + gamma) * acc
+  let wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
+  term1 <- foldM
+    ( \acc (Tuple wi si) -> do
+        betaSi <- pure input.beta * pure si
+        let term = CVar.add_ (CVar.add_ betaSi wi) input.gamma
+        pure term * pure acc
+    )
+    term1Init
+    wSigma
+
+  -- Term 2: product with shifts
+  -- init = alpha^21 * zkp * z(zeta)
+  term2Init <- pure alphaPow21 * pure input.zkPolynomial * pure input.z.zeta
+
+  -- fold: acc * ∏_{i=0}^{6}(gamma + beta*zeta*shift_i + w_i)
+  let wShifts = zipWith Tuple input.w input.shifts
+  term2 <- foldM
+    ( \acc (Tuple wi si) -> do
+        betaZetaSi <- pure input.beta * pure input.zeta * pure si
+        let term = CVar.add_ (CVar.add_ input.gamma betaZetaSi) wi
+        pure acc * pure term
+    )
+    term2Init
+    wShifts
+
+  -- Boundary quotient:
+  -- zetaMinusOmega = zeta - omega^{-zkRows}
+  -- zetaMinus1 = zeta - 1
+  let
+    zetaMinusOmega = CVar.sub_ input.zeta input.omegaToMinusZkRows
+    zetaMinus1 = CVar.sub_ input.zeta (CVar.const_ one)
+
+  -- nominator = ((zeta^n-1) * alpha^22 * zetaMinusOmega
+  --            + (zeta^n-1) * alpha^23 * zetaMinus1) * (1 - z(zeta))
+  term22 <- pure input.zetaToNMinus1 * pure alphaPow22 * pure zetaMinusOmega
+  term23 <- pure input.zetaToNMinus1 * pure alphaPow23 * pure zetaMinus1
+  oneMinusZ <- pure (CVar.const_ one) - pure input.z.zeta
+  nominator <- (pure term22 + pure term23) * pure oneMinusZ
+
+  -- denominator = zetaMinusOmega * zetaMinus1
+  denominator <- pure zetaMinusOmega * pure zetaMinus1
+
+  -- boundary = nominator / denominator (generates witness + constraint)
+  boundary <- pure nominator / pure denominator
+
+  -- result = term1 - term2 + boundary
+  let term1MinusTerm2 = CVar.sub_ term1 term2
+  pure (CVar.add_ term1MinusTerm2 boundary)
 

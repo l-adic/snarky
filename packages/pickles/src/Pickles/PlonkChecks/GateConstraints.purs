@@ -37,7 +37,6 @@ import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
 
 -------------------------------------------------------------------------------
@@ -126,7 +125,7 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
 -- |   { zkRows: false, offset: 0 }
 -- |   { zkRows: true, offset: -1 }
 buildChallenges
-  :: forall a
+  :: forall a r
    . { alpha :: a
      , beta :: a
      , gamma :: a
@@ -134,6 +133,7 @@ buildChallenges
      , vanishesOnZk :: a
      , lagrangeFalse0 :: a
      , lagrangeTrue1 :: a
+     | r
      }
   -> Challenges a
 buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 } =
@@ -164,14 +164,14 @@ parseHex hex = case fromBigInt <$> BigInt.fromString hex of
 -- | This computes the linearization polynomial but does NOT assert it equals zero.
 -- | Use `checkGateConstraints` for the full constraint check.
 evaluateGateConstraints
-  :: forall f f' t m
+  :: forall f f' c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
+  => CircuitM f c t m
   => Array PolishToken
   -> GateConstraintInput (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky c t m (FVar f)
 evaluateGateConstraints tokens input =
   let
     evalPoint = buildEvalPoint
@@ -203,14 +203,14 @@ evaluateGateConstraints tokens input =
 -- |
 -- | A valid proof will satisfy this constraint; an invalid proof will not.
 checkGateConstraints
-  :: forall f f' t m
+  :: forall f f' c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
+  => CircuitM f c t m
   => Array PolishToken
   -> GateConstraintInput (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> Snarky c t m Unit
 checkGateConstraints tokens input = do
   result <- evaluateGateConstraints tokens input
   assertEqual_ result (Const zero)

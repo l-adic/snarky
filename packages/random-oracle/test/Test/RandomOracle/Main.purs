@@ -7,7 +7,6 @@ import Data.Array ((:))
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Maybe (fromJust)
-import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..), uncurry)
@@ -334,7 +333,7 @@ hashVecCircuitTests
 hashVecCircuitTests _ pn = do
   let
     referenceHash :: Vector n (F f) -> Digest (F f)
-    referenceHash inputs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable inputs))
+    referenceHash inputs = Digest $ hash (Vector.toUnfoldable inputs)
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
     s = compilePure
@@ -367,7 +366,7 @@ hashVecEdgeCase
 hashVecEdgeCase _ input = do
   let
     referenceHash :: Vector n (F f) -> Digest (F f)
-    referenceHash xs = Digest $ F $ hash (map unwrap (Vector.toUnfoldable xs))
+    referenceHash xs = Digest $ hash (Vector.toUnfoldable xs)
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
     s = compilePure

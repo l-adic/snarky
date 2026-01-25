@@ -148,12 +148,12 @@ squeezeScalarPure sponge =
 -- | Extract the lowest 128 bits from a field element (circuit version).
 -- | Unpacks to bits, takes the low 128, and packs back.
 lowest128Bits
-  :: forall f t m
+  :: forall f c t m
    . PrimeField f
   => FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
+  => CircuitM f c t m
   => FVar f
-  -> Snarky (KimchiConstraint f) t m (FVar f)
+  -> Snarky c t m (FVar f)
 lowest128Bits x = do
   bits <- unpack_ x
   let low128 = Vector.take @128 bits

@@ -174,27 +174,26 @@ linearizationReference
   -> F f
 linearizationReference tokens input =
   let
-    unwrapPointEval pe = { zeta: unwrap pe.zeta, omegaTimesZeta: unwrap pe.omegaTimesZeta }
     evalPoint = buildEvalPoint
-      { witnessEvals: map unwrapPointEval input.witnessEvals
-      , coeffEvals: map unwrap input.coeffEvals
-      , indexEvals: map unwrapPointEval input.indexEvals
+      { witnessEvals: input.witnessEvals
+      , coeffEvals: input.coeffEvals
+      , indexEvals: input.indexEvals
       , defaultVal: zero
       }
 
     challenges = buildChallenges
-      { alpha: unwrap input.alpha
-      , beta: unwrap input.beta
-      , gamma: unwrap input.gamma
-      , jointCombiner: unwrap input.jointCombiner
-      , vanishesOnZk: unwrap input.vanishesOnZk
-      , lagrangeFalse0: unwrap input.lagrangeFalse0
-      , lagrangeTrue1: unwrap input.lagrangeTrue1
+      { alpha: input.alpha
+      , beta: input.beta
+      , gamma: input.gamma
+      , jointCombiner: input.jointCombiner
+      , vanishesOnZk: input.vanishesOnZk
+      , lagrangeFalse0: input.lagrangeFalse0
+      , lagrangeTrue1: input.lagrangeTrue1
       }
 
     env = fieldEnv evalPoint challenges parseHex
   in
-    wrap $ evaluate tokens env
+    evaluate tokens env
 
 -- | Generate an arbitrary PointEval
 genPointEval :: forall f. PrimeField f => Gen (PointEval f)
@@ -211,19 +210,19 @@ genLinearizationInput
   => Gen (LinearizationInput (F f))
 genLinearizationInput = do
   witnessEvals <- Vector.generator (Proxy @15) genPointEval
-  coeffEvals <- map wrap <$> genFieldVector (Proxy @15)
+  coeffEvals <- genFieldVector (Proxy @15)
   indexEvals <- Vector.generator (Proxy @6) genPointEval
-  alpha <- wrap <$> arbitrary
-  beta <- wrap <$> arbitrary
-  gamma <- wrap <$> arbitrary
-  jointCombiner <- wrap <$> arbitrary
-  zeta <- arbitrary
+  alpha <- arbitrary
+  beta <- arbitrary
+  gamma <- arbitrary
+  jointCombiner <- arbitrary
+  zeta :: F f <- arbitrary
 
   -- Compute domain-dependent values using FFI
   let
-    vanishesOnZk = wrap $ vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: zeta }
-    lagrangeFalse0 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zeta }
-    lagrangeTrue1 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zeta }
+    vanishesOnZk = wrap $ vanishesOnZkAndPreviousRows { domainLog2, zkRows, pt: unwrap zeta }
+    lagrangeFalse0 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: unwrap zeta }
+    lagrangeTrue1 = wrap $ unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: unwrap zeta }
 
   pure
     { witnessEvals
