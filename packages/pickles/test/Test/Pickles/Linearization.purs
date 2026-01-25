@@ -38,7 +38,6 @@ import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Poseidon (class PoseidonField)
-import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
@@ -176,20 +175,20 @@ linearizationReference
 linearizationReference tokens input =
   let
     evalPoint = buildEvalPoint
-      { witnessEvals: coerce input.witnessEvals
-      , coeffEvals: coerce input.coeffEvals
-      , indexEvals: coerce input.indexEvals
+      { witnessEvals: input.witnessEvals
+      , coeffEvals: input.coeffEvals
+      , indexEvals: input.indexEvals
       , defaultVal: zero
       }
 
     challenges = buildChallenges
-      { alpha: coerce input.alpha
-      , beta: coerce input.beta
-      , gamma: coerce input.gamma
-      , jointCombiner: coerce input.jointCombiner
-      , vanishesOnZk: coerce input.vanishesOnZk
-      , lagrangeFalse0: coerce input.lagrangeFalse0
-      , lagrangeTrue1: coerce input.lagrangeTrue1
+      { alpha: input.alpha
+      , beta: input.beta
+      , gamma: input.gamma
+      , jointCombiner: input.jointCombiner
+      , vanishesOnZk: input.vanishesOnZk
+      , lagrangeFalse0: input.lagrangeFalse0
+      , lagrangeTrue1: input.lagrangeTrue1
       }
 
     env = fieldEnv evalPoint challenges parseHex

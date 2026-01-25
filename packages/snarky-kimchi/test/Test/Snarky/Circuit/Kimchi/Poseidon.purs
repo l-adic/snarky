@@ -3,7 +3,6 @@ module Test.Snarky.Circuit.Kimchi.Poseidon (spec) where
 import Prelude
 
 import Data.Array as Array
-import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
@@ -41,11 +40,9 @@ spec' testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
       referenceHash :: Vector 3 (F f) -> Vector 3 (F f)
       referenceHash inputs =
         let
-          initialValues = map unwrap inputs
           rounds = Array.range 0 54
-          finalState = Array.foldl (\state round -> fullRound state round) initialValues rounds
         in
-          F <$> finalState
+          Array.foldl (\state round -> fullRound state round) inputs rounds
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) PoseidonCircuit.poseidon
       s = compilePure
