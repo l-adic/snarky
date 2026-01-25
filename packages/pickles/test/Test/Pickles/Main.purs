@@ -6,6 +6,7 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
@@ -22,6 +23,7 @@ main = runSpecAndExitProcess'
   do
     E2E.spec
     mapSpec nat do
+      Commitments.spec
       Linearization.spec
       Permutation.spec
       ScalarChallenge.spec

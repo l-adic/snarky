@@ -8,21 +8,25 @@
 -- | - `bPoly`: The challenge polynomial from the IPA protocol
 -- | - `computeB`: Combines bPoly evaluations at zeta and zeta*omega
 -- | - `combinedInnerProduct`: Batch all polynomial evaluations
+-- | - `combinedInnerProductCircuit`: In-circuit version for recursive verification
 module Pickles.Commitments
   ( bPoly
   , computeB
   , combinedInnerProduct
+  , combinedInnerProductCircuit
   , CombinedInnerProductInput
   , NumEvals
   ) where
 
 import Prelude
 
-import Data.Foldable (foldl, product)
+import Data.Foldable (foldM, foldl, product)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (PointEval)
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
 import Snarky.Curves.Class (class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -119,3 +123,43 @@ combinedInnerProduct { polyscale, evalscale, evals } =
     init = { result: zero, scale: one }
   in
     (foldl step init evals).result
+
+-------------------------------------------------------------------------------
+-- | Circuit-level Combined Inner Product
+-------------------------------------------------------------------------------
+
+-- | Compute the combined inner product in-circuit.
+-- |
+-- | This is the circuit version for recursive verification, using the
+-- | Semiring/Ring instances for `Snarky c t m (FVar f)` to express
+-- | the arithmetic naturally.
+-- |
+-- | Computes: sum_i (polyscale^i * (eval_zeta[i] + evalscale * eval_zeta_omega[i]))
+combinedInnerProductCircuit
+  :: forall f c t m
+   . PrimeField f
+  => CircuitM f c t m
+  => CombinedInnerProductInput (FVar f)
+  -> Snarky c t m (FVar f)
+combinedInnerProductCircuit { polyscale, evalscale, evals } = do
+  -- We accumulate { result, scale } where scale = polyscale^i
+  -- For each eval: result += scale * (eval.zeta + evalscale * eval.omegaTimesZeta)
+  --                scale *= polyscale
+  let
+    step { result, scale } eval = do
+      -- evalscale * eval.omegaTimesZeta
+      evalscaleTimesOmega <- pure evalscale * pure eval.omegaTimesZeta
+      -- eval.zeta + evalscale * eval.omegaTimesZeta
+      let term = CVar.add_ eval.zeta evalscaleTimesOmega
+      -- scale * term
+      scaledTerm <- pure scale * pure term
+      -- result + scale * term
+      let newResult = CVar.add_ result scaledTerm
+      -- scale * polyscale
+      newScale <- pure scale * pure polyscale
+      pure { result: newResult, scale: newScale }
+
+    init = { result: CVar.const_ zero, scale: CVar.const_ one }
+
+  { result } <- foldM step init evals
+  pure result
