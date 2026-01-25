@@ -14,6 +14,7 @@ package:
     - newtype
     - ordered-collections
     - partial
+    - poseidon
     - prelude
     - quickcheck
     - record
