@@ -1,4 +1,4 @@
-module Snarky.Circuit.Kimchi.EndoMul (endo, endoInv) where
+module Snarky.Circuit.Kimchi.EndoMul (endo, endoInv, endoInvPure) where
 
 import Prelude
 
@@ -148,3 +148,41 @@ endoInv g scalar = do
   assertEqual_ computed.x g.x
   assertEqual_ computed.y g.y
   pure result
+
+-- | Pure version of endoInv for reference implementations.
+-- | Computes point / effective_scalar where effective_scalar = toFieldConstant(scalar, endoScalar).
+endoInvPure
+  :: forall f f' g n _l
+   . FieldSizeInBits f n
+  => FieldSizeInBits f' n
+  => HasEndo f f'
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => Add 128 _l n
+  => AffinePoint f
+  -> f
+  -> AffinePoint f
+endoInvPure point scalar =
+  let
+    -- Coerce scalar from f to f' via bit representation
+    coerceViaBits :: f -> f'
+    coerceViaBits = packPure <<< unpackPure
+
+    -- Compute effective scalar in the scalar field f'
+    effectiveScalar :: f'
+    effectiveScalar = toFieldConstant (coerceViaBits scalar) (endoScalar @f @f')
+
+    -- Compute inverse scalar
+    invScalar :: f'
+    invScalar = recip effectiveScalar
+
+    -- Convert to projective, scale, convert back
+    projPoint :: g
+    projPoint = fromAffine @f @g point
+
+    resultPoint :: g
+    resultPoint = scalarMul invScalar projPoint
+
+    { x, y } = unsafePartial $ fromJust $ toAffine @f @g resultPoint
+  in
+    { x, y }
