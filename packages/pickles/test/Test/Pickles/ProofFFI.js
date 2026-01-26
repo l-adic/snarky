@@ -101,6 +101,13 @@ export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publi
 export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
   crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
 
+// Sponge checkpoint (squeeze value after oracles + absorbing cip)
+export const pallasProofSpongeCheckpoint = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.pallasProofSpongeCheckpoint(proverIndex, proof, publicInput);
+
+export const vestaProofSpongeCheckpoint = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.vestaProofSpongeCheckpoint(proverIndex, proof, publicInput);
+
 // Verify opening proof
 export const pallasVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
   crypto.pallasVerifyOpeningProof(proverIndex, proof, publicInput);
@@ -128,3 +135,90 @@ export const pallasComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
 
 export const vestaComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
   crypto.vestaComputeB0(challenges, zeta, zetaOmega, evalscale);
+
+// ─── Opening proof components ─────────────────────────────────────────────────
+
+// Helper: restructure flat LR array into [{l: {x, y}, r: {x, y}}, ...]
+// Input: [L0.x, L0.y, R0.x, R0.y, L1.x, L1.y, R1.x, R1.y, ...]
+const pairLR = (flat) => {
+  const result = [];
+  for (let i = 0; i < flat.length; i += 4) {
+    result.push({
+      l: { x: flat[i], y: flat[i + 1] },
+      r: { x: flat[i + 2], y: flat[i + 3] }
+    });
+  }
+  return result;
+};
+
+// Proof L/R pairs
+export const pallasProofLr = (proof) =>
+  pairLR(crypto.pallasProofLr(proof));
+
+export const vestaProofLr = (proof) =>
+  pairLR(crypto.vestaProofLr(proof));
+
+// Proof delta commitment
+export const pallasProofDelta = (proof) => {
+  const flat = crypto.pallasProofDelta(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofDelta = (proof) => {
+  const flat = crypto.vestaProofDelta(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+// Proof z1 scalar
+export const pallasProofZ1 = (proof) =>
+  crypto.pallasProofZ1(proof);
+
+export const vestaProofZ1 = (proof) =>
+  crypto.vestaProofZ1(proof);
+
+// Proof z2 scalar
+export const pallasProofZ2 = (proof) =>
+  crypto.pallasProofZ2(proof);
+
+export const vestaProofZ2 = (proof) =>
+  crypto.vestaProofZ2(proof);
+
+// Proof sg commitment
+export const pallasProofSg = (proof) => {
+  const flat = crypto.pallasProofSg(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofSg = (proof) => {
+  const flat = crypto.vestaProofSg(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+// Prover index H generator
+export const pallasProverIndexH = (proverIndex) => {
+  const flat = crypto.pallasProverIndexH(proverIndex);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProverIndexH = (proverIndex) => {
+  const flat = crypto.vestaProverIndexH(proverIndex);
+  return { x: flat[0], y: flat[1] };
+};
+
+// Proof IPA rounds (domain log2)
+export const pallasProofIpaRounds = (proof) =>
+  crypto.pallasProofIpaRounds(proof);
+
+export const vestaProofIpaRounds = (proof) =>
+  crypto.vestaProofIpaRounds(proof);
+
+// Bullet reduction product lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
+export const pallasProofLrProd = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.pallasProofLrProd(proverIndex, proof, publicInput);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofLrProd = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.vestaProofLrProd(proverIndex, proof, publicInput);
+  return { x: flat[0], y: flat[1] };
+};

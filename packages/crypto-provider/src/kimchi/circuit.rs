@@ -427,6 +427,36 @@ mod generic {
         Ok(challenges.chal)
     }
 
+    /// Get the sponge state after oracle computation and absorbing combined_inner_product.
+    /// Returns a checkpoint squeeze value that can be compared against PureScript sponge.
+    /// If the squeeze values match, the sponge states are equivalent.
+    ///
+    /// This is the sponge state right before IPA challenge computation begins.
+    pub fn proof_sponge_checkpoint<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<G::ScalarField>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let (_, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // Get the sponge from oracles, absorb combined_inner_product
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // Squeeze a checkpoint value - this is the state we want to compare
+        Ok(fq_sponge.challenge())
+    }
+
     /// Verify the opening proof using batch_verify.
     /// Returns true if verification succeeds.
     pub fn verify_opening_proof<G, EFqSponge, EFrSponge>(
@@ -475,6 +505,58 @@ mod generic {
     ) -> F {
         use poly_commitment::commitment::b_poly;
         b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+    }
+
+    /// Compute the bullet reduction product: lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
+    ///
+    /// This is the accumulated L/R product from the IPA opening proof.
+    /// Uses challenges derived from the Fiat-Shamir transcript (after endo mapping).
+    ///
+    /// Returns the (x, y) coordinates of the resulting point in the base field.
+    pub fn proof_lr_prod<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::BaseField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        use ark_ec::CurveGroup;
+        use poly_commitment::commitment::shift_scalar;
+
+        let (verifier_index, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // Get the sponge after oracle computation, absorb cip
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[shift_scalar::<G>(oracles_result.combined_inner_product)]);
+
+        // Get challenges (endo-mapped) from the proof
+        let poly_commitment::ipa::Challenges { chal, chal_inv } =
+            proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+
+        // Compute lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
+        let mut acc = G::Group::zero();
+        for ((l, r), (u_inv, u)) in proof.proof.lr.iter().zip(chal_inv.iter().zip(chal.iter())) {
+            // L * chal_inv + R * chal
+            acc += l.mul_bigint(u_inv.into_bigint());
+            acc += r.mul_bigint(u.into_bigint());
+        }
+
+        // Convert to affine and extract coordinates
+        let point = acc.into_affine();
+        let (x, y) = point.xy().ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                "lr_prod is the point at infinity".to_string(),
+            )
+        })?;
+
+        Ok(vec![x, y])
     }
 }
 
@@ -1055,6 +1137,42 @@ pub fn vesta_proof_bulletproof_challenges(
     Ok(result.into_iter().map(External::new).collect())
 }
 
+/// Get sponge checkpoint for a Vesta proof (Pallas/Fp circuits).
+/// Returns a squeeze value after oracle computation + absorbing cip.
+/// Compare against PureScript sponge to verify states match.
+#[napi]
+pub fn pallas_proof_sponge_checkpoint(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<VestaFieldExternal> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_sponge_checkpoint::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(External::new(result))
+}
+
+/// Get sponge checkpoint for a Pallas proof (Vesta/Fq circuits).
+/// Returns a squeeze value after oracle computation + absorbing cip.
+/// Compare against PureScript sponge to verify states match.
+#[napi]
+pub fn vesta_proof_sponge_checkpoint(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<PallasFieldExternal> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_sponge_checkpoint::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(External::new(result))
+}
+
 /// Verify opening proof for a Vesta proof (Pallas/Fp circuits).
 /// Returns true if verification succeeds.
 #[napi]
@@ -1113,4 +1231,188 @@ pub fn vesta_compute_b0(
     let chals: Vec<PallasScalarField> = challenges.iter().map(|c| ***c).collect();
     let result = generic::compute_b0(&chals, **zeta, **zeta_omega, **evalscale);
     External::new(result)
+}
+
+// ─── Opening proof components ─────────────────────────────────────────────────
+//
+// Note on return types for curve points:
+// - Vesta curve has base field Fp (= PallasScalarField)
+// - Pallas curve has base field Fq (= VestaScalarField)
+// - VestaProof uses VestaGroup → point coordinates in Fp → PallasFieldExternal
+// - PallasProof uses PallasGroup → point coordinates in Fq → VestaFieldExternal
+
+/// Extract L/R pairs from a Vesta proof's opening proof.
+/// Returns 2*d points as flat array: [L0.x, L0.y, R0.x, R0.y, L1.x, L1.y, R1.x, R1.y, ...]
+/// where d = domain_log2 (number of IPA rounds).
+/// Note: Returns PallasFieldExternal because VestaGroup coordinates are in Fp.
+#[napi]
+pub fn pallas_proof_lr(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    let mut result = Vec::with_capacity(proof.proof.lr.len() * 4);
+    for (l, r) in &proof.proof.lr {
+        // L point
+        result.push(External::new(l.x));
+        result.push(External::new(l.y));
+        // R point
+        result.push(External::new(r.x));
+        result.push(External::new(r.y));
+    }
+    result
+}
+
+/// Extract L/R pairs from a Pallas proof's opening proof.
+/// Returns 2*d points as flat array: [L0.x, L0.y, R0.x, R0.y, L1.x, L1.y, R1.x, R1.y, ...]
+/// where d = domain_log2 (number of IPA rounds).
+/// Note: Returns VestaFieldExternal because PallasGroup coordinates are in Fq.
+#[napi]
+pub fn vesta_proof_lr(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    let mut result = Vec::with_capacity(proof.proof.lr.len() * 4);
+    for (l, r) in &proof.proof.lr {
+        // L point
+        result.push(External::new(l.x));
+        result.push(External::new(l.y));
+        // R point
+        result.push(External::new(r.x));
+        result.push(External::new(r.y));
+    }
+    result
+}
+
+/// Extract delta commitment from a Vesta proof's opening proof.
+/// Returns [delta.x, delta.y].
+/// Note: Returns PallasFieldExternal because VestaGroup coordinates are in Fp.
+#[napi]
+pub fn pallas_proof_delta(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    vec![
+        External::new(proof.proof.delta.x),
+        External::new(proof.proof.delta.y),
+    ]
+}
+
+/// Extract delta commitment from a Pallas proof's opening proof.
+/// Returns [delta.x, delta.y].
+/// Note: Returns VestaFieldExternal because PallasGroup coordinates are in Fq.
+#[napi]
+pub fn vesta_proof_delta(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    vec![
+        External::new(proof.proof.delta.x),
+        External::new(proof.proof.delta.y),
+    ]
+}
+
+/// Extract z1 scalar from a Vesta proof's opening proof.
+/// Note: z1 is in the scalar field, so VestaFieldExternal (Fq).
+#[napi]
+pub fn pallas_proof_z1(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.proof.z1)
+}
+
+/// Extract z1 scalar from a Pallas proof's opening proof.
+/// Note: z1 is in the scalar field, so PallasFieldExternal (Fp).
+#[napi]
+pub fn vesta_proof_z1(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.proof.z1)
+}
+
+/// Extract z2 scalar from a Vesta proof's opening proof.
+/// Note: z2 is in the scalar field, so VestaFieldExternal (Fq).
+#[napi]
+pub fn pallas_proof_z2(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.proof.z2)
+}
+
+/// Extract z2 scalar from a Pallas proof's opening proof.
+/// Note: z2 is in the scalar field, so PallasFieldExternal (Fp).
+#[napi]
+pub fn vesta_proof_z2(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.proof.z2)
+}
+
+/// Extract sg (challenge polynomial commitment) from a Vesta proof's opening proof.
+/// Returns [sg.x, sg.y].
+/// Note: Returns PallasFieldExternal because VestaGroup coordinates are in Fp.
+#[napi]
+pub fn pallas_proof_sg(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    vec![
+        External::new(proof.proof.sg.x),
+        External::new(proof.proof.sg.y),
+    ]
+}
+
+/// Extract sg (challenge polynomial commitment) from a Pallas proof's opening proof.
+/// Returns [sg.x, sg.y].
+/// Note: Returns VestaFieldExternal because PallasGroup coordinates are in Fq.
+#[napi]
+pub fn vesta_proof_sg(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    vec![
+        External::new(proof.proof.sg.x),
+        External::new(proof.proof.sg.y),
+    ]
+}
+
+/// Get the H generator from a Vesta prover index's SRS.
+/// Returns [h.x, h.y].
+/// Note: Returns PallasFieldExternal because VestaGroup coordinates are in Fp.
+#[napi]
+pub fn pallas_prover_index_h(prover_index: &VestaProverIndexExternal) -> Vec<PallasFieldExternal> {
+    let h = prover_index.srs.h;
+    vec![External::new(h.x), External::new(h.y)]
+}
+
+/// Get the H generator from a Pallas prover index's SRS.
+/// Returns [h.x, h.y].
+/// Note: Returns VestaFieldExternal because PallasGroup coordinates are in Fq.
+#[napi]
+pub fn vesta_prover_index_h(prover_index: &PallasProverIndexExternal) -> Vec<VestaFieldExternal> {
+    let h = prover_index.srs.h;
+    vec![External::new(h.x), External::new(h.y)]
+}
+
+/// Get the number of IPA rounds (domain log2) from a Vesta proof.
+#[napi]
+pub fn pallas_proof_ipa_rounds(proof: &VestaProofExternal) -> u32 {
+    proof.proof.lr.len() as u32
+}
+
+/// Get the number of IPA rounds (domain log2) from a Pallas proof.
+#[napi]
+pub fn vesta_proof_ipa_rounds(proof: &PallasProofExternal) -> u32 {
+    proof.proof.lr.len() as u32
+}
+
+/// Compute the bullet reduction product for a Vesta proof (Pallas/Fp circuits).
+/// lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
+/// Returns [lr_prod.x, lr_prod.y] in the curve's base field.
+/// Note: Returns PallasFieldExternal because VestaGroup coordinates are in Fp.
+#[napi]
+pub fn pallas_proof_lr_prod(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_lr_prod::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute the bullet reduction product for a Pallas proof (Vesta/Fq circuits).
+/// lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
+/// Returns [lr_prod.x, lr_prod.y] in the curve's base field.
+/// Note: Returns VestaFieldExternal because PallasGroup coordinates are in Fq.
+#[napi]
+pub fn vesta_proof_lr_prod(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_lr_prod::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(result.into_iter().map(External::new).collect())
 }
