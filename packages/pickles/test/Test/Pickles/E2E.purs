@@ -18,6 +18,7 @@ import Prelude
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
 import Data.Array (concatMap)
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
@@ -387,10 +388,6 @@ openingProofTest ctx = do
   let verified = ProofFFI.verifyOpeningProof ctx.proverIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
   liftEffect $ verified `shouldEqual` true
 
--- | Domain log2 for the Schnorr circuit (number of IPA rounds).
--- | This is the size of the bulletproof challenges vector.
-type SchnorrDomainLog2 = 16
-
 -- | Test that PureScript computeB matches the Rust FFI computeB0.
 computeBTest :: TestContext -> Aff Unit
 computeBTest ctx = do
@@ -399,8 +396,8 @@ computeBTest ctx = do
     challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
-    -- Convert to type-safe vector (unsafe partial since we trust the FFI)
-    challenges :: Vector SchnorrDomainLog2 Vesta.ScalarField
+    -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
+    challenges :: Vector 16 Vesta.ScalarField
     challenges = unsafePartial $ fromJust $ Vector.toVector challengesArray
 
     -- Compute zeta * omega for the second evaluation point
@@ -425,6 +422,22 @@ computeBTest ctx = do
   -- Compare PureScript vs Rust
   liftEffect $ psResult `shouldEqual` rustResult
 
+-- | Test that IPA rounds matches the bulletproof challenges length.
+-- | Note: IPA rounds depends on SRS size, not circuit domain size.
+ipaRoundsTest :: TestContext -> Aff Unit
+ipaRoundsTest ctx = do
+  let
+    -- Get IPA rounds from the proof
+    ipaRounds = ProofFFI.proofIpaRounds ctx.proof
+
+    -- Get bulletproof challenges (their count should match IPA rounds)
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    numChallenges = Array.length challengesArray
+
+  -- IPA rounds should match the number of challenges
+  liftEffect $ ipaRounds `shouldEqual` numChallenges
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -437,3 +450,4 @@ spec = beforeAll createTestContext $
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
+    it "IPA rounds matches domain log2" ipaRoundsTest

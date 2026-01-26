@@ -3,6 +3,7 @@ package:
   dependencies:
     - arrays
     - bifunctors
+    - control
     - curves
     - effect
     - either

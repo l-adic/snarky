@@ -7,15 +7,19 @@ package:
     - exceptions
     - foldable-traversable
     - foreign
+    - identity
     - js-bigints
     - maybe
     - newtype
+    - partial
     - poseidon
     - prelude
     - random-oracle
     - simple-json
     - snarky
+    - snarky-curves
     - snarky-kimchi
+    - transformers
     - tuples
     - vector-sized
   build:

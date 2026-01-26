@@ -60,7 +60,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Constraint.Basic (class BasicSystem, boolean)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -73,6 +73,8 @@ derive instance Newtype (Bool a) _
 derive instance Generic (Bool f) _
 
 newtype F f = F f
+
+instance FieldSizeInBits f n => FieldSizeInBits (F f) n
 
 derive newtype instance Eq f => Eq (F f)
 derive newtype instance Ord f => Ord (F f)

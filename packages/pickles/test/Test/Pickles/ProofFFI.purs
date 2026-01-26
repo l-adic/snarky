@@ -13,6 +13,7 @@ module Test.Pickles.ProofFFI
   , computeB0
   , permutationVanishingPolynomial
   , domainGenerator
+  , proofIpaRounds
   , Proof
   , OraclesResult
   , PointEval
@@ -46,8 +47,8 @@ type OraclesResult f =
 
 -- | Typeclass for proof-related FFI operations.
 -- | `f` is the scalar field, `g` is the curve group.
--- | For Pallas (Fp circuits): f = Pallas.BaseField, g = Vesta.G
--- | For Vesta (Fq circuits): f = Vesta.BaseField, g = Pallas.G
+-- | For Pallas (Fq circuits): f = Pallas.BaseField, g = Vesta.G
+-- | For Vesta (Fp circuits): f = Vesta.BaseField, g = Pallas.G
 class ProofFFI f g | f -> g where
   proverIndexShifts :: ProverIndex g f -> Vector 7 f
   createProof :: { proverIndex :: ProverIndex g f, witness :: Vector 15 (Array f) } -> Proof g f
@@ -61,6 +62,7 @@ class ProofFFI f g | f -> g where
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
+  proofIpaRounds :: Proof g f -> Int
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -102,6 +104,9 @@ foreign import vestaDomainGenerator :: Int -> Vesta.BaseField
 foreign import pallasComputeB0 :: { challenges :: Array Pallas.BaseField, zeta :: Pallas.BaseField, zetaOmega :: Pallas.BaseField, evalscale :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaComputeB0 :: { challenges :: Array Vesta.BaseField, zeta :: Vesta.BaseField, zetaOmega :: Vesta.BaseField, evalscale :: Vesta.BaseField } -> Vesta.BaseField
 
+foreign import pallasProofIpaRounds :: Proof Vesta.G Pallas.BaseField -> Int
+foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
+
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
@@ -119,6 +124,7 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
   computeB0 = pallasComputeB0
+  proofIpaRounds = pallasProofIpaRounds
 
 instance ProofFFI Vesta.BaseField Pallas.G where
   proverIndexShifts = vestaProverIndexShifts
@@ -133,3 +139,4 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator
   computeB0 = vestaComputeB0
+  proofIpaRounds = vestaProofIpaRounds

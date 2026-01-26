@@ -128,3 +128,10 @@ export const pallasComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
 
 export const vestaComputeB0 = ({ challenges, zeta, zetaOmega, evalscale }) =>
   crypto.vestaComputeB0(challenges, zeta, zetaOmega, evalscale);
+
+// Proof IPA rounds (domain log2)
+export const pallasProofIpaRounds = (proof) =>
+  crypto.pallasProofIpaRounds(proof);
+
+export const vestaProofIpaRounds = (proof) =>
+  crypto.vestaProofIpaRounds(proof);

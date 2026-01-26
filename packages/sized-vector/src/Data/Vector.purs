@@ -25,7 +25,10 @@ module Data.Vector
   , drop
   , chunks
   , head
+  , tail
+  , uncons
   , last
+  , unsnoc
   , reverse
   , updateAt
   , modifyAt
@@ -39,12 +42,15 @@ import Control.Monad.Gen (class MonadGen)
 import Data.Array (foldMap, (:))
 import Data.Array as A
 import Data.Array as Array
+import Data.Array.NonEmpty (foldMap1, foldl1)
+import Data.Array.NonEmpty as NEA
 import Data.Fin (Finite, finites, getFinite, unsafeFinite)
 import Data.Foldable (class Foldable)
 import Data.FoldableWithIndex (class FoldableWithIndex, foldMapWithIndex, foldlWithIndex, foldrWithIndex)
 import Data.FunctorWithIndex (class FunctorWithIndex, mapWithIndex)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Semigroup.Foldable (class Foldable1, foldr1)
 import Data.Traversable (class Traversable, traverse)
 import Data.TraversableWithIndex (class TraversableWithIndex, traverseWithIndex)
 import Data.Tuple (Tuple(..))
@@ -71,6 +77,13 @@ instance (Reflectable n Int) => FoldableWithIndex (Finite n) (Vector n) where
     foldlWithIndex (\i b a -> f (unsafeFinite i) b a) init as
   foldMapWithIndex f (Vector as) =
     foldMapWithIndex (\i a -> f (unsafeFinite i) a) as
+
+instance Add 1 m n => Foldable1 (Vector n) where
+  foldl1 f (Vector xs) = foldl1 f (unsafePartial fromJust $ NEA.fromFoldable xs)
+  foldr1 f (Vector xs) =
+    foldr1 f (unsafePartial fromJust $ NEA.fromFoldable xs)
+  foldMap1 f (Vector xs) =
+    foldMap1 f (unsafePartial fromJust $ NEA.fromFoldable xs)
 
 instance (Reflectable n Int) => FunctorWithIndex (Finite n) (Vector n) where
   mapWithIndex f (Vector as) = Vector $ mapWithIndex (\i a -> f (unsafeFinite i) a) as
@@ -229,12 +242,41 @@ head
   -> a
 head (Vector as) = unsafePartial $ fromJust $ Array.head as
 
+tail
+  :: forall n m a
+   . Add 1 m n
+  => Vector n a
+  -> Vector m a
+tail (Vector as) = Vector $ unsafePartial $ fromJust $ Array.tail as
+
+uncons
+  :: forall n m a
+   . Add 1 m n
+  => Vector n a
+  -> { head :: a, tail :: Vector m a }
+uncons (Vector as) =
+  let
+    { head, tail } = unsafePartial $ fromJust $ Array.uncons as
+  in
+    { head, tail: Vector tail }
+
 last
   :: forall n a
    . Compare 0 n LT
   => Vector n a
   -> a
 last (Vector as) = unsafePartial $ fromJust $ Array.last as
+
+unsnoc
+  :: forall n m a
+   . Add 1 m n
+  => Vector n a
+  -> { last :: a, init :: Vector m a }
+unsnoc (Vector as) =
+  let
+    { init, last } = unsafePartial $ fromJust $ Array.unsnoc as
+  in
+    { last, init: Vector init }
 
 reverse :: forall n a. Vector n a -> Vector n a
 reverse (Vector as) = Vector (Array.reverse as)

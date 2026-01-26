@@ -1114,3 +1114,15 @@ pub fn vesta_compute_b0(
     let result = generic::compute_b0(&chals, **zeta, **zeta_omega, **evalscale);
     External::new(result)
 }
+
+/// Get the number of IPA rounds (domain log2) from a Vesta proof.
+#[napi]
+pub fn pallas_proof_ipa_rounds(proof: &VestaProofExternal) -> u32 {
+    proof.proof.lr.len() as u32
+}
+
+/// Get the number of IPA rounds (domain log2) from a Pallas proof.
+#[napi]
+pub fn vesta_proof_ipa_rounds(proof: &PallasProofExternal) -> u32 {
+    proof.proof.lr.len() as u32
+}
