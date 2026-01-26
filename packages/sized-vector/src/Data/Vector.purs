@@ -244,9 +244,8 @@ uncons
   => Vector n a
   -> { head :: a, tail :: Vector m a }
 uncons (Vector as) =
-  { head: unsafePartial $ fromJust $ Array.head as
-  , tail: Vector $ unsafePartial $ fromJust $ Array.tail as
-  }
+  let { head, tail } = unsafePartial $ fromJust $ Array.uncons as
+  in { head, tail: Vector tail }
 
 last
   :: forall n a
