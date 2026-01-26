@@ -6,6 +6,7 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.BulletproofVerifier as BulletproofVerifier
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
 import Test.Pickles.Linearization as Linearization
@@ -23,6 +24,7 @@ main = runSpecAndExitProcess'
   do
     E2E.spec
     mapSpec nat do
+      BulletproofVerifier.spec
       Commitments.spec
       Linearization.spec
       Permutation.spec
