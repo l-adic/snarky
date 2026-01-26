@@ -1,19 +1,22 @@
-module Snarky.Circuit.Kimchi.EndoMul (endo) where
+module Snarky.Circuit.Kimchi.EndoMul (endo, endoInv) where
 
 import Prelude
 
 import Data.Fin (unsafeFinite)
+import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_)
-import Snarky.Circuit.DSL.Bits (unpackPure)
+import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoBase, endoScalar, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 endo
@@ -86,3 +89,62 @@ endo g scalar = do
   where
   double x = x + x
   square x = x * x
+
+-- | Inverse endomorphism scalar multiplication.
+-- | Computes `g / scalar` where scalar is the effective scalar derived from the challenge.
+-- |
+-- | Implementation: Witness the result, then verify via `endo(result, scalar) == g`.
+-- | This is the pattern from mina's `endo_inv` in scalar_challenge.ml.
+endoInv
+  :: forall @f @f' @g t m n _l
+   . FieldSizeInBits f n
+  => FieldSizeInBits f' n
+  => HasEndo f f'
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => CircuitM f (KimchiConstraint f) t m
+  => Add 128 _l n
+  => AffinePoint (FVar f)
+  -> FVar f
+  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+endoInv g scalar = do
+  -- Witness the result: g * (1 / effective_scalar)
+  result <- exists $ do
+    -- Read the input point
+    { x: F gx, y: F gy } <- read @(AffinePoint _) g
+    -- Read the scalar challenge
+    F scalarVal <- readCVar scalar
+
+    -- Coerce scalar from f to f' via bit representation
+    -- (works because both fields have the same bit size n)
+    let
+      coerceViaBits :: f -> f'
+      coerceViaBits = packPure <<< unpackPure
+
+    -- Compute effective scalar in the scalar field f'
+    let
+      effectiveScalar :: f'
+      effectiveScalar = toFieldConstant (coerceViaBits scalarVal) (endoScalar @f @f')
+
+    -- Compute inverse scalar
+    let
+      invScalar :: f'
+      invScalar = recip effectiveScalar
+
+    -- Convert input point to curve group element and scale by inverse
+    let
+      gPoint :: g
+      gPoint = fromAffine @f @g { x: gx, y: gy }
+
+      resultPoint :: g
+      resultPoint = scalarMul invScalar gPoint
+
+    -- Convert result back to AffinePoint
+    let { x: rx, y: ry } = unsafePartial $ fromJust $ toAffine @f @g resultPoint
+    pure { x: F rx, y: F ry }
+
+  -- Verify: endo(result, scalar) == g
+  computed <- endo result scalar
+  assertEqual_ computed.x g.x
+  assertEqual_ computed.y g.y
+  pure result

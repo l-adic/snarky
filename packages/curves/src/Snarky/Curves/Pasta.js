@@ -126,7 +126,7 @@ export function _pallasGroupScale(scalar) {
 }
 
 export function _pallasToAffine(just, nothing, value) {
-  let p = napi.pallasGroupToAffine(value)
+  var p = napi.pallasGroupToAffine(value);
   if (p == null) {
     return nothing;
   } else {
@@ -297,4 +297,58 @@ export function _vestaEndoBase() {
 
 export function _vestaEndoScalar() {
     return napi.vestaEndoScalar();
+}
+
+// Square root and quadratic residue functions
+export function _pallasIsSquare(x) {
+    return napi.pallasScalarfieldIsSquare(x);
+}
+
+export function _pallasSqrt(just) {
+    return function(nothing) {
+        return function(x) {
+            const result = napi.pallasScalarfieldSqrt(x);
+            if (result == null) {
+                return nothing;
+            } else {
+                return just(result);
+            }
+        };
+    };
+}
+
+export function _vestaScalarFieldIsSquare(x) {
+    return napi.vestaScalarfieldIsSquare(x);
+}
+
+export function _vestaScalarFieldSqrt(just) {
+    return function(nothing) {
+        return function(x) {
+            const result = napi.vestaScalarfieldSqrt(x);
+            if (result == null) {
+                return nothing;
+            } else {
+                return just(result);
+            }
+        };
+    };
+}
+
+// BW19 GroupMap parameters
+// Returns array: [u, fu, sqrtNeg3U2MinusUOver2, sqrtNeg3U2, inv3U2]
+export function _pallasBW19Params() {
+    return napi.pallasBw19Params();
+}
+
+export function _vestaBW19Params() {
+    return napi.vestaBw19Params();
+}
+
+// Group map (hash-to-curve) functions
+export function _pallasGroupMap(t) {
+    return napi.pallasGroupMap(t);
+}
+
+export function _vestaGroupMap(t) {
+    return napi.vestaGroupMap(t);
 }

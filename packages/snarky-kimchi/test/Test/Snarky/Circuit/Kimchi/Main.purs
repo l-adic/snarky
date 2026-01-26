@@ -12,6 +12,7 @@ import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
 import Test.Snarky.Circuit.Kimchi.EndoMul as EndoMulTests
 import Test.Snarky.Circuit.Kimchi.EndoScalar as EndoScalarTests
 import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
+import Test.Snarky.Circuit.Kimchi.GroupMap as GroupMapTests
 import Test.Snarky.Circuit.Kimchi.Poseidon as PoseidonTests
 import Test.Snarky.Circuit.Kimchi.VarBaseMul as VarBaseMulTests
 import Test.Snarky.Constraint.Kimchi.GenericPlonk as GenericPlonkSpec
@@ -44,3 +45,4 @@ spec = do
   EndoMulTests.spec
   EndoScalarTests.spec
   ShiftedTests.spec
+  GroupMapTests.spec

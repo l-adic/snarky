@@ -10,6 +10,9 @@ module Snarky.Curves.Pasta
   , -- Hex serialization (for test vectors)
     vestaScalarFieldFromHexLe
   , vestaScalarFieldToHexLe
+  , -- Group map FFI (for testing against Rust implementation)
+    pallasGroupMap
+  , vestaGroupMap
   ) where
 
 import Prelude
@@ -19,7 +22,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -44,6 +47,8 @@ foreign import _pallasModulus :: Unit -> BigInt
 foreign import _pallasPow :: PallasScalarField -> BigInt -> PallasScalarField
 foreign import _pallasEndoBase :: Unit -> VestaScalarField
 foreign import _pallasEndoScalar :: Unit -> PallasScalarField
+foreign import _pallasIsSquare :: PallasScalarField -> Boolean
+foreign import _pallasSqrt :: forall a. (a -> Maybe a) -> Maybe a -> PallasScalarField -> Maybe PallasScalarField
 
 instance Semiring PallasScalarField where
   add = _pallasAdd
@@ -80,6 +85,10 @@ instance PrimeField PallasScalarField where
   pow = _pallasPow
 
 instance FieldSizeInBits PallasScalarField 255
+
+instance HasSqrt PallasScalarField where
+  sqrt = _pallasSqrt Just Nothing
+  isSquare = _pallasIsSquare
 
 -- Pallas Base Field (= Vesta Scalar Field via cross-wiring)
 type PallasBaseField = VestaScalarField
@@ -138,6 +147,21 @@ foreign import _pallasToAffine
        PallasG
        (Maybe a)
 
+-- BW19 parameters for Pallas (returns array of base field elements)
+foreign import _pallasBW19Params :: Unit -> Array VestaScalarField
+
+instance HasBW19 PallasBaseField PallasG where
+  bw19Params _ =
+    let
+      arr = _pallasBW19Params unit
+    in
+      { u: unsafePartial $ fromJust $ arr Array.!! 0
+      , fu: unsafePartial $ fromJust $ arr Array.!! 1
+      , sqrtNeg3U2MinusUOver2: unsafePartial $ fromJust $ arr Array.!! 2
+      , sqrtNeg3U2: unsafePartial $ fromJust $ arr Array.!! 3
+      , inv3U2: unsafePartial $ fromJust $ arr Array.!! 4
+      }
+
 -- ============================================================================
 -- VESTA CURVE DEFINITIONS
 -- ============================================================================
@@ -162,6 +186,8 @@ foreign import _vestaScalarFieldFromHexLe :: String -> VestaScalarField
 foreign import _vestaScalarFieldToHexLe :: VestaScalarField -> String
 foreign import _vestaEndoBase :: Unit -> PallasScalarField
 foreign import _vestaEndoScalar :: Unit -> VestaScalarField
+foreign import _vestaScalarFieldIsSquare :: VestaScalarField -> Boolean
+foreign import _vestaScalarFieldSqrt :: forall a. (a -> Maybe a) -> Maybe a -> VestaScalarField -> Maybe VestaScalarField
 
 instance Semiring VestaScalarField where
   add = _vestaScalarFieldAdd
@@ -198,6 +224,10 @@ instance PrimeField VestaScalarField where
   modulus = _vestaScalarFieldModulus unit
 
 instance FieldSizeInBits VestaScalarField 255
+
+instance HasSqrt VestaScalarField where
+  sqrt = _vestaScalarFieldSqrt Just Nothing
+  isSquare = _vestaScalarFieldIsSquare
 
 -- | Parse a VestaScalarField (= PallasBaseField) from little-endian hex string
 vestaScalarFieldFromHexLe :: String -> VestaScalarField
@@ -281,3 +311,48 @@ instance HasEndo VestaScalarField PallasScalarField where
 instance HasEndo PallasScalarField VestaScalarField where
   endoBase = _vestaEndoBase unit
   endoScalar = _vestaEndoScalar unit
+
+-- BW19 parameters for Vesta (returns array of base field elements)
+foreign import _vestaBW19Params :: Unit -> Array PallasScalarField
+
+instance HasBW19 VestaBaseField VestaG where
+  bw19Params _ =
+    let
+      arr = _vestaBW19Params unit
+    in
+      { u: unsafePartial $ fromJust $ arr Array.!! 0
+      , fu: unsafePartial $ fromJust $ arr Array.!! 1
+      , sqrtNeg3U2MinusUOver2: unsafePartial $ fromJust $ arr Array.!! 2
+      , sqrtNeg3U2: unsafePartial $ fromJust $ arr Array.!! 3
+      , inv3U2: unsafePartial $ fromJust $ arr Array.!! 4
+      }
+
+-- ============================================================================
+-- GROUP MAP (Hash-to-Curve) FFI - Reference implementations for testing
+-- ============================================================================
+
+-- | Returns (x, y) as a tuple array [x, y]
+foreign import _pallasGroupMap :: PallasBaseField -> Array PallasBaseField
+foreign import _vestaGroupMap :: VestaBaseField -> Array VestaBaseField
+
+-- | Hash a field element to a point on the Pallas curve using Rust's BW19 implementation
+-- | For testing against our PureScript implementation
+pallasGroupMap :: PallasBaseField -> { x :: PallasBaseField, y :: PallasBaseField }
+pallasGroupMap t =
+  let
+    arr = _pallasGroupMap t
+  in
+    { x: unsafePartial $ fromJust $ arr Array.!! 0
+    , y: unsafePartial $ fromJust $ arr Array.!! 1
+    }
+
+-- | Hash a field element to a point on the Vesta curve using Rust's BW19 implementation
+-- | For testing against our PureScript implementation
+vestaGroupMap :: VestaBaseField -> { x :: VestaBaseField, y :: VestaBaseField }
+vestaGroupMap t =
+  let
+    arr = _vestaGroupMap t
+  in
+    { x: unsafePartial $ fromJust $ arr Array.!! 0
+    , y: unsafePartial $ fromJust $ arr Array.!! 1
+    }
