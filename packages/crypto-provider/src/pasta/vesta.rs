@@ -155,6 +155,50 @@ pub mod scalar_field {
         let (_endo_q, endo_r) = endos::<Vesta>();
         External::new(endo_r)
     }
+
+    /// Check if field element is a quadratic residue (has a square root)
+    #[napi]
+    pub fn vesta_scalarfield_is_square(x: &FieldExternal) -> bool {
+        x.legendre().is_qr()
+    }
+
+    /// Compute the square root of a field element if it exists
+    #[napi]
+    pub fn vesta_scalarfield_sqrt(x: &FieldExternal) -> Option<FieldExternal> {
+        x.sqrt().map(External::new)
+    }
+}
+
+/// BW19 GroupMap parameters for Vesta curve
+/// These are precomputed constants used for hash-to-curve
+pub mod group_map {
+    use super::*;
+    use kimchi::groupmap::{BWParameters, GroupMap};
+
+    /// Get all BW19 parameters for Vesta curve as an array
+    /// Returns [u, fu, sqrt_neg_three_u_squared_minus_u_over_2, sqrt_neg_three_u_squared, inv_three_u_squared]
+    #[napi]
+    pub fn vesta_bw19_params() -> Vec<External<PallasScalarField>> {
+        let params: BWParameters<VestaConfig> = BWParameters::setup();
+        vec![
+            External::new(params.u),
+            External::new(params.fu),
+            External::new(params.sqrt_neg_three_u_squared_minus_u_over_2),
+            External::new(params.sqrt_neg_three_u_squared),
+            External::new(params.inv_three_u_squared),
+        ]
+    }
+
+    /// Hash a base field element to a point on the Vesta curve using BW19 algorithm
+    /// Returns (x, y) coordinates in the base field (= PallasScalarField)
+    #[napi]
+    pub fn vesta_group_map(
+        t: &External<PallasScalarField>,
+    ) -> (External<PallasScalarField>, External<PallasScalarField>) {
+        let params: BWParameters<VestaConfig> = BWParameters::setup();
+        let (x, y) = params.to_group(**t);
+        (External::new(x), External::new(y))
+    }
 }
 
 // Note: Vesta base field operations removed - now handled via Pallas scalar field cross-wiring in JS layer

@@ -129,6 +129,50 @@ pub mod scalar_field {
         let (_endo_q, endo_r) = endos::<Pallas>();
         External::new(endo_r)
     }
+
+    /// Check if field element is a quadratic residue (has a square root)
+    #[napi]
+    pub fn pallas_scalarfield_is_square(x: &FieldExternal) -> bool {
+        x.legendre().is_qr()
+    }
+
+    /// Compute the square root of a field element if it exists
+    #[napi]
+    pub fn pallas_scalarfield_sqrt(x: &FieldExternal) -> Option<FieldExternal> {
+        x.sqrt().map(External::new)
+    }
+}
+
+/// BW19 GroupMap parameters for Pallas curve
+/// These are precomputed constants used for hash-to-curve
+pub mod group_map {
+    use super::*;
+    use kimchi::groupmap::{BWParameters, GroupMap};
+
+    /// Get all BW19 parameters for Pallas curve as an array
+    /// Returns [u, fu, sqrt_neg_three_u_squared_minus_u_over_2, sqrt_neg_three_u_squared, inv_three_u_squared]
+    #[napi]
+    pub fn pallas_bw19_params() -> Vec<External<VestaScalarField>> {
+        let params: BWParameters<PallasConfig> = BWParameters::setup();
+        vec![
+            External::new(params.u),
+            External::new(params.fu),
+            External::new(params.sqrt_neg_three_u_squared_minus_u_over_2),
+            External::new(params.sqrt_neg_three_u_squared),
+            External::new(params.inv_three_u_squared),
+        ]
+    }
+
+    /// Hash a base field element to a point on the Pallas curve using BW19 algorithm
+    /// Returns (x, y) coordinates in the base field (= VestaScalarField)
+    #[napi]
+    pub fn pallas_group_map(
+        t: &External<VestaScalarField>,
+    ) -> (External<VestaScalarField>, External<VestaScalarField>) {
+        let params: BWParameters<PallasConfig> = BWParameters::setup();
+        let (x, y) = params.to_group(**t);
+        (External::new(x), External::new(y))
+    }
 }
 
 // Note: Pallas base field operations handled via Vesta scalar field (curve duality)
