@@ -10,6 +10,7 @@ module Test.Pickles.ProofFFI
   , proofOracles
   , proofBulletproofChallenges
   , verifyOpeningProof
+  , computeB0
   , permutationVanishingPolynomial
   , domainGenerator
   , Proof
@@ -59,6 +60,7 @@ class ProofFFI f g | f -> g where
   verifyOpeningProof :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
+  computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -97,6 +99,9 @@ foreign import vestaPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRow
 foreign import pallasDomainGenerator :: Int -> Pallas.BaseField
 foreign import vestaDomainGenerator :: Int -> Vesta.BaseField
 
+foreign import pallasComputeB0 :: { challenges :: Array Pallas.BaseField, zeta :: Pallas.BaseField, zetaOmega :: Pallas.BaseField, evalscale :: Pallas.BaseField } -> Pallas.BaseField
+foreign import vestaComputeB0 :: { challenges :: Array Vesta.BaseField, zeta :: Vesta.BaseField, zetaOmega :: Vesta.BaseField, evalscale :: Vesta.BaseField } -> Vesta.BaseField
+
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
@@ -113,6 +118,7 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
+  computeB0 = pallasComputeB0
 
 instance ProofFFI Vesta.BaseField Pallas.G where
   proverIndexShifts = vestaProverIndexShifts
@@ -126,3 +132,4 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator
+  computeB0 = vestaComputeB0
