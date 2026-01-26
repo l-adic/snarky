@@ -22,9 +22,10 @@ module Pickles.BulletproofVerifier
 
 import Prelude
 
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldM)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
+import Data.Semigroup.Foldable (foldl1)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, reverse, uncons)
@@ -110,27 +111,23 @@ lrProdPure
   -> AffinePoint f
 lrProdPure lrPairs chals =
   let
-    -- Compute challenge inverses
-    chalInvs = map recip chals
 
     -- Compute each term: chal_inv * L + chal * R
-    terms = Vector.zipWith computeTerm lrPairs (Vector.zip chals chalInvs)
+    terms = map computeTerm $ Vector.zip lrPairs chals
 
-    -- Sum all terms (safe: d >= 1 enforced by Add 1 d' d)
-    { head, tail } = uncons terms
-    acc = foldl (<>) head tail
+    acc = foldl1 (<>) terms
 
     -- Convert back to affine
     { x, y } = unsafePartial $ fromJust $ toAffine @f @g acc
   in
     { x, y }
   where
-  computeTerm { l, r } (Tuple chal chalInv) =
+  computeTerm (Tuple { l, r } chal) =
     let
       lProj = fromAffine @f @g l
       rProj = fromAffine @f @g r
     in
-      scalarMul chalInv lProj <> scalarMul chal rProj
+      scalarMul (recip chal) lProj <> scalarMul chal rProj
 
 -- | Circuit version of lr_prod computation.
 -- |

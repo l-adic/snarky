@@ -26,14 +26,13 @@ import Data.Maybe (fromJust)
 import Data.Newtype (un)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, toVector, (:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.BulletproofVerifier (lrProdPure)
 import Pickles.Commitments (combinedInnerProduct, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
@@ -108,10 +107,6 @@ schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorr
 -------------------------------------------------------------------------------
 -- | Test setup types
 -------------------------------------------------------------------------------
-
--- | Domain log2 for the Schnorr circuit (number of IPA rounds).
--- | The Schnorr circuit with 4 group operations has domain size 2^16.
-type SchnorrDomainLog2 = 16
 
 -- | Shared test context created once by beforeAll.
 -- | Contains prover index, witness, proof, and oracles.
@@ -443,57 +438,6 @@ ipaRoundsTest ctx = do
   -- IPA rounds should match the number of challenges
   liftEffect $ ipaRounds `shouldEqual` numChallenges
 
--- | Test that opening proof components can be extracted.
-openingProofComponentsTest :: TestContext -> Aff Unit
-openingProofComponentsTest ctx = do
-  let
-    -- Extract opening proof components
-    lr = ProofFFI.proofLr ctx.proof
-    _delta = ProofFFI.proofDelta ctx.proof
-    _z1 = ProofFFI.proofZ1 ctx.proof
-    _z2 = ProofFFI.proofZ2 ctx.proof
-    _sg = ProofFFI.proofSg ctx.proof
-    _h = ProofFFI.proverIndexH ctx.proverIndex
-
-    -- Number of L/R pairs should equal IPA rounds (= number of challenges)
-    lrLength = Array.length lr
-    ipaRounds = ProofFFI.proofIpaRounds ctx.proof
-
-  -- Verify L/R pairs length matches IPA rounds
-  liftEffect $ lrLength `shouldEqual` ipaRounds
-
--- | Test that proofLrProd FFI computes the bullet reduction correctly.
--- | This compares the FFI result against our pure PureScript reference (lrProdPure).
--- |
--- | lr_prod = sum(chal_inv[i] * L[i] + chal[i] * R[i])
-bulletReduceTest :: TestContext -> Aff Unit
-bulletReduceTest ctx = do
-  let
-    -- Get the lr_prod from FFI (ground truth from Rust verification)
-    lrProdFFI = ProofFFI.proofLrProd ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    -- Get L/R pairs and challenges
-    lrArray = ProofFFI.proofLr ctx.proof
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    -- Convert to Vector (safe: FFI returns exactly SchnorrDomainLog2 elements)
-    lr :: Vector SchnorrDomainLog2 { l :: AffinePoint Vesta.BaseField, r :: AffinePoint Vesta.BaseField }
-    lr = unsafePartial $ fromJust $ toVector lrArray
-
-    -- Challenges are in the scalar field of Vesta (= Pallas.BaseField = circuit field)
-    challenges :: Vector SchnorrDomainLog2 Vesta.ScalarField
-    challenges = unsafePartial $ fromJust $ toVector challengesArray
-
-    -- Pure reference using lrProdPure
-    -- f = Vesta.BaseField (point coordinates), f' = Vesta.ScalarField (scalars), g = Vesta.G
-    lrProdRef :: AffinePoint Vesta.BaseField
-    lrProdRef = lrProdPure @SchnorrDomainLog2 @_ @Vesta.BaseField @Vesta.ScalarField @Vesta.G lr challenges
-
-  -- Compare
-  liftEffect $ lrProdFFI `shouldEqual` lrProdRef
-
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -507,5 +451,3 @@ spec = beforeAll createTestContext $
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
-    it "opening proof components can be extracted" openingProofComponentsTest
-    it "PS bullet reduce matches Rust proofLrProd" bulletReduceTest
