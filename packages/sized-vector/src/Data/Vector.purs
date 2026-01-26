@@ -25,6 +25,8 @@ module Data.Vector
   , drop
   , chunks
   , head
+  , tail
+  , uncons
   , last
   , reverse
   , updateAt
@@ -228,6 +230,23 @@ head
   => Vector n a
   -> a
 head (Vector as) = unsafePartial $ fromJust $ Array.head as
+
+tail
+  :: forall n m a
+   . Add 1 m n
+  => Vector n a
+  -> Vector m a
+tail (Vector as) = Vector $ unsafePartial $ fromJust $ Array.tail as
+
+uncons
+  :: forall n m a
+   . Add 1 m n
+  => Vector n a
+  -> { head :: a, tail :: Vector m a }
+uncons (Vector as) =
+  { head: unsafePartial $ fromJust $ Array.head as
+  , tail: Vector $ unsafePartial $ fromJust $ Array.tail as
+  }
 
 last
   :: forall n a
