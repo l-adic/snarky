@@ -12,6 +12,9 @@ pub mod bn254;
 
 mod bigint;
 
+// Polynomial types for IPA deferred verification
+pub mod poly;
+
 // Pasta curves using mina-curves backend
 pub mod pasta;
 

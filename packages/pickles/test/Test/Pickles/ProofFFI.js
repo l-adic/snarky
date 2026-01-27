@@ -135,3 +135,49 @@ export const pallasProofIpaRounds = (proof) =>
 
 export const vestaProofIpaRounds = (proof) =>
   crypto.vestaProofIpaRounds(proof);
+
+// Proof sg commitment (for deferred IPA check)
+// Returns { x, y } coordinates of the sg commitment point
+export const pallasProofSg = (proof) => {
+  const flat = crypto.pallasProofSg(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofSg = (proof) => {
+  const flat = crypto.vestaProofSg(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+// ─── Polynomial / Deferred Check FFI ──────────────────────────────────────────
+
+// Create b_poly_coefficients polynomial object from IPA challenges
+export const pallasBPolyCoefficients = (challenges) =>
+  crypto.pallasBPolyCoefficients(challenges);
+
+export const vestaBPolyCoefficients = (challenges) =>
+  crypto.vestaBPolyCoefficients(challenges);
+
+// Get polynomial length
+export const pallasPolyLength = (poly) =>
+  crypto.pallasPolyLength(poly);
+
+export const vestaPolyLength = (poly) =>
+  crypto.vestaPolyLength(poly);
+
+// Get polynomial coefficients
+export const pallasPolyGetCoeffs = (poly) =>
+  crypto.pallasPolyGetCoeffs(poly);
+
+export const vestaPolyGetCoeffs = (poly) =>
+  crypto.vestaPolyGetCoeffs(poly);
+
+// Verify deferred sg commitment check
+export const pallasVerifyDeferredCheck = (proverIndex) => ({ sgX, sgY, poly }) =>
+  crypto.pallasVerifyDeferredCheck(proverIndex, sgX, sgY, poly);
+
+export const vestaVerifyDeferredCheck = (proverIndex) => ({ sgX, sgY, poly }) =>
+  crypto.vestaVerifyDeferredCheck(proverIndex, sgX, sgY, poly);
+
+// Verify deferred check entirely in Rust (for debugging)
+export const pallasVerifyDeferredCheckInternal = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.pallasVerifyDeferredCheckInternal(proverIndex, proof, publicInput);

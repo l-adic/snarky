@@ -14,9 +14,17 @@ module Test.Pickles.ProofFFI
   , permutationVanishingPolynomial
   , domainGenerator
   , proofIpaRounds
+  , proofSg
+  , bPolyCoefficients
+  , polyLength
+  , polyGetCoeffs
+  , verifyDeferredCheck
+  , pallasVerifyDeferredCheckInternal
   , Proof
+  , Polynomial
   , OraclesResult
   , PointEval
+  , SgPoint
   ) where
 
 import Data.Vector (Vector)
@@ -27,8 +35,17 @@ import Snarky.Curves.Vesta as Vesta
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type
 
+-- | Opaque polynomial type for IPA deferred verification.
+-- | The coefficients are in the circuit field f.
+foreign import data Polynomial :: Type -> Type
+
 -- | Polynomial evaluation at two points: zeta and zeta*omega
 type PointEval f = { zeta :: f, omegaTimesZeta :: f }
+
+-- | sg commitment point coordinates.
+-- | The coordinates are in the commitment curve's base field (b),
+-- | which is the "other" base field in the Pasta cycle.
+type SgPoint b = { x :: b, y :: b }
 
 -- | Result of running the Fiat-Shamir oracle computation on a proof.
 type OraclesResult f =
@@ -46,10 +63,11 @@ type OraclesResult f =
   }
 
 -- | Typeclass for proof-related FFI operations.
--- | `f` is the scalar field, `g` is the curve group.
--- | For Pallas (Fq circuits): f = Pallas.BaseField, g = Vesta.G
--- | For Vesta (Fp circuits): f = Vesta.BaseField, g = Pallas.G
-class ProofFFI f g | f -> g where
+-- | `f` is the circuit field (scalar field of the circuit), `g` is the commitment curve group.
+-- | `b` is the commitment curve's base field (the "other" base field in Pasta cycle).
+-- | For Pallas (Fq circuits): f = Pallas.BaseField, g = Vesta.G, b = Vesta.BaseField
+-- | For Vesta (Fp circuits): f = Vesta.BaseField, g = Pallas.G, b = Pallas.BaseField
+class ProofFFI f g b | f -> g, f -> b where
   proverIndexShifts :: ProverIndex g f -> Vector 7 f
   createProof :: { proverIndex :: ProverIndex g f, witness :: Vector 15 (Array f) } -> Proof g f
   proofWitnessEvals :: Proof g f -> Vector 15 (PointEval f)
@@ -63,6 +81,18 @@ class ProofFFI f g | f -> g where
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
   proofIpaRounds :: Proof g f -> Int
+  -- | Extract sg commitment coordinates from a proof.
+  -- | The coordinates are in the commitment curve's base field (b).
+  proofSg :: Proof g f -> SgPoint b
+  -- | Create b_poly_coefficients polynomial from IPA challenges.
+  bPolyCoefficients :: Array f -> Polynomial f
+  -- | Get the number of coefficients in a polynomial.
+  polyLength :: Polynomial f -> Int
+  -- | Get the coefficients from a polynomial.
+  polyGetCoeffs :: Polynomial f -> Array f
+  -- | Verify the deferred sg commitment check.
+  -- | Checks that sg = MSM(SRS.g, poly.coeffs).
+  verifyDeferredCheck :: ProverIndex g f -> { sgX :: b, sgY :: b, poly :: Polynomial f } -> Boolean
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -107,11 +137,31 @@ foreign import vestaComputeB0 :: { challenges :: Array Vesta.BaseField, zeta :: 
 foreign import pallasProofIpaRounds :: Proof Vesta.G Pallas.BaseField -> Int
 foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
 
+-- sg commitment extraction (coordinates in the commitment curve's base field)
+foreign import pallasProofSg :: Proof Vesta.G Pallas.BaseField -> SgPoint Vesta.BaseField
+foreign import vestaProofSg :: Proof Pallas.G Vesta.BaseField -> SgPoint Pallas.BaseField
+
+-- Polynomial / deferred check FFI
+foreign import pallasBPolyCoefficients :: Array Pallas.BaseField -> Polynomial Pallas.BaseField
+foreign import vestaBPolyCoefficients :: Array Vesta.BaseField -> Polynomial Vesta.BaseField
+
+foreign import pallasPolyLength :: Polynomial Pallas.BaseField -> Int
+foreign import vestaPolyLength :: Polynomial Vesta.BaseField -> Int
+
+foreign import pallasPolyGetCoeffs :: Polynomial Pallas.BaseField -> Array Pallas.BaseField
+foreign import vestaPolyGetCoeffs :: Polynomial Vesta.BaseField -> Array Vesta.BaseField
+
+foreign import pallasVerifyDeferredCheck :: ProverIndex Vesta.G Pallas.BaseField -> { sgX :: Vesta.BaseField, sgY :: Vesta.BaseField, poly :: Polynomial Pallas.BaseField } -> Boolean
+foreign import vestaVerifyDeferredCheck :: ProverIndex Pallas.G Vesta.BaseField -> { sgX :: Pallas.BaseField, sgY :: Pallas.BaseField, poly :: Polynomial Vesta.BaseField } -> Boolean
+
+-- Internal check (entirely in Rust) for debugging
+foreign import pallasVerifyDeferredCheckInternal :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
+
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
 
-instance ProofFFI Pallas.BaseField Vesta.G where
+instance ProofFFI Pallas.BaseField Vesta.G Vesta.BaseField where
   proverIndexShifts = pallasProverIndexShifts
   createProof = pallasCreateProof
   proofWitnessEvals = pallasProofWitnessEvals
@@ -125,8 +175,13 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   domainGenerator = pallasDomainGenerator
   computeB0 = pallasComputeB0
   proofIpaRounds = pallasProofIpaRounds
+  proofSg = pallasProofSg
+  bPolyCoefficients = pallasBPolyCoefficients
+  polyLength = pallasPolyLength
+  polyGetCoeffs = pallasPolyGetCoeffs
+  verifyDeferredCheck = pallasVerifyDeferredCheck
 
-instance ProofFFI Vesta.BaseField Pallas.G where
+instance ProofFFI Vesta.BaseField Pallas.G Pallas.BaseField where
   proverIndexShifts = vestaProverIndexShifts
   createProof = vestaCreateProof
   proofWitnessEvals = vestaProofWitnessEvals
@@ -140,3 +195,8 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   domainGenerator = vestaDomainGenerator
   computeB0 = vestaComputeB0
   proofIpaRounds = vestaProofIpaRounds
+  proofSg = vestaProofSg
+  bPolyCoefficients = vestaBPolyCoefficients
+  polyLength = vestaPolyLength
+  polyGetCoeffs = vestaPolyGetCoeffs
+  verifyDeferredCheck = vestaVerifyDeferredCheck

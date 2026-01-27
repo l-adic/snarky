@@ -28,6 +28,7 @@ use super::super::pasta::types::{
 use super::super::pasta::vesta::scalar_field::FieldExternal as VestaFieldExternal;
 use ark_ff::PrimeField;
 use ark_poly::EvaluationDomain;
+use kimchi::curve::vesta_endos;
 use mina_poseidon::constants::PlonkSpongeConstantsKimchi;
 use mina_poseidon::sponge::{DefaultFqSponge, DefaultFrSponge};
 
@@ -61,7 +62,7 @@ type PallasBaseSponge = DefaultFqSponge<PallasConfig, PlonkSpongeConstantsKimchi
 type PallasScalarSponge = DefaultFrSponge<PallasScalarField, PlonkSpongeConstantsKimchi>;
 
 // Generic implementations for circuit operations
-mod generic {
+pub(crate) mod generic {
     use super::*;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
     use ark_std::{One, Zero};
@@ -299,7 +300,7 @@ mod generic {
     /// Helper: compute oracles result from prover index and proof.
     /// Returns (verifier_index, oracles_result).
     #[allow(clippy::type_complexity)]
-    fn compute_oracles<G, EFqSponge, EFrSponge>(
+    pub fn compute_oracles<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
@@ -412,17 +413,24 @@ mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let (verifier_index, oracles_result) =
+        let (_, oracles_result) =
             compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
 
         // Get the sponge from oracles, absorb combined_inner_product, then get challenges
+        // This follows the same sequence as SRS::verify in poly-commitment/src/ipa.rs
         let mut fq_sponge = oracles_result.fq_sponge;
-        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
-            oracles_result.combined_inner_product,
-        )]);
 
-        // Get the challenges using the endomorphism coefficient
-        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+        let shifted_cip =
+            poly_commitment::commitment::shift_scalar::<G>(oracles_result.combined_inner_product);
+        fq_sponge.absorb_fr(&[shifted_cip]);
+
+        // Squeeze challenge_fq for u_base computation (advances sponge state)
+        // This is done in verify before getting challenges - we must match that state
+        let _u_base_t = fq_sponge.challenge_fq();
+
+        // Get the challenges using the CANONICAL endomorphism coefficient from the curve
+        // IMPORTANT: Use G::endos().1 to match SRS::verify behavior, NOT verifier_index.endo
+        let challenges = proof.proof.challenges(&G::endos().1, &mut fq_sponge);
 
         Ok(challenges.chal)
     }
@@ -441,6 +449,9 @@ mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
+        eprintln!("DEBUG verify_opening_proof:");
+        eprintln!("  proof.proof.sg = {:?}", proof.proof.sg);
+
         let verifier_index = prover_index.verifier_index();
         let group_map = <G as CommitmentCurve>::Map::setup();
 
@@ -454,7 +465,10 @@ mod generic {
             &group_map,
             &[context],
         ) {
-            Ok(()) => true,
+            Ok(()) => {
+                eprintln!("  batch_verify succeeded!");
+                true
+            }
             Err(e) => {
                 eprintln!("Opening proof verification failed: {e:?}");
                 false
@@ -1125,4 +1139,85 @@ pub fn pallas_proof_ipa_rounds(proof: &VestaProofExternal) -> u32 {
 #[napi]
 pub fn vesta_proof_ipa_rounds(proof: &PallasProofExternal) -> u32 {
     proof.proof.lr.len() as u32
+}
+
+/// Extract sg commitment coordinates from a Vesta proof (Pallas/Fp circuits).
+/// Returns 2 values: [sg.x, sg.y] in PallasScalarField (= Vesta base field Fp).
+/// These are needed for the deferred IPA verification check.
+#[napi]
+pub fn pallas_proof_sg(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let sg = &proof.proof.sg;
+    let x = sg.x().unwrap();
+    let y = sg.y().unwrap();
+    vec![External::new(x), External::new(y)]
+}
+
+/// Extract sg commitment coordinates from a Pallas proof (Vesta/Fq circuits).
+/// Returns 2 values: [sg.x, sg.y] in VestaScalarField (= Pallas base field Fq).
+/// These are needed for the deferred IPA verification check.
+#[napi]
+pub fn vesta_proof_sg(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let sg = &proof.proof.sg;
+    let x = sg.x().unwrap();
+    let y = sg.y().unwrap();
+    vec![External::new(x), External::new(y)]
+}
+
+/// Verify the deferred sg commitment check entirely in Rust (for debugging).
+/// This duplicates the logic from proof_bulletproof_challenges + pallas_verify_deferred_check
+/// to verify the full chain works correctly.
+#[napi]
+pub fn pallas_verify_deferred_check_internal(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<bool> {
+    use ark_ec::{AffineRepr, CurveGroup, VariableBaseMSM};
+    use mina_poseidon::FqSponge;
+    use poly_commitment::commitment::b_poly_coefficients;
+
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+
+    // Compute oracles (same as in proof_bulletproof_challenges)
+    let (_, oracles_result) = generic::compute_oracles::<
+        VestaGroup,
+        VestaBaseSponge,
+        VestaScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+
+    // Follow SRS::verify flow exactly
+    let mut fq_sponge = oracles_result.fq_sponge;
+
+    let shifted_cip = poly_commitment::commitment::shift_scalar::<VestaGroup>(
+        oracles_result.combined_inner_product,
+    );
+    fq_sponge.absorb_fr(&[shifted_cip]);
+
+    // Squeeze challenge_fq for u_base (advances sponge state)
+    let _u_base_t = fq_sponge.challenge_fq();
+
+    // Get challenges using the CANONICAL endomorphism coefficient to match SRS::verify behavior
+    let canonical_endo_r = vesta_endos().1;
+    let challenges = proof.proof.challenges(&canonical_endo_r, &mut fq_sponge);
+    let chal = &challenges.chal;
+
+    // Compute b_poly_coefficients
+    let s = b_poly_coefficients(chal);
+
+    // Get sg from proof
+    let sg = proof.proof.sg;
+
+    // Compute MSM using the SRS from prover_index
+    let g = &prover_index.srs.g;
+
+    if g.len() < s.len() {
+        return Ok(false);
+    }
+
+    let bases: Vec<VestaGroup> = g.iter().take(s.len()).cloned().collect();
+    let computed = <VestaGroup as AffineRepr>::Group::msm_unchecked(&bases, &s).into_affine();
+
+    Ok(computed == sg)
 }

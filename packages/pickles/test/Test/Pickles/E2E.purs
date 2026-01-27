@@ -57,7 +57,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.Linearization (buildFFIInput)
-import Test.Pickles.ProofFFI (OraclesResult, Proof)
+import Test.Pickles.ProofFFI (OraclesResult, Proof, pallasVerifyDeferredCheckInternal)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (randomSampleOne)
@@ -438,6 +438,58 @@ ipaRoundsTest ctx = do
   -- IPA rounds should match the number of challenges
   liftEffect $ ipaRounds `shouldEqual` numChallenges
 
+-- | Test the deferred sg commitment check using internal Rust implementation.
+-- | This runs the entire check in Rust to isolate any FFI boundary issues.
+deferredCheckInternalTest :: TestContext -> Aff Unit
+deferredCheckInternalTest ctx = do
+  let
+    verified = pallasVerifyDeferredCheckInternal ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+  liftEffect $ verified `shouldEqual` true
+
+-- | Test the deferred sg commitment check.
+-- | This verifies that sg = MSM(SRS.g, b_poly_coefficients(challenges)).
+deferredCheckTest :: TestContext -> Aff Unit
+deferredCheckTest ctx = do
+  let
+    -- Get bulletproof challenges from the proof
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Create b_poly_coefficients polynomial from challenges
+    poly = ProofFFI.bPolyCoefficients challengesArray
+
+    -- Get sg commitment coordinates from the proof
+    sg = ProofFFI.proofSg ctx.proof
+
+    -- Verify the deferred check: sg = MSM(SRS.g, coeffs)
+    verified = ProofFFI.verifyDeferredCheck ctx.proverIndex
+      { sgX: sg.x, sgY: sg.y, poly }
+
+  -- The deferred check should pass
+  liftEffect $ verified `shouldEqual` true
+
+-- | Test that polynomial length matches 2^(IPA rounds).
+polyLengthTest :: TestContext -> Aff Unit
+polyLengthTest ctx = do
+  let
+    -- Get IPA rounds from the proof
+    ipaRounds = ProofFFI.proofIpaRounds ctx.proof
+
+    -- Get bulletproof challenges and create polynomial
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    poly = ProofFFI.bPolyCoefficients challengesArray
+
+    -- Get polynomial length
+    polyLen = BigInt.fromInt $ ProofFFI.polyLength poly
+
+    -- Expected length is 2^k where k = number of challenges
+    expectedLen = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ipaRounds)
+
+  -- Polynomial length should be 2^(IPA rounds)
+  liftEffect $ polyLen `shouldEqual` expectedLen
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -451,3 +503,6 @@ spec = beforeAll createTestContext $
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
+    it "deferred sg check verifies (internal Rust)" deferredCheckInternalTest
+    it "deferred sg check verifies" deferredCheckTest
+    it "polynomial length matches 2^(IPA rounds)" polyLengthTest
