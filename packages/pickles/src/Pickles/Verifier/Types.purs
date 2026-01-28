@@ -48,9 +48,9 @@ type DeferredCheck d f =
 -- |
 -- | These are absorbed into the Fiat-Shamir sponge to derive challenges.
 type ProofMessages f =
-  { wComm :: Vector 15 (AffinePoint f)  -- Wire polynomial commitments
-  , zComm :: AffinePoint f              -- Permutation polynomial commitment
-  , tComm :: AffinePoint f              -- Quotient polynomial commitment
+  { wComm :: Vector 15 (AffinePoint f) -- Wire polynomial commitments
+  , zComm :: AffinePoint f -- Permutation polynomial commitment
+  , tComm :: AffinePoint f -- Quotient polynomial commitment
   }
 
 --------------------------------------------------------------------------------
@@ -65,7 +65,7 @@ type OpeningProof d f =
   , delta :: AffinePoint f
   , z1 :: f
   , z2 :: f
-  , sg :: AffinePoint f  -- Challenge polynomial commitment (verified out-of-circuit)
+  , sg :: AffinePoint f -- Challenge polynomial commitment (verified out-of-circuit)
   }
 
 --------------------------------------------------------------------------------
@@ -79,24 +79,24 @@ type VerifierInput d f =
   { -- Polynomial commitments from prover
     messages :: ProofMessages f
 
-    -- Polynomial evaluations at zeta and zeta*omega
+  -- Polynomial evaluations at zeta and zeta*omega
   , evaluations ::
       { witness :: Vector 15 (PointEval f)
-      , coefficient :: Vector 15 f        -- Only at zeta
-      , sigma :: Vector 6 (PointEval f)   -- Permutation sigmas
-      , z :: PointEval f                  -- Permutation polynomial
-      , index :: Vector 6 (PointEval f)   -- Selector polynomials
+      , coefficient :: Vector 15 f -- Only at zeta
+      , sigma :: Vector 6 (PointEval f) -- Permutation sigmas
+      , z :: PointEval f -- Permutation polynomial
+      , index :: Vector 6 (PointEval f) -- Selector polynomials
       , publicInput :: PointEval f
-      , ft :: PointEval f                 -- Linearization polynomial
+      , ft :: PointEval f -- Linearization polynomial
       }
 
-    -- Opening proof
+  -- Opening proof
   , opening :: OpeningProof d f
 
-    -- Verification key (public parameters)
+  -- Verification key (public parameters)
   , verificationKey ::
-      { h :: AffinePoint f      -- SRS H generator
-      , domainLog2 :: Int       -- Domain size as log2
+      { h :: AffinePoint f -- SRS H generator
+      , domainLog2 :: Int -- Domain size as log2
       }
   }
 
@@ -110,5 +110,5 @@ type VerifierInput d f =
 -- | then outputs the deferred sg check for out-of-circuit verification.
 type VerifierOutput d f =
   { deferredCheck :: DeferredCheck d f
-  , sg :: AffinePoint f  -- The sg from the proof (to be verified against challenges)
+  , sg :: AffinePoint f -- The sg from the proof (to be verified against challenges)
   }

@@ -56,13 +56,13 @@ type VerifyInput d n f b =
   { -- Batching scalar for polynomial commitments
     xi :: f
 
-    -- Polynomial commitments to batch
+  -- Polynomial commitments to batch
   , commitments :: Vector n (AffinePoint f)
 
-    -- Combined inner product
+  -- Combined inner product
   , combinedInnerProduct :: f
 
-    -- Opening proof
+  -- Opening proof
   , opening ::
       { lr :: Vector d { l :: AffinePoint f, r :: AffinePoint f }
       , delta :: AffinePoint f
@@ -71,18 +71,18 @@ type VerifyInput d n f b =
       , sg :: AffinePoint f
       }
 
-    -- Evaluation points for computing b
+  -- Evaluation points for computing b
   , zeta :: f
   , zetaOmega :: f
-  , evalscale :: f  -- u: for combining evaluations at zeta and zeta*omega
+  , evalscale :: f -- u: for combining evaluations at zeta and zeta*omega
 
-    -- SRS generator H
+  -- SRS generator H
   , h :: AffinePoint f
 
-    -- Public inputs (sponge-derived, computed outside circuit)
-  , challenges :: Vector d f  -- IPA challenges (endo-mapped, full field elements)
-  , u :: AffinePoint f        -- U = groupMap(squeeze(sponge after absorbing CIP))
-  , c :: f                    -- c = squeeze_scalar(sponge after absorbing delta)
+  -- Public inputs (sponge-derived, computed outside circuit)
+  , challenges :: Vector d f -- IPA challenges (endo-mapped, full field elements)
+  , u :: AffinePoint f -- U = groupMap(squeeze(sponge after absorbing CIP))
+  , c :: f -- c = squeeze_scalar(sponge after absorbing delta)
   }
 
 --------------------------------------------------------------------------------

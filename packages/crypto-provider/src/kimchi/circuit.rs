@@ -403,11 +403,17 @@ pub(crate) mod generic {
     /// - challenges: IPA challenges (endo-mapped, full field elements), d values where d = IPA rounds
     /// - u_x, u_y: U point coordinates from groupMap(squeeze after CIP)
     /// - c: final scalar challenge (128-bit) after absorbing delta
+    #[allow(clippy::type_complexity)]
     pub fn proof_bulletproof_challenges<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
-    ) -> Result<(Vec<G::ScalarField>, G::BaseField, G::BaseField, G::ScalarField)>
+    ) -> Result<(
+        Vec<G::ScalarField>,
+        G::BaseField,
+        G::BaseField,
+        G::ScalarField,
+    )>
     where
         G: KimchiCurve,
         G::BaseField: PrimeField,
@@ -1370,10 +1376,7 @@ pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExterna
 pub fn pallas_prover_index_h(prover_index: &VestaProverIndexExternal) -> Vec<PallasFieldExternal> {
     use ark_ec::AffineRepr;
     let h = &prover_index.srs.h;
-    vec![
-        External::new(h.x().unwrap()),
-        External::new(h.y().unwrap()),
-    ]
+    vec![External::new(h.x().unwrap()), External::new(h.y().unwrap())]
 }
 
 /// Extract H generator from a Pallas prover index's SRS.
@@ -1382,10 +1385,7 @@ pub fn pallas_prover_index_h(prover_index: &VestaProverIndexExternal) -> Vec<Pal
 pub fn vesta_prover_index_h(prover_index: &PallasProverIndexExternal) -> Vec<VestaFieldExternal> {
     use ark_ec::AffineRepr;
     let h = &prover_index.srs.h;
-    vec![
-        External::new(h.x().unwrap()),
-        External::new(h.y().unwrap()),
-    ]
+    vec![External::new(h.x().unwrap()), External::new(h.y().unwrap())]
 }
 
 // ─── Proof Commitments Extraction ────────────────────────────────────────────

@@ -30,20 +30,19 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct, computeB)
-import Pickles.Verifier (verify)
-import Pickles.Verifier (VerifyInput) as Verifier
-import Pickles.Verifier.Types (VerifierOutput)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
+import Pickles.Verifier (VerifyInput) as Verifier
+import Pickles.Verifier (verify)
+import Pickles.Verifier.Types (VerifierOutput)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
@@ -56,11 +55,11 @@ import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class FieldSizeInBits, endoBase, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
-import Snarky.Types.Shifted (Type2, toShifted)
+import Snarky.Curves.Class (endoBase, fromBigInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type2, toShifted)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof, pallasVerifyDeferredCheckInternal)
 import Test.Pickles.ProofFFI as ProofFFI
@@ -586,15 +585,6 @@ verifierCircuit
   => Verifier.VerifyInput 16 1 (FVar Vesta.BaseField) (BoolVar Vesta.BaseField)
   -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (VerifierOutput 16 (FVar Vesta.BaseField))
 verifierCircuit = verify @16 @15 @1 @0 @51
-
--- | Compiled circuit state for the verifier circuit.
-verifierBuiltState :: CircuitBuilderState (KimchiGate Vesta.BaseField) (AuxState Vesta.BaseField)
-verifierBuiltState = compilePure
-  (Proxy @VerifierInputValue)
-  (Proxy @VerifierOutputValue)
-  (Proxy @(KimchiConstraint Vesta.BaseField))
-  verifierCircuit
-  Kimchi.initialState
 
 -- | Solver for the verifier circuit.
 verifierSolver :: Solver Vesta.BaseField (KimchiGate Vesta.BaseField) VerifierInputValue VerifierOutputValue

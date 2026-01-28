@@ -3,21 +3,16 @@
 -- | This module implements the core IPA (Inner Product Argument) verification
 -- | components needed for recursive proof composition.
 -- |
--- | Reference: mina's step_verifier.ml `check_bulletproof` function
+-- | Note: In the Pickles pattern, challenges are computed outside the circuit
+-- | (via sponge on the other curve's field) and passed as public inputs.
+-- | The `lrProdCircuit` function uses these pre-computed challenges.
 module Pickles.BulletproofVerifier
-  ( -- Main verifier
-    checkBulletproof
-  -- Components
-  , bulletReduce
-  , combineSplitCommitments
+  ( -- Components
+    combineSplitCommitments
   -- Pure reference (mirrors Rust IPA verify)
   , lrProdPure
   -- Circuit version (testable against lrProdPure)
   , lrProdCircuit
-  -- Types
-  , BulletReduceResult
-  , CheckBulletproofInput
-  , CheckBulletproofOutput
   ) where
 
 import Prelude
@@ -31,61 +26,16 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, reverse, uncons)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Monad (PicklesM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge)
-import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
-import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..))
-import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMapCircuit)
+import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
-import Snarky.Circuit.Types (BoolVar, FVar)
+import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class PrimeField, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type2)
-
---------------------------------------------------------------------------------
--- | Types
---------------------------------------------------------------------------------
-
--- | Result of bullet reduce operation
-type BulletReduceResult d f =
-  { lrProd :: AffinePoint f -- Accumulated L/R product
-  , challenges :: Vector d f -- Scalar challenges extracted
-  }
-
--- | Input to the bulletproof verifier circuit
--- |
--- | Type parameters:
--- | - d: number of IPA rounds (domain log2)
--- | - n: number of polynomial commitments
--- | - f: the field type
-type CheckBulletproofInput d n f =
-  { xi :: FVar f -- ^ Batching scalar (128 bits)
-  , advice ::
-      { b :: FVar f -- ^ b = bPoly(chals, zeta) + u * bPoly(chals, zetaOmega)
-      , combinedInnerProduct :: FVar f -- ^ Combined evaluation of all polynomials
-      }
-  , commitments :: Vector n (AffinePoint (FVar f)) -- ^ Polynomial commitments to combine
-  , opening ::
-      { lr :: Vector d (Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))) -- ^ L/R pairs
-      , delta :: AffinePoint (FVar f) -- ^ Delta commitment from opening proof
-      , z1 :: Type2 (FVar f) (BoolVar f) -- ^ Opening proof scalar z1
-      , z2 :: Type2 (FVar f) (BoolVar f) -- ^ Opening proof scalar z2
-      , sg :: AffinePoint (FVar f) -- ^ Challenge polynomial commitment (deferred)
-      }
-  , h :: AffinePoint (FVar f) -- ^ SRS H generator
-  , groupMapParams :: GroupMapParams f -- ^ BW19 group map parameters
-  }
-
--- | Output of the bulletproof verifier circuit
-type CheckBulletproofOutput d f =
-  { challenges :: Vector d f -- ^ IPA challenges (for deferred sg verification)
-  }
 
 --------------------------------------------------------------------------------
 -- | Pure Reference (mirrors Rust IPA verify)
@@ -177,67 +127,6 @@ lrProdCircuit lrPairs chals = do
     _.p <$> addComplete termL termR
 
 --------------------------------------------------------------------------------
--- | Bullet Reduce (In-Circuit)
---------------------------------------------------------------------------------
-
--- | The L/R reduction loop for IPA verification.
--- |
--- | For each (L, R) pair:
--- | 1. Absorb L.x, L.y, R.x, R.y into the sponge
--- | 2. Squeeze a scalar challenge
--- | 3. Compute term = endoInv(L, chal) + endo(R, chal)
--- | 4. Accumulate into lrProd
--- |
--- | Returns the accumulated lrProd and all challenges.
--- |
--- | Note: Requires d >= 1 (at least one L/R pair). This is always true for
--- | valid IPA proofs since d is the domain log2.
-bulletReduce
-  :: forall @d @d' @g f f' t m
-   . Reflectable d Int
-  => Add 1 d' d
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => HasEndo f f'
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => PrimeField f
-  => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => Vector d (Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f)))
-  -> PicklesM f (KimchiConstraint f) t m (BulletReduceResult d (FVar f))
-bulletReduce lrPairs = do
-  -- Process each L/R pair, accumulating terms and collecting challenges
-  Tuple challenges terms <- Vector.unzip <$> traverse reducePair lrPairs
-
-  -- Sum all terms to get lrProd
-  -- uncons is safe here because d >= 1 (enforced by Add 1 d' d constraint)
-  let { head, tail } = uncons terms
-  lrProd <- liftSnarky $ foldM (\x y -> _.p <$> addComplete x y) head tail
-
-  pure { lrProd, challenges }
-
-  where
-  -- Process a single L/R pair
-  reducePair
-    :: Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-    -> PicklesM f (KimchiConstraint f) t m (Tuple (FVar f) (AffinePoint (FVar f)))
-  reducePair (Tuple l r) = do
-    -- Absorb L and R into the sponge
-    absorbPoint l
-    absorbPoint r
-
-    -- Squeeze a scalar challenge (128 bits)
-    ScalarChallenge challenge <- squeezeScalarChallenge
-
-    -- Compute term = endoInv(L, chal) + endo(R, chal)
-    liftSnarky $ do
-      termL <- endoInv @f @f' @g l challenge
-      termR <- endo r challenge
-      { p: term } <- addComplete termL termR
-      pure $ Tuple challenge term
-
---------------------------------------------------------------------------------
 -- | Combine Split Commitments (In-Circuit)
 --------------------------------------------------------------------------------
 
@@ -275,97 +164,3 @@ combineSplitCommitments xi commitments = do
   step acc c = do
     scaled <- endo acc xi
     _.p <$> addComplete scaled c
-
---------------------------------------------------------------------------------
--- | Check Bulletproof (Main Verifier Circuit)
---------------------------------------------------------------------------------
-
--- | The main bulletproof verification circuit.
--- |
--- | Verifies the IPA opening equation:
--- |   c*Q + delta = z1*(sg + b*U) + z2*H
--- |
--- | Where:
--- | - Q = combined_polynomial + cip*U + lr_prod
--- | - U = groupMap(squeeze(sponge)) after absorbing cip
--- | - c = scalar challenge squeezed after absorbing delta
--- |
--- | Returns the challenges for the deferred sg verification.
--- |
--- | Algorithm (from mina's step_verifier.ml):
--- | 1. Absorb combined_inner_product into sponge
--- | 2. u = group_map(squeeze(sponge))
--- | 3. combined_polynomial = combineSplitCommitments(xi, commitments)
--- | 4. (lr_prod, challenges) = bullet_reduce(sponge, lr)
--- | 5. p_prime = combined_polynomial + scaleFast2(u, cip)
--- | 6. q = p_prime + lr_prod
--- | 7. Absorb delta into sponge
--- | 8. c = squeeze_scalar(sponge)
--- | 9. LHS = endo(q, c) + delta
--- | 10. RHS = scaleFast2(sg + scaleFast2(u, b), z1) + scaleFast2(h, z2)
--- | 11. Assert LHS == RHS
--- | 12. Return challenges
-checkBulletproof
-  :: forall @d @d' @n @n' @nChunks f f' g t m
-   . Reflectable d Int
-  => Reflectable n Int
-  => Add 1 d' d
-  => Add 1 n' n
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => Mul 5 nChunks 255
-  => Reflectable nChunks Int
-  => HasEndo f f'
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => HasSqrt f
-  => PrimeField f
-  => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => CheckBulletproofInput d n f
-  -> PicklesM f (KimchiConstraint f) t m (CheckBulletproofOutput d (FVar f))
-checkBulletproof input = do
-  -- Step 1: Absorb combined_inner_product into sponge
-  absorb input.advice.combinedInnerProduct
-
-  -- Step 2: u = group_map(squeeze(sponge))
-  squeezed <- squeeze
-  u <- liftSnarky $ groupMapCircuit input.groupMapParams squeezed
-
-  -- Step 3: combined_polynomial = combineSplitCommitments(xi, commitments)
-  combined <- liftSnarky $ combineSplitCommitments @n input.xi input.commitments
-
-  -- Step 4: (lr_prod, challenges) = bullet_reduce(sponge, lr)
-  { lrProd, challenges } <- bulletReduce @d @_ @g input.opening.lr
-
-  -- Step 5: p_prime = combined + scaleFast2(u, cip)
-  cipType2 <- liftSnarky $ splitFieldVar input.advice.combinedInnerProduct
-  uTimesCip <- liftSnarky $ scaleFast2 @nChunks u cipType2
-  { p: pPrime } <- liftSnarky $ addComplete combined uTimesCip
-
-  -- Step 6: q = p_prime + lr_prod
-  { p: q } <- liftSnarky $ addComplete pPrime lrProd
-
-  -- Step 7: Absorb delta into sponge
-  absorbPoint input.opening.delta
-
-  -- Step 8: c = squeeze_scalar(sponge) (128 bits for endo)
-  ScalarChallenge c <- squeezeScalarChallenge
-  liftSnarky $ do
-    -- Step 9: LHS = endo(q, c) + delta
-    qTimesC <- endo q c
-    { p: lhs } <- addComplete qTimesC input.opening.delta
-
-    -- Step 10: RHS = scaleFast2(sg + scaleFast2(u, b), z1) + scaleFast2(h, z2)
-    bType2 <- splitFieldVar input.advice.b
-    uTimesB <- scaleFast2 @nChunks u bType2
-    { p: sgPlusUB } <- addComplete input.opening.sg uTimesB
-    term1 <- scaleFast2 @nChunks sgPlusUB input.opening.z1
-    term2 <- scaleFast2 @nChunks input.h input.opening.z2
-    { p: rhs } <- addComplete term1 term2
-
-    -- Step 11: Assert LHS == RHS
-    EllipticCurve.assertEqual lhs rhs
-
-    -- Step 12: Return challenges (for deferred sg verification)
-    pure { challenges }
