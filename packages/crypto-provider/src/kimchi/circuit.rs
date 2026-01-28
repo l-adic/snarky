@@ -472,9 +472,6 @@ pub(crate) mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        eprintln!("DEBUG verify_opening_proof:");
-        eprintln!("  proof.proof.sg = {:?}", proof.proof.sg);
-
         let verifier_index = prover_index.verifier_index();
         let group_map = <G as CommitmentCurve>::Map::setup();
 
@@ -484,19 +481,11 @@ pub(crate) mod generic {
             public_input,
         };
 
-        match kimchi::verifier::batch_verify::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
+        kimchi::verifier::batch_verify::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
             &group_map,
             &[context],
-        ) {
-            Ok(()) => {
-                eprintln!("  batch_verify succeeded!");
-                true
-            }
-            Err(e) => {
-                eprintln!("Opening proof verification failed: {e:?}");
-                false
-            }
-        }
+        )
+        .is_ok()
     }
 
     /// Compute b0 = sum_i (evalscale^i * b_poly(challenges, evaluation_points[i]))
@@ -1058,83 +1047,54 @@ pub fn vesta_proof_oracles(
     Ok(result.into_iter().map(External::new).collect())
 }
 
-/// Extract sponge-derived verifier data from a Vesta proof (Pallas/Fp circuits).
-/// Returns flat array: [challenges..., u_x, u_y, c]
-/// - challenges (d values): in ScalarField (Fp)
-/// - u_x, u_y: U point coords in BaseField (Fq)
-/// - c: final challenge in ScalarField (Fp), 128-bit truncated
+/// Extract all sponge-derived verifier data from a Vesta proof (Pallas/Fp circuits).
+/// Returns two arrays:
+/// - First: [challenges..., c] in ScalarField (Fp) - challenges are d values, c is 128-bit truncated
+/// - Second: [u_x, u_y] in BaseField (Fq) - U point coordinates
 #[napi]
-pub fn pallas_proof_bulletproof_challenges(
+pub fn pallas_proof_sponge_data(
     prover_index: &VestaProverIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
-) -> Result<Vec<VestaFieldExternal>> {
+) -> Result<(Vec<VestaFieldExternal>, Vec<PallasFieldExternal>)> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
-    let (challenges, _u_x, _u_y, c) = generic::proof_bulletproof_challenges::<
+    let (challenges, u_x, u_y, c) = generic::proof_bulletproof_challenges::<
         VestaGroup,
         VestaBaseSponge,
         VestaScalarSponge,
     >(&**prover_index, &**proof, &public)?;
-    // Return challenges and c (both in ScalarField)
-    // u_x, u_y are in BaseField - return separately via pallas_proof_u_point
-    let mut result: Vec<VestaFieldExternal> = challenges.into_iter().map(External::new).collect();
-    result.push(External::new(c));
-    Ok(result)
+    // Scalar field values: challenges + c
+    let mut scalar_result: Vec<VestaFieldExternal> =
+        challenges.into_iter().map(External::new).collect();
+    scalar_result.push(External::new(c));
+    // Base field values: u_x, u_y
+    let base_result = vec![External::new(u_x), External::new(u_y)];
+    Ok((scalar_result, base_result))
 }
 
-/// Extract U point from a Vesta proof (Pallas/Fp circuits).
-/// Returns [u_x, u_y] in BaseField (Fq = Pallas.ScalarField).
+/// Extract all sponge-derived verifier data from a Pallas proof (Vesta/Fq circuits).
+/// Returns two arrays:
+/// - First: [challenges..., c] in ScalarField (Fq) - challenges are d values, c is 128-bit truncated
+/// - Second: [u_x, u_y] in BaseField (Fp) - U point coordinates
 #[napi]
-pub fn pallas_proof_u_point(
-    prover_index: &VestaProverIndexExternal,
-    proof: &VestaProofExternal,
-    public_input: Vec<&VestaFieldExternal>,
-) -> Result<Vec<PallasFieldExternal>> {
-    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
-    let (_, u_x, u_y, _) = generic::proof_bulletproof_challenges::<
-        VestaGroup,
-        VestaBaseSponge,
-        VestaScalarSponge,
-    >(&**prover_index, &**proof, &public)?;
-    Ok(vec![External::new(u_x), External::new(u_y)])
-}
-
-/// Extract sponge-derived verifier data from a Pallas proof (Vesta/Fq circuits).
-/// Returns flat array: [challenges..., c]
-/// - challenges (d values): in ScalarField (Fq)
-/// - c: final challenge in ScalarField (Fq), 128-bit truncated
-#[napi]
-pub fn vesta_proof_bulletproof_challenges(
+pub fn vesta_proof_sponge_data(
     prover_index: &PallasProverIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
-) -> Result<Vec<PallasFieldExternal>> {
+) -> Result<(Vec<PallasFieldExternal>, Vec<VestaFieldExternal>)> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
-    let (challenges, _u_x, _u_y, c) = generic::proof_bulletproof_challenges::<
+    let (challenges, u_x, u_y, c) = generic::proof_bulletproof_challenges::<
         PallasGroup,
         PallasBaseSponge,
         PallasScalarSponge,
     >(&**prover_index, &**proof, &public)?;
-    let mut result: Vec<PallasFieldExternal> = challenges.into_iter().map(External::new).collect();
-    result.push(External::new(c));
-    Ok(result)
-}
-
-/// Extract U point from a Pallas proof (Vesta/Fq circuits).
-/// Returns [u_x, u_y] in BaseField (Fp = Vesta.ScalarField).
-#[napi]
-pub fn vesta_proof_u_point(
-    prover_index: &PallasProverIndexExternal,
-    proof: &PallasProofExternal,
-    public_input: Vec<&PallasFieldExternal>,
-) -> Result<Vec<VestaFieldExternal>> {
-    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
-    let (_, u_x, u_y, _) = generic::proof_bulletproof_challenges::<
-        PallasGroup,
-        PallasBaseSponge,
-        PallasScalarSponge,
-    >(&**prover_index, &**proof, &public)?;
-    Ok(vec![External::new(u_x), External::new(u_y)])
+    // Scalar field values: challenges + c
+    let mut scalar_result: Vec<PallasFieldExternal> =
+        challenges.into_iter().map(External::new).collect();
+    scalar_result.push(External::new(c));
+    // Base field values: u_x, u_y
+    let base_result = vec![External::new(u_x), External::new(u_y)];
+    Ok((scalar_result, base_result))
 }
 
 /// Verify opening proof for a Vesta proof (Pallas/Fp circuits).

@@ -8,8 +8,7 @@ module Test.Pickles.ProofFFI
   , proofSigmaEvals
   , proofCoefficientEvals
   , proofOracles
-  , proofBulletproofChallenges
-  , proofUPoint
+  , proofSpongeData
   , verifyOpeningProof
   , computeB0
   , permutationVanishingPolynomial
@@ -92,12 +91,11 @@ class ProofFFI f g b | f -> g, f -> b where
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
   proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
   proofOracles :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
-  -- | Extract IPA challenges and final challenge c from sponge transcript.
-  -- | Returns { challenges: IPA challenges, c: final 128-bit challenge after absorbing delta }
-  proofBulletproofChallenges :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> { challenges :: Array f, c :: f }
-  -- | Extract U point (groupMap result) from sponge transcript.
-  -- | Coordinates are in the commitment curve's base field (b).
-  proofUPoint :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> { x :: b, y :: b }
+  -- | Extract all sponge-derived verifier data in a single call.
+  -- | Returns { challenges: IPA challenges, c: final 128-bit challenge, u: U point }
+  -- | - challenges and c are in the circuit field (f)
+  -- | - u coordinates are in the commitment curve's base field (b)
+  proofSpongeData :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> { challenges :: Array f, c :: f, u :: { x :: b, y :: b } }
   verifyOpeningProof :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
@@ -163,12 +161,9 @@ foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> V
 foreign import pallasProofOracles :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
 foreign import vestaProofOracles :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
 
-foreign import pallasProofBulletproofChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> { challenges :: Array Pallas.BaseField, c :: Pallas.BaseField }
-foreign import vestaProofBulletproofChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> { challenges :: Array Vesta.BaseField, c :: Vesta.BaseField }
-
--- U point extraction (coordinates in the commitment curve's base field)
-foreign import pallasProofUPoint :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> { x :: Vesta.BaseField, y :: Vesta.BaseField }
-foreign import vestaProofUPoint :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> { x :: Pallas.BaseField, y :: Pallas.BaseField }
+-- Combined sponge data extraction (challenges + c in circuit field, U point in commitment curve's base field)
+foreign import pallasProofSpongeData :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> { challenges :: Array Pallas.BaseField, c :: Pallas.BaseField, u :: { x :: Vesta.BaseField, y :: Vesta.BaseField } }
+foreign import vestaProofSpongeData :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> { challenges :: Array Vesta.BaseField, c :: Vesta.BaseField, u :: { x :: Pallas.BaseField, y :: Pallas.BaseField } }
 
 foreign import pallasVerifyOpeningProof :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
@@ -245,8 +240,7 @@ instance ProofFFI Pallas.BaseField Vesta.G Vesta.BaseField where
   proofSigmaEvals = pallasProofSigmaEvals
   proofCoefficientEvals = pallasProofCoefficientEvals
   proofOracles = pallasProofOracles
-  proofBulletproofChallenges = pallasProofBulletproofChallenges
-  proofUPoint = pallasProofUPoint
+  proofSpongeData = pallasProofSpongeData
   verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
@@ -274,8 +268,7 @@ instance ProofFFI Vesta.BaseField Pallas.G Pallas.BaseField where
   proofSigmaEvals = vestaProofSigmaEvals
   proofCoefficientEvals = vestaProofCoefficientEvals
   proofOracles = vestaProofOracles
-  proofBulletproofChallenges = vestaProofBulletproofChallenges
-  proofUPoint = vestaProofUPoint
+  proofSpongeData = vestaProofSpongeData
   verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator

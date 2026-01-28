@@ -396,8 +396,8 @@ openingProofTest ctx = do
 computeBTest :: TestContext -> Aff Unit
 computeBTest ctx = do
   let
-    -- Get bulletproof challenges from the proof
-    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    -- Get sponge-derived data from the proof
+    { challenges: challengesArray } = ProofFFI.proofSpongeData ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
@@ -434,8 +434,8 @@ ipaRoundsTest ctx = do
     -- Get IPA rounds from the proof
     ipaRounds = ProofFFI.proofIpaRounds ctx.proof
 
-    -- Get bulletproof challenges (their count should match IPA rounds)
-    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    -- Get sponge-derived data (challenge count should match IPA rounds)
+    { challenges: challengesArray } = ProofFFI.proofSpongeData ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     numChallenges = Array.length challengesArray
 
@@ -456,8 +456,8 @@ deferredCheckInternalTest ctx = do
 deferredCheckTest :: TestContext -> Aff Unit
 deferredCheckTest ctx = do
   let
-    -- Get bulletproof challenges from the proof
-    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    -- Get sponge-derived data from the proof
+    { challenges: challengesArray } = ProofFFI.proofSpongeData ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Create b_poly_coefficients polynomial from challenges
@@ -480,8 +480,8 @@ polyLengthTest ctx = do
     -- Get IPA rounds from the proof
     ipaRounds = ProofFFI.proofIpaRounds ctx.proof
 
-    -- Get bulletproof challenges and create polynomial
-    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    -- Get sponge-derived data and create polynomial
+    { challenges: challengesArray } = ProofFFI.proofSpongeData ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     poly = ProofFFI.bPolyCoefficients challengesArray
 
@@ -515,10 +515,9 @@ buildVerifierInput
   -> Verifier.VerifyInput 16 1 (F Vesta.BaseField) Boolean
 buildVerifierInput ctx =
   let
-    -- Get sponge-derived values from FFI
-    { challenges: challengesArray, c: cScalar } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    -- Get sponge-derived values from FFI (single call for all values)
+    { challenges: challengesArray, c: cScalar, u: uPoint } = ProofFFI.proofSpongeData ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
-    uPoint = ProofFFI.proofUPoint ctx.proverIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Get opening proof data (coordinates in Vesta.BaseField)
     lrPairsArray = ProofFFI.proofOpeningLR ctx.proof
@@ -612,7 +611,7 @@ verifierCircuitTest ctx = do
 
       -- Verify the deferred sg check via FFI
       let
-        { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+        { challenges: challengesArray } = ProofFFI.proofSpongeData ctx.proverIndex
           { proof: ctx.proof, publicInput: ctx.publicInputs }
         poly = ProofFFI.bPolyCoefficients challengesArray
         sg = ProofFFI.proofSg ctx.proof

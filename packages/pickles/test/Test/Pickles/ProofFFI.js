@@ -94,29 +94,27 @@ export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
   };
 };
 
-// Bulletproof challenges + c (IPA sponge-derived values)
-// Returns { challenges: Array, c: Field } where challenges are IPA challenges and c is final challenge
-export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.pallasProofBulletproofChallenges(proverIndex, proof, publicInput);
-  // Last element is c, rest are challenges
-  return { challenges: flat.slice(0, -1), c: flat[flat.length - 1] };
+// All sponge-derived verifier data (challenges, c, U point)
+// Returns { challenges: Array, c: Field, u: { x, y } }
+// - challenges: IPA challenges (endo-mapped, full field elements)
+// - c: final scalar challenge (128-bit truncated)
+// - u: U point from groupMap (coordinates in base field)
+export const pallasProofSpongeData = (proverIndex) => ({ proof, publicInput }) => {
+  const [scalarFlat, baseFlat] = crypto.pallasProofSpongeData(proverIndex, proof, publicInput);
+  return {
+    challenges: scalarFlat.slice(0, -1),
+    c: scalarFlat[scalarFlat.length - 1],
+    u: { x: baseFlat[0], y: baseFlat[1] }
+  };
 };
 
-export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
-  return { challenges: flat.slice(0, -1), c: flat[flat.length - 1] };
-};
-
-// U point (groupMap result from sponge)
-// Returns { x, y } coordinates
-export const pallasProofUPoint = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.pallasProofUPoint(proverIndex, proof, publicInput);
-  return { x: flat[0], y: flat[1] };
-};
-
-export const vestaProofUPoint = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.vestaProofUPoint(proverIndex, proof, publicInput);
-  return { x: flat[0], y: flat[1] };
+export const vestaProofSpongeData = (proverIndex) => ({ proof, publicInput }) => {
+  const [scalarFlat, baseFlat] = crypto.vestaProofSpongeData(proverIndex, proof, publicInput);
+  return {
+    challenges: scalarFlat.slice(0, -1),
+    c: scalarFlat[scalarFlat.length - 1],
+    u: { x: baseFlat[0], y: baseFlat[1] }
+  };
 };
 
 // Verify opening proof
