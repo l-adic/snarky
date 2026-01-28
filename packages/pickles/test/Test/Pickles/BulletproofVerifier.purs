@@ -16,7 +16,8 @@ import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.BulletproofVerifier (BulletReduceResult, bulletReduce, combineSplitCommitments, lrProdPure)
-import Pickles.Sponge (PureSpongeM, absorbPoint, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, squeezeScalarChallengePure)
+import Pickles.Monad (evalPicklesM, initialPicklesState)
+import Pickles.Sponge (PureSpongeM, absorbPoint, evalPureSpongeM, initialSponge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -235,7 +236,7 @@ bulletReduceSpec _ _ curveProxy curveName =
          . CircuitM f (KimchiConstraint f) t Identity
         => Vector TestLRCount (Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f)))
         -> Snarky (KimchiConstraint f) t Identity (BulletReduceResult TestLRCount (FVar f))
-      circuit lrPairs = evalSpongeM initialSpongeCircuit $
+      circuit lrPairs = map _.result $ evalPicklesM initialPicklesState $
         bulletReduce @TestLRCount @_ @g lrPairs
 
       s = compilePure

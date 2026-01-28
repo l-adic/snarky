@@ -398,14 +398,16 @@ pub(crate) mod generic {
         ])
     }
 
-    /// Extract bulletproof challenges from a proof.
-    /// These are the IPA challenges after applying the endomorphism.
-    /// Returns d values where d = domain_log2 (number of IPA rounds).
+    /// Extract all sponge-derived values needed for the verifier circuit.
+    /// Returns (challenges, u_x, u_y, c) where:
+    /// - challenges: IPA challenges (endo-mapped, full field elements), d values where d = IPA rounds
+    /// - u_x, u_y: U point coordinates from groupMap(squeeze after CIP)
+    /// - c: final scalar challenge (128-bit) after absorbing delta
     pub fn proof_bulletproof_challenges<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
-    ) -> Result<Vec<G::ScalarField>>
+    ) -> Result<(Vec<G::ScalarField>, G::BaseField, G::BaseField, G::ScalarField)>
     where
         G: KimchiCurve,
         G::BaseField: PrimeField,
@@ -413,6 +415,9 @@ pub(crate) mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
+        use ark_ff::BigInteger;
+        use poly_commitment::commitment::CommitmentCurve;
+
         let (_, oracles_result) =
             compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
 
@@ -424,15 +429,27 @@ pub(crate) mod generic {
             poly_commitment::commitment::shift_scalar::<G>(oracles_result.combined_inner_product);
         fq_sponge.absorb_fr(&[shifted_cip]);
 
-        // Squeeze challenge_fq for u_base computation (advances sponge state)
-        // This is done in verify before getting challenges - we must match that state
-        let _u_base_t = fq_sponge.challenge_fq();
+        // Squeeze u_base and compute U via groupMap
+        let u_base = fq_sponge.challenge_fq();
+        let group_map = <G as CommitmentCurve>::Map::setup();
+        let (u_x, u_y) = group_map.to_group(u_base);
 
         // Get the challenges using the CANONICAL endomorphism coefficient from the curve
         // IMPORTANT: Use G::endos().1 to match SRS::verify behavior, NOT verifier_index.endo
         let challenges = proof.proof.challenges(&G::endos().1, &mut fq_sponge);
 
-        Ok(challenges.chal)
+        // Absorb delta and squeeze c
+        fq_sponge.absorb_g(&[proof.proof.delta]);
+        let c_full = fq_sponge.challenge_fq();
+
+        // Truncate to 128 bits (ScalarChallenge) - matches circuit's endo usage
+        let c_bits = c_full.into_bigint().to_bits_le();
+        let c_truncated = G::ScalarField::from_bigint(
+            <G::ScalarField as ark_ff::PrimeField>::BigInt::from_bits_le(&c_bits[..128]),
+        )
+        .unwrap();
+
+        Ok((challenges.chal, u_x, u_y, c_truncated))
     }
 
     /// Verify the opening proof using batch_verify.
@@ -1035,8 +1052,11 @@ pub fn vesta_proof_oracles(
     Ok(result.into_iter().map(External::new).collect())
 }
 
-/// Extract bulletproof challenges from a Vesta proof (Pallas/Fp circuits).
-/// Returns d values where d = domain_log2 (number of IPA rounds).
+/// Extract sponge-derived verifier data from a Vesta proof (Pallas/Fp circuits).
+/// Returns flat array: [challenges..., u_x, u_y, c]
+/// - challenges (d values): in ScalarField (Fp)
+/// - u_x, u_y: U point coords in BaseField (Fq)
+/// - c: final challenge in ScalarField (Fp), 128-bit truncated
 #[napi]
 pub fn pallas_proof_bulletproof_challenges(
     prover_index: &VestaProverIndexExternal,
@@ -1044,16 +1064,39 @@ pub fn pallas_proof_bulletproof_challenges(
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
-    let result = generic::proof_bulletproof_challenges::<
+    let (challenges, _u_x, _u_y, c) = generic::proof_bulletproof_challenges::<
         VestaGroup,
         VestaBaseSponge,
         VestaScalarSponge,
     >(&**prover_index, &**proof, &public)?;
-    Ok(result.into_iter().map(External::new).collect())
+    // Return challenges and c (both in ScalarField)
+    // u_x, u_y are in BaseField - return separately via pallas_proof_u_point
+    let mut result: Vec<VestaFieldExternal> = challenges.into_iter().map(External::new).collect();
+    result.push(External::new(c));
+    Ok(result)
 }
 
-/// Extract bulletproof challenges from a Pallas proof (Vesta/Fq circuits).
-/// Returns d values where d = domain_log2 (number of IPA rounds).
+/// Extract U point from a Vesta proof (Pallas/Fp circuits).
+/// Returns [u_x, u_y] in BaseField (Fq = Pallas.ScalarField).
+#[napi]
+pub fn pallas_proof_u_point(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let (_, u_x, u_y, _) = generic::proof_bulletproof_challenges::<
+        VestaGroup,
+        VestaBaseSponge,
+        VestaScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(vec![External::new(u_x), External::new(u_y)])
+}
+
+/// Extract sponge-derived verifier data from a Pallas proof (Vesta/Fq circuits).
+/// Returns flat array: [challenges..., c]
+/// - challenges (d values): in ScalarField (Fq)
+/// - c: final challenge in ScalarField (Fq), 128-bit truncated
 #[napi]
 pub fn vesta_proof_bulletproof_challenges(
     prover_index: &PallasProverIndexExternal,
@@ -1061,12 +1104,31 @@ pub fn vesta_proof_bulletproof_challenges(
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
-    let result = generic::proof_bulletproof_challenges::<
+    let (challenges, _u_x, _u_y, c) = generic::proof_bulletproof_challenges::<
         PallasGroup,
         PallasBaseSponge,
         PallasScalarSponge,
     >(&**prover_index, &**proof, &public)?;
-    Ok(result.into_iter().map(External::new).collect())
+    let mut result: Vec<PallasFieldExternal> = challenges.into_iter().map(External::new).collect();
+    result.push(External::new(c));
+    Ok(result)
+}
+
+/// Extract U point from a Pallas proof (Vesta/Fq circuits).
+/// Returns [u_x, u_y] in BaseField (Fp = Vesta.ScalarField).
+#[napi]
+pub fn vesta_proof_u_point(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let (_, u_x, u_y, _) = generic::proof_bulletproof_challenges::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(vec![External::new(u_x), External::new(u_y)])
 }
 
 /// Verify opening proof for a Vesta proof (Pallas/Fp circuits).
@@ -1220,4 +1282,184 @@ pub fn pallas_verify_deferred_check_internal(
     let computed = <VestaGroup as AffineRepr>::Group::msm_unchecked(&bases, &s).into_affine();
 
     Ok(computed == sg)
+}
+
+// ─── Opening Proof Data Extraction ───────────────────────────────────────────
+
+/// Extract L/R pairs from a proof's opening proof.
+/// Returns 4*d values: d pairs of (L.x, L.y, R.x, R.y) coordinates.
+/// Coordinates are in the curve's base field.
+#[napi]
+pub fn pallas_proof_opening_lr(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(proof.proof.lr.len() * 4);
+    for (l, r) in &proof.proof.lr {
+        result.push(External::new(l.x().unwrap()));
+        result.push(External::new(l.y().unwrap()));
+        result.push(External::new(r.x().unwrap()));
+        result.push(External::new(r.y().unwrap()));
+    }
+    result
+}
+
+/// Extract L/R pairs from a Pallas proof's opening proof.
+#[napi]
+pub fn vesta_proof_opening_lr(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(proof.proof.lr.len() * 4);
+    for (l, r) in &proof.proof.lr {
+        result.push(External::new(l.x().unwrap()));
+        result.push(External::new(l.y().unwrap()));
+        result.push(External::new(r.x().unwrap()));
+        result.push(External::new(r.y().unwrap()));
+    }
+    result
+}
+
+/// Extract delta commitment from a Vesta proof's opening proof.
+/// Returns 2 values: [delta.x, delta.y] in PallasScalarField.
+#[napi]
+pub fn pallas_proof_opening_delta(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let delta = &proof.proof.delta;
+    vec![
+        External::new(delta.x().unwrap()),
+        External::new(delta.y().unwrap()),
+    ]
+}
+
+/// Extract delta commitment from a Pallas proof's opening proof.
+/// Returns 2 values: [delta.x, delta.y] in VestaScalarField.
+#[napi]
+pub fn vesta_proof_opening_delta(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let delta = &proof.proof.delta;
+    vec![
+        External::new(delta.x().unwrap()),
+        External::new(delta.y().unwrap()),
+    ]
+}
+
+/// Extract z1 scalar from a Vesta proof's opening proof.
+#[napi]
+pub fn pallas_proof_opening_z1(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.proof.z1)
+}
+
+/// Extract z1 scalar from a Pallas proof's opening proof.
+#[napi]
+pub fn vesta_proof_opening_z1(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.proof.z1)
+}
+
+/// Extract z2 scalar from a Vesta proof's opening proof.
+#[napi]
+pub fn pallas_proof_opening_z2(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(proof.proof.z2)
+}
+
+/// Extract z2 scalar from a Pallas proof's opening proof.
+#[napi]
+pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(proof.proof.z2)
+}
+
+/// Extract H generator from a Vesta prover index's SRS.
+/// Returns 2 values: [h.x, h.y] in PallasScalarField (= Vesta base field).
+#[napi]
+pub fn pallas_prover_index_h(prover_index: &VestaProverIndexExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let h = &prover_index.srs.h;
+    vec![
+        External::new(h.x().unwrap()),
+        External::new(h.y().unwrap()),
+    ]
+}
+
+/// Extract H generator from a Pallas prover index's SRS.
+/// Returns 2 values: [h.x, h.y] in VestaScalarField (= Pallas base field).
+#[napi]
+pub fn vesta_prover_index_h(prover_index: &PallasProverIndexExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let h = &prover_index.srs.h;
+    vec![
+        External::new(h.x().unwrap()),
+        External::new(h.y().unwrap()),
+    ]
+}
+
+// ─── Proof Commitments Extraction ────────────────────────────────────────────
+
+/// Extract witness polynomial commitments from a Vesta proof.
+/// Returns 30 values: 15 commitments × 2 coordinates (x, y).
+/// Each commitment is the first (non-chunked) point from w_comm[i].
+#[napi]
+pub fn pallas_proof_w_comm(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(COLUMNS * 2);
+    for w in &proof.commitments.w_comm {
+        // Take the first (and typically only) point from each PolyComm
+        if let Some(pt) = w.chunks.first() {
+            result.push(External::new(pt.x().unwrap()));
+            result.push(External::new(pt.y().unwrap()));
+        }
+    }
+    result
+}
+
+/// Extract witness polynomial commitments from a Pallas proof.
+#[napi]
+pub fn vesta_proof_w_comm(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(COLUMNS * 2);
+    for w in &proof.commitments.w_comm {
+        if let Some(pt) = w.chunks.first() {
+            result.push(External::new(pt.x().unwrap()));
+            result.push(External::new(pt.y().unwrap()));
+        }
+    }
+    result
+}
+
+/// Extract z (permutation) polynomial commitment from a Vesta proof.
+/// Returns 2 values: [z.x, z.y].
+#[napi]
+pub fn pallas_proof_z_comm(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let z = proof.commitments.z_comm.chunks.first().unwrap();
+    vec![External::new(z.x().unwrap()), External::new(z.y().unwrap())]
+}
+
+/// Extract z (permutation) polynomial commitment from a Pallas proof.
+#[napi]
+pub fn vesta_proof_z_comm(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let z = proof.commitments.z_comm.chunks.first().unwrap();
+    vec![External::new(z.x().unwrap()), External::new(z.y().unwrap())]
+}
+
+/// Extract t (quotient) polynomial commitment from a Vesta proof.
+/// Returns 2*chunks values: chunks × 2 coordinates (x, y).
+/// The t polynomial may be chunked for large circuits.
+#[napi]
+pub fn pallas_proof_t_comm(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(proof.commitments.t_comm.chunks.len() * 2);
+    for pt in &proof.commitments.t_comm.chunks {
+        result.push(External::new(pt.x().unwrap()));
+        result.push(External::new(pt.y().unwrap()));
+    }
+    result
+}
+
+/// Extract t (quotient) polynomial commitment from a Pallas proof.
+#[napi]
+pub fn vesta_proof_t_comm(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    use ark_ec::AffineRepr;
+    let mut result = Vec::with_capacity(proof.commitments.t_comm.chunks.len() * 2);
+    for pt in &proof.commitments.t_comm.chunks {
+        result.push(External::new(pt.x().unwrap()));
+        result.push(External::new(pt.y().unwrap()));
+    }
+    result
 }

@@ -31,7 +31,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, reverse, uncons)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Sponge (SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge)
+import Pickles.Monad (PicklesM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.Curves as EllipticCurve
@@ -205,7 +205,7 @@ bulletReduce
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Vector d (Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f)))
-  -> SpongeM f (KimchiConstraint f) t m (BulletReduceResult d (FVar f))
+  -> PicklesM f (KimchiConstraint f) t m (BulletReduceResult d (FVar f))
 bulletReduce lrPairs = do
   -- Process each L/R pair, accumulating terms and collecting challenges
   Tuple challenges terms <- Vector.unzip <$> traverse reducePair lrPairs
@@ -221,7 +221,7 @@ bulletReduce lrPairs = do
   -- Process a single L/R pair
   reducePair
     :: Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-    -> SpongeM f (KimchiConstraint f) t m (Tuple (FVar f) (AffinePoint (FVar f)))
+    -> PicklesM f (KimchiConstraint f) t m (Tuple (FVar f) (AffinePoint (FVar f)))
   reducePair (Tuple l r) = do
     -- Absorb L and R into the sponge
     absorbPoint l
@@ -323,7 +323,7 @@ checkBulletproof
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => CheckBulletproofInput d n f
-  -> SpongeM f (KimchiConstraint f) t m (CheckBulletproofOutput d (FVar f))
+  -> PicklesM f (KimchiConstraint f) t m (CheckBulletproofOutput d (FVar f))
 checkBulletproof input = do
   -- Step 1: Absorb combined_inner_product into sponge
   absorb input.advice.combinedInnerProduct

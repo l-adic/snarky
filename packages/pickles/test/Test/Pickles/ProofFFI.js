@@ -94,12 +94,30 @@ export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
   };
 };
 
-// Bulletproof challenges (IPA)
-export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.pallasProofBulletproofChallenges(proverIndex, proof, publicInput);
+// Bulletproof challenges + c (IPA sponge-derived values)
+// Returns { challenges: Array, c: Field } where challenges are IPA challenges and c is final challenge
+export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.pallasProofBulletproofChallenges(proverIndex, proof, publicInput);
+  // Last element is c, rest are challenges
+  return { challenges: flat.slice(0, -1), c: flat[flat.length - 1] };
+};
 
-export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
+export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
+  return { challenges: flat.slice(0, -1), c: flat[flat.length - 1] };
+};
+
+// U point (groupMap result from sponge)
+// Returns { x, y } coordinates
+export const pallasProofUPoint = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.pallasProofUPoint(proverIndex, proof, publicInput);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofUPoint = (proverIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.vestaProofUPoint(proverIndex, proof, publicInput);
+  return { x: flat[0], y: flat[1] };
+};
 
 // Verify opening proof
 export const pallasVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
@@ -181,3 +199,118 @@ export const vestaVerifyDeferredCheck = (proverIndex) => ({ sgX, sgY, poly }) =>
 // Verify deferred check entirely in Rust (for debugging)
 export const pallasVerifyDeferredCheckInternal = (proverIndex) => ({ proof, publicInput }) =>
   crypto.pallasVerifyDeferredCheckInternal(proverIndex, proof, publicInput);
+
+// ─── Opening Proof Data Extraction ──────────────────────────────────────────
+
+// Extract L/R pairs from opening proof
+// Returns array of {l: {x, y}, r: {x, y}} objects
+export const pallasProofOpeningLR = (proof) => {
+  const flat = crypto.pallasProofOpeningLr(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 4) {
+    result.push({
+      l: { x: flat[i], y: flat[i + 1] },
+      r: { x: flat[i + 2], y: flat[i + 3] }
+    });
+  }
+  return result;
+};
+
+export const vestaProofOpeningLR = (proof) => {
+  const flat = crypto.vestaProofOpeningLr(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 4) {
+    result.push({
+      l: { x: flat[i], y: flat[i + 1] },
+      r: { x: flat[i + 2], y: flat[i + 3] }
+    });
+  }
+  return result;
+};
+
+// Extract delta commitment from opening proof
+export const pallasProofOpeningDelta = (proof) => {
+  const flat = crypto.pallasProofOpeningDelta(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofOpeningDelta = (proof) => {
+  const flat = crypto.vestaProofOpeningDelta(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+// Extract z1 scalar from opening proof
+export const pallasProofOpeningZ1 = (proof) =>
+  crypto.pallasProofOpeningZ1(proof);
+
+export const vestaProofOpeningZ1 = (proof) =>
+  crypto.vestaProofOpeningZ1(proof);
+
+// Extract z2 scalar from opening proof
+export const pallasProofOpeningZ2 = (proof) =>
+  crypto.pallasProofOpeningZ2(proof);
+
+export const vestaProofOpeningZ2 = (proof) =>
+  crypto.vestaProofOpeningZ2(proof);
+
+// Extract H generator from prover index SRS
+export const pallasProverIndexH = (proverIndex) => {
+  const flat = crypto.pallasProverIndexH(proverIndex);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProverIndexH = (proverIndex) => {
+  const flat = crypto.vestaProverIndexH(proverIndex);
+  return { x: flat[0], y: flat[1] };
+};
+
+// ─── Proof Commitments Extraction ───────────────────────────────────────────
+
+// Extract witness polynomial commitments (15 points)
+export const pallasProofWComm = (proof) => {
+  const flat = crypto.pallasProofWComm(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaProofWComm = (proof) => {
+  const flat = crypto.vestaProofWComm(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Extract z (permutation) polynomial commitment
+export const pallasProofZComm = (proof) => {
+  const flat = crypto.pallasProofZComm(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaProofZComm = (proof) => {
+  const flat = crypto.vestaProofZComm(proof);
+  return { x: flat[0], y: flat[1] };
+};
+
+// Extract t (quotient) polynomial commitments (may be chunked)
+export const pallasProofTComm = (proof) => {
+  const flat = crypto.pallasProofTComm(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaProofTComm = (proof) => {
+  const flat = crypto.vestaProofTComm(proof);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};

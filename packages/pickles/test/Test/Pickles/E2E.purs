@@ -30,10 +30,14 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct, computeB)
+import Pickles.Verifier (verify)
+import Pickles.Verifier (VerifyInput) as Verifier
+import Pickles.Verifier.Types (VerifierOutput)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
@@ -48,11 +52,12 @@ import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
-import Snarky.Circuit.Types (F)
+import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (endoBase, fromBigInt, generator, pow, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, endoBase, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Types.Shifted (Type2, toShifted)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -62,7 +67,7 @@ import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Spec (SpecT, beforeAll, describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.Assertions (fail, shouldEqual)
 import Type.Proxy (Proxy(..))
 
 -- | Standard Kimchi constants
@@ -393,7 +398,7 @@ computeBTest :: TestContext -> Aff Unit
 computeBTest ctx = do
   let
     -- Get bulletproof challenges from the proof
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
@@ -431,7 +436,7 @@ ipaRoundsTest ctx = do
     ipaRounds = ProofFFI.proofIpaRounds ctx.proof
 
     -- Get bulletproof challenges (their count should match IPA rounds)
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     numChallenges = Array.length challengesArray
 
@@ -453,7 +458,7 @@ deferredCheckTest :: TestContext -> Aff Unit
 deferredCheckTest ctx = do
   let
     -- Get bulletproof challenges from the proof
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Create b_poly_coefficients polynomial from challenges
@@ -477,7 +482,7 @@ polyLengthTest ctx = do
     ipaRounds = ProofFFI.proofIpaRounds ctx.proof
 
     -- Get bulletproof challenges and create polynomial
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     poly = ProofFFI.bPolyCoefficients challengesArray
 
@@ -489,6 +494,142 @@ polyLengthTest ctx = do
 
   -- Polynomial length should be 2^(IPA rounds)
   liftEffect $ polyLen `shouldEqual` expectedLen
+
+-------------------------------------------------------------------------------
+-- | Verifier Circuit Test
+-------------------------------------------------------------------------------
+
+-- | Helper to convert scalar field value to base field via BigInt.
+-- | Safe because both are 255-bit fields and we only use this for values
+-- | that fit in both (e.g., 128-bit challenges).
+scalarToBase :: Vesta.ScalarField -> Vesta.BaseField
+scalarToBase x = fromBigInt (toBigInt x)
+
+-- | Build verifier circuit input from the Schnorr proof data.
+-- |
+-- | The verifier circuit operates over Vesta.BaseField, so:
+-- | - Commitment coordinates are native (Vesta points have Vesta.BaseField coords)
+-- | - Scalars (z1, z2) are converted via Shifted typeclass (cross-field Type2)
+-- | - Other scalar values are converted via BigInt (safe for 128-bit values)
+buildVerifierInput
+  :: TestContext
+  -> Verifier.VerifyInput 16 1 (F Vesta.BaseField) Boolean
+buildVerifierInput ctx =
+  let
+    -- Get sponge-derived values from FFI
+    { challenges: challengesArray, c: cScalar } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    uPoint = ProofFFI.proofUPoint ctx.proverIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Get opening proof data (coordinates in Vesta.BaseField)
+    lrPairsArray = ProofFFI.proofOpeningLR ctx.proof
+    delta = ProofFFI.proofOpeningDelta ctx.proof
+    z1 = ProofFFI.proofOpeningZ1 ctx.proof
+    z2 = ProofFFI.proofOpeningZ2 ctx.proof
+    sg = ProofFFI.proofSg ctx.proof
+    h = ProofFFI.proverIndexH ctx.proverIndex
+
+    -- Get z commitment for the single polynomial commitment
+    zComm = ProofFFI.proofZComm ctx.proof
+
+    -- Convert scalar field values to base field
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Convert challenges to base field (challenges are 128-bit, fit in both fields)
+    challengesBase :: Vector 16 (F Vesta.BaseField)
+    challengesBase = unsafePartial $ fromJust $ Vector.toVector $
+      map (F <<< scalarToBase) challengesArray
+
+    -- Convert L/R pairs (already in Vesta.BaseField from FFI)
+    lrPairs :: Vector 16 { l :: AffinePoint (F Vesta.BaseField), r :: AffinePoint (F Vesta.BaseField) }
+    lrPairs = unsafePartial $ fromJust $ Vector.toVector $
+      map (\p -> { l: { x: F p.l.x, y: F p.l.y }, r: { x: F p.r.x, y: F p.r.y } }) lrPairsArray
+
+    -- Convert z1, z2 using Shifted (cross-field Type2 conversion)
+    -- z1, z2 are in Vesta.ScalarField, convert to Type2 (F Vesta.BaseField) Boolean
+    z1Type2 :: Type2 (F Vesta.BaseField) Boolean
+    z1Type2 = toShifted (F z1)
+
+    z2Type2 :: Type2 (F Vesta.BaseField) Boolean
+    z2Type2 = toShifted (F z2)
+  in
+    { xi: F (scalarToBase ctx.oracles.v)
+    , commitments: { x: F zComm.x, y: F zComm.y } :< Vector.nil
+    , combinedInnerProduct: F (scalarToBase ctx.oracles.combinedInnerProduct)
+    , opening:
+        { lr: lrPairs
+        , delta: { x: F delta.x, y: F delta.y }
+        , z1: z1Type2
+        , z2: z2Type2
+        , sg: { x: F sg.x, y: F sg.y }
+        }
+    , zeta: F (scalarToBase ctx.oracles.zeta)
+    , zetaOmega: F (scalarToBase (ctx.oracles.zeta * omega))
+    , evalscale: F (scalarToBase ctx.oracles.u)
+    , h: { x: F h.x, y: F h.y }
+    , challenges: challengesBase
+    , u: { x: F uPoint.x, y: F uPoint.y }
+    , c: F (scalarToBase cScalar)
+    }
+
+-- | Type alias for the verifier circuit input (value version)
+type VerifierInputValue = Verifier.VerifyInput 16 1 (F Vesta.BaseField) Boolean
+
+-- | Type alias for the verifier circuit output (value version)
+type VerifierOutputValue = VerifierOutput 16 (F Vesta.BaseField)
+
+-- | The verifier circuit over Vesta.BaseField.
+-- | Verifies a Schnorr proof's IPA equation.
+verifierCircuit
+  :: forall t
+   . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
+  => Verifier.VerifyInput 16 1 (FVar Vesta.BaseField) (BoolVar Vesta.BaseField)
+  -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (VerifierOutput 16 (FVar Vesta.BaseField))
+verifierCircuit = verify @16 @15 @1 @0 @51
+
+-- | Compiled circuit state for the verifier circuit.
+verifierBuiltState :: CircuitBuilderState (KimchiGate Vesta.BaseField) (AuxState Vesta.BaseField)
+verifierBuiltState = compilePure
+  (Proxy @VerifierInputValue)
+  (Proxy @VerifierOutputValue)
+  (Proxy @(KimchiConstraint Vesta.BaseField))
+  verifierCircuit
+  Kimchi.initialState
+
+-- | Solver for the verifier circuit.
+verifierSolver :: Solver Vesta.BaseField (KimchiGate Vesta.BaseField) VerifierInputValue VerifierOutputValue
+verifierSolver = makeSolver (Proxy @(KimchiConstraint Vesta.BaseField)) verifierCircuit
+
+-- | Test that the verifier circuit produces the correct output.
+-- | This verifies the IPA equation in-circuit.
+verifierCircuitTest :: TestContext -> Aff Unit
+verifierCircuitTest ctx = do
+  let
+    -- Build the verifier input from proof data
+    input = buildVerifierInput ctx
+
+    nat :: Identity ~> Aff
+    nat = pure <<< un Identity
+
+  -- Run the solver with the proof data
+  eRes <- runSolverT (\a -> hoist nat $ verifierSolver a) input
+  case eRes of
+    Left e -> liftEffect $ fail $ "Verifier circuit failed: " <> show e
+    Right (Tuple output _assignments) -> do
+      -- Check that the output challenges match the input challenges
+      -- (The circuit just passes through the challenges for deferred verification)
+      liftEffect $ output.deferredCheck.challenges `shouldEqual` input.challenges
+
+      -- Verify the deferred sg check via FFI
+      let
+        { challenges: challengesArray } = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+        poly = ProofFFI.bPolyCoefficients challengesArray
+        sg = ProofFFI.proofSg ctx.proof
+        verified = ProofFFI.verifyDeferredCheck ctx.proverIndex
+          { sgX: sg.x, sgY: sg.y, poly }
+
+      liftEffect $ verified `shouldEqual` true
 
 -------------------------------------------------------------------------------
 -- | Main spec
@@ -506,3 +647,4 @@ spec = beforeAll createTestContext $
     it "deferred sg check verifies (internal Rust)" deferredCheckInternalTest
     it "deferred sg check verifies" deferredCheckTest
     it "polynomial length matches 2^(IPA rounds)" polyLengthTest
+    it "verifier circuit satisfies with valid proof" verifierCircuitTest

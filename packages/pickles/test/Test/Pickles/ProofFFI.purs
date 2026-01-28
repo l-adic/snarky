@@ -9,6 +9,7 @@ module Test.Pickles.ProofFFI
   , proofCoefficientEvals
   , proofOracles
   , proofBulletproofChallenges
+  , proofUPoint
   , verifyOpeningProof
   , computeB0
   , permutationVanishingPolynomial
@@ -20,17 +21,29 @@ module Test.Pickles.ProofFFI
   , polyGetCoeffs
   , verifyDeferredCheck
   , pallasVerifyDeferredCheckInternal
+  -- Opening proof data extraction
+  , proofOpeningLR
+  , proofOpeningDelta
+  , proofOpeningZ1
+  , proofOpeningZ2
+  , proverIndexH
+  -- Proof commitments
+  , proofWComm
+  , proofZComm
+  , proofTComm
   , Proof
   , Polynomial
   , OraclesResult
   , PointEval
   , SgPoint
+  , LRPair
   ) where
 
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type
@@ -46,6 +59,10 @@ type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 -- | The coordinates are in the commitment curve's base field (b),
 -- | which is the "other" base field in the Pasta cycle.
 type SgPoint b = { x :: b, y :: b }
+
+-- | L/R pair from opening proof.
+-- | Each pair contains two curve points used in the IPA reduction.
+type LRPair f = { l :: AffinePoint f, r :: AffinePoint f }
 
 -- | Result of running the Fiat-Shamir oracle computation on a proof.
 type OraclesResult f =
@@ -75,7 +92,12 @@ class ProofFFI f g b | f -> g, f -> b where
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
   proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
   proofOracles :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
-  proofBulletproofChallenges :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
+  -- | Extract IPA challenges and final challenge c from sponge transcript.
+  -- | Returns { challenges: IPA challenges, c: final 128-bit challenge after absorbing delta }
+  proofBulletproofChallenges :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> { challenges :: Array f, c :: f }
+  -- | Extract U point (groupMap result) from sponge transcript.
+  -- | Coordinates are in the commitment curve's base field (b).
+  proofUPoint :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> { x :: b, y :: b }
   verifyOpeningProof :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
@@ -93,6 +115,28 @@ class ProofFFI f g b | f -> g, f -> b where
   -- | Verify the deferred sg commitment check.
   -- | Checks that sg = MSM(SRS.g, poly.coeffs).
   verifyDeferredCheck :: ProverIndex g f -> { sgX :: b, sgY :: b, poly :: Polynomial f } -> Boolean
+  -- | Extract L/R pairs from opening proof.
+  -- | Returns array of {l, r} point pairs with coordinates in commitment curve's base field.
+  proofOpeningLR :: Proof g f -> Array (LRPair b)
+  -- | Extract delta commitment from opening proof.
+  -- | Coordinates are in commitment curve's base field.
+  proofOpeningDelta :: Proof g f -> AffinePoint b
+  -- | Extract z1 scalar from opening proof.
+  proofOpeningZ1 :: Proof g f -> f
+  -- | Extract z2 scalar from opening proof.
+  proofOpeningZ2 :: Proof g f -> f
+  -- | Extract H generator from prover index SRS.
+  -- | Coordinates are in commitment curve's base field.
+  proverIndexH :: ProverIndex g f -> AffinePoint b
+  -- | Extract witness polynomial commitments (15 points).
+  -- | Coordinates are in commitment curve's base field.
+  proofWComm :: Proof g f -> Array (AffinePoint b)
+  -- | Extract z (permutation) polynomial commitment.
+  -- | Coordinates are in commitment curve's base field.
+  proofZComm :: Proof g f -> AffinePoint b
+  -- | Extract t (quotient) polynomial commitments (may be chunked).
+  -- | Coordinates are in commitment curve's base field.
+  proofTComm :: Proof g f -> Array (AffinePoint b)
 
 --------------------------------------------------------------------------------
 -- Private foreign imports
@@ -119,8 +163,12 @@ foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> V
 foreign import pallasProofOracles :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
 foreign import vestaProofOracles :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
 
-foreign import pallasProofBulletproofChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
-foreign import vestaProofBulletproofChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
+foreign import pallasProofBulletproofChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> { challenges :: Array Pallas.BaseField, c :: Pallas.BaseField }
+foreign import vestaProofBulletproofChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> { challenges :: Array Vesta.BaseField, c :: Vesta.BaseField }
+
+-- U point extraction (coordinates in the commitment curve's base field)
+foreign import pallasProofUPoint :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> { x :: Vesta.BaseField, y :: Vesta.BaseField }
+foreign import vestaProofUPoint :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> { x :: Pallas.BaseField, y :: Pallas.BaseField }
 
 foreign import pallasVerifyOpeningProof :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
@@ -157,6 +205,34 @@ foreign import vestaVerifyDeferredCheck :: ProverIndex Pallas.G Vesta.BaseField 
 -- Internal check (entirely in Rust) for debugging
 foreign import pallasVerifyDeferredCheckInternal :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 
+-- Opening proof data extraction
+-- Note: For Pallas circuits (f = Pallas.BaseField), commitments are on Vesta (b = Vesta.BaseField)
+-- For Vesta circuits (f = Vesta.BaseField), commitments are on Pallas (b = Pallas.BaseField)
+foreign import pallasProofOpeningLR :: Proof Vesta.G Pallas.BaseField -> Array (LRPair Vesta.BaseField)
+foreign import vestaProofOpeningLR :: Proof Pallas.G Vesta.BaseField -> Array (LRPair Pallas.BaseField)
+
+foreign import pallasProofOpeningDelta :: Proof Vesta.G Pallas.BaseField -> AffinePoint Vesta.BaseField
+foreign import vestaProofOpeningDelta :: Proof Pallas.G Vesta.BaseField -> AffinePoint Pallas.BaseField
+
+foreign import pallasProofOpeningZ1 :: Proof Vesta.G Pallas.BaseField -> Pallas.BaseField
+foreign import vestaProofOpeningZ1 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
+
+foreign import pallasProofOpeningZ2 :: Proof Vesta.G Pallas.BaseField -> Pallas.BaseField
+foreign import vestaProofOpeningZ2 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
+
+foreign import pallasProverIndexH :: ProverIndex Vesta.G Pallas.BaseField -> AffinePoint Vesta.BaseField
+foreign import vestaProverIndexH :: ProverIndex Pallas.G Vesta.BaseField -> AffinePoint Pallas.BaseField
+
+-- Proof commitments (coordinates in commitment curve's base field)
+foreign import pallasProofWComm :: Proof Vesta.G Pallas.BaseField -> Array (AffinePoint Vesta.BaseField)
+foreign import vestaProofWComm :: Proof Pallas.G Vesta.BaseField -> Array (AffinePoint Pallas.BaseField)
+
+foreign import pallasProofZComm :: Proof Vesta.G Pallas.BaseField -> AffinePoint Vesta.BaseField
+foreign import vestaProofZComm :: Proof Pallas.G Vesta.BaseField -> AffinePoint Pallas.BaseField
+
+foreign import pallasProofTComm :: Proof Vesta.G Pallas.BaseField -> Array (AffinePoint Vesta.BaseField)
+foreign import vestaProofTComm :: Proof Pallas.G Vesta.BaseField -> Array (AffinePoint Pallas.BaseField)
+
 --------------------------------------------------------------------------------
 -- Instances
 --------------------------------------------------------------------------------
@@ -170,6 +246,7 @@ instance ProofFFI Pallas.BaseField Vesta.G Vesta.BaseField where
   proofCoefficientEvals = pallasProofCoefficientEvals
   proofOracles = pallasProofOracles
   proofBulletproofChallenges = pallasProofBulletproofChallenges
+  proofUPoint = pallasProofUPoint
   verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
   domainGenerator = pallasDomainGenerator
@@ -180,6 +257,14 @@ instance ProofFFI Pallas.BaseField Vesta.G Vesta.BaseField where
   polyLength = pallasPolyLength
   polyGetCoeffs = pallasPolyGetCoeffs
   verifyDeferredCheck = pallasVerifyDeferredCheck
+  proofOpeningLR = pallasProofOpeningLR
+  proofOpeningDelta = pallasProofOpeningDelta
+  proofOpeningZ1 = pallasProofOpeningZ1
+  proofOpeningZ2 = pallasProofOpeningZ2
+  proverIndexH = pallasProverIndexH
+  proofWComm = pallasProofWComm
+  proofZComm = pallasProofZComm
+  proofTComm = pallasProofTComm
 
 instance ProofFFI Vesta.BaseField Pallas.G Pallas.BaseField where
   proverIndexShifts = vestaProverIndexShifts
@@ -190,6 +275,7 @@ instance ProofFFI Vesta.BaseField Pallas.G Pallas.BaseField where
   proofCoefficientEvals = vestaProofCoefficientEvals
   proofOracles = vestaProofOracles
   proofBulletproofChallenges = vestaProofBulletproofChallenges
+  proofUPoint = vestaProofUPoint
   verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial
   domainGenerator = vestaDomainGenerator
@@ -200,3 +286,11 @@ instance ProofFFI Vesta.BaseField Pallas.G Pallas.BaseField where
   polyLength = vestaPolyLength
   polyGetCoeffs = vestaPolyGetCoeffs
   verifyDeferredCheck = vestaVerifyDeferredCheck
+  proofOpeningLR = vestaProofOpeningLR
+  proofOpeningDelta = vestaProofOpeningDelta
+  proofOpeningZ1 = vestaProofOpeningZ1
+  proofOpeningZ2 = vestaProofOpeningZ2
+  proverIndexH = vestaProverIndexH
+  proofWComm = vestaProofWComm
+  proofZComm = vestaProofZComm
+  proofTComm = vestaProofTComm
