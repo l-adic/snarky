@@ -2,10 +2,11 @@ module Test.Pickles.ScalarChallenge where
 
 import Prelude
 
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff)
 import JS.BigInt as BigInt
-import Pickles.ScalarChallenge (Challenge(..), ScalarChallenge(..), lowest128Bits, lowest128BitsConstant, squeezeChallenge, squeezeChallengePure, squeezeScalar, squeezeScalarPure)
+import Pickles.ScalarChallenge (Challenge(..), lowest128Bits, lowest128BitsConstant, squeezeChallenge, squeezeChallengePure, squeezeScalar, squeezeScalarPure)
 import RandomOracle.Sponge as Sponge
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (Snarky)
@@ -17,6 +18,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.SizedF (SizedF(..))
 import Test.QuickCheck (Result(..), arbitrary, (===))
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
@@ -76,8 +78,8 @@ scalarChallengeTests pf = do
       let
         sponge :: Sponge.Sponge f
         sponge = Sponge.create Sponge.initialState
-        { result: ScalarChallenge r1 } = squeezeScalarPure sponge
-        { result: ScalarChallenge r2 } = squeezeScalarPure sponge
+        { result: SizedF r1 } = squeezeScalarPure sponge
+        { result: SizedF r2 } = squeezeScalarPure sponge
       r1 `shouldEqual` r2
 
   describe "Circuit versions match pure" do
@@ -218,9 +220,9 @@ circuitSqueezeScalarTest _ =
         pureSponge = Sponge.create Sponge.initialState
         s1 = Sponge.absorb a pureSponge
         s2 = Sponge.absorb b s1
-        { result: ScalarChallenge r } = squeezeScalarPure s2
+        { result } = squeezeScalarPure s2
       in
-        F r
+        F $ unwrap result
 
     circuitFn
       :: forall t m
@@ -231,8 +233,8 @@ circuitSqueezeScalarTest _ =
       let sponge0 = CircuitSponge.create CircuitSponge.initialState
       sponge1 <- CircuitSponge.absorb a sponge0
       sponge2 <- CircuitSponge.absorb b sponge1
-      { result: ScalarChallenge r } <- squeezeScalar sponge2
-      pure r
+      { result } <- squeezeScalar sponge2
+      pure $ unwrap result
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) circuitFn
     builtState = compilePure

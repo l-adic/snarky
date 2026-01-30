@@ -8,7 +8,7 @@ import Prelude
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
-import Data.Reflectable (class Reflectable)
+import Data.Newtype (unwrap)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Vector (Vector, reverse, uncons)
@@ -18,12 +18,10 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.BulletproofVerifier (BulletReduceResult, bulletReduce, combineSplitCommitments, lrProdPure)
 import Pickles.Sponge (PureSpongeM, absorbPoint, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toFieldConstant)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
@@ -33,18 +31,12 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
+import Snarky.Data.SizedF (SizedF, coerceViaBits)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
--- | Generate a 128-bit field element (for endo scalar)
-gen128BitElem :: forall f n _l. FieldSizeInBits f n => Reflectable _l Int => Add 128 _l n => Gen (F f)
-gen128BitElem = do
-  v <- Vector.generator (Proxy @128) arbitrary
-  let v' = v `Vector.append` (Vector.generate $ const false)
-  pure $ F $ packPure v'
 
 -- | Test size for combineSplitCommitments
 -- | Use small vector to keep constraint count manageable
@@ -101,12 +93,12 @@ combineSplitCommitmentsSpec _ _ curveProxy curveName =
     let
       -- Reference function: Horner's method with pure scalar mul
       -- c_0 + xi * (c_1 + xi * (c_2 + ... + xi * c_{n-1}))
-      refFn :: Tuple (F f) (Vector TestCommitmentCount (AffinePoint (F f))) -> AffinePoint (F f)
-      refFn (Tuple (F xi) commitments) =
+      refFn :: Tuple (SizedF 128 (F f)) (Vector TestCommitmentCount (AffinePoint (F f))) -> AffinePoint (F f)
+      refFn (Tuple xi commitments) =
         let
           -- Convert xi to scalar field f' for scalarMul
           effectiveXi :: f'
-          effectiveXi = toFieldConstant (coerceViaBits xi) (endoScalar :: f')
+          effectiveXi = unwrap $ toFieldPure (coerceViaBits xi) (endoScalar :: f')
 
           -- Convert affine points to projective for computation
           toProj { x: F px, y: F py } = fromAffine @f @g { x: px, y: py }
@@ -131,21 +123,21 @@ combineSplitCommitmentsSpec _ _ curveProxy curveName =
       circuit
         :: forall t
          . CircuitM f (KimchiConstraint f) t Identity
-        => FVar f
+        => SizedF 128 (FVar f)
         -> Vector TestCommitmentCount (AffinePoint (FVar f))
         -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
       circuit = combineSplitCommitments @TestCommitmentCount
 
       s = compilePure
-        (Proxy @(Tuple (F f) (Vector TestCommitmentCount (AffinePoint (F f)))))
+        (Proxy @(Tuple (SizedF 128 (F f)) (Vector TestCommitmentCount (AffinePoint (F f)))))
         (Proxy @(AffinePoint (F f)))
         (Proxy @(KimchiConstraint f))
         (uncurry circuit)
         Kimchi.initialState
 
-      gen :: Gen (Tuple (F f) (Vector TestCommitmentCount (AffinePoint (F f))))
+      gen :: Gen (Tuple (SizedF 128 (F f)) (Vector TestCommitmentCount (AffinePoint (F f))))
       gen = do
-        xi <- gen128BitElem
+        xi <- arbitrary
         commitments <- Vector.generator (Proxy @TestCommitmentCount) (EC.genAffinePoint curveProxy)
         pure $ Tuple xi commitments
 
@@ -159,9 +151,6 @@ combineSplitCommitmentsSpec _ _ curveProxy curveName =
       gen
 
     liftEffect $ verifyCircuit { s, gen, solver }
-  where
-  coerceViaBits :: f -> f'
-  coerceViaBits = packPure <<< unpackPure
 
 -- | Test bulletReduce circuit
 -- | f = circuit field (coordinates), f' = scalar field, g = curve group
@@ -208,25 +197,21 @@ bulletReduceSpec _ _ curveProxy curveName =
         -- Absorb L/R and squeeze raw 128-bit challenge
         processPair
           :: Tuple (AffinePoint (F f)) (AffinePoint (F f))
-          -> PureSpongeM (F f) (F f)
+          -> PureSpongeM (F f) (SizedF 128 (F f))
         processPair (Tuple l r) = do
           absorbPoint l
           absorbPoint r
-          ScalarChallenge chal <- squeezeScalarChallengePure
-          pure chal
+          squeezeScalarChallengePure
 
         -- Convert raw 128-bit challenge to endo-mapped full field element
-        toEndoMapped :: F f -> f'
-        toEndoMapped (F chal) = toFieldConstant (coerceViaBits chal) (endoScalar :: f')
+        toEndoMapped :: SizedF 128 (F f) -> f'
+        toEndoMapped chal = unwrap $ toFieldPure (coerceViaBits chal) (endoScalar :: f')
 
         unwrapF :: AffinePoint (F f) -> AffinePoint f
         unwrapF { x: F px, y: F py } = { x: px, y: py }
 
         wrapF :: AffinePoint f -> AffinePoint (F f)
         wrapF { x, y } = { x: F x, y: F y }
-
-        coerceViaBits :: f -> f'
-        coerceViaBits = packPure <<< unpackPure
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 

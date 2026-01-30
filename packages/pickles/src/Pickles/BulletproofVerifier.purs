@@ -39,13 +39,13 @@ import Snarky.Circuit.DSL (Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..))
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMapCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
 import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.SizedF (SizedF)
 import Snarky.Types.Shifted (Type2)
 
 --------------------------------------------------------------------------------
@@ -55,7 +55,7 @@ import Snarky.Types.Shifted (Type2)
 -- | Result of bullet reduce operation
 type BulletReduceResult d f =
   { lrProd :: AffinePoint f -- Accumulated L/R product
-  , challenges :: Vector d f -- Scalar challenges extracted
+  , challenges :: Vector d (SizedF 128 f) -- Scalar challenges extracted (128 bits each)
   }
 
 -- | Input to the bulletproof verifier circuit
@@ -65,7 +65,7 @@ type BulletReduceResult d f =
 -- | - n: number of polynomial commitments
 -- | - f: the field type
 type CheckBulletproofInput d n f =
-  { xi :: FVar f -- ^ Batching scalar (128 bits)
+  { xi :: SizedF 128 (FVar f) -- ^ Batching scalar (128 bits)
   , advice ::
       { b :: FVar f -- ^ b = bPoly(chals, zeta) + u * bPoly(chals, zetaOmega)
       , combinedInnerProduct :: FVar f -- ^ Combined evaluation of all polynomials
@@ -84,7 +84,7 @@ type CheckBulletproofInput d n f =
 
 -- | Output of the bulletproof verifier circuit
 type CheckBulletproofOutput d f =
-  { challenges :: Vector d f -- ^ IPA challenges (for deferred sg verification)
+  { challenges :: Vector d (SizedF 128 f) -- ^ IPA challenges (for deferred sg verification)
   }
 
 --------------------------------------------------------------------------------
@@ -221,14 +221,14 @@ bulletReduce lrPairs = do
   -- Process a single L/R pair
   reducePair
     :: Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
-    -> SpongeM f (KimchiConstraint f) t m (Tuple (FVar f) (AffinePoint (FVar f)))
+    -> SpongeM f (KimchiConstraint f) t m (Tuple (SizedF 128 (FVar f)) (AffinePoint (FVar f)))
   reducePair (Tuple l r) = do
     -- Absorb L and R into the sponge
     absorbPoint l
     absorbPoint r
 
     -- Squeeze a scalar challenge (128 bits)
-    ScalarChallenge challenge <- squeezeScalarChallenge
+    challenge :: SizedF 128 (FVar f) <- squeezeScalarChallenge
 
     -- Compute term = endoInv(L, chal) + endo(R, chal)
     liftSnarky $ do
@@ -260,7 +260,7 @@ combineSplitCommitments
   => HasEndo f f'
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
-  => FVar f -- ^ xi (scalar challenge, 128 bits)
+  => SizedF 128 (FVar f) -- ^ xi (scalar challenge, 128 bits)
   -> Vector n (AffinePoint (FVar f)) -- ^ commitments
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 combineSplitCommitments xi commitments = do
@@ -350,7 +350,7 @@ checkBulletproof input = do
   absorbPoint input.opening.delta
 
   -- Step 8: c = squeeze_scalar(sponge) (128 bits for endo)
-  ScalarChallenge c <- squeezeScalarChallenge
+  c :: SizedF 128 (FVar f) <- squeezeScalarChallenge
   liftSnarky $ do
     -- Step 9: LHS = endo(q, c) + delta
     qTimesC <- endo q c
