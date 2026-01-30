@@ -6,7 +6,7 @@
 -- |
 -- | The key distinction:
 -- | - `Challenge f`: Regular challenges (beta, gamma) - 128 bits with boolean constraints
--- | - `ScalarChallenge f`: Scalar challenges (alpha, zeta) - 128 bits without boolean constraints
+-- | - `SizedF 128 f`: Scalar challenges (alpha, zeta) - 128 bits without boolean constraints
 -- |
 -- | Scalar challenges use endomorphism encoding for efficient EC operations.
 module Pickles.ScalarChallenge
@@ -39,12 +39,12 @@ import RandomOracle.Sponge as Sponge
 import Snarky.Circuit.DSL (Snarky)
 import Snarky.Circuit.DSL.Bits (pack_, unpackPure, unpack_)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..))
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField, toFieldConstant) as Exports
+import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure) as Exports
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
+import Snarky.Data.SizedF (SizedF(..))
 
 -------------------------------------------------------------------------------
 -- | Challenge Types
@@ -61,27 +61,28 @@ derive newtype instance Show f => Show (Challenge f)
 
 -- | Minimal set of PLONK challenges.
 -- | This is used in proofs - just the raw challenges without derived values.
-type ChallengesMinimal challenge scalar =
-  { alpha :: scalar
+-- | Scalar challenges (alpha, zeta, jointCombiner) are 128-bit SizedF values.
+type ChallengesMinimal challenge f =
+  { alpha :: SizedF 128 f
   , beta :: challenge
   , gamma :: challenge
-  , zeta :: scalar
-  , jointCombiner :: Maybe scalar
+  , zeta :: SizedF 128 f
+  , jointCombiner :: Maybe (SizedF 128 f)
   , featureFlags :: Array FeatureFlag
   }
 
 -- | Full set of PLONK challenges with derived values.
 -- | Used in-circuit when the verifier needs to compute derived scalars.
-type Challenges challenge scalar fp =
-  { alpha :: scalar
+type Challenges challenge f =
+  { alpha :: SizedF 128 f
   , beta :: challenge
   , gamma :: challenge
-  , zeta :: scalar
+  , zeta :: SizedF 128 f
   -- Derived values computed from zeta:
-  , zetaToSrsLength :: fp -- zeta^srs_length
-  , zetaToDomainSize :: fp -- zeta^domain_size - 1
-  , perm :: fp -- permutation scalar
-  , jointCombiner :: Maybe scalar
+  , zetaToSrsLength :: f -- zeta^srs_length
+  , zetaToDomainSize :: f -- zeta^domain_size - 1
+  , perm :: f -- permutation scalar
+  , jointCombiner :: Maybe (SizedF 128 f)
   , featureFlags :: Array FeatureFlag
   }
 
@@ -127,19 +128,19 @@ squeezeChallengePure sponge =
     { result: Challenge $ lowest128BitsConstant x, sponge: sponge' }
 
 -- | Squeeze a scalar challenge from the sponge (pure version).
--- | Returns the lowest 128 bits wrapped as a ScalarChallenge.
+-- | Returns the lowest 128 bits wrapped as a SizedF 128.
 squeezeScalarPure
   :: forall f
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => Sponge f
-  -> { result :: ScalarChallenge f, sponge :: Sponge f }
+  -> { result :: SizedF 128 f, sponge :: Sponge f }
 squeezeScalarPure sponge =
   let
     { result: x, sponge: sponge' } = Sponge.squeeze sponge
   in
-    { result: ScalarChallenge $ lowest128BitsConstant x, sponge: sponge' }
+    { result: SizedF $ lowest128BitsConstant x, sponge: sponge' }
 
 -------------------------------------------------------------------------------
 -- | Circuit (in-circuit) squeeze functions
@@ -175,7 +176,7 @@ squeezeChallenge sponge = do
   pure { result: Challenge truncated, sponge: sponge' }
 
 -- | Squeeze a scalar challenge from the sponge (circuit version).
--- | Returns the lowest 128 bits wrapped as a ScalarChallenge.
+-- | Returns the lowest 128 bits wrapped as a SizedF 128.
 squeezeScalar
   :: forall f t m
    . PrimeField f
@@ -183,8 +184,8 @@ squeezeScalar
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => Sponge (FVar f)
-  -> Snarky (KimchiConstraint f) t m { result :: ScalarChallenge (FVar f), sponge :: Sponge (FVar f) }
+  -> Snarky (KimchiConstraint f) t m { result :: SizedF 128 (FVar f), sponge :: Sponge (FVar f) }
 squeezeScalar sponge = do
   { result: x, sponge: sponge' } <- CircuitSponge.squeeze sponge
   truncated <- lowest128Bits x
-  pure { result: ScalarChallenge truncated, sponge: sponge' }
+  pure { result: SizedF truncated, sponge: sponge' }

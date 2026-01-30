@@ -75,7 +75,7 @@ unpackPure x = Vector.generate \i ->
   if (toBigInt x `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then false
   else true
 
-packPure :: forall f n. FieldSizeInBits f n => Vector n Boolean -> f
+packPure :: forall f n. PrimeField f => Reflectable n Int => Vector n Boolean -> f
 packPure bs = foldlWithIndex
   ( \i acc bit ->
       let

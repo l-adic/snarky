@@ -4,35 +4,38 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (fromJust)
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, scale_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldConstant)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoBase, endoScalar, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.SizedF (SizedF, coerceViaBits)
+import Snarky.Data.SizedF as SizedF
 
 endo
-  :: forall f f' t m n _l
+  :: forall f f' t m n
    . FieldSizeInBits f n
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => Add 128 _l n
+  => Compare 128 n LT
   => AffinePoint (FVar f)
-  -> FVar f
+  -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 endo g scalar = do
   msbBits <- exists do
-    F vVal <- readCVar scalar
-    let lsbBits = Vector.take @128 $ unpackPure vVal
+    vVal :: SizedF 128 (F f) <- read scalar
+    let lsbBits = SizedF.toBits vVal
     pure $ map (\x -> if x then (one :: F f) else zero) (Vector.reverse lsbBits)
   -- acc = [2] (g + \phi g)
   let
@@ -67,7 +70,7 @@ endo g scalar = do
             s4 = (double yr / (double xr + xq2 - s3Squared)) - s3
             xs = xq2 + square s4 - s3Squared
             ys = ((xr - xs) * s4) - yr
-          nAccPrevVal <- readCVar st.nAcc
+          nAccPrevVal <- read st.nAcc
           pure
             { p: { x: xp, y: yp }
             , r: { x: xr, y: yr }
@@ -83,7 +86,7 @@ endo g scalar = do
     )
     { nAcc: const_ zero, acc: accInit }
     chunks
-  assertEqual_ nAcc scalar
+  assertEqual_ nAcc (unwrap scalar)
   addConstraint $ KimchiEndoMul { nAcc, s: acc, state: rounds }
   pure acc
   where
@@ -96,16 +99,16 @@ endo g scalar = do
 -- | Implementation: Witness the result, then verify via `endo(result, scalar) == g`.
 -- | This is the pattern from mina's `endo_inv` in scalar_challenge.ml.
 endoInv
-  :: forall @f @f' @g t m n _l
+  :: forall @f @f' @g t m n
    . FieldSizeInBits f n
   => FieldSizeInBits f' n
   => HasEndo f f'
   => FrModule f' g
   => WeierstrassCurve f g
   => CircuitM f (KimchiConstraint f) t m
-  => Add 128 _l n
+  => Compare 128 n LT
   => AffinePoint (FVar f)
-  -> FVar f
+  -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 endoInv g scalar = do
   -- Witness the result: g * (1 / effective_scalar)
@@ -113,22 +116,16 @@ endoInv g scalar = do
     -- Read the input point
     { x: F gx, y: F gy } <- read @(AffinePoint _) g
     -- Read the scalar challenge
-    F scalarVal <- readCVar scalar
-
-    -- Coerce scalar from f to f' via bit representation
-    -- (works because both fields have the same bit size n)
-    let
-      coerceViaBits :: f -> f'
-      coerceViaBits = packPure <<< unpackPure
+    scalarVal :: SizedF 128 (F f) <- read scalar
 
     -- Compute effective scalar in the scalar field f'
     let
-      effectiveScalar :: f'
-      effectiveScalar = toFieldConstant (coerceViaBits scalarVal) (endoScalar @f @f')
+      effectiveScalar :: F f'
+      effectiveScalar = toFieldPure (coerceViaBits scalarVal) (endoScalar @f @f')
 
     -- Compute inverse scalar
     let
-      invScalar :: f'
+      invScalar :: F f'
       invScalar = recip effectiveScalar
 
     -- Convert input point to curve group element and scale by inverse
@@ -137,7 +134,7 @@ endoInv g scalar = do
       gPoint = fromAffine @f @g { x: gx, y: gy }
 
       resultPoint :: g
-      resultPoint = scalarMul invScalar gPoint
+      resultPoint = scalarMul (unwrap invScalar) gPoint
 
     -- Convert result back to AffinePoint
     let { x: rx, y: ry } = unsafePartial $ fromJust $ toAffine @f @g resultPoint

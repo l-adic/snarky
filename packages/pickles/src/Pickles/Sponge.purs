@@ -46,12 +46,12 @@ import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (Snarky)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..))
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.SizedF (SizedF(..))
 
 --------------------------------------------------------------------------------
 -- | MonadSponge Typeclass
@@ -143,18 +143,18 @@ instance
     lift ma = StateT \s -> ma <#> \a -> Tuple a s
 
 -- | Squeeze a scalar challenge (128 bits) from the sponge.
--- | This is the in-circuit version that returns a ScalarChallenge.
+-- | This is the in-circuit version that returns a SizedF 128.
 squeezeScalarChallenge
   :: forall f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => SpongeM f (KimchiConstraint f) t m (ScalarChallenge (FVar f))
+  => SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
 squeezeScalarChallenge = do
   x <- squeeze
   truncated <- liftSnarky $ lowest128Bits x
-  pure $ ScalarChallenge truncated
+  pure $ SizedF truncated
 
 --------------------------------------------------------------------------------
 -- | Pure Sponge Monad: PureSpongeM
@@ -208,10 +208,10 @@ squeezeScalarChallengePure
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => PureSpongeM f (ScalarChallenge f)
+  => PureSpongeM f (SizedF 128 f)
 squeezeScalarChallengePure = do
   x <- squeeze
-  pure $ ScalarChallenge $ lowest128BitsConstant x
+  pure $ SizedF $ lowest128BitsConstant x
 
 --------------------------------------------------------------------------------
 -- | Initial States
