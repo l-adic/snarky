@@ -18,7 +18,7 @@ import Data.Traversable (all)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Add, class Compare)
+import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
 import Snarky.Circuit.Types (class CheckedType, class CircuitType, F, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
@@ -42,7 +42,6 @@ derive instance Generic (SizedF n f) _
 
 instance
   ( FieldSizeInBits f m
-  , Compare n m LT
   ) =>
   CircuitType f (SizedF n (F f)) (SizedF n (FVar f)) where
   valueToFields = genericValueToFields
@@ -52,8 +51,8 @@ instance
   fieldsToVar = genericFieldsToVar @(SizedF n (F f))
 
 instance
-  ( Add n _k m
-  , FieldSizeInBits f m
+  ( FieldSizeInBits f m
+  , Compare n m LT
   , BasicSystem f c
   ) =>
   CheckedType (SizedF n (FVar f)) c where
