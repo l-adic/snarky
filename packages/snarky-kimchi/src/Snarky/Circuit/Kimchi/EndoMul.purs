@@ -22,6 +22,14 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.SizedF (SizedF, coerceViaBits)
 import Snarky.Data.SizedF as SizedF
 
+{-
+endo satisfies the equation
+
+  endo g a ~ scalarMul (toFieldPure a endoScalar) g
+
+where ~ means that the LHS is a circuit which computes
+the pure function on the RHS.
+-}
 endo
   :: forall f f' t m n
    . FieldSizeInBits f n
@@ -93,11 +101,14 @@ endo g scalar = do
   double x = x + x
   square x = x * x
 
--- | Inverse endomorphism scalar multiplication.
--- | Computes `g / scalar` where scalar is the effective scalar derived from the challenge.
--- |
--- | Implementation: Witness the result, then verify via `endo(result, scalar) == g`.
--- | This is the pattern from mina's `endo_inv` in scalar_challenge.ml.
+{-
+endoInv satisfies the equation
+
+  endoInv g a ~ scalarMul (recip (toFieldPure a endoScalar)) g
+
+where ~ means that the LHS is a circuit which computes
+the pure function on the RHS.
+-}
 endoInv
   :: forall @f @f' @g t m n
    . FieldSizeInBits f n

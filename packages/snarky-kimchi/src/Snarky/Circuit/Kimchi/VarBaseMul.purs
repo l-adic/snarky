@@ -106,6 +106,13 @@ varBaseMul base (Type1 t) = do
   where
   double x = x + x
 
+{-
+scaleFast1 g a ~ scalarMul (fromShifted a) g
+
+where ~ means that the LHS is a circuit which computes
+the pure function on the RHS. This is used when the modulus
+of the scalar field is smaller than the modulus of the circuit field.
+-}
 scaleFast1
   :: forall t m n @nChunks f
    . FieldSizeInBits f n
@@ -121,10 +128,13 @@ scaleFast1 p t = do
   { g } <- varBaseMul @n @nChunks p t
   pure g
 
--- | Scale a point by a scalar using the Type2 split representation.
--- | The scalar s is already split into (sDiv2, sOdd) where s = 2*sDiv2 + sOdd.
--- | This allows efficient scalar multiplication when the scalar field
--- | is larger than the circuit field (foreign field case).
+{-
+scaleFast2 g a ~ scalarMul (fromShifted a) g
+
+where ~ means that the LHS is a circuit which computes
+the pure function on the RHS. This is used when the modulus
+of the scalar field is larger than the modulus of the circuit field.
+-}
 scaleFast2
   :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
    . FieldSizeInBits f n
