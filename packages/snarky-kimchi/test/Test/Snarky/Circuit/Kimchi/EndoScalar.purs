@@ -5,37 +5,38 @@ module Test.Snarky.Circuit.Kimchi.EndoScalar
 
 import Prelude
 
-import Data.Newtype (over)
 import Effect.Class (liftEffect)
-import Prim.Int (class Add)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
-import Snarky.Circuit.Kimchi.EndoScalar (ScalarChallenge(..), toField, toFieldConstant)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
+import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoBase)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.Kimchi.Utils (gen128BitElem)
+import Snarky.Data.SizedF (SizedF)
+import Test.QuickCheck (arbitrary)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
 circuit
-  :: forall f f' t m n _l
+  :: forall f f' t m n
    . CircuitM f (KimchiConstraint f) t m
   => FieldSizeInBits f n
-  => Add 128 _l n
-  => HasEndo f f'
-  => FVar f
+  => Compare 128 n LT
+  => HasEndo f' f
+  => SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
 circuit scalarValue =
   let
-    endoVar = const_ (endoBase @f @f')
+    endoVar = const_ (endoScalar :: f)
   in
-    toField (ScalarChallenge scalarValue) endoVar
+    toField scalarValue endoVar
 
 spec'
   :: forall f f' g'
@@ -49,14 +50,13 @@ spec' _ curveName = do
   describe ("EndoScalar: " <> curveName) do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
-        f :: F f -> F f
-        f =
-          over F \x -> toFieldConstant x (endoBase @f @f')
+        f :: SizedF 128 (F f) -> F f
+        f x = toFieldPure x (endoScalar @f' @f)
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
         s = compilePure
-          (Proxy @(F f))
+          (Proxy @(SizedF 128 (F f)))
           (Proxy @(F f))
           (Proxy @(KimchiConstraint f))
           circuit
@@ -72,9 +72,9 @@ spec' _ curveName = do
             , testFunction: satisfied f
             , postCondition: Kimchi.postCondition
             }
-            gen128BitElem
+            arbitrary
 
-          liftEffect $ verifyCircuit { s, gen: gen128BitElem, solver }
+          liftEffect $ verifyCircuit { s, gen: arbitrary, solver }
 
 spec :: Spec Unit
 spec = do

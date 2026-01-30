@@ -1,45 +1,40 @@
 module Snarky.Circuit.Kimchi.EndoScalar
-  ( ScalarChallenge(..)
-  , toField
-  , toFieldConstant
+  ( toField
+  , toFieldPure
   ) where
 
 import Prelude
 
 import Data.Fin (unsafeFinite)
-import Data.Newtype (class Newtype)
+import Data.Newtype (unwrap)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, chunks, (!!))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
-import Prim.Int (class Add)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, readCVar, scale_)
-import Snarky.Circuit.DSL.Bits (unpackPure)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, scale_)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt)
+import Snarky.Data.SizedF (SizedF, toBits)
 
-newtype ScalarChallenge f = ScalarChallenge f
-
-derive instance Newtype (ScalarChallenge f) _
-derive instance Eq f => Eq (ScalarChallenge f)
-derive instance Ord f => Ord (ScalarChallenge f)
-derive newtype instance Show f => Show (ScalarChallenge f)
-
+-- | Circuit version of endomorphism scalar decomposition.
+-- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.
 toField
-  :: forall f t m n _l
+  :: forall f t m n
    . FieldSizeInBits f n
-  => Add 128 _l n
   => CircuitM f (KimchiConstraint f) t m
-  => ScalarChallenge (FVar f)
+  => Compare 128 n LT
+  => SizedF 128 (FVar f)
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
-toField (ScalarChallenge scalar) endo = do
+toField scalar endo = do
   lsbBits :: Vector 128 (BoolVar f) <- exists do
-    F vVal <- readCVar scalar
-    pure $ Vector.take @128 $ unpackPure $ vVal
+    vVal :: SizedF 128 (F f) <- read scalar
+    pure $ toBits vVal
   let
     msbBits :: Vector 128 (FVar f)
     msbBits = coerce $ Vector.reverse lsbBits
@@ -74,7 +69,7 @@ toField (ScalarChallenge scalar) endo = do
     }
     nibblesByRow
   addConstraint $ KimchiEndoScalar rowsRev
-  assertEqual_ n scalar
+  assertEqual_ n (unwrap scalar)
   a `mul_` endo <#>
     add_ b
 
@@ -96,20 +91,21 @@ toField (ScalarChallenge scalar) endo = do
     | otherwise = unsafeThrow ("Unexpected bF application: " <> show x)
 
 -- | Pure/constant version of endomorphism scalar decomposition.
--- | Given a 128-bit scalar and the endomorphism coefficient, computes
+-- | Given a 128-bit scalar challenge and the endomorphism coefficient, computes
 -- | `a * endo + b` where (a, b) is the decomposition of the scalar.
-toFieldConstant
-  :: forall f n _l
+-- | The input is in field f (only 128 bits used), the output is in field f.
+toFieldPure
+  :: forall f n
    . PrimeField f
   => FieldSizeInBits f n
-  => Add 128 _l n
-  => f
+  => Compare 128 n LT
+  => SizedF 128 (F f)
   -> f
-  -> f
-toFieldConstant scalar endo =
+  -> F f
+toFieldPure challenge endo =
   let
     bits :: Vector 128 Boolean
-    bits = Vector.reverse $ Vector.take @128 $ unpackPure scalar
+    bits = Vector.reverse $ toBits challenge
 
     chunked :: Vector 64 (Vector 2 Boolean)
     chunked = Vector.chunks @2 bits
@@ -129,6 +125,6 @@ toFieldConstant scalar endo =
 
     { a, b } = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunked
   in
-    a * endo + b
+    F $ a * endo + b
   where
   double x = x + x
