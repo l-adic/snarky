@@ -12,6 +12,7 @@ import Test.Snarky.Circuit as CircuitTests
 import Test.Snarky.Circuit.Types as TypesTests
 import Test.Snarky.Circuit.Utils (nullPostCondition)
 import Test.Snarky.Constraint as ConstraintTests
+import Test.Snarky.Data.SizedF as SizedFTests
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -21,3 +22,4 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   ConstraintTests.spec $ Proxy @BN254.ScalarField
   CircuitTests.spec (Proxy @Vesta.ScalarField) (Proxy @(Basic Vesta.ScalarField)) (Basic.eval) nullPostCondition Snarky.initialState
   TypesTests.spec $ Proxy @(Vesta.BaseField)
+  SizedFTests.spec
