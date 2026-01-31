@@ -20,14 +20,13 @@ import Prelude
 import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
-import Data.Foldable (traverse_)
 import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky, addConstraint, fresh)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, check, fieldsToVar, sizeInFields)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky, check, fresh)
+import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -114,7 +113,7 @@ instance
   CircuitM f c' (CircuitBuilderT c r) m where
   exists
     :: forall a var
-     . CheckedType var c'
+     . CheckedType f var c'
     => CircuitType f a var
     => ConstraintM (CircuitBuilderT c r) c'
     => AsProverT f m a
@@ -123,7 +122,7 @@ instance
     let n = sizeInFields (Proxy @f) (Proxy @a)
     vars <- replicateA n fresh
     let v = fieldsToVar @f @a (map Var vars)
-    traverse_ addConstraint (check v)
+    check v
     pure v
 
 setPublicInputVars
