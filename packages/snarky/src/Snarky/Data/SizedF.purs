@@ -20,8 +20,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, F, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, packPure, unpackPure)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -55,7 +54,7 @@ instance
   , Compare n m LT
   , BasicSystem f c
   ) =>
-  CheckedType (SizedF n (FVar f)) c where
+  CheckedType f (SizedF n (FVar f)) c where
   check = genericCheck
 
 instance
