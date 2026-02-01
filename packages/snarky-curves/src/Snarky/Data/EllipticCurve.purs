@@ -17,7 +17,7 @@ import Prelude
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..), fromJust, isJust)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
 import Snarky.Curves.Class as Snarky.Curves.Class
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -56,7 +56,7 @@ instance CircuitType f (Point (F f)) (Point (FVar f)) where
   varToFields = genericVarToFields @(Point (F f))
   fieldsToVar = genericFieldsToVar @(Point (F f))
 
-instance CheckedType (Point (FVar f)) c where
+instance CheckedType f c t m (Point (FVar f)) where
   check = genericCheck
 
 genPoint

@@ -41,9 +41,7 @@ import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar)
-import Snarky.Circuit.Types (genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Type.Proxy (Proxy(..))
 
@@ -134,7 +132,7 @@ instance
   fieldsToVar as =
     coerce $ unsafePartial fromJust $ Vector.toVector @d as
 
-instance BasicSystem f c => CheckedType (AddressVar d f) c where
+instance CheckedType f c t m (AddressVar d f) where
   check = genericCheck
 
 get
@@ -169,7 +167,7 @@ instance (Reflectable d Int, CircuitType f hash hashvar) => CircuitType f (Path 
   varToFields = genericVarToFields @(Path d hash)
   fieldsToVar = genericFieldsToVar @(Path d hash)
 
-instance CheckedType hash c => CheckedType (Path d hash) c where
+instance CheckedType f c t m hash => CheckedType f c t m (Path d hash) where
   check = genericCheck
 
 getPath

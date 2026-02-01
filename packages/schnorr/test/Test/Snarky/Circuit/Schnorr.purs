@@ -134,4 +134,4 @@ spec :: Spec Unit
 spec = describe "Snarky.Circuit.Schnorr" do
   describe "verifies" do
     it "Vesta curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) (Proxy @5)
+      verifySpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) (Proxy @5)

@@ -113,8 +113,8 @@ instance
   CircuitM f c' (CircuitBuilderT c r) m where
   exists
     :: forall a var
-     . CheckedType f var c'
-    => CircuitType f a var
+     . CircuitType f a var
+    => CheckedType f c' (CircuitBuilderT c r) m var
     => ConstraintM (CircuitBuilderT c r) c'
     => AsProverT f m a
     -> Snarky c' (CircuitBuilderT c r) m var

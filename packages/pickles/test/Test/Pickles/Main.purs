@@ -12,6 +12,7 @@ import Test.Pickles.E2E as E2E
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
 import Test.Pickles.ScalarChallenge as ScalarChallenge
+import Test.Pickles.Types as Types
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -29,6 +30,7 @@ main = runSpecAndExitProcess'
       Linearization.spec
       Permutation.spec
       ScalarChallenge.spec
+      Types.spec
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x

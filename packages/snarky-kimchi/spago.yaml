@@ -30,6 +30,7 @@ package:
     - spec
     - transformers
     - tuples
+    - unfoldable
     - union-find
     - vector-sized
   test:
