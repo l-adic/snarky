@@ -6,7 +6,7 @@ module Snarky.Circuit.DSL.Assert
   , assert_
   , class AssertEqual
   , assertEq
-  , assertEqualGeneric
+  , assertEqGeneric
   , class GAssertEqual
   , gAssertEqual
   , class RAssertEqual
@@ -133,14 +133,14 @@ instance GAssertEqual f c t m a => GAssertEqual f c t m (Constructor name a) whe
   gAssertEqual (Constructor a1) (Constructor a2) = gAssertEqual @f @c @t @m a1 a2
 
 -- | Generic assertEqual for types with Generic instance
-assertEqualGeneric
+assertEqGeneric
   :: forall f c t m var rep
    . Generic var rep
   => GAssertEqual f c t m rep
   => var
   -> var
   -> Snarky c t m Unit
-assertEqualGeneric x y = gAssertEqual @f @c @t @m (from x) (from y)
+assertEqGeneric x y = gAssertEqual @f @c @t @m (from x) (from y)
 
 --------------------------------------------------------------------------------
 -- | Row list instances for AssertEqual on records

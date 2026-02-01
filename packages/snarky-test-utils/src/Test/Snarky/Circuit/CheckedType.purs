@@ -5,12 +5,16 @@ import Prelude
 import Control.Apply (lift2)
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
+import Data.Identity (Identity)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Show.Generic (genericShow)
+import Data.Tuple (snd)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Builder (CircuitBuilderT, initialState, runCircuitBuilder)
 import Snarky.Circuit.CVar (CVar(..), Variable, const_)
-import Snarky.Circuit.Types (class CheckedType, Bool, BoolVar, FVar, UnChecked(..), check, genericCheck)
+import Snarky.Circuit.DSL (class CheckedType, Bool, BoolVar, FVar, UnChecked(..), check, genericCheck)
+import Snarky.Circuit.DSL.Monad (Snarky(..))
 import Snarky.Constraint.Basic (Basic)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
@@ -18,6 +22,9 @@ import Test.QuickCheck.Gen (suchThat)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
+
+runM :: forall f a. Snarky (Basic f) (CircuitBuilderT (Basic f) Unit) Identity a -> Array (Basic f)
+runM (Snarky m) = _.constraints <<< snd $ runCircuitBuilder m initialState
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 
@@ -50,7 +57,7 @@ instance Show f => Show (Point f) where
 instance Arbitrary f => Arbitrary (Point f) where
   arbitrary = Point <$> arbitrary <*> arbitrary
 
-instance CheckedType (Point (CVar f Variable)) c where
+instance CheckedType f (Basic f) (CircuitBuilderT (Basic f) r) Identity (Point (CVar f Variable)) where
   check = genericCheck
 
 spec :: forall f. PrimeField f => Proxy f -> Spec Unit
@@ -62,21 +69,21 @@ spec _ = do
       quickCheck' 10 \(value :: f) ->
         let
           cvar = const_ value :: CVar f Variable
-          constraints = check @(CVar f Variable) @(Basic f) cvar
+          constraints = runM $ check cvar
         in
           Array.null constraints === true
 
     it "Boolean type has exactly one constraint" $
       quickCheck' 10 \(cvar :: ValidBVar f) ->
         let
-          constraints = check @(CVar f (Bool Variable)) @(Basic f) (un ValidBVar cvar)
+          constraints = runM $ check (un ValidBVar cvar)
         in
           Array.length constraints === 1
 
     it "Unit type has no constraints" $
       quickCheck' 10 \(_ :: Unit) ->
         let
-          constraints = check @Unit @(Basic f) unit
+          constraints = runM $ check @f @(Basic f) unit
         in
           Array.null constraints === true
 
@@ -84,14 +91,14 @@ spec _ = do
       quickCheck' 10 \(value :: f) ->
         let
           uncheckedVar = UnChecked (const_ value :: CVar f Variable)
-          constraints = check @(UnChecked (CVar f Variable)) @(Basic f) uncheckedVar
+          constraints = runM $ check @f @(Basic f) uncheckedVar
         in
           Array.null constraints === true
 
     it "UnChecked Boolean has no constraints" $
       quickCheck' 10 \(x :: UnChecked (BoolVar f)) ->
         let
-          constraints = check x
+          constraints = runM $ check @f x
         in
           Array.null constraints === true
 
@@ -99,7 +106,7 @@ spec _ = do
     it "Record with F and Boolean accumulates constraints correctly" $
       quickCheck' 10 \(x :: { a :: FVar f, b :: ValidBVar f }) ->
         let
-          constraints = check @_ @(Basic f) (coerce x :: { a :: FVar f, b :: BoolVar f })
+          constraints = runM $ check (coerce x :: { a :: FVar f, b :: BoolVar f })
         in
           Array.length constraints === 1 -- Only the Boolean should contribute a constraint
 
@@ -107,7 +114,7 @@ spec _ = do
       quickCheck' 10 \(x :: f) (y :: f) ->
         let
           point = Point (const_ x) (const_ y) :: Point (CVar f Variable)
-          constraints = check @(Point (CVar f Variable)) @(Basic f) point
+          constraints = runM $ check @f @(Basic f) point
         in
           Array.null constraints === true
 
@@ -116,6 +123,6 @@ spec _ = do
         let
           record :: { flag1 :: BoolVar f, flag2 :: BoolVar f }
           record = coerce x
-          constraints = check @_ @(Basic f) record
+          constraints = runM $ check record
         in
           Array.length constraints === 2 -- Both Booleans should contribute constraints

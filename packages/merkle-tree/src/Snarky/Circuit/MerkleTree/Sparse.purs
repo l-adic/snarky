@@ -25,7 +25,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Poseidon.Class (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, exists, if_, read)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, FVar, Snarky, assertEqual_, exists, if_, read)
 import Snarky.Circuit.MerkleTree (class MerkleRequestM, getElement, getPath, setValue)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -63,8 +63,9 @@ get
   :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v (KimchiConstraint f) d var
+  => MerkleRequestM m f v d var
   => CircuitM f (KimchiConstraint f) t m
+  => CheckedType f (KimchiConstraint f) t m var
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => Sized.AddressVar d f
   -> Digest (FVar f)
@@ -72,7 +73,7 @@ get
 get addr (Digest root_) = do
   { value, path } <- exists do
     a <- read addr
-    lift $ getElement @_ @_ @v @(KimchiConstraint f) @d a
+    lift $ getElement @_ @f @v @d a
   h <- hash $ Just value
   impliedRoot addr h path >>= \(Digest d) ->
     assertEqual_ root_ d
@@ -121,7 +122,7 @@ update
   :: forall t m f d v var
    . Reflectable d Int
   => PoseidonField f
-  => MerkleRequestM m f v (KimchiConstraint f) d var
+  => MerkleRequestM m f v d var
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => Sized.AddressVar d f
@@ -133,7 +134,7 @@ update addr (Digest root_) prev next = do
   -- Witness only the path
   path <- exists do
     a <- read addr
-    lift $ getPath @m @_ @v @(KimchiConstraint f) @d a
+    lift $ getPath @m @_ @v @d a
   -- Hash old element and verify against root
   prevHash <- hash $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
@@ -142,7 +143,7 @@ update addr (Digest root_) prev next = do
   _ <- exists do
     a <- read addr
     n <- read @v next
-    lift $ setValue @_ @_ @v @(KimchiConstraint f) @d a n
+    lift $ setValue @_ @f @v @d a n
   -- Hash new element and compute new root
   nextHash <- hash $ Just next
   impliedRoot addr nextHash path

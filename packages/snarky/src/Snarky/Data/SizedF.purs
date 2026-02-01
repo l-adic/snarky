@@ -14,13 +14,13 @@ import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (all)
+import Data.Traversable (all, for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Compare)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, packPure, unpackPure)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar, assert_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, packPure, unpackPure, unpack_)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -50,12 +50,19 @@ instance
   fieldsToVar = genericFieldsToVar @(SizedF n (F f))
 
 instance
-  ( FieldSizeInBits f m
-  , Compare n m LT
+  ( FieldSizeInBits f k
+  , Compare n k LT
   , BasicSystem f c
+  , Reflectable n Int
+  , Add n _l k
   ) =>
-  CheckedType f (SizedF n (FVar f)) c where
-  check = genericCheck
+  CheckedType f c t m (SizedF n (FVar f)) where
+  check (SizedF var) = do
+    bits <- unpack_ var
+    let
+      { after } = Vector.splitAt @n bits
+    for_ after \bit ->
+      assert_ (not_ bit)
 
 instance
   ( FieldSizeInBits f m

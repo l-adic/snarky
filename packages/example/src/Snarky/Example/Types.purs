@@ -14,10 +14,8 @@ import Data.Newtype (class Newtype, un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
-import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEqualGeneric)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, assertEqGeneric, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Test.QuickCheck (class Arbitrary)
 
@@ -40,11 +38,11 @@ instance CircuitType f (PublicKey (F f)) (PublicKey (FVar f)) where
   varToFields = genericVarToFields @(PublicKey (F f))
   fieldsToVar = genericFieldsToVar @(PublicKey (F f))
 
-instance CheckedType (PublicKey (FVar f)) c where
+instance CheckedType f c t m (PublicKey (FVar f)) where
   check = genericCheck
 
 instance CircuitM f c t m => AssertEqual f c t m (PublicKey (FVar f)) where
-  assertEq x y = assertEqualGeneric x y
+  assertEq x y = assertEqGeneric x y
 
 --------------------------------------------------------------------------------
 -- | TokenAmount type - a single field element representing a token balance
@@ -69,7 +67,7 @@ instance CircuitType f (TokenAmount (F f)) (TokenAmount (FVar f)) where
   varToFields = genericVarToFields @(TokenAmount (F f))
   fieldsToVar = genericFieldsToVar @(TokenAmount (F f))
 
-instance CheckedType (TokenAmount (FVar f)) c where
+instance CheckedType f c t m (TokenAmount (FVar f)) where
   check = genericCheck
 
 --------------------------------------------------------------------------------
@@ -92,7 +90,7 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
   varToFields = genericVarToFields @(Account (F f))
   fieldsToVar = genericFieldsToVar @(Account (F f))
 
-instance CheckedType (Account (FVar f)) c where
+instance CheckedType f c t m (Account (FVar f)) where
   check = genericCheck
 
 -- | Pure Hashable instance for Account (F f)
