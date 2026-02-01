@@ -20,12 +20,16 @@ import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Circuit.CVar (CVar(..))
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, BoolVar, F(..), FVar, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
+import Snarky.Circuit.DSL.Assert (assert_)
+import Snarky.Circuit.DSL.Boolean (any_)
+import Snarky.Circuit.DSL.Field (equals_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -51,6 +55,17 @@ instance CircuitType f (Type1 (F f)) (Type1 (FVar f)) where
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields @(Type1 (F f))
   fieldsToVar = genericFieldsToVar @(Type1 (F f))
+
+-- | Check that a Type1 value is not one of the forbidden shifted values.
+-- | This is specialized for the Vesta cross-field case.
+instance CircuitM Vesta.BaseField c t m => CheckedType Vesta.BaseField c t m (Type1 (FVar Vesta.BaseField)) where
+  check (Type1 t) = do
+    -- For each forbidden value, check if t equals it
+    -- Then assert that NONE of them match
+    let forbiddenConstants = map (\(F f) -> Const f) forbiddenType1Values
+    matchesForbidden <- traverse (equals_ t) forbiddenConstants
+    anyMatch <- any_ matchesForbidden
+    assert_ (not_ anyMatch)
 
 fieldSizeBits :: forall f n. FieldSizeInBits f n => Proxy f -> Int
 fieldSizeBits _ = reflectType (Proxy :: Proxy n)
@@ -84,8 +99,20 @@ instance PrimeField f => CircuitType f (Type2 (F f) Boolean) (Type2 (FVar f) (Bo
   varToFields = genericVarToFields @(Type2 (F f) Boolean)
   fieldsToVar = genericFieldsToVar @(Type2 (F f) Boolean)
 
-instance BasicSystem f c => CheckedType f c t m (Type2 (FVar f) (BoolVar f)) where
-  check = genericCheck
+-- | Check that a Type2 value is not one of the forbidden shifted values.
+-- | This is specialized for the Pallas cross-field case.
+instance CircuitM Pallas.BaseField c t m => CheckedType Pallas.BaseField c t m (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)) where
+  check (Type2 { sDiv2, sOdd }) = do
+    -- First run the generic check (verifies sOdd is a boolean)
+    genericCheck (Type2 { sDiv2, sOdd } :: Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
+    -- For each forbidden (sDiv2, sOdd) pair, check if current matches
+    -- Then assert that NONE of them match
+    matchesForbidden <- for forbiddenType2Values \{ sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } -> do
+      sDiv2Matches <- equals_ sDiv2 (Const forbiddenDiv2)
+      let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
+      sDiv2Matches `and_` sOddMatches
+    anyMatch <- any_ matchesForbidden
+    assert_ (not_ anyMatch)
 
 instance Bifunctor Type2 where
   bimap f g (Type2 x) = Type2 { sDiv2: f x.sDiv2, sOdd: g x.sOdd }

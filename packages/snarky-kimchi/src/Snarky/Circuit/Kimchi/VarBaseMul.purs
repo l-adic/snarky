@@ -16,7 +16,7 @@ import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -162,6 +162,7 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
 splitFieldVar
   :: forall t m f c
    . CircuitM f c t m
+  => CheckedType f c t m (Type2 (FVar f) (BoolVar f))
   => FVar f
   -> Snarky c t m (Type2 (FVar f) (BoolVar f))
 splitFieldVar s = do

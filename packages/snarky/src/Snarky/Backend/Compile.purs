@@ -22,17 +22,19 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, CircuitBuilderT, finalize, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, check, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
 
 compilePure
   :: forall @f c c' a b avar bvar r
    . CompileCircuit f c c' r
+  => CheckedType f c' (CircuitBuilderT c r) Identity avar
+  => CheckedType f c' (CircuitBuilderT c r) Identity bvar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy a
@@ -46,6 +48,8 @@ compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
 compile
   :: forall f c c' m a b avar bvar r
    . CompileCircuit f c c' r
+  => CheckedType f c' (CircuitBuilderT c r) m avar
+  => CheckedType f c' (CircuitBuilderT c r) m bvar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
@@ -65,8 +69,10 @@ compile _ _ _ circuit cbs = finalize <$> do
       let { before: avars, after: bvars } = Array.splitAt n vars
       setPublicInputVars vars
       let avar = fieldsToVar @f @a (map Var avars)
+      runSnarky $ check @f @c' avar
       out <- runSnarky $ do
         out <- circuit avar
+        check out
         for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
           assertEqual_ v1 v2
       pure out
@@ -75,6 +81,8 @@ compile _ _ _ circuit cbs = finalize <$> do
 makeSolver
   :: forall f a b c m avar bvar
    . SolveCircuit f c
+  => CheckedType f c (ProverT f) m avar
+  => CheckedType f c (ProverT f) m bvar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
@@ -89,8 +97,11 @@ makeSolver _ circuit = \inputs -> do
     let { before: avars, after: bvars } = Array.splitAt n vars
     setAssignments $ zip avars (valueToFields inputs)
     outVar <- runSnarky $ do
-      result <- circuit (fieldsToVar @f @a (map Var avars))
+      let var = fieldsToVar @f @a (map Var avars)
+      check @f @c var
+      result <- circuit var
       pure result
+    runSnarky $ check @f @c outVar
     eres <- getAssignments >>= runAsProverT (read outVar)
     case eres of
       Left e -> throwProverError e
