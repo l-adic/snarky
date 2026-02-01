@@ -65,7 +65,7 @@ get
   => PoseidonField f
   => MerkleRequestM m f v d var
   => CircuitM f (KimchiConstraint f) t m
-  => CheckedType f (KimchiConstraint f) t m var
+  => CheckedType f (KimchiConstraint f) var
   => MerkleHashable var (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => Sized.AddressVar d f
   -> Digest (FVar f)

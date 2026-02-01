@@ -4,20 +4,28 @@
 -- | components needed for recursive proof composition.
 -- |
 -- | Reference: mina's step_verifier.ml `check_bulletproof` function
+-- |
+-- | The main verifier functions are parameterized by `ScalarOps` which provides
+-- | the operations for converting field elements to scalars and performing
+-- | scalar multiplication. This allows the code to work with different scalar
+-- | representations (e.g., Type2 for Pallas.BaseField).
 module Pickles.BulletproofVerifier
-  ( -- Main verifier
+  ( -- Main verifier (generic, takes ScalarOps)
     checkBulletproof
   -- Components
   , bulletReduce
   , combineSplitCommitments
   -- Pure reference (mirrors Rust IPA verify)
   , lrProdPure
-  -- Circuit version (testable against lrProdPure)
+  -- Circuit version (generic, takes ScalarOps)
   , lrProdCircuit
   -- Types
   , BulletReduceResult
   , CheckBulletproofInput
   , CheckBulletproofOutput
+  , ScalarOps
+  -- Pallas-specific ops
+  , pallasScalarOps
   ) where
 
 import Prelude
@@ -44,6 +52,7 @@ import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
 import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.SizedF (SizedF)
 import Snarky.Types.Shifted (Type2)
@@ -51,6 +60,38 @@ import Snarky.Types.Shifted (Type2)
 --------------------------------------------------------------------------------
 -- | Types
 --------------------------------------------------------------------------------
+
+-- | Operations for scalar multiplication in circuits.
+-- |
+-- | This record captures the operations needed for scalar multiplication with
+-- | a specific scalar representation. By passing these operations explicitly,
+-- | the verifier functions can remain generic while supporting different
+-- | scalar types (e.g., Type2 for cross-field arithmetic).
+-- |
+-- | Type parameters:
+-- | - f: the circuit field
+-- | - c: the constraint type
+-- | - scalar: the scalar representation (e.g., Type2 (FVar f) (BoolVar f))
+type ScalarOps f c scalar =
+  { -- | Convert a field variable to a scalar representation
+    toScalar :: forall t m. CircuitM f c t m => FVar f -> Snarky c t m scalar
+  -- | Multiply a point by a scalar
+  , scalarMul :: forall t m. CircuitM f c t m => AffinePoint (FVar f) -> scalar -> Snarky c t m (AffinePoint (FVar f))
+  }
+
+-- | ScalarOps for Pallas.BaseField using Type2 and scaleFast2.
+-- |
+-- | This is the standard configuration for the Pasta curve cycle where
+-- | the scalar field is larger than the circuit field.
+pallasScalarOps
+  :: forall @nChunks
+   . Mul 5 nChunks 255
+  => Reflectable nChunks Int
+  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
+pallasScalarOps =
+  { toScalar: splitFieldVar
+  , scalarMul: scaleFast2 @nChunks
+  }
 
 -- | Result of bullet reduce operation
 type BulletReduceResult d f =
@@ -64,7 +105,8 @@ type BulletReduceResult d f =
 -- | - d: number of IPA rounds (domain log2)
 -- | - n: number of polynomial commitments
 -- | - f: the field type
-type CheckBulletproofInput d n f =
+-- | - scalar: the scalar representation for z1, z2 (e.g., Type2 (FVar f) (BoolVar f))
+type CheckBulletproofInput d n f scalar =
   { xi :: SizedF 128 (FVar f) -- ^ Batching scalar (128 bits)
   , advice ::
       { b :: FVar f -- ^ b = bPoly(chals, zeta) + u * bPoly(chals, zetaOmega)
@@ -74,8 +116,8 @@ type CheckBulletproofInput d n f =
   , opening ::
       { lr :: Vector d (Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))) -- ^ L/R pairs
       , delta :: AffinePoint (FVar f) -- ^ Delta commitment from opening proof
-      , z1 :: Type2 (FVar f) (BoolVar f) -- ^ Opening proof scalar z1
-      , z2 :: Type2 (FVar f) (BoolVar f) -- ^ Opening proof scalar z2
+      , z1 :: scalar -- ^ Opening proof scalar z1
+      , z2 :: scalar -- ^ Opening proof scalar z2
       , sg :: AffinePoint (FVar f) -- ^ Challenge polynomial commitment (deferred)
       }
   , h :: AffinePoint (FVar f) -- ^ SRS H generator
@@ -136,22 +178,19 @@ lrProdPure lrPairs chals =
 -- |
 -- | This can be tested directly against lrProdPure.
 -- |
--- | Note: Uses scaleFast2 for scalar multiplication with full field elements.
--- | The nChunks type parameter controls the chunking for scaleFast2 (5 * nChunks = 255).
+-- | The ScalarOps parameter provides the toScalar and scalarMul operations,
+-- | allowing this function to work with different scalar representations.
 -- | The d parameter is the number of IPA rounds (domain log2), enforced >= 1.
 lrProdCircuit
-  :: forall @d @d' @nChunks f t m
+  :: forall @d @d' f scalar t m
    . Add 1 d' d
   => Reflectable d Int
-  => Mul 5 nChunks 255
-  => Reflectable nChunks Int
-  => FieldSizeInBits f 255
-  => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
-  => Vector d { l :: AffinePoint (FVar f), r :: AffinePoint (FVar f) }
+  => ScalarOps f (KimchiConstraint f) scalar
+  -> Vector d { l :: AffinePoint (FVar f), r :: AffinePoint (FVar f) }
   -> Vector d (FVar f) -- ^ Endo-mapped challenges
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-lrProdCircuit lrPairs chals = do
+lrProdCircuit ops lrPairs chals = do
   -- Compute challenge inverses in circuit
   chalInvs <- traverse (\c -> recip (pure c)) chals
 
@@ -167,13 +206,13 @@ lrProdCircuit lrPairs chals = do
   mkInput { l, r } (Tuple chal chalInv) = { l, r, chal, chalInv }
 
   computeTermCircuit { l, r, chal, chalInv } = do
-    -- Convert challenges to Type2 for scaleFast2
-    chalType2 <- splitFieldVar chal
-    chalInvType2 <- splitFieldVar chalInv
+    -- Convert challenges to scalar representation
+    chalScalar <- ops.toScalar chal
+    chalInvScalar <- ops.toScalar chalInv
 
     -- L * chal_inv + R * chal
-    termL <- scaleFast2 @nChunks l chalInvType2
-    termR <- scaleFast2 @nChunks r chalType2
+    termL <- ops.scalarMul l chalInvScalar
+    termR <- ops.scalarMul r chalScalar
     _.p <$> addComplete termL termR
 
 --------------------------------------------------------------------------------
@@ -297,34 +336,36 @@ combineSplitCommitments xi commitments = do
 -- | 2. u = group_map(squeeze(sponge))
 -- | 3. combined_polynomial = combineSplitCommitments(xi, commitments)
 -- | 4. (lr_prod, challenges) = bullet_reduce(sponge, lr)
--- | 5. p_prime = combined_polynomial + scaleFast2(u, cip)
+-- | 5. p_prime = combined_polynomial + scalarMul(u, cip)
 -- | 6. q = p_prime + lr_prod
 -- | 7. Absorb delta into sponge
 -- | 8. c = squeeze_scalar(sponge)
 -- | 9. LHS = endo(q, c) + delta
--- | 10. RHS = scaleFast2(sg + scaleFast2(u, b), z1) + scaleFast2(h, z2)
+-- | 10. RHS = scalarMul(sg + scalarMul(u, b), z1) + scalarMul(h, z2)
 -- | 11. Assert LHS == RHS
 -- | 12. Return challenges
+-- |
+-- | The ScalarOps parameter provides toScalar and scalarMul operations,
+-- | allowing this function to work with different scalar representations.
 checkBulletproof
-  :: forall @d @d' @n @n' @nChunks f f' g t m
+  :: forall @d @d' @n @n' @g f f' scalar t m
    . Reflectable d Int
   => Reflectable n Int
   => Add 1 d' d
   => Add 1 n' n
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
-  => Mul 5 nChunks 255
-  => Reflectable nChunks Int
   => HasEndo f f'
+  => HasSqrt f
   => FrModule f' g
   => WeierstrassCurve f g
-  => HasSqrt f
   => PrimeField f
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => CheckBulletproofInput d n f
+  => ScalarOps f (KimchiConstraint f) scalar
+  -> CheckBulletproofInput d n f scalar
   -> SpongeM f (KimchiConstraint f) t m (CheckBulletproofOutput d (FVar f))
-checkBulletproof input = do
+checkBulletproof ops input = do
   -- Step 1: Absorb combined_inner_product into sponge
   absorb input.advice.combinedInnerProduct
 
@@ -338,9 +379,9 @@ checkBulletproof input = do
   -- Step 4: (lr_prod, challenges) = bullet_reduce(sponge, lr)
   { lrProd, challenges } <- bulletReduce @d @_ @g input.opening.lr
 
-  -- Step 5: p_prime = combined + scaleFast2(u, cip)
-  cipType2 <- liftSnarky $ splitFieldVar input.advice.combinedInnerProduct
-  uTimesCip <- liftSnarky $ scaleFast2 @nChunks u cipType2
+  -- Step 5: p_prime = combined + scalarMul(u, cip)
+  cipScalar <- liftSnarky $ ops.toScalar input.advice.combinedInnerProduct
+  uTimesCip <- liftSnarky $ ops.scalarMul u cipScalar
   { p: pPrime } <- liftSnarky $ addComplete combined uTimesCip
 
   -- Step 6: q = p_prime + lr_prod
@@ -356,12 +397,12 @@ checkBulletproof input = do
     qTimesC <- endo q c
     { p: lhs } <- addComplete qTimesC input.opening.delta
 
-    -- Step 10: RHS = scaleFast2(sg + scaleFast2(u, b), z1) + scaleFast2(h, z2)
-    bType2 <- splitFieldVar input.advice.b
-    uTimesB <- scaleFast2 @nChunks u bType2
+    -- Step 10: RHS = scalarMul(sg + scalarMul(u, b), z1) + scalarMul(h, z2)
+    bScalar <- ops.toScalar input.advice.b
+    uTimesB <- ops.scalarMul u bScalar
     { p: sgPlusUB } <- addComplete input.opening.sg uTimesB
-    term1 <- scaleFast2 @nChunks sgPlusUB input.opening.z1
-    term2 <- scaleFast2 @nChunks input.h input.opening.z2
+    term1 <- ops.scalarMul sgPlusUB input.opening.z1
+    term2 <- ops.scalarMul input.h input.opening.z2
     { p: rhs } <- addComplete term1 term2
 
     -- Step 11: Assert LHS == RHS

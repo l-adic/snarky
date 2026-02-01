@@ -85,7 +85,7 @@ instance CircuitType f (Digest (F f)) (Digest (FVar f)) where
   varToFields = genericVarToFields @(Digest (F f))
   fieldsToVar = genericFieldsToVar @(Digest (F f))
 
-instance CheckedType f c t m (Digest (FVar f)) where
+instance CheckedType f c (Digest (FVar f)) where
   check = genericCheck
 
 -- | Hash exactly 2 field elements.

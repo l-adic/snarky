@@ -162,7 +162,7 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
 splitFieldVar
   :: forall t m f c
    . CircuitM f c t m
-  => CheckedType f c t m (Type2 (FVar f) (BoolVar f))
+  => CheckedType f c (Type2 (FVar f) (BoolVar f))
   => FVar f
   -> Snarky c t m (Type2 (FVar f) (BoolVar f))
 splitFieldVar s = do

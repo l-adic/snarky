@@ -81,86 +81,86 @@ assert_ v = assertEqual_ (coerce v) (const_ $ one @f)
 --------------------------------------------------------------------------------
 -- | Generic AssertEqual class for asserting equality of circuit variables
 
-class AssertEqual :: Type -> Type -> ((Type -> Type) -> Type -> Type) -> (Type -> Type) -> Type -> Constraint
-class AssertEqual f c t m var | c -> f, var -> f, t -> f where
-  assertEq :: var -> var -> Snarky c t m Unit
+class AssertEqual :: Type -> Type -> Type -> Constraint
+class AssertEqual f c var | c -> f, var -> f where
+  assertEq :: forall t m. CircuitM f c t m => var -> var -> Snarky c t m Unit
 
 -- Base instance for FVar
-instance CircuitM f c t m => AssertEqual f c t m (FVar f) where
+instance AssertEqual f c (FVar f) where
   assertEq = assertEqual_
 
 -- Base instance for BoolVar
-instance CircuitM f c t m => AssertEqual f c t m (BoolVar f) where
+instance AssertEqual f c (BoolVar f) where
   assertEq x y = assertEqual_ (coerce x) (coerce y)
 
 -- Instance for Unit
-instance Applicative (Snarky c t m) => AssertEqual f c t m Unit where
+instance AssertEqual f c Unit where
   assertEq _ _ = pure unit
 
 -- Instance for Tuple
-instance (AssertEqual f c t m a, AssertEqual f c t m b, Bind (t m)) => AssertEqual f c t m (Tuple a b) where
+instance (AssertEqual f c a, AssertEqual f c b) => AssertEqual f c (Tuple a b) where
   assertEq (Tuple a1 b1) (Tuple a2 b2) = do
     assertEq @f a1 a2
     assertEq @f b1 b2
 
 -- Instance for Vector
-instance (AssertEqual f c t m a, Applicative (t m)) => AssertEqual f c t m (Vector n a) where
+instance AssertEqual f c a => AssertEqual f c (Vector n a) where
   assertEq v1 v2 = for_ (Vector.zip v1 v2) \(Tuple a1 a2) -> assertEq @f a1 a2
 
 -- Instance for Records
-instance (RowToList r rl, RAssertEqual f c t m rl r) => AssertEqual f c t m (Record r) where
-  assertEq = rAssertEqual @f @c @t @m (Proxy @rl)
+instance (RowToList r rl, RAssertEqual f c rl r) => AssertEqual f c (Record r) where
+  assertEq = rAssertEqual @f @c (Proxy @rl)
 
 --------------------------------------------------------------------------------
 -- | Generic rep instances for AssertEqual
 
-class GAssertEqual :: Type -> Type -> ((Type -> Type) -> Type -> Type) -> (Type -> Type) -> Type -> Constraint
-class GAssertEqual f c t m rep where
-  gAssertEqual :: rep -> rep -> Snarky c t m Unit
+class GAssertEqual :: Type -> Type -> Type -> Constraint
+class GAssertEqual f c rep where
+  gAssertEqual :: forall t m. CircuitM f c t m => rep -> rep -> Snarky c t m Unit
 
-instance Applicative (Snarky c t m) => GAssertEqual f c t m NoArguments where
+instance GAssertEqual f c NoArguments where
   gAssertEqual _ _ = pure unit
 
-instance AssertEqual f c t m a => GAssertEqual f c t m (Argument a) where
+instance AssertEqual f c a => GAssertEqual f c (Argument a) where
   gAssertEqual (Argument a1) (Argument a2) = assertEq @f a1 a2
 
-instance (GAssertEqual f c t m a, GAssertEqual f c t m b, Bind (t m)) => GAssertEqual f c t m (Product a b) where
+instance (GAssertEqual f c a, GAssertEqual f c b) => GAssertEqual f c (Product a b) where
   gAssertEqual (Product a1 b1) (Product a2 b2) = do
-    gAssertEqual @f @c @t @m a1 a2
-    gAssertEqual @f @c @t @m b1 b2
+    gAssertEqual @f @c a1 a2
+    gAssertEqual @f @c b1 b2
 
-instance GAssertEqual f c t m a => GAssertEqual f c t m (Constructor name a) where
-  gAssertEqual (Constructor a1) (Constructor a2) = gAssertEqual @f @c @t @m a1 a2
+instance GAssertEqual f c a => GAssertEqual f c (Constructor name a) where
+  gAssertEqual (Constructor a1) (Constructor a2) = gAssertEqual @f @c a1 a2
 
 -- | Generic assertEqual for types with Generic instance
 assertEqGeneric
   :: forall f c t m var rep
    . Generic var rep
-  => GAssertEqual f c t m rep
+  => CircuitM f c t m
+  => GAssertEqual f c rep
   => var
   -> var
   -> Snarky c t m Unit
-assertEqGeneric x y = gAssertEqual @f @c @t @m (from x) (from y)
+assertEqGeneric x y = gAssertEqual @f @c (from x) (from y)
 
 --------------------------------------------------------------------------------
 -- | Row list instances for AssertEqual on records
 
-class RAssertEqual :: Type -> Type -> ((Type -> Type) -> Type -> Type) -> (Type -> Type) -> RL.RowList Type -> Row Type -> Constraint
-class RAssertEqual f c t m (rl :: RL.RowList Type) (r :: Row Type) | rl -> r where
-  rAssertEqual :: Proxy rl -> Record r -> Record r -> Snarky c t m Unit
+class RAssertEqual :: Type -> Type -> RL.RowList Type -> Row Type -> Constraint
+class RAssertEqual f c (rl :: RL.RowList Type) (r :: Row Type) | rl -> r where
+  rAssertEqual :: forall t m. CircuitM f c t m => Proxy rl -> Record r -> Record r -> Snarky c t m Unit
 
-instance Applicative (Snarky c t m) => RAssertEqual f c t m RL.Nil () where
+instance RAssertEqual f c RL.Nil () where
   rAssertEqual _ _ _ = pure unit
 
 instance
   ( IsSymbol s
   , Row.Cons s a rest r
   , Row.Lacks s rest
-  , AssertEqual f c t m a
-  , RAssertEqual f c t m tail rest
-  , Bind (t m)
+  , AssertEqual f c a
+  , RAssertEqual f c tail rest
   ) =>
-  RAssertEqual f c t m (RL.Cons s a tail) r where
+  RAssertEqual f c (RL.Cons s a tail) r where
   rAssertEqual _ r1 r2 = do
     assertEq @f (Record.get (Proxy @s) r1) (Record.get (Proxy @s) r2)
-    rAssertEqual @f @c @t @m (Proxy @tail) (Record.delete (Proxy @s) r1) (Record.delete (Proxy @s) r2)
+    rAssertEqual @f @c (Proxy @tail) (Record.delete (Proxy @s) r1) (Record.delete (Proxy @s) r2)
