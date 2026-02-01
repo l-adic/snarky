@@ -21,6 +21,15 @@ module Snarky.Circuit.DSL.Monad
   , inv_
   , mul_
   , div_
+  --
+  , class CheckedType
+  , check
+  , genericCheck
+  --
+  , class GCheckedType
+  , gCheck
+  , class RCheckedType
+  , rCheck
   ) where
 
 import Prelude
@@ -30,20 +39,29 @@ import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
 import Data.Either (Either)
+import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (class Newtype, un, unwrap, wrap)
-import Data.Traversable (traverse)
+import Data.Symbol (class IsSymbol)
+import Data.Traversable (traverse, traverse_)
+import Data.Tuple (Tuple)
+import Data.Vector (Vector)
 import Effect.Exception.Unsafe (unsafeThrow)
+import Prim.Row as Row
+import Prim.RowList (class RowToList)
+import Prim.RowList as RL
+import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, fieldsToValue, varToFields)
-import Snarky.Constraint.Basic (class BasicSystem, r1cs)
+import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, UnChecked, fieldsToValue, varToFields)
+import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs)
 import Snarky.Curves.Class (class PrimeField)
+import Type.Proxy (Proxy(..))
 
 class ConstraintM t c where
   addConstraint' :: forall m. Monad m => c -> t m Unit
@@ -153,7 +171,7 @@ runSnarky :: forall c t m a. Snarky c t m a -> t m a
 runSnarky (Snarky m) = m
 
 class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
-  exists :: forall a var. CheckedType var c => CircuitType f a var => AsProverT f m a -> Snarky c t m var
+  exists :: forall a var. CircuitType f a var => CheckedType f c t m var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
@@ -297,3 +315,83 @@ div_
   -> FVar f
   -> Snarky c t m (FVar f)
 div_ a b = mul_ a =<< inv_ b
+
+--------------------------------------------------------------------------------
+
+class CheckedType f c t m var | c -> f, var -> f where
+  check
+    :: CircuitM f c t m
+    => var
+    -> Snarky c t m Unit
+
+instance CheckedType f c t m Unit where
+  check _ = pure mempty
+
+instance CheckedType f c t m (FVar f) where
+  check _ = pure mempty
+
+instance BasicSystem f c => CheckedType f c t m (BoolVar f) where
+  check var = Snarky $ addConstraint' @t @c $ boolean (coerce var :: FVar f)
+
+instance (CheckedType f c t m avar, CheckedType f c t m bvar) => CheckedType f c t m (Tuple avar bvar) where
+  check = genericCheck
+
+instance CheckedType f c t m (UnChecked var) where
+  check _ = pure mempty
+
+instance CheckedType f c t m var => CheckedType f c t m (Vector n var) where
+  check var = traverse_ check var
+
+instance (RowToList var rlvar, RCheckedType f c t m rlvar var) => CheckedType f c t m (Record var) where
+  check x = rCheck (Proxy @rlvar) x
+
+class GCheckedType f c t m var | c -> f, var -> f where
+  gCheck
+    :: CircuitM f c t m
+    => var
+    -> Snarky c t m Unit
+
+instance GCheckedType f c t m NoArguments where
+  gCheck _ = pure mempty
+
+instance CheckedType f c t m a => GCheckedType f c t m (Argument a) where
+  gCheck (Argument a) = check a
+
+instance (GCheckedType f c t m avar, GCheckedType f c t m bvar) => GCheckedType f c t m (Product avar bvar) where
+  gCheck (Product a b) = lift2 (<>) (gCheck a) (gCheck b)
+
+instance GCheckedType f c t m var => GCheckedType f c t m (Constructor name var) where
+  gCheck (Constructor a) = gCheck a
+
+genericCheck
+  :: forall var rep f c t m
+   . Generic var rep
+  => CircuitM f c t m
+  => GCheckedType f c t m rep
+  => var
+  -> Snarky c t m Unit
+genericCheck var = gCheck $ from var
+
+class RCheckedType :: forall k. Type -> Type -> ((Type -> Type) -> Type -> Type) -> (Type -> Type) -> k -> Row Type -> Constraint
+class RCheckedType f c t m rlvar var | rlvar -> var where
+  rCheck
+    :: CircuitM f c t m
+    => Proxy rlvar
+    -> Record var
+    -> Snarky c t m Unit
+
+instance Monad (t m) => RCheckedType f c t m RL.Nil () where
+  rCheck _ _ = pure mempty
+
+instance
+  ( IsSymbol s
+  , Row.Cons s avar restvars vars
+  , Row.Lacks s restvars
+  , CheckedType f c t m avar
+  , RCheckedType f c t m tailvars restvars
+  ) =>
+  RCheckedType f c t m (RL.Cons s avar tailvars) vars where
+  rCheck _ r = do
+    afs <- check $ Record.get (Proxy @s) r
+    asfs <- rCheck (Proxy @tailvars) $ Record.delete (Proxy @s) r
+    pure $ afs <> asfs

@@ -17,7 +17,7 @@ import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
 import JS.BigInt (fromInt)
 import JS.BigInt as BigInt
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, BoolVar, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
@@ -111,7 +111,7 @@ instance PrimeField f => CircuitType f (Type2 (F f) Boolean) (Type2 (FVar f) (Bo
   varToFields = genericVarToFields @(Type2 (F f) Boolean)
   fieldsToVar = genericFieldsToVar @(Type2 (F f) Boolean)
 
-instance BasicSystem f c => CheckedType (Type2 (FVar f) (BoolVar f)) c where
+instance BasicSystem f c => CheckedType f c t m (Type2 (FVar f) (BoolVar f)) where
   check = genericCheck
 
 instance Bifunctor Type2 where

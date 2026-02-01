@@ -28,12 +28,11 @@ import Poseidon as Poseidon
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
@@ -84,10 +83,9 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f v var
-  , CheckedType var c
   , MerkleHashable v (Digest (F f))
   ) =>
-  CMT.MerkleRequestM (SparseMerkleRefM d f v) f v c d var where
+  CMT.MerkleRequestM (SparseMerkleRefM d f v) f v d var where
   getElement (Address addr) = do
     tree <- getSparseTreeRef
     let
@@ -128,9 +126,8 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f (Account (F f)) (Account (FVar f))
-  , CheckedType (Account (FVar f)) c
   ) =>
-  CMT.MerkleRequestM (SparseCompileM d f) f (Account (F f)) c d (Account (FVar f)) where
+  CMT.MerkleRequestM (SparseCompileM d f) f (Account (F f)) d (Account (FVar f)) where
   getElement _ = unsafeThrow "unhandled request: getElement"
   getPath _ = unsafeThrow "unhandled request: getPath"
   setValue _ _ = unsafeThrow "unhandled request: setValue"
@@ -159,7 +156,7 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
   varToFields = genericVarToFields @(Account (F f))
   fieldsToVar = genericFieldsToVar @(Account (F f))
 
-instance CheckedType (Account (FVar f)) c where
+instance CheckedType f c t m (Account (FVar f)) where
   check = genericCheck
 
 -- | Pure Hashable instance for Account (F f)

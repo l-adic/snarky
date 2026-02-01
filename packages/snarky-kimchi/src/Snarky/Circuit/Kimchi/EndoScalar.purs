@@ -23,6 +23,7 @@ import Snarky.Data.SizedF (SizedF, toBits)
 
 -- | Circuit version of endomorphism scalar decomposition.
 -- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.
+-- | This is used in conjnuction with EndoMul
 toField
   :: forall f t m n
    . FieldSizeInBits f n

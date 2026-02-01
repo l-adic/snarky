@@ -28,10 +28,8 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (F(..), Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 
@@ -87,7 +85,7 @@ instance CircuitType f (Digest (F f)) (Digest (FVar f)) where
   varToFields = genericVarToFields @(Digest (F f))
   fieldsToVar = genericFieldsToVar @(Digest (F f))
 
-instance CheckedType (Digest (FVar f)) c where
+instance CheckedType f c t m (Digest (FVar f)) where
   check = genericCheck
 
 -- | Hash exactly 2 field elements.

@@ -8,9 +8,9 @@ import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Snarky.Backend.Builder (CircuitBuilderT)
 import Snarky.Circuit.CVar (CVar, Variable)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType, Bool, F, UnChecked, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
-import Snarky.Constraint.Basic (class BasicSystem)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool, F, UnChecked, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary, (===))
 import Test.QuickCheck.Gen (Gen)
@@ -70,7 +70,7 @@ instance
   varToFields = genericVarToFields @(MyRecord (F f) Boolean)
   fieldsToVar = genericFieldsToVar @(MyRecord (F f) Boolean)
 
-instance (BasicSystem f c) => CheckedType (MyRecord (CVar f Variable) (CVar f (Bool Variable))) c where
+instance CheckedType f c (CircuitBuilderT c Unit) m (MyRecord (CVar f Variable) (CVar f (Bool Variable))) where
   check = genericCheck
 
 -- Generic test suite for any CircuitType

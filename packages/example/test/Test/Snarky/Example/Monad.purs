@@ -26,10 +26,9 @@ import Effect.Ref (Ref, read, write)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafeCrashWith)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (F(..), FVar)
+import Snarky.Circuit.DSL (class CircuitType, F(..), FVar)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Circuit.Types (class CheckedType, class CircuitType)
 import Snarky.Curves.Class (class PrimeField, toBigInt)
 import Snarky.Example.Circuits (class AccountMapM)
 import Snarky.Example.Types (Account, PublicKey(..))
@@ -82,10 +81,9 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f (Account (F f)) (Account (FVar f))
-  , CheckedType (Account (FVar f)) c
   , MerkleHashable (Account (F f)) (Digest (F f))
   ) =>
-  CMT.MerkleRequestM (TransferRefM d f) f (Account (F f)) c d (Account (FVar f)) where
+  CMT.MerkleRequestM (TransferRefM d f) f (Account (F f)) d (Account (FVar f)) where
   getElement (Sparse.Address addr) = do
     { tree } <- getStateRef
     let
@@ -134,9 +132,8 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f (Account (F f)) (Account (FVar f))
-  , CheckedType (Account (FVar f)) c
   ) =>
-  CMT.MerkleRequestM (TransferCompileM d f) f (Account (F f)) c d (Account (FVar f)) where
+  CMT.MerkleRequestM (TransferCompileM d f) f (Account (F f)) d (Account (FVar f)) where
   getElement _ = unsafeCrashWith "the impossible happened! unhandled request: getElement"
   getPath _ = unsafeCrashWith "the impossible happened! unhandled request: getPath"
   setValue _ _ = unsafeCrashWith "the impossible happened! unhandled request: setValue"

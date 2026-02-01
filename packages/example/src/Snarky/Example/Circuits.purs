@@ -74,7 +74,7 @@ transfer
   => FieldSizeInBits f n
   => Add 64 _k n
   => AccountMapM m f d
-  => CMT.MerkleRequestM m f (Account (F f)) (KimchiConstraint f) d (Account (FVar f))
+  => CMT.MerkleRequestM m f (Account (F f)) d (Account (FVar f))
   => MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
   => CircuitM f (KimchiConstraint f) t m
   => Digest (FVar f)
