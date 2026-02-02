@@ -1,3 +1,25 @@
+-- | Union-Find (Disjoint Set Union) data structure.
+-- |
+-- | This module provides an efficient implementation of the union-find data
+-- | structure for tracking equivalence classes. It supports two primary
+-- | operations:
+-- |
+-- | - `find`: Determine which equivalence class an element belongs to
+-- | - `union`: Merge two equivalence classes into one
+-- |
+-- | The implementation uses path compression and union by rank for
+-- | near-constant amortized time complexity.
+-- |
+-- | ```purescript
+-- | import Control.Monad.State (evalState)
+-- | import Data.UnionFind (emptyUnionFind, find, union, connected)
+-- |
+-- | example :: Boolean
+-- | example = flip evalState emptyUnionFind do
+-- |   union 1 2
+-- |   union 2 3
+-- |   connected 1 3  -- true: 1 and 3 are in the same equivalence class
+-- | ```
 module Data.UnionFind
   ( class MonadUnionFind
   , find
@@ -19,22 +41,40 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Newtype (class Newtype, over)
 
--- | Interface for Union-Find operations
+-- | Type class for monads supporting union-find operations.
+-- |
+-- | The type parameter `a` is the element type (must be `Ord` for the
+-- | standard implementation), and `m` is the monad providing the state.
 class Monad m <= MonadUnionFind a m where
-  -- | Find the representative of an element's equivalence class
+  -- | Find the representative (root) of an element's equivalence class.
+  -- |
+  -- | Elements in the same equivalence class will return the same
+  -- | representative. If the element hasn't been seen before, it becomes
+  -- | its own representative (a singleton equivalence class).
   find :: a -> m a
 
-  -- | Union two elements into the same equivalence class
+  -- | Merge the equivalence classes containing two elements.
+  -- |
+  -- | After `union x y`, `find x` and `find y` will return the same
+  -- | representative.
   union :: a -> a -> m Unit
 
--- | Check if two elements are in the same equivalence class
+-- | Check if two elements are in the same equivalence class.
+-- |
+-- | ```purescript
+-- | example = flip evalState emptyUnionFind do
+-- |   union 1 2
+-- |   c1 <- connected 1 2  -- true
+-- |   c2 <- connected 1 3  -- false
+-- |   pure { c1, c2 }
+-- | ```
 connected :: forall a m. MonadUnionFind a m => Eq a => a -> a -> m Boolean
 connected x y = do
   rootX <- find x
   rootY <- find y
   pure (rootX == rootY)
 
--- | Pure function to find root without path compression
+-- | Pure helper to find root without path compression (used by `equivalenceClasses`).
 findRootPure :: forall a. Ord a => Map a a -> a -> a
 findRootPure parentMap element =
   case Map.lookup element parentMap of
@@ -43,7 +83,17 @@ findRootPure parentMap element =
       if parent == element then element -- Found root
       else findRootPure parentMap parent -- Recurse
 
--- | Get all equivalence classes as an array of arrays (pure function)
+-- | Extract all equivalence classes from the union-find structure.
+-- |
+-- | Returns an array of arrays, where each inner array contains all elements
+-- | in the same equivalence class. This is a pure function that doesn't
+-- | perform path compression.
+-- |
+-- | ```purescript
+-- | finalState = execState (union 1 2 *> union 2 3 *> union 4 5) emptyUnionFind
+-- | equivalenceClasses finalState
+-- | -- [[1, 2, 3], [4, 5]] (order may vary)
+-- | ```
 equivalenceClasses :: forall a. Ord a => UnionFindData a -> Array (Array a)
 equivalenceClasses (UnionFindData { parent }) =
   let
@@ -60,19 +110,25 @@ equivalenceClasses (UnionFindData { parent }) =
   in
     Array.fromFoldable (Map.values rootGroups)
 
--- | The Union-Find data structure
+-- | The union-find data structure, storing parent pointers and ranks.
+-- |
+-- | Use `emptyUnionFind` to create a new instance, then run operations
+-- | in `State (UnionFindData a)`.
 newtype UnionFindData a = UnionFindData
-  { parent :: Map a a -- parent pointers
-  , rank :: Map a Int -- rank for union by rank
+  { parent :: Map a a -- ^ Parent pointers forming a forest
+  , rank :: Map a Int -- ^ Rank (upper bound on tree height) for union by rank
   }
 
 derive instance Newtype (UnionFindData a) _
 
--- | Create an empty union-find data structure
+-- | Create an empty union-find structure with no elements.
 emptyUnionFind :: forall a. UnionFindData a
 emptyUnionFind = UnionFindData { parent: Map.empty, rank: Map.empty }
 
--- | Implementation for any MonadState with a unionFind field
+-- | Standard implementation using `State (UnionFindData a)`.
+-- |
+-- | Uses path compression in `find` and union by rank in `union` for
+-- | near-constant amortized time complexity (inverse Ackermann function).
 instance (Ord a) => MonadUnionFind a (State (UnionFindData a)) where
   find x = do
     UnionFindData st <- get
