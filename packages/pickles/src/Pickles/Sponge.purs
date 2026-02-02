@@ -33,23 +33,27 @@ module Pickles.Sponge
 import Prelude
 
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
+import Data.Fin (getFinite)
 import Data.Foldable (class Foldable)
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Identity (Identity(..))
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.ScalarChallenge (lowest128Bits, lowest128BitsConstant)
+import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
+import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (Snarky)
+import Snarky.Circuit.DSL (Snarky, pack_, unpackPure, unpack_)
 import Snarky.Circuit.DSL.Monad (class CircuitM)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.SizedF (SizedF(..))
 
@@ -211,7 +215,7 @@ squeezeScalarChallengePure
   => PureSpongeM f (SizedF 128 f)
 squeezeScalarChallengePure = do
   x <- squeeze
-  pure $ SizedF $ lowest128BitsConstant x
+  pure $ SizedF $ lowest128BitsPure x
 
 --------------------------------------------------------------------------------
 -- | Initial States
@@ -224,3 +228,37 @@ initialSponge = create $ Vector.generate (const zero)
 -- | Create an initial sponge with zero state (circuit version)
 initialSpongeCircuit :: forall f. PrimeField f => Sponge (FVar f)
 initialSpongeCircuit = create $ Vector.generate (const $ const_ zero)
+
+--------------------------------------------------------------------------------
+
+lowest128Bits
+  :: forall f c t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => CircuitM f c t m
+  => FVar f
+  -> Snarky c t m (FVar f)
+lowest128Bits x = do
+  bits <- unpack_ x
+  let low128 = Vector.take @128 bits
+  pure $ pack_ low128
+
+lowest128BitsPure
+  :: forall f n _l
+   . PrimeField f
+  => FieldSizeInBits f n
+  => Add 128 _l n
+  => f
+  -> f
+lowest128BitsPure x =
+  let
+    -- Unpack to bits (LSB first), take first 128
+    bits :: Vector 128 Boolean
+    bits = Vector.take @128 $ unpackPure x
+    two = fromInt 2
+  in
+    -- Pack back to field element
+    foldlWithIndex
+      (\i acc b -> if b then acc + pow two (BigInt.fromInt $ getFinite i) else acc)
+      zero
+      bits
