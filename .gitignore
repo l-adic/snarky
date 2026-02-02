@@ -52,3 +52,4 @@ srs-cache/
 packages/pickles/src/Pickles/Linearization/Pallas.purs
 packages/pickles/src/Pickles/Linearization/Vesta.purs
 packages/pickles-codegen/rust/output/
+mina/

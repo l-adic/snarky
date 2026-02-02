@@ -6,6 +6,11 @@ members = [
     "packages/pickles-codegen/rust",
 ]
 
+exclude = [
+    "vendor/proof-systems",
+    "mina",
+]
+
 [workspace.dependencies]
 # arkworks (minimal for bn254/groth16 support only)
 ark-ff = "0.5.0"
@@ -32,10 +37,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.0"
 
-kimchi = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
-mina-curves = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
-mina-poseidon = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
-poly-commitment = { git = "https://github.com/o1-labs/proof-systems", rev = "1f5dc49" }
+kimchi = { path = "vendor/proof-systems/kimchi", features = ["bn254"] }
+mina-curves = { path = "vendor/proof-systems/curves" }
+mina-poseidon = { path = "vendor/proof-systems/poseidon" }
+poly-commitment = { path = "vendor/proof-systems/poly-commitment" }
 
 [workspace.dependencies.proptest]
 version = "1.0"
