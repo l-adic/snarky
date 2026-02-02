@@ -1,3 +1,16 @@
+//! BigInt conversion utilities for bridging JavaScript and Rust.
+//!
+//! This module handles conversions between three BigInt representations:
+//!
+//! - **NAPI BigInt**: JavaScript's native BigInt, passed via NAPI as `{sign_bit, words}`
+//! - **num-bigint**: Rust's arbitrary-precision integers (for intermediate computation)
+//! - **arkworks BigInt**: Fixed-limb representation used by ark_ff field elements
+//!
+//! Key operations:
+//! - Automatic modular reduction when converting to field elements
+//! - Correct handling of negative numbers (reduced to positive representatives)
+//! - Round-trip preservation for values in range
+
 use ark_ff::{BigInt, PrimeField};
 use core::convert::TryInto;
 use napi::bindgen_prelude::{BigInt as NapiBigInt, Result as NapiResult};

@@ -1,41 +1,70 @@
-// Unified crypto-provider that consolidates curves, bulletproofs, and groth16 functionality
-// This replaces the separate NAPI crates with a single unified crate
+//! Unified crypto-provider: NAPI bindings for elliptic curve cryptography.
+//!
+//! This crate provides Node.js bindings (via NAPI-RS) for cryptographic operations
+//! used by the PureScript snarky library. It consolidates:
+//!
+//! - **Curves**: Field arithmetic and group operations for Pasta (Pallas/Vesta) and BN254
+//! - **Poseidon**: zkSNARK-friendly hash function with Kimchi-compatible parameters
+//! - **Bulletproofs**: Range proofs and inner product arguments
+//! - **Groth16**: zkSNARK proving system over BN254
+//! - **Kimchi**: Gate verification functions for the Kimchi proof system
+//!
+//! # Architecture
+//!
+//! The PureScript code imports this crate's exports as FFI:
+//! ```text
+//! PureScript (Snarky.Curves.Pasta) → FFI → crypto-provider (Rust/NAPI)
+//! ```
+//!
+//! Field elements and group points are passed as opaque `External<T>` handles
+//! that JavaScript/PureScript cannot inspect directly.
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
 // ============================================================================
-// CURVES MODULE - Basic curve operations and field arithmetic
+// CURVES MODULE
+// Field arithmetic and elliptic curve group operations.
 // ============================================================================
 
+/// BN254 curve (alt_bn128) - used for Groth16 proofs, Ethereum compatibility.
 pub mod bn254;
 
+/// BigInt conversion utilities between NAPI, num-bigint, and arkworks.
 mod bigint;
 
-// Pasta curves using mina-curves backend
+/// Pasta curves (Pallas and Vesta) - used for recursive SNARKs in Mina.
 pub mod pasta;
 
 // Re-export pasta functions for backward compatibility
 pub use pasta::*;
 
 // ============================================================================
-// BULLETPROOFS MODULE - Zero-knowledge proofs using bulletproofs
+// BULLETPROOFS MODULE
+// Zero-knowledge proofs using the Bulletproofs protocol.
+// Provides range proofs and R1CS constraint system support.
 // ============================================================================
 
+/// Bulletproofs circuit definitions and constraint generation.
 pub mod bulletproofs_circuit;
+
+/// Bulletproofs type definitions (commitments, proofs, etc).
 pub mod bulletproofs_types;
 
 // Re-export bulletproofs functionality
 pub use bulletproofs_circuit::*;
 pub use bulletproofs_types::*;
 
+/// Initialize the bulletproofs module (no-op, for API consistency).
 #[napi]
 pub fn bulletproofs_init() -> Result<()> {
     Ok(())
 }
 
 // ============================================================================
-// GROTH16 MODULE - Zero-knowledge proofs using Groth16
+// GROTH16 MODULE
+// zkSNARK proving system using the Groth16 protocol over BN254.
+// Provides setup, prove, and verify operations for R1CS circuits.
 // ============================================================================
 
 use std::collections::HashSet;
@@ -55,32 +84,54 @@ use rand_chacha::ChaCha20Rng;
 
 use crate::bn254::scalar_field::FieldExternal as Bn254FieldExternal;
 
-// External types for NAPI
+// External types for NAPI - opaque handles to Groth16 objects
+/// Proving key with circuit dimensions (needed for witness validation).
 pub type Bn254ProvingKeyExternal = External<(ProvingKey<ark_bn254::Bn254>, R1CSDimensions)>;
+/// Verifying key for proof verification.
 pub type Bn254VerifyingKeyExternal = External<VerifyingKey<ark_bn254::Bn254>>;
+/// Serialized proof bytes.
 pub type Bn254ProofExternal = External<Vec<u8>>;
+/// R1CS constraint system.
 pub type Bn254CircuitExternal = External<R1CSConstraints>;
+/// Witness assignment for all variables.
 pub type Bn254WitnessExternal = External<R1CSWitness>;
 
+/// Dimensions of an R1CS constraint system.
+///
+/// Exposed to JavaScript for circuit introspection.
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct R1CSDimensions {
+    /// Number of constraints (rows in the A, B, C matrices).
     #[napi(js_name = "numConstraints")]
     pub num_constraints: u32,
+    /// Total number of variables (including the constant "1" variable).
     #[napi(js_name = "numVariables")]
     pub num_variables: u32,
+    /// Number of public inputs.
     #[napi(js_name = "numInputs")]
     pub num_inputs: u32,
 }
 
+/// R1CS constraint system in sparse matrix form.
+///
+/// Constraints are of the form: (A · w) ∘ (B · w) = C · w
+/// where w is the witness vector and ∘ is element-wise multiplication.
 pub struct R1CSConstraints {
     dimensions: R1CSDimensions,
+    /// Sparse A matrix: matrix_a[constraint_idx] = [(var_idx, coeff), ...]
     matrix_a: Vec<Vec<(u32, Fr)>>,
+    /// Sparse B matrix.
     matrix_b: Vec<Vec<(u32, Fr)>>,
+    /// Sparse C matrix.
     matrix_c: Vec<Vec<(u32, Fr)>>,
+    /// Indices of public input variables.
     public_input_indices: Vec<u32>,
 }
 
+/// Witness assignment for an R1CS circuit.
+///
+/// witness[0] must always be 1 (the constant variable).
 #[derive(Clone)]
 pub struct R1CSWitness {
     witness: Vec<Fr>,
@@ -274,6 +325,10 @@ fn convert_sparse_matrix(sparse: Vec<Vec<(u32, &Bn254FieldExternal)>>) -> Vec<Ve
         .collect()
 }
 
+/// Create an R1CS circuit from sparse constraint matrices.
+///
+/// Each matrix is represented as a vector of rows, where each row is
+/// a vector of (variable_index, coefficient) pairs.
 #[napi]
 pub fn bn254_circuit_create(
     dimensions: R1CSDimensions,
@@ -319,6 +374,9 @@ pub fn bn254_circuit_create(
     Ok(External::new(constraints))
 }
 
+/// Create a witness from field element assignments.
+///
+/// witness[0] must be 1 (the constant variable).
 #[napi]
 pub fn bn254_witness_create(witness: Vec<&Bn254FieldExternal>) -> External<R1CSWitness> {
     let witness_fr: Vec<Fr> = witness.into_iter().map(|field_ext| **field_ext).collect();
@@ -329,6 +387,9 @@ pub fn bn254_witness_create(witness: Vec<&Bn254FieldExternal>) -> External<R1CSW
     External::new(r1cs_witness)
 }
 
+/// Check if a witness satisfies all R1CS constraints.
+///
+/// Returns true if (A·w) ∘ (B·w) = C·w for all constraints.
 #[napi]
 pub fn bn254_circuit_is_satisfied_by(
     circuit: &External<R1CSConstraints>,
@@ -337,6 +398,9 @@ pub fn bn254_circuit_is_satisfied_by(
     circuit.is_satisfied_by(witness)
 }
 
+/// Generate Groth16 proving and verifying keys for a circuit.
+///
+/// Uses deterministic randomness from the provided seed.
 #[napi]
 pub fn bn254_setup(
     circuit: &External<R1CSConstraints>,
@@ -353,6 +417,9 @@ pub fn bn254_setup(
     ))
 }
 
+/// Generate a Groth16 proof for a circuit with a satisfying witness.
+///
+/// Returns compressed proof bytes.
 #[napi]
 pub fn bn254_prove(
     pk: &Bn254ProvingKeyExternal,
@@ -376,6 +443,9 @@ pub fn bn254_prove(
     Ok(External::new(proof_bytes))
 }
 
+/// Verify a Groth16 proof against public inputs.
+///
+/// Returns true if the proof is valid.
 #[napi]
 pub fn bn254_verify(
     vk: &Bn254VerifyingKeyExternal,
@@ -398,9 +468,12 @@ pub fn bn254_verify(
 }
 
 // ============================================================================
-// KIMCHI MODULE - Poseidon hashing and Kimchi gate functionality
+// KIMCHI MODULE
+// Poseidon hashing with Kimchi-compatible parameters, plus gate verification
+// functions for testing circuit implementations against reference code.
 // ============================================================================
 
+/// Kimchi-specific functionality: Poseidon hash, gate verification, linearization.
 pub mod kimchi;
 
 pub use kimchi::poseidon::{
