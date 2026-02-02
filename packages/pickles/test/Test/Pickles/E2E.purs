@@ -47,7 +47,7 @@ import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
-import Snarky.Circuit.Schnorr (SignatureVar(..), verifies)
+import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -89,7 +89,7 @@ schnorrCircuit { signature: { r: sigR, s: sigS }, publicKey, message } =
         { x: const_ x, y: const_ y }
     signature = SignatureVar { r: sigR, s: sigS }
   in
-    verifies @51 genPointVar { signature, publicKey, message }
+    verifies (pallasScalarOps @51) genPointVar { signature, publicKey, message }
 
 -- | Compiled circuit state for the Schnorr circuit.
 schnorrBuiltState :: CircuitBuilderState (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField)

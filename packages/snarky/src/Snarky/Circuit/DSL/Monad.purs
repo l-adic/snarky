@@ -171,7 +171,7 @@ runSnarky :: forall c t m a. Snarky c t m a -> t m a
 runSnarky (Snarky m) = m
 
 class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
-  exists :: forall a var. CircuitType f a var => CheckedType f c t m var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
+  exists :: forall a var. CircuitType f a var => CheckedType f c var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a
 throwAsProver = AsProverT <<< throwError
@@ -318,79 +318,82 @@ div_ a b = mul_ a =<< inv_ b
 
 --------------------------------------------------------------------------------
 
-class CheckedType f c t m var | c -> f, var -> f where
+class CheckedType f c var | c -> f, var -> f where
   check
-    :: CircuitM f c t m
+    :: forall t m
+     . CircuitM f c t m
     => var
     -> Snarky c t m Unit
 
-instance CheckedType f c t m Unit where
+instance CheckedType f c Unit where
   check _ = pure mempty
 
-instance CheckedType f c t m (FVar f) where
+instance CheckedType f c (FVar f) where
   check _ = pure mempty
 
-instance BasicSystem f c => CheckedType f c t m (BoolVar f) where
-  check var = Snarky $ addConstraint' @t @c $ boolean (coerce var :: FVar f)
+instance BasicSystem f c => CheckedType f c (BoolVar f) where
+  check var = Snarky $ addConstraint' @_ @c $ boolean (coerce var :: FVar f)
 
-instance (CheckedType f c t m avar, CheckedType f c t m bvar) => CheckedType f c t m (Tuple avar bvar) where
+instance (CheckedType f c avar, CheckedType f c bvar) => CheckedType f c (Tuple avar bvar) where
   check = genericCheck
 
-instance CheckedType f c t m (UnChecked var) where
+instance CheckedType f c (UnChecked var) where
   check _ = pure mempty
 
-instance CheckedType f c t m var => CheckedType f c t m (Vector n var) where
+instance CheckedType f c var => CheckedType f c (Vector n var) where
   check var = traverse_ check var
 
-instance (RowToList var rlvar, RCheckedType f c t m rlvar var) => CheckedType f c t m (Record var) where
+instance (RowToList var rlvar, RCheckedType f c rlvar var) => CheckedType f c (Record var) where
   check x = rCheck (Proxy @rlvar) x
 
-class GCheckedType f c t m var | c -> f, var -> f where
+class GCheckedType f c var | c -> f, var -> f where
   gCheck
-    :: CircuitM f c t m
+    :: forall t m
+     . CircuitM f c t m
     => var
     -> Snarky c t m Unit
 
-instance GCheckedType f c t m NoArguments where
+instance GCheckedType f c NoArguments where
   gCheck _ = pure mempty
 
-instance CheckedType f c t m a => GCheckedType f c t m (Argument a) where
+instance CheckedType f c a => GCheckedType f c (Argument a) where
   gCheck (Argument a) = check a
 
-instance (GCheckedType f c t m avar, GCheckedType f c t m bvar) => GCheckedType f c t m (Product avar bvar) where
+instance (GCheckedType f c avar, GCheckedType f c bvar) => GCheckedType f c (Product avar bvar) where
   gCheck (Product a b) = lift2 (<>) (gCheck a) (gCheck b)
 
-instance GCheckedType f c t m var => GCheckedType f c t m (Constructor name var) where
+instance GCheckedType f c var => GCheckedType f c (Constructor name var) where
   gCheck (Constructor a) = gCheck a
 
 genericCheck
   :: forall var rep f c t m
    . Generic var rep
   => CircuitM f c t m
-  => GCheckedType f c t m rep
+  => GCheckedType f c rep
   => var
   -> Snarky c t m Unit
 genericCheck var = gCheck $ from var
 
-class RCheckedType :: forall k. Type -> Type -> ((Type -> Type) -> Type -> Type) -> (Type -> Type) -> k -> Row Type -> Constraint
-class RCheckedType f c t m rlvar var | rlvar -> var where
+class RCheckedType :: forall k. Type -> Type -> k -> Row Type -> Constraint
+class RCheckedType f c rlvar var | rlvar -> var where
   rCheck
-    :: CircuitM f c t m
+    :: forall t m
+     . CircuitM f c t m
     => Proxy rlvar
     -> Record var
     -> Snarky c t m Unit
 
-instance Monad (t m) => RCheckedType f c t m RL.Nil () where
+instance RCheckedType f c RL.Nil () where
   rCheck _ _ = pure mempty
 
 instance
   ( IsSymbol s
   , Row.Cons s avar restvars vars
   , Row.Lacks s restvars
-  , CheckedType f c t m avar
-  , RCheckedType f c t m tailvars restvars
+  , CheckedType f c avar
+  , RCheckedType f c tailvars restvars
   ) =>
-  RCheckedType f c t m (RL.Cons s avar tailvars) vars where
+  RCheckedType f c (RL.Cons s avar tailvars) vars where
   rCheck _ r = do
     afs <- check $ Record.get (Proxy @s) r
     asfs <- rCheck (Proxy @tailvars) $ Record.delete (Proxy @s) r

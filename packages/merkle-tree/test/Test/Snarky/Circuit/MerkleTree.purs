@@ -30,8 +30,7 @@ import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit, verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
@@ -80,6 +79,7 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f v var
+  , CheckedType f (KimchiConstraint f) var
   , MerkleHashable v (Digest (F f))
   ) =>
   CMT.MerkleRequestM (MerkleRefM d f v) f v d var where
@@ -172,7 +172,7 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
   varToFields = genericVarToFields @(Account (F f))
   fieldsToVar = genericFieldsToVar @(Account (F f))
 
-instance CheckedType f c t m (Account (FVar f)) where
+instance CheckedType f c (Account (FVar f)) where
   check = genericCheck
 
 -- | Pure Hashable instance for Account (F f)

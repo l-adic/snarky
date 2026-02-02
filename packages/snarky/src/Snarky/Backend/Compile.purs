@@ -26,13 +26,14 @@ import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finali
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, fresh, read, runAsProverT, runSnarky)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, check, fresh, read, runAsProverT, runSnarky)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
 
 compilePure
   :: forall @f c c' a b avar bvar r
    . CompileCircuit f c c' r
+  => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy a
@@ -46,6 +47,7 @@ compilePure pa pb pc circuit cbs = un Identity $ compile pa pb pc circuit cbs
 compile
   :: forall f c c' m a b avar bvar r
    . CompileCircuit f c c' r
+  => CheckedType f c' avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
@@ -66,6 +68,7 @@ compile _ _ _ circuit cbs = finalize <$> do
       setPublicInputVars vars
       let avar = fieldsToVar @f @a (map Var avars)
       out <- runSnarky $ do
+        check @f @c' avar
         out <- circuit avar
         for_ (zip (varToFields @f @b out) (map Var bvars)) \(Tuple v1 v2) ->
           assertEqual_ v1 v2
@@ -75,6 +78,7 @@ compile _ _ _ circuit cbs = finalize <$> do
 makeSolver
   :: forall f a b c m avar bvar
    . SolveCircuit f c
+  => CheckedType f c avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
@@ -89,7 +93,9 @@ makeSolver _ circuit = \inputs -> do
     let { before: avars, after: bvars } = Array.splitAt n vars
     setAssignments $ zip avars (valueToFields inputs)
     outVar <- runSnarky $ do
-      result <- circuit (fieldsToVar @f @a (map Var avars))
+      let var = fieldsToVar @f @a (map Var avars)
+      check @f @c var
+      result <- circuit var
       pure result
     eres <- getAssignments >>= runAsProverT (read outVar)
     case eres of
