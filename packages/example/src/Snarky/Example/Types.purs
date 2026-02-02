@@ -38,10 +38,10 @@ instance CircuitType f (PublicKey (F f)) (PublicKey (FVar f)) where
   varToFields = genericVarToFields @(PublicKey (F f))
   fieldsToVar = genericFieldsToVar @(PublicKey (F f))
 
-instance CheckedType f c t m (PublicKey (FVar f)) where
+instance CheckedType f c (PublicKey (FVar f)) where
   check = genericCheck
 
-instance CircuitM f c t m => AssertEqual f c t m (PublicKey (FVar f)) where
+instance AssertEqual f c (PublicKey (FVar f)) where
   assertEq x y = assertEqGeneric x y
 
 --------------------------------------------------------------------------------
@@ -67,7 +67,7 @@ instance CircuitType f (TokenAmount (F f)) (TokenAmount (FVar f)) where
   varToFields = genericVarToFields @(TokenAmount (F f))
   fieldsToVar = genericFieldsToVar @(TokenAmount (F f))
 
-instance CheckedType f c t m (TokenAmount (FVar f)) where
+instance CheckedType f c (TokenAmount (FVar f)) where
   check = genericCheck
 
 --------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ instance CircuitType f (Account (F f)) (Account (FVar f)) where
   varToFields = genericVarToFields @(Account (F f))
   fieldsToVar = genericFieldsToVar @(Account (F f))
 
-instance CheckedType f c t m (Account (FVar f)) where
+instance CheckedType f c (Account (FVar f)) where
   check = genericCheck
 
 -- | Pure Hashable instance for Account (F f)

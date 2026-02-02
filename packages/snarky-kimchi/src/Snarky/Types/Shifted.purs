@@ -26,7 +26,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, BoolVar, F(..), FVar, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, BoolVar, F(..), FVar, Snarky, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
 import Snarky.Circuit.DSL.Assert (assert_)
 import Snarky.Circuit.DSL.Boolean (any_)
 import Snarky.Circuit.DSL.Field (equals_)
@@ -58,7 +58,7 @@ instance CircuitType f (Type1 (F f)) (Type1 (FVar f)) where
 
 -- | Check that a Type1 value is not one of the forbidden shifted values.
 -- | This is specialized for the Vesta cross-field case.
-instance CircuitM Vesta.BaseField c t m => CheckedType Vesta.BaseField c t m (Type1 (FVar Vesta.BaseField)) where
+instance CheckedType Vesta.BaseField c (Type1 (FVar Vesta.BaseField)) where
   check (Type1 t) = do
     -- For each forbidden value, check if t equals it
     -- Then assert that NONE of them match
@@ -101,7 +101,7 @@ instance PrimeField f => CircuitType f (Type2 (F f) Boolean) (Type2 (FVar f) (Bo
 
 -- | Check that a Type2 value is not one of the forbidden shifted values.
 -- | This is specialized for the Pallas cross-field case.
-instance CircuitM Pallas.BaseField c t m => CheckedType Pallas.BaseField c t m (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)) where
+instance CheckedType Pallas.BaseField c (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)) where
   check (Type2 { sDiv2, sOdd }) = do
     -- First run the generic check (verifies sOdd is a boolean)
     genericCheck (Type2 { sDiv2, sOdd } :: Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))

@@ -27,7 +27,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError, Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky(..), fresh, runAsProverT)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky(..), check, fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -95,17 +95,21 @@ instance
   exists
     :: forall a var
      . CircuitType f a var
+    => CheckedType f c var
     => AsProverT f m a
     -> Snarky c (ProverT f) m var
-  exists m = Snarky do
-    assignments <- getAssignments
-    let n = sizeInFields (Proxy @f) (Proxy @a)
-    vars <- replicateA n fresh
-    a <- ProverT $ ExceptT $ lift $ runAsProverT m assignments
-    let
-      aFieldElems = valueToFields a
-    setAssignments (zip vars aFieldElems)
-    pure $ fieldsToVar @f @a (map Var vars)
+  exists m = do
+    res <- Snarky do
+      assignments <- getAssignments
+      let n = sizeInFields (Proxy @f) (Proxy @a)
+      vars <- replicateA n fresh
+      a <- ProverT $ ExceptT $ lift $ runAsProverT m assignments
+      let
+        aFieldElems = valueToFields a
+      setAssignments (zip vars aFieldElems)
+      pure $ fieldsToVar @f @a (map Var vars)
+    check res
+    pure res
 
 instance Monad m => MonadFresh (ProverT f m) where
   fresh = ProverT do

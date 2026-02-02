@@ -2199,7 +2199,8 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck"
+            "spec-quickcheck",
+            "strings"
           ],
           "build_plan": [
             "aff",

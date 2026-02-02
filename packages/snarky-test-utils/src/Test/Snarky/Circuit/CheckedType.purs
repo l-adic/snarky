@@ -57,7 +57,7 @@ instance Show f => Show (Point f) where
 instance Arbitrary f => Arbitrary (Point f) where
   arbitrary = Point <$> arbitrary <*> arbitrary
 
-instance CheckedType f (Basic f) (CircuitBuilderT (Basic f) r) Identity (Point (CVar f Variable)) where
+instance CheckedType f (Basic f) (Point (CVar f Variable)) where
   check = genericCheck
 
 spec :: forall f. PrimeField f => Proxy f -> Spec Unit

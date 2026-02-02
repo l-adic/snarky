@@ -114,7 +114,7 @@ instance
   exists
     :: forall a var
      . CircuitType f a var
-    => CheckedType f c' (CircuitBuilderT c r) m var
+    => CheckedType f c' var
     => ConstraintM (CircuitBuilderT c r) c'
     => AsProverT f m a
     -> Snarky c' (CircuitBuilderT c r) m var
