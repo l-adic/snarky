@@ -1,3 +1,8 @@
+-- | Field elements with type-level bit size tracking.
+-- |
+-- | `SizedF n f` represents a field element known to fit in `n` bits. This enables
+-- | safe coercion between different fields when the value is small enough to fit
+-- | in both. The `CheckedType` instance constrains the high bits to be zero.
 module Snarky.Data.SizedF
   ( SizedF(..)
   , fromField
@@ -26,9 +31,6 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Type.Proxy (Proxy(..))
 
--- | A field element known to have at most `n` significant bits.
--- | The type parameter `n` tracks the bit size at the type level.
--- | This allows safe coercion between fields when n fits in both.
 newtype SizedF :: Int -> Type -> Type
 newtype SizedF n f = SizedF f
 
@@ -91,11 +93,9 @@ fromField x =
     if all not after then Just (SizedF x)
     else Nothing
 
--- | Convert a SizedF back to a field element
 toField :: forall n f. SizedF n f -> f
 toField (SizedF x) = x
 
--- | Construct a SizedF from a vector of n bits
 fromBits
   :: forall n m f
    . FieldSizeInBits f m
@@ -106,7 +106,6 @@ fromBits
   -> SizedF n f
 fromBits bits = SizedF $ packPure $ bits
 
--- | Extract the bits of a SizedF as a vector of exactly n booleans
 toBits
   :: forall n m f
    . FieldSizeInBits f m
@@ -123,6 +122,8 @@ toBits (SizedF x) =
     $
       unpackPure x
 
+-- | Coerce between fields by unpacking to bits and repacking.
+-- | Safe because both fields must have at least `m` bits and the value fits in `n < m`.
 coerceViaBits
   :: forall f f' n m
    . FieldSizeInBits f m

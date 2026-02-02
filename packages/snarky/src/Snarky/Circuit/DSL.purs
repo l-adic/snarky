@@ -1,3 +1,30 @@
+-- | Main entry point for building circuit libraries.
+-- |
+-- | Import this module to get everything needed for circuit construction.
+-- |
+-- | ## The trailing `_` convention
+-- |
+-- | Functions ending in `_` (like `mul_`, `add_`, `and_`, `not_`) avoid name
+-- | collisions with Prelude type classes (`Semiring`, `HeytingAlgebra`, etc.)
+-- | and operate directly on circuit variables:
+-- |
+-- | ```purescript
+-- | -- _ functions: take variables, may return Snarky action
+-- | mul_ :: FVar f -> FVar f -> Snarky c t m (FVar f)
+-- | and_ :: BoolVar f -> BoolVar f -> Snarky c t m (BoolVar f)
+-- | add_ :: FVar f -> FVar f -> FVar f  -- pure, no constraints needed
+-- | ```
+-- |
+-- | The Prelude classes are also implemented for `Snarky c t m (FVar f)`, so you
+-- | can use `*`, `+`, `&&`, `||` directly on Snarky actions when chaining:
+-- |
+-- | ```purescript
+-- | -- Chaining with Prelude operators
+-- | squareAndDouble x = mul_ x x + mul_ x x  -- two muls, added together
+-- |
+-- | -- Mix of variables and actions
+-- | combined a b = mul_ a b * mul_ b a + pure (const_ one)
+-- | ```
 module Snarky.Circuit.DSL
   ( module ReExports
   ) where

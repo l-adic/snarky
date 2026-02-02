@@ -1,3 +1,8 @@
+-- | Bit packing and unpacking operations.
+-- |
+-- | All bit operations use LSB-first ordering. The `unpack_` circuit operation
+-- | introduces boolean witness variables and constrains their weighted sum to
+-- | equal the original field element.
 module Snarky.Circuit.DSL.Bits where
 
 import Prelude

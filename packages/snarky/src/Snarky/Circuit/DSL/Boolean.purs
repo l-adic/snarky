@@ -1,3 +1,8 @@
+-- | Boolean operations for circuits.
+-- |
+-- | These operations work on `BoolVar` (field elements constrained to 0 or 1).
+-- | For small arrays, `all_`/`any_` use direct `and_`/`or_`. For larger arrays,
+-- | they use sum-based checks which can be more constraint-efficient.
 module Snarky.Circuit.DSL.Boolean
   ( if_
   , xor_

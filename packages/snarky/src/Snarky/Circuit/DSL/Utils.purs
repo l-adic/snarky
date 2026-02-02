@@ -1,3 +1,4 @@
+-- | Circuit utility functions.
 module Snarky.Circuit.DSL.Utils where
 
 import Prelude
@@ -11,6 +12,11 @@ import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, exists, readCVar)
 import Snarky.Circuit.Types (FVar)
 
+-- | Reduce an expression to a single variable if it's complex.
+-- |
+-- | If the expression is already simple (a lone variable or constant), returns it unchanged.
+-- | Otherwise introduces a new variable constrained equal to the expression. Useful when
+-- | you need a "sealed" value that won't expand during further operations.
 seal
   :: forall f c t m
    . CircuitM f c t m

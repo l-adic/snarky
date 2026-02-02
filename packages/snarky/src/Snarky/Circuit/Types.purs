@@ -1,3 +1,50 @@
+-- | Core types for circuit values and the CircuitType class.
+-- |
+-- | This module defines the fundamental types used to represent values in
+-- | circuits, both in their "value" form (concrete field elements) and their
+-- | "variable" form (circuit expressions).
+-- |
+-- | ## Type Pairs
+-- |
+-- | Each circuit type has a value form and a variable form:
+-- |
+-- | | Value Type | Variable Type | Description |
+-- | |------------|---------------|-------------|
+-- | | `F f`      | `FVar f`      | Field element |
+-- | | `Boolean`  | `BoolVar f`   | Boolean (0 or 1) |
+-- | | `Tuple a b`| `Tuple av bv` | Product types |
+-- | | `Vector n a`| `Vector n av`| Fixed-size arrays |
+-- | | `Record r` | `Record rv`   | Records |
+-- |
+-- | ## The CircuitType Class
+-- |
+-- | The `CircuitType` class provides conversions between value and variable
+-- | representations, and tracks the "size in fields" (number of field elements)
+-- | needed to represent a type.
+-- |
+-- | ```purescript
+-- | -- A point has 2 field elements
+-- | type Point f = { x :: F f, y :: F f }
+-- | -- sizeInFields @Point = 2
+-- |
+-- | -- Convert values to/from field arrays
+-- | valueToFields { x: F 1, y: F 2 } = [1, 2]
+-- | fieldsToValue [1, 2] = { x: F 1, y: F 2 }
+-- | ```
+-- |
+-- | ## Generic Derivation
+-- |
+-- | For custom types with `Generic` instances, use the `generic*` helpers:
+-- |
+-- | ```purescript
+-- | newtype MyType = MyType { a :: F Field, b :: Boolean }
+-- | derive instance Generic MyType _
+-- |
+-- | instance CircuitType Field MyType MyTypeVar where
+-- |   valueToFields = genericValueToFields
+-- |   fieldsToValue = genericFieldsToValue
+-- |   -- ... etc
+-- | ```
 module Snarky.Circuit.Types
   ( F(..)
   , Bool(..)
@@ -54,6 +101,10 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
+-- | Wrapper for boolean values in circuits.
+-- |
+-- | `Bool` wraps a representation type `a` to indicate it represents a boolean.
+-- | For values, `a` is typically `Boolean`. For variables, `a` is `Variable`.
 newtype Bool a = Bool a
 
 derive newtype instance Eq a => Eq (Bool a)
@@ -62,6 +113,10 @@ derive newtype instance Arbitrary a => Arbitrary (Bool a)
 derive instance Newtype (Bool a) _
 derive instance Generic (Bool f) _
 
+-- | Wrapper for field elements in their value form.
+-- |
+-- | `F f` wraps a field element to distinguish it from raw field values
+-- | when used with the `CircuitType` class.
 newtype F f = F f
 
 instance FieldSizeInBits f n => FieldSizeInBits (F f) n
@@ -90,6 +145,16 @@ instance PrimeField f => PrimeField (F f) where
   modulus = modulus @f
   pow (F f) n = F $ pow @f f n
 
+-- | Wrapper indicating a value should not have constraints checked.
+-- |
+-- | When introducing a variable with `exists`, the `CheckedType` class
+-- | normally adds constraints (e.g., boolean range checks). Wrapping in
+-- | `UnChecked` skips these checks, useful when the value is already
+-- | constrained through other means.
+-- |
+-- | For example, in elliptic curve addition, if both input points have
+-- | on-curve constraints, the sum is mathematically guaranteed to be on
+-- | the curve - no additional check is needed for the result.
 newtype UnChecked a = UnChecked a
 
 derive instance Eq a => Eq (UnChecked a)
@@ -98,17 +163,43 @@ derive newtype instance Arbitrary a => Arbitrary (UnChecked a)
 derive instance Newtype (UnChecked a) _
 derive instance Generic (UnChecked f) _
 
+-- | A boolean variable in the circuit.
+-- |
+-- | This is a field expression tagged to indicate it represents a boolean
+-- | (constrained to be 0 or 1).
 type BoolVar f = CVar f (Bool Variable)
+
+-- | A field variable in the circuit.
+-- |
+-- | This is the primary type for circuit expressions - an affine combination
+-- | of circuit variables over field `f`.
 type FVar f = CVar f Variable
 
 --------------------------------------------------------------------------------
 
+-- | Type class for converting between value and variable representations.
+-- |
+-- | Every circuit type has:
+-- | - A **value form** (`a`): concrete field elements used during proving
+-- | - A **variable form** (`var`): circuit expressions used during compilation
+-- |
+-- | The class provides bidirectional conversion to/from arrays of field elements,
+-- | which is how values are serialized for the constraint system.
+-- |
+-- | **Functional dependencies:**
+-- | - `a f -> var`: The value type and field determine the variable type
+-- | - `var -> f`: The variable type determines the field
 class CircuitType :: Type -> Type -> Type -> Constraint
 class CircuitType f a var | a f -> var, var -> f where
+  -- | Convert a value to an array of field elements
   valueToFields :: a -> Array f
+  -- | Reconstruct a value from an array of field elements
   fieldsToValue :: Array f -> a
+  -- | The number of field elements needed to represent this type
   sizeInFields :: Proxy f -> Proxy a -> Int
+  -- | Convert a variable to an array of field variable expressions
   varToFields :: var -> Array (FVar f)
+  -- | Reconstruct a variable from an array of field variable expressions
   fieldsToVar :: Array (FVar f) -> var
 
 instance CircuitType f Unit Unit where

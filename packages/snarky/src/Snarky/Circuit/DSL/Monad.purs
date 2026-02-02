@@ -1,3 +1,38 @@
+-- | The circuit monad and core DSL operations.
+-- |
+-- | This module provides the `Snarky` monad for building circuits and the
+-- | `AsProverT` monad for witness computation during proving.
+-- |
+-- | ## Circuit Construction
+-- |
+-- | The `Snarky c t m a` monad is where circuits are built:
+-- |
+-- | ```purescript
+-- | -- Multiply two field elements (introduces R1CS constraint)
+-- | multiply :: forall f c t m. CircuitM f c t m => FVar f -> FVar f -> Snarky c t m (FVar f)
+-- | multiply a b = mul_ a b
+-- | ```
+-- |
+-- | ## Witness Computation
+-- |
+-- | The `exists` function introduces new variables with prover-side computation:
+-- |
+-- | ```purescript
+-- | -- Compute inverse with witness
+-- | inverse :: forall f c t m. CircuitM f c t m => FVar f -> Snarky c t m (FVar f)
+-- | inverse a = do
+-- |   aInv <- exists (recip <$> readCVar a)  -- Prover computes 1/a
+-- |   addConstraint $ r1cs { left: a, right: aInv, output: const_ one }
+-- |   pure aInv
+-- | ```
+-- |
+-- | ## Key Operations
+-- |
+-- | - `exists`: Introduce witness variable with prover computation
+-- | - `addConstraint`: Add constraint to the circuit
+-- | - `mul_`, `div_`, `inv_`: Field arithmetic (create constraints)
+-- | - `and_`, `or_`, `not_`: Boolean logic
+-- | - `read`, `readCVar`: Evaluate variables in prover context
 module Snarky.Circuit.DSL.Monad
   ( AsProver
   , AsProverT
@@ -70,6 +105,9 @@ addConstraint :: forall f c t m. CircuitM f c t m => c -> Snarky c t m Unit
 addConstraint c = Snarky $ addConstraint' c
 
 --------------------------------------------------------------------------------
+
+-- | Prover-side computation monad. Runs with access to variable assignments,
+-- | used as the argument to `exists` to compute witness values.
 newtype AsProverT f m a = AsProverT (ExceptT EvaluationError (ReaderT (Map Variable f) m) a)
 
 runAsProverT
@@ -156,6 +194,12 @@ instance (Monad m) => HeytingAlgebra (AsProverT f m Boolean) where
 class Monad m <= MonadFresh m where
   fresh :: m Variable
 
+-- | The circuit-building monad.
+-- |
+-- | Type parameters:
+-- | - `c`: Constraint type (e.g., `Basic f` or backend-specific)
+-- | - `t`: Monad transformer injected by the backend (e.g., `CircuitBuilderT` or `ProverT`)
+-- | - `m`: Base monad
 newtype Snarky :: Type -> ((Type -> Type) -> (Type -> Type)) -> (Type -> Type) -> Type -> Type
 newtype Snarky c t m a = Snarky (t m a)
 
@@ -170,6 +214,10 @@ derive newtype instance (MonadTrans t) => MonadTrans (Snarky c t)
 runSnarky :: forall c t m a. Snarky c t m a -> t m a
 runSnarky (Snarky m) = m
 
+-- | The main circuit monad type class. Backends implement this to provide
+-- | `exists`, which introduces witness variables with prover-side computation.
+-- | The functional dependencies ensure the field type is determined by either
+-- | the transformer `t` or the constraint type `c`.
 class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CircuitType f a var => CheckedType f c t m var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
@@ -318,6 +366,9 @@ div_ a b = mul_ a =<< inv_ b
 
 --------------------------------------------------------------------------------
 
+-- | Defines what constraints are added when a variable type is introduced via `exists`.
+-- | For example, `BoolVar` adds a boolean constraint; `FVar` adds nothing.
+-- | Use `UnChecked` wrapper to skip checks when constraints are guaranteed elsewhere.
 class CheckedType f c t m var | c -> f, var -> f where
   check
     :: CircuitM f c t m
