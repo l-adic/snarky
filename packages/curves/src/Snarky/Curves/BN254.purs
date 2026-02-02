@@ -1,3 +1,14 @@
+-- | The BN254 (alt_bn128) elliptic curve.
+-- |
+-- | BN254 is a pairing-friendly curve widely used in Ethereum and other
+-- | blockchain systems. It provides ~100 bits of security.
+-- |
+-- | Curve equation: y² = x³ + 3 (over the base field)
+-- |
+-- | Field sizes are 254 bits.
+-- |
+-- | Note: BN254 does not form a 2-cycle like Pasta, so the scalar and base
+-- | fields are distinct types.
 module Snarky.Curves.BN254
   ( ScalarField
   , BaseField
@@ -14,6 +25,9 @@ import Partial.Unsafe (unsafePartial)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
+-- | The scalar field of BN254 (F_r).
+-- |
+-- | Used for scalar multiplication on BN254 points.
 foreign import data ScalarField :: Type
 foreign import _zero :: Unit -> ScalarField
 foreign import _one :: Unit -> ScalarField
@@ -70,7 +84,9 @@ instance PrimeField ScalarField where
   modulus = _modulus unit
   pow = _pow
 
--- BaseField type and instances
+-- | The base field of BN254 (F_q).
+-- |
+-- | Used for point coordinates on the curve.
 foreign import data BaseField :: Type
 foreign import _baseFieldZero :: Unit -> BaseField
 foreign import _baseFieldOne :: Unit -> BaseField
@@ -122,7 +138,9 @@ instance PrimeField BaseField where
   modulus = _baseFieldModulus unit
   pow = _baseFieldPow
 
--- Group Element type
+-- | A point on the BN254 curve (G1 group).
+-- |
+-- | Uses projective coordinates internally for efficient arithmetic.
 foreign import data G :: Type
 foreign import _groupAdd :: G -> G -> G
 foreign import _groupIdentity :: Unit -> G
