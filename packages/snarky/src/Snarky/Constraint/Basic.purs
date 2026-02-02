@@ -1,3 +1,33 @@
+-- | Basic constraint types for zero-knowledge circuits.
+-- |
+-- | This module provides the fundamental constraint types used in circuit
+-- | construction. These constraints form the building blocks that backends
+-- | compile into their native formats (R1CS, Plonk gates, etc.).
+-- |
+-- | ## Constraint Types
+-- |
+-- | - **R1CS**: Rank-1 Constraint System - `left × right = output`
+-- | - **Equal**: Equality constraint between two expressions
+-- | - **Boolean**: Range constraint ensuring a value is 0 or 1
+-- |
+-- | ```purescript
+-- | import Snarky.Constraint.Basic (r1cs, equal, boolean)
+-- |
+-- | -- Multiplication constraint: a × b = c
+-- | mulConstraint = r1cs { left: a, right: b, output: c }
+-- |
+-- | -- Equality constraint: x = y
+-- | eqConstraint = equal x y
+-- |
+-- | -- Boolean constraint: b ∈ {0, 1}
+-- | boolConstraint = boolean b
+-- | ```
+-- |
+-- | ## The BasicSystem Type Class
+-- |
+-- | The `BasicSystem` class abstracts over concrete constraint representations,
+-- | allowing backends to define their own constraint types while sharing
+-- | circuit construction logic.
 module Snarky.Constraint.Basic
   ( Basic(..)
   , eval
@@ -29,18 +59,29 @@ import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
 import Type.Proxy (Proxy)
 
+-- | The basic constraint type parameterized by field `f`.
+-- |
+-- | These are the fundamental constraints supported by most ZK backends.
 data Basic f
   = R1CS
       { left :: CVar f Variable
       , right :: CVar f Variable
       , output :: CVar f Variable
       }
+  -- ^ Rank-1 constraint: `left × right = output`
   | Equal (CVar f Variable) (CVar f Variable)
+  -- ^ Equality constraint: the two expressions must be equal
   | Boolean (CVar f Variable)
+
+-- ^ Boolean constraint: the expression must evaluate to 0 or 1
 
 derive instance Functor Basic
 derive instance Generic (Basic f) _
 
+-- | Evaluate a constraint given variable assignments.
+-- |
+-- | Returns `true` if the constraint is satisfied, `false` otherwise.
+-- | The lookup function provides values for circuit variables.
 eval
   :: forall f m
    . PrimeField f
@@ -61,6 +102,9 @@ eval lookup gate =
       CVar.eval lookup i <#> \inp ->
         inp == zero || inp == one
 
+-- | Generate a random constraint with satisfying variable assignments.
+-- |
+-- | Used for property-based testing of constraint evaluation and backends.
 genWithAssignments
   :: forall f
    . PrimeField f
@@ -148,11 +192,26 @@ genWithAssignments pf =
       , Tuple 4.0 genEqual
       ]
 
+-- | Type class for constraint systems supporting basic constraint types.
+-- |
+-- | This abstracts over concrete constraint representations, allowing
+-- | different backends to provide their own implementations while sharing
+-- | the circuit DSL.
+-- |
+-- | The functional dependency `c -> f` ensures each constraint type
+-- | determines its field type.
 class PrimeField f <= BasicSystem f c | c -> f where
+  -- | Create an R1CS constraint: `left × right = output`
   r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
+  -- | Create an equality constraint: the two expressions must be equal
   equal :: CVar f Variable -> CVar f Variable -> c
+  -- | Create a boolean constraint: the expression must be 0 or 1
   boolean :: CVar f Variable -> c
 
+-- | Convert a `Basic` constraint to any `BasicSystem` constraint type.
+-- |
+-- | This allows using the concrete `Basic` type as an intermediate
+-- | representation before converting to backend-specific formats.
 fromBasic :: forall f c. BasicSystem f c => Basic f -> c
 fromBasic = case _ of
   R1CS r -> r1cs r

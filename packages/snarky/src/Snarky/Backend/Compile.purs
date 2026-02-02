@@ -1,3 +1,10 @@
+-- | High-level circuit compilation and solving.
+-- |
+-- | - `compile`: Runs a circuit through `CircuitBuilderT` to extract constraints
+-- | - `makeSolver`: Creates a witness solver that runs the circuit through `ProverT`
+-- |
+-- | Both functions handle the public input/output variable allocation and ensure
+-- | the circuit's output variables are constrained to match the computed values.
 module Snarky.Backend.Compile
   ( Checker
   , Solver

@@ -1,3 +1,19 @@
+-- | Circuit variables and affine expressions.
+-- |
+-- | A `CVar f i` represents a circuit expression that can be reduced to affine
+-- | form: `c + Σ(aᵢ × xᵢ)` where `c` is a constant and `xᵢ` are variables with
+-- | coefficients `aᵢ`. This representation is fundamental to constraint systems
+-- | and can be compiled to various backend formats (R1CS, Plonk gates, etc.).
+-- |
+-- | ```purescript
+-- | -- Build expressions using smart constructors
+-- | x :: CVar Field Variable
+-- | x = add_ (scale_ 2 (Var v0)) (Const 5)  -- 2x₀ + 5
+-- |
+-- | -- Reduce to canonical affine form
+-- | affine = reduceToAffineExpression x
+-- | -- AffineExpression { constant: Just 5, terms: [(v0, 2)] }
+-- | ```
 module Snarky.Circuit.CVar
   ( Variable
   , incrementVariable
@@ -56,13 +72,15 @@ newtype Variable = Variable Int
 getVariable :: Variable -> Int
 getVariable (Variable i) = i
 
--- An CVar is an expression that can be reduced to
--- c + \sum a_i * x_i. This is the most generic formulation.
+-- | A circuit variable expression over field `f` with variable type `i`.
+-- |
+-- | Every `CVar` can be reduced to an affine expression: `c + Σ(aᵢ × xᵢ)`.
+-- | The constructors form an AST that is normalized via `reduceToAffineExpression`.
 data CVar f i
-  = Add (CVar f i) (CVar f i)
-  | ScalarMul f (CVar f i)
-  | Const f
-  | Var i
+  = Add (CVar f i) (CVar f i) -- ^ Sum of two expressions
+  | ScalarMul f (CVar f i) -- ^ Scalar multiplication
+  | Const f -- ^ Constant value
+  | Var i -- ^ Variable reference
 
 derive instance Functor (CVar f)
 derive instance Foldable (CVar f)

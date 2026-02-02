@@ -1,3 +1,9 @@
+-- | Circuit compilation backend.
+-- |
+-- | `CircuitBuilderT` is a `CircuitM` instance that collects constraints without
+-- | computing witness values. Used during compilation to extract the constraint
+-- | system structure. The `exists` implementation allocates fresh variables and
+-- | adds type-specific checks, but ignores the prover computation.
 module Snarky.Backend.Builder
   ( CircuitBuilderT
   , initialState

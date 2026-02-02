@@ -1,14 +1,30 @@
-//! Pasta curves (Pallas and Vesta) with conditional backend support
+//! Pasta curves (Pallas and Vesta) for recursive SNARKs.
 //!
-//! This module provides a unified API for Pasta curves that works with either:
-//! - arkworks curves (ark-pallas, ark-vesta) - default
-//! - mina-curves (from proof-systems)
+//! The Pasta curves form a 2-cycle, making them ideal for recursive proof composition:
 //!
-//! The implementation is identical regardless of backend - only the underlying
-//! types change based on feature flags.
+//! - **Pallas**: scalar field ≈ 2^255, base field = Vesta scalar field
+//! - **Vesta**: scalar field ≈ 2^255, base field = Pallas scalar field
+//!
+//! This cross-wiring means a proof verified on one curve can be efficiently
+//! represented in the other curve's scalar field, enabling recursive SNARKs.
+//!
+//! # Module Structure
+//!
+//! - `pallas`: Pallas scalar field and group operations
+//! - `vesta`: Vesta scalar field and group operations
+//! - `types`: Type aliases for arkworks/mina-curves backend types
+//!
+//! Note: Base field operations are handled via the partner curve's scalar field
+//! (e.g., Pallas base field = Vesta scalar field), so there are no separate
+//! base field modules.
 
+/// Pallas curve: scalar field, group operations, and BW19 hash-to-curve.
 pub mod pallas;
+
+/// Type aliases bridging arkworks and mina-curves types.
 pub mod types;
+
+/// Vesta curve: scalar field, group operations, and BW19 hash-to-curve.
 pub mod vesta;
 
 // Re-export only the NAPI functions, not the type aliases

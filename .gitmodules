@@ -1,0 +1,4 @@
+[submodule "vendor/proof-systems"]
+	path = vendor/proof-systems
+	url = https://github.com/o1-labs/proof-systems
+	shallow = true

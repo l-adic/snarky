@@ -1,3 +1,20 @@
+-- | The Pasta curves: Pallas and Vesta.
+-- |
+-- | Pallas and Vesta form a 2-cycle of elliptic curves, meaning:
+-- |
+-- | - Pallas scalar field = Vesta base field
+-- | - Vesta scalar field = Pallas base field
+-- |
+-- | This property is essential for recursive SNARKs, as used in Mina Protocol.
+-- | Each curve can verify proofs about computations on the other curve.
+-- |
+-- | Both curves are in short Weierstrass form with a = 0:
+-- | ```
+-- | Pallas: y² = x³ + 5  (over Vesta scalar field)
+-- | Vesta:  y² = x³ + 5  (over Pallas scalar field)
+-- | ```
+-- |
+-- | Field sizes are approximately 2²⁵⁵ (255 bits).
 module Snarky.Curves.Pasta
   ( -- Pallas exports
     PallasScalarField
@@ -26,10 +43,16 @@ import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
--- PALLAS CURVE DEFINITIONS
+-- PALLAS CURVE
+-- The "inner" curve in Mina's recursive proof system.
+-- Scalar field: ~2^255 elements
+-- Base field: Vesta scalar field (the 2-cycle property)
 -- ============================================================================
 
--- Pallas Scalar Field
+-- | The scalar field of the Pallas curve (F_r).
+-- |
+-- | This is the field used for scalar multiplication on Pallas points,
+-- | and is equal to the base field of Vesta.
 foreign import data PallasScalarField :: Type
 foreign import _pallasZero :: Unit -> PallasScalarField
 foreign import _pallasOne :: Unit -> PallasScalarField
@@ -90,10 +113,15 @@ instance HasSqrt PallasScalarField where
   sqrt = _pallasSqrt Just Nothing
   isSquare = _pallasIsSquare
 
--- Pallas Base Field (= Vesta Scalar Field via cross-wiring)
+-- | The base field of the Pallas curve (F_q).
+-- |
+-- | Due to the 2-cycle property, this equals `VestaScalarField`.
 type PallasBaseField = VestaScalarField
 
--- Pallas Group
+-- | A point on the Pallas curve.
+-- |
+-- | Uses projective coordinates internally for efficient arithmetic.
+-- | The group operation is elliptic curve point addition.
 foreign import data PallasG :: Type
 foreign import _pallasGroupAdd :: PallasG -> PallasG -> PallasG
 foreign import _pallasGroupIdentity :: Unit -> PallasG
@@ -163,10 +191,16 @@ instance HasBW19 PallasBaseField PallasG where
       }
 
 -- ============================================================================
--- VESTA CURVE DEFINITIONS
+-- VESTA CURVE
+-- The "outer" curve in Mina's recursive proof system.
+-- Scalar field: ~2^255 elements
+-- Base field: Pallas scalar field (the 2-cycle property)
 -- ============================================================================
 
--- Vesta Scalar Field
+-- | The scalar field of the Vesta curve (F_r).
+-- |
+-- | This is the field used for scalar multiplication on Vesta points,
+-- | and is equal to the base field of Pallas.
 foreign import data VestaScalarField :: Type
 foreign import _vestaScalarFieldZero :: Unit -> VestaScalarField
 foreign import _vestaScalarFieldOne :: Unit -> VestaScalarField
@@ -237,10 +271,15 @@ vestaScalarFieldFromHexLe = _vestaScalarFieldFromHexLe
 vestaScalarFieldToHexLe :: VestaScalarField -> String
 vestaScalarFieldToHexLe = _vestaScalarFieldToHexLe
 
--- Vesta Base Field (= Pallas Scalar Field via cross-wiring)
+-- | The base field of the Vesta curve (F_q).
+-- |
+-- | Due to the 2-cycle property, this equals `PallasScalarField`.
 type VestaBaseField = PallasScalarField
 
--- Vesta Group
+-- | A point on the Vesta curve.
+-- |
+-- | Uses projective coordinates internally for efficient arithmetic.
+-- | The group operation is elliptic curve point addition.
 foreign import data VestaG :: Type
 foreign import _vestaGroupAdd :: VestaG -> VestaG -> VestaG
 foreign import _vestaGroupIdentity :: Unit -> VestaG
@@ -328,15 +367,17 @@ instance HasBW19 VestaBaseField VestaG where
       }
 
 -- ============================================================================
--- GROUP MAP (Hash-to-Curve) FFI - Reference implementations for testing
+-- GROUP MAP (Hash-to-Curve)
+-- Reference FFI implementations for testing PureScript hash-to-curve code.
 -- ============================================================================
 
--- | Returns (x, y) as a tuple array [x, y]
 foreign import _pallasGroupMap :: PallasBaseField -> Array PallasBaseField
 foreign import _vestaGroupMap :: VestaBaseField -> Array VestaBaseField
 
--- | Hash a field element to a point on the Pallas curve using Rust's BW19 implementation
--- | For testing against our PureScript implementation
+-- | Hash a field element to a point on the Pallas curve.
+-- |
+-- | Uses the BW19 algorithm via Rust FFI. This is a reference implementation
+-- | for testing the PureScript `GroupMap` implementation.
 pallasGroupMap :: PallasBaseField -> { x :: PallasBaseField, y :: PallasBaseField }
 pallasGroupMap t =
   let
@@ -346,8 +387,10 @@ pallasGroupMap t =
     , y: unsafePartial $ fromJust $ arr Array.!! 1
     }
 
--- | Hash a field element to a point on the Vesta curve using Rust's BW19 implementation
--- | For testing against our PureScript implementation
+-- | Hash a field element to a point on the Vesta curve.
+-- |
+-- | Uses the BW19 algorithm via Rust FFI. This is a reference implementation
+-- | for testing the PureScript `GroupMap` implementation.
 vestaGroupMap :: VestaBaseField -> { x :: VestaBaseField, y :: VestaBaseField }
 vestaGroupMap t =
   let

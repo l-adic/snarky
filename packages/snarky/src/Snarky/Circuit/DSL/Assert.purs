@@ -1,3 +1,8 @@
+-- | Assertion operations that add constraints without returning values.
+-- |
+-- | Use these when you want to enforce a condition rather than compute a boolean
+-- | result. `assertNonZero_` works by computing the inverse (which fails if zero).
+-- | The `AssertEqual` class provides generic equality assertions for compound types.
 module Snarky.Circuit.DSL.Assert
   ( assertNonZero_
   , assertEqual_

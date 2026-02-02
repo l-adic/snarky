@@ -1,3 +1,10 @@
+//! Pallas curve NAPI bindings.
+//!
+//! Provides scalar field arithmetic, group operations, and hash-to-curve (BW19).
+//!
+//! Note: Pallas base field operations are accessed via `vesta::scalar_field`,
+//! due to the 2-cycle property (Pallas base field = Vesta scalar field).
+
 use ark_ec::models::short_weierstrass::SWCurveConfig;
 use ark_ec::{AffineRepr, CurveGroup};
 use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
@@ -11,6 +18,7 @@ use super::types::{
     PallasConfig, PallasGroup, PallasScalarField, ProjectivePallas, VestaScalarField,
 };
 
+/// Pallas scalar field (F_r) operations.
 pub mod scalar_field {
     use super::*;
     use crate::bigint::napi_bigint_to_ark_bigint;
@@ -143,8 +151,11 @@ pub mod scalar_field {
     }
 }
 
-/// BW19 GroupMap parameters for Pallas curve
-/// These are precomputed constants used for hash-to-curve
+/// BW19 hash-to-curve for Pallas.
+///
+/// The BW19 algorithm maps field elements to curve points deterministically,
+/// without hashing to a random oracle. Used for Pedersen commitments and
+/// other applications requiring a "nothing up my sleeve" generator.
 pub mod group_map {
     use super::*;
     use kimchi::groupmap::{BWParameters, GroupMap};
@@ -177,6 +188,10 @@ pub mod group_map {
 
 // Note: Pallas base field operations handled via Vesta scalar field (curve duality)
 
+/// Pallas curve group operations.
+///
+/// Points are stored in affine coordinates internally, converted to projective
+/// for arithmetic operations.
 pub mod group {
     use ark_ec::short_weierstrass::Affine;
 

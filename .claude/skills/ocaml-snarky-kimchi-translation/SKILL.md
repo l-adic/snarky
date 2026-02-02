@@ -1,15 +1,121 @@
-# OCaml to PureScript Snarky Circuit Translator
+---
+name: ocaml-snarky-kimchi-translation
+description: Translate OCaml snarky/kimchi circuits from mina into PureScript. Use when translating code from mina/src/lib/snarky, mina/src/lib/pickles, or related crypto libraries.
+---
 
-You are an expert in both OCaml and PureScript, with deep knowledge of the snarky DSL and its implementation in both languages. Your task is to translate OCaml snarky circuits into their PureScript equivalents.
+# OCaml to PureScript Snarky Circuit Translation
 
-Below are several examples of such translations. Use these as a guide for your translation.
+This skill guides translation of OCaml snarky circuits from the mina codebase into idiomatic PureScript.
+
+## Key Translation Patterns
+
+| OCaml | PureScript |
+|-------|------------|
+| `let%bind x = ... in` | `do x <- ...` |
+| `let%map x = ... in` | `do x <- ... pure (f x)` or `<$>` |
+| `As_prover.read_var x` | `readCVar x` |
+| `exists Field.typ ~compute:(...)` | `exists do ...` |
+| `assert_ (Constraint ...)` | `addConstraint $ Constraint ...` |
+| `with_label "name" (fun () -> ...)` | (labels typically omitted) |
+| `Field.Constant.zero/one` | `zero` / `one` (from Semiring) |
+| `Field.of_int n` | `fromInt @f n` |
+| `!!x` (As_prover.read_var) | `readCVar x` |
+| `!ref` (deref mutable) | Use accumulator pattern |
+| `ref := value` (mutate) | Use `mapAccumM` or fold |
+| `for i = 0 to n do ... done` | `foldM`, `traverse`, or `mapAccumM` |
+| `Array.map_inplace` | `map` (pure transformation) |
+| `Array.fold ~init ~f` | `foldl f init` |
+| `lazy (...)` | Compute directly or use thunks |
+| `module Make (X : Sig)` | Type class with constraints |
+| `Impl.Field.t` | `FVar f` |
+| `Boolean.var` | `BoolVar f` |
+| `(x, y)` (tuple for points) | `{ x, y }` (record) |
+
+## Mutable State → Functional Accumulators
+
+OCaml circuits often use mutable refs in loops. Translate using `mapAccumM`:
+
+**OCaml:**
+```ocaml
+let acc = ref initial in
+let results = ref [] in
+for i = 0 to n - 1 do
+  let x = process !acc in
+  results := x :: !results;
+  acc := update !acc x
+done;
+(!acc, List.rev !results)
+```
+
+**PureScript:**
+```purescript
+Tuple resultsRev final <- mapAccumM
+  (\acc _ -> do
+    x <- process acc
+    pure $ Tuple x (update acc x)
+  )
+  initial
+  (Vector.replicate @n unit)
+pure $ Tuple final (Vector.reverse resultsRev)
+```
+
+## Witness Generation Pattern
+
+OCaml uses `exists` with `~compute` for witness values:
+
+**OCaml:**
+```ocaml
+let x = exists Field.typ ~compute:(fun () ->
+  let a = !!input in
+  a * a + Field.Constant.one
+) in
+```
+
+**PureScript:**
+```purescript
+x <- exists do
+  a <- readCVar input
+  pure $ a * a + one
+```
+
+## Circuit Constraint Pattern
+
+**OCaml:**
+```ocaml
+assert_ (EC_add_complete { p1; p2; p3; inf; same_x; slope; inf_z; x21_inv })
+```
+
+**PureScript:**
+```purescript
+addConstraint $ KimchiAddComplete
+  { p1, p2, p3: { x: x3, y: y3 }, inf: coerce inf, sameX: coerce sameX, infZ, x21Inv, s }
+```
+
+## Type Class Instead of Functor
+
+**OCaml:**
+```ocaml
+module Make_add (Impl : Kimchi_pasta_snarky_backend.Snark_intf) = struct
+  open Impl
+  (* implementation *)
+end
+```
+
+**PureScript:**
+```purescript
+addComplete
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
+  -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
+```
 
 ---
 
 ## Example 1: Poseidon
 
 ### OCaml
-
 **File:** `mina/src/lib/snarky/sponge/sponge.ml`
 **Module:** `Poseidon`
 
@@ -23,41 +129,6 @@ module Poseidon (Inputs : Intf.Inputs.Poseidon) = struct
 
   let add_block ~state block = Array.iteri block ~f:(add_assign ~state)
 
-  (* Poseidon goes
-
-        ARK_0 -> SBOX -> MDS
-     -> ARK_1 -> SBOX -> MDS
-     -> ...
-     -> ARK_{half_rounds_full - 1} -> SBOX -> MDS
-     -> ARK_{half_rounds_full} -> SBOX0 -> MDS
-     -> ...
-     -> ARK_{half_rounds_full + rounds_partial - 1} -> SBOX0 -> MDS
-     -> ARK_{half_rounds_full + rounds_partial} -> SBOX -> MDS
-     -> ...
-     -> ARK_{half_rounds_full + rounds_partial + half_rounds_full - 1} -> SBOX -> MDS
-
-     It is best to apply the matrix and add the round constants at the same
-     time for Marlin constraint efficiency, so that is how this implementation does it.
-     Like,
-
-        ARK_0
-     -> SBOX -> (MDS -> ARK_1)
-     -> SBOX -> (MDS -> ARK_2)
-     -> ...
-     -> SBOX -> (MDS -> ARK_{half_rounds_full - 1})
-     -> SBOX -> (MDS -> ARK_{half_rounds_full})
-     -> SBOX0 -> (MDS -> ARK_{half_rounds_full + 1})
-     -> ...
-     -> SBOX0 -> (MDS -> ARK_{half_rounds_full + rounds_partial - 1})
-     -> SBOX0 -> (MDS -> ARK_{half_rounds_full + rounds_partial})
-     -> SBOX -> (MDS -> ARK_{half_rounds_full + rounds_partial + 1})
-     -> ...
-     -> SBOX -> (MDS -> ARK_{half_rounds_full + rounds_partial + half_rounds_full - 1})
-     -> SBOX -> MDS ->* ARK_{half_rounds_full + rounds_partial + half_rounds_full}
-
-      *this last round is a deviation from standard poseidon made for efficiency reasons.
-       clearly it does not impact security to add round constants
-  *)
   let block_cipher { Params.round_constants; mds } state =
     let sbox = to_the_alpha in
     let state = ref state in
@@ -71,7 +142,6 @@ module Poseidon (Inputs : Intf.Inputs.Poseidon) = struct
       (constant_offset, constant_offset + first_half_rounds_full - 1)
     in
     for i = fst range to snd range do
-      (* SBOX -> MDS -> ARK *)
       Array.map_inplace !state ~f:sbox ;
       state := apply_affine_map (mds, round_constants.(i)) !state
     done ;
@@ -91,7 +161,6 @@ end
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/Poseidon.purs`
 **Module:** `Snarky.Circuit.Kimchi.Poseidon`
 
@@ -137,7 +206,6 @@ poseidon initialState = do
 ## Example 2: CompleteAdd
 
 ### OCaml
-
 **File:** `mina/src/lib/pickles/plonk_curve_ops.ml`
 **Module:** `Make_add`
 
@@ -193,7 +261,6 @@ end
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/AddComplete.purs`
 **Module:** `Snarky.Circuit.Kimchi.AddComplete`
 
@@ -265,7 +332,6 @@ addComplete p1 p2 = do
 ## Example 3: VarBaseMul
 
 ### OCaml
-
 **File:** `mina/src/lib/pickles/plonk_curve_ops.ml`
 **Module:** `Make`
 
@@ -326,12 +392,10 @@ addComplete p1 p2 = do
         :: !rounds_rev
     done ;
     assert_ (EC_scale { state = Array.of_list_rev !rounds_rev }) ;
-    (* TODO: Return n_acc ? *)
     !acc
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/VarBaseMul.purs`
 **Module:** `Snarky.Circuit.Kimchi.VarBaseMul`
 
@@ -420,7 +484,6 @@ varBaseMul base (Type1 t) = do
 ## Example 4: EndoScalar
 
 ### OCaml
-
 **File:** `mina/src/lib/pickles/scalar_challenge.ml`
 **Module:** `(top level)`
 
@@ -431,31 +494,20 @@ let to_field_checked' (type f) ?(num_bits = num_bits)
   let open Impl in
   let neg_one = Field.Constant.(negate one) in
   let a_func = function
-    | 0 ->
-        Field.Constant.zero
-    | 1 ->
-        Field.Constant.zero
-    | 2 ->
-        neg_one
-    | 3 ->
-        Field.Constant.one
-    | _ ->
-        raise (Invalid_argument "a_func")
+    | 0 -> Field.Constant.zero
+    | 1 -> Field.Constant.zero
+    | 2 -> neg_one
+    | 3 -> Field.Constant.one
+    | _ -> raise (Invalid_argument "a_func")
   in
   let b_func = function
-    | 0 ->
-        neg_one
-    | 1 ->
-        Field.Constant.one
-    | 2 ->
-        Field.Constant.zero
-    | 3 ->
-        Field.Constant.zero
-    | _ ->
-        raise (Invalid_argument "a_func")
+    | 0 -> neg_one
+    | 1 -> Field.Constant.one
+    | 2 -> Field.Constant.zero
+    | 3 -> Field.Constant.zero
+    | _ -> raise (Invalid_argument "a_func")
   in
   let ( !! ) = As_prover.read_var in
-  (* MSB bits *)
   let bits_msb =
     lazy
       (let open Field.Constant in
@@ -463,7 +515,6 @@ let to_field_checked' (type f) ?(num_bits = num_bits)
   in
   let nybbles_per_row = 8 in
   let bits_per_row = 2 * nybbles_per_row in
-  [%test_eq: int] (num_bits mod bits_per_row) 0 ;
   let rows = num_bits / bits_per_row in
   let nybbles_by_row =
     lazy
@@ -512,25 +563,14 @@ let to_field_checked' (type f) ?(num_bits = num_bits)
     in
     state :=
       { Kimchi_backend_common.Endoscale_scalar_round.a0
-      ; a8
-      ; b0
-      ; b8
-      ; n0
-      ; n8
-      ; x0 = xs.(0)
-      ; x1 = xs.(1)
-      ; x2 = xs.(2)
-      ; x3 = xs.(3)
-      ; x4 = xs.(4)
-      ; x5 = xs.(5)
-      ; x6 = xs.(6)
-      ; x7 = xs.(7)
+      ; a8; b0; b8; n0; n8
+      ; x0 = xs.(0); x1 = xs.(1); x2 = xs.(2); x3 = xs.(3)
+      ; x4 = xs.(4); x5 = xs.(5); x6 = xs.(6); x7 = xs.(7)
       }
       :: !state ;
     n := n8 ;
     a := a8 ;
-    b := b8 ;
-    ()
+    b := b8
   done ;
   with_label __LOC__ (fun () ->
       assert_ (EC_endoscalar { state = Array.of_list_rev !state }) ) ;
@@ -538,7 +578,6 @@ let to_field_checked' (type f) ?(num_bits = num_bits)
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoScalar.purs`
 **Module:** `Snarky.Circuit.Kimchi.EndoScalar`
 
@@ -638,14 +677,12 @@ toField (ScalarChallenge scalar) endo = do
 ## Example 5: EndoMul
 
 ### OCaml
-
 **File:** `mina/src/lib/pickles/scalar_challenge.ml`
 **Module:** `Make`
 
 ```ocaml
   let endo ?(num_bits = num_bits) t { SC.inner = (scalar : Field.t) } =
     let ( !! ) = As_prover.read_var in
-    (* MSB bits *)
     let bits =
       lazy
         (let open Field.Constant in
@@ -704,18 +741,7 @@ toField (ScalarChallenge scalar) endo = do
             |> double |> ( + ) !!b3 |> double |> ( + ) !!b4 ) ;
       rounds_rev :=
         { Kimchi_backend_common.Endoscale_round.xt
-        ; yt
-        ; xp
-        ; yp
-        ; n_acc = n_acc_prev
-        ; xr
-        ; yr
-        ; s1
-        ; s3
-        ; b1
-        ; b2
-        ; b3
-        ; b4
+        ; yt; xp; yp; n_acc = n_acc_prev; xr; yr; s1; s3; b1; b2; b3; b4
         }
         :: !rounds_rev
     done ;
@@ -730,7 +756,6 @@ toField (ScalarChallenge scalar) endo = do
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-kimchi/src/Snarky/Circuit/Kimchi/EndoMul.purs`
 **Module:** `Snarky.Circuit.Kimchi.EndoMul`
 
@@ -830,7 +855,6 @@ endo g scalar = do
 ## Example 6: Curve Circuits
 
 ### OCaml
-
 **File:** `mina/src/lib/snarky_curves/snarky_curves.ml`
 **Module:** `Make_weierstrass_checked`
 
@@ -838,23 +862,15 @@ endo g scalar = do
 module Make_weierstrass_checked
     (F : Snarky_field_extensions.Intf.S) (Scalar : sig
       type t
-
       val of_int : int -> t
     end) (Curve : sig
       type t
-
       val random : unit -> t
-
       val to_affine_exn : t -> F.Unchecked.t * F.Unchecked.t
-
       val of_affine : F.Unchecked.t * F.Unchecked.t -> t
-
       val double : t -> t
-
       val ( + ) : t -> t -> t
-
       val negate : t -> t
-
       val scale : t -> Scalar.t -> t
     end)
     (Params : Params_intf with type field := F.Unchecked.t) (Override : sig
@@ -875,31 +891,7 @@ module Make_weierstrass_checked
     let%bind ax = constant Params.a * x in
     assert_square y (x3 + ax + constant Params.b)
 
-  let typ : (t, Curve.t) Typ.t =
-    let (Typ unchecked) =
-      Typ.transport
-        Typ.(tuple2 F.typ F.typ)
-        ~there:Curve.to_affine_exn ~back:Curve.of_affine
-    in
-    Typ { unchecked with check = assert_on_curve }
-
   let negate ((x, y) : t) : t = (x, F.negate y)
-
-  let constant (t : Curve.t) : t =
-    let x, y = Curve.to_affine_exn t in
-    F.(constant x, constant y)
-
-  let assert_equal (x1, y1) (x2, y2) =
-    let%map () = F.assert_equal x1 x2 and () = F.assert_equal y1 y2 in
-    ()
-
-  module Assert = struct
-    let on_curve = assert_on_curve
-
-    let equal = assert_equal
-  end
-
-  open Let_syntax
 
   let%snarkydef_ add' ~div (ax, ay) (bx, by) =
     let open F in
@@ -914,12 +906,7 @@ module Make_weierstrass_checked
           and lambda = read typ lambda in
           Unchecked.(square lambda - (ax + bx)))
     in
-    let%bind () =
-      (* lambda^2 = cx + ax + bx
-            cx = lambda^2 - (ax + bc)
-      *)
-      assert_square lambda F.(cx + ax + bx)
-    in
+    let%bind () = assert_square lambda F.(cx + ax + bx) in
     let%bind cy =
       exists typ
         ~compute:
@@ -933,24 +920,6 @@ module Make_weierstrass_checked
     in
     let%map () = assert_r1cs lambda (ax - cx) (cy + ay) in
     (cx, cy)
-
-  let add' ~div p1 p2 =
-    match Override.add with Some add -> add p1 p2 | None -> add' ~div p1 p2
-
-  (* This function MUST NOT be called UNLESS you are certain the two points
-     on which it is called are not equal. If it is called on equal points,
-     the prover can return almost any curve point they want to from this function. *)
-  let add_unsafe p q =
-    let%map r = add' ~div:F.div_unsafe p q in
-    `I_thought_about_this_very_carefully r
-
-  let add_exn p q = add' ~div:(fun x y -> F.inv_exn y >>= F.(( * ) x)) p q
-
-  (* TODO-someday: Make it so this doesn't have to compute both branches *)
-  let if_ b ~then_:(tx, ty) ~else_:(ex, ey) =
-    let%map x = F.if_ b ~then_:tx ~else_:ex
-    and y = F.if_ b ~then_:ty ~else_:ey in
-    (x, y)
 
   let%snarkydef_ double (ax, ay) =
     let open F in
@@ -993,8 +962,8 @@ end
 ```
 
 ### PureScript
-
 **File:** `packages/snarky-curves/src/Snarky/Circuit/Curves.purs`
+**Module:** `Snarky.Circuit.Curves`
 
 ```purescript
 module Snarky.Circuit.Curves
@@ -1056,9 +1025,7 @@ if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
   pure { x, y }
 
 -- N.B. This function is unsafe, if the x value is the same for both points
--- bad things can happen, i.e.
---   1. If the points are equal 
---   2. If the points are mutual inverses
+-- bad things can happen
 add_
   :: forall f c t m
    . Partial
@@ -1140,10 +1107,9 @@ double { a } { x: ax, y: ay } = do
 
 ---
 
-## Example 7: Snarky Base
+## Example 7: Snarky Base (Field Operations)
 
 ### OCaml
-
 **File:** `mina/src/lib/snarky/src/base/snark0.ml`
 **Module:** `Field`
 
@@ -1151,35 +1117,9 @@ double { a } { x: ax, y: ay } = do
 module Field = struct
     include Field0
 
-    let gen =
-      Quickcheck.Generator.map
-        Bignum_bigint.(gen_incl zero (size - one))
-        ~f:(fun x -> Bigint.(to_field (of_bignum_bigint x)))
-
-    let gen_incl lo hi =
-      let lo_bigint = Bigint.(to_bignum_bigint @@ of_field lo) in
-      let hi_bigint = Bigint.(to_bignum_bigint @@ of_field hi) in
-      Quickcheck.Generator.map
-        Bignum_bigint.(gen_incl lo_bigint hi_bigint)
-        ~f:(fun x -> Bigint.(to_field (of_bignum_bigint x)))
-
-    let gen_uniform =
-      Quickcheck.Generator.map
-        Bignum_bigint.(gen_uniform_incl zero (size - one))
-        ~f:(fun x -> Bigint.(to_field (of_bignum_bigint x)))
-
-    let gen_uniform_incl lo hi =
-      let lo_bigint = Bigint.(to_bignum_bigint @@ of_field lo) in
-      let hi_bigint = Bigint.(to_bignum_bigint @@ of_field hi) in
-      Quickcheck.Generator.map
-        Bignum_bigint.(gen_uniform_incl lo_bigint hi_bigint)
-        ~f:(fun x -> Bigint.(to_field (of_bignum_bigint x)))
-
     let typ = Typ.field
 
     module Var = Cvar1
-
-    let parity x = Bigint.(test_bit (of_field x) 0)
 
     module Checked = struct
       include Cvar1
@@ -1206,8 +1146,6 @@ module Field = struct
             in
             let%map () = assert_square y x in
             y
-            
-      let choose_preimage_var = Checked.choose_preimage
 
       type comparison_result =
         { less : Checked.Boolean.var; less_or_equal : Checked.Boolean.var }
@@ -1215,24 +1153,6 @@ module Field = struct
       let if_ = Checked.if_
 
       let compare ~bit_length a b =
-        (* Overview of the logic:
-           let n = bit_length
-           We have 0 <= a < 2^n, 0 <= b < 2^n, and so
-             -2^n < b - a < 2^n
-           If (b - a) >= 0, then
-             2^n <= 2^n + b - a < 2^{n+1},
-           and so the n-th bit must be set.
-           If (b - a) < 0 then
-             0 < 2^n + b - a < 2^n
-           and so the n-th bit must not be set.
-           Thus, we can use the n-th bit of 2^n + b - a to determine whether
-             (b - a) >= 0 <-> a <= b.
-
-           We also need that the maximum value
-             2^n + (2^n - 1) - 0 = 2^{n+1} - 1
-           fits inside the field, so for the max field element f,
-             2^{n+1} - 1 <= f -> n+1 <= log2(f) = size_in_bits - 1
-        *)
         assert (Int.(bit_length <= size_in_bits - 2)) ;
         let open Checked in
         let open Let_syntax in
@@ -1243,10 +1163,8 @@ module Field = struct
             let%bind alpha = unpack alpha_packed ~length:Int.(bit_length + 1) in
             let prefix, less_or_equal =
               match Core_kernel.List.split_n alpha bit_length with
-              | p, [ l ] ->
-                  (p, l)
-              | _ ->
-                  failwith "compare: Invalid alpha"
+              | p, [ l ] -> (p, l)
+              | _ -> failwith "compare: Invalid alpha"
             in
             let%bind not_all_zeros = Boolean.any prefix in
             let%map less = Boolean.(less_or_equal && not_all_zeros) in
@@ -1256,8 +1174,8 @@ end
 ```
 
 ### PureScript
-
 **File:** `packages/snarky/src/Snarky/Circuit/DSL/Field.purs`
+**Module:** `Snarky.Circuit.DSL.Field`
 
 ```purescript
 module Snarky.Circuit.DSL.Field
@@ -1339,376 +1257,22 @@ pow_ x n
 ## Example 8: Merkle Tree
 
 ### OCaml
-
 **File:** `mina/src/lib/snarky/src/base/merkle_tree.ml`
-**Module:** `Merkle_tree`
+**Module:** `Merkle_tree.Checked`
 
 ```ocaml
-open Core_kernel
-
-module Address = struct
-  type t = int
-end
-
-module Free_hash = struct
-  type 'a t = Hash_value of 'a | Hash_empty | Merge of 'a t * 'a t
-  [@@deriving sexp]
-
-  let diff t1 t2 =
-    let module M = struct
-      exception Done of bool list
-    end in
-    let rec go path t1 t2 =
-      match (t1, t2) with
-      | Hash_empty, Hash_empty ->
-          None
-      | Hash_value x, Hash_value y ->
-          (* poly equality; we don't know type of x and y *)
-          if Caml.( = ) x y then None else raise (M.Done path)
-      | Merge (l1, r1), Merge (l2, r2) ->
-          ignore (go (false :: path) l1 l2) ;
-          ignore (go (true :: path) r1 r2) ;
-          None
-      | Hash_empty, Hash_value _
-      | Hash_empty, Merge _
-      | Hash_value _, Hash_empty
-      | Hash_value _, Merge _
-      | Merge _, Hash_empty
-      | Merge _, Hash_value _ ->
-          raise (M.Done path)
-    in
-    try go [] t1 t2 with M.Done addr -> Some addr
-
-  let rec run t ~hash ~merge =
-    match t with
-    | Hash_value x ->
-        hash (Some x)
-    | Hash_empty ->
-        hash None
-    | Merge (l, r) ->
-        merge (run ~hash ~merge l) (run ~hash ~merge r)
-end
-
-type ('hash, 'a) non_empty_tree =
-  | Node of 'hash * ('hash, 'a) tree * ('hash, 'a) tree
-  | Leaf of 'hash * 'a
-
-and ('hash, 'a) tree = Non_empty of ('hash, 'a) non_empty_tree | Empty
-[@@deriving sexp]
-
-type ('hash, 'a) t =
-  { tree : ('hash, 'a) non_empty_tree
-  ; depth : int
-  ; count : int
-  ; hash : 'a option -> 'hash
-  ; merge : 'hash -> 'hash -> 'hash
-  }
-[@@deriving sexp]
-
-let check_exn { tree; hash; merge; _ } =
-  let default = hash None in
-  let rec check_hash = function
-    | Non_empty t ->
-        check_hash_non_empty t
-    | Empty ->
-        default
-  and check_hash_non_empty = function
-    | Leaf (h, x) ->
-        (* poly equality; don't know the hash type *)
-        assert (Caml.( = ) h (hash (Some x))) ;
-        h
-    | Node (h, l, r) ->
-        (* poly equality *)
-        assert (Caml.( = ) (merge (check_hash l) (check_hash r)) h) ;
-        h
-  in
-  ignore (check_hash_non_empty tree)
-
-let non_empty_hash = function Node (h, _, _) -> h | Leaf (h, _) -> h
-
-let depth { depth; _ } = depth
-
-let tree_hash ~default = function
-  | Empty ->
-      default
-  | Non_empty t ->
-      non_empty_hash t
-
-let to_list : ('hash, 'a) t -> 'a list =
-  let rec go acc = function
-    | Empty ->
-        acc
-    | Non_empty (Leaf (_, x)) ->
-        x :: acc
-    | Non_empty (Node (_h, l, r)) ->
-        let acc' = go acc r in
-        go acc' l
-  in
-  fun t -> go [] (Non_empty t.tree)
-
-let left_tree hash merge depth x =
-  let empty_hash = hash None in
-  let rec go i h acc =
-    if i = depth then (h, acc)
-    else
-      let h' = merge h empty_hash in
-      go (i + 1) h' (Node (h', Non_empty acc, Empty))
-  in
-  let h = hash (Some x) in
-  go 0 h (Leaf (h, x))
-
-let insert hash merge t0 mask0 address x =
-  let default = hash None in
-  let rec go mask t =
-    if mask = 0 then
-      match t with
-      | Empty ->
-          Leaf (hash (Some x), x)
-      | Non_empty _ ->
-          failwith "Tree should be empty"
-    else
-      let go_left = mask land address = 0 in
-      let mask' = mask lsr 1 in
-      match t with
-      | Empty ->
-          if go_left then
-            let t_l' = go mask' Empty in
-            Node (merge (non_empty_hash t_l') default, Non_empty t_l', Empty)
-          else
-            let t_r' = go mask' Empty in
-            Node (merge default (non_empty_hash t_r'), Empty, Non_empty t_r')
-      | Non_empty (Node (_h, t_l, t_r)) ->
-          if go_left then
-            let t_l' = go mask' t_l in
-            Node
-              ( merge (non_empty_hash t_l') (tree_hash ~default t_r)
-              , Non_empty t_l'
-              , t_r )
-          else
-            let t_r' = go mask' t_r in
-            Node
-              ( merge (tree_hash ~default t_l) (non_empty_hash t_r')
-              , t_l
-              , Non_empty t_r' )
-      | Non_empty (Leaf _) ->
-          failwith "Cannot insert into leaf"
-  in
-  go mask0 t0
-
-let ith_bit n i = (n lsr i) land 1 = 1
-
-let get { tree; depth; _ } addr0 =
-  let rec get t i =
-    match t with Empty -> None | Non_empty t -> get_non_empty t i
-  and get_non_empty t i =
-    match t with
-    | Node (_, l, r) ->
-        let go_right = ith_bit addr0 i in
-        if go_right then get r (i - 1) else get l (i - 1)
-    | Leaf (_, x) ->
-        Some x
-  in
-  get_non_empty tree (depth - 1)
-
-let get_exn t addr = Option.value_exn (get t addr)
-
-let set_dirty default tree addr x =
-  let rec go tree addr =
-    match (tree, addr) with
-    | Empty, go_right :: bs ->
-        let t = Non_empty (go Empty bs) in
-        let l, r = if go_right then (Empty, t) else (t, Empty) in
-        Node (default, l, r)
-    | Empty, [] ->
-        Leaf (default, x)
-    | Non_empty t, _ ->
-        go_non_empty t addr
-  and go_non_empty tree addr =
-    match (tree, addr) with
-    | Leaf _, [] ->
-        Leaf (default, x)
-    | Node (_, l, r), go_right :: bs ->
-        let l', r' =
-          if go_right then (l, Non_empty (go r bs)) else (Non_empty (go l bs), r)
-        in
-        Node (default, l', r')
-    | Leaf _, _ :: _ | Node _, [] ->
-        failwith "Merkle_tree.set_dirty (go_non_empty): Mismatch"
-  in
-  go_non_empty tree (List.rev addr)
-
-let recompute_hashes { tree; hash; merge; _ } =
-  let h =
-    let default = hash None in
-    fun t -> tree_hash ~default t
-  in
-  let rec go = function
-    | Non_empty t ->
-        Non_empty (go_non_empty t)
-    | Empty ->
-        Empty
-  and go_non_empty = function
-    | Leaf (_, x) ->
-        Leaf (hash (Some x), x)
-    | Node (_, l, r) ->
-        let l' = go l in
-        let r' = go r in
-        Node (merge (h l') (h r'), l', r')
-  in
-  go_non_empty tree
-
-let address_of_int ~depth n : bool list =
-  List.init depth ~f:(fun i -> n land (1 lsl i) <> 0)
-
-let add_many t xs =
-  let default = t.hash None in
-  let left_tree_dirty depth x =
-    let rec go i acc =
-      if i = depth then acc
-      else go (i + 1) (Node (default, Non_empty acc, Empty))
-    in
-    go 0 (Leaf (default, x))
-  in
-  let add_one_dirty { tree; depth; count; hash; merge } x =
-    if count = 1 lsl depth then
-      let t_r = left_tree_dirty depth x in
-      { tree = Node (default, Non_empty tree, Non_empty t_r)
-      ; count = count + 1
-      ; depth = depth + 1
-      ; hash
-      ; merge
-      }
-    else
-      { tree = set_dirty default tree (address_of_int ~depth count) x
-      ; count = count + 1
-      ; depth
-      ; hash
-
-      ; merge
-      }
-  in
-  let t = List.fold_left xs ~init:t ~f:add_one_dirty in
-  { t with tree = recompute_hashes t }
-
-let add { tree; depth; count; hash; merge } x =
-  if count = 1 lsl depth then
-    let h_r, t_r = left_tree hash merge depth x in
-    let h_l = non_empty_hash tree in
-    { tree = Node (merge h_l h_r, Non_empty tree, Non_empty t_r)
-    ; count = count + 1
-    ; depth = depth + 1
-    ; hash
-    ; merge
-    }
-  else
-    { tree = insert hash merge (Non_empty tree) (1 lsl (depth - 1)) count x
-    ; count = count + 1
-    ; depth
-    ; hash
-    ; merge
-    }
-
-let root { tree; _ } = non_empty_hash tree
-
-let create ~hash ~merge x =
-  { tree = Leaf (hash (Some x), x); count = 1; depth = 0; hash; merge }
-
-let get_path { tree; hash; depth; _ } addr0 =
-  let default = hash None in
-  let rec go acc t i =
-    if i < 0 then acc
-    else
-      let go_right = ith_bit addr0 i in
-      if go_right then
-        match t with
-        | Leaf _ ->
-            failwith "get_path"
-        | Node (_h, _t_l, Empty) ->
-            failwith "get_path"
-        | Node (_h, t_l, Non_empty t_r) ->
-            go (tree_hash ~default t_l :: acc) t_r (i - 1)
-      else
-        match t with
-        | Leaf _ ->
-            failwith "get_path"
-        | Node (_h, Empty, _t_r) ->
-            failwith "get_path"
-        | Node (_h, Non_empty t_l, t_r) ->
-            go (tree_hash ~default t_r :: acc) t_l (i - 1)
-  in
-  go [] tree (depth - 1)
-
-let implied_root ~merge addr0 entry_hash path0 =
-  let rec go acc i path =
-    match path with
-    | [] ->
-        acc
-    | h :: hs ->
-        go (if ith_bit addr0 i then merge h acc else merge acc h) (i + 1) hs
-  in
-  go entry_hash 0 path0
-
-let rec free_tree_hash = function
-  | Empty ->
-      Free_hash.Hash_empty
-  | Non_empty (Leaf (_, x)) ->
-      Hash_value x
-  | Non_empty (Node (_, l, r)) ->
-      Merge (free_tree_hash l, free_tree_hash r)
-
-let free_root { tree; _ } = free_tree_hash (Non_empty tree)
-
-let get_free_path { tree; depth; _ } addr0 =
-  let rec go acc t i =
-    if i < 0 then acc
-    else
-      let go_right = ith_bit addr0 i in
-      if go_right then
-        match t with
-        | Leaf _ ->
-            failwith "get_path"
-        | Node (_h, _t_l, Empty) ->
-            failwith "get_path"
-        | Node (_h, t_l, Non_empty t_r) ->
-            go (free_tree_hash t_l :: acc) t_r (i - 1)
-      else
-        match t with
-        | Leaf _ ->
-            failwith "get_path"
-        | Node (_h, Empty, _t_r) ->
-            failwith "get_path"
-        | Node (_h, Non_empty t_l, t_r) ->
-            go (free_tree_hash t_r :: acc) t_l (i - 1)
-  in
-  go [] tree (depth - 1)
-
-let implied_free_root addr0 x path0 =
-  implied_root
-    ~merge:(fun a b -> Free_hash.Merge (a, b))
-    addr0 (Hash_value x) path0
-
-type ('hash, 'a) merkle_tree = ('hash, 'a) t
-
 module Checked
     (Impl : Snark_intf.Basic) (Hash : sig
       type var
-
       type value
-
       val typ : (var, value) Impl.Typ.t
-
       val merge : height:int -> var -> var -> var Impl.Checked.t
-
       val if_ : Impl.Boolean.var -> then_:var -> else_:var -> var Impl.Checked.t
-
       val assert_equal : var -> var -> unit Impl.Checked.t
     end) (Elt : sig
       type var
-
       type value
-
       val typ : (var, value) Impl.Typ.t
-
       val hash : var -> Hash.var Impl.Checked.t
     end) =
 struct
@@ -1716,49 +1280,30 @@ struct
 
   module Address = struct
     type var = Boolean.var list
-
     type value = int
-
     let typ ~depth : (var, value) Typ.t =
       Typ.transport
         (Typ.list ~length:depth Boolean.typ)
         ~there:(address_of_int ~depth)
-        ~back:
-          (List.foldi ~init:0 ~f:(fun i acc b ->
+        ~back:(List.foldi ~init:0 ~f:(fun i acc b ->
                if b then acc lor (1 lsl i) else acc ) )
-  end
-
-  module Path = struct
-    type value = Hash.value list
-
-    type var = Hash.var list
-
-    let typ ~depth : (var, value) Typ.t = Typ.(list ~length:depth Hash.typ)
   end
 
   let implied_root entry_hash addr0 path0 =
     let rec go height acc addr path =
       let open Let_syntax in
       match (addr, path) with
-      | [], [] ->
-          return acc
+      | [], [] -> return acc
       | b :: bs, h :: hs ->
           let%bind l = Hash.if_ b ~then_:h ~else_:acc
           and r = Hash.if_ b ~then_:acc ~else_:h in
           let%bind acc' = Hash.merge ~height l r in
           go (height + 1) acc' bs hs
       | _, _ ->
-          failwith
-            "Merkle_tree.Checked.implied_root: address, path length mismatch"
+          failwith "Merkle_tree.Checked.implied_root: address, path length mismatch"
     in
     go 0 entry_hash addr0 path0
 
-  type _ Request.t +=
-    | Get_element : Address.value -> (Elt.value * Path.value) Request.t
-    | Get_path : Address.value -> Path.value Request.t
-    | Set : Address.value * Elt.value -> unit Request.t
-
-  (* addr0 should have least significant bit first *)
   let%snarkydef_ fetch_and_update_req ~(depth : int) root addr0 ~f :
       (Hash.var * [ `Old of Elt.var ] * [ `New of Elt.var ]) Checked.t =
     let open Let_syntax in
@@ -1784,113 +1329,10 @@ struct
     in
     let%map new_root = implied_root next_entry_hash addr0 prev_path in
     (new_root, `Old prev, `New next)
-
-  (* addr0 should have least significant bit first *)
-  let%snarkydef_ modify_req ~(depth : int) root addr0 ~f : Hash.var Checked.t =
-    let%map root, _, _ = fetch_and_update_req ~depth root addr0 ~f in
-    root
-
-  (* addr0 should have least significant bit first *)
-  let%snarkydef_ get_req ~(depth : int) root addr0 : Elt.var Checked.t =
-    let open Let_syntax in
-    let%bind prev, prev_path =
-      request_witness
-        Typ.(Elt.typ * Path.typ ~depth)
-        Impl.As_prover.(
-          map (read (Address.typ ~depth) addr0) ~f:(fun a -> Get_element a))
-    in
-    let%bind () =
-      let%bind prev_entry_hash = Elt.hash prev in
-      implied_root prev_entry_hash addr0 prev_path >>= Hash.assert_equal root
-    in
-    return prev
-
-  (* addr0 should have least significant bit first *)
-  let%snarkydef_ update_req ~(depth : int) ~root ~prev ~next addr0 :
-      Hash.var Checked.t =
-    let open Let_syntax in
-    let%bind prev_entry_hash = Elt.hash prev
-    and next_entry_hash = Elt.hash next
-    and prev_path =
-      request_witness (Path.typ ~depth)
-        Impl.As_prover.(
-          map (read (Address.typ ~depth) addr0) ~f:(fun a -> Get_path a))
-    in
-    let%bind () =
-      implied_root prev_entry_hash addr0 prev_path >>= Hash.assert_equal root
-    in
-    let%bind () =
-      perform
-        (let open Impl.As_prover in
-        let open Let_syntax in
-        let%map addr = read (Address.typ ~depth) addr0
-        and next = read Elt.typ next in
-        Set (addr, next))
-    in
-    implied_root next_entry_hash addr0 prev_path
-end
-
-module Run = struct
-  module Make
-      (Impl : Snark_intf.Run_basic) (Hash : sig
-        type var
-
-        type value
-
-        val typ : (var, value) Impl.Typ.t
-
-        val merge : height:int -> var -> var -> var
-
-        val if_ : Impl.Boolean.var -> then_:var -> else_:var -> var
-
-        val assert_equal : var -> var -> unit
-      end) (Elt : sig
-        type var
-
-        type value
-
-        val typ : (var, value) Impl.Typ.t
-
-        val hash : var -> Hash.var
-      end) =
-  struct
-    open Impl
-
-    include
-      Checked
-        (Impl.Internal_Basic)
-        (struct
-          include Hash
-
-          let merge ~height x y = make_checked (fun () -> merge ~height x y)
-
-          let if_ x ~then_ ~else_ = make_checked (fun () -> if_ x ~then_ ~else_)
-
-          let assert_equal x y = make_checked (fun () -> assert_equal x y)
-        end)
-        (struct
-          include Elt
-
-          let hash var = make_checked (fun () -> hash var)
-        end)
-
-    let implied_root entry_hash addr0 path0 =
-      run_checked (implied_root entry_hash addr0 path0)
-
-    let modify_req ~depth root addr0 ~f =
-      run_checked
-        (modify_req ~depth root addr0 ~f:(fun x -> make_checked (fun () -> f x)))
-
-    let get_req ~depth root addr0 = run_checked (get_req ~depth root addr0)
-
-    let update_req ~depth ~root ~prev ~next addr0 =
-      run_checked (update_req ~depth ~root ~prev ~next addr0)
-  end
 end
 ```
 
 ### PureScript
-
 **File:** `packages/merkle-tree/src/Snarky/Circuit/MerkleTree.purs`
 **Module:** `Snarky.Circuit.MerkleTree`
 
@@ -1955,14 +1397,6 @@ get addr (Digest root) = do
     assertEqual_ root d
   pure value
 
--- | Fetch an element, apply a modification, and update the tree.
--- |
--- | This function:
--- | 1. Witnesses the current element and path
--- | 2. Verifies the old element hashes to the given root
--- | 3. Applies the modification function to get the new element
--- | 4. Updates the underlying tree state via setValue
--- | 5. Computes and returns the new root along with old and new elements
 fetchAndUpdate
   :: forall t m f d v var
    . Reflectable d Int
@@ -1979,33 +1413,21 @@ fetchAndUpdate
        , new :: var
        }
 fetchAndUpdate addr (Digest root) f = do
-  -- Get element and path as witnesses
   { value: prev, path } <- exists do
     a <- read addr
     lift $ getElement @m @_ @v @(KimchiConstraint f) @d a
-  -- Hash old element and verify against root
   prevHash <- hash $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
     assertEqual_ root d
-  -- Apply modification function
   next <- f prev
-  -- Update the tree with the new value
   _ <- exists do
     a <- read addr
     n <- read @v next
     lift $ setValue @_ @_ @v @(KimchiConstraint f) @d a n
-  -- Hash new element and compute new root
   nextHash <- hash $ Just next
   newRoot <- impliedRoot addr nextHash path
   pure { root: newRoot, old: prev, new: next }
 
--- | Update an element when you already have both old and new values.
--- |
--- | This function:
--- | 1. Witnesses only the path (not the element)
--- | 2. Verifies the old element hashes to the given root
--- | 3. Updates the underlying tree state via setValue
--- | 4. Computes and returns the new root
 update
   :: forall t m f d v var
    . Reflectable d Int
@@ -2019,20 +1441,16 @@ update
   -> var
   -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
 update addr (Digest root) prev next = do
-  -- Witness only the path
   path <- exists do
     a <- read addr
     lift $ getPath @m @_ @v @(KimchiConstraint f) @d a
-  -- Hash old element and verify against root
   prevHash <- hash $ Just prev
   impliedRoot addr prevHash path >>= \(Digest d) ->
     assertEqual_ root d
-  -- Update the tree with the new value
   _ <- exists do
     a <- read addr
     n <- read @v next
     lift $ setValue @_ @_ @v @(KimchiConstraint f) @d a n
-  -- Hash new element and compute new root
   nextHash <- hash $ Just next
   impliedRoot addr nextHash path
 
@@ -2055,113 +1473,204 @@ impliedRoot (AddressVar addr) initialHash (Path path) =
     initialHash
     (Vector.zip addr path)
 ```
+
 ---
 
-## How to Test Circuits
+## Example 9: Schnorr Signature Verification
 
-The `snarky-test-utils` package provides a framework for testing circuits. The core of this framework is the `circuitSpec` family of functions, which automate the process of compiling a circuit, generating a witness, and verifying its correctness against a pure functional model.
+### OCaml
+**File:** `mina/src/lib/signature_lib/schnorr.ml`
+**Module:** `Make.Checked`
 
-### The `CircuitSpec` Record
+Note: The OCaml version uses a `Shifted` abstraction with precomputed tables for scalar multiplication via `Curve.Checked.scale`.
 
-All testing functions are configured with a `CircuitSpec` record:
+```ocaml
+module Checked = struct
+  let to_bits x =
+    Field.Checked.choose_preimage_var x ~length:Field.size_in_bits
 
-```purescript
-type CircuitSpec f c r m a b =
-  { builtState :: CircuitBuilderState c r
-  , solver :: SolverT f c m a b
-  , checker :: Checker f c
-  , testFunction :: a -> Expectation b
-  , postCondition :: PostCondition f c r
-  }
+  let compress ((x, _) : Curve.var) = to_bits x
+
+  let is_even y =
+    let%map bs = Field.Checked.unpack_full y in
+    Bitstring_lib.Bitstring.Lsb_first.to_list bs |> List.hd_exn |> Boolean.not
+
+  (* returning r_point as a representable point ensures it is nonzero so the nonzero
+   * check does not have to explicitly be performed *)
+
+  let%snarkydef_ verifier (type s) ~signature_kind ~equal ~final_check
+      ((module Shifted) as shifted :
+        (module Curve.Checked.Shifted.S with type t = s) )
+      ((r, s) : Signature.var) (public_key : Public_key.var) (m : Message.var)
+      =
+    let%bind e = Message.hash_checked ~signature_kind m ~public_key ~r in
+    (* s * g - e * public_key *)
+    let%bind e_pk =
+      Curve.Checked.scale shifted
+        (Curve.Checked.negate public_key)
+        (Curve.Scalar.Checked.to_bits e)
+        ~init:Shifted.zero
+    in
+    let%bind s_g_e_pk =
+      Curve.Checked.scale_known shifted Curve.one
+        (Curve.Scalar.Checked.to_bits s)
+        ~init:e_pk
+    in
+    let%bind rx, ry = Shifted.unshift_nonzero s_g_e_pk in
+    let%bind y_even = is_even ry in
+    let%bind r_correct = equal r rx in
+    final_check r_correct y_even
+
+  let verifies ~signature_kind s =
+    verifier ~signature_kind ~equal:Field.Checked.equal
+      ~final_check:Boolean.( && ) s
+
+  let assert_verifies ~signature_kind s =
+    verifier ~signature_kind ~equal:Field.Checked.Assert.equal
+      ~final_check:(fun () ry_even -> Boolean.Assert.is_true ry_even)
+      s
+end
 ```
 
--   `builtState`: The compiled circuit, produced by `compile`.
--   `solver`: A function that generates the witness, created by `makeSolver`.
--   `checker`: A function that verifies the constraints (e.g., `Kimchi.eval`).
--   `testFunction`: A pure function that defines the expected behavior. It takes the same public input as the circuit and returns an `Expectation`:
-    -   `satisfied`: The circuit should succeed, and the output should match the provided value.
-    -   `unsatisfied`: The circuit should fail to prove (i.e., a constraint was not met).
-    -   `ProverError`: The prover is expected to throw a specific error (e.g., `DivisionByZero`).
--   `postCondition`: An optional function to run additional checks on the generated witness.
+### PureScript
+**File:** `packages/schnorr/src/Snarky/Circuit/Schnorr.purs`
+**Module:** `Snarky.Circuit.Schnorr`
 
-### Testing Pure Circuits
+Note: This translation uses `scaleFast2` from VarBaseMul instead of the `Shifted` abstraction. The scalar `s` is represented as `Type2` to handle the foreign field case where the scalar field differs from the circuit field.
 
-For circuits that do not involve any side effects or state (i.e., their `Snarky` monad is specialized to `Identity`), you can use `circuitSpecPure'`.
+```purescript
+module Snarky.Circuit.Schnorr
+  ( SignatureVar(..)
+  , sigR
+  , sigS
+  , isEven
+  , hashMessage
+  , verifies
+  ) where
 
-**Example Pattern:**
+import Prelude
 
-1.  **Define the Circuit**: Write your circuit as a pure function in the `Snarky ... Identity` monad.
+import Data.Array ((:))
+import Data.Fin (unsafeFinite)
+import Data.Generic.Rep (class Generic)
+import Data.Newtype (class Newtype)
+import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector)
+import Data.Vector as Vector
+import Poseidon (class PoseidonField)
+import Prim.Int (class Add, class Mul)
+import Snarky.Circuit.Curves as EllipticCurve
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, not_, unpack_)
+import Snarky.Circuit.DSL.Field (equals_)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
+import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type2)
 
-2.  **Define a `testFunction`**: Write a regular PureScript function that computes the same result as your circuit. This is your specification.
+-- | Circuit variable type for Schnorr signatures.
+-- | r is the x-coordinate of R (circuit field element).
+-- | s is a scalar field element represented as Type2 (for foreign field case).
+newtype SignatureVar f = SignatureVar
+  { r :: FVar f
+  , s :: Type2 (FVar f) (BoolVar f)
+  }
 
-3.  **Compile the Circuit**: Use `compile` to get the `builtState`.
-    ```purescript
-    s = un Identity $
-      compile
-        (Proxy @InputType)
-        (Proxy @OutputType)
-        (Proxy @ConstraintSystem)
-        circuit
-        initialState
-    ```
+derive instance Newtype (SignatureVar f) _
+derive instance Generic (SignatureVar f) _
 
-4.  **Create a Solver**: Use `makeSolver` to create the witness generator.
+-- | Extract the r component from a SignatureVar.
+sigR :: forall f. SignatureVar f -> FVar f
+sigR (SignatureVar { r }) = r
 
-5.  **Run the Spec**: Use `circuitSpecPure'` with a `QuickCheck` generator for your inputs.
+-- | Extract the s component from a SignatureVar.
+sigS :: forall f. SignatureVar f -> Type2 (FVar f) (BoolVar f)
+sigS (SignatureVar { s }) = s
 
-    ```purescript
-    circuitSpecPure'
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      inputGenerator
-    ```
+-- | Check if a field element is even (LSB is 0) in a circuit.
+isEven
+  :: forall f t m n
+   . CircuitM f (KimchiConstraint f) t m
+  => FieldSizeInBits f n
+  => FVar f
+  -> Snarky (KimchiConstraint f) t m (BoolVar f)
+isEven y = do
+  bits <- unpack_ y
+  pure $ not_ $ Vector.index bits (unsafeFinite 0)
 
-### Testing Stateful and Effectful Circuits
+-- | Hash the message for signature verification in a circuit.
+-- | e = H(pk_x, pk_y, r, message)
+hashMessage
+  :: forall f t m @n
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => Reflectable n Int
+  => AffinePoint (FVar f)
+  -> FVar f
+  -> Vector n (FVar f)
+  -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
+hashMessage { x: px, y: py } r message = do
+  let
+    inputs = px : py : r : (Vector.toUnfoldable message)
+  hashVec inputs
 
-For circuits that need to interact with external state (like a database or a Merkle tree), you need a more advanced setup. These circuits typically use a custom monad `m` constrained by a typeclass (e.g., `MerkleRequestM`).
+-- | Verify a Schnorr signature in a circuit, returning a boolean.
+-- |
+-- | Algorithm:
+-- | 1. e = H(pk_x, pk_y, r, message)
+-- | 2. R' = [s] * G - [e] * pk
+-- | 3. Return: y-coordinate of R' is even AND x-coordinate of R' == r
+verifies
+  :: forall f t m n l @nChunks sDiv2Bits bitsUsed _l
+   . PoseidonField f
+  => Reflectable l Int
+  => FieldSizeInBits f n
+  => Add bitsUsed _l n
+  => Add sDiv2Bits 1 n
+  => Mul 5 nChunks bitsUsed
+  => Reflectable bitsUsed Int
+  => Reflectable sDiv2Bits Int
+  => CircuitM f (KimchiConstraint f) t m
+  => AffinePoint (FVar f)
+  -> { signature :: SignatureVar f
+     , publicKey :: AffinePoint (FVar f)
+     , message :: Vector l (FVar f)
+     }
+  -> Snarky (KimchiConstraint f) t m (BoolVar f)
+verifies gen { signature: SignatureVar { r, s }, publicKey, message } = do
+  Digest e <- hashMessage @l publicKey r message
+  eSplit <- splitFieldVar e
+  sG <- scaleFast2 @nChunks gen s
+  ePk <- scaleFast2 @nChunks publicKey eSplit
+  negEPk <- EllipticCurve.negate ePk
+  { p: rPoint } <- addComplete sG negEPk
+  isEven rPoint.y && equals_ rPoint.x r
+```
 
-**Example Pattern:**
+**Key Translation Notes:**
+- OCaml's `Shifted` module with precomputed tables → PureScript's `scaleFast2` from VarBaseMul
+- `Curve.Scalar.Checked.to_bits` → `splitFieldVar` for handling field/scalar conversion
+- The `Type2` wrapper handles the foreign field case where scalar and circuit fields differ
+- `Boolean.( && )` → `&&` operator for combining boolean results
 
-1.  **Define Two Monads**:
-    -   **A Compile Monad**: This monad is used during the `compile` step. It should be pure (e.g., based on `Identity`) and its implementation for your custom typeclass should simply throw an error. This ensures that no side effects can occur during compilation.
-    -   **A Test Monad**: This monad is used during the `solver` step. It's typically stateful (e.g., using `ReaderT` over `Effect` with a `Ref`) and implements the logic for your custom typeclass (e.g., reading from/writing to the `Ref`).
+---
 
-2.  **Compile the Circuit**: Compile the circuit using the *compile monad*.
-    ```purescript
-    s =
-      runMyCompileMonad $
-        compile
-          ...
-          (circuit @(MyCompileMonad f))
-          initialState
-    ```
+## Guidelines
 
-3.  **Set up the Test State**: Initialize your state (e.g., create an initial Merkle tree and a `Ref` to hold it).
+1. **Express formulas directly** — Don't break mathematical expressions into unnecessary intermediate steps. Keep the circuit code close to the mathematical specification.
 
-4.  **Define a Natural Transformation**: Write a function that runs a computation in your *test monad* and produces an `Effect`. This function will typically set up initial state, run the monad, and return the result. If you need to reset the state for each `QuickCheck` sample, do it here.
+2. **Use type classes** — OCaml functors become PureScript type classes with constraints like `CircuitM f (KimchiConstraint f) t m`.
 
-    ```purescript
-    natWithReset :: MyTestMonad f ~> Effect
-    natWithReset m = do
-      write initialTree ref
-      runMyTestMonad ref m
-    ```
+3. **Records over tuples** — Use `{ x, y }` records for points instead of tuples `(x, y)`.
 
-5.  **Run the Spec**: Use `circuitSpec'` with the natural transformation.
+4. **Leverage Vector** — Use `Data.Vector` from `sized-vector` package for fixed-size arrays with type-level lengths.
 
-    ```purescript
-    circuitSpec' natWithReset
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied testFunction
-      , postCondition: Kimchi.postCondition
-      }
-      inputGenerator
-    ```
+5. **mapAccumM for stateful loops** — The `mapAccumM` pattern from `Snarky.Circuit.Kimchi.Utils` replaces mutable ref patterns.
 
-This two-monad system cleanly separates the pure circuit structure from the effectful witness generation, ensuring your circuits are deterministic and portable while allowing for stateful testing.
+6. **Look up the OCaml** — When in doubt, read the original OCaml in `mina/src/lib/` to understand intent.
+
+7. **Look up existing translations** — Many circuits are already translated in `packages/snarky-kimchi/src/`. Check there first.
+
+8. **Cite your sources** — Always reference the OCaml file path and module, and the PureScript file path and module.

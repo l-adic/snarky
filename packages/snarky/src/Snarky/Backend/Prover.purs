@@ -1,3 +1,9 @@
+-- | Witness computation backend.
+-- |
+-- | `ProverT` is a `CircuitM` instance that computes witness values without
+-- | collecting constraints. The `exists` implementation runs the prover computation
+-- | and stores the resulting assignments. Constraints are ignored (they're assumed
+-- | to have been validated during compilation).
 module Snarky.Backend.Prover
   ( ProverT
   , runProverT

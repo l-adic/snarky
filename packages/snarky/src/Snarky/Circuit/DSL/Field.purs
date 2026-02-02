@@ -1,3 +1,8 @@
+-- | Field comparison and arithmetic operations.
+-- |
+-- | The `equals_` function is notable: it returns a `BoolVar` indicating equality
+-- | rather than asserting it. This requires introducing witness variables and
+-- | uses the standard "inverse-or-zero" trick to avoid branching.
 module Snarky.Circuit.DSL.Field
   ( equals
   , equals_
