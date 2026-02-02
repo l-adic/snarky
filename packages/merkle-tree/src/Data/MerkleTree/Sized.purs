@@ -132,7 +132,7 @@ instance
   fieldsToVar as =
     coerce $ unsafePartial fromJust $ Vector.toVector @d as
 
-instance CheckedType f c t m (AddressVar d f) where
+instance CheckedType f c (AddressVar d f) where
   check = genericCheck
 
 get
@@ -167,7 +167,7 @@ instance (Reflectable d Int, CircuitType f hash hashvar) => CircuitType f (Path 
   varToFields = genericVarToFields @(Path d hash)
   fieldsToVar = genericFieldsToVar @(Path d hash)
 
-instance CheckedType f c t m hash => CheckedType f c t m (Path d hash) where
+instance CheckedType f c hash => CheckedType f c (Path d hash) where
   check = genericCheck
 
 getPath

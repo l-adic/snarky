@@ -557,7 +557,6 @@
             "js-bigints",
             "maybe",
             "newtype",
-            "partial",
             "poseidon",
             "prelude",
             "random-oracle",
@@ -662,7 +661,6 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck",
             "transformers"
           ],
           "build_plan": [
@@ -1230,6 +1228,7 @@
             "prelude",
             "quickcheck",
             "random-oracle",
+            "safe-coerce",
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
@@ -2117,6 +2116,7 @@
             "spec",
             "transformers",
             "tuples",
+            "unfoldable",
             "union-find",
             "vector-sized"
           ],
@@ -2198,7 +2198,8 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "spec-quickcheck"
+            "spec-quickcheck",
+            "strings"
           ],
           "build_plan": [
             "aff",

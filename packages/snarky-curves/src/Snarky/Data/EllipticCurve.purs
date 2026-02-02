@@ -56,7 +56,7 @@ instance CircuitType f (Point (F f)) (Point (FVar f)) where
   varToFields = genericVarToFields @(Point (F f))
   fieldsToVar = genericFieldsToVar @(Point (F f))
 
-instance CheckedType f c t m (Point (FVar f)) where
+instance CheckedType f c (Point (FVar f)) where
   check = genericCheck
 
 genPoint

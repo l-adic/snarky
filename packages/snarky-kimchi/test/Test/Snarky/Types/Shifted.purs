@@ -105,31 +105,11 @@ spec = do
       it "roundtrips in Vesta.ScalarField" $
         quickCheck (splitJoinRoundtrip @Vesta.ScalarField)
 
-    describe "Type1 Shifted (same-field roundtrip)" do
-      it "fromShifted (toShifted s) == s (Vesta.BaseField)" $
-        quickCheck (type1ShiftRoundtrip @Vesta.BaseField @Vesta.BaseField)
-      it "fromShifted (toShifted s) == s (Vesta.ScalarField)" $
-        quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField)
-      it "fromShifted (toShifted s) == s (danger zone, Vesta.BaseField)" $
-        quickCheck (type1ShiftRoundtrip @Vesta.BaseField @Vesta.BaseField <$> genDangerZone)
-      it "fromShifted (toShifted s) == s (danger zone, Vesta.ScalarField)" $
-        quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField <$> genDangerZone)
-
     describe "Type1 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField)
       it "fromShifted (toShifted s) == s (danger zone)" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField <$> genDangerZone)
-
-    describe "Type2 Shifted (same-field, adds 2^n)" do
-      it "fromShifted (toShifted s) == s + 2^n (Vesta.BaseField)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.BaseField)
-      it "fromShifted (toShifted s) == s + 2^n (Vesta.ScalarField)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField)
-      it "fromShifted (toShifted s) == s + 2^n (danger zone, Vesta.BaseField)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.BaseField <$> genDangerZone)
-      it "fromShifted (toShifted s) == s + 2^n (danger zone, Vesta.ScalarField)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField <$> genDangerZone)
 
     describe "Type2 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $

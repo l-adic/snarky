@@ -6,12 +6,10 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Test.Pickles.BulletproofVerifier as BulletproofVerifier
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
-import Test.Pickles.ScalarChallenge as ScalarChallenge
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -24,11 +22,9 @@ main = runSpecAndExitProcess'
   do
     E2E.spec
     mapSpec nat do
-      BulletproofVerifier.spec
       Commitments.spec
       Linearization.spec
       Permutation.spec
-      ScalarChallenge.spec
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x

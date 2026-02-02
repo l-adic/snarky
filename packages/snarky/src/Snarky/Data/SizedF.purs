@@ -58,7 +58,7 @@ instance
   , Reflectable n Int
   , Add n _l k
   ) =>
-  CheckedType f c t m (SizedF n (FVar f)) where
+  CheckedType f c (SizedF n (FVar f)) where
   check (SizedF var) = do
     bits <- unpack_ var
     let
