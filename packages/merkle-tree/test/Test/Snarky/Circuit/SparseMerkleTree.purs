@@ -83,6 +83,7 @@ instance
   ( Reflectable d Int
   , PoseidonField f
   , CircuitType f v var
+  , CheckedType f (KimchiConstraint f) var
   , MerkleHashable v (Digest (F f))
   ) =>
   CMT.MerkleRequestM (SparseMerkleRefM d f v) f v d var where

@@ -22,7 +22,7 @@ import Data.Map (Map)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, CircuitBuilderT, finalize, runCircuitBuilderT, setPublicInputVars)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
@@ -34,7 +34,6 @@ compilePure
   :: forall @f c c' a b avar bvar r
    . CompileCircuit f c c' r
   => CheckedType f c' avar
-  => CheckedType f c' bvar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Proxy a

@@ -34,20 +34,21 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Mul)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, not_, unpack_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, const_, exists, not_, readCVar, unpack_)
 import Snarky.Circuit.DSL.Field (equals_)
 import Snarky.Circuit.DSL.Monad (check)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2, splitFieldVar)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
-import Snarky.Circuit.Types (BoolVar, FVar) as Types
+import Snarky.Circuit.Types (Bool(..), BoolVar, FVar) as Types
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1(..), Type2)
+import Snarky.Types.Shifted (Type1(..), Type2(..), splitField)
 
 -- | Operations for scalar multiplication in circuits.
 -- |
@@ -67,8 +68,6 @@ type ScalarOps f c scalar =
   , scalarMul :: forall t m. CircuitM f c t m => AffinePoint (FVar f) -> scalar -> Snarky c t m (AffinePoint (FVar f))
   }
 
--- | ScalarOps for Pallas.BaseField using Type2 and scaleFast2.
--- |
 -- | This is the configuration for Pallas circuits where
 -- | the scalar field is larger than the circuit field.
 pallasScalarOps
@@ -174,3 +173,19 @@ verifies ops gen { signature: SignatureVar { r, s }, publicKey, message } = do
   negEPk <- EllipticCurve.negate ePk
   { p: rPoint } <- addComplete sG negEPk
   isEven rPoint.y && equals_ rPoint.x r
+
+-- | Split a field element into Type2 representation with constraint.
+-- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then constrains the relationship.
+splitFieldVar
+  :: forall t m f c
+   . CircuitM f c t m
+  => CheckedType f c ((Type2 (FVar f) (BoolVar f)))
+  => FVar f
+  -> Snarky c t m (Type2 (FVar f) (BoolVar f))
+splitFieldVar s = do
+  Type2 { sDiv2, sOdd } <- exists do
+    F sVal <- readCVar s
+    pure $ splitField (F sVal)
+  assertEqual_ s =<< do
+    pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
+  pure $ Type2 { sDiv2, sOdd }

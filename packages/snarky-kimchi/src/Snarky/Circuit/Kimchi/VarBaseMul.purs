@@ -1,7 +1,6 @@
 module Snarky.Circuit.Kimchi.VarBaseMul
   ( scaleFast1
   , scaleFast2
-  , splitFieldVar
   ) where
 
 import Prelude
@@ -16,7 +15,7 @@ import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -24,9 +23,9 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
-import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1(..), Type2(..), splitField)
+import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 varBaseMul
   :: forall t m @n bitsUsed l @nChunks f
@@ -156,19 +155,3 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
     negBase <- EllipticCurve.negate base
     { p } <- addComplete g negBase
     pure p
-
--- | Split a field element into Type2 representation with constraint.
--- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then constrains the relationship.
-splitFieldVar
-  :: forall t m f c
-   . CircuitM f c t m
-  => CheckedType f c (Type2 (FVar f) (BoolVar f))
-  => FVar f
-  -> Snarky c t m (Type2 (FVar f) (BoolVar f))
-splitFieldVar s = do
-  Type2 { sDiv2, sOdd } <- exists do
-    F sVal <- readCVar s
-    pure $ splitField (F sVal)
-  assertEqual_ s =<< do
-    pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
-  pure $ Type2 { sDiv2, sOdd }
