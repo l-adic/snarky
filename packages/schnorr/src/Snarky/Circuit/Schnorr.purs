@@ -18,8 +18,9 @@ module Snarky.Circuit.Schnorr
   , isEven
   , hashMessage
   , verifies
-  -- Pallas-specific ops
+  -- Curve-specific ops
   , pallasScalarOps
+  , vestaScalarOps
   ) where
 
 import Prelude
@@ -36,15 +37,17 @@ import Prim.Int (class Mul)
 import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, not_, unpack_)
 import Snarky.Circuit.DSL.Field (equals_)
+import Snarky.Circuit.DSL.Monad (check)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2, splitFieldVar)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2, splitFieldVar)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
 import Snarky.Circuit.Types (BoolVar, FVar) as Types
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (Type1(..), Type2)
 
 -- | Operations for scalar multiplication in circuits.
 -- |
@@ -66,7 +69,7 @@ type ScalarOps f c scalar =
 
 -- | ScalarOps for Pallas.BaseField using Type2 and scaleFast2.
 -- |
--- | This is the standard configuration for the Pasta curve cycle where
+-- | This is the configuration for Pallas circuits where
 -- | the scalar field is larger than the circuit field.
 pallasScalarOps
   :: forall @nChunks
@@ -76,6 +79,23 @@ pallasScalarOps
 pallasScalarOps =
   { toScalar: splitFieldVar
   , scalarMul: scaleFast2 @nChunks
+  }
+
+-- | ScalarOps for Vesta.BaseField using Type1 and scaleFast1.
+-- |
+-- | This is the configuration for Vesta circuits where
+-- | the scalar field is smaller than the circuit field.
+vestaScalarOps
+  :: forall @nChunks
+   . Mul 5 nChunks 255
+  => Reflectable nChunks Int
+  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (Types.FVar Vesta.BaseField))
+vestaScalarOps =
+  { toScalar: \fvar -> do
+      let t1 = Type1 fvar
+      check t1
+      pure t1
+  , scalarMul: scaleFast1 @nChunks
   }
 
 -- | Circuit variable type for Schnorr signatures.
