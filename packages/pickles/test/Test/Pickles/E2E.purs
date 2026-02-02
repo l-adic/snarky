@@ -17,20 +17,24 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
+import Control.Monad.State.Trans (StateT(..), evalStateT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
 import Data.Maybe (fromJust)
-import Data.Newtype (un)
+import Data.Newtype (un, unwrap)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
+import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct, computeB)
@@ -40,6 +44,10 @@ import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
+import Pickles.Sponge (lowest128BitsPure)
+import Poseidon (class PoseidonField)
+import RandomOracle.Sponge (Sponge)
+import RandomOracle.Sponge as RandomOracle
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
@@ -47,15 +55,17 @@ import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (endoBase, fromBigInt, generator, pow, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, endoScalar, fromBigInt, generator, pow, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.SizedF (SizedF(..), coerceViaBits)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof)
 import Test.Pickles.ProofFFI as ProofFFI
@@ -150,7 +160,8 @@ createTestContext = do
           , constraints: map _.variables constraints
           , publicInputs: schnorrBuiltState.publicInputs
           }
-        endo = endoBase @Vesta.ScalarField @Pallas.ScalarField
+        -- For Vesta commitment curve, use the Vesta endoScalar (in Fp = Vesta.ScalarField)
+        endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
         proverIndex = createProverIndex @Vesta.ScalarField @Vesta.G
           { endo
           , constraintSystem
@@ -438,6 +449,101 @@ ipaRoundsTest ctx = do
   -- IPA rounds should match the number of challenges
   liftEffect $ ipaRounds `shouldEqual` numChallenges
 
+-- | Test that PureScript challenge extraction from L/R pairs matches Rust.
+-- | This validates: absorb L/R → squeeze 128 bits → apply endo
+bulletproofChallengeExtractionTest :: TestContext -> Aff Unit
+bulletproofChallengeExtractionTest ctx = do
+  let
+    -- Get sponge checkpoint from Rust (state before L/R processing)
+    -- Note: Sponge operates over commitment curve's base field (Pallas.ScalarField = Fq)
+    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Get L/R pairs from the proof (16 pairs for SRS log size 16)
+    -- L/R coordinates are in commitment curve's base field (Pallas.ScalarField = Fq)
+    lrPairs :: Vector 16 { l :: AffinePoint Pallas.ScalarField, r :: AffinePoint Pallas.ScalarField }
+    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
+
+    -- Get Rust-computed endo-mapped challenges
+    rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Reconstruct PureScript sponge from checkpoint
+    -- The sponge state is in Pallas.ScalarField (Fq = commitment curve's base field)
+    spongeState :: Sponge Pallas.ScalarField
+    spongeState = reconstructSponge checkpoint
+
+    -- Process L/R pairs through PureScript sponge (with debug tracing)
+    psChallenges :: Array Pallas.BaseField
+    psChallenges = evalPureSpongeM' spongeState $ extractChallenges lrPairs
+
+  -- Each PS challenge should match the corresponding Rust challenge
+  liftEffect $ psChallenges `shouldEqual` rustChallenges
+  where
+  -- Reconstruct sponge from checkpoint data
+  -- Note: The checkpoint state is in Pallas.ScalarField (Fq) - the commitment curve's base field
+  reconstructSponge :: ProofFFI.SpongeCheckpoint Pallas.ScalarField -> Sponge Pallas.ScalarField
+  reconstructSponge cp =
+    let
+      -- State is already Vector 3 Pallas.ScalarField from FFI
+      state :: Vector 3 Pallas.ScalarField
+      state = cp.state
+
+      -- Parse sponge mode
+      spongeState = case cp.spongeMode of
+        "Absorbed" -> RandomOracle.Absorbed (unsafeFinite cp.modeCount)
+        "Squeezed" -> RandomOracle.Squeezed (unsafeFinite cp.modeCount)
+        _ -> unsafeThrow $ "Unknown sponge mode: " <> cp.spongeMode
+    in
+      { state, spongeState }
+
+  -- Extract challenges: for each L/R pair, absorb and squeeze
+  -- L/R coordinates are in the commitment curve's base field (Pallas.ScalarField = Fq)
+  -- The sponge also operates over Pallas.ScalarField - types match!
+  -- The endo-mapped challenges go into the circuit field (Pallas.BaseField = Fp)
+  extractChallenges
+    :: Vector 16 { l :: AffinePoint Pallas.ScalarField, r :: AffinePoint Pallas.ScalarField }
+    -> PureSpongeM' Pallas.ScalarField (Array Pallas.BaseField)
+  extractChallenges pairs = do
+    challenges <- traverse processPair pairs
+    pure $ Vector.toUnfoldable challenges
+    where
+    processPair { l, r } = do
+      -- Absorb L point (x, y)
+      absorbPure l.x
+      absorbPure l.y
+      -- Absorb R point (x, y)
+      absorbPure r.x
+      absorbPure r.y
+      -- Squeeze 128-bit challenge
+      raw128 <- squeezeScalarChallengePure'
+      -- Apply endo mapping to get final challenge (in circuit field)
+      let endoMapped = unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField)
+      pure endoMapped
+
+-------------------------------------------------------------------------------
+-- | Pure sponge monad helpers (without newtype wrapper for simpler use)
+-------------------------------------------------------------------------------
+
+-- | A simpler state monad for the sponge (avoiding SpongeM complexity)
+type PureSpongeM' f = StateT (Sponge f) Identity
+
+-- | Run the pure sponge monad
+evalPureSpongeM' :: forall f a. Sponge f -> PureSpongeM' f a -> a
+evalPureSpongeM' s m = un Identity $ evalStateT m s
+
+-- | Absorb a field element
+absorbPure :: forall f. PoseidonField f => f -> PureSpongeM' f Unit
+absorbPure x = StateT \s -> Identity $ Tuple unit (RandomOracle.absorb x s)
+
+-- | Squeeze a 128-bit scalar challenge
+squeezeScalarChallengePure' :: forall f. PrimeField f => FieldSizeInBits f 255 => PoseidonField f => PureSpongeM' f (SizedF 128 f)
+squeezeScalarChallengePure' = StateT \s ->
+  let
+    { result, sponge } = RandomOracle.squeeze s
+  in
+    Identity $ Tuple (SizedF $ lowest128BitsPure result) sponge
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -451,3 +557,4 @@ spec = beforeAll createTestContext $
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
+    it "PS bulletproof challenge extraction matches Rust" bulletproofChallengeExtractionTest

@@ -135,3 +135,42 @@ export const pallasProofIpaRounds = (proof) =>
 
 export const vestaProofIpaRounds = (proof) =>
   crypto.vestaProofIpaRounds(proof);
+
+// Sponge checkpoint before L/R processing
+// Returns { state: [f, f, f], spongeMode: String, modeCount: Int }
+export const pallasSpongeCheckpointBeforeChallenges = (proverIndex) => ({ proof, publicInput }) => {
+  const checkpoint = crypto.pallasSpongeCheckpoint(proverIndex, proof, publicInput);
+  return {
+    state: crypto.pallasSpongeCheckpointState(checkpoint),
+    spongeMode: crypto.pallasSpongeCheckpointMode(checkpoint),
+    modeCount: crypto.pallasSpongeCheckpointModeCount(checkpoint)
+  };
+};
+
+export const vestaSpongeCheckpointBeforeChallenges = (proverIndex) => ({ proof, publicInput }) => {
+  const checkpoint = crypto.vestaSpongeCheckpoint(proverIndex, proof, publicInput);
+  return {
+    state: crypto.vestaSpongeCheckpointState(checkpoint),
+    spongeMode: crypto.vestaSpongeCheckpointMode(checkpoint),
+    modeCount: crypto.vestaSpongeCheckpointModeCount(checkpoint)
+  };
+};
+
+// Proof opening L/R pairs - parse flat array into structured points
+// Returns [{l: {x, y}, r: {x, y}}, ...]
+const parseLrPairs = (flat) => {
+  const result = [];
+  for (let i = 0; i < flat.length; i += 4) {
+    result.push({
+      l: { x: flat[i], y: flat[i + 1] },
+      r: { x: flat[i + 2], y: flat[i + 3] }
+    });
+  }
+  return result;
+};
+
+export const pallasProofOpeningLr = (proof) =>
+  parseLrPairs(crypto.pallasProofOpeningLr(proof));
+
+export const vestaProofOpeningLr = (proof) =>
+  parseLrPairs(crypto.vestaProofOpeningLr(proof));

@@ -397,6 +397,49 @@ mod generic {
         ])
     }
 
+    /// Result of bulletproof challenge computation, including intermediate state.
+    pub struct BulletproofChallengeData<F, Fq> {
+        /// The endo-mapped challenges (what verification uses)
+        pub challenges: Vec<F>,
+        /// Sponge checkpoint just before L/R processing (from proof-systems)
+        pub sponge_checkpoint: mina_poseidon::sponge::SpongeCheckpoint<Fq>,
+    }
+
+    /// Core helper: compute bulletproof challenges and extract all intermediate state.
+    /// This is the single source of truth - other functions project from this.
+    pub fn bulletproof_challenge_data<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<BulletproofChallengeData<G::ScalarField, G::BaseField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let (verifier_index, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // Get the sponge from oracles, absorb combined_inner_product
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // Capture sponge checkpoint BEFORE challenge extraction using trait method
+        let sponge_checkpoint = fq_sponge.checkpoint();
+
+        // Get the challenges using the endomorphism coefficient
+        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+
+        Ok(BulletproofChallengeData {
+            challenges: challenges.chal,
+            sponge_checkpoint,
+        })
+    }
+
     /// Extract bulletproof challenges from a proof.
     /// These are the IPA challenges after applying the endomorphism.
     /// Returns d values where d = domain_log2 (number of IPA rounds).
@@ -412,19 +455,36 @@ mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let (verifier_index, oracles_result) =
-            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+        Ok(bulletproof_challenge_data::<G, EFqSponge, EFrSponge>(
+            prover_index,
+            proof,
+            public_input,
+        )?
+        .challenges)
+    }
 
-        // Get the sponge from oracles, absorb combined_inner_product, then get challenges
-        let mut fq_sponge = oracles_result.fq_sponge;
-        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
-            oracles_result.combined_inner_product,
-        )]);
-
-        // Get the challenges using the endomorphism coefficient
-        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
-
-        Ok(challenges.chal)
+    /// Extract opening proof L/R pairs as flat coordinate array.
+    /// Returns [L0.x, L0.y, R0.x, R0.y, L1.x, L1.y, R1.x, R1.y, ...]
+    pub fn proof_opening_lr<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        // L and R are already affine points (G: AffineRepr)
+        // Use CommitmentCurve::to_coordinates to extract x,y
+        let mut result = Vec::with_capacity(proof.proof.lr.len() * 4);
+        for (l, r) in &proof.proof.lr {
+            if let Some((lx, ly)) = l.to_coordinates() {
+                result.push(lx);
+                result.push(ly);
+            }
+            if let Some((rx, ry)) = r.to_coordinates() {
+                result.push(rx);
+                result.push(ry);
+            }
+        }
+        result
     }
 
     /// Verify the opening proof using batch_verify.
@@ -1125,4 +1185,134 @@ pub fn pallas_proof_ipa_rounds(proof: &VestaProofExternal) -> u32 {
 #[napi]
 pub fn vesta_proof_ipa_rounds(proof: &PallasProofExternal) -> u32 {
     proof.proof.lr.len() as u32
+}
+
+/// Opaque sponge checkpoint for Pallas circuits.
+/// For VestaGroup, G::BaseField = Fq = PallasScalarField (due to Pasta 2-cycle).
+pub type PallasSpongeCheckpointExternal =
+    External<mina_poseidon::sponge::SpongeCheckpoint<PallasScalarField>>;
+
+/// Opaque sponge checkpoint for Vesta circuits.
+/// For PallasGroup, G::BaseField = Fp = VestaScalarField (due to Pasta 2-cycle).
+pub type VestaSpongeCheckpointExternal =
+    External<mina_poseidon::sponge::SpongeCheckpoint<VestaScalarField>>;
+
+/// Get sponge checkpoint before L/R processing for a Vesta proof (Pallas/Fp circuits).
+/// Returns an opaque checkpoint - use accessor functions to get state/mode.
+#[napi]
+pub fn pallas_sponge_checkpoint(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<PallasSpongeCheckpointExternal> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let data = generic::bulletproof_challenge_data::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(External::new(data.sponge_checkpoint))
+}
+
+/// Get the 3 state field elements from a Pallas sponge checkpoint.
+#[napi]
+pub fn pallas_sponge_checkpoint_state(
+    checkpoint: &PallasSpongeCheckpointExternal,
+) -> Vec<PallasFieldExternal> {
+    checkpoint
+        .state
+        .iter()
+        .copied()
+        .map(External::new)
+        .collect()
+}
+
+/// Get the sponge mode from a Pallas sponge checkpoint.
+/// Returns "Absorbed" or "Squeezed".
+#[napi]
+pub fn pallas_sponge_checkpoint_mode(checkpoint: &PallasSpongeCheckpointExternal) -> String {
+    match checkpoint.sponge_state {
+        mina_poseidon::poseidon::SpongeState::Absorbed(_) => "Absorbed".to_string(),
+        mina_poseidon::poseidon::SpongeState::Squeezed(_) => "Squeezed".to_string(),
+    }
+}
+
+/// Get the mode count from a Pallas sponge checkpoint.
+#[napi]
+pub fn pallas_sponge_checkpoint_mode_count(checkpoint: &PallasSpongeCheckpointExternal) -> u32 {
+    match checkpoint.sponge_state {
+        mina_poseidon::poseidon::SpongeState::Absorbed(n) => n as u32,
+        mina_poseidon::poseidon::SpongeState::Squeezed(n) => n as u32,
+    }
+}
+
+/// Get sponge checkpoint before L/R processing for a Pallas proof (Vesta/Fq circuits).
+/// Returns an opaque checkpoint - use accessor functions to get state/mode.
+#[napi]
+pub fn vesta_sponge_checkpoint(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<VestaSpongeCheckpointExternal> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let data = generic::bulletproof_challenge_data::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**prover_index, &**proof, &public)?;
+    Ok(External::new(data.sponge_checkpoint))
+}
+
+/// Get the 3 state field elements from a Vesta sponge checkpoint.
+#[napi]
+pub fn vesta_sponge_checkpoint_state(
+    checkpoint: &VestaSpongeCheckpointExternal,
+) -> Vec<VestaFieldExternal> {
+    checkpoint
+        .state
+        .iter()
+        .copied()
+        .map(External::new)
+        .collect()
+}
+
+/// Get the sponge mode from a Vesta sponge checkpoint.
+/// Returns "Absorbed" or "Squeezed".
+#[napi]
+pub fn vesta_sponge_checkpoint_mode(checkpoint: &VestaSpongeCheckpointExternal) -> String {
+    match checkpoint.sponge_state {
+        mina_poseidon::poseidon::SpongeState::Absorbed(_) => "Absorbed".to_string(),
+        mina_poseidon::poseidon::SpongeState::Squeezed(_) => "Squeezed".to_string(),
+    }
+}
+
+/// Get the mode count from a Vesta sponge checkpoint.
+#[napi]
+pub fn vesta_sponge_checkpoint_mode_count(checkpoint: &VestaSpongeCheckpointExternal) -> u32 {
+    match checkpoint.sponge_state {
+        mina_poseidon::poseidon::SpongeState::Absorbed(n) => n as u32,
+        mina_poseidon::poseidon::SpongeState::Squeezed(n) => n as u32,
+    }
+}
+
+/// Get opening proof L/R pairs for a Vesta proof (Pallas/Fp circuits).
+/// Returns flat array [L0.x, L0.y, R0.x, R0.y, L1.x, ...]
+/// Note: Vesta base field = Pallas scalar field (2-cycle)
+#[napi]
+pub fn pallas_proof_opening_lr(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_opening_lr::<VestaGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get opening proof L/R pairs for a Pallas proof (Vesta/Fq circuits).
+/// Returns flat array [L0.x, L0.y, R0.x, R0.y, L1.x, ...]
+/// Note: Pallas base field = Vesta scalar field (2-cycle)
+#[napi]
+pub fn vesta_proof_opening_lr(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_opening_lr::<PallasGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
 }

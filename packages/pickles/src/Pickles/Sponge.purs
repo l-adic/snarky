@@ -16,6 +16,7 @@ module Pickles.Sponge
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalarChallengePure
+  , lowest128BitsPure
   -- In-circuit sponge monad
   , SpongeM(..)
   , runSpongeM
