@@ -34,10 +34,11 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
-import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct, computeB)
+import Pickles.IPA (BCorrectInput)
+import Pickles.IPA as IPA
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
@@ -45,6 +46,7 @@ import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.Sponge (lowest128BitsPure)
+import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -57,7 +59,7 @@ import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
-import Snarky.Circuit.Types (F)
+import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
@@ -71,6 +73,7 @@ import Test.Pickles.ProofFFI (OraclesResult, Proof)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (randomSampleOne)
+import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -449,78 +452,6 @@ ipaRoundsTest ctx = do
   -- IPA rounds should match the number of challenges
   liftEffect $ ipaRounds `shouldEqual` numChallenges
 
--- | Test that PureScript challenge extraction from L/R pairs matches Rust.
--- | This validates: absorb L/R → squeeze 128 bits → apply endo
-bulletproofChallengeExtractionTest :: TestContext -> Aff Unit
-bulletproofChallengeExtractionTest ctx = do
-  let
-    -- Get sponge checkpoint from Rust (state before L/R processing)
-    -- Note: Sponge operates over commitment curve's base field (Pallas.ScalarField = Fq)
-    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    -- Get L/R pairs from the proof (16 pairs for SRS log size 16)
-    -- L/R coordinates are in commitment curve's base field (Pallas.ScalarField = Fq)
-    lrPairs :: Vector 16 { l :: AffinePoint Pallas.ScalarField, r :: AffinePoint Pallas.ScalarField }
-    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
-
-    -- Get Rust-computed endo-mapped challenges
-    rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    -- Reconstruct PureScript sponge from checkpoint
-    -- The sponge state is in Pallas.ScalarField (Fq = commitment curve's base field)
-    spongeState :: Sponge Pallas.ScalarField
-    spongeState = reconstructSponge checkpoint
-
-    -- Process L/R pairs through PureScript sponge (with debug tracing)
-    psChallenges :: Array Pallas.BaseField
-    psChallenges = evalPureSpongeM' spongeState $ extractChallenges lrPairs
-
-  -- Each PS challenge should match the corresponding Rust challenge
-  liftEffect $ psChallenges `shouldEqual` rustChallenges
-  where
-  -- Reconstruct sponge from checkpoint data
-  -- Note: The checkpoint state is in Pallas.ScalarField (Fq) - the commitment curve's base field
-  reconstructSponge :: ProofFFI.SpongeCheckpoint Pallas.ScalarField -> Sponge Pallas.ScalarField
-  reconstructSponge cp =
-    let
-      -- State is already Vector 3 Pallas.ScalarField from FFI
-      state :: Vector 3 Pallas.ScalarField
-      state = cp.state
-
-      -- Parse sponge mode
-      spongeState = case cp.spongeMode of
-        "Absorbed" -> RandomOracle.Absorbed (unsafeFinite cp.modeCount)
-        "Squeezed" -> RandomOracle.Squeezed (unsafeFinite cp.modeCount)
-        _ -> unsafeThrow $ "Unknown sponge mode: " <> cp.spongeMode
-    in
-      { state, spongeState }
-
-  -- Extract challenges: for each L/R pair, absorb and squeeze
-  -- L/R coordinates are in the commitment curve's base field (Pallas.ScalarField = Fq)
-  -- The sponge also operates over Pallas.ScalarField - types match!
-  -- The endo-mapped challenges go into the circuit field (Pallas.BaseField = Fp)
-  extractChallenges
-    :: Vector 16 { l :: AffinePoint Pallas.ScalarField, r :: AffinePoint Pallas.ScalarField }
-    -> PureSpongeM' Pallas.ScalarField (Array Pallas.BaseField)
-  extractChallenges pairs = do
-    challenges <- traverse processPair pairs
-    pure $ Vector.toUnfoldable challenges
-    where
-    processPair { l, r } = do
-      -- Absorb L point (x, y)
-      absorbPure l.x
-      absorbPure l.y
-      -- Absorb R point (x, y)
-      absorbPure r.x
-      absorbPure r.y
-      -- Squeeze 128-bit challenge
-      raw128 <- squeezeScalarChallengePure'
-      -- Apply endo mapping to get final challenge (in circuit field)
-      let endoMapped = unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField)
-      pure endoMapped
-
 -------------------------------------------------------------------------------
 -- | Pure sponge monad helpers (without newtype wrapper for simpler use)
 -------------------------------------------------------------------------------
@@ -544,6 +475,158 @@ squeezeScalarChallengePure' = StateT \s ->
   in
     Identity $ Tuple (SizedF $ lowest128BitsPure result) sponge
 
+-- | Test that bCorrectCircuit verifies using Rust-provided values.
+-- | Uses circuitSpec infrastructure to verify constraint satisfaction.
+bCorrectCircuitTest :: TestContext -> Aff Unit
+bCorrectCircuitTest ctx = do
+  let
+    -- Get bulletproof challenges from Rust
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    challenges :: Vector 16 (F Vesta.ScalarField)
+    challenges = unsafePartial $ fromJust $ Vector.toVector $ map F challengesArray
+
+    -- Get evaluation points from oracles
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+    zetaOmega = ctx.oracles.zeta * omega
+
+    -- Compute expected b value using Rust FFI
+    expectedB = ProofFFI.computeB0
+      { challenges: challengesArray
+      , zeta: ctx.oracles.zeta
+      , zetaOmega
+      , evalscale: ctx.oracles.u
+      }
+
+    -- Bundle circuit input (using F wrapper for CircuitType)
+    circuitInput :: BCorrectInput 16 (F Vesta.ScalarField)
+    circuitInput =
+      { challenges
+      , zeta: F ctx.oracles.zeta
+      , zetaOmega: F zetaOmega
+      , evalscale: F ctx.oracles.u
+      , expectedB: F expectedB
+      }
+
+    -- The circuit wrapping bCorrectCircuit
+    circuit
+      :: forall t m
+       . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+      => BCorrectInput 16 (FVar Vesta.ScalarField)
+      -> Snarky (KimchiConstraint Vesta.ScalarField) t m (BoolVar Vesta.ScalarField)
+    circuit = IPA.bCorrectCircuit
+
+    solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+
+    builtState = compilePure
+      (Proxy @(BCorrectInput 16 (F Vesta.ScalarField)))
+      (Proxy @Boolean)
+      (Proxy @(KimchiConstraint Vesta.ScalarField))
+      circuit
+      Kimchi.initialState
+
+  -- Run circuitSpec with the single Rust-provided test input
+  -- testFunction expects the circuit to return true (b is correct)
+  circuitSpecPureInputs
+    { builtState
+    , checker: Kimchi.eval
+    , solver
+    , testFunction: satisfied (const true :: BCorrectInput 16 (F Vesta.ScalarField) -> Boolean)
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+-- | In-circuit test for challenge extraction.
+-- | Circuit runs over Pallas.ScalarField (Fq) where the sponge operates.
+-- | Extracts 128-bit scalar challenges, verifies circuit matches pure sponge,
+-- | and validates endo-mapped values match Rust.
+extractChallengesCircuitTest :: TestContext -> Aff Unit
+extractChallengesCircuitTest ctx = do
+  let
+    -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
+    lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
+    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
+
+    -- Get sponge checkpoint (used as constants, not circuit inputs)
+    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Parse checkpoint into sponge state
+    spongeMode = case checkpoint.spongeMode of
+      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
+      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
+
+    -- Pure sponge for computing expected values
+    pureSponge :: Sponge Pallas.ScalarField
+    pureSponge = { state: checkpoint.state, spongeState: spongeMode }
+
+    -- Circuit sponge initialized from constants
+    circuitSponge = Pickles.Sponge.spongeFromConstants
+      { state: checkpoint.state, spongeState: spongeMode }
+
+    -- Compute expected 128-bit challenges using pure sponge
+    expected128BitChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+    expected128BitChallenges = evalPureSpongeM' pureSponge $ do
+      traverse processPairPure lrPairs
+      where
+      processPairPure { l, r } = do
+        absorbPure l.x
+        absorbPure l.y
+        absorbPure r.x
+        absorbPure r.y
+        squeezeScalarChallengePure'
+
+    -- Apply endo mapping to 128-bit challenges to get full field elements
+    -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
+    -- toFieldPure: applies endo mapping to get full field element
+    endoMappedChallenges :: Array Pallas.BaseField
+    endoMappedChallenges = Vector.toUnfoldable $ map
+      (\raw128 -> unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField))
+      expected128BitChallenges
+
+    -- Get Rust-computed endo-mapped challenges for comparison
+    rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Build circuit input (just L/R pairs - sponge is constant)
+    circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
+    circuitInput = map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
+
+    -- The circuit: extract 128-bit scalar challenges
+    circuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
+    circuit pairs = Pickles.Sponge.evalSpongeM circuitSponge (IPA.extractScalarChallenges pairs)
+
+    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+
+    builtState = compilePure
+      (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
+      (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      circuit
+      Kimchi.initialState
+
+    -- testFunction: compare circuit output to expected pure sponge output
+    testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    testFn _ = map (\(SizedF x) -> SizedF (F x)) expected128BitChallenges
+
+  -- Verify endo-mapped challenges match Rust (validates pure sponge + endo)
+  liftEffect $ endoMappedChallenges `shouldEqual` rustChallenges
+
+  -- Verify circuit produces correct 128-bit challenges (validates circuit impl)
+  circuitSpecPureInputs
+    { builtState
+    , checker: Kimchi.eval
+    , solver
+    , testFunction: satisfied testFn
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -557,4 +640,5 @@ spec = beforeAll createTestContext $
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
-    it "PS bulletproof challenge extraction matches Rust" bulletproofChallengeExtractionTest
+    it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
+    it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest

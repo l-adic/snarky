@@ -89,12 +89,14 @@ computeB chals { zeta, zetaOmega, evalscale } =
 -- | Input type for bPoly circuit tests.
 type BPolyInput d f = { challenges :: Vector d f, x :: f }
 
--- | Input type for computeB circuit tests.
-type ComputeBInput d f =
+-- | Input type for computeB and related circuits.
+-- | Open row type to allow extension (e.g., adding expectedB for bCorrect).
+type ComputeBInput d f r =
   { challenges :: Vector d f
   , zeta :: f
   , zetaOmega :: f
   , evalscale :: f
+  | r
   }
 
 -- | Circuit version of bPoly using iterative squaring (O(k) multiplications).
@@ -132,11 +134,11 @@ bPolyCircuit { challenges: chals, x } = do
 -- |
 -- | Combines bPolyCircuit evaluations: b(zeta) + evalscale * b(zeta*omega)
 computeBCircuit
-  :: forall d f c t m
+  :: forall d f c t m r
    . Reflectable d Int
   => PrimeField f
   => CircuitM f c t m
-  => ComputeBInput d (FVar f)
+  => ComputeBInput d (FVar f) r
   -> Snarky c t m (FVar f)
 computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
   bZeta <- bPolyCircuit { challenges, x: zeta }

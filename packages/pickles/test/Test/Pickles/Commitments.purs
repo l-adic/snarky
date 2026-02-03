@@ -66,7 +66,7 @@ genBPolyInput = do
   pure { challenges, x }
 
 -- | Generate arbitrary ComputeBInput with TestChallengeSize challenges
-genComputeBInput :: forall f. PrimeField f => Gen (ComputeBInput TestChallengeSize (F f))
+genComputeBInput :: forall f. PrimeField f => Gen (ComputeBInput TestChallengeSize (F f) ())
 genComputeBInput = do
   challenges <- Vector.generator (Proxy @TestChallengeSize) arbitrary
   zeta <- arbitrary
@@ -150,21 +150,21 @@ commitmentsTests _ = do
       circuit
         :: forall t m
          . CircuitM f (KimchiConstraint f) t m
-        => ComputeBInput TestChallengeSize (FVar f)
+        => ComputeBInput TestChallengeSize (FVar f) ()
         -> Snarky (KimchiConstraint f) t m (FVar f)
       circuit = computeBCircuit
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 
       builtState = compilePure
-        (Proxy @(ComputeBInput TestChallengeSize (F f)))
+        (Proxy @(ComputeBInput TestChallengeSize (F f) ()))
         (Proxy @(F f))
         (Proxy @(KimchiConstraint f))
         circuit
         Kimchi.initialState
 
       -- Reference function: convert ComputeBInput to computeB call
-      computeBRef :: ComputeBInput TestChallengeSize (F f) -> F f
+      computeBRef :: ComputeBInput TestChallengeSize (F f) () -> F f
       computeBRef { challenges, zeta, zetaOmega, evalscale } =
         computeB challenges { zeta, zetaOmega, evalscale }
 
@@ -175,4 +175,4 @@ commitmentsTests _ = do
       , testFunction: satisfied computeBRef
       , postCondition: Kimchi.postCondition
       }
-      (genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f)))
+      (genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f) ()))
