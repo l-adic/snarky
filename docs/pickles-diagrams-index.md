@@ -518,7 +518,7 @@ As we implement checkpoints, we'll likely need to expose additional functionalit
 | # | Task | Status | Checkpoint |
 |---|------|--------|------------|
 | 1 | Validate `computeB` against Rust FFI `computeB0` | ✓ Done | C-6 |
-| 2 | Validate bulletproof challenge extraction against Rust FFI | Not started | C-5 |
+| 2 | Validate bulletproof challenge extraction against Rust FFI | ✓ Done | C-5 |
 
 ---
 
@@ -734,3 +734,54 @@ E2E Schnorr Circuit
 **Potential future enhancements** (not required for completion):
 - Add Pallas field test (would require a circuit over `Pallas.ScalarField = Vesta.BaseField`)
 - Run multiple proof instances via QuickCheck (currently uses single random signature per test run)
+
+### TODO 2: Validate bulletproof challenge extraction against Rust FFI
+
+**Completed**: 2026-02-03
+
+**PR**: https://github.com/l-adic/snarky/pull/90
+
+**Findings**: The implementation correctly exposes sponge checkpoint state from vendored `proof-systems` (following the architecture constraint) rather than re-implementing in the FFI layer.
+
+**Key changes**:
+
+1. **Vendored proof-systems modification** (`vendor/proof-systems/poseidon/src/sponge.rs`):
+   - Added `checkpoint()` method to `FqSponge` trait
+   - Exposed `SpongeCheckpoint<F>` struct with `state`, `sponge_state`, `last_squeezed`
+
+2. **Rust FFI** (`packages/crypto-provider/src/kimchi/circuit.rs`):
+   - `bulletproof_challenge_data`: Core helper that captures sponge state before L/R processing
+   - `pallas_sponge_checkpoint` / `vesta_sponge_checkpoint`: Returns checkpoint with accessors
+   - `pallas_proof_opening_lr` / `vesta_proof_opening_lr`: Returns L/R pairs from opening proof
+
+3. **New PureScript module** (`packages/pickles/src/Pickles/IPA.purs`):
+   - `LrPair`, `BPolyInput`, `ComputeBInput`, `BCorrectInput` types
+   - `bPoly` / `bPolyCircuit`: Challenge polynomial evaluation
+   - `computeB` / `computeBCircuit`: Combined b evaluation at zeta and zeta*omega
+   - `extractScalarChallenges`: In-circuit challenge extraction from L/R pairs
+   - `bCorrect` / `bCorrectCircuit`: Verification that b matches expected value
+
+4. **PureScript FFI** (`packages/pickles/test/Test/Pickles/ProofFFI.purs`):
+   - `SpongeCheckpoint` type with `state`, `spongeMode`, `modeCount`
+   - `pallasSpongeCheckpointBeforeChallenges` / `vestaSpongeCheckpointBeforeChallenges`
+   - `pallasProofOpeningLr` / `vestaProofOpeningLr`
+
+5. **Tests** (`packages/pickles/test/Test/Pickles/E2E.purs`):
+   - `bCorrectCircuitTest`: Validates `bCorrectCircuit` with Rust-provided values
+   - `extractChallengesCircuitTest`: Validates challenge extraction circuit matches pure sponge and Rust FFI
+
+**Test execution**:
+```
+$ npx spago test -p pickles -- --example "extractScalarChallenges"
+E2E Schnorr Circuit
+  ✓ extractScalarChallenges circuit matches pure and Rust
+```
+
+**Architecture compliance**:
+- ✓ Modified vendored proof-systems to expose `SpongeCheckpoint` (correct approach)
+- ✓ FFI accesses existing fields (`proof.lr`, `sponge.checkpoint()`) - no re-implementation
+- ✓ Tests validate: pure sponge matches circuit, endo-mapped challenges match Rust
+
+**Code organization**:
+- IPA-related code consolidated from `Commitments.purs` into new `IPA.purs` module
+- Clean separation: `IPA.purs` handles challenge polynomial and verification, `Commitments.purs` handles polynomial commitment batching
