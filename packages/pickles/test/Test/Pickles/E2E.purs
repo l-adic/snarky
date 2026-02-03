@@ -36,8 +36,8 @@ import Effect.Class (liftEffect)
 import Effect.Exception (error)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.Commitments (combinedInnerProduct, computeB)
-import Pickles.IPA (BCorrectInput)
+import Pickles.Commitments (combinedInnerProduct)
+import Pickles.IPA (BCorrectInput, computeB)
 import Pickles.IPA as IPA
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
