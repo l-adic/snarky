@@ -34,6 +34,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (error)
+import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
@@ -544,9 +545,6 @@ bCorrectCircuitTest ctx = do
 extractChallengesCircuitTest :: TestContext -> Aff Unit
 extractChallengesCircuitTest ctx = do
   let
-    -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
-    lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
-    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
 
     -- Get sponge checkpoint (used as constants, not circuit inputs)
     checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
@@ -557,41 +555,15 @@ extractChallengesCircuitTest ctx = do
       "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
       _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
 
-    -- Pure sponge for computing expected values
-    pureSponge :: Sponge Pallas.ScalarField
-    pureSponge = { state: checkpoint.state, spongeState: spongeMode }
-
-    -- Circuit sponge initialized from constants
-    circuitSponge = Pickles.Sponge.spongeFromConstants
-      { state: checkpoint.state, spongeState: spongeMode }
-
-    -- Compute expected 128-bit challenges using pure sponge
-    expected128BitChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-    expected128BitChallenges = evalPureSpongeM' pureSponge $ do
-      traverse processPairPure lrPairs
-      where
-      processPairPure { l, r } = do
-        absorbPure l.x
-        absorbPure l.y
-        absorbPure r.x
-        absorbPure r.y
-        squeezeScalarChallengePure'
-
-    -- Apply endo mapping to 128-bit challenges to get full field elements
-    -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
-    -- toFieldPure: applies endo mapping to get full field element
-    endoMappedChallenges :: Array Pallas.BaseField
-    endoMappedChallenges = Vector.toUnfoldable $ map
-      (\raw128 -> unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField))
-      expected128BitChallenges
-
-    -- Get Rust-computed endo-mapped challenges for comparison
-    rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
     -- Build circuit input (just L/R pairs - sponge is constant)
     circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
-    circuitInput = map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
+    circuitInput =
+      let
+        -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
+        lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
+        lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
+      in
+        map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
 
     -- The circuit: extract 128-bit scalar challenges
     circuit
@@ -599,7 +571,13 @@ extractChallengesCircuitTest ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
-    circuit pairs = Pickles.Sponge.evalSpongeM circuitSponge (IPA.extractScalarChallenges pairs)
+    circuit pairs =
+      let
+        -- Circuit sponge initialized from constants
+        circuitSponge = Pickles.Sponge.spongeFromConstants
+          { state: checkpoint.state, spongeState: spongeMode }
+      in
+        Pickles.Sponge.evalSpongeM circuitSponge (IPA.extractScalarChallenges pairs)
 
     solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
 
@@ -610,12 +588,37 @@ extractChallengesCircuitTest ctx = do
       circuit
       Kimchi.initialState
 
-    -- testFunction: compare circuit output to expected pure sponge output
+    -- testFunction: compare circuit output to expected pure sponge output, throws an exception if the 
+    -- result doesn't match the rust FFI
     testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
-    testFn _ = map (\(SizedF x) -> SizedF (F x)) expected128BitChallenges
+    testFn pairs =
+      let
+        pureSponge :: Sponge Pallas.ScalarField
+        pureSponge = { state: checkpoint.state, spongeState: spongeMode }
 
-  -- Verify endo-mapped challenges match Rust (validates pure sponge + endo)
-  liftEffect $ endoMappedChallenges `shouldEqual` rustChallenges
+        challenges =
+          evalPureSpongeM' pureSponge $ traverse processPairPure pairs
+
+        -- Apply endo mapping to 128-bit challenges to get full field elements
+        -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
+        -- toFieldPure: applies endo mapping to get full field element
+        endoMappedChallenges = Vector.toUnfoldable $ map
+          (\raw128 -> unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField))
+          challenges
+        -- Get Rust-computed endo-mapped challenges for comparison
+        rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+      in
+        if endoMappedChallenges /= rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
+        else challenges
+      where
+      processPairPure { l, r } = do
+        absorbPure $ un F l.x
+        absorbPure $ un F l.y
+        absorbPure $ un F r.x
+        absorbPure $ un F r.y
+        SizedF f <- squeezeScalarChallengePure'
+        pure $ SizedF (F f)
 
   -- Verify circuit produces correct 128-bit challenges (validates circuit impl)
   circuitSpecPureInputs
