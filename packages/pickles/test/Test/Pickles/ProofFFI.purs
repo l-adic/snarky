@@ -19,6 +19,8 @@ module Test.Pickles.ProofFFI
   , vestaSpongeCheckpointBeforeChallenges
   , pallasProofOpeningLr
   , vestaProofOpeningLr
+  , pallasProofLrProd
+  , vestaProofLrProd
   , Proof
   , OraclesResult
   , PointEval
@@ -137,6 +139,12 @@ foreign import vestaSpongeCheckpointBeforeChallenges :: ProverIndex Pallas.G Ves
 -- For Vesta circuits using Pallas commitments: Pallas.BaseField = Vesta.ScalarField
 foreign import pallasProofOpeningLr :: Proof Vesta.G Pallas.BaseField -> Vector 16 (LrPair Pallas.ScalarField)
 foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Vector 16 (LrPair Vesta.ScalarField)
+
+-- lr_prod: the curve point sum from bullet_reduce
+-- lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+-- Returns the coordinates of the result point in the commitment curve's base field
+foreign import pallasProofLrProd :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
+foreign import vestaProofLrProd :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
 
 --------------------------------------------------------------------------------
 -- Instances

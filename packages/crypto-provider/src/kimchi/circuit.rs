@@ -63,6 +63,7 @@ type PallasScalarSponge = DefaultFrSponge<PallasScalarField, PlonkSpongeConstant
 // Generic implementations for circuit operations
 mod generic {
     use super::*;
+    use ark_ec::{CurveGroup, VariableBaseMSM};
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
     use ark_std::{One, Zero};
     use kimchi::curve::KimchiCurve;
@@ -485,6 +486,66 @@ mod generic {
             }
         }
         result
+    }
+
+    /// Compute lr_prod: the curve point sum from bullet_reduce.
+    /// lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+    ///
+    /// This is the intermediate value computed during IPA verification
+    /// (see wrap_verifier.ml bullet_reduce / step_verifier.ml bullet_reduce).
+    /// Returns coordinates [x, y] of the result point.
+    pub fn proof_lr_prod<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::BaseField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let (verifier_index, oracles_result) =
+            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+
+        // Get the sponge from oracles, absorb combined_inner_product
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // Get the challenges using the endomorphism coefficient
+        // This returns Challenges { chal, chal_inv }
+        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+
+        // Compute lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+        let lr_pairs = &proof.proof.lr;
+        let n = lr_pairs.len();
+
+        // Build scalars and points for MSM
+        let mut scalars = Vec::with_capacity(2 * n);
+        let mut points = Vec::with_capacity(2 * n);
+
+        for (i, (l, r)) in lr_pairs.iter().enumerate() {
+            scalars.push(challenges.chal_inv[i]);
+            scalars.push(challenges.chal[i]);
+            points.push(*l);
+            points.push(*r);
+        }
+
+        // Perform MSM: result = Σ scalars[i] * points[i]
+        let result = G::Group::msm_unchecked(&points, &scalars).into_affine();
+
+        // Return coordinates
+        if let Some((x, y)) = result.to_coordinates() {
+            Ok(vec![x, y])
+        } else {
+            Err(Error::new(
+                Status::GenericFailure,
+                "lr_prod result is point at infinity",
+            ))
+        }
     }
 
     /// Verify the opening proof using batch_verify.
@@ -1315,4 +1376,40 @@ pub fn vesta_proof_opening_lr(proof: &PallasProofExternal) -> Vec<VestaFieldExte
         .into_iter()
         .map(External::new)
         .collect()
+}
+
+/// Compute lr_prod for a Vesta proof (Pallas/Fp circuits).
+/// lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+/// Returns [x, y] coordinates of the result point (in Pallas base field = Fq).
+#[napi]
+pub fn pallas_proof_lr_prod(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::proof_lr_prod::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+/// Compute lr_prod for a Pallas proof (Vesta/Fq circuits).
+/// lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+/// Returns [x, y] coordinates of the result point (in Vesta base field = Fp).
+#[napi]
+pub fn vesta_proof_lr_prod(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::proof_lr_prod::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
 }

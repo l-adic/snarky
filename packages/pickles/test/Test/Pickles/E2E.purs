@@ -46,7 +46,7 @@ import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
-import Pickles.Sponge (lowest128BitsPure)
+import Pickles.Sponge (liftSnarky, lowest128BitsPure)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge)
@@ -630,6 +630,77 @@ extractChallengesCircuitTest ctx = do
     }
     [ circuitInput ]
 
+-- | In-circuit test for bullet reduce (lr_prod computation).
+-- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
+-- | Extracts 128-bit scalar challenges, computes lr_prod, and verifies
+-- | result matches Rust FFI.
+bulletReduceCircuitTest :: TestContext -> Aff Unit
+bulletReduceCircuitTest ctx = do
+  let
+    -- Get sponge checkpoint (used as constants, not circuit inputs)
+    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Parse checkpoint into sponge state
+    spongeMode = case checkpoint.spongeMode of
+      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
+      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
+
+    -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
+    lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
+    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
+
+    -- Build circuit input with F wrapper
+    circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
+    circuitInput = map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
+
+    -- The circuit: extract 128-bit challenges then compute lr_prod
+    circuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
+    circuit pairs = do
+      -- Extract 128-bit scalar challenges using circuit sponge
+      let
+        circuitSponge = Pickles.Sponge.spongeFromConstants
+          { state: checkpoint.state, spongeState: spongeMode }
+      Pickles.Sponge.evalSpongeM circuitSponge do
+        challenges <- IPA.extractScalarChallenges pairs
+        -- Compute lr_prod
+        { p } <- liftSnarky $ IPA.bulletReduceCircuit @Pallas.ScalarField @Vesta.G { pairs, challenges }
+        pure p
+
+    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+
+    builtState = compilePure
+      (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
+      (Proxy @(AffinePoint (F Pallas.ScalarField)))
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      circuit
+      Kimchi.initialState
+
+    -- testFunction: compare circuit output to expected lr_prod
+    testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
+    testFn _ =
+      let
+        -- Get expected lr_prod from Rust FFI
+        expectedLrProd :: AffinePoint Pallas.ScalarField
+        expectedLrProd = ProofFFI.pallasProofLrProd ctx.proverIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+      in
+        { x: F expectedLrProd.x, y: F expectedLrProd.y }
+
+  -- Verify circuit produces correct lr_prod
+  circuitSpecPureInputs
+    { builtState
+    , checker: Kimchi.eval
+    , solver
+    , testFunction: satisfied testFn
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -645,3 +716,4 @@ spec = beforeAll createTestContext $
     it "IPA rounds matches domain log2" ipaRoundsTest
     it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
     it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest
+    it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest

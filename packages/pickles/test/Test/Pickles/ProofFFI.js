@@ -174,3 +174,16 @@ export const pallasProofOpeningLr = (proof) =>
 
 export const vestaProofOpeningLr = (proof) =>
   parseLrPairs(crypto.vestaProofOpeningLr(proof));
+
+// lr_prod: the curve point sum from bullet_reduce
+// lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+// Returns { x, y } coordinates of the result point
+export const pallasProofLrProd = (proverIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasProofLrProd(proverIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofLrProd = (proverIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.vestaProofLrProd(proverIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
