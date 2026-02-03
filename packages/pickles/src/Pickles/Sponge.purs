@@ -16,6 +16,7 @@ module Pickles.Sponge
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalarChallengePure
+  , lowest128BitsPure
   -- In-circuit sponge monad
   , SpongeM(..)
   , runSpongeM
@@ -25,9 +26,10 @@ module Pickles.Sponge
   , PureSpongeM(..)
   , runPureSpongeM
   , evalPureSpongeM
-  -- Initial state
+  -- Initial state / restore
   , initialSponge
   , initialSpongeCircuit
+  , spongeFromConstants
   ) where
 
 import Prelude
@@ -228,6 +230,18 @@ initialSponge = create $ Vector.generate (const zero)
 -- | Create an initial sponge with zero state (circuit version)
 initialSpongeCircuit :: forall f. PrimeField f => Sponge (FVar f)
 initialSpongeCircuit = create $ Vector.generate (const $ const_ zero)
+
+-- | Create a circuit sponge from constant field values and sponge state.
+-- | Used to restore sponge state from a checkpoint (e.g., from Rust FFI).
+spongeFromConstants
+  :: forall f
+   . PrimeField f
+  => { state :: Vector 3 f, spongeState :: PureSponge.SpongeState }
+  -> Sponge (FVar f)
+spongeFromConstants { state, spongeState } =
+  { state: map const_ state
+  , spongeState
+  }
 
 --------------------------------------------------------------------------------
 

@@ -8,6 +8,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
+import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
 import Test.Spec (mapSpec)
@@ -23,6 +24,7 @@ main = runSpecAndExitProcess'
     E2E.spec
     mapSpec nat do
       Commitments.spec
+      IPA.spec
       Linearization.spec
       Permutation.spec
   where

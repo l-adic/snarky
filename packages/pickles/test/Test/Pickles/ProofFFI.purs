@@ -14,15 +14,23 @@ module Test.Pickles.ProofFFI
   , permutationVanishingPolynomial
   , domainGenerator
   , proofIpaRounds
+  -- Functions not in typeclass (use different field than circuit field f)
+  , pallasSpongeCheckpointBeforeChallenges
+  , vestaSpongeCheckpointBeforeChallenges
+  , pallasProofOpeningLr
+  , vestaProofOpeningLr
   , Proof
   , OraclesResult
   , PointEval
+  , SpongeCheckpoint
+  , LrPair
   ) where
 
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type
@@ -44,6 +52,17 @@ type OraclesResult f =
   , publicEvalZeta :: f
   , publicEvalZetaOmega :: f
   }
+
+-- | Sponge checkpoint for debugging/testing challenge extraction.
+-- | Contains the Poseidon sponge state (3 field elements) and mode info.
+type SpongeCheckpoint f =
+  { state :: Vector 3 f -- Poseidon state (3 field elements)
+  , spongeMode :: String -- "Absorbed" or "Squeezed"
+  , modeCount :: Int -- count from the sponge mode
+  }
+
+-- | A single L/R pair from the IPA opening proof.
+type LrPair f = { l :: AffinePoint f, r :: AffinePoint f }
 
 -- | Typeclass for proof-related FFI operations.
 -- | `f` is the scalar field, `g` is the curve group.
@@ -106,6 +125,18 @@ foreign import vestaComputeB0 :: { challenges :: Array Vesta.BaseField, zeta :: 
 
 foreign import pallasProofIpaRounds :: Proof Vesta.G Pallas.BaseField -> Int
 foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
+
+-- Note: Sponge checkpoint state is in the commitment curve's base field (the "other" field in the 2-cycle)
+-- Pallas circuits use Vesta for commitments, so sponge is over Vesta.BaseField = Pallas.ScalarField
+-- Vesta circuits use Pallas for commitments, so sponge is over Pallas.BaseField = Vesta.ScalarField
+foreign import pallasSpongeCheckpointBeforeChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> SpongeCheckpoint Pallas.ScalarField
+foreign import vestaSpongeCheckpointBeforeChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> SpongeCheckpoint Vesta.ScalarField
+
+-- Note: L/R coordinates are in the commitment curve's base field (the "other" field in the 2-cycle)
+-- For Pallas circuits using Vesta commitments: Vesta.BaseField = Pallas.ScalarField
+-- For Vesta circuits using Pallas commitments: Pallas.BaseField = Vesta.ScalarField
+foreign import pallasProofOpeningLr :: Proof Vesta.G Pallas.BaseField -> Vector 16 (LrPair Pallas.ScalarField)
+foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Vector 16 (LrPair Vesta.ScalarField)
 
 --------------------------------------------------------------------------------
 -- Instances
