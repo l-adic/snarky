@@ -17,7 +17,6 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
-import Control.Monad.State.Trans (StateT(..), evalStateT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -27,7 +26,6 @@ import Data.Identity (Identity(..))
 import Data.Maybe (fromJust)
 import Data.Newtype (un, unwrap)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
-import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -46,9 +44,8 @@ import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
-import Pickles.Sponge (liftSnarky, lowest128BitsPure)
+import Pickles.Sponge (liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
-import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Snarky.Backend.Builder (CircuitBuilderState)
@@ -64,7 +61,7 @@ import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, endoScalar, fromBigInt, generator, pow, toAffine)
+import Snarky.Curves.Class (endoScalar, fromBigInt, generator, pow, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -457,25 +454,6 @@ ipaRoundsTest ctx = do
 -- | Pure sponge monad helpers (without newtype wrapper for simpler use)
 -------------------------------------------------------------------------------
 
--- | A simpler state monad for the sponge (avoiding SpongeM complexity)
-type PureSpongeM' f = StateT (Sponge f) Identity
-
--- | Run the pure sponge monad
-evalPureSpongeM' :: forall f a. Sponge f -> PureSpongeM' f a -> a
-evalPureSpongeM' s m = un Identity $ evalStateT m s
-
--- | Absorb a field element
-absorbPure :: forall f. PoseidonField f => f -> PureSpongeM' f Unit
-absorbPure x = StateT \s -> Identity $ Tuple unit (RandomOracle.absorb x s)
-
--- | Squeeze a 128-bit scalar challenge
-squeezeScalarChallengePure' :: forall f. PrimeField f => FieldSizeInBits f 255 => PoseidonField f => PureSpongeM' f (SizedF 128 f)
-squeezeScalarChallengePure' = StateT \s ->
-  let
-    { result, sponge } = RandomOracle.squeeze s
-  in
-    Identity $ Tuple (SizedF $ lowest128BitsPure result) sponge
-
 -- | Test that bCorrectCircuit verifies using Rust-provided values.
 -- | Uses circuitSpec infrastructure to verify constraint satisfaction.
 bCorrectCircuitTest :: TestContext -> Aff Unit
@@ -588,7 +566,7 @@ extractChallengesCircuitTest ctx = do
       circuit
       Kimchi.initialState
 
-    -- testFunction: compare circuit output to expected pure sponge output, throws an exception if the 
+    -- testFunction: compare circuit output to expected pure sponge output, throws an exception if the
     -- result doesn't match the rust FFI
     testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
     testFn pairs =
@@ -596,8 +574,12 @@ extractChallengesCircuitTest ctx = do
         pureSponge :: Sponge Pallas.ScalarField
         pureSponge = { state: checkpoint.state, spongeState: spongeMode }
 
-        challenges =
-          evalPureSpongeM' pureSponge $ traverse processPairPure pairs
+        -- Unwrap F from pairs
+        unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
+
+        -- Extract 128-bit challenges using pure sponge
+        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges = Pickles.Sponge.evalPureSpongeM pureSponge $ IPA.extractScalarChallengesPure unwrappedPairs
 
         -- Apply endo mapping to 128-bit challenges to get full field elements
         -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
@@ -610,15 +592,7 @@ extractChallengesCircuitTest ctx = do
           { proof: ctx.proof, publicInput: ctx.publicInputs }
       in
         if endoMappedChallenges /= rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
-        else challenges
-      where
-      processPairPure { l, r } = do
-        absorbPure $ un F l.x
-        absorbPure $ un F l.y
-        absorbPure $ un F r.x
-        absorbPure $ un F r.y
-        SizedF f <- squeezeScalarChallengePure'
-        pure $ SizedF (F f)
+        else map (\(SizedF f) -> SizedF (F f)) challenges
 
   -- Verify circuit produces correct 128-bit challenges (validates circuit impl)
   circuitSpecPureInputs
@@ -680,16 +654,34 @@ bulletReduceCircuitTest ctx = do
       circuit
       Kimchi.initialState
 
-    -- testFunction: compare circuit output to expected lr_prod
+    -- testFunction: compute lr_prod using pure bulletReduce, compare to Rust
     testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
-    testFn _ =
+    testFn pairs =
       let
+        pureSponge :: Sponge Pallas.ScalarField
+        pureSponge = { state: checkpoint.state, spongeState: spongeMode }
+
+        -- Unwrap F from pairs
+        unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
+
+        -- Extract 128-bit challenges using pure sponge
+        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges = Pickles.Sponge.evalPureSpongeM pureSponge $ IPA.extractScalarChallengesPure unwrappedPairs
+
+        -- Compute lr_prod using pure bulletReduce
+        lrProd :: Vesta.G
+        lrProd = IPA.bulletReduce @Pallas.ScalarField @Vesta.G { pairs: unwrappedPairs, challenges }
+
         -- Get expected lr_prod from Rust FFI
         expectedLrProd :: AffinePoint Pallas.ScalarField
         expectedLrProd = ProofFFI.pallasProofLrProd ctx.proverIndex
           { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+        -- Convert lrProd to AffinePoint for comparison
+        computedAffine = unsafePartial $ fromJust $ toAffine lrProd
       in
-        { x: F expectedLrProd.x, y: F expectedLrProd.y }
+        if computedAffine /= expectedLrProd then unsafeThrow "bulletReduce lr_prod doesn't match Rust"
+        else { x: F computedAffine.x, y: F computedAffine.y }
 
   -- Verify circuit produces correct lr_prod
   circuitSpecPureInputs

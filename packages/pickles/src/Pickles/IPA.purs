@@ -25,6 +25,7 @@ module Pickles.IPA
   , computeBCircuit
   -- Challenge extraction (returns 128-bit scalar challenges)
   , extractScalarChallenges
+  , extractScalarChallengesPure
   -- Bullet reduce (lr_prod computation)
   , bulletReduce
   , bulletReduceCircuit
@@ -44,7 +45,8 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Pickles.Sponge (SpongeM, absorbPoint, squeezeScalarChallenge)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorbPoint, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge as Sponge
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -207,10 +209,26 @@ extractScalarChallenges pairs = for pairs \{ l, r } -> do
   -- Absorb L and R points into the sponge
   absorbPoint l
   absorbPoint r
-  -- | The result is a 128-bit scalar challenge, NOT a full field element.
-  -- | In pickles, the endo mapping to full field happens separately when needed.
-  -- | This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
+  -- The result is a 128-bit scalar challenge, NOT a full field element.
+  -- In pickles, the endo mapping to full field happens separately when needed.
+  -- This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
   squeezeScalarChallenge
+
+-- | Pure version of extractScalarChallenges for testing.
+-- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
+extractScalarChallengesPure
+  :: forall n f
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => Vector n (LrPair f)
+  -> PureSpongeM f (Vector n (SizedF 128 f))
+extractScalarChallengesPure pairs = for pairs \{ l, r } -> do
+  Sponge.absorb l.x
+  Sponge.absorb l.y
+  Sponge.absorb r.x
+  Sponge.absorb r.y
+  squeezeScalarChallengePure
 
 -------------------------------------------------------------------------------
 -- | Verification
@@ -263,7 +281,7 @@ bCorrectCircuit input@{ expectedB } = do
 -- |
 -- | This corresponds to `bullet_reduce` in wrap_verifier.ml / step_verifier.ml.
 bulletReduce
-  :: forall n f f' g _l
+  :: forall n @f f' @g _l
    . Reflectable n Int
   => Add 1 _l n
   => FieldSizeInBits f' 255
