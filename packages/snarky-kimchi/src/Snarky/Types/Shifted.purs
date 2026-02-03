@@ -26,7 +26,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, BoolVar, F(..), FVar, Snarky, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F(..), FVar, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
 import Snarky.Circuit.DSL.Assert (assert_)
 import Snarky.Circuit.DSL.Boolean (any_)
 import Snarky.Circuit.DSL.Field (equals_)

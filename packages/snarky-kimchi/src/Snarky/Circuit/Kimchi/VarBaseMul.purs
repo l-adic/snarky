@@ -15,7 +15,7 @@ import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, throwAsProver)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.DSL.Bits (unpackPure)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -151,7 +151,7 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
   { g, lsbBits } <- varBaseMul @n @nChunks base (Type1 sDiv2)
   let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
-  EllipticCurve.if_ sOdd g =<< do
+  if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
     { p } <- addComplete g negBase
     pure p

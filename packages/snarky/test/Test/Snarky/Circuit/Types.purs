@@ -8,7 +8,6 @@ import Data.Tuple (Tuple)
 import Data.Tuple.Nested (Tuple3)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Snarky.Backend.Builder (CircuitBuilderT)
 import Snarky.Circuit.CVar (CVar, Variable)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool, F, UnChecked, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)

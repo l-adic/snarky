@@ -2,14 +2,13 @@ module Snarky.Circuit.Curves
   ( assertOnCurve
   , assertEqual
   , negate
-  , if_
   , add_
   , double
   ) where
 
 import Prelude
 
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), addConstraint, assertEqual_, assertSquare_, const_, div_, exists, mul_, negate_, pow_, r1cs, readCVar, scale_, sub_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Curves.Class (class PrimeField, fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -43,18 +42,6 @@ negate
   -> Snarky c t m (AffinePoint (FVar f))
 negate { x, y } = do
   pure { x, y: negate_ y }
-
-if_
-  :: forall f c t m
-   . CircuitM f c t m
-  => BoolVar f
-  -> AffinePoint (FVar f)
-  -> AffinePoint (FVar f)
-  -> Snarky c t m (AffinePoint (FVar f))
-if_ b { x: x1, y: y1 } { x: x2, y: y2 } = do
-  x <- Snarky.if_ b x1 x2
-  y <- Snarky.if_ b y1 y2
-  pure { x, y }
 
 -- N.B. This function is unsafe, if the x value is the same for both points
 -- bad things can happen, i.e.
