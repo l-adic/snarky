@@ -44,8 +44,9 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
-import Pickles.PlonkChecks.Permutation (permContribution)
+import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
+import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
 import Pickles.Sponge (liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon as Poseidon
@@ -58,7 +59,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEqual_, assert_)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Kimchi.GroupMap (groupMapParams)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -391,6 +392,182 @@ permutationTest ctx = do
 
   -- Verify: permContribution = ftEval0 - publicEval + gateConstraints
   liftEffect $ permResult `shouldEqual` (ctx.oracles.ftEval0 - publicEval + gateResult)
+
+-- | Test that PureScript ftEval0 matches the Rust FFI value.
+-- | This validates the composition: ftEval0 = permContribution + publicEval - gateConstraints
+ftEval0Test :: TestContext -> Aff Unit
+ftEval0Test ctx = do
+  let
+    -- Get proof evaluations
+    witnessEvals = ProofFFI.proofWitnessEvals ctx.proof
+    zEvals = ProofFFI.proofZEvals ctx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals ctx.proof
+    shifts = ProofFFI.proverIndexShifts ctx.proverIndex
+
+    -- Compute domain-related values for permutation
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+    zetaToNMinus1 = pow ctx.oracles.zeta n - one
+    zkPoly = ProofFFI.permutationVanishingPolynomial
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
+
+    -- Build permutation input and compute contribution
+    permInput =
+      { w: map _.zeta (Vector.take @7 witnessEvals)
+      , sigma: map _.zeta sigmaEvals
+      , z: zEvals
+      , shifts
+      , alpha: ctx.oracles.alpha
+      , beta: ctx.oracles.beta
+      , gamma: ctx.oracles.gamma
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: ctx.oracles.zeta
+      }
+    permResult = permContribution permInput
+
+    -- Compute gate constraints using proof witness evals
+    coeffEvals = evalCoefficientPolys ctx.proverIndex ctx.oracles.zeta
+    indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
+    vanishesOnZk' = vanishesOnZkAndPreviousRows
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    lagrangeFalse0 = unnormalizedLagrangeBasis
+      { domainLog2: ctx.domainLog2, zkRows: 0, offset: 0, pt: ctx.oracles.zeta }
+    lagrangeTrue1 = unnormalizedLagrangeBasis
+      { domainLog2: ctx.domainLog2, zkRows, offset: -1, pt: ctx.oracles.zeta }
+    evalPoint = buildEvalPoint
+      { witnessEvals
+      , coeffEvals
+      , indexEvals
+      , defaultVal: zero
+      }
+    challenges = buildChallenges
+      { alpha: ctx.oracles.alpha
+      , beta: ctx.oracles.beta
+      , gamma: ctx.oracles.gamma
+      , jointCombiner: zero
+      , vanishesOnZk: vanishesOnZk'
+      , lagrangeFalse0
+      , lagrangeTrue1
+      }
+    env = fieldEnv evalPoint challenges parseHex
+    gateResult = evaluate PallasTokens.constantTermTokens env
+
+    -- Compute public input polynomial evaluation (same as permutationTest)
+    publicEval = computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+
+    -- Compute ftEval0 using our composition function
+    computed = ftEval0
+      { permContribution: permResult
+      , publicEval
+      , gateConstraints: gateResult
+      }
+
+  -- Compare against Rust FFI ground truth
+  liftEffect $ computed `shouldEqual` ctx.oracles.ftEval0
+
+-- | Circuit test for ftEval0Circuit.
+-- | Verifies the in-circuit computation matches the Rust FFI ftEval0 value.
+ftEval0CircuitTest :: TestContext -> Aff Unit
+ftEval0CircuitTest ctx = do
+  let
+    -- Get proof evaluations
+    witnessEvals = ProofFFI.proofWitnessEvals ctx.proof
+    zEvals = ProofFFI.proofZEvals ctx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals ctx.proof
+    shifts = ProofFFI.proverIndexShifts ctx.proverIndex
+    coeffEvals = evalCoefficientPolys ctx.proverIndex ctx.oracles.zeta
+    indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
+
+    -- Compute domain-related values
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+    zetaToNMinus1 = pow ctx.oracles.zeta n - one
+    zkPoly = ProofFFI.permutationVanishingPolynomial
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
+    vanishesOnZk' = vanishesOnZkAndPreviousRows
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    lagrangeFalse0 = unnormalizedLagrangeBasis
+      { domainLog2: ctx.domainLog2, zkRows: 0, offset: 0, pt: ctx.oracles.zeta }
+    lagrangeTrue1 = unnormalizedLagrangeBasis
+      { domainLog2: ctx.domainLog2, zkRows, offset: -1, pt: ctx.oracles.zeta }
+
+    -- Build permutation input
+    permInput :: PermutationInput (F Vesta.ScalarField)
+    permInput =
+      { w: map (F <<< _.zeta) (Vector.take @7 witnessEvals)
+      , sigma: map (F <<< _.zeta) sigmaEvals
+      , z: { zeta: F zEvals.zeta, omegaTimesZeta: F zEvals.omegaTimesZeta }
+      , shifts: map F shifts
+      , alpha: F ctx.oracles.alpha
+      , beta: F ctx.oracles.beta
+      , gamma: F ctx.oracles.gamma
+      , zkPolynomial: F zkPoly
+      , zetaToNMinus1: F zetaToNMinus1
+      , omegaToMinusZkRows: F omegaToMinusZkRows
+      , zeta: F ctx.oracles.zeta
+      }
+
+    -- Build gate constraint input
+    gateInput :: GateConstraintInput (F Vesta.ScalarField)
+    gateInput =
+      { witnessEvals: coerce witnessEvals
+      , coeffEvals: coerce coeffEvals
+      , indexEvals: coerce indexEvals
+      , alpha: F ctx.oracles.alpha
+      , beta: F ctx.oracles.beta
+      , gamma: F ctx.oracles.gamma
+      , jointCombiner: F zero
+      , vanishesOnZk: F vanishesOnZk'
+      , lagrangeFalse0: F lagrangeFalse0
+      , lagrangeTrue1: F lagrangeTrue1
+      }
+
+    -- Public eval (computed same as pure test)
+    publicEval :: F Vesta.ScalarField
+    publicEval = F $ computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+
+    -- Expected result from FFI
+    expected :: F Vesta.ScalarField
+    expected = F ctx.oracles.ftEval0
+
+    -- Circuit input tuple
+    circuitInput = { permInput, gateInput, publicEval }
+
+    -- The circuit computes ftEval0 and asserts it equals the expected value
+    circuit
+      :: forall t m
+       . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+      => { permInput :: PermutationInput (FVar Vesta.ScalarField)
+         , gateInput :: GateConstraintInput (FVar Vesta.ScalarField)
+         , publicEval :: FVar Vesta.ScalarField
+         }
+      -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
+    circuit input = do
+      result <- ftEval0Circuit PallasTokens.constantTermTokens input
+      assertEqual_ result (const_ (un F expected))
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        ( Proxy
+            @{ permInput :: PermutationInput (F Vesta.ScalarField)
+            , gateInput :: GateConstraintInput (F Vesta.ScalarField)
+            , publicEval :: F Vesta.ScalarField
+            }
+        )
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
 
 -- | Test that PureScript combinedInnerProduct matches the Rust FFI value.
 combinedInnerProductTest :: TestContext -> Aff Unit
@@ -806,6 +983,8 @@ spec = beforeAll createTestContext $
   describe "E2E Schnorr Circuit" do
     it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
     it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest
+    it "PS ftEval0 matches Rust FFI ftEval0" ftEval0Test
+    it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
