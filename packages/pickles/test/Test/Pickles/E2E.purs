@@ -48,6 +48,7 @@ import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput,
 import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
+import Pickles.PlonkChecks.XiCorrect (XiCorrectInput, emptyPrevChallengeDigest, xiCorrectCircuit, xiCorrectPure)
 import Pickles.Sponge (liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon as Poseidon
@@ -701,6 +702,92 @@ combinedInnerProductTest ctx = do
   -- Compare against Rust combined_inner_product from oracles
   liftEffect $ psResult `shouldEqual` ctx.oracles.combinedInnerProduct
 
+-- | Test xi_correct: verify that claimed xi (polyscale) was computed correctly.
+-- | Replays Fr-sponge absorptions and compares squeezed+endo result to claimed xi.
+xiCorrectTest :: TestContext -> Aff Unit
+xiCorrectTest ctx = do
+  let
+    -- Get proof evaluations
+    witnessEvals = ProofFFI.proofWitnessEvals ctx.proof
+    zEvals = ProofFFI.proofZEvals ctx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals ctx.proof
+    coeffEvals = ProofFFI.proofCoefficientEvals ctx.proof
+    indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
+
+    -- Public evals
+    publicEvals :: PointEval Vesta.ScalarField
+    publicEvals = { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+
+    -- Build XiCorrectInput
+    xiInput :: XiCorrectInput Vesta.ScalarField
+    xiInput =
+      { fqDigest: ctx.oracles.fqDigest
+      , prevChallengeDigest: emptyPrevChallengeDigest -- no previous recursion in our test
+      , ftEval1: ctx.oracles.ftEval1
+      , publicEvals
+      , zEvals
+      , indexEvals
+      , witnessEvals
+      , coeffEvals
+      , sigmaEvals
+      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , claimedXi: ctx.oracles.v
+      }
+
+    -- Compute xi using PureScript
+    psXi = xiCorrectPure xiInput
+
+  -- Compare PureScript computed xi against Rust's v (polyscale)
+  liftEffect $ psXi `shouldEqual` ctx.oracles.v
+
+-- | Circuit test for xi_correct.
+-- | Replays Fr-sponge in-circuit and asserts equality with claimed xi.
+xiCorrectCircuitTest :: TestContext -> Aff Unit
+xiCorrectCircuitTest ctx = do
+  let
+    -- Get proof evaluations
+    witnessEvals = ProofFFI.proofWitnessEvals ctx.proof
+    zEvals = ProofFFI.proofZEvals ctx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals ctx.proof
+    coeffEvals = ProofFFI.proofCoefficientEvals ctx.proof
+    indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
+
+    circuitInput :: XiCorrectInput (F Vesta.ScalarField)
+    circuitInput =
+      { fqDigest: F ctx.oracles.fqDigest
+      , prevChallengeDigest: F emptyPrevChallengeDigest
+      , ftEval1: F ctx.oracles.ftEval1
+      , publicEvals: coerce { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+      , zEvals: coerce zEvals
+      , indexEvals: coerce indexEvals
+      , witnessEvals: coerce witnessEvals
+      , coeffEvals: coerce coeffEvals
+      , sigmaEvals: coerce sigmaEvals
+      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , claimedXi: F ctx.oracles.v
+      }
+
+    circuit
+      :: forall t m
+       . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+      => XiCorrectInput (FVar Vesta.ScalarField)
+      -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
+    circuit = xiCorrectCircuit
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @(XiCorrectInput (F Vesta.ScalarField)))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
 -- | Test that the opening proof verifies.
 openingProofTest :: TestContext -> Aff Unit
 openingProofTest ctx = do
@@ -1068,6 +1155,8 @@ spec = beforeAll createTestContext $
     it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
+    it "PS xiCorrect computes xi matching Rust polyscale" xiCorrectTest
+    it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
