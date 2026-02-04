@@ -93,6 +93,7 @@ type OraclesResult f =
   , combinedInnerProduct :: f
   , ftEval0, ftEval1 :: f
   , publicEvalZeta, publicEvalZetaOmega :: f
+  , fqDigest :: f                       -- Fq-sponge digest before Fr-sponge (for xi derivation)
   }
 ```
 
@@ -1012,29 +1013,32 @@ E2E Schnorr Circuit
 **Library code** (`packages/pickles/src/Pickles/PlonkChecks/CombinedInnerProduct.purs`):
 
 ```purescript
--- | Input containing everything needed for the CIP check
-type CombinedInnerProductCheckInput f =
-  { permInput :: PermutationInput f
-  , gateInput :: GateConstraintInput f
-  , publicEvalForFt :: f
-  , publicPointEval :: PointEval f
-  , ftEval1 :: f
-  , zEvals :: PointEval f
-  , indexEvals :: Vector 6 (PointEval f)
-  , witnessEvals :: Vector 15 (PointEval f)
-  , coeffEvals :: Vector 15 (PointEval f)
-  , sigmaEvals :: Vector 6 (PointEval f)
-  , polyscale :: f
-  , evalscale :: f
-  }
+type CombinedInnerProductCheckInput f = { permInput, gateInput, publicEvalForFt, ... }
 
--- | Compute CIP in-circuit with ftEval0 computed in-circuit
-combinedInnerProductCheckCircuit :: ... -> CombinedInnerProductCheckInput (FVar f) -> Snarky c t m (FVar f)
+combinedInnerProductCheckCircuit
+  :: Array PolishToken
+  -> CombinedInnerProductCheckInput (FVar f)
+  -> Snarky c t m (FVar f)
+combinedInnerProductCheckCircuit tokens input = do
+  ftEval0Computed <- ftEval0Circuit tokens { permInput, gateInput, publicEval }
+  let allEvals = (publicPointEval :< ftPointEval :< zEvals :< ...) -- 45 evals
+  combinedInnerProductCircuit { polyscale, evalscale, evals: allEvals }
 ```
 
 **Test** (`packages/pickles/test/Test/Pickles/E2E.purs`):
 
-`combinedInnerProductCorrectCircuitTest` calls `combinedInnerProductCheckCircuit` and asserts result equals `ctx.oracles.combinedInnerProduct`.
+```purescript
+combinedInnerProductCorrectCircuitTest ctx = do
+  let
+    circuitInput :: CombinedInnerProductCheckInput (F Vesta.ScalarField)
+    circuitInput = { permInput: {...}, gateInput: {...}, ... }
+
+    circuit input = do
+      cipResult <- combinedInnerProductCheckCircuit PallasTokens.constantTermTokens input
+      assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
+
+  circuitSpecPureInputs {...} [ circuitInput ]
+```
 
 **FFI ground truth**: `ctx.oracles.combinedInnerProduct` - no new Rust code needed
 
@@ -1046,6 +1050,69 @@ E2E Schnorr Circuit
 ```
 
 **Result**: All 28 pickles tests pass
+
+### TODO 6: Implement `xi_correct` check
+
+**Completed**: 2026-02-04
+
+**Goal**: Verify that the claimed xi (polyscale/v) value was correctly derived via Fiat-Shamir by replaying the Fr-sponge absorptions in-circuit.
+
+**What this validates**:
+- The `xi_correct` check from `step_main`
+- Fr-sponge protocol: absorb fq_digest, prev_challenge_digest, ft_eval1, public_evals, all polynomial evaluations, then squeeze and apply endomorphism
+
+**FFI changes** (`packages/crypto-provider/src/kimchi/circuit.rs`):
+- Added `fq_digest` (12th value) to `proof_oracles` return - the Fq-sponge digest before Fr-sponge initialization
+
+**Library code** (`packages/pickles/src/Pickles/PlonkChecks/XiCorrect.purs`):
+
+```purescript
+type XiCorrectInput f =
+  { fqDigest :: f              -- Fq-sponge digest (from FFI)
+  , prevChallengeDigest :: f   -- digest of previous recursion (empty for base case)
+  , ftEval1 :: f
+  , publicEvals :: PointEval f
+  , zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals :: ...
+  , endo :: f
+  , claimedXi :: f
+  }
+
+xiCorrectCircuit :: XiCorrectInput (FVar f) -> Snarky c t m Unit
+xiCorrectCircuit input = do
+  computedXi <- evalSpongeM initialSpongeCircuit do
+    absorb input.fqDigest
+    absorb input.prevChallengeDigest
+    absorb input.ftEval1
+    absorb input.publicEvals.zeta
+    absorb input.publicEvals.omegaTimesZeta
+    absorbEvaluations input  -- z, selectors, witness, coeff, sigma
+    rawChallenge <- squeezeScalarChallenge
+    liftSnarky $ toField rawChallenge input.endo
+  assertEqual_ computedXi input.claimedXi
+```
+
+**Test** (`packages/pickles/test/Test/Pickles/E2E.purs`):
+
+```purescript
+xiCorrectTest ctx = do
+  let psXi = xiCorrectPure { fqDigest: ctx.oracles.fqDigest, ... }
+  liftEffect $ psXi `shouldEqual` ctx.oracles.v
+
+xiCorrectCircuitTest ctx = do
+  circuitSpecPureInputs {...} [ circuitInput ]
+```
+
+**Test execution**:
+```
+$ npx spago test -p pickles -- --example "xi"
+E2E Schnorr Circuit
+  ✓ PS xiCorrect computes xi matching Rust polyscale
+  ✓ xiCorrectCircuit verifies claimed xi
+```
+
+**Design note**: `fqDigest` is treated as a "deferred value" - in the full recursive setting, it would be verified by the wrap circuit. For our test, we get it directly from FFI as ground truth.
+
+**Result**: All 30 pickles tests pass
 
 ---
 
@@ -1084,7 +1151,7 @@ These four checks from `step_main` (lines 1080-1086) are NOT part of IPA but hap
 
 | Check | Description | Our Status |
 |-------|-------------|------------|
-| `xi_correct` | Fiat-Shamir: squeezed xi matches proof's xi | Not yet (pre-IPA check) |
+| `xi_correct` | Fiat-Shamir: squeezed xi matches proof's xi | ✓ `xiCorrectCircuit` (TODO 6) |
 | `b_correct` | `computeB` matches proof's b value | ✓ `bCorrectCircuit` |
 | `combined_inner_product_correct` | Recomputed CIP (using ft_eval0) matches proof | ✓ `combinedInnerProductCorrectCircuitTest` (TODO 5) |
 | `plonk_checks_passed` | Gate + permutation constraints satisfied | ✓ `GateConstraints` + `Permutation` + `FtEval` modules |
@@ -1097,7 +1164,8 @@ The **PLONK checks** (`ftEval0`, `permContribution`, `gateConstraints`) are comp
 
 The **combined inner product check** (`combined_inner_product_correct`) is complete - `ftEval0` is computed in-circuit and fed into `combinedInnerProductCircuit`.
 
+The **xi_correct check** is complete - Fr-sponge is replayed in-circuit to verify the xi (polyscale) derivation.
+
 **What remains for full Kimchi verification** (outside IPA scope):
-1. Integration of `xi_correct` check (Fiat-Shamir verification)
-2. Composition of PLONK checks + IPA check into overall verifier
-3. Higher-level data structures (`StepDeferredValues`, `WrapDeferredValues`, etc.)
+1. Composition of PLONK checks + IPA check into overall verifier
+2. Higher-level data structures (`StepDeferredValues`, `WrapDeferredValues`, etc.)
