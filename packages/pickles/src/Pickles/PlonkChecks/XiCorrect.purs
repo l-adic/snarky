@@ -32,7 +32,7 @@ import Data.Foldable (traverse_)
 import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, initialSponge, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_)
@@ -79,10 +79,20 @@ type FrSpongeChallenges f =
 -- | Circuit computation
 -------------------------------------------------------------------------------
 
--- | Verify xi correctness in-circuit.
+-- | Verify xi correctness in-circuit and derive both xi and evalscale.
 -- |
--- | Replays the Fr-sponge protocol, squeezes a scalar challenge,
--- | applies the endomorphism mapping, and asserts equality with claimed xi.
+-- | This circuit stays in `SpongeM` so the caller can continue using the sponge
+-- | for subsequent operations (e.g., absorbing combined_inner_product for IPA).
+-- |
+-- | The sponge should be in its initial state when this is called.
+-- |
+-- | Operations:
+-- | 1. Absorb fq_digest and prev_challenge_digest
+-- | 2. Absorb ft_eval1, public_evals, all poly evals
+-- | 3. Squeeze and derive xi (polyscale)
+-- | 4. Assert xi matches claimed value
+-- | 5. Squeeze and derive evalscale (r)
+-- | 6. Return both derived values
 xiCorrectCircuit
   :: forall f t m
    . PrimeField f
@@ -90,31 +100,34 @@ xiCorrectCircuit
   => FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
   => XiCorrectInput (FVar f)
-  -> Snarky (KimchiConstraint f) t m Unit
+  -> SpongeM f (KimchiConstraint f) t m (FrSpongeChallenges (FVar f))
 xiCorrectCircuit input = do
-  computedXi <- evalSpongeM initialSpongeCircuit do
-    -- 1. Absorb fq_digest and prev_challenge_digest
-    absorb input.fqDigest
-    absorb input.prevChallengeDigest
+  -- 1. Absorb fq_digest and prev_challenge_digest
+  absorb input.fqDigest
+  absorb input.prevChallengeDigest
 
-    -- 2. Absorb ft_eval1
-    absorb input.ftEval1
+  -- 2. Absorb ft_eval1
+  absorb input.ftEval1
 
-    -- 3. Absorb public evals (zeta, then zeta_omega)
-    absorb input.publicEvals.zeta
-    absorb input.publicEvals.omegaTimesZeta
+  -- 3. Absorb public evals (zeta, then zeta_omega)
+  absorb input.publicEvals.zeta
+  absorb input.publicEvals.omegaTimesZeta
 
-    -- 4. Absorb all polynomial evaluations in Kimchi's order
-    absorbEvaluations input
+  -- 4. Absorb all polynomial evaluations in Kimchi's order
+  absorbEvaluations input
 
-    -- 5. Squeeze scalar challenge (128 bits)
-    rawChallenge <- squeezeScalarChallenge
+  -- 5. Squeeze scalar challenge (128 bits) and derive xi
+  rawXi <- squeezeScalarChallenge
+  xi <- liftSnarky $ toField rawXi input.endo
 
-    -- 6. Apply endomorphism to get xi
-    liftSnarky $ toField rawChallenge input.endo
+  -- 6. Assert equality with claimed xi
+  liftSnarky $ assertEqual_ xi input.claimedXi
 
-  -- 7. Assert equality with claimed xi
-  assertEqual_ computedXi input.claimedXi
+  -- 7. Squeeze scalar challenge for evalscale (r)
+  rawR <- squeezeScalarChallenge
+  evalscale <- liftSnarky $ toField rawR input.endo
+
+  pure { xi, evalscale }
 
 -- | Helper: absorb all polynomial evaluations in Kimchi's order.
 -- | Order: z, selectors (6), witness (15), coefficients (15), sigma (6)

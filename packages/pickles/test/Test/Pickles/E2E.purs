@@ -50,7 +50,7 @@ import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
 import Pickles.PlonkChecks.XiCorrect (XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
-import Pickles.Sponge (liftSnarky)
+import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
@@ -776,7 +776,7 @@ xiCorrectCircuitTest ctx = do
        . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
       => XiCorrectInput (FVar Vesta.ScalarField)
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
-    circuit = xiCorrectCircuit
+    circuit input = void $ evalSpongeM initialSpongeCircuit (xiCorrectCircuit input)
 
   circuitSpecPureInputs
     { builtState: compilePure
@@ -1027,11 +1027,11 @@ ipaFinalCheckCircuitTest ctx = do
       => IpaFinalCheckInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit input = do
-      result <- IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
-        IPA.type1ScalarOps
-        (groupMapParams $ Proxy @Vesta.G)
-        (Pickles.Sponge.spongeFromConstants spongeState)
-        input
+      result <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
+        IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
+          IPA.type1ScalarOps
+          (groupMapParams $ Proxy @Vesta.G)
+          input
       assert_ result
 
   circuitSpecPureInputs
