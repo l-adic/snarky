@@ -39,6 +39,7 @@ module Pickles.IPA
   , ipaFinalCheckCircuit
   -- Scalar ops helpers
   , type1ScalarOps
+  , type2ScalarOps
   ) where
 
 import Prelude
@@ -58,18 +59,20 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, if_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMapCircuit)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
+import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, endoScalar, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.SizedF (SizedF, coerceViaBits)
-import Snarky.Types.Shifted (Type1(..))
+import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -477,31 +480,31 @@ ipaFinalCheckCircuit scalarOps groupMapParams spongeCheckpoint input = do
     -- 4. Derive c via squeeze (as 128-bit scalar challenge)
     c <- squeezeScalarChallenge
 
-    -- 5. Compute lr_prod from L/R pairs and challenges
-    { p: lrProd } <- liftSnarky $ bulletReduceCircuit @f @g
-      { pairs: input.lr
-      , challenges: scalarChallenges
-      }
+    liftSnarky $ do
+      -- 5. Compute lr_prod from L/R pairs and challenges
+      { p: lrProd } <- bulletReduceCircuit @f @g
+        { pairs: input.lr
+        , challenges: scalarChallenges
+        }
 
-    -- 6. Compute Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
-    cipU <- liftSnarky $ scalarOps.scaleByShifted u input.combinedInnerProduct
-    { p: pPrime } <- liftSnarky $ addComplete input.combinedPolynomial cipU
-    { p: q } <- liftSnarky $ addComplete pPrime lrProd
+      -- 6. Compute Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
+      cipU <- scalarOps.scaleByShifted u input.combinedInnerProduct
+      { p: pPrime } <- addComplete input.combinedPolynomial cipU
+      { p: q } <- addComplete pPrime lrProd
 
-    -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
-    cQ <- liftSnarky $ endo q c
-    { p: lhs } <- liftSnarky $ addComplete cQ input.delta
+      -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
+      cQ <- endo q c
+      { p: lhs } <- addComplete cQ input.delta
 
-    -- 8. Compute RHS: z1*(sg + b*u) + z2*H
-    -- Note: b is provided as input and verified separately via bCorrectCircuit
-    bU <- liftSnarky $ scalarOps.scaleByShifted u input.b
-    { p: sgPlusBU } <- liftSnarky $ addComplete input.sg bU
-    z1Term <- liftSnarky $ scalarOps.scaleByShifted sgPlusBU input.z1
-    z2Term <- liftSnarky $ scalarOps.scaleByShifted input.blindingGenerator input.z2
-    { p: rhs } <- liftSnarky $ addComplete z1Term z2Term
+      -- 8. Compute RHS: z1*(sg + b*u) + z2*H
+      -- Note: b is provided as input and verified separately via bCorrectCircuit
+      bU <- scalarOps.scaleByShifted u input.b
+      { p: sgPlusBU } <- addComplete input.sg bU
+      z1Term <- scalarOps.scaleByShifted sgPlusBU input.z1
+      z2Term <- scalarOps.scaleByShifted input.blindingGenerator input.z2
+      { p: rhs } <- addComplete z1Term z2Term
 
-    -- 9. Check LHS == RHS and return boolean result
-    liftSnarky do
+      -- 9. Check LHS == RHS and return boolean result
       xEqual <- equals_ lhs.x rhs.x
       yEqual <- equals_ lhs.y rhs.y
       xEqual `and_` yEqual
@@ -524,4 +527,20 @@ type1ScalarOps
 type1ScalarOps =
   { scaleByShifted: \p t -> scaleFast1 @51 p t
   , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
+  }
+
+-- | Type2 scalar ops for circuits where scalar field > circuit field.
+-- |
+-- | Used for Vesta circuits (Fq) with Pallas commitment curve.
+-- | Pallas scalar field = Fp > Fq, so scalars need Type2 split representation.
+-- |
+-- | For a 255-bit field, nChunks = 51 (since 5 * 51 = 255).
+type2ScalarOps
+  :: forall f t m
+   . FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => IpaScalarOps f (KimchiConstraint f) t m (Type2 (FVar f) (BoolVar f))
+type2ScalarOps =
+  { scaleByShifted: \p t -> scaleFast2 @51 p t
+  , shiftedToAbsorbFields: \(Type2 { sDiv2, sOdd }) -> [ sDiv2, coerce sOdd ]
   }
