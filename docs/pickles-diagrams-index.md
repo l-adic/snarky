@@ -525,6 +525,8 @@ As we implement checkpoints, we'll likely need to expose additional functionalit
 | 3 | Implement `ipaFinalCheckCircuit` (full IPA verification equation) | ✓ Done | V-5 |
 | 4 | Implement `ftEval0` composition (pure + circuit) | ✓ Done | V-3, V-4 |
 | 5 | Integrate `ftEval0Circuit` into `combinedInnerProductCircuit` | ✓ Done | V-6 |
+| 6 | Implement `xi_correct` check | ✓ Done | V-2 |
+| 7 | Implement `r_correct` (evalscale) check | ✓ Done | V-2 |
 
 ---
 
@@ -1111,6 +1113,72 @@ E2E Schnorr Circuit
 ```
 
 **Design note**: `fqDigest` is treated as a "deferred value" - in the full recursive setting, it would be verified by the wrap circuit. For our test, we get it directly from FFI as ground truth.
+
+**Result**: All 30 pickles tests pass
+
+### TODO 7: Implement `r_correct` (evalscale) check
+
+**Completed**: 2026-02-04
+
+**Goal**: Verify that the claimed `r` (evalscale/u) value was correctly derived via Fiat-Shamir by extending the Fr-sponge replay to squeeze twice - once for xi, once for r.
+
+**Background from OCaml** (`step_verifier.ml` lines 946-954):
+```ocaml
+let xi_actual = squeeze () in
+let r_actual = squeeze () in
+let xi_correct =
+  Field.equal xi_actual
+    (match xi with { Import.Scalar_challenge.inner = xi } -> xi)
+in
+let xi = scalar xi in
+let r = scalar (Import.Scalar_challenge.create r_actual) in
+```
+
+Note: There's no explicit `r_correct` check in OCaml - `r` is implicitly validated through `combined_inner_product_correct` which depends on `r`. We add explicit validation for completeness.
+
+**Implementation**:
+
+Extended `XiCorrect.purs` to compute both challenges:
+
+```purescript
+type FrSpongeChallenges f =
+  { xi :: f       -- polyscale (first squeeze)
+  , evalscale :: f -- evalscale/r (second squeeze)
+  }
+
+frSpongeChallengesPure :: XiCorrectInput f -> FrSpongeChallenges f
+frSpongeChallengesPure input = evalPureSpongeM initialSponge do
+  -- Absorb all inputs...
+  absorb input.fqDigest
+  absorb input.prevChallengeDigest
+  absorb input.ftEval1
+  -- ... all poly evals ...
+
+  -- Squeeze for xi
+  rawXi <- squeezeScalarChallengePure
+  let xi = unwrap $ toFieldPure (coerceViaBits rawXi) input.endo
+
+  -- Squeeze for r (evalscale)
+  rawR <- squeezeScalarChallengePure
+  let evalscale = unwrap $ toFieldPure (coerceViaBits rawR) input.endo
+
+  pure { xi, evalscale }
+```
+
+**Test** (extended existing `xiCorrectTest`):
+```purescript
+xiCorrectTest ctx = do
+  let result = frSpongeChallengesPure xiInput
+  liftEffect $ result.xi `shouldEqual` ctx.oracles.v
+  liftEffect $ result.evalscale `shouldEqual` ctx.oracles.u
+```
+
+**Test execution**:
+```
+$ npx spago test -p pickles -- --example "Fr-sponge"
+E2E Schnorr Circuit
+  ✓ PS Fr-sponge challenges (xi, evalscale) match Rust
+```
 
 **Result**: All 30 pickles tests pass
 
