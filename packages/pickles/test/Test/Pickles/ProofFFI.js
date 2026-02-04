@@ -187,3 +187,72 @@ export const vestaProofLrProd = (proverIndex) => ({ proof, publicInput }) => {
   const coords = crypto.vestaProofLrProd(proverIndex, proof, publicInput);
   return { x: coords[0], y: coords[1] };
 };
+
+// Opening proof delta (curve point)
+// Returns { x, y } coordinates
+export const pallasProofOpeningDelta = (proof) => {
+  const coords = crypto.pallasProofOpeningDelta(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofOpeningDelta = (proof) => {
+  const coords = crypto.vestaProofOpeningDelta(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Opening proof sg (challenge polynomial commitment, curve point)
+// Returns { x, y } coordinates
+export const pallasProofOpeningSg = (proof) => {
+  const coords = crypto.pallasProofOpeningSg(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofOpeningSg = (proof) => {
+  const coords = crypto.vestaProofOpeningSg(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Opening proof z1 scalar
+export const pallasProofOpeningZ1 = (proof) =>
+  crypto.pallasProofOpeningZ1(proof);
+
+export const vestaProofOpeningZ1 = (proof) =>
+  crypto.vestaProofOpeningZ1(proof);
+
+// Opening proof z2 scalar
+export const pallasProofOpeningZ2 = (proof) =>
+  crypto.pallasProofOpeningZ2(proof);
+
+export const vestaProofOpeningZ2 = (proof) =>
+  crypto.vestaProofOpeningZ2(proof);
+
+// Blinding generator H from SRS
+// Returns { x, y } coordinates
+export const pallasProverIndexBlindingGenerator = (proverIndex) => {
+  const coords = crypto.pallasProverIndexBlindingGenerator(proverIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProverIndexBlindingGenerator = (proverIndex) => {
+  const coords = crypto.vestaProverIndexBlindingGenerator(proverIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Combined polynomial commitment (batched sum_i polyscale^i * C_i)
+// Returns { x, y } coordinates
+export const pallasCombinedPolynomialCommitment = (proverIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasCombinedPolynomialCommitment(proverIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaCombinedPolynomialCommitment = (proverIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.vestaCombinedPolynomialCommitment(proverIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Debug verification - prints intermediate IPA values
+export const pallasDebugVerify = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.pallasDebugVerify(proverIndex, proof, publicInput);
+
+export const vestaDebugVerify = (proverIndex) => ({ proof, publicInput }) =>
+  crypto.vestaDebugVerify(proverIndex, proof, publicInput);

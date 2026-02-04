@@ -64,6 +64,7 @@ type PallasScalarSponge = DefaultFrSponge<PallasScalarField, PlonkSpongeConstant
 mod generic {
     use super::*;
     use ark_ec::{CurveGroup, VariableBaseMSM};
+    use ark_ff::Field;
     use ark_poly::{EvaluationDomain, Evaluations, Polynomial, Radix2EvaluationDomain};
     use ark_std::{One, Zero};
     use kimchi::curve::KimchiCurve;
@@ -430,7 +431,13 @@ mod generic {
         )]);
 
         // Capture sponge checkpoint BEFORE challenge extraction using trait method
+        // This is after absorbing CIP but before squeezing for u
         let sponge_checkpoint = fq_sponge.checkpoint();
+
+        // Squeeze for u (matches ipa.rs verifier which does this before calling challenges())
+        // The u value itself is derived via group_map in the circuit, but we need to
+        // advance the sponge state here to match the verifier's Fiat-Shamir transcript.
+        let _u = fq_sponge.challenge_fq();
 
         // Get the challenges using the endomorphism coefficient
         let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
@@ -515,6 +522,9 @@ mod generic {
             oracles_result.combined_inner_product,
         )]);
 
+        // Squeeze for u (matches ipa.rs verifier which does this before calling challenges())
+        let _u = fq_sponge.challenge_fq();
+
         // Get the challenges using the endomorphism coefficient
         // This returns Challenges { chal, chal_inv }
         let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
@@ -596,6 +606,299 @@ mod generic {
     ) -> F {
         use poly_commitment::commitment::b_poly;
         b_poly(challenges, zeta) + evalscale * b_poly(challenges, zeta_omega)
+    }
+
+    /// Extract opening proof delta (curve point).
+    /// Returns [x, y] coordinates.
+    pub fn proof_opening_delta<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        if let Some((x, y)) = proof.proof.delta.to_coordinates() {
+            vec![x, y]
+        } else {
+            // Point at infinity - return zeros
+            vec![G::BaseField::zero(), G::BaseField::zero()]
+        }
+    }
+
+    /// Extract opening proof sg (challenge polynomial commitment).
+    /// Returns [x, y] coordinates.
+    pub fn proof_opening_sg<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        if let Some((x, y)) = proof.proof.sg.to_coordinates() {
+            vec![x, y]
+        } else {
+            // Point at infinity - return zeros
+            vec![G::BaseField::zero(), G::BaseField::zero()]
+        }
+    }
+
+    /// Extract opening proof z1 scalar.
+    pub fn proof_opening_z1<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> G::ScalarField {
+        proof.proof.z1
+    }
+
+    /// Extract opening proof z2 scalar.
+    pub fn proof_opening_z2<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> G::ScalarField {
+        proof.proof.z2
+    }
+
+    /// Get the blinding generator H from the SRS via prover index.
+    /// Returns [x, y] coordinates.
+    pub fn prover_index_blinding_generator<G: KimchiCurve>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let verifier_index = prover_index.verifier_index();
+        let h = verifier_index.srs().blinding_commitment();
+        if let Some((x, y)) = h.to_coordinates() {
+            vec![x, y]
+        } else {
+            // Point at infinity - return zeros
+            vec![G::BaseField::zero(), G::BaseField::zero()]
+        }
+    }
+
+    /// Compute the combined polynomial commitment.
+    /// This matches exactly what the Kimchi verifier computes and passes to IPA.
+    /// The key is that the evaluations list includes ft_comm (the linearized commitment),
+    /// NOT the raw t_comm.
+    ///
+    /// Uses Kimchi's to_batch function to get the evaluations list,
+    /// then combines the commitments using combine_commitments.
+    ///
+    /// Returns [x, y] coordinates of the combined commitment.
+    pub fn combined_polynomial_commitment<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::BaseField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        use poly_commitment::commitment::combine_commitments;
+
+        let verifier_index = prover_index.verifier_index();
+
+        // Use Kimchi's to_batch to get the evaluations list in correct order
+        let batch = kimchi::verifier::to_batch::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
+            &verifier_index,
+            proof,
+            public_input,
+        )
+        .map_err(|e| Error::new(Status::GenericFailure, format!("to_batch failed: {:?}", e)))?;
+
+        // Use combine_commitments to compute the combined commitment
+        let mut scalars: Vec<G::ScalarField> = Vec::new();
+        let mut points: Vec<G> = Vec::new();
+
+        combine_commitments(
+            &batch.evaluations,
+            &mut scalars,
+            &mut points,
+            batch.polyscale,
+            G::ScalarField::one(), // rand_base = 1 (we're not batching multiple proofs)
+        );
+
+        // Compute MSM
+        let scalars_bigint: Vec<_> = scalars.iter().map(|s| s.into_bigint()).collect();
+        let result = G::Group::msm_bigint(&points, &scalars_bigint).into_affine();
+
+        if let Some((x, y)) = result.to_coordinates() {
+            Ok(vec![x, y])
+        } else {
+            Err(Error::new(
+                Status::GenericFailure,
+                "combined_polynomial_commitment result is point at infinity",
+            ))
+        }
+    }
+
+    /// Debug verification that prints all intermediate IPA values.
+    pub fn debug_verify<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        use poly_commitment::commitment::b_poly;
+
+        let (verifier_index, oracles_result) =
+            match compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Failed to compute oracles: {:?}", e);
+                    return;
+                }
+            };
+
+        let oracles = &oracles_result.oracles;
+
+        eprintln!("=== IPA Debug Verification ===");
+        eprintln!("combined_inner_product: {:?}", oracles_result.combined_inner_product);
+        eprintln!("polyscale (v): {:?}", oracles.v);
+        eprintln!("evalscale (u oracle): {:?}", oracles.u);
+        eprintln!("zeta: {:?}", oracles.zeta);
+
+        // Get the sponge, absorb combined_inner_product
+        let mut fq_sponge = oracles_result.fq_sponge.clone();
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // Derive u point from group map
+        let group_map = <G as CommitmentCurve>::Map::setup();
+        let u_challenge = fq_sponge.challenge_fq();
+        let (u_x, u_y) = group_map.to_group(u_challenge);
+        let u_point: G = G::of_coordinates(u_x, u_y);
+
+        eprintln!("u_challenge (for group map): {:?}", u_challenge);
+        if let Some((x, y)) = u_point.to_coordinates() {
+            eprintln!("u point: ({:?}, {:?})", x, y);
+        }
+
+        // Get challenges
+        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+        eprintln!("IPA challenges (first 3): {:?}", &challenges.chal[..3.min(challenges.chal.len())]);
+
+        // Absorb delta, get c
+        fq_sponge.absorb_g(&[proof.proof.delta]);
+        let c = mina_poseidon::sponge::ScalarChallenge(fq_sponge.challenge())
+            .to_field(&verifier_index.endo);
+        eprintln!("c (final challenge): {:?}", c);
+
+        // Compute b0
+        let omega = verifier_index.domain.group_gen;
+        let zeta_omega = oracles.zeta * omega;
+        let b0 = b_poly(&challenges.chal, oracles.zeta)
+            + oracles.u * b_poly(&challenges.chal, zeta_omega);
+        eprintln!("b0: {:?}", b0);
+
+        // Compute lr_prod
+        let lr_pairs = &proof.proof.lr;
+        let mut lr_scalars = Vec::with_capacity(2 * lr_pairs.len());
+        let mut lr_points = Vec::with_capacity(2 * lr_pairs.len());
+        for (i, (l, r)) in lr_pairs.iter().enumerate() {
+            lr_scalars.push(challenges.chal_inv[i]);
+            lr_scalars.push(challenges.chal[i]);
+            lr_points.push(*l);
+            lr_points.push(*r);
+        }
+        let lr_prod = G::Group::msm_unchecked(&lr_points, &lr_scalars).into_affine();
+        if let Some((x, y)) = lr_prod.to_coordinates() {
+            eprintln!("lr_prod: ({:?}, {:?})", x, y);
+        }
+
+        // Print proof fields
+        if let Some((x, y)) = proof.proof.delta.to_coordinates() {
+            eprintln!("delta: ({:?}, {:?})", x, y);
+        }
+        if let Some((x, y)) = proof.proof.sg.to_coordinates() {
+            eprintln!("sg: ({:?}, {:?})", x, y);
+        }
+        eprintln!("z1: {:?}", proof.proof.z1);
+        eprintln!("z2: {:?}", proof.proof.z2);
+
+        // Get H (blinding generator)
+        let h = verifier_index.srs().blinding_commitment();
+        if let Some((x, y)) = h.to_coordinates() {
+            eprintln!("H (blinding generator): ({:?}, {:?})", x, y);
+        }
+
+        // Now let's compute the LHS and RHS of the IPA equation
+        // LHS = c*Q + delta where Q = combined_comm + combined_inner_product*u + lr_prod
+        // RHS = z1*(sg + b*u) + z2*H
+
+        // For combined_comm, we need to combine all evaluations with polyscale
+        // This is what the verifier does internally
+
+        eprintln!("\n=== Verifying IPA equation ===");
+        eprintln!("Equation: c*Q + delta = z1*(sg + b*u) + z2*H");
+        eprintln!("Where Q = combined_comm + combined_inner_product*u + lr_prod");
+
+        // Compute RHS = z1*(sg + b*u) + z2*H
+        let rhs = {
+            let sg_plus_bu = (proof.proof.sg.into_group() + u_point.into_group() * b0).into_affine();
+            let term1 = sg_plus_bu.into_group() * proof.proof.z1;
+            let term2 = h.into_group() * proof.proof.z2;
+            (term1 + term2).into_affine()
+        };
+        if let Some((x, y)) = rhs.to_coordinates() {
+            eprintln!("RHS = z1*(sg + b*u) + z2*H: ({:?}, {:?})", x, y);
+        }
+
+        // Compute delta contribution
+        if let Some((x, y)) = proof.proof.delta.to_coordinates() {
+            eprintln!("delta: ({:?}, {:?})", x, y);
+        }
+
+        // RHS - delta = c*Q, so Q = (RHS - delta) / c
+        let rhs_minus_delta = (rhs.into_group() - proof.proof.delta.into_group()).into_affine();
+        if let Some((x, y)) = rhs_minus_delta.to_coordinates() {
+            eprintln!("RHS - delta (should = c*Q): ({:?}, {:?})", x, y);
+        }
+
+        // Q = (RHS - delta) * c^{-1}
+        let c_inv = c.inverse().unwrap_or(G::ScalarField::zero());
+        let q_computed = (rhs_minus_delta.into_group() * c_inv).into_affine();
+        if let Some((x, y)) = q_computed.to_coordinates() {
+            eprintln!("Q (computed from RHS): ({:?}, {:?})", x, y);
+        }
+
+        // Q should equal: combined_comm + combined_inner_product*u + lr_prod
+        // So combined_comm = Q - combined_inner_product*u - lr_prod
+        let combined_inner_u = (u_point.into_group() * oracles_result.combined_inner_product).into_affine();
+        let combined_comm_expected = (q_computed.into_group()
+            - combined_inner_u.into_group()
+            - lr_prod.into_group())
+        .into_affine();
+        if let Some((x, y)) = combined_comm_expected.to_coordinates() {
+            eprintln!("combined_comm (expected, derived from Q): ({:?}, {:?})", x, y);
+        }
+
+        // Now compute what our FFI function returns
+        match combined_polynomial_commitment::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input) {
+            Ok(coords) => {
+                eprintln!("combined_comm (our FFI): ({:?}, {:?})", coords[0], coords[1]);
+
+                // Check if they match
+                if let Some((expected_x, expected_y)) = combined_comm_expected.to_coordinates() {
+                    if coords[0] == expected_x && coords[1] == expected_y {
+                        eprintln!("✓ combined_comm MATCHES!");
+                    } else {
+                        eprintln!("✗ combined_comm DOES NOT MATCH!");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("combined_polynomial_commitment error: {:?}", e);
+            }
+        }
+
+        eprintln!("=== End Debug ===");
     }
 }
 
@@ -1412,4 +1715,178 @@ pub fn vesta_proof_lr_prod(
         &public,
     )
     .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+// ============================================================================
+// Opening proof field extractors
+// ============================================================================
+
+/// Get opening proof delta for a Vesta proof (Pallas/Fp circuits).
+/// Returns [x, y] coordinates of the delta point (in Pallas base field = Fq).
+#[napi]
+pub fn pallas_proof_opening_delta(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_opening_delta::<VestaGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get opening proof delta for a Pallas proof (Vesta/Fq circuits).
+/// Returns [x, y] coordinates of the delta point (in Vesta base field = Fp).
+#[napi]
+pub fn vesta_proof_opening_delta(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_opening_delta::<PallasGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get opening proof sg (challenge polynomial commitment) for a Vesta proof (Pallas/Fp circuits).
+/// Returns [x, y] coordinates of the sg point (in Pallas base field = Fq).
+#[napi]
+pub fn pallas_proof_opening_sg(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_opening_sg::<VestaGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get opening proof sg (challenge polynomial commitment) for a Pallas proof (Vesta/Fq circuits).
+/// Returns [x, y] coordinates of the sg point (in Vesta base field = Fp).
+#[napi]
+pub fn vesta_proof_opening_sg(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_opening_sg::<PallasGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get opening proof z1 scalar for a Vesta proof (Pallas/Fp circuits).
+/// Returns the z1 scalar in the scalar field (Vesta scalar field = Fp).
+#[napi]
+pub fn pallas_proof_opening_z1(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(generic::proof_opening_z1::<VestaGroup>(&**proof))
+}
+
+/// Get opening proof z1 scalar for a Pallas proof (Vesta/Fq circuits).
+/// Returns the z1 scalar in the scalar field (Pallas scalar field = Fq).
+#[napi]
+pub fn vesta_proof_opening_z1(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(generic::proof_opening_z1::<PallasGroup>(&**proof))
+}
+
+/// Get opening proof z2 scalar for a Vesta proof (Pallas/Fp circuits).
+/// Returns the z2 scalar in the scalar field (Vesta scalar field = Fp).
+#[napi]
+pub fn pallas_proof_opening_z2(proof: &VestaProofExternal) -> VestaFieldExternal {
+    External::new(generic::proof_opening_z2::<VestaGroup>(&**proof))
+}
+
+/// Get opening proof z2 scalar for a Pallas proof (Vesta/Fq circuits).
+/// Returns the z2 scalar in the scalar field (Pallas scalar field = Fq).
+#[napi]
+pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExternal {
+    External::new(generic::proof_opening_z2::<PallasGroup>(&**proof))
+}
+
+// ============================================================================
+// SRS accessors
+// ============================================================================
+
+/// Get the blinding generator H from the SRS for Pallas circuits.
+/// Returns [x, y] coordinates of H (in Pallas base field = Fq).
+#[napi]
+pub fn pallas_prover_index_blinding_generator(
+    prover_index: &VestaProverIndexExternal,
+) -> Vec<PallasFieldExternal> {
+    generic::prover_index_blinding_generator::<VestaGroup>(&**prover_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get the blinding generator H from the SRS for Vesta circuits.
+/// Returns [x, y] coordinates of H (in Vesta base field = Fp).
+#[napi]
+pub fn vesta_prover_index_blinding_generator(
+    prover_index: &PallasProverIndexExternal,
+) -> Vec<VestaFieldExternal> {
+    generic::prover_index_blinding_generator::<PallasGroup>(&**prover_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+// ============================================================================
+// Combined polynomial commitment
+// ============================================================================
+
+/// Compute the combined polynomial commitment for a Vesta proof (Pallas/Fp circuits).
+/// Returns [x, y] coordinates of the combined commitment (in Pallas base field = Fq).
+#[napi]
+pub fn pallas_combined_polynomial_commitment(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::combined_polynomial_commitment::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+/// Compute the combined polynomial commitment for a Pallas proof (Vesta/Fq circuits).
+/// Returns [x, y] coordinates of the combined commitment (in Vesta base field = Fp).
+#[napi]
+pub fn vesta_combined_polynomial_commitment(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::combined_polynomial_commitment::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+// ============================================================================
+// Debug verification tracing
+// ============================================================================
+
+/// Run full verification with debug tracing for a Vesta proof (Pallas/Fp circuits).
+/// This prints intermediate values to understand the IPA verification.
+#[napi]
+pub fn pallas_debug_verify(
+    prover_index: &VestaProverIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::debug_verify::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    );
+}
+
+/// Run full verification with debug tracing for a Pallas proof (Vesta/Fq circuits).
+/// This prints intermediate values to understand the IPA verification.
+#[napi]
+pub fn vesta_debug_verify(
+    prover_index: &PallasProverIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::debug_verify::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        &**proof,
+        &public,
+    );
 }

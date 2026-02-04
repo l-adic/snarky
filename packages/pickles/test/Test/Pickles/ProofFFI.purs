@@ -21,6 +21,20 @@ module Test.Pickles.ProofFFI
   , vestaProofOpeningLr
   , pallasProofLrProd
   , vestaProofLrProd
+  , pallasProofOpeningDelta
+  , vestaProofOpeningDelta
+  , pallasProofOpeningSg
+  , vestaProofOpeningSg
+  , pallasProofOpeningZ1
+  , vestaProofOpeningZ1
+  , pallasProofOpeningZ2
+  , vestaProofOpeningZ2
+  , pallasProverIndexBlindingGenerator
+  , vestaProverIndexBlindingGenerator
+  , pallasCombinedPolynomialCommitment
+  , vestaCombinedPolynomialCommitment
+  , pallasDebugVerify
+  , vestaDebugVerify
   , Proof
   , OraclesResult
   , PointEval
@@ -28,6 +42,7 @@ module Test.Pickles.ProofFFI
   , LrPair
   ) where
 
+import Data.Unit (Unit)
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
@@ -145,6 +160,37 @@ foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Vector 1
 -- Returns the coordinates of the result point in the commitment curve's base field
 foreign import pallasProofLrProd :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
 foreign import vestaProofLrProd :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
+
+-- Opening proof delta (curve point)
+-- Coordinates are in the commitment curve's base field
+foreign import pallasProofOpeningDelta :: Proof Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+foreign import vestaProofOpeningDelta :: Proof Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+
+-- Opening proof sg (challenge polynomial commitment, curve point)
+-- Coordinates are in the commitment curve's base field
+foreign import pallasProofOpeningSg :: Proof Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+foreign import vestaProofOpeningSg :: Proof Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+
+-- Opening proof z1 scalar (in the commitment curve's scalar field = circuit field)
+foreign import pallasProofOpeningZ1 :: Proof Vesta.G Pallas.BaseField -> Pallas.BaseField
+foreign import vestaProofOpeningZ1 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
+
+-- Opening proof z2 scalar (in the commitment curve's scalar field = circuit field)
+foreign import pallasProofOpeningZ2 :: Proof Vesta.G Pallas.BaseField -> Pallas.BaseField
+foreign import vestaProofOpeningZ2 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
+
+-- Blinding generator H from SRS (coordinates in commitment curve's base field)
+foreign import pallasProverIndexBlindingGenerator :: ProverIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+foreign import vestaProverIndexBlindingGenerator :: ProverIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+
+-- Combined polynomial commitment (coordinates in commitment curve's base field)
+-- This is the batched commitment: sum_i polyscale^i * C_i
+foreign import pallasCombinedPolynomialCommitment :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
+foreign import vestaCombinedPolynomialCommitment :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
+
+-- Debug verification: prints intermediate IPA values to stderr
+foreign import pallasDebugVerify :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Unit
+foreign import vestaDebugVerify :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Unit
 
 --------------------------------------------------------------------------------
 -- Instances

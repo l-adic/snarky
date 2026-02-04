@@ -17,7 +17,7 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
-import Data.Array (concatMap)
+import Data.Array (concatMap, (:))
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
@@ -25,18 +25,20 @@ import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
 import Data.Maybe (fromJust)
 import Data.Newtype (un, unwrap)
-import Data.Schnorr.Gen (VerifyInput, genValidSignature)
+import Data.Schnorr (isEven, truncateFieldCoerce)
+import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Console (log)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.IPA (BCorrectInput, computeB)
+import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, computeB)
 import Pickles.IPA as IPA
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
@@ -46,32 +48,34 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, par
 import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.Sponge (liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
+import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
+import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Circuit.Kimchi.GroupMap (groupMapParams)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (endoScalar, fromBigInt, generator, pow, toAffine)
+import Snarky.Curves.Class (endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.SizedF (SizedF(..), coerceViaBits)
+import Snarky.Types.Shifted (Type1, fromShifted, toShifted)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (randomSampleOne)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
+import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -130,15 +134,61 @@ type TestContext =
   , oracles :: OraclesResult Vesta.ScalarField
   }
 
+-- | Create a fixed valid Schnorr signature for deterministic testing.
+-- | Uses constant private key and message to ensure reproducible results.
+fixedValidSignature :: VerifyInput 4 (F Vesta.ScalarField) Boolean
+fixedValidSignature =
+  let
+    -- Fixed private key (arbitrary non-zero scalar)
+    privateKey :: Pallas.ScalarField
+    privateKey = fromBigInt (BigInt.fromInt 12345)
+
+    -- Fixed message (4 field elements)
+    message :: Vector 4 Vesta.ScalarField
+    message = unsafePartial $ fromJust $ Vector.toVector
+      [ fromBigInt (BigInt.fromInt 1)
+      , fromBigInt (BigInt.fromInt 2)
+      , fromBigInt (BigInt.fromInt 3)
+      , fromBigInt (BigInt.fromInt 4)
+      ]
+
+    -- Compute public key = privateKey * generator
+    publicKey :: AffinePoint Vesta.ScalarField
+    publicKey = unsafePartial fromJust $ toAffine $ scalarMul privateKey (generator @_ @Pallas.G)
+
+    -- Compute k' = H(pk.x, pk.y, message)
+    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
+
+    kPrime :: Pallas.ScalarField
+    kPrime = truncateFieldCoerce kPrimeBase
+
+    -- R = k' * G
+    { x: r, y: ry } = unsafePartial fromJust $ toAffine $ scalarMul kPrime (generator @_ @Pallas.G)
+
+    -- Adjust k for even y coordinate
+    k = if isEven ry then kPrime else negate kPrime
+
+    -- e = H(pk.x, pk.y, r, message)
+    eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
+
+    e :: Pallas.ScalarField
+    e = fromBigInt (toBigInt eBase)
+
+    -- s = k + e * privateKey
+    s :: Pallas.ScalarField
+    s = k + e * privateKey
+  in
+    { signature: { r: F r, s: toShifted $ F s }
+    , publicKey: { x: F publicKey.x, y: F publicKey.y }
+    , message: map F message
+    }
+
 -- | Create the shared test context.
--- | Generates a valid Schnorr signature, runs the solver, creates the prover index,
--- | generates a proof, and computes oracles.
+-- | Uses a fixed Schnorr signature for deterministic testing.
 createTestContext :: Aff TestContext
 createTestContext = do
-  let gen = genValidSignature (Proxy @Pallas.G) (Proxy @4)
+  let input = fixedValidSignature
 
-  -- Generate a valid input and run the solver
-  input <- liftEffect $ randomSampleOne gen
   crs <- liftEffect $ createCRS @Vesta.ScalarField
 
   let
@@ -210,17 +260,16 @@ computePublicEval publicInputs domainLog2 zeta =
 -------------------------------------------------------------------------------
 
 -- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
--- | Uses random challenges (not proof-derived) to test gate constraint evaluation.
+-- | Uses fixed challenges (not proof-derived) to test gate constraint evaluation.
 gateConstraintTest :: TestContext -> Aff Unit
 gateConstraintTest ctx = do
-  -- Generate random challenges (independent of the proof)
-  zeta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-  alpha <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-  beta <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-  gamma <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-  jointCombiner <- liftEffect $ randomSampleOne (arbitrary @Vesta.ScalarField)
-
   let
+    -- Fixed challenges for deterministic testing
+    zeta = fromBigInt (BigInt.fromInt 98765) :: Vesta.ScalarField
+    alpha = fromBigInt (BigInt.fromInt 11111) :: Vesta.ScalarField
+    beta = fromBigInt (BigInt.fromInt 22222) :: Vesta.ScalarField
+    gamma = fromBigInt (BigInt.fromInt 33333) :: Vesta.ScalarField
+    jointCombiner = fromBigInt (BigInt.fromInt 44444) :: Vesta.ScalarField
     -- Compute evaluations using FFI from prover index
     witnessEvals = evalWitnessPolys ctx.proverIndex ctx.witness zeta
     coeffEvals = evalCoefficientPolys ctx.proverIndex zeta
@@ -471,12 +520,13 @@ bCorrectCircuitTest ctx = do
     zetaOmega = ctx.oracles.zeta * omega
 
     -- Compute expected b value using Rust FFI
-    expectedB = ProofFFI.computeB0
-      { challenges: challengesArray
-      , zeta: ctx.oracles.zeta
-      , zetaOmega
-      , evalscale: ctx.oracles.u
-      }
+    expectedB =
+      ProofFFI.computeB0
+        { challenges: challengesArray
+        , zeta: ctx.oracles.zeta
+        , zetaOmega
+        , evalscale: ctx.oracles.u
+        }
 
     -- Bundle circuit input (using F wrapper for CircuitType)
     circuitInput :: BCorrectInput 16 (F Vesta.ScalarField)
@@ -511,7 +561,7 @@ bCorrectCircuitTest ctx = do
     { builtState
     , checker: Kimchi.eval
     , solver
-    , testFunction: satisfied (const true :: BCorrectInput 16 (F Vesta.ScalarField) -> Boolean)
+    , testFunction: satisfied bCorrect
     , postCondition: Kimchi.postCondition
     }
     [ circuitInput ]
@@ -543,7 +593,7 @@ extractChallengesCircuitTest ctx = do
       in
         map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
 
-    -- The circuit: extract 128-bit scalar challenges
+    -- The circuit: squeeze for u first, then extract 128-bit scalar challenges
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
@@ -555,7 +605,12 @@ extractChallengesCircuitTest ctx = do
         circuitSponge = Pickles.Sponge.spongeFromConstants
           { state: checkpoint.state, spongeState: spongeMode }
       in
-        Pickles.Sponge.evalSpongeM circuitSponge (IPA.extractScalarChallenges pairs)
+        Pickles.Sponge.evalSpongeM circuitSponge do
+          -- Squeeze for u first (to match the Fiat-Shamir transcript)
+          -- The actual u value is derived via group_map, but we just need to
+          -- advance the sponge state here.
+          _ <- Pickles.Sponge.squeeze
+          IPA.extractScalarChallenges pairs
 
     solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
 
@@ -577,9 +632,12 @@ extractChallengesCircuitTest ctx = do
         -- Unwrap F from pairs
         unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
 
-        -- Extract 128-bit challenges using pure sponge
+        -- Squeeze for u first, then extract 128-bit challenges using pure sponge
         challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-        challenges = Pickles.Sponge.evalPureSpongeM pureSponge $ IPA.extractScalarChallengesPure unwrappedPairs
+        challenges = Pickles.Sponge.evalPureSpongeM pureSponge do
+          -- Squeeze for u first (to match the Fiat-Shamir transcript)
+          _ <- Pickles.Sponge.squeeze
+          IPA.extractScalarChallengesPure unwrappedPairs
 
         -- Apply endo mapping to 128-bit challenges to get full field elements
         -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
@@ -626,9 +684,9 @@ bulletReduceCircuitTest ctx = do
 
     -- Build circuit input with F wrapper
     circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
-    circuitInput = map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
+    circuitInput = coerce $ lrPairs
 
-    -- The circuit: extract 128-bit challenges then compute lr_prod
+    -- The circuit: squeeze for u, extract 128-bit challenges, then compute lr_prod
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
@@ -640,6 +698,8 @@ bulletReduceCircuitTest ctx = do
         circuitSponge = Pickles.Sponge.spongeFromConstants
           { state: checkpoint.state, spongeState: spongeMode }
       Pickles.Sponge.evalSpongeM circuitSponge do
+        -- Squeeze for u first (to match the Fiat-Shamir transcript)
+        _ <- Pickles.Sponge.squeeze
         challenges <- IPA.extractScalarChallenges pairs
         -- Compute lr_prod
         { p } <- liftSnarky $ IPA.bulletReduceCircuit @Pallas.ScalarField @Vesta.G { pairs, challenges }
@@ -664,9 +724,12 @@ bulletReduceCircuitTest ctx = do
         -- Unwrap F from pairs
         unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
 
-        -- Extract 128-bit challenges using pure sponge
+        -- Squeeze for u first, then extract 128-bit challenges using pure sponge
         challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-        challenges = Pickles.Sponge.evalPureSpongeM pureSponge $ IPA.extractScalarChallengesPure unwrappedPairs
+        challenges = Pickles.Sponge.evalPureSpongeM pureSponge do
+          -- Squeeze for u first (to match the Fiat-Shamir transcript)
+          _ <- Pickles.Sponge.squeeze
+          IPA.extractScalarChallengesPure unwrappedPairs
 
         -- Compute lr_prod using pure bulletReduce
         lrProd :: Vesta.G
@@ -693,6 +756,198 @@ bulletReduceCircuitTest ctx = do
     }
     [ circuitInput ]
 
+-- | In-circuit test for IPA final check.
+-- | This tests the full IPA verification equation:
+-- |   c*Q + delta = z1*(sg + b*u) + z2*H
+-- |
+-- | The circuit operates over Pallas.ScalarField (Fq) and verifies opening proofs
+-- | for Vesta commitments. Scalars are represented using Type1 shifted encoding.
+ipaFinalCheckCircuitTest :: TestContext -> Aff Unit
+ipaFinalCheckCircuitTest ctx = do
+  let
+    { challenges
+    , spongeState
+    , combinedPolynomial
+    , omega
+    } = mkIpaTestContext ctx
+
+    -- Bundle the circuit input (with F wrappers for CircuitType)
+    circuitInput :: IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput =
+      { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
+      , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
+      , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+      , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
+      , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
+      , combinedPolynomial: coerce combinedPolynomial
+      , combinedInnerProduct: toShifted $ F $ ctx.oracles.combinedInnerProduct
+      , b: toShifted $
+          ( coerce
+              ( ProofFFI.computeB0
+                  { challenges: Vector.toUnfoldable challenges
+                  , zeta: ctx.oracles.zeta
+                  , zetaOmega: ctx.oracles.zeta * omega
+                  , evalscale: ctx.oracles.u
+                  }
+              ) :: F Vesta.ScalarField
+          )
+      , blindingGenerator: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.proverIndex
+      }
+
+    -- The circuit: IPA final check
+    circuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => IpaFinalCheckInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
+    circuit input = do
+      let
+        circuitSponge = Pickles.Sponge.spongeFromConstants spongeState
+      result <- IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
+        IPA.type1ScalarOps
+        (groupMapParams $ Proxy @Vesta.G)
+        circuitSponge
+        input
+      assert_ result
+
+    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+
+    builtState = compilePure
+      (Proxy @(IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+      (Proxy @Unit)
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      circuit
+      Kimchi.initialState
+
+  -- Verify circuit produces true (IPA equation holds)
+  circuitSpecPureInputs
+    { builtState
+    , checker: Kimchi.eval
+    , solver
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+-- | Debug verification test: prints intermediate IPA values to stderr.
+-- | This is useful for understanding what values the Rust verifier computes.
+debugVerifyTest :: TestContext -> Aff Unit
+debugVerifyTest ctx = do
+  -- Call the debug verify function which prints to stderr
+  let
+    _ = ProofFFI.pallasDebugVerify ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+  -- Also print z1Raw from FFI to compare
+  let
+    z1Raw = ProofFFI.pallasProofOpeningZ1 ctx.proof
+
+    z1Shifted :: Type1 (F Pallas.ScalarField)
+    z1Shifted = toShifted (F z1Raw)
+
+    -- Verify roundtrip
+    z1Recovered :: F Pallas.BaseField
+    z1Recovered = fromShifted z1Shifted
+  liftEffect $ log $ "z1Raw from FFI: " <> show z1Raw
+  liftEffect $ log $ "z1Shifted (Type1 t): " <> show z1Shifted
+  liftEffect $ log $ "z1Recovered (fromShifted): " <> show z1Recovered
+  liftEffect $ log $ "Roundtrip matches: " <> show (F z1Raw == z1Recovered)
+
+  -- Test scaleFast1 with z1 and the generator point
+  let
+    genPoint = unsafePartial fromJust $ toAffine (generator @_ @Vesta.G)
+
+    -- Expected: z1Raw * generator using pure scalarMul
+    expectedResult = scalarMul z1Raw (generator @_ @Vesta.G)
+    expectedAffine = unsafePartial fromJust $ toAffine expectedResult
+  liftEffect $ log $ "Expected z1*G: (" <> show expectedAffine.x <> ", " <> show expectedAffine.y <> ")"
+
+  -- Now let's test scaleFast1 in a mini circuit
+  let
+    circuitInput :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))
+    circuitInput = Tuple { x: F genPoint.x, y: F genPoint.y } z1Shifted
+
+    miniCircuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => Tuple (AffinePoint (FVar Pallas.ScalarField)) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
+    miniCircuit (Tuple p t) = IPA.type1ScalarOps.scaleByShifted p t
+
+    miniSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) miniCircuit
+
+    miniBuiltState = compilePure
+      (Proxy @(Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))))
+      (Proxy @(AffinePoint (F Pallas.ScalarField)))
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      miniCircuit
+      Kimchi.initialState
+
+    -- Expected result
+    testFn :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
+    testFn (Tuple { x: F px, y: F py } scalar_) =
+      let
+        base = fromAffine @Pallas.ScalarField @Vesta.G { x: px, y: py }
+
+        -- Reconstruct the scalar from Type1
+        scalar :: Pallas.BaseField
+        scalar = case fromShifted scalar_ of F a -> a
+        result = scalarMul scalar base
+        { x: rx, y: ry } = unsafePartial fromJust $ toAffine @Pallas.ScalarField result
+      in
+        { x: F rx, y: F ry }
+
+  -- Run the mini test
+  circuitSpecPureInputs
+    { builtState: miniBuiltState
+    , checker: Kimchi.eval
+    , solver: miniSolver
+    , testFunction: satisfied testFn
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+  liftEffect $ log "scaleFast1 mini test passed!"
+
+  -- Always passes - the point is to see the debug output
+  pure unit
+
+--------------------------------------------------------------------------------
+type IPATestContext =
+  { challenges :: Vector 16 Vesta.ScalarField
+  , spongeState :: Sponge Pallas.ScalarField
+  , combinedPolynomial :: AffinePoint Pallas.ScalarField
+  , omega :: Vesta.ScalarField
+  }
+
+mkIpaTestContext :: TestContext -> IPATestContext
+mkIpaTestContext ctx =
+  let
+
+    -- Get sponge checkpoint (state before L/R processing)
+    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Parse checkpoint into sponge state
+    spongeMode = case checkpoint.spongeMode of
+      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
+      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
+
+    -- Combined polynomial commitment
+    combinedPolynomial :: AffinePoint Pallas.ScalarField
+    combinedPolynomial = ProofFFI.pallasCombinedPolynomialCommitment ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Compute b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+  in
+    { challenges: unsafePartial $ fromJust $ Vector.toVector @16 challengesArray
+    , spongeState: { state: checkpoint.state, spongeState: spongeMode }
+    , combinedPolynomial
+    , omega
+    }
+
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
@@ -709,3 +964,5 @@ spec = beforeAll createTestContext $
     it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
     it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest
     it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest
+    it "debug verify traces intermediate IPA values" debugVerifyTest
+    it "ipaFinalCheckCircuit verifies with Rust proof values" ipaFinalCheckCircuitTest
