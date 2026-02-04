@@ -48,7 +48,7 @@ import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput,
 import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
-import Pickles.PlonkChecks.XiCorrect (XiCorrectInput, emptyPrevChallengeDigest, xiCorrectCircuit, xiCorrectPure)
+import Pickles.PlonkChecks.XiCorrect (XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon as Poseidon
@@ -702,8 +702,9 @@ combinedInnerProductTest ctx = do
   -- Compare against Rust combined_inner_product from oracles
   liftEffect $ psResult `shouldEqual` ctx.oracles.combinedInnerProduct
 
--- | Test xi_correct: verify that claimed xi (polyscale) was computed correctly.
--- | Replays Fr-sponge absorptions and compares squeezed+endo result to claimed xi.
+-- | Test xi_correct and r_correct: verify that claimed xi (polyscale) and r (evalscale)
+-- | were computed correctly via Fr-sponge Fiat-Shamir.
+-- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
 xiCorrectTest :: TestContext -> Aff Unit
 xiCorrectTest ctx = do
   let
@@ -734,11 +735,13 @@ xiCorrectTest ctx = do
       , claimedXi: ctx.oracles.v
       }
 
-    -- Compute xi using PureScript
-    psXi = xiCorrectPure xiInput
+    -- Compute both xi and evalscale using PureScript
+    result = frSpongeChallengesPure xiInput
 
   -- Compare PureScript computed xi against Rust's v (polyscale)
-  liftEffect $ psXi `shouldEqual` ctx.oracles.v
+  liftEffect $ result.xi `shouldEqual` ctx.oracles.v
+  -- Compare PureScript computed evalscale against Rust's u (evalscale)
+  liftEffect $ result.evalscale `shouldEqual` ctx.oracles.u
 
 -- | Circuit test for xi_correct.
 -- | Replays Fr-sponge in-circuit and asserts equality with claimed xi.
@@ -1155,7 +1158,7 @@ spec = beforeAll createTestContext $
     it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
-    it "PS xiCorrect computes xi matching Rust polyscale" xiCorrectTest
+    it "PS Fr-sponge challenges (xi, evalscale) match Rust" xiCorrectTest
     it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
