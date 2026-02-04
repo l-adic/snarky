@@ -519,6 +519,7 @@ As we implement checkpoints, we'll likely need to expose additional functionalit
 |---|------|--------|------------|
 | 1 | Validate `computeB` against Rust FFI `computeB0` | ✓ Done | C-6 |
 | 2 | Validate bulletproof challenge extraction against Rust FFI | ✓ Done | C-5 |
+| 3 | Implement `ipaFinalCheckCircuit` (full IPA verification equation) | ✓ Done | V-5 |
 
 ---
 
@@ -785,3 +786,53 @@ E2E Schnorr Circuit
 **Code organization**:
 - IPA-related code consolidated from `Commitments.purs` into new `IPA.purs` module
 - Clean separation: `IPA.purs` handles challenge polynomial and verification, `Commitments.purs` handles polynomial commitment batching
+
+### TODO 3: Implement `ipaFinalCheckCircuit` (full IPA verification equation)
+
+**Completed**: 2026-02-04
+
+**Findings**: The IPA final check circuit implements the full verification equation: `c*Q + delta = z1*(sg + b*u) + z2*H`
+
+**Key changes**:
+
+1. **New `IpaScalarOps` abstraction** (`packages/pickles/src/Pickles/IPA.purs`):
+   - Record type bundling `scaleByShifted` and `shiftedToAbsorbFields` operations
+   - `type1ScalarOps`: For Pallas circuits (Fp) with Vesta commitment curve (Fq < Fp, Type1 scalars)
+   - `type2ScalarOps`: For Vesta circuits (Fq) with Pallas commitment curve (Fp > Fq, Type2 scalars)
+
+2. **`ipaFinalCheckCircuit`** (`packages/pickles/src/Pickles/IPA.purs`):
+   - Takes `IpaScalarOps`, `GroupMapParams`, sponge checkpoint, and `IpaFinalCheckInput`
+   - Derives `u` via group map (squeeze + map to curve)
+   - Extracts 128-bit scalar challenges from L/R pairs
+   - Computes `lr_prod` via `bulletReduceCircuit`
+   - Computes `Q = combinedPolynomial + combinedInnerProduct*u + lr_prod`
+   - Verifies equation: `c*Q + delta = z1*(sg + b*u) + z2*H`
+
+3. **Critical bug fix in Rust FFI** (`packages/crypto-provider/src/kimchi/circuit.rs`):
+   - Root cause: FFI was missing the squeeze for `u` before extracting L/R challenges
+   - The IPA verifier squeezes for `u` (via `challenge_fq()`) BEFORE calling `challenges()`
+   - Fixed in `bulletproof_challenge_data` and `proof_lr_prod` functions:
+   ```rust
+   // Squeeze for u (matches ipa.rs verifier which does this before calling challenges())
+   let _u = fq_sponge.challenge_fq();
+
+   // Get the challenges using the endomorphism coefficient
+   let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+   ```
+
+4. **Tests** (`packages/pickles/test/Test/Pickles/E2E.purs`):
+   - `ipaFinalCheckCircuitTest`: Validates the full IPA equation with real proof values
+   - `debugVerifyTest`: Traces intermediate values for debugging
+   - Refactored tests (`bCorrectCircuitTest`, `extractChallengesCircuitTest`, `bulletReduceCircuitTest`) to use `mkIpaTestContext` helper
+
+**Test execution**:
+```
+$ npx spago test -p pickles -- --example "ipaFinalCheck"
+E2E Schnorr Circuit
+  ✓ ipaFinalCheckCircuit verifies with Rust proof values
+```
+
+**Architecture compliance**:
+- ✓ Circuit matches Rust verifier behavior exactly (after bug fix)
+- ✓ Parameterized over shifted scalar type (Type1/Type2) for curve flexibility
+- ✓ All 25 pickles tests pass
