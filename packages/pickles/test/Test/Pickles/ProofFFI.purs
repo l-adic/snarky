@@ -62,12 +62,13 @@ type OraclesResult f =
   , gamma :: f
   , zeta :: f
   , ftEval0 :: f
-  , v :: f -- polyscale
+  , v :: f -- polyscale (xi)
   , u :: f -- evalscale
   , combinedInnerProduct :: f
   , ftEval1 :: f
   , publicEvalZeta :: f
   , publicEvalZetaOmega :: f
+  , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
   }
 
 -- | Sponge checkpoint for debugging/testing challenge extraction.

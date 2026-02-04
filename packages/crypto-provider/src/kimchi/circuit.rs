@@ -356,8 +356,9 @@ mod generic {
     }
 
     /// Run the verifier's Fiat-Shamir oracle computation.
-    /// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
-    ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
+    /// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+    ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
+    ///                     fq_digest]
     pub fn proof_oracles<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
@@ -396,6 +397,7 @@ mod generic {
             proof.ft_eval1,
             public_eval_zeta,
             public_eval_zeta_omega,
+            oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
         ])
     }
 
@@ -704,7 +706,7 @@ mod generic {
             proof,
             public_input,
         )
-        .map_err(|e| Error::new(Status::GenericFailure, format!("to_batch failed: {:?}", e)))?;
+        .map_err(|e| Error::new(Status::GenericFailure, format!("to_batch failed: {e:?}")))?;
 
         // Use combine_commitments to compute the combined commitment
         let mut scalars: Vec<G::ScalarField> = Vec::new();
@@ -750,7 +752,7 @@ mod generic {
             match compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input) {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("Failed to compute oracles: {:?}", e);
+                    eprintln!("Failed to compute oracles: {e:?}");
                     return;
                 }
             };
@@ -758,7 +760,10 @@ mod generic {
         let oracles = &oracles_result.oracles;
 
         eprintln!("=== IPA Debug Verification ===");
-        eprintln!("combined_inner_product: {:?}", oracles_result.combined_inner_product);
+        eprintln!(
+            "combined_inner_product: {:?}",
+            oracles_result.combined_inner_product
+        );
         eprintln!("polyscale (v): {:?}", oracles.v);
         eprintln!("evalscale (u oracle): {:?}", oracles.u);
         eprintln!("zeta: {:?}", oracles.zeta);
@@ -775,27 +780,30 @@ mod generic {
         let (u_x, u_y) = group_map.to_group(u_challenge);
         let u_point: G = G::of_coordinates(u_x, u_y);
 
-        eprintln!("u_challenge (for group map): {:?}", u_challenge);
+        eprintln!("u_challenge (for group map): {u_challenge:?}");
         if let Some((x, y)) = u_point.to_coordinates() {
-            eprintln!("u point: ({:?}, {:?})", x, y);
+            eprintln!("u point: ({x:?}, {y:?})");
         }
 
         // Get challenges
         let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
-        eprintln!("IPA challenges (first 3): {:?}", &challenges.chal[..3.min(challenges.chal.len())]);
+        eprintln!(
+            "IPA challenges (first 3): {:?}",
+            &challenges.chal[..3.min(challenges.chal.len())]
+        );
 
         // Absorb delta, get c
         fq_sponge.absorb_g(&[proof.proof.delta]);
         let c = mina_poseidon::sponge::ScalarChallenge(fq_sponge.challenge())
             .to_field(&verifier_index.endo);
-        eprintln!("c (final challenge): {:?}", c);
+        eprintln!("c (final challenge): {c:?}");
 
         // Compute b0
         let omega = verifier_index.domain.group_gen;
         let zeta_omega = oracles.zeta * omega;
         let b0 = b_poly(&challenges.chal, oracles.zeta)
             + oracles.u * b_poly(&challenges.chal, zeta_omega);
-        eprintln!("b0: {:?}", b0);
+        eprintln!("b0: {b0:?}");
 
         // Compute lr_prod
         let lr_pairs = &proof.proof.lr;
@@ -809,15 +817,15 @@ mod generic {
         }
         let lr_prod = G::Group::msm_unchecked(&lr_points, &lr_scalars).into_affine();
         if let Some((x, y)) = lr_prod.to_coordinates() {
-            eprintln!("lr_prod: ({:?}, {:?})", x, y);
+            eprintln!("lr_prod: ({x:?}, {y:?})");
         }
 
         // Print proof fields
         if let Some((x, y)) = proof.proof.delta.to_coordinates() {
-            eprintln!("delta: ({:?}, {:?})", x, y);
+            eprintln!("delta: ({x:?}, {y:?})");
         }
         if let Some((x, y)) = proof.proof.sg.to_coordinates() {
-            eprintln!("sg: ({:?}, {:?})", x, y);
+            eprintln!("sg: ({x:?}, {y:?})");
         }
         eprintln!("z1: {:?}", proof.proof.z1);
         eprintln!("z2: {:?}", proof.proof.z2);
@@ -825,7 +833,7 @@ mod generic {
         // Get H (blinding generator)
         let h = verifier_index.srs().blinding_commitment();
         if let Some((x, y)) = h.to_coordinates() {
-            eprintln!("H (blinding generator): ({:?}, {:?})", x, y);
+            eprintln!("H (blinding generator): ({x:?}, {y:?})");
         }
 
         // Now let's compute the LHS and RHS of the IPA equation
@@ -841,48 +849,58 @@ mod generic {
 
         // Compute RHS = z1*(sg + b*u) + z2*H
         let rhs = {
-            let sg_plus_bu = (proof.proof.sg.into_group() + u_point.into_group() * b0).into_affine();
+            let sg_plus_bu =
+                (proof.proof.sg.into_group() + u_point.into_group() * b0).into_affine();
             let term1 = sg_plus_bu.into_group() * proof.proof.z1;
             let term2 = h.into_group() * proof.proof.z2;
             (term1 + term2).into_affine()
         };
         if let Some((x, y)) = rhs.to_coordinates() {
-            eprintln!("RHS = z1*(sg + b*u) + z2*H: ({:?}, {:?})", x, y);
+            eprintln!("RHS = z1*(sg + b*u) + z2*H: ({x:?}, {y:?})");
         }
 
         // Compute delta contribution
         if let Some((x, y)) = proof.proof.delta.to_coordinates() {
-            eprintln!("delta: ({:?}, {:?})", x, y);
+            eprintln!("delta: ({x:?}, {y:?})");
         }
 
         // RHS - delta = c*Q, so Q = (RHS - delta) / c
         let rhs_minus_delta = (rhs.into_group() - proof.proof.delta.into_group()).into_affine();
         if let Some((x, y)) = rhs_minus_delta.to_coordinates() {
-            eprintln!("RHS - delta (should = c*Q): ({:?}, {:?})", x, y);
+            eprintln!("RHS - delta (should = c*Q): ({x:?}, {y:?})");
         }
 
         // Q = (RHS - delta) * c^{-1}
         let c_inv = c.inverse().unwrap_or(G::ScalarField::zero());
         let q_computed = (rhs_minus_delta.into_group() * c_inv).into_affine();
         if let Some((x, y)) = q_computed.to_coordinates() {
-            eprintln!("Q (computed from RHS): ({:?}, {:?})", x, y);
+            eprintln!("Q (computed from RHS): ({x:?}, {y:?})");
         }
 
         // Q should equal: combined_comm + combined_inner_product*u + lr_prod
         // So combined_comm = Q - combined_inner_product*u - lr_prod
-        let combined_inner_u = (u_point.into_group() * oracles_result.combined_inner_product).into_affine();
-        let combined_comm_expected = (q_computed.into_group()
-            - combined_inner_u.into_group()
-            - lr_prod.into_group())
-        .into_affine();
+        let combined_inner_u =
+            (u_point.into_group() * oracles_result.combined_inner_product).into_affine();
+        let combined_comm_expected =
+            (q_computed.into_group() - combined_inner_u.into_group() - lr_prod.into_group())
+                .into_affine();
         if let Some((x, y)) = combined_comm_expected.to_coordinates() {
-            eprintln!("combined_comm (expected, derived from Q): ({:?}, {:?})", x, y);
+            eprintln!(
+                "combined_comm (expected, derived from Q): ({x:?}, {y:?})"
+            );
         }
 
         // Now compute what our FFI function returns
-        match combined_polynomial_commitment::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input) {
+        match combined_polynomial_commitment::<G, EFqSponge, EFrSponge>(
+            prover_index,
+            proof,
+            public_input,
+        ) {
             Ok(coords) => {
-                eprintln!("combined_comm (our FFI): ({:?}, {:?})", coords[0], coords[1]);
+                eprintln!(
+                    "combined_comm (our FFI): ({:?}, {:?})",
+                    coords[0], coords[1]
+                );
 
                 // Check if they match
                 if let Some((expected_x, expected_y)) = combined_comm_expected.to_coordinates() {
@@ -894,7 +912,7 @@ mod generic {
                 }
             }
             Err(e) => {
-                eprintln!("combined_polynomial_commitment error: {:?}", e);
+                eprintln!("combined_polynomial_commitment error: {e:?}");
             }
         }
 
@@ -1410,8 +1428,9 @@ pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasF
 }
 
 /// Run Fiat-Shamir oracle computation on a Vesta proof (Pallas/Fp circuits).
-/// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
-///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
+/// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
+///                     fq_digest]
 #[napi]
 pub fn pallas_proof_oracles(
     prover_index: &VestaProverIndexExternal,
@@ -1428,8 +1447,9 @@ pub fn pallas_proof_oracles(
 }
 
 /// Run Fiat-Shamir oracle computation on a Pallas proof (Vesta/Fq circuits).
-/// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
-///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
+/// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
+///                     fq_digest]
 #[napi]
 pub fn vesta_proof_oracles(
     prover_index: &PallasProverIndexExternal,
