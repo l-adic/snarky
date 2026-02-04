@@ -449,6 +449,8 @@ Based on data dependencies visible in diagrams:
 | `Pickles/ScalarChallenge.purs` | V-2 | Challenge types (alpha, beta, gamma, zeta), squeeze functions, 128-bit extraction | ✓ Done |
 | `Pickles/PlonkChecks/GateConstraints.purs` | V-3 | Gate constraint verification circuit using linearization AST | ✓ Done |
 | `Pickles/PlonkChecks/Permutation.purs` | V-4 | Permutation argument contribution to ft_eval0 | ✓ Done |
+| `Pickles/PlonkChecks/FtEval.purs` | V-3, V-4 | `ftEval0` composition (perm + public - gate) | ✓ Done |
+| `Pickles/PlonkChecks/CombinedInnerProduct.purs` | V-6 | `combinedInnerProductCheckCircuit` (ftEval0 + CIP integration) | ✓ Done |
 | `Pickles/BulletproofVerifier.purs` | V-5 | IPA verification circuits (from step_verifier.ml check_bulletproof) | Partial |
 | `Pickles/Commitments.purs` | C-4, C-5, C-6 | `bPoly`, `computeB`, `combinedInnerProduct` (circuit + pure) | ✓ Done |
 
@@ -521,6 +523,7 @@ As we implement checkpoints, we'll likely need to expose additional functionalit
 | 2 | Validate bulletproof challenge extraction against Rust FFI | ✓ Done | C-5 |
 | 3 | Implement `ipaFinalCheckCircuit` (full IPA verification equation) | ✓ Done | V-5 |
 | 4 | Implement `ftEval0` composition (pure + circuit) | ✓ Done | V-3, V-4 |
+| 5 | Integrate `ftEval0Circuit` into `combinedInnerProductCircuit` | ✓ Done | V-6 |
 
 ---
 
@@ -951,24 +954,37 @@ E2E Schnorr Circuit
 
 **Completed**: 2026-02-04
 
-**Findings**: The `ftEval0` function composes existing validated pieces (permutation contribution, gate constraints, public input evaluation) into the complete ft polynomial evaluation at zeta.
+**How the implementation addresses the plan**:
 
-**Implementation**:
+| Plan Item | Status | Notes |
+|-----------|--------|-------|
+| Move `computePublicEval` to `PlonkChecks/` | Deferred | Kept as test helper; `publicEval` is witness input anyway |
+| Create `ftEval0` in `PlonkChecks/FtEval.purs` | ✓ Done | Takes pre-computed components for flexibility |
+| Create `ftEval0Circuit` | ✓ Done | Uses `permContributionCircuit` + `evaluateGateConstraints` |
+| Test pure version against FFI | ✓ Done | `ftEval0Test` validates against `ctx.oracles.ftEval0` |
+| Test circuit version | ✓ Done | `ftEval0CircuitTest` with `assertEqual_` |
 
-1. **New module** (`packages/pickles/src/Pickles/PlonkChecks/FtEval.purs`):
-   - `ftEval0`: Pure function taking pre-computed `{ permContribution, publicEval, gateConstraints }`
-   - `ftEval0Circuit`: In-circuit version using `permContributionCircuit` and `evaluateGateConstraints`
-   - Formula: `ftEval0 = permContribution + publicEval - gateConstraints`
+**Sign convention resolved**: The TODO noted potential sign ambiguity. Testing confirmed:
+```
+ftEval0 = permContribution + publicEval - gateConstraints
+```
 
-2. **Tests** (`packages/pickles/test/Test/Pickles/E2E.purs`):
-   - `ftEval0Test`: Pure function test - validates composition matches `ctx.oracles.ftEval0`
-   - `ftEval0CircuitTest`: Circuit test - validates `ftEval0Circuit` produces correct result with real proof data
+**Implementation** (`packages/pickles/src/Pickles/PlonkChecks/FtEval.purs`):
+```purescript
+ftEval0 { permContribution, publicEval, gateConstraints } =
+  permContribution + publicEval - gateConstraints
 
-**Key design decisions**:
-- Pure `ftEval0` takes pre-computed components (not raw inputs) for flexibility
-- Circuit version computes perm and gate in-circuit, takes `publicEval` as witness
-- Uses existing FFI ground truth (`proofOracles.ftEval0`) for validation
-- No new Rust FFI code needed - pure composition of existing validated pieces
+ftEval0Circuit tokens { permInput, gateInput, publicEval } = do
+  perm <- permContributionCircuit permInput
+  gate <- evaluateGateConstraints tokens gateInput
+  pure $ CVar.sub_ (CVar.add_ perm publicEval) gate
+```
+
+**Tests** (`packages/pickles/test/Test/Pickles/E2E.purs`):
+- `ftEval0Test`: Computes all three components from proof data, validates composition equals `ctx.oracles.ftEval0`
+- `ftEval0CircuitTest`: Builds `PermutationInput` and `GateConstraintInput` from proof evals, runs circuit with `assertEqual_` against FFI value
+
+**Design decision**: Pure `ftEval0` takes pre-computed components rather than raw inputs. This differs from the plan but provides better composability - callers can compute components separately if needed.
 
 **Test execution**:
 ```
@@ -978,10 +994,58 @@ E2E Schnorr Circuit
   ✓ ftEval0Circuit matches Rust FFI ftEval0
 ```
 
-**Architecture compliance**:
-- ✓ Uses existing FFI `proofOracles.ftEval0` as ground truth
-- ✓ No re-implementation of Rust logic
-- ✓ All 27 pickles tests pass
+**Success criteria from plan** (all met):
+- ✓ Pure `ftEval0` matches `ctx.oracles.ftEval0` from FFI
+- ✓ Circuit version generates satisfiable constraints with valid witness
+- ✓ All 28 pickles tests pass
+
+### TODO 5: Integrate `ftEval0Circuit` into `combinedInnerProductCircuit`
+
+**Completed**: 2026-02-04
+
+**Goal**: Wire `ftEval0Circuit` output into `combinedInnerProductCircuit` and verify the result matches `ctx.oracles.combinedInnerProduct`.
+
+**What this validates**:
+- The `combined_inner_product_correct` check from `step_main`
+- End-to-end correctness of PLONK evaluation batching with in-circuit `ftEval0` computation
+
+**Library code** (`packages/pickles/src/Pickles/PlonkChecks/CombinedInnerProduct.purs`):
+
+```purescript
+-- | Input containing everything needed for the CIP check
+type CombinedInnerProductCheckInput f =
+  { permInput :: PermutationInput f
+  , gateInput :: GateConstraintInput f
+  , publicEvalForFt :: f
+  , publicPointEval :: PointEval f
+  , ftEval1 :: f
+  , zEvals :: PointEval f
+  , indexEvals :: Vector 6 (PointEval f)
+  , witnessEvals :: Vector 15 (PointEval f)
+  , coeffEvals :: Vector 15 (PointEval f)
+  , sigmaEvals :: Vector 6 (PointEval f)
+  , polyscale :: f
+  , evalscale :: f
+  }
+
+-- | Compute CIP in-circuit with ftEval0 computed in-circuit
+combinedInnerProductCheckCircuit :: ... -> CombinedInnerProductCheckInput (FVar f) -> Snarky c t m (FVar f)
+```
+
+**Test** (`packages/pickles/test/Test/Pickles/E2E.purs`):
+
+`combinedInnerProductCorrectCircuitTest` calls `combinedInnerProductCheckCircuit` and asserts result equals `ctx.oracles.combinedInnerProduct`.
+
+**FFI ground truth**: `ctx.oracles.combinedInnerProduct` - no new Rust code needed
+
+**Test execution**:
+```
+$ npx spago test -p pickles -- --example "combined_inner_product_correct"
+E2E Schnorr Circuit
+  ✓ combined_inner_product_correct circuit integration
+```
+
+**Result**: All 28 pickles tests pass
 
 ---
 
@@ -1022,7 +1086,7 @@ These four checks from `step_main` (lines 1080-1086) are NOT part of IPA but hap
 |-------|-------------|------------|
 | `xi_correct` | Fiat-Shamir: squeezed xi matches proof's xi | Not yet (pre-IPA check) |
 | `b_correct` | `computeB` matches proof's b value | ✓ `bCorrectCircuit` |
-| `combined_inner_product_correct` | Recomputed CIP (using ft_eval0) matches proof | ✓ `ftEval0` + `combinedInnerProductCircuit` exist (integration pending) |
+| `combined_inner_product_correct` | Recomputed CIP (using ft_eval0) matches proof | ✓ `combinedInnerProductCorrectCircuitTest` (TODO 5) |
 | `plonk_checks_passed` | Gate + permutation constraints satisfied | ✓ `GateConstraints` + `Permutation` + `FtEval` modules |
 
 ### Conclusion
@@ -1031,8 +1095,9 @@ The **core IPA verifier** (`ipaFinalCheckCircuit`) is complete. It implements th
 
 The **PLONK checks** (`ftEval0`, `permContribution`, `gateConstraints`) are complete and validated against Rust FFI.
 
+The **combined inner product check** (`combined_inner_product_correct`) is complete - `ftEval0` is computed in-circuit and fed into `combinedInnerProductCircuit`.
+
 **What remains for full Kimchi verification** (outside IPA scope):
 1. Integration of `xi_correct` check (Fiat-Shamir verification)
-2. Full `combined_inner_product_correct` circuit (integrating `ftEval0` into CIP check)
-3. Composition of PLONK checks + IPA check into overall verifier
-4. Higher-level data structures (`StepDeferredValues`, `WrapDeferredValues`, etc.)
+2. Composition of PLONK checks + IPA check into overall verifier
+3. Higher-level data structures (`StepDeferredValues`, `WrapDeferredValues`, etc.)
