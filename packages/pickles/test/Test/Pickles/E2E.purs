@@ -508,37 +508,23 @@ ipaRoundsTest ctx = do
 bCorrectCircuitTest :: TestContext -> Aff Unit
 bCorrectCircuitTest ctx = do
   let
-    -- Get bulletproof challenges from Rust
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    challenges :: Vector 16 (F Vesta.ScalarField)
-    challenges = unsafePartial $ fromJust $ Vector.toVector $ map F challengesArray
-
-    -- Get evaluation points from oracles
-    omega = ProofFFI.domainGenerator ctx.domainLog2
+    { challenges, omega } = mkIpaTestContext ctx
     zetaOmega = ctx.oracles.zeta * omega
 
-    -- Compute expected b value using Rust FFI
-    expectedB =
-      ProofFFI.computeB0
-        { challenges: challengesArray
-        , zeta: ctx.oracles.zeta
-        , zetaOmega
-        , evalscale: ctx.oracles.u
-        }
-
-    -- Bundle circuit input (using F wrapper for CircuitType)
     circuitInput :: BCorrectInput 16 (F Vesta.ScalarField)
     circuitInput =
-      { challenges
+      { challenges: coerce challenges
       , zeta: F ctx.oracles.zeta
       , zetaOmega: F zetaOmega
       , evalscale: F ctx.oracles.u
-      , expectedB: F expectedB
+      , expectedB: F $ ProofFFI.computeB0
+          { challenges: Vector.toUnfoldable challenges
+          , zeta: ctx.oracles.zeta
+          , zetaOmega
+          , evalscale: ctx.oracles.u
+          }
       }
 
-    -- The circuit wrapping bCorrectCircuit
     circuit
       :: forall t m
        . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
@@ -546,21 +532,15 @@ bCorrectCircuitTest ctx = do
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m (BoolVar Vesta.ScalarField)
     circuit = IPA.bCorrectCircuit
 
-    solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-
-    builtState = compilePure
-      (Proxy @(BCorrectInput 16 (F Vesta.ScalarField)))
-      (Proxy @Boolean)
-      (Proxy @(KimchiConstraint Vesta.ScalarField))
-      circuit
-      Kimchi.initialState
-
-  -- Run circuitSpec with the single Rust-provided test input
-  -- testFunction expects the circuit to return true (b is correct)
   circuitSpecPureInputs
-    { builtState
+    { builtState: compilePure
+        (Proxy @(BCorrectInput 16 (F Vesta.ScalarField)))
+        (Proxy @Boolean)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
     , checker: Kimchi.eval
-    , solver
+    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
     , testFunction: satisfied bCorrect
     , postCondition: Kimchi.postCondition
     }
@@ -573,94 +553,47 @@ bCorrectCircuitTest ctx = do
 extractChallengesCircuitTest :: TestContext -> Aff Unit
 extractChallengesCircuitTest ctx = do
   let
+    { spongeState, challenges: rustChallenges } = mkIpaTestContext ctx
 
-    -- Get sponge checkpoint (used as constants, not circuit inputs)
-    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-    -- Parse checkpoint into sponge state
-    spongeMode = case checkpoint.spongeMode of
-      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
-      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
-
-    -- Build circuit input (just L/R pairs - sponge is constant)
-    circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
-    circuitInput =
-      let
-        -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
-        lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
-        lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
-      in
-        map (\{ l, r } -> { l: { x: F l.x, y: F l.y }, r: { x: F r.x, y: F r.y } }) lrPairs
-
-    -- The circuit: squeeze for u first, then extract 128-bit scalar challenges
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
     circuit pairs =
-      let
-        -- Circuit sponge initialized from constants
-        circuitSponge = Pickles.Sponge.spongeFromConstants
-          { state: checkpoint.state, spongeState: spongeMode }
-      in
-        Pickles.Sponge.evalSpongeM circuitSponge do
-          -- Squeeze for u first (to match the Fiat-Shamir transcript)
-          -- The actual u value is derived via group_map, but we just need to
-          -- advance the sponge state here.
-          _ <- Pickles.Sponge.squeeze
-          IPA.extractScalarChallenges pairs
+      Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
+        _ <- Pickles.Sponge.squeeze -- Squeeze for u first
+        IPA.extractScalarChallenges pairs
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-
-    builtState = compilePure
-      (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
-      (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
-      (Proxy @(KimchiConstraint Pallas.ScalarField))
-      circuit
-      Kimchi.initialState
-
-    -- testFunction: compare circuit output to expected pure sponge output, throws an exception if the
-    -- result doesn't match the rust FFI
     testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
     testFn pairs =
       let
-        pureSponge :: Sponge Pallas.ScalarField
-        pureSponge = { state: checkpoint.state, spongeState: spongeMode }
-
-        -- Unwrap F from pairs
-        unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
-
-        -- Squeeze for u first, then extract 128-bit challenges using pure sponge
         challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-        challenges = Pickles.Sponge.evalPureSpongeM pureSponge do
-          -- Squeeze for u first (to match the Fiat-Shamir transcript)
+        challenges = Pickles.Sponge.evalPureSpongeM spongeState do
           _ <- Pickles.Sponge.squeeze
-          IPA.extractScalarChallengesPure unwrappedPairs
+          IPA.extractScalarChallengesPure (coerce pairs)
 
-        -- Apply endo mapping to 128-bit challenges to get full field elements
-        -- coerceViaBits: SizedF 128 Pallas.ScalarField -> SizedF 128 Pallas.BaseField (same bits, different field)
-        -- toFieldPure: applies endo mapping to get full field element
+        endoMappedChallenges :: Array Pallas.BaseField
         endoMappedChallenges = Vector.toUnfoldable $ map
           (\raw128 -> unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField))
           challenges
-        -- Get Rust-computed endo-mapped challenges for comparison
-        rustChallenges = ProofFFI.proofBulletproofChallenges ctx.proverIndex
-          { proof: ctx.proof, publicInput: ctx.publicInputs }
       in
-        if endoMappedChallenges /= rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
-        else map (\(SizedF f) -> SizedF (F f)) challenges
+        if endoMappedChallenges /= Vector.toUnfoldable rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
+        else coerce challenges
 
-  -- Verify circuit produces correct 128-bit challenges (validates circuit impl)
   circuitSpecPureInputs
-    { builtState
+    { builtState: compilePure
+        (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
+        (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
     , checker: Kimchi.eval
-    , solver
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
     , testFunction: satisfied testFn
     , postCondition: Kimchi.postCondition
     }
-    [ circuitInput ]
+    [ coerce $ ProofFFI.pallasProofOpeningLr ctx.proof ]
 
 -- | In-circuit test for bullet reduce (lr_prod computation).
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
@@ -669,109 +602,58 @@ extractChallengesCircuitTest ctx = do
 bulletReduceCircuitTest :: TestContext -> Aff Unit
 bulletReduceCircuitTest ctx = do
   let
-    -- Get sponge checkpoint (used as constants, not circuit inputs)
-    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    { spongeState } = mkIpaTestContext ctx
 
-    -- Parse checkpoint into sponge state
-    spongeMode = case checkpoint.spongeMode of
-      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
-      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
-
-    -- Get L/R pairs from the proof (coordinates in Pallas.ScalarField = Fq)
-    lrPairs :: Vector 16 (IPA.LrPair Pallas.ScalarField)
-    lrPairs = ProofFFI.pallasProofOpeningLr ctx.proof
-
-    -- Build circuit input with F wrapper
-    circuitInput :: Vector 16 (IPA.LrPair (F Pallas.ScalarField))
-    circuitInput = coerce $ lrPairs
-
-    -- The circuit: squeeze for u, extract 128-bit challenges, then compute lr_prod
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
-    circuit pairs = do
-      -- Extract 128-bit scalar challenges using circuit sponge
-      let
-        circuitSponge = Pickles.Sponge.spongeFromConstants
-          { state: checkpoint.state, spongeState: spongeMode }
-      Pickles.Sponge.evalSpongeM circuitSponge do
-        -- Squeeze for u first (to match the Fiat-Shamir transcript)
+    circuit pairs =
+      Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
         _ <- Pickles.Sponge.squeeze
         challenges <- IPA.extractScalarChallenges pairs
-        -- Compute lr_prod
         { p } <- liftSnarky $ IPA.bulletReduceCircuit @Pallas.ScalarField @Vesta.G { pairs, challenges }
         pure p
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-
-    builtState = compilePure
-      (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
-      (Proxy @(AffinePoint (F Pallas.ScalarField)))
-      (Proxy @(KimchiConstraint Pallas.ScalarField))
-      circuit
-      Kimchi.initialState
-
-    -- testFunction: compute lr_prod using pure bulletReduce, compare to Rust
     testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
     testFn pairs =
       let
-        pureSponge :: Sponge Pallas.ScalarField
-        pureSponge = { state: checkpoint.state, spongeState: spongeMode }
-
-        -- Unwrap F from pairs
-        unwrappedPairs = map (\{ l, r } -> { l: { x: un F l.x, y: un F l.y }, r: { x: un F r.x, y: un F r.y } }) pairs
-
-        -- Squeeze for u first, then extract 128-bit challenges using pure sponge
         challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-        challenges = Pickles.Sponge.evalPureSpongeM pureSponge do
-          -- Squeeze for u first (to match the Fiat-Shamir transcript)
+        challenges = Pickles.Sponge.evalPureSpongeM spongeState do
           _ <- Pickles.Sponge.squeeze
-          IPA.extractScalarChallengesPure unwrappedPairs
+          IPA.extractScalarChallengesPure (coerce pairs)
 
-        -- Compute lr_prod using pure bulletReduce
         lrProd :: Vesta.G
-        lrProd = IPA.bulletReduce @Pallas.ScalarField @Vesta.G { pairs: unwrappedPairs, challenges }
-
-        -- Get expected lr_prod from Rust FFI
-        expectedLrProd :: AffinePoint Pallas.ScalarField
+        lrProd = IPA.bulletReduce @Pallas.ScalarField @Vesta.G { pairs: coerce pairs, challenges }
+        computedAffine = unsafePartial $ fromJust $ toAffine lrProd
         expectedLrProd = ProofFFI.pallasProofLrProd ctx.proverIndex
           { proof: ctx.proof, publicInput: ctx.publicInputs }
-
-        -- Convert lrProd to AffinePoint for comparison
-        computedAffine = unsafePartial $ fromJust $ toAffine lrProd
       in
         if computedAffine /= expectedLrProd then unsafeThrow "bulletReduce lr_prod doesn't match Rust"
-        else { x: F computedAffine.x, y: F computedAffine.y }
+        else coerce computedAffine
 
-  -- Verify circuit produces correct lr_prod
   circuitSpecPureInputs
-    { builtState
+    { builtState: compilePure
+        (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
+        (Proxy @(AffinePoint (F Pallas.ScalarField)))
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
     , checker: Kimchi.eval
-    , solver
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
     , testFunction: satisfied testFn
     , postCondition: Kimchi.postCondition
     }
-    [ circuitInput ]
+    [ coerce $ ProofFFI.pallasProofOpeningLr ctx.proof ]
 
 -- | In-circuit test for IPA final check.
--- | This tests the full IPA verification equation:
--- |   c*Q + delta = z1*(sg + b*u) + z2*H
--- |
--- | The circuit operates over Pallas.ScalarField (Fq) and verifies opening proofs
--- | for Vesta commitments. Scalars are represented using Type1 shifted encoding.
+-- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
 ipaFinalCheckCircuitTest :: TestContext -> Aff Unit
 ipaFinalCheckCircuitTest ctx = do
   let
-    { challenges
-    , spongeState
-    , combinedPolynomial
-    , omega
-    } = mkIpaTestContext ctx
+    { challenges, spongeState, combinedPolynomial, omega } = mkIpaTestContext ctx
 
-    -- Bundle the circuit input (with F wrappers for CircuitType)
     circuitInput :: IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
@@ -780,136 +662,103 @@ ipaFinalCheckCircuitTest ctx = do
       , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
       , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
       , combinedPolynomial: coerce combinedPolynomial
-      , combinedInnerProduct: toShifted $ F $ ctx.oracles.combinedInnerProduct
-      , b: toShifted $
-          ( coerce
-              ( ProofFFI.computeB0
-                  { challenges: Vector.toUnfoldable challenges
-                  , zeta: ctx.oracles.zeta
-                  , zetaOmega: ctx.oracles.zeta * omega
-                  , evalscale: ctx.oracles.u
-                  }
-              ) :: F Vesta.ScalarField
-          )
+      , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+      , b: toShifted $ (coerce :: Vesta.ScalarField -> F Vesta.ScalarField) $ ProofFFI.computeB0
+          { challenges: Vector.toUnfoldable challenges
+          , zeta: ctx.oracles.zeta
+          , zetaOmega: ctx.oracles.zeta * omega
+          , evalscale: ctx.oracles.u
+          }
       , blindingGenerator: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.proverIndex
       }
 
-    -- The circuit: IPA final check
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => IpaFinalCheckInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit input = do
-      let
-        circuitSponge = Pickles.Sponge.spongeFromConstants spongeState
       result <- IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
         IPA.type1ScalarOps
         (groupMapParams $ Proxy @Vesta.G)
-        circuitSponge
+        (Pickles.Sponge.spongeFromConstants spongeState)
         input
       assert_ result
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-
-    builtState = compilePure
-      (Proxy @(IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint Pallas.ScalarField))
-      circuit
-      Kimchi.initialState
-
-  -- Verify circuit produces true (IPA equation holds)
   circuitSpecPureInputs
-    { builtState
+    { builtState: compilePure
+        (Proxy @(IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
     , checker: Kimchi.eval
-    , solver
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
     , testFunction: satisfied_
     , postCondition: Kimchi.postCondition
     }
     [ circuitInput ]
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
--- | This is useful for understanding what values the Rust verifier computes.
+-- | Also tests scaleFast1 with z1 and the generator point.
 debugVerifyTest :: TestContext -> Aff Unit
 debugVerifyTest ctx = do
-  -- Call the debug verify function which prints to stderr
   let
     _ = ProofFFI.pallasDebugVerify ctx.proverIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
-  -- Also print z1Raw from FFI to compare
-  let
+
     z1Raw = ProofFFI.pallasProofOpeningZ1 ctx.proof
 
     z1Shifted :: Type1 (F Pallas.ScalarField)
     z1Shifted = toShifted (F z1Raw)
 
-    -- Verify roundtrip
     z1Recovered :: F Pallas.BaseField
     z1Recovered = fromShifted z1Shifted
-  liftEffect $ log $ "z1Raw from FFI: " <> show z1Raw
-  liftEffect $ log $ "z1Shifted (Type1 t): " <> show z1Shifted
-  liftEffect $ log $ "z1Recovered (fromShifted): " <> show z1Recovered
-  liftEffect $ log $ "Roundtrip matches: " <> show (F z1Raw == z1Recovered)
 
-  -- Test scaleFast1 with z1 and the generator point
-  let
     genPoint = unsafePartial fromJust $ toAffine (generator @_ @Vesta.G)
+    expectedAffine = unsafePartial fromJust $ toAffine $ scalarMul z1Raw (generator @_ @Vesta.G)
 
-    -- Expected: z1Raw * generator using pure scalarMul
-    expectedResult = scalarMul z1Raw (generator @_ @Vesta.G)
-    expectedAffine = unsafePartial fromJust $ toAffine expectedResult
-  liftEffect $ log $ "Expected z1*G: (" <> show expectedAffine.x <> ", " <> show expectedAffine.y <> ")"
+  liftEffect do
+    log $ "z1Raw from FFI: " <> show z1Raw
+    log $ "z1Shifted (Type1 t): " <> show z1Shifted
+    log $ "z1Recovered (fromShifted): " <> show z1Recovered
+    log $ "Roundtrip matches: " <> show (F z1Raw == z1Recovered)
+    log $ "Expected z1*G: (" <> show expectedAffine.x <> ", " <> show expectedAffine.y <> ")"
 
-  -- Now let's test scaleFast1 in a mini circuit
   let
-    circuitInput :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))
-    circuitInput = Tuple { x: F genPoint.x, y: F genPoint.y } z1Shifted
-
-    miniCircuit
+    circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => Tuple (AffinePoint (FVar Pallas.ScalarField)) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
-    miniCircuit (Tuple p t) = IPA.type1ScalarOps.scaleByShifted p t
+    circuit (Tuple p t) = IPA.type1ScalarOps.scaleByShifted p t
 
-    miniSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) miniCircuit
-
-    miniBuiltState = compilePure
-      (Proxy @(Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))))
-      (Proxy @(AffinePoint (F Pallas.ScalarField)))
-      (Proxy @(KimchiConstraint Pallas.ScalarField))
-      miniCircuit
-      Kimchi.initialState
-
-    -- Expected result
-    testFn :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
-    testFn (Tuple { x: F px, y: F py } scalar_) =
+    testFn
+      :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))
+      -> AffinePoint (F Pallas.ScalarField)
+    testFn (Tuple p scalar_) =
       let
-        base = fromAffine @Pallas.ScalarField @Vesta.G { x: px, y: py }
-
-        -- Reconstruct the scalar from Type1
         scalar :: Pallas.BaseField
         scalar = case fromShifted scalar_ of F a -> a
-        result = scalarMul scalar base
-        { x: rx, y: ry } = unsafePartial fromJust $ toAffine @Pallas.ScalarField result
       in
-        { x: F rx, y: F ry }
+        coerce $ unsafePartial fromJust $ toAffine @Pallas.ScalarField $
+          scalarMul scalar (fromAffine @Pallas.ScalarField @Vesta.G (coerce p))
 
-  -- Run the mini test
   circuitSpecPureInputs
-    { builtState: miniBuiltState
+    { builtState: compilePure
+        (Proxy @(Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(AffinePoint (F Pallas.ScalarField)))
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
     , checker: Kimchi.eval
-    , solver: miniSolver
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
     , testFunction: satisfied testFn
     , postCondition: Kimchi.postCondition
     }
-    [ circuitInput ]
+    [ Tuple (coerce genPoint) z1Shifted ]
 
   liftEffect $ log "scaleFast1 mini test passed!"
-
-  -- Always passes - the point is to see the debug output
-  pure unit
 
 --------------------------------------------------------------------------------
 type IPATestContext =
