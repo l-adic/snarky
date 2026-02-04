@@ -8,6 +8,7 @@
 -- | Reference: mina/src/lib/pickles/step_main.ml (combined_inner_product_correct)
 module Pickles.PlonkChecks.CombinedInnerProduct
   ( CombinedInnerProductCheckInput
+  , BatchingScalars
   , combinedInnerProductCheckCircuit
   ) where
 
@@ -31,10 +32,13 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -- | Input for the combined inner product check.
 -- |
--- | This contains everything needed to:
+-- | This contains the evaluation data needed to:
 -- | 1. Compute ftEval0 (from permInput, gateInput, publicEvalForFt)
 -- | 2. Build the 45-element evaluation vector
--- | 3. Compute the combined inner product
+-- |
+-- | Note: polyscale (xi) and evalscale (r) are NOT included here because they
+-- | are derived from the sponge in the verification circuit, not provided as
+-- | witness data. See plonkChecksCircuit for how they're derived and passed in.
 type CombinedInnerProductCheckInput f =
   { -- Inputs for ftEval0 computation
     permInput :: PermutationInput f
@@ -48,9 +52,16 @@ type CombinedInnerProductCheckInput f =
   , witnessEvals :: Vector 15 (PointEval f) -- witness column evals
   , coeffEvals :: Vector 15 (PointEval f) -- coefficient column evals
   , sigmaEvals :: Vector 6 (PointEval f) -- sigma poly evals
-  -- Batching scalars
-  , polyscale :: f -- v: polynomial batching scalar
-  , evalscale :: f -- u: evaluation point batching scalar
+  }
+
+-- | Batching scalars derived from the Fiat-Shamir sponge.
+-- |
+-- | These are computed by squeezing the sponge after absorbing all evaluations:
+-- | - polyscale (xi/v): first squeeze, used for polynomial batching
+-- | - evalscale (r/u): second squeeze, used for evaluation point batching
+type BatchingScalars f =
+  { polyscale :: f -- xi/v: polynomial batching scalar
+  , evalscale :: f -- r/u: evaluation point batching scalar
   }
 
 -------------------------------------------------------------------------------
@@ -62,8 +73,11 @@ type CombinedInnerProductCheckInput f =
 -- | This implements the `combined_inner_product_correct` check:
 -- | 1. Compute ftEval0 in-circuit using permutation and gate constraints
 -- | 2. Build evaluation vector with computed ftEval0
--- | 3. Compute combined inner product in-circuit
+-- | 3. Compute combined inner product in-circuit using derived batching scalars
 -- | 4. Return the result for comparison against expected value
+-- |
+-- | The batching scalars (polyscale/evalscale) are passed separately because they
+-- | are derived from the Fiat-Shamir sponge, not provided as witness data.
 combinedInnerProductCheckCircuit
   :: forall f f' c t m
    . PrimeField f
@@ -71,9 +85,10 @@ combinedInnerProductCheckCircuit
   => HasEndo f f'
   => CircuitM f c t m
   => LinearizationPoly f
+  -> BatchingScalars (FVar f)
   -> CombinedInnerProductCheckInput (FVar f)
   -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit linPoly input = do
+combinedInnerProductCheckCircuit linPoly scalars input = do
   -- 1. Compute ftEval0 in-circuit
   ftEval0Computed <- ftEval0Circuit linPoly
     { permInput: input.permInput
@@ -97,7 +112,7 @@ combinedInnerProductCheckCircuit linPoly input = do
 
   -- 4. Compute combined inner product in-circuit
   combinedInnerProductCircuit
-    { polyscale: input.polyscale
-    , evalscale: input.evalscale
+    { polyscale: scalars.polyscale
+    , evalscale: scalars.evalscale
     , evals: allEvals
     }

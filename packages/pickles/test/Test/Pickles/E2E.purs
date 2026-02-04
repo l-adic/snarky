@@ -45,7 +45,8 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
+import Pickles.PlonkChecks (PlonkChecksInput, plonkChecksCircuit)
+import Pickles.PlonkChecks.CombinedInnerProduct (BatchingScalars, CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
@@ -586,8 +587,16 @@ combinedInnerProductCorrectCircuitTest ctx = do
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     omega = ProofFFI.domainGenerator ctx.domainLog2
 
-    circuitInput :: CombinedInnerProductCheckInput (F Vesta.ScalarField)
-    circuitInput =
+    -- Batching scalars (from Fiat-Shamir in real verification)
+    scalars :: BatchingScalars (F Vesta.ScalarField)
+    scalars =
+      { polyscale: F ctx.oracles.v
+      , evalscale: F ctx.oracles.u
+      }
+
+    -- Evaluation data
+    evalInput :: CombinedInnerProductCheckInput (F Vesta.ScalarField)
+    evalInput =
       { permInput:
           { w: map (F <<< _.zeta) (Vector.take @7 witnessEvals)
           , sigma: map (F <<< _.zeta) sigmaEvals
@@ -625,22 +634,24 @@ combinedInnerProductCorrectCircuitTest ctx = do
       , witnessEvals: coerce witnessEvals
       , coeffEvals: coerce (ProofFFI.proofCoefficientEvals ctx.proof)
       , sigmaEvals: coerce sigmaEvals
-      , polyscale: F ctx.oracles.v
-      , evalscale: F ctx.oracles.u
       }
+
+    -- Combined input for the test framework
+    circuitInput :: Tuple (BatchingScalars (F Vesta.ScalarField)) (CombinedInnerProductCheckInput (F Vesta.ScalarField))
+    circuitInput = Tuple scalars evalInput
 
     circuit
       :: forall t m
        . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-      => CombinedInnerProductCheckInput (FVar Vesta.ScalarField)
+      => Tuple (BatchingScalars (FVar Vesta.ScalarField)) (CombinedInnerProductCheckInput (FVar Vesta.ScalarField))
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
-    circuit input = do
-      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas input
+    circuit (Tuple s input) = do
+      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas s input
       assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(CombinedInnerProductCheckInput (F Vesta.ScalarField)))
+        (Proxy @(Tuple (BatchingScalars (F Vesta.ScalarField)) (CombinedInnerProductCheckInput (F Vesta.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Vesta.ScalarField))
         circuit
@@ -781,6 +792,121 @@ xiCorrectCircuitTest ctx = do
   circuitSpecPureInputs
     { builtState: compilePure
         (Proxy @(XiCorrectInput (F Vesta.ScalarField)))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+-- | Circuit test for plonkChecksCircuit.
+-- | This tests the composed circuit that verifies xi, derives evalscale,
+-- | and computes combined_inner_product all in one circuit.
+plonkChecksCircuitTest :: TestContext -> Aff Unit
+plonkChecksCircuitTest ctx = do
+  let
+    -- Get proof evaluations
+    witnessEvals = ProofFFI.proofWitnessEvals ctx.proof
+    zEvals = ProofFFI.proofZEvals ctx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals ctx.proof
+    coeffEvals = ProofFFI.proofCoefficientEvals ctx.proof
+    indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Build the CombinedInnerProductCheckInput
+    -- Note: polyscale and evalscale are derived by the circuit, not provided here
+    cipInput :: CombinedInnerProductCheckInput (F Vesta.ScalarField)
+    cipInput =
+      { permInput:
+          { w: map (F <<< _.zeta) (Vector.take @7 witnessEvals)
+          , sigma: map (F <<< _.zeta) sigmaEvals
+          , z: coerce zEvals
+          , shifts: map F (ProofFFI.proverIndexShifts ctx.proverIndex)
+          , alpha: F ctx.oracles.alpha
+          , beta: F ctx.oracles.beta
+          , gamma: F ctx.oracles.gamma
+          , zkPolynomial: F $ ProofFFI.permutationVanishingPolynomial
+              { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+          , zetaToNMinus1: F $ pow ctx.oracles.zeta n - one
+          , omegaToMinusZkRows: F $ pow omega (n - BigInt.fromInt zkRows)
+          , zeta: F ctx.oracles.zeta
+          }
+      , gateInput:
+          { witnessEvals: coerce witnessEvals
+          , coeffEvals: coerce (evalCoefficientPolys ctx.proverIndex ctx.oracles.zeta)
+          , indexEvals: coerce indexEvals
+          , alpha: F ctx.oracles.alpha
+          , beta: F ctx.oracles.beta
+          , gamma: F ctx.oracles.gamma
+          , jointCombiner: F zero
+          , vanishesOnZk: F $ vanishesOnZkAndPreviousRows
+              { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+          , lagrangeFalse0: F $ unnormalizedLagrangeBasis
+              { domainLog2: ctx.domainLog2, zkRows: 0, offset: 0, pt: ctx.oracles.zeta }
+          , lagrangeTrue1: F $ unnormalizedLagrangeBasis
+              { domainLog2: ctx.domainLog2, zkRows, offset: -1, pt: ctx.oracles.zeta }
+          }
+      , publicEvalForFt: F $ computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+      , publicPointEval: { zeta: F ctx.oracles.publicEvalZeta, omegaTimesZeta: F ctx.oracles.publicEvalZetaOmega }
+      , ftEval1: F ctx.oracles.ftEval1
+      , zEvals: coerce zEvals
+      , indexEvals: coerce indexEvals
+      , witnessEvals: coerce witnessEvals
+      , coeffEvals: coerce coeffEvals
+      , sigmaEvals: coerce sigmaEvals
+      }
+
+    -- Build the PlonkChecksInput
+    circuitInput :: PlonkChecksInput (F Vesta.ScalarField)
+    circuitInput =
+      { ftEval1: F ctx.oracles.ftEval1
+      , publicEvals: coerce { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+      , zEvals: coerce zEvals
+      , indexEvals: coerce indexEvals
+      , witnessEvals: coerce witnessEvals
+      , coeffEvals: coerce coeffEvals
+      , sigmaEvals: coerce sigmaEvals
+      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , claimedXi: F ctx.oracles.v
+      , cipInput
+      }
+
+    -- Build initial sponge state with fqDigest and prevChallengeDigest absorbed
+    initialSpongeWithDigests :: Pickles.Sponge.PureSpongeM Vesta.ScalarField Unit
+    initialSpongeWithDigests = do
+      Pickles.Sponge.absorb ctx.oracles.fqDigest
+      Pickles.Sponge.absorb (emptyPrevChallengeDigest :: Vesta.ScalarField)
+
+    -- Get the sponge state after absorbing digests
+    spongeStateAfterDigests :: Sponge Vesta.ScalarField
+    spongeStateAfterDigests =
+      let
+        Tuple _ s = Pickles.Sponge.runPureSpongeM Pickles.Sponge.initialSponge initialSpongeWithDigests
+      in
+        s
+
+    circuit
+      :: forall t m
+       . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+      => PlonkChecksInput (FVar Vesta.ScalarField)
+      -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
+    circuit input = do
+      -- Start with sponge that has fqDigest and prevChallengeDigest absorbed
+      output <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeStateAfterDigests) $
+        plonkChecksCircuit Linearization.pallas input
+      -- Verify outputs match expected values
+      assertEqual_ output.polyscale (const_ ctx.oracles.v)
+      assertEqual_ output.evalscale (const_ ctx.oracles.u)
+      assertEqual_ output.combinedInnerProduct (const_ ctx.oracles.combinedInnerProduct)
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @(PlonkChecksInput (F Vesta.ScalarField)))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Vesta.ScalarField))
         circuit
@@ -1161,6 +1287,7 @@ spec = beforeAll createTestContext $
     it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
     it "PS Fr-sponge challenges (xi, evalscale) match Rust" xiCorrectTest
     it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
+    it "plonkChecksCircuit verifies xi, evalscale, and combined_inner_product" plonkChecksCircuitTest
     it "opening proof verifies" openingProofTest
     it "PS computeB matches Rust computeB0" computeBTest
     it "IPA rounds matches domain log2" ipaRoundsTest
