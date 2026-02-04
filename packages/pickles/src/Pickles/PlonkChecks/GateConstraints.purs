@@ -32,7 +32,7 @@ import JS.BigInt as BigInt
 import Pickles.Linearization.Env (Challenges, EvalPoint, circuitEnv)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
-import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), PolishToken)
+import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
@@ -173,10 +173,10 @@ evaluateGateConstraints
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
-  => Array PolishToken
+  => LinearizationPoly f
   -> GateConstraintInput (FVar f)
   -> Snarky c t m (FVar f)
-evaluateGateConstraints tokens input =
+evaluateGateConstraints linPoly input =
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -197,7 +197,7 @@ evaluateGateConstraints tokens input =
 
     env = circuitEnv evalPoint challenges parseHex
   in
-    evaluate tokens env
+    evaluate (runLinearizationPoly linPoly) env
 
 -- | Check that the gate constraints are satisfied.
 -- |
@@ -212,9 +212,9 @@ checkGateConstraints
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
-  => Array PolishToken
+  => LinearizationPoly f
   -> GateConstraintInput (FVar f)
   -> Snarky c t m Unit
-checkGateConstraints tokens input = do
-  result <- evaluateGateConstraints tokens input
+checkGateConstraints linPoly input = do
+  result <- evaluateGateConstraints linPoly input
   assertEqual_ result (Const zero)

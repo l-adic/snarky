@@ -40,6 +40,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
 import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, computeB)
 import Pickles.IPA as IPA
+import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
@@ -549,7 +550,7 @@ ftEval0CircuitTest ctx = do
          }
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit input = do
-      result <- ftEval0Circuit PallasTokens.constantTermTokens input
+      result <- ftEval0Circuit Linearization.pallas input
       assertEqual_ result (const_ (un F expected))
 
   circuitSpecPureInputs
@@ -634,7 +635,7 @@ combinedInnerProductCorrectCircuitTest ctx = do
       => CombinedInnerProductCheckInput (FVar Vesta.ScalarField)
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit input = do
-      cipResult <- combinedInnerProductCheckCircuit PallasTokens.constantTermTokens input
+      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas input
       assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
 
   circuitSpecPureInputs

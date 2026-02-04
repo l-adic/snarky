@@ -17,7 +17,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Commitments (combinedInnerProductCircuit)
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.Linearization.Types (PolishToken)
+import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
@@ -70,12 +70,12 @@ combinedInnerProductCheckCircuit
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
-  => Array PolishToken
+  => LinearizationPoly f
   -> CombinedInnerProductCheckInput (FVar f)
   -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit tokens input = do
+combinedInnerProductCheckCircuit linPoly input = do
   -- 1. Compute ftEval0 in-circuit
-  ftEval0Computed <- ftEval0Circuit tokens
+  ftEval0Computed <- ftEval0Circuit linPoly
     { permInput: input.permInput
     , gateInput: input.gateInput
     , publicEval: input.publicEvalForFt

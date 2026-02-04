@@ -19,7 +19,7 @@ module Pickles.PlonkChecks.FtEval
 
 import Prelude
 
-import Pickles.Linearization.Types (PolishToken)
+import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, evaluateGateConstraints)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContributionCircuit)
 import Poseidon (class PoseidonField)
@@ -74,18 +74,18 @@ ftEval0Circuit
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
-  => Array PolishToken
+  => LinearizationPoly f
   -> { permInput :: PermutationInput (FVar f)
      , gateInput :: GateConstraintInput (FVar f)
      , publicEval :: FVar f
      }
   -> Snarky c t m (FVar f)
-ftEval0Circuit tokens { permInput, gateInput, publicEval } = do
+ftEval0Circuit linPoly { permInput, gateInput, publicEval } = do
   -- Compute permutation contribution in-circuit
   perm <- permContributionCircuit permInput
 
   -- Compute gate constraints in-circuit
-  gate <- evaluateGateConstraints tokens gateInput
+  gate <- evaluateGateConstraints linPoly gateInput
 
   -- ft_eval0 = perm + publicEval - gate
   let permPlusPublic = CVar.add_ perm publicEval
