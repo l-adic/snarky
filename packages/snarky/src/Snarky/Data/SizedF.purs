@@ -25,7 +25,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F, FVar, assert_, assertEq, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, packPure, unpackPure, unpack_)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F, FVar, assertEq, assert_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, packPure, unpackPure, unpack_)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)

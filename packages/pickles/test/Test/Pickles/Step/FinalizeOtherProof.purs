@@ -1,20 +1,21 @@
-module Test.Pickles.Step.Circuit
+module Test.Pickles.Step.FinalizeOtherProof
   ( spec
   ) where
 
--- | Tests for the Step circuit combinator.
+-- | Tests for the FinalizeOtherProof circuit.
 -- |
--- | Tests verify that the Step circuit is satisfiable with dummy proofs
--- | (base case for bootstrapping Pickles recursion).
+-- | Tests verify that the skeleton circuit is satisfiable with dummy inputs.
+-- | This is the base case for bootstrapping Pickles recursion.
 
 import Prelude
 
 import Data.Identity (Identity)
-import Data.Vector (nil, (:<))
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
+import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
+import Pickles.Step.Types (BulletproofChallenges)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, false_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -31,41 +32,31 @@ import Type.Proxy (Proxy(..))
 type StepField = Vesta.ScalarField
 
 -- | Value type for test input
-type StepTestInput =
-  StepInput 1 Unit Unit (F StepField) (Type1 (F StepField)) Boolean
+type FinalizeOtherProofTestInput =
+  FinalizeOtherProofInput (F StepField) (Type1 (F StepField)) Boolean
 
 -- | Variable type for circuit
-type StepTestInputVar =
-  StepInput 1 Unit Unit (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
+type FinalizeOtherProofTestInputVar =
+  FinalizeOtherProofInput (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
 
--------------------------------------------------------------------------------
--- | Application Circuit
--------------------------------------------------------------------------------
-
--- | Trivial app circuit for base case: returns mustVerify=false
-trivialAppCircuit
-  :: forall t m
-   . CircuitM StepField (KimchiConstraint StepField) t m
-  => AppCircuitInput 1 Unit Unit
-  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
-trivialAppCircuit _ = pure
-  { mustVerify: false_ :< nil
-  , publicOutput: unit
-  , auxiliaryOutput: unit
+-- | Output type from circuit (we only check satisfiability, not output values)
+type FinalizeOtherProofTestOutput =
+  { finalized :: Boolean
+  , challenges :: BulletproofChallenges (F StepField)
   }
 
 -------------------------------------------------------------------------------
 -- | Test Circuit
 -------------------------------------------------------------------------------
 
--- | The circuit under test: runs stepCircuit and discards output
+-- | The circuit under test: runs finalizeOtherProofCircuit and discards output
 testCircuit
   :: forall t
    . CircuitM StepField (KimchiConstraint StepField) t Identity
-  => StepTestInputVar
+  => FinalizeOtherProofTestInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 testCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams trivialAppCircuit input
+  _ <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit dummyFinalizeOtherProofParams input)
   pure unit
 
 -------------------------------------------------------------------------------
@@ -73,20 +64,18 @@ testCircuit input = do
 -------------------------------------------------------------------------------
 
 spec :: Spec Unit
-spec = describe "Pickles.Step.Circuit" do
-  it "Step circuit is satisfiable with dummy proofs (base case)" do
+spec = describe "Pickles.Step.FinalizeOtherProof" do
+  it "skeleton circuit is satisfiable with dummy inputs (base case)" do
     let
-      input :: StepTestInput
+      input :: FinalizeOtherProofTestInput
       input =
-        { appInput: unit
-        , previousProofInputs: unit :< nil
-        , unfinalizedProofs: dummyUnfinalizedProof :< nil
-        , wrapProofWitnesses: dummyWrapProofWitness :< nil
+        { unfinalized: dummyUnfinalizedProof
+        , witness: dummyWrapProofWitness
         }
 
     circuitSpecPureInputs
       { builtState: compilePure
-          (Proxy @StepTestInput)
+          (Proxy @FinalizeOtherProofTestInput)
           (Proxy @Unit)
           (Proxy @(KimchiConstraint StepField))
           testCircuit

@@ -22,7 +22,7 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Dummy (dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, false_)
@@ -110,7 +110,7 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit schnorrAppCircuit input
+  _ <- stepCircuit dummyFinalizeOtherProofParams schnorrAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -124,6 +124,7 @@ genStepSchnorrInput =
     { appInput: schnorrInput
     , previousProofInputs: unit :< Vector.nil
     , unfinalizedProofs: dummyUnfinalizedProof :< Vector.nil
+    , wrapProofWitnesses: dummyWrapProofWitness :< Vector.nil
     }
 
 spec :: Spec Unit

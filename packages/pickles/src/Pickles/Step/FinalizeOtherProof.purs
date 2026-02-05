@@ -13,20 +13,21 @@
 -- | Reference: step_verifier.ml:823-1086 `finalize_other_proof`
 module Pickles.Step.FinalizeOtherProof
   ( -- * Types
-    FinalizeOtherProofInput
+    FinalizeOtherProofParams
+  , FinalizeOtherProofInput
   , FinalizeOtherProofOutput
   -- * Circuit
   , finalizeOtherProofCircuit
   -- * Component Circuits (exported for testing)
   , module PlonkChecks
   , module ChallengeDigest
-  , module IPA
   ) where
 
 import Prelude
 
-import Pickles.IPA (bCorrectCircuit, ipaFinalCheckCircuit, type1ScalarOps) as IPA
-import Pickles.PlonkChecks (plonkArithmeticCheckCircuit, plonkChecksCircuit) as PlonkChecks
+import Data.Vector (Vector)
+import Pickles.Linearization.Types (LinearizationPoly)
+import Pickles.PlonkChecks (absorbAllEvals, plonkChecksCircuit) as PlonkChecks
 import Pickles.Sponge (SpongeM, absorb)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Step.Types (BulletproofChallenges, UnfinalizedProof)
@@ -42,18 +43,35 @@ import Snarky.Types.Shifted (Type1)
 -- | Types
 -------------------------------------------------------------------------------
 
+-- | Compile-time parameters for finalizing another proof.
+-- |
+-- | These come from the verification key / are known at circuit compile time.
+-- | In OCaml, `finalize_other_proof` receives `step_domains`, `zk_rows`, and
+-- | `endo` as separate parameters.
+-- |
+-- | - `domain`: Domain generator and shift values for the permutation argument
+-- | - `endo`: Endomorphism coefficient for scalar challenge conversion
+-- | - `zkRows`: Number of zero-knowledge rows (typically 3)
+-- | - `linearizationPoly`: The linearization polynomial for gate constraints
+-- |
+-- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
+type FinalizeOtherProofParams f =
+  { domain :: { generator :: f, shifts :: Vector 7 f }
+  , endo :: f
+  , zkRows :: Int
+  , linearizationPoly :: LinearizationPoly f
+  }
+
 -- | Input for finalizing another proof.
 -- |
 -- | This combines:
 -- | - `unfinalized`: The deferred values from the proof's public input
--- | - `witness`: Private witness data needed for verification
--- |
--- | The `n` parameter is the number of IPA rounds (16 for Pasta curves).
-type FinalizeOtherProofInput n f sf b =
+-- | - `witness`: Private witness data (polynomial evaluations only)
+type FinalizeOtherProofInput f sf b =
   { -- | Unfinalized proof from public input
     unfinalized :: UnfinalizedProof f sf b
-  -- | Private witness data
-  , witness :: WrapProofWitness n f sf
+  -- | Private witness data (polynomial evaluations)
+  , witness :: WrapProofWitness f
   }
 
 -- | Output from finalizing another proof.
@@ -85,7 +103,8 @@ type FinalizeOtherProofOutput f =
 -- |
 -- | 4. **b_correct**: Verify the challenge polynomial evaluation
 -- |
--- | 5. **IPA Final Check**: Verify the IPA equation c*Q + delta = z1*(sg + b*u) + z2*H
+-- | Note: IPA final check is NOT part of `finalize_other_proof`. It belongs
+-- | in `incrementally_verify_proof` which handles the opening proof.
 -- |
 -- | **Current Status**: This is a skeleton implementation that returns success
 -- | and dummy challenges. The full implementation needs to wire up all the
@@ -93,14 +112,15 @@ type FinalizeOtherProofOutput f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall n f t m
+  :: forall f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => FinalizeOtherProofInput n (FVar f) (Type1 (FVar f)) (BoolVar f)
+  => FinalizeOtherProofParams f
+  -> FinalizeOtherProofInput (FVar f) (Type1 (FVar f)) (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
-finalizeOtherProofCircuit { unfinalized, witness: _witness } = do
+finalizeOtherProofCircuit _params { unfinalized, witness } = do
   let
     deferred = unfinalized.deferredValues
 
@@ -108,12 +128,17 @@ finalizeOtherProofCircuit { unfinalized, witness: _witness } = do
   -- This resumes the Fiat-Shamir transcript from where the prover left off
   absorb unfinalized.spongeDigestBeforeEvaluations
 
+  -- 2. Absorb all polynomial evaluations into the Fr-sponge
+  -- (includes ftEval1, follows order in plonkChecksCircuit / step_verifier.ml)
+  PlonkChecks.absorbAllEvals witness.allEvals
+
   -- TODO: Full implementation needs to:
-  -- 2. Run plonkChecksCircuit with proper inputs
-  -- 3. Run plonkArithmeticCheckCircuit with proper inputs
-  -- 4. Run bCorrectCircuit with proper inputs
-  -- 5. Run ipaFinalCheckCircuit with proper inputs
-  -- 6. Combine all check results
+  -- 3. Squeeze to derive xi (polyscale) and verify xi_correct
+  -- 4. Squeeze to derive evalscale (r)
+  -- 5. Compute and verify combined_inner_product
+  -- 6. Run plonkArithmeticCheckCircuit (verify perm)
+  -- 7. Run bCorrectCircuit
+  -- 8. Combine all check results
 
   -- For now, return success and the challenges from deferred values
   let
@@ -124,11 +149,3 @@ finalizeOtherProofCircuit { unfinalized, witness: _witness } = do
     challenges = deferred.bulletproofChallenges
 
   pure { finalized, challenges }
-
--------------------------------------------------------------------------------
--- | Helper: Extract field element from scalar challenge
--- | Note: For proper conversion to full field element, use `toField` with endo
--------------------------------------------------------------------------------
-
--- scalarChallengeToField :: forall f. SizedF 128 (FVar f) -> FVar f
--- scalarChallengeToField (SizedF x) = x

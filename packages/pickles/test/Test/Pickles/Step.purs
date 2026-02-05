@@ -13,6 +13,7 @@ import Prelude
 import Test.Pickles.Step.ChallengeDigest as ChallengeDigest
 import Test.Pickles.Step.Circuit as Circuit
 import Test.Pickles.Step.Dummy as Dummy
+import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProof
 import Test.Spec (Spec, describe)
 
 spec :: Spec Unit
@@ -20,3 +21,4 @@ spec = describe "Pickles.Step" do
   Dummy.spec
   Circuit.spec
   ChallengeDigest.spec
+  FinalizeOtherProof.spec
