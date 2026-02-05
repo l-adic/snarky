@@ -22,10 +22,14 @@ module Pickles.Sponge
   , runSpongeM
   , evalSpongeM
   , liftSnarky
+  , getSponge
+  , putSponge
   -- Pure sponge monad
   , PureSpongeM(..)
   , runPureSpongeM
   , evalPureSpongeM
+  , getSpongeState
+  , putSpongeState
   -- Initial state / restore
   , initialSponge
   , initialSpongeCircuit
@@ -127,6 +131,21 @@ liftSnarky
   -> SpongeM f c t m a
 liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
 
+-- | Get the current sponge state (for checkpointing)
+getSponge
+  :: forall f c t m
+   . Monad (Snarky c t m)
+  => SpongeM f c t m (Sponge (FVar f))
+getSponge = wrap get
+
+-- | Set the sponge state (for restoring from checkpoint)
+putSponge
+  :: forall f c t m
+   . Monad (Snarky c t m)
+  => Sponge (FVar f)
+  -> SpongeM f c t m Unit
+putSponge = wrap <<< put
+
 -- | MonadSponge instance for the in-circuit sponge monad
 instance
   ( PoseidonField f
@@ -194,6 +213,14 @@ evalPureSpongeM
   -> a
 evalPureSpongeM initialState computation =
   un Identity $ evalStateT (unwrap computation) initialState
+
+-- | Get the current sponge state (pure version)
+getSpongeState :: forall f. PureSpongeM f (Sponge f)
+getSpongeState = wrap get
+
+-- | Set the sponge state (pure version)
+putSpongeState :: forall f. Sponge f -> PureSpongeM f Unit
+putSpongeState = wrap <<< put
 
 -- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where
