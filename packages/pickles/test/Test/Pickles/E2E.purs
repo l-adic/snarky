@@ -50,7 +50,7 @@ import Pickles.PlonkChecks.CombinedInnerProduct (BatchingScalars, CombinedInnerP
 import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
-import Pickles.PlonkChecks.XiCorrect (XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
+import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon as Poseidon
@@ -716,6 +716,11 @@ combinedInnerProductTest ctx = do
 
 -- | Test xi_correct and r_correct: verify that claimed xi (polyscale) and r (evalscale)
 -- | were computed correctly via Fr-sponge Fiat-Shamir.
+-- |
+-- | This test verifies that our Fr-sponge implementation produces the same scalar
+-- | challenges as Rust, and that when expanded via endo, they match Rust's
+-- | polyscale (v) and evalscale (u).
+-- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
 xiCorrectTest :: TestContext -> Aff Unit
 xiCorrectTest ctx = do
@@ -731,9 +736,9 @@ xiCorrectTest ctx = do
     publicEvals :: PointEval Vesta.ScalarField
     publicEvals = { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
 
-    -- Build XiCorrectInput
-    xiInput :: XiCorrectInput Vesta.ScalarField
-    xiInput =
+    -- Build FrSpongeInput for pure challenge computation
+    spongeInput :: FrSpongeInput Vesta.ScalarField
+    spongeInput =
       { fqDigest: ctx.oracles.fqDigest
       , prevChallengeDigest: emptyPrevChallengeDigest -- no previous recursion in our test
       , ftEval1: ctx.oracles.ftEval1
@@ -744,15 +749,14 @@ xiCorrectTest ctx = do
       , coeffEvals
       , sigmaEvals
       , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
-      , claimedXi: ctx.oracles.v
       }
 
-    -- Compute both xi and evalscale using PureScript
-    result = frSpongeChallengesPure xiInput
+    -- Compute scalar challenges using PureScript Fr-sponge
+    result = frSpongeChallengesPure spongeInput
 
-  -- Compare PureScript computed xi against Rust's v (polyscale)
+  -- Compare PureScript computed xi (endo-expanded) against Rust's v (polyscale)
   liftEffect $ result.xi `shouldEqual` ctx.oracles.v
-  -- Compare PureScript computed evalscale against Rust's u (evalscale)
+  -- Compare PureScript computed evalscale (endo-expanded) against Rust's u (evalscale)
   liftEffect $ result.evalscale `shouldEqual` ctx.oracles.u
 
 -- | Circuit test for xi_correct.
@@ -767,6 +771,27 @@ xiCorrectCircuitTest ctx = do
     coeffEvals = ProofFFI.proofCoefficientEvals ctx.proof
     indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
 
+    -- First compute the raw xi challenge using pure sponge
+    spongeInput :: FrSpongeInput Vesta.ScalarField
+    spongeInput =
+      { fqDigest: ctx.oracles.fqDigest
+      , prevChallengeDigest: emptyPrevChallengeDigest
+      , ftEval1: ctx.oracles.ftEval1
+      , publicEvals: { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+      , zEvals
+      , indexEvals
+      , witnessEvals
+      , coeffEvals
+      , sigmaEvals
+      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      }
+    pureResult = frSpongeChallengesPure spongeInput
+
+  -- First verify our pure computation matches Rust's expanded values
+  liftEffect $ pureResult.xi `shouldEqual` ctx.oracles.v
+  liftEffect $ pureResult.evalscale `shouldEqual` ctx.oracles.u
+
+  let
     circuitInput :: XiCorrectInput (F Vesta.ScalarField)
     circuitInput =
       { fqDigest: F ctx.oracles.fqDigest
@@ -779,7 +804,7 @@ xiCorrectCircuitTest ctx = do
       , coeffEvals: coerce coeffEvals
       , sigmaEvals: coerce sigmaEvals
       , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
-      , claimedXi: F ctx.oracles.v
+      , claimedXi: coerce pureResult.rawXi -- use the verified raw challenge
       }
 
     circuit
@@ -817,6 +842,28 @@ plonkChecksCircuitTest ctx = do
     indexEvals = evalSelectorPolys ctx.proverIndex ctx.oracles.zeta
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Compute raw challenges using pure sponge
+    spongeInput :: FrSpongeInput Vesta.ScalarField
+    spongeInput =
+      { fqDigest: ctx.oracles.fqDigest
+      , prevChallengeDigest: emptyPrevChallengeDigest
+      , ftEval1: ctx.oracles.ftEval1
+      , publicEvals: { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+      , zEvals
+      , indexEvals
+      , witnessEvals
+      , coeffEvals
+      , sigmaEvals
+      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      }
+    pureResult = frSpongeChallengesPure spongeInput
+
+  -- First verify our pure computation matches Rust's expanded values
+  liftEffect $ pureResult.xi `shouldEqual` ctx.oracles.v
+  liftEffect $ pureResult.evalscale `shouldEqual` ctx.oracles.u
+
+  let
 
     -- Build the CombinedInnerProductCheckInput
     -- Note: polyscale and evalscale are derived by the circuit, not provided here
@@ -864,15 +911,18 @@ plonkChecksCircuitTest ctx = do
     -- Build the PlonkChecksInput
     circuitInput :: PlonkChecksInput (F Vesta.ScalarField)
     circuitInput =
-      { ftEval1: F ctx.oracles.ftEval1
-      , publicEvals: coerce { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
-      , zEvals: coerce zEvals
-      , indexEvals: coerce indexEvals
-      , witnessEvals: coerce witnessEvals
-      , coeffEvals: coerce coeffEvals
-      , sigmaEvals: coerce sigmaEvals
+      { allEvals:
+          { ftEval1: F ctx.oracles.ftEval1
+          , publicEvals: coerce { zeta: ctx.oracles.publicEvalZeta, omegaTimesZeta: ctx.oracles.publicEvalZetaOmega }
+          , zEvals: coerce zEvals
+          , indexEvals: coerce indexEvals
+          , witnessEvals: coerce witnessEvals
+          , coeffEvals: coerce coeffEvals
+          , sigmaEvals: coerce sigmaEvals
+          }
       , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
-      , claimedXi: F ctx.oracles.v
+      , claimedXi: coerce pureResult.rawXi -- raw 128-bit challenge
+      , claimedR: coerce pureResult.rawR -- raw 128-bit challenge
       , cipInput
       }
 

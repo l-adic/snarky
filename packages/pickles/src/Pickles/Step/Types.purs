@@ -20,13 +20,24 @@ module Pickles.Step.Types
   , ScalarChallenge
   -- * Plonk Deferred Values
   , PlonkMinimal
+  , PlonkExpanded
+  , expandPlonkMinimal
+  , expandPlonkMinimalCircuit
   -- * Full Deferred Values
   , DeferredValues
   -- * Unfinalized Proof
   , UnfinalizedProof
   ) where
 
+import Prelude
+
+import Data.Newtype (unwrap)
 import Data.Vector (Vector)
+import Poseidon (class PoseidonField)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.SizedF (SizedF)
 
 -------------------------------------------------------------------------------
@@ -70,6 +81,69 @@ type PlonkMinimal f =
   , zeta :: ScalarChallenge f
   -- jointCombiner omitted (None for now, used for lookups)
   }
+
+-------------------------------------------------------------------------------
+-- | Plonk Expanded Values
+-------------------------------------------------------------------------------
+
+-- | PLONK challenges with scalar challenges expanded to full field elements.
+-- |
+-- | This is the "In_circuit" representation where alpha and zeta have been
+-- | converted from 128-bit scalar challenges to full field elements via
+-- | the endo coefficient.
+-- |
+-- | Reference: composition_types.ml In_circuit.map_challenges ~scalar
+type PlonkExpanded f =
+  { alpha :: f -- expanded from ScalarChallenge
+  , beta :: f
+  , gamma :: f
+  , zeta :: f -- expanded from ScalarChallenge
+  }
+
+-- | Expand PlonkMinimal scalar challenges to full field values.
+-- |
+-- | Converts alpha and zeta from 128-bit scalar challenges to full field
+-- | elements using: expanded = a * endo + b
+-- | where (a, b) is the decomposition of the 128-bit challenge.
+-- |
+-- | Reference: step_verifier.ml:857-859 map_challenges ~scalar
+expandPlonkMinimal
+  :: forall f
+   . PrimeField f
+  => PoseidonField f
+  => FieldSizeInBits f 255
+  => f -- endo coefficient
+  -> PlonkMinimal (F f)
+  -> PlonkExpanded f
+expandPlonkMinimal endo plonk =
+  { alpha: unwrap $ toFieldPure plonk.alpha endo
+  , beta: unwrap plonk.beta
+  , gamma: unwrap plonk.gamma
+  , zeta: unwrap $ toFieldPure plonk.zeta endo
+  }
+
+-- | Expand PlonkMinimal scalar challenges to full field values in-circuit.
+-- |
+-- | Circuit version of expandPlonkMinimal that generates the appropriate
+-- | constraints for endo expansion.
+expandPlonkMinimalCircuit
+  :: forall f t m
+   . PrimeField f
+  => PoseidonField f
+  => FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => FVar f -- endo coefficient
+  -> PlonkMinimal (FVar f)
+  -> Snarky (KimchiConstraint f) t m (PlonkExpanded (FVar f))
+expandPlonkMinimalCircuit endo plonk = do
+  alpha <- toField plonk.alpha endo
+  zeta <- toField plonk.zeta endo
+  pure
+    { alpha
+    , beta: plonk.beta
+    , gamma: plonk.gamma
+    , zeta
+    }
 
 -------------------------------------------------------------------------------
 -- | Deferred Values

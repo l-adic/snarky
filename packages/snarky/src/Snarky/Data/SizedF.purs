@@ -25,7 +25,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F, FVar, assert_, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, packPure, unpackPure, unpack_)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitType, F, FVar, assert_, assertEq, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, packPure, unpackPure, unpack_)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -65,6 +65,10 @@ instance
       { after } = Vector.splitAt @n bits
     for_ after \bit ->
       assert_ (not_ bit)
+
+-- | AssertEqual instance for SizedF - delegates to inner field comparison
+instance AssertEqual f c (SizedF n (FVar f)) where
+  assertEq (SizedF x) (SizedF y) = assertEq @f x y
 
 instance
   ( FieldSizeInBits f m
