@@ -248,18 +248,6 @@ dummyUnfinalizedProof =
 
 ## TODOs
 
-- [x] **Step types and dummy proof generation**: Created `Pickles.Step.Types` with newtypes (`BulletproofChallenges`, `PlonkMinimal`, `DeferredValues`, `UnfinalizedProof`) using proper size encoding (Vector 16, SizedF 128). Created `Pickles.Step.Dummy` with dummy value generators. Tests verify dummy values are zero and `shouldFinalize = false`. Reference: unfinalized.ml:95-104, dummy.ml.
-
-- [x] **Step circuit combinator skeleton**: Created `Pickles.Step.Circuit` with:
-  - `PreviousProofStatement`, `StepReturn`, `StepStatement` types
-  - `stepCircuit` combinator that:
-    1. Runs application circuit to get `previousProofStatements` with `mustVerify` flags
-    2. For each previous proof: asserts `shouldFinalize == mustVerify`, calls `finalizeOtherProofStub`, asserts `finalized || not shouldFinalize`
-    3. Collects challenges and computes message digests (stubbed)
-    4. Returns `StepStatement`
-  - Stubs: `finalizeOtherProofStub`, `hashMessagesForNextStepProofStub`, `computeMessageForNextWrapProofStub`
-  - Tests verify the bootstrapping assertion `finalized || not shouldFinalize` with all 4 boolean combinations
-
 - [ ] **`finalizeOtherProof` for Step**: Implement the actual finalization logic (step_verifier.ml:823-1086). Takes deferred values + evaluations, returns `(finalized :: BoolVar, challenges :: Vector 16 f)`. Checks: xi_correct, b_correct, combined_inner_product_correct, plonk_checks_passed. Much of this is already implemented in `Pickles.PlonkChecks` - integrate with Step circuit.
 
 - [ ] **`hashMessagesForNextStepProof`**: Hash app state + challenges into digest (step_verifier.ml:1099+). Uses Poseidon sponge.
@@ -267,3 +255,70 @@ dummyUnfinalizedProof =
 - [ ] **`WrapProofWitness` type**: Define the witness data needed from a Wrap proof for Step to verify it. Includes evaluations, commitments, and sponge state.
 
 - [ ] **Integration test**: Run Step combinator with Schnorr circuit + real (non-stubbed) verification, verify circuit is satisfiable.
+
+---
+
+## Completed TODOs
+
+### 1. Step types and dummy proof generation
+
+**Final Implementation:**
+- `Pickles.Step.Types`: Core newtypes with proper size encoding
+  - `ScalarChallenge` = `SizedF 128 f` (128-bit challenges)
+  - `BulletproofChallenges` = `Vector 16 (ScalarChallenge f)` (16 IPA rounds)
+  - `PlonkMinimal` = record with alpha, beta, gamma, zeta challenges
+  - `DeferredValues` = full deferred values including shifted types (`Type1`)
+  - `UnfinalizedProof` = deferred values + `shouldFinalize` flag + sponge digest
+- `Pickles.Step.Dummy`: Dummy value generators for bootstrapping
+  - All values are zero, `shouldFinalize = false`
+- Both `CircuitType` and `CheckedType` instances for all types
+
+**Success Criteria:**
+- 5 unit tests pass verifying dummy values are zero and `shouldFinalize = false`
+- Types compile with proper `CircuitType` instances for circuit compilation
+- Types compile with proper `CheckedType` instances for constraint generation
+
+**Follow-up Tasks:**
+- None directly, but revealed need for `CheckedType` instances when testing the Step circuit combinator
+
+**Issues Encountered:**
+- Initial design used newtypes everywhere, but simplified to type aliases for `PreviousProofStatement`, `StepReturn`, `StepStatement` to reduce boilerplate
+
+---
+
+### 2. Step circuit combinator skeleton
+
+**Final Implementation:**
+- `Pickles.Step.Circuit` module with:
+  - `PreviousProofStatement` - type alias for `{ publicInput, mustVerify }` record
+  - `StepReturn` - type alias for application circuit return value
+  - `StepStatement` - type alias for Step circuit output
+  - `stepCircuit` combinator that:
+    1. Runs application circuit to get `previousProofStatements`
+    2. For each proof: asserts `shouldFinalize == mustVerify` via `assertEq`
+    3. Calls `finalizeOtherProofStub` (returns `true`, dummy challenges)
+    4. Asserts `finalized || not shouldFinalize` (bootstrapping assertion)
+    5. Computes message digests (stubbed to zero)
+    6. Returns `StepStatement`
+  - Helper: `assertBoolsEqual` using double implication
+
+**Success Criteria:**
+- Circuit compiles and is satisfiable with dummy proofs (base case)
+- Test: `trivialAppCircuit` returns `mustVerify = false`, combined with `dummyUnfinalizedProof` (`shouldFinalize = false`), circuit passes
+- 6 total tests pass (5 dummy + 1 circuit satisfiability)
+
+**Follow-up Tasks:**
+- Add `CheckedType` instance for `Type1 (FVar Vesta.ScalarField)` in `Snarky.Types.Shifted`
+- Add `CheckedType` instances for `BulletproofChallenges`, `PlonkMinimal`, `DeferredValues`, `UnfinalizedProof`
+
+**Issues Encountered:**
+
+1. **Initial test was trivial**: First attempt tested `P || not P` in isolation, which the user correctly identified as testing nothing meaningful. Rewrote to test the actual `stepCircuit` combinator.
+
+2. **Missing `CheckedType` instances**: The test framework requires `CheckedType` instances to allocate circuit variables. Had to add:
+   - `CheckedType Vesta.ScalarField c (Type1 (FVar Vesta.ScalarField))` - trivial instance since all values are valid (smaller field fits in larger)
+   - Generic instances for all Step types using `genericCheck`
+
+3. **Type alias vs newtype confusion**: Originally defined `StepReturn` and `StepStatement` as newtypes, but the module exported them with `(..)` syntax. Changed to type aliases (plain records) which is simpler and matches how they're used.
+
+4. **Value types vs variable types**: Test framework passes value types (`F f`, `Boolean`) which get converted to variable types (`FVar f`, `BoolVar f`) via `CircuitType`. Had to ensure input types used value types and circuit used variable types correctly.

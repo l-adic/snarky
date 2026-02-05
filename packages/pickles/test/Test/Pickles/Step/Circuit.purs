@@ -15,7 +15,7 @@ import Pickles.Step.Circuit (StepReturn, stepCircuit)
 import Pickles.Step.Dummy (dummyUnfinalizedProof)
 import Pickles.Step.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, false_)
 import Snarky.Circuit.Types (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -54,7 +54,7 @@ trivialAppCircuit
   => Unit
   -> Snarky (KimchiConstraint StepField) t m (StepReturn 1 Unit Unit Unit StepField)
 trivialAppCircuit _ = pure
-  { previousProofStatements: { publicInput: unit, mustVerify: const_ zero } :< nil
+  { previousProofStatements: { publicInput: unit, mustVerify: false_ } :< nil
   , publicOutput: unit
   , auxiliaryOutput: unit
   }

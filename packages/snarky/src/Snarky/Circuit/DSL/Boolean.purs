@@ -10,6 +10,8 @@ module Snarky.Circuit.DSL.Boolean
   , rIfThenElse
   , class GIfThenElse
   , gIfThenElse
+  , true_
+  , false_
   , xor_
   , all_
   , any_
@@ -32,13 +34,13 @@ import Prim.RowList (class RowToList)
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(Const, ScalarMul))
+import Snarky.Circuit.CVar (CVar(Const, ScalarMul), const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, exists, not_, or_, read, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F(..), FVar, UnChecked(..))
 import Snarky.Constraint.Basic (r1cs)
-import Snarky.Curves.Class (fromBigInt)
+import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -135,6 +137,14 @@ instance
     val <- if_ @f b (Record.get (Proxy @s) r1) (Record.get (Proxy @s) r2)
     rest <- rIfThenElse @f @c (Proxy @tail) b (Record.delete (Proxy @s) r1) (Record.delete (Proxy @s) r2)
     pure $ Record.insert (Proxy @s) val rest
+
+--------------------------------------------------------------------------------
+
+true_ :: forall f. PrimeField f => BoolVar f
+true_ = const_ one
+
+false_ :: forall f. PrimeField f => BoolVar f
+false_ = const_ zero
 
 xor_
   :: forall f c t m

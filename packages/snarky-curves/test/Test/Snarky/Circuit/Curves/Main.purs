@@ -12,8 +12,9 @@ import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Builder (class CompileCircuit, initialState)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
-import Snarky.Circuit.Curves (add_, assertEqual, assertOnCurve, double, if_)
+import Snarky.Circuit.Curves (add_, assertOnCurve, double)
 import Snarky.Circuit.Curves as Curves
+import Snarky.Circuit.DSL (assertEq, if_)
 import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Basic (Basic)
 import Snarky.Constraint.Basic as Basic
@@ -93,7 +94,7 @@ spec pg pc =
 
     it "assertEqual Circuit is Valid" $
       let
-        solver = makeSolver (Proxy @(Basic f)) (uncurry assertEqual)
+        solver = makeSolver (Proxy @(Basic f)) (uncurry assertEq)
         s =
           compilePure
             ( Proxy
@@ -104,7 +105,7 @@ spec pg pc =
             )
             (Proxy @Unit)
             pc
-            (uncurry assertEqual)
+            (uncurry assertEq)
             initialState
 
         same = do
