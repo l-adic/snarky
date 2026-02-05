@@ -16,27 +16,18 @@
 -- | Reference: mina/src/lib/pickles/unfinalized.ml, composition_types.ml
 module Pickles.Step.Types
   ( -- * Bulletproof Challenges
-    BulletproofChallenges(..)
+    BulletproofChallenges
   , ScalarChallenge
   -- * Plonk Deferred Values
-  , PlonkMinimal(..)
+  , PlonkMinimal
   -- * Full Deferred Values
-  , DeferredValues(..)
+  , DeferredValues
   -- * Unfinalized Proof
-  , UnfinalizedProof(..)
+  , UnfinalizedProof
   ) where
 
-import Prelude
-
-import Data.Generic.Rep (class Generic)
-import Data.Newtype (class Newtype)
-import Data.Show.Generic (genericShow)
 import Data.Vector (Vector)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F, FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.SizedF (SizedF)
-import Snarky.Types.Shifted (Type1)
 
 -------------------------------------------------------------------------------
 -- | Scalar Challenge (128-bit)
@@ -60,33 +51,7 @@ type ScalarChallenge f = SizedF 128 f
 -- | Each challenge is a 128-bit value derived from absorbing L/R pairs.
 -- |
 -- | Reference: unfinalized.ml:99 `bulletproof_challenges = Dummy.Ipa.Wrap.challenges`
-newtype BulletproofChallenges f = BulletproofChallenges (Vector 16 (ScalarChallenge f))
-
-derive instance Newtype (BulletproofChallenges f) _
-derive instance Eq f => Eq (BulletproofChallenges f)
-derive instance Generic (BulletproofChallenges f) _
-
-instance Show f => Show (BulletproofChallenges f) where
-  show = genericShow
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  ) =>
-  CircuitType f (BulletproofChallenges (F f)) (BulletproofChallenges (FVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(BulletproofChallenges (F f))
-  fieldsToVar = genericFieldsToVar @(BulletproofChallenges (F f))
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  , BasicSystem f c
-  ) =>
-  CheckedType f c (BulletproofChallenges (FVar f)) where
-  check = genericCheck
+type BulletproofChallenges f = Vector 16 (ScalarChallenge f)
 
 -------------------------------------------------------------------------------
 -- | Plonk Minimal Values
@@ -98,39 +63,13 @@ instance
 -- | proof, are all that's needed to derive the full In_circuit values.
 -- |
 -- | Reference: composition_types.ml:36-50 `Plonk.Minimal`
-newtype PlonkMinimal f = PlonkMinimal
+type PlonkMinimal f =
   { alpha :: ScalarChallenge f
   , beta :: f -- Note: beta/gamma are full challenges, not scalar
   , gamma :: f
   , zeta :: ScalarChallenge f
   -- jointCombiner omitted (None for now, used for lookups)
   }
-
-derive instance Newtype (PlonkMinimal f) _
-derive instance Eq f => Eq (PlonkMinimal f)
-derive instance Generic (PlonkMinimal f) _
-
-instance Show f => Show (PlonkMinimal f) where
-  show = genericShow
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  ) =>
-  CircuitType f (PlonkMinimal (F f)) (PlonkMinimal (FVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(PlonkMinimal (F f))
-  fieldsToVar = genericFieldsToVar @(PlonkMinimal (F f))
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  , BasicSystem f c
-  ) =>
-  CheckedType f c (PlonkMinimal (FVar f)) where
-  check = genericCheck
 
 -------------------------------------------------------------------------------
 -- | Deferred Values
@@ -146,43 +85,14 @@ instance
 -- | - Type2 for Wrap verifying Step (Step scalars > Wrap field)
 -- |
 -- | Reference: unfinalized.ml:95-101, composition_types.ml Deferred_values
-newtype DeferredValues f sf = DeferredValues
+type DeferredValues f sf =
   { plonk :: PlonkMinimal f
   , combinedInnerProduct :: sf
   , xi :: ScalarChallenge f
   , bulletproofChallenges :: BulletproofChallenges f
   , b :: sf
+  , perm :: sf -- Permutation argument scalar (shifted)
   }
-
-derive instance Newtype (DeferredValues f sf) _
-derive instance (Eq f, Eq sf) => Eq (DeferredValues f sf)
-derive instance Generic (DeferredValues f sf) _
-
-instance (Show f, Show sf) => Show (DeferredValues f sf) where
-  show = genericShow
-
--- CircuitType instance for Step verifying Wrap (Type1 shifted values)
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  ) =>
-  CircuitType f
-    (DeferredValues (F f) (Type1 (F f)))
-    (DeferredValues (FVar f) (Type1 (FVar f))) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(DeferredValues (F f) (Type1 (F f)))
-  fieldsToVar = genericFieldsToVar @(DeferredValues (F f) (Type1 (F f)))
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  , BasicSystem f c
-  , CheckedType f c (Type1 (FVar f))
-  ) =>
-  CheckedType f c (DeferredValues (FVar f) (Type1 (FVar f))) where
-  check = genericCheck
 
 -------------------------------------------------------------------------------
 -- | Unfinalized Proof
@@ -199,38 +109,8 @@ instance
 -- | - `BoolVar f` for circuit variable types
 -- |
 -- | Reference: unfinalized.ml:9-12 (comment), wrap_main.ml:431 (assertion)
-newtype UnfinalizedProof f sf b = UnfinalizedProof
+type UnfinalizedProof f sf b =
   { deferredValues :: DeferredValues f sf
   , shouldFinalize :: b
   , spongeDigestBeforeEvaluations :: f
   }
-
-derive instance Newtype (UnfinalizedProof f sf b) _
-derive instance (Eq f, Eq sf, Eq b) => Eq (UnfinalizedProof f sf b)
-derive instance Generic (UnfinalizedProof f sf b) _
-
-instance (Show f, Show sf, Show b) => Show (UnfinalizedProof f sf b) where
-  show = genericShow
-
--- CircuitType instance for Step verifying Wrap (Type1 shifted values)
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  ) =>
-  CircuitType f
-    (UnfinalizedProof (F f) (Type1 (F f)) Boolean)
-    (UnfinalizedProof (FVar f) (Type1 (FVar f)) (BoolVar f)) where
-  valueToFields = genericValueToFields
-  fieldsToValue = genericFieldsToValue
-  sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(UnfinalizedProof (F f) (Type1 (F f)) Boolean)
-  fieldsToVar = genericFieldsToVar @(UnfinalizedProof (F f) (Type1 (F f)) Boolean)
-
-instance
-  ( PrimeField f
-  , FieldSizeInBits f 255
-  , BasicSystem f c
-  , CheckedType f c (Type1 (FVar f))
-  ) =>
-  CheckedType f c (UnfinalizedProof (FVar f) (Type1 (FVar f)) (BoolVar f)) where
-  check = genericCheck

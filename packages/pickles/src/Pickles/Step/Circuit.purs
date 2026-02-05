@@ -11,9 +11,11 @@
 -- | Reference: mina/src/lib/pickles/step_main.ml:274-594
 module Pickles.Step.Circuit
   ( -- * Application Circuit Types
-    PreviousProofStatement
-  , StepReturn
+    AppCircuit
+  , AppCircuitInput
+  , AppCircuitOutput
   -- * Step Circuit Types
+  , StepInput
   , StepStatement
   -- * Step Circuit Combinator
   , stepCircuit
@@ -21,12 +23,11 @@ module Pickles.Step.Circuit
 
 import Prelude
 
-import Data.Newtype (unwrap)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Step.Types (BulletproofChallenges(..), ScalarChallenge, UnfinalizedProof)
+import Pickles.Step.Types (BulletproofChallenges, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, assertEq, assert_, const_, not_, or_)
 import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -38,33 +39,56 @@ import Snarky.Types.Shifted (Type1)
 -- | Application Circuit Types
 -------------------------------------------------------------------------------
 
--- | A previous proof statement from the application circuit.
+-- | Input to an application circuit.
 -- |
--- | The `mustVerify` flag indicates whether this proof should actually be verified.
--- | For base case (Step0), all `mustVerify` flags are false.
+-- | The application receives:
+-- | - `appInput`: Its own application-specific input
+-- | - `previousProofInputs`: Public inputs from previous proofs (for recursive apps)
 -- |
--- | Reference: pickles_intf.mli:168-178 `Previous_proof_statement`
-type PreviousProofStatement publicInput f =
-  { publicInput :: publicInput
-  , mustVerify :: BoolVar f
-  -- Note: proof witness is passed separately to stepCircuit
+-- | For base case (no recursion), `previousProofInputs` contains dummy values.
+type AppCircuitInput n input prevInput =
+  { appInput :: input
+  , previousProofInputs :: Vector n prevInput
   }
 
--- | Return type from an application circuit.
+-- | Output from an application circuit.
 -- |
--- | The application circuit returns previous proof statements (with mustVerify flags)
--- | and its public output. The auxiliary output is private prover data.
+-- | The application returns:
+-- | - `mustVerify`: Which previous proofs should actually be verified
+-- | - `publicOutput`: The application's public output
+-- | - `auxiliaryOutput`: Private prover data (not part of public statement)
 -- |
--- | Reference: pickles_intf.mli:184-190 `main_return`
-type StepReturn n publicInput publicOutput aux f =
-  { previousProofStatements :: Vector n (PreviousProofStatement publicInput f)
-  , publicOutput :: publicOutput
+-- | For base case, `mustVerify` should be all false.
+type AppCircuitOutput n output aux f =
+  { mustVerify :: Vector n (BoolVar f)
+  , publicOutput :: output
   , auxiliaryOutput :: aux
   }
 
+-- | Type alias for an application circuit in the Step context.
+-- |
+-- | An application circuit:
+-- | 1. Receives its input + previous proof public inputs
+-- | 2. Does its application logic (e.g., verify a signature)
+-- | 3. Returns which previous proofs to verify + its output
+-- |
+-- | The Step combinator handles the actual verification of previous proofs.
+type AppCircuit n input prevInput output aux f c t m =
+  AppCircuitInput n input prevInput
+  -> Snarky c t m (AppCircuitOutput n output aux f)
+
 -------------------------------------------------------------------------------
--- | Step Circuit Output Types
+-- | Step Circuit Types
 -------------------------------------------------------------------------------
+
+-- | Input to the Step circuit combinator.
+-- |
+-- | Bundles the application input with the proof witness data.
+type StepInput n input prevInput f sf b =
+  { appInput :: input
+  , previousProofInputs :: Vector n prevInput
+  , unfinalizedProofs :: Vector n (UnfinalizedProof f sf b)
+  }
 
 -- | The Step circuit's output statement.
 -- |
@@ -95,21 +119,11 @@ dummyScalarChallengeVar = SizedF (const_ zero)
 -- |
 -- | These are all-zero challenges lifted into the circuit with `const_`.
 dummyBulletproofChallengesVar :: forall f. PrimeField f => BulletproofChallenges (FVar f)
-dummyBulletproofChallengesVar = BulletproofChallenges $ Vector.generate \_ -> dummyScalarChallengeVar
+dummyBulletproofChallengesVar = Vector.generate \_ -> dummyScalarChallengeVar
 
 -------------------------------------------------------------------------------
--- | Step Circuit Combinator
+-- | Stub Implementations
 -------------------------------------------------------------------------------
-
--- | Type alias for an application circuit in the Step context.
--- |
--- | Takes the application's public input and returns:
--- | - Previous proof statements with mustVerify flags
--- | - Public output
--- | - Auxiliary (private) output
-type AppCircuit n input prevInput output aux f c t m =
-  input
-  -> Snarky c t m (StepReturn n prevInput output aux f)
 
 -- | Stub: Finalize another proof's deferred values.
 -- |
@@ -165,14 +179,21 @@ computeMessageForNextWrapProofStub _challenges = do
   -- Stub: return zero digest
   pure $ const_ zero
 
+-------------------------------------------------------------------------------
+-- | Step Circuit Combinator
+-------------------------------------------------------------------------------
+
 -- | The Step circuit combinator.
 -- |
--- | Combines an application circuit with verification of previous Wrap proofs.
+-- | Takes an application circuit and returns a Step circuit that:
+-- | 1. Runs the application circuit
+-- | 2. Verifies previous Wrap proofs based on `mustVerify` flags
+-- | 3. Returns a StepStatement for the Wrap circuit
 -- |
 -- | **Processing (see step_main.ml:274-594):**
--- | 1. Run application circuit → get `previousProofStatements` with `mustVerify` flags
--- | 2. For each previous proof:
--- |    - Assert `unfinalizedProof.shouldFinalize == statement.mustVerify`
+-- | 1. Run application circuit → get `mustVerify` flags
+-- | 2. For each previous proof where `mustVerify = true`:
+-- |    - Assert `unfinalizedProof.shouldFinalize == mustVerify`
 -- |    - Call `finalizeOtherProof` → `(finalized, challenges)`
 -- |    - Assert `finalized || not shouldFinalize` (key bootstrapping assertion)
 -- | 3. Collect bulletproof challenges
@@ -180,7 +201,7 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | 5. Return StepStatement
 -- |
 -- | **For base case (Step0):** All `shouldFinalize = false`, all `mustVerify = false`,
--- | assertion passes trivially.
+-- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- |
 -- | Note: This is a skeleton implementation. `finalizeOtherProof` and hashing
 -- | are stubbed out - they return dummy values to enable testing the circuit structure.
@@ -190,27 +211,22 @@ stepCircuit
   => FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
   => AppCircuit n input prevInput output aux f (KimchiConstraint f) t m
-  -> { appInput :: input
-     , unfinalizedProofs :: Vector n (UnfinalizedProof (FVar f) (Type1 (FVar f)) (BoolVar f))
-     }
+  -> StepInput n input prevInput (FVar f) (Type1 (FVar f)) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (StepStatement n (FVar f) (Type1 (FVar f)) (BoolVar f))
-stepCircuit appCircuit { appInput, unfinalizedProofs } = do
+stepCircuit appCircuit { appInput, previousProofInputs, unfinalizedProofs } = do
   -- 1. Run application circuit
-  { previousProofStatements } <- appCircuit appInput
+  { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. For each previous proof, verify and collect challenges
   let
-    stmtsAndProofs = Vector.zip previousProofStatements unfinalizedProofs
+    proofsAndFlags = Vector.zip unfinalizedProofs mustVerify
 
-  challengesAndDigests <- for stmtsAndProofs \(Tuple stmt unfinalized) -> do
+  challengesAndDigests <- for proofsAndFlags \(Tuple unfinalized mustVerifyFlag) -> do
     let
-      { mustVerify } = stmt
-      shouldFinalize = (unwrap unfinalized).shouldFinalize
+      shouldFinalize = unfinalized.shouldFinalize
 
     -- 2a. Assert shouldFinalize == mustVerify (step_main.ml:34)
-    -- Note: For proper implementation, this should use assertEqual_ on BoolVars
-    -- For skeleton, we just check they're consistent
-    assertEq shouldFinalize mustVerify
+    assertEq shouldFinalize mustVerifyFlag
 
     -- 2b. Finalize the proof (stub for now)
     { finalized, challenges } <- finalizeOtherProofStub unfinalized

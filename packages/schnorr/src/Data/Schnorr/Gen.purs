@@ -99,6 +99,7 @@ genValidSignature pg pn = do
 
           -- Compute 2^n in scalar field for shift compensation
           n = fieldSizeBits (Proxy @f)
+
           twoToN :: f'
           twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
 

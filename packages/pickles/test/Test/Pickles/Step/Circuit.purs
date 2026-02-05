@@ -10,10 +10,9 @@ module Test.Pickles.Step.Circuit
 import Prelude
 
 import Data.Identity (Identity)
-import Data.Vector (Vector, nil, (:<))
-import Pickles.Step.Circuit (StepReturn, stepCircuit)
+import Data.Vector (nil, (:<))
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyUnfinalizedProof)
-import Pickles.Step.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, false_)
 import Snarky.Circuit.Types (F)
@@ -33,15 +32,11 @@ type StepField = Vesta.ScalarField
 
 -- | Value type for test input
 type StepTestInput =
-  { appInput :: Unit
-  , unfinalizedProofs :: Vector 1 (UnfinalizedProof (F StepField) (Type1 (F StepField)) Boolean)
-  }
+  StepInput 1 Unit Unit (F StepField) (Type1 (F StepField)) Boolean
 
 -- | Variable type for circuit
 type StepTestInputVar =
-  { appInput :: Unit
-  , unfinalizedProofs :: Vector 1 (UnfinalizedProof (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField))
-  }
+  StepInput 1 Unit Unit (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit
@@ -51,10 +46,10 @@ type StepTestInputVar =
 trivialAppCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Unit
-  -> Snarky (KimchiConstraint StepField) t m (StepReturn 1 Unit Unit Unit StepField)
+  => AppCircuitInput 1 Unit Unit
+  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
 trivialAppCircuit _ = pure
-  { previousProofStatements: { publicInput: unit, mustVerify: false_ } :< nil
+  { mustVerify: false_ :< nil
   , publicOutput: unit
   , auxiliaryOutput: unit
   }
@@ -84,6 +79,7 @@ spec = describe "Pickles.Step.Circuit" do
       input :: StepTestInput
       input =
         { appInput: unit
+        , previousProofInputs: unit :< nil
         , unfinalizedProofs: dummyUnfinalizedProof :< nil
         }
 

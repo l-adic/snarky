@@ -12,6 +12,7 @@ import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
 import Test.Pickles.Step as Step
+import Test.Pickles.StepE2E as StepE2E
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -29,6 +30,7 @@ main = runSpecAndExitProcess'
       Linearization.spec
       Permutation.spec
       Step.spec
+      StepE2E.spec
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x

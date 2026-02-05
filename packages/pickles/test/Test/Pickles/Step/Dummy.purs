@@ -8,11 +8,10 @@ import Prelude
 
 import Data.Array as Array
 import Data.Maybe (fromJust)
-import Data.Newtype (unwrap)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dummyPlonkMinimal, dummyScalarChallenge, dummyUnfinalizedProof)
-import Pickles.Step.Types (BulletproofChallenges(..), DeferredValues(..), PlonkMinimal(..), ScalarChallenge, UnfinalizedProof)
+import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.SizedF (SizedF(..))
@@ -55,7 +54,7 @@ spec = describe "Dummy values" do
     x `shouldEqual` zero
 
   it "dummyBulletproofChallenges has 16 zero challenges" do
-    let BulletproofChallenges chals = dummyBulletproofChallenges'
+    let chals = dummyBulletproofChallenges'
     let arr = Vector.toUnfoldable chals :: Array _
     Array.length arr `shouldEqual` 16
     -- Check first challenge is zero
@@ -63,7 +62,7 @@ spec = describe "Dummy values" do
     first `shouldEqual` zero
 
   it "dummyPlonkMinimal has zero challenges" do
-    let PlonkMinimal p = dummyPlonkMinimal'
+    let p = dummyPlonkMinimal'
     let SizedF (F alpha) = p.alpha
     let F beta = p.beta
     let F gamma = p.gamma
@@ -74,7 +73,7 @@ spec = describe "Dummy values" do
     zeta `shouldEqual` zero
 
   it "dummyDeferredValues has zero values" do
-    let DeferredValues d = dummyDeferredValues'
+    let d = dummyDeferredValues'
     let Type1 (F cip) = d.combinedInnerProduct
     let Type1 (F b) = d.b
     cip `shouldEqual` zero
@@ -82,5 +81,4 @@ spec = describe "Dummy values" do
 
   it "dummyUnfinalizedProof has shouldFinalize = false" do
     let proof = dummyUnfinalizedProof' (Proxy :: Proxy StepField)
-    let { shouldFinalize } = unwrap proof
-    shouldFinalize `shouldEqual` false
+    proof.shouldFinalize `shouldEqual` false

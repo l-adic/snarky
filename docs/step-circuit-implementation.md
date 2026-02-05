@@ -246,13 +246,63 @@ dummyUnfinalizedProof =
 3. **Feature flags** for optional circuit features (lookups, etc.)
 4. **Public input packing** into field elements
 
+## Type Design Guidelines
+
+1. **Encode static sizes in types**: Whenever a static size is known, encode it in the type using `Vector n`, `SizedF n`, or type-level parameters. This catches size mismatches at compile time.
+
+2. **Prefer newtypes over type aliases for shared types**: Types shared between modules (not including tests) should be newtypes or data types with a clean interface, not type aliases. This provides:
+   - Better error messages (the newtype name appears instead of the expanded record)
+   - Ability to add instances without orphans
+   - Clear abstraction boundary
+   - Explicit wrapping/unwrapping makes data flow visible
+
 ## TODOs
 
-- [ ] **`finalizeOtherProof` for Step**: Implement the actual finalization logic (step_verifier.ml:823-1086). Takes deferred values + evaluations, returns `(finalized :: BoolVar, challenges :: Vector 16 f)`. Checks: xi_correct, b_correct, combined_inner_product_correct, plonk_checks_passed. Much of this is already implemented in `Pickles.PlonkChecks` - integrate with Step circuit.
+### `finalizeOtherProof` for Step (step_verifier.ml:823-1086)
+
+**Existing components we can reuse:**
+| Component | Module | Function |
+|-----------|--------|----------|
+| Sponge operations | `Pickles.Sponge` | `SpongeM`, `absorb`, `squeeze`, `squeezeScalarChallenge` |
+| xi/r derivation | `Pickles.PlonkChecks` | `plonkChecksCircuit` (derives xi, r; checks xi; computes CIP) |
+| b correctness | `Pickles.IPA` | `bCorrectCircuit` |
+| Permutation scalar | `Pickles.PlonkChecks.Permutation` | `permScalarCircuit` |
+
+**Subtasks:**
+
+- [x] **1. Plonk arithmetic check circuit (`plonkArithmeticCheckCircuit`)** ✓
+  - Added `perm :: sf` to `DeferredValues` type
+  - Compute `permScalarCircuit` in-circuit
+  - Compare against claimed `perm` value using `fromShiftedType1Circuit`
+  - Return `BoolVar` for whether they match
+  - Reference: `Plonk_checks.checked` in plonk_checks.ml:450-476
+
+- [ ] **2. Challenge digest computation (`challengeDigestCircuit`)**
+  - Take `Vector n (Vector 16 (ScalarChallenge f))` old bulletproof challenges
+  - Take `Vector n Boolean` mask (which proofs are "real" vs dummy)
+  - Absorb challenges into opt_sponge (only absorb if mask[i] = true)
+  - Squeeze to get challenge_digest
+  - Reference: step_verifier.ml:885-896
+
+- [ ] **3. Compose `finalizeOtherProof` circuit**
+  - Input: `UnfinalizedProof`, `WrapProofWitness`, old challenges
+  - Flow:
+    1. Compute challenge_digest from old bulletproof challenges
+    2. Absorb challenge_digest into sponge
+    3. Call `plonkChecksCircuit` → gets xi_correct, combinedInnerProduct
+    4. Absorb combinedInnerProduct for IPA
+    5. Call `bCorrectCircuit` with new bulletproof_challenges
+    6. Call `plonkArithmeticCheckCircuit`
+    7. Return `(Boolean.all [xi_correct, cip_correct, b_correct, plonk_correct], challenges)`
+  - Reference: step_verifier.ml:823-1086
+
+- [ ] **4. Tests for finalizeOtherProof**
+  - Test with dummy proofs (base case, all checks should pass trivially)
+  - Test with real proof data extracted from Rust FFI (similar to existing IPA tests)
+
+### Other TODOs
 
 - [ ] **`hashMessagesForNextStepProof`**: Hash app state + challenges into digest (step_verifier.ml:1099+). Uses Poseidon sponge.
-
-- [ ] **`WrapProofWitness` type**: Define the witness data needed from a Wrap proof for Step to verify it. Includes evaluations, commitments, and sponge state.
 
 - [ ] **Integration test**: Run Step combinator with Schnorr circuit + real (non-stubbed) verification, verify circuit is satisfiable.
 
@@ -322,3 +372,25 @@ dummyUnfinalizedProof =
 3. **Type alias vs newtype confusion**: Originally defined `StepReturn` and `StepStatement` as newtypes, but the module exported them with `(..)` syntax. Changed to type aliases (plain records) which is simpler and matches how they're used.
 
 4. **Value types vs variable types**: Test framework passes value types (`F f`, `Boolean`) which get converted to variable types (`FVar f`, `BoolVar f`) via `CircuitType`. Had to ensure input types used value types and circuit used variable types correctly.
+
+---
+
+### 3. WrapProofWitness type
+
+**Final Implementation:**
+- `Pickles.Step.WrapProofWitness` module with:
+  - `AllEvals` - polynomial evaluations at zeta and zeta*omega (public, z, 6 index, 15 witness, 15 coefficient, 6 sigma)
+  - `LrPair` - L/R commitment points from IPA rounds
+  - `OpeningProof` - IPA opening proof components (lr pairs, sg, delta, z1, z2)
+  - `VerifierData` - verification key data (shifts, endo, combined polynomial, blinding generator)
+  - `WrapProofWitness` - complete witness bundle for `finalizeOtherProof`
+- All types have `CircuitType` and `CheckedType` instances using generic deriving
+- Sizes encoded in types: `Vector 16 (LrPair f)`, `Vector 6 (PointEval f)`, etc.
+
+**Success Criteria:**
+- Types compile with proper instances (verified by successful build)
+- Design matches OCaml step_verifier.ml structure
+
+**Notes:**
+- Dummy generators for `WrapProofWitness` are NOT needed for bootstrapping. The base case uses `shouldFinalize = false` which skips verification entirely.
+- Real witness values will be needed when implementing `finalizeOtherProof` with actual verification logic.

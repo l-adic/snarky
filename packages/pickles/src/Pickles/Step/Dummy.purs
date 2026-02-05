@@ -16,9 +16,8 @@ module Pickles.Step.Dummy
 
 import Prelude
 
-import Data.Newtype (wrap)
 import Data.Vector as Vector
-import Pickles.Step.Types (BulletproofChallenges(..), DeferredValues(..), PlonkMinimal(..), ScalarChallenge, UnfinalizedProof)
+import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.SizedF (SizedF(..))
 import Snarky.Types.Shifted (Type1(..))
@@ -42,7 +41,7 @@ dummyScalarChallenge = SizedF zero
 -- |
 -- | Reference: dummy.ml:31-34 `Ipa.Wrap.challenges`
 dummyBulletproofChallenges :: forall f. PrimeField f => BulletproofChallenges f
-dummyBulletproofChallenges = BulletproofChallenges $ Vector.generate \_ -> dummyScalarChallenge
+dummyBulletproofChallenges = Vector.generate \_ -> dummyScalarChallenge
 
 -------------------------------------------------------------------------------
 -- | Dummy Plonk Minimal
@@ -52,7 +51,7 @@ dummyBulletproofChallenges = BulletproofChallenges $ Vector.generate \_ -> dummy
 -- |
 -- | Reference: unfinalized.ml:33-42
 dummyPlonkMinimal :: forall f. PrimeField f => PlonkMinimal f
-dummyPlonkMinimal = PlonkMinimal
+dummyPlonkMinimal =
   { alpha: dummyScalarChallenge
   , beta: zero
   , gamma: zero
@@ -70,12 +69,13 @@ dummyPlonkMinimal = PlonkMinimal
 -- |
 -- | Reference: unfinalized.ml:95-101
 dummyDeferredValues :: forall f. PrimeField f => DeferredValues f (Type1 f)
-dummyDeferredValues = DeferredValues
+dummyDeferredValues =
   { plonk: dummyPlonkMinimal
   , combinedInnerProduct: Type1 zero
   , xi: dummyScalarChallenge
   , bulletproofChallenges: dummyBulletproofChallenges
   , b: Type1 zero
+  , perm: Type1 zero
   }
 
 -------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ dummyDeferredValues = DeferredValues
 -- |
 -- | Reference: unfinalized.ml:102 `should_finalize = false`
 dummyUnfinalizedProof :: forall f. PrimeField f => UnfinalizedProof f (Type1 f) Boolean
-dummyUnfinalizedProof = wrap
+dummyUnfinalizedProof =
   { deferredValues: dummyDeferredValues
   , shouldFinalize: false
   , spongeDigestBeforeEvaluations: zero
