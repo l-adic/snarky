@@ -249,16 +249,26 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
   valueToFields as = foldMap valueToFields as
   fieldsToValue as =
     let
-      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToValue <$> cs
+      elemSize = sizeInFields (Proxy @f) (Proxy @a)
+      vecLen = reflectType (Proxy @n)
+      -- Handle zero-sized elements: chunk 0 returns [], so we need to
+      -- generate vecLen elements directly
+      vals =
+        if elemSize == 0 then Array.replicate vecLen (fieldsToValue @f @a [])
+        else fieldsToValue @f @a <$> Vector.chunk elemSize as
     in
       unsafePartial $ fromJust $ toVector @n vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
   varToFields as = foldMap (varToFields @f @a) as
   fieldsToVar as =
     let
-      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToVar @f @a <$> cs
+      elemSize = sizeInFields (Proxy @f) (Proxy @a)
+      vecLen = reflectType (Proxy @n)
+      -- Handle zero-sized elements: chunk 0 returns [], so we need to
+      -- generate vecLen elements directly
+      vals =
+        if elemSize == 0 then Array.replicate vecLen (fieldsToVar @f @a [])
+        else fieldsToVar @f @a <$> Vector.chunk elemSize as
     in
       unsafePartial $ fromJust $ toVector @n vals
 
