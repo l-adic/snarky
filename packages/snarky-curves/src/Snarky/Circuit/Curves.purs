@@ -1,9 +1,8 @@
 module Snarky.Circuit.Curves
-  ( assertOnCurve
-  , assertEqual
-  , negate
-  , add_
+  ( add_
+  , assertOnCurve
   , double
+  , negate
   ) where
 
 import Prelude
@@ -24,16 +23,6 @@ assertOnCurve { a, b } { x, y } = do
   rhs <- (x `pow_` 3) + (a `mul_` x) + (pure b)
   y2 <- mul_ y y
   assertEqual_ y2 rhs
-
-assertEqual
-  :: forall f c t m
-   . CircuitM f c t m
-  => AffinePoint (FVar f)
-  -> AffinePoint (FVar f)
-  -> Snarky c t m Unit
-assertEqual { x: x1, y: y1 } { x: x2, y: y2 } = do
-  assertEqual_ x1 x2
-  assertEqual_ y1 y2
 
 negate
   :: forall f c t m

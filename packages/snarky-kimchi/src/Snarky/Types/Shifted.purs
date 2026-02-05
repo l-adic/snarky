@@ -57,7 +57,7 @@ instance CircuitType f (Type1 (F f)) (Type1 (FVar f)) where
   fieldsToVar = genericFieldsToVar @(Type1 (F f))
 
 -- | Check that a Type1 value is not one of the forbidden shifted values.
--- | This is specialized for the Vesta cross-field case.
+-- | This is specialized for the Vesta cross-field case (Wrap circuit).
 instance CheckedType Vesta.BaseField c (Type1 (FVar Vesta.BaseField)) where
   check (Type1 t) = do
     -- For each forbidden value, check if t equals it
@@ -66,6 +66,12 @@ instance CheckedType Vesta.BaseField c (Type1 (FVar Vesta.BaseField)) where
     matchesForbidden <- traverse (equals_ t) forbiddenConstants
     anyMatch <- any_ matchesForbidden
     assert_ (not_ anyMatch)
+
+-- | CheckedType instance for Step circuit (runs on Vesta.ScalarField).
+-- | Type1 values here represent Pallas.ScalarField values shifted into the larger field.
+-- | Since Pallas.ScalarField < Vesta.ScalarField, all values are valid (no forbidden values).
+instance CheckedType Vesta.ScalarField c (Type1 (FVar Vesta.ScalarField)) where
+  check _ = pure unit
 
 fieldSizeBits :: forall f n. FieldSizeInBits f n => Proxy f -> Int
 fieldSizeBits _ = reflectType (Proxy :: Proxy n)
