@@ -8,6 +8,7 @@ import Prelude
 import Effect.Class (liftEffect)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
@@ -51,7 +52,7 @@ spec' _ curveName = do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
         f :: SizedF 128 (F f) -> F f
-        f x = toFieldPure x (endoScalar @f' @f)
+        f x = toFieldPure (coerce x) (endoScalar @(F f') @(F f))
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 

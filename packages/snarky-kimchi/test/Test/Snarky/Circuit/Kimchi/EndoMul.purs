@@ -12,17 +12,17 @@ import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoScalar, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Data.SizedF (SizedF, coerceViaBits)
+import Snarky.Data.SizedF (SizedF)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
@@ -50,7 +50,7 @@ endoSpec _ curveProxy curveName =
         f (Tuple { x: F x, y: F y } scalar) =
           let
             base = fromAffine @f @g { x, y }
-            effectiveScalar = toFieldPure (coerceViaBits scalar) (endoScalar :: f')
+            effectiveScalar = expandToEndoScalar scalar :: F f'
             result = scalarMul (unwrap effectiveScalar) base
             { x, y } = unsafePartial $ fromJust $ toAffine @f result
           in
@@ -116,7 +116,7 @@ endoInvSpec _ curveProxy curveName =
         refFn (Tuple { x: F x, y: F y } scalar) =
           let
             -- Convert scalar to effective scalar in f'
-            effectiveScalar = toFieldPure (coerceViaBits scalar) (endoScalar :: f')
+            effectiveScalar = expandToEndoScalar scalar :: F f'
             -- Compute inverse
             invScalar = recip effectiveScalar
             -- Scale the point

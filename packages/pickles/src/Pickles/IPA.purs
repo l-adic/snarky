@@ -46,7 +46,6 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Foldable (fold, foldM, product)
-import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -62,14 +61,14 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, if_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMapCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
 import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, endoScalar, fromAffine, pow, scalarMul)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF, coerceViaBits)
+import Snarky.Data.SizedF (SizedF)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 -------------------------------------------------------------------------------
@@ -305,16 +304,12 @@ bulletReduce
   -> g
 bulletReduce { pairs, challenges } =
   let
-    -- Convert 128-bit challenge to full field element using endo coefficient
-    toFullChallenge :: SizedF 128 f -> f'
-    toFullChallenge raw128 = unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar @f @f')
-
     -- Compute one term: endoInv(L, u) + endo(R, u)
     -- where u is the full field challenge
     computeTerm :: LrPair f -> SizedF 128 f -> g
     computeTerm { l, r } raw128 =
       let
-        fullChal = toFullChallenge raw128
+        fullChal = expandToEndoScalar raw128 :: f'
         fullChalInv = recip fullChal
         -- L * chal_inv
         lPoint = fromAffine @f @g l

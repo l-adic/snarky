@@ -30,7 +30,6 @@ module Pickles.PlonkChecks.XiCorrect
 import Prelude
 
 import Data.Foldable (traverse_)
-import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, initialSponge, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
@@ -248,8 +247,9 @@ frSpongeChallengesPure input =
     rawR <- squeezeScalarChallengePure
 
     -- 7. Expand to full field via endo for CIP use
-    let xi = unwrap $ toFieldPure (coerceViaBits rawXi) input.endo
-        evalscale = unwrap $ toFieldPure (coerceViaBits rawR) input.endo
+    let
+      xi = toFieldPure (coerceViaBits rawXi) input.endo
+      evalscale = toFieldPure (coerceViaBits rawR) input.endo
 
     pure { rawXi, xi, rawR, evalscale }
 

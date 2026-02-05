@@ -34,7 +34,7 @@ import Prelude
 import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
@@ -116,10 +116,10 @@ expandPlonkMinimal
   -> PlonkMinimal (F f)
   -> PlonkExpanded f
 expandPlonkMinimal endo plonk =
-  { alpha: unwrap $ toFieldPure plonk.alpha endo
+  { alpha: unwrap $ toFieldPure plonk.alpha (F endo)
   , beta: unwrap plonk.beta
   , gamma: unwrap plonk.gamma
-  , zeta: unwrap $ toFieldPure plonk.zeta endo
+  , zeta: unwrap $ toFieldPure plonk.zeta (F endo)
   }
 
 -- | Expand PlonkMinimal scalar challenges to full field values in-circuit.

@@ -1,6 +1,7 @@
 module Snarky.Circuit.Kimchi.EndoScalar
   ( toField
   , toFieldPure
+  , expandToEndoScalar
   ) where
 
 import Prelude
@@ -15,11 +16,11 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, scale_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, scale_)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt)
-import Snarky.Data.SizedF (SizedF, toBits)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar, fromInt)
+import Snarky.Data.SizedF (SizedF, coerceViaBits, toBits)
 
 -- | Circuit version of endomorphism scalar decomposition.
 -- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.
@@ -100,9 +101,9 @@ toFieldPure
    . PrimeField f
   => FieldSizeInBits f n
   => Compare 128 n LT
-  => SizedF 128 (F f)
+  => SizedF 128 f
   -> f
-  -> F f
+  -> f
 toFieldPure challenge endo =
   let
     bits :: Vector 128 Boolean
@@ -126,6 +127,17 @@ toFieldPure challenge endo =
 
     { a, b } = foldl processChunk { a: fromInt 2, b: fromInt 2 } chunked
   in
-    F $ a * endo + b
+    a * endo + b
   where
   double x = x + x
+
+expandToEndoScalar
+  :: forall f f' n
+   . HasEndo f f'
+  => FieldSizeInBits f n
+  => FieldSizeInBits f' n
+  => PrimeField f'
+  => Compare 128 n LT
+  => SizedF 128 f
+  -> f'
+expandToEndoScalar f = toFieldPure (coerceViaBits f) (endoScalar :: f')

@@ -24,7 +24,7 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
 import Data.Maybe (fromJust)
-import Data.Newtype (un, unwrap)
+import Data.Newtype (un)
 import Data.Schnorr (isEven, truncateFieldCoerce)
 import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
@@ -64,7 +64,7 @@ import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEqual_, assert_)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.GroupMap (groupMapParams)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Circuit.Types (F(..))
@@ -75,7 +75,7 @@ import Snarky.Curves.Class (endoScalar, fromAffine, fromBigInt, generator, pow, 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF(..), coerceViaBits)
+import Snarky.Data.SizedF (SizedF(..))
 import Snarky.Types.Shifted (Type1, fromShifted, toShifted)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof)
@@ -1100,7 +1100,7 @@ extractChallengesCircuitTest ctx = do
 
         endoMappedChallenges :: Array Pallas.BaseField
         endoMappedChallenges = Vector.toUnfoldable $ map
-          (\raw128 -> unwrap $ toFieldPure (coerceViaBits raw128) (endoScalar :: Pallas.BaseField))
+          (\c -> expandToEndoScalar c :: Pallas.BaseField)
           challenges
       in
         if endoMappedChallenges /= Vector.toUnfoldable rustChallenges then unsafeThrow "unexpected endoMappedChallenges"

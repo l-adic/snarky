@@ -11,15 +11,16 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, read, scale_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoBase, endoScalar, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoBase, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF, coerceViaBits)
+import Snarky.Data.SizedF (SizedF)
 import Snarky.Data.SizedF as SizedF
 
 {-
@@ -131,12 +132,12 @@ endoInv g scalar = do
 
     -- Compute effective scalar in the scalar field f'
     let
-      effectiveScalar :: F f'
-      effectiveScalar = toFieldPure (coerceViaBits scalarVal) (endoScalar @f @f')
+      effectiveScalar :: f'
+      effectiveScalar = expandToEndoScalar (coerce scalarVal :: SizedF 128 f)
 
     -- Compute inverse scalar
     let
-      invScalar :: F f'
+      invScalar :: f'
       invScalar = recip effectiveScalar
 
     -- Convert input point to curve group element and scale by inverse
@@ -145,7 +146,7 @@ endoInv g scalar = do
       gPoint = fromAffine @f @g { x: gx, y: gy }
 
       resultPoint :: g
-      resultPoint = scalarMul (unwrap invScalar) gPoint
+      resultPoint = scalarMul invScalar gPoint
 
     -- Convert result back to AffinePoint
     let { x: rx, y: ry } = unsafePartial $ fromJust $ toAffine @f @g resultPoint
