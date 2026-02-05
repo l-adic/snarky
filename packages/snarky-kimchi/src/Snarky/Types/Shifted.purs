@@ -10,6 +10,8 @@ module Snarky.Types.Shifted
   , forbiddenShiftedValues
   , forbiddenType1Values
   , forbiddenType2Values
+  , fromShiftedType1Circuit
+  , fromShiftedType2Circuit
   ) where
 
 import Prelude
@@ -25,8 +27,9 @@ import Data.Tuple (Tuple(..))
 import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
-import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, BoolVar, F(..), FVar, and_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar (CVar(..), add_, scale_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, and_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
 import Snarky.Circuit.DSL.Assert (assert_)
 import Snarky.Circuit.DSL.Boolean (any_)
 import Snarky.Circuit.DSL.Field (equals_)
@@ -174,6 +177,43 @@ instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.BaseField) Boolean) whe
       twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
     in
       F $ fromBigInt (sBigInt + twoToN)
+
+--------------------------------------------------------------------------------
+-- Circuit-level unshifting
+--
+-- These convert shifted circuit variables back to raw field elements.
+-- Used in verification to compare claimed (shifted) values against computed values.
+-- Only fromShifted is provided since toShifted for Type2 requires monadic unpacking.
+--------------------------------------------------------------------------------
+
+-- | Unshift a Type1 circuit variable: s = 2*t + 2^n + 1
+fromShiftedType1Circuit
+  :: forall f n
+   . PrimeField f
+  => FieldSizeInBits f n
+  => Type1 (FVar f)
+  -> FVar f
+fromShiftedType1Circuit (Type1 t) =
+  let
+    { c } = shift1 (Proxy @f)
+    two = fromBigInt (fromInt 2)
+  in
+    add_ (scale_ two t) (const_ c)
+
+-- | Unshift a Type2 circuit variable: s = 2*sDiv2 + sOdd + 2^n
+fromShiftedType2Circuit
+  :: forall f n
+   . PrimeField f
+  => FieldSizeInBits f n
+  => Type2 (FVar f) (BoolVar f)
+  -> FVar f
+fromShiftedType2Circuit (Type2 { sDiv2, sOdd }) =
+  let
+    n = fieldSizeBits (Proxy @f)
+    two = fromBigInt (fromInt 2)
+    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
+  in
+    add_ (add_ (scale_ two sDiv2) (coerce sOdd :: FVar f)) (const_ twoToN)
 
 --------------------------------------------------------------------------------
 -- Utility functions

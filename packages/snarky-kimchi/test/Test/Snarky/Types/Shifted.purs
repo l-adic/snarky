@@ -3,13 +3,20 @@ module Test.Snarky.Types.Shifted where
 import Prelude
 
 import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import JS.BigInt as BigInt
+import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.Types (F(..))
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (class Shifted, Type1, Type2(..), fieldSizeBits, fromShifted, joinField, splitField, toShifted)
+import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, joinField, splitField, toShifted)
 import Test.QuickCheck (Result, (===))
 import Test.QuickCheck.Gen (Gen, chooseInt, oneOf)
+import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
@@ -93,6 +100,46 @@ genDangerZone =
     oneOf $ NEA.cons' genNearZero [ genNearMax, genNearHalf, genEven ]
 
 --------------------------------------------------------------------------------
+-- Circuit-level tests for fromShiftedType1Circuit and fromShiftedType2Circuit
+--------------------------------------------------------------------------------
+
+-- | Circuit that computes fromShiftedType1Circuit.
+type1Circuit
+  :: forall t
+   . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
+  => Type1 (FVar Vesta.BaseField)
+  -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (FVar Vesta.BaseField)
+type1Circuit shifted = pure $ fromShiftedType1Circuit shifted
+
+-- | Circuit that computes fromShiftedType2Circuit.
+type2Circuit
+  :: forall t
+   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
+  => Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)
+  -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
+type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
+
+-- | Pure computation for Type1: s = 2*t + 2^n + 1
+type1Expected :: Type1 (F Vesta.BaseField) -> F Vesta.BaseField
+type1Expected (Type1 (F t)) =
+  let
+    n = fieldSizeBits (Proxy :: Proxy Vesta.BaseField)
+    two = fromBigInt (BigInt.fromInt 2)
+    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
+  in
+    F (two * t + twoToN + one)
+
+-- | Pure computation for Type2: s = 2*sDiv2 + sOdd + 2^n
+type2Expected :: Type2 (F Pallas.BaseField) Boolean -> F Pallas.BaseField
+type2Expected (Type2 { sDiv2: F d, sOdd }) =
+  let
+    n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
+    two = fromBigInt (BigInt.fromInt 2)
+    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
+  in
+    F (two * d + (if sOdd then one else zero) + twoToN)
+
+--------------------------------------------------------------------------------
 -- Spec
 --------------------------------------------------------------------------------
 
@@ -116,3 +163,43 @@ spec = do
         quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField)
       it "fromShifted (toShifted s) == s + 2^n (danger zone)" $
         quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField <$> genDangerZone)
+
+    describe "fromShiftedType1Circuit" do
+      it "circuit matches pure implementation" do
+        let
+          gen = toShifted <$> genDangerZone @Vesta.ScalarField
+          st = compilePure
+            (Proxy @(Type1 (F Vesta.BaseField)))
+            (Proxy @(F Vesta.BaseField))
+            (Proxy @(KimchiConstraint Vesta.BaseField))
+            type1Circuit
+            Kimchi.initialState
+          solver = makeSolver (Proxy @(KimchiConstraint Vesta.BaseField)) type1Circuit
+        circuitSpecPure' 100
+          { builtState: st
+          , checker: Kimchi.eval
+          , solver: solver
+          , testFunction: satisfied type1Expected
+          , postCondition: Kimchi.postCondition
+          }
+          gen
+
+    describe "fromShiftedType2Circuit" do
+      it "circuit matches pure implementation" do
+        let
+          gen = toShifted <$> genDangerZone @Pallas.ScalarField
+          st = compilePure
+            (Proxy @(Type2 (F Pallas.BaseField) Boolean))
+            (Proxy @(F Pallas.BaseField))
+            (Proxy @(KimchiConstraint Pallas.BaseField))
+            type2Circuit
+            Kimchi.initialState
+          solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) type2Circuit
+        circuitSpecPure' 100
+          { builtState: st
+          , checker: Kimchi.eval
+          , solver: solver
+          , testFunction: satisfied type2Expected
+          , postCondition: Kimchi.postCondition
+          }
+          gen
