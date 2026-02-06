@@ -35,7 +35,7 @@ import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
-import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
+import Snarky.Circuit.Kimchi (toField, toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 

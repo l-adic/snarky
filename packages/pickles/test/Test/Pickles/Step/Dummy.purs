@@ -14,8 +14,8 @@ import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dumm
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL as SizedF
+import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (Type1(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))

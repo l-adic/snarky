@@ -40,10 +40,9 @@ import Pickles.Step.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProo
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
-import Snarky.Circuit.Kimchi.EndoScalar (toField)
+import Snarky.Circuit.Kimchi (Type1, fromShiftedType1Circuit, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
-import Snarky.Types.Shifted (Type1, fromShiftedType1Circuit)
 
 -------------------------------------------------------------------------------
 -- | Types

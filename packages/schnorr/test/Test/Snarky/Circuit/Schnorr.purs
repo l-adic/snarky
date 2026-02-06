@@ -18,14 +18,13 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon as Poseidon
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assert_, const_)
-import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
+import Snarky.Circuit.Kimchi (fromShifted, splitField, verifyCircuit)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromAffine, generator, inverse, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (fromShifted, splitField)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))

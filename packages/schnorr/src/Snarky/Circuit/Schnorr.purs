@@ -37,15 +37,13 @@ import Prim.Int (class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEqual_, check, const_, equals_, exists, not_, readCVar, unpack_)
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), addComplete, scaleFast1, scaleFast2, splitField)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1(..), Type2(..), splitField)
 
 -- | Operations for scalar multiplication in circuits.
 -- |

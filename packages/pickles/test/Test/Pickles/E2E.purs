@@ -67,8 +67,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, const_)
-import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
-import Snarky.Circuit.Kimchi.GroupMap (groupMapParams)
+import Snarky.Circuit.Kimchi (Type1, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -77,7 +76,6 @@ import Snarky.Curves.Class (endoScalar, fromAffine, fromBigInt, generator, pow, 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1, fromShifted, toShifted)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof)
 import Test.Pickles.ProofFFI as ProofFFI

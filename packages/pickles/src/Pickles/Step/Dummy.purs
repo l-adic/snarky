@@ -26,8 +26,8 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
 import Snarky.Circuit.DSL as SizedF
+import Snarky.Circuit.Kimchi (Type1(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Types.Shifted (Type1(..))
 
 -------------------------------------------------------------------------------
 -- | Dummy Scalar Challenge

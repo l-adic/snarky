@@ -31,10 +31,9 @@ import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeSc
 import Pickles.Step.Types (ScalarChallenge)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, equals_)
-import Snarky.Circuit.Kimchi.EndoScalar (toField)
+import Snarky.Circuit.Kimchi (Type1, fromShiftedType1Circuit, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
-import Snarky.Types.Shifted (Type1, fromShiftedType1Circuit)
 
 -------------------------------------------------------------------------------
 -- | Evaluation Types
