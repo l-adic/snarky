@@ -26,10 +26,10 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (for_)
-import Data.Maybe (Maybe(..))
-import Data.Traversable (for)
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
+import Data.Maybe (Maybe(..))
 import Data.Symbol (class IsSymbol)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector

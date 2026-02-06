@@ -103,13 +103,21 @@ genDangerZone =
 -- Circuit-level tests for fromShiftedType1Circuit and fromShiftedType2Circuit
 --------------------------------------------------------------------------------
 
--- | Circuit that computes fromShiftedType1Circuit.
+-- | Circuit that computes fromShiftedType1Circuit (cross-field: Vesta.BaseField).
 type1Circuit
   :: forall t
    . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
   => Type1 (FVar Vesta.BaseField)
   -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (FVar Vesta.BaseField)
 type1Circuit shifted = pure $ fromShiftedType1Circuit shifted
+
+-- | Circuit that computes fromShiftedType1Circuit (same-field: Vesta.ScalarField).
+type1SameFieldCircuit
+  :: forall t
+   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+  => Type1 (FVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (FVar Vesta.ScalarField)
+type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType2Circuit.
 type2Circuit
@@ -119,11 +127,21 @@ type2Circuit
   -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
 type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
 
--- | Pure computation for Type1: s = 2*t + 2^n + 1
+-- | Pure computation for Type1 (cross-field): s = 2*t + 2^n + 1
 type1Expected :: Type1 (F Vesta.BaseField) -> F Vesta.BaseField
 type1Expected (Type1 (F t)) =
   let
     n = fieldSizeBits (Proxy :: Proxy Vesta.BaseField)
+    two = fromBigInt (BigInt.fromInt 2)
+    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
+  in
+    F (two * t + twoToN + one)
+
+-- | Pure computation for Type1 (same-field): s = 2*t + 2^n + 1
+type1SameFieldExpected :: Type1 (F Vesta.ScalarField) -> F Vesta.ScalarField
+type1SameFieldExpected (Type1 (F t)) =
+  let
+    n = fieldSizeBits (Proxy :: Proxy Vesta.ScalarField)
     two = fromBigInt (BigInt.fromInt 2)
     twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
   in
@@ -158,6 +176,12 @@ spec = do
       it "fromShifted (toShifted s) == s (danger zone)" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField <$> genDangerZone)
 
+    describe "Type1 Shifted (sameField)" do
+      it "fromShifted (toShifted s) == s" $
+        quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField)
+      it "fromShifted (toShifted s) == s (danger zone)" $
+        quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField <$> genDangerZone)
+
     describe "Type2 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
         quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField)
@@ -180,6 +204,26 @@ spec = do
           , checker: Kimchi.eval
           , solver: solver
           , testFunction: satisfied type1Expected
+          , postCondition: Kimchi.postCondition
+          }
+          gen
+
+    describe "fromShiftedType1Circuit (sameField)" do
+      it "circuit matches pure implementation" do
+        let
+          gen = toShifted <$> genDangerZone @Vesta.ScalarField
+          st = compilePure
+            (Proxy @(Type1 (F Vesta.ScalarField)))
+            (Proxy @(F Vesta.ScalarField))
+            (Proxy @(KimchiConstraint Vesta.ScalarField))
+            type1SameFieldCircuit
+            Kimchi.initialState
+          solver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) type1SameFieldCircuit
+        circuitSpecPure' 100
+          { builtState: st
+          , checker: Kimchi.eval
+          , solver: solver
+          , testFunction: satisfied type1SameFieldExpected
           , postCondition: Kimchi.postCondition
           }
           gen

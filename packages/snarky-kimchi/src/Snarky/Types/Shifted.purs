@@ -156,6 +156,22 @@ instance Shifted (F Vesta.ScalarField) (Type1 (F Vesta.BaseField)) where
     in
       F $ fromBigInt (BigInt.fromInt 2 * tBigInt + twoToN + BigInt.fromInt 1)
 
+-- Same-field Type1: Step circuit stores Wrap-field scalars shifted into its own field.
+-- Since Pallas.ScalarField < Vesta.ScalarField, all values fit and there are no forbidden values.
+instance Shifted (F Vesta.ScalarField) (Type1 (F Vesta.ScalarField)) where
+  toShifted (F s) =
+    let
+      { c, scale } = shift1 (Proxy :: Proxy Vesta.ScalarField)
+      t = (s - c) * scale
+    in
+      Type1 (F t)
+  fromShifted (Type1 (F t)) =
+    let
+      { c } = shift1 (Proxy :: Proxy Vesta.ScalarField)
+      two = fromBigInt (BigInt.fromInt 2)
+    in
+      F (two * t + c)
+
 -- Type2 instances
 
 -- Cross-field Type2: scalar field → Type2 in circuit field (via BigInt)
