@@ -14,9 +14,7 @@ import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertOnCurve, double)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (assertEq, if_)
-import Snarky.Circuit.Types (F(..))
-import Snarky.Constraint.Basic (Basic)
+import Snarky.Circuit.DSL (Basic, F(..), assertEq, if_)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta

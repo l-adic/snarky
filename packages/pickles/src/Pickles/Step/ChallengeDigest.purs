@@ -29,10 +29,10 @@ import Pickles.Sponge (SpongeM, squeeze)
 import Pickles.Step.Types (BulletproofChallenges)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, if_)
+import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.SizedF as SizedF
 
 -------------------------------------------------------------------------------
 -- | Conditional Sponge Operations

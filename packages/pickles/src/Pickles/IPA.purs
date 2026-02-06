@@ -57,18 +57,15 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, equals_, if_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMapCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
-import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 -------------------------------------------------------------------------------
@@ -150,14 +147,14 @@ bPolyCircuit { challenges: chals, x } = do
     ( \{ product: p, currPower } c -> do
         -- term = 1 + c * currPower
         cp <- pure c * pure currPower
-        let term = CVar.add_ (CVar.const_ one) cp
+        let term = add_ (const_ one) cp
         -- product *= term
         newProduct <- pure p * pure term
         -- currPower = currPower²
         newPower <- pure currPower * pure currPower
         pure { product: newProduct, currPower: newPower }
     )
-    { product: CVar.const_ one, currPower: x }
+    { product: const_ one, currPower: x }
     (Vector.reverse chals)
 
   pure prod
@@ -195,7 +192,7 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
   bZeta <- bPolyCircuit { challenges, x: zeta }
   bZetaOmega <- bPolyCircuit { challenges, x: zetaOmega }
   scaledB <- pure evalscale * pure bZetaOmega
-  pure $ CVar.add_ bZeta scaledB
+  pure $ add_ bZeta scaledB
 
 -------------------------------------------------------------------------------
 -- | Challenge Extraction (In-Circuit)

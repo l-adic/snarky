@@ -1,4 +1,4 @@
-module Test.Snarky.Data.SizedF (spec) where
+module Test.Snarky.Circuit.DSL.SizedF (spec) where
 
 import Prelude
 
@@ -7,8 +7,8 @@ import Data.Maybe (Maybe(..), isNothing)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Snarky.Circuit.DSL (packPure)
+import Snarky.Circuit.DSL.SizedF (SizedF, fromBits, fromField, toBits, toField)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF (SizedF, fromBits, fromField, toBits, toField)
 import Test.QuickCheck (Result(..), arbitrary, (===))
 import Test.QuickCheck.Gen (Gen)
 import Test.Spec (Spec, describe, it)

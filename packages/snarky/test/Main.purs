@@ -9,10 +9,10 @@ import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.BN254 as BN254
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
+import Test.Snarky.Circuit.DSL.SizedF as SizedFTests
 import Test.Snarky.Circuit.Types as TypesTests
 import Test.Snarky.Circuit.Utils (nullPostCondition)
 import Test.Snarky.Constraint as ConstraintTests
-import Test.Snarky.Data.SizedF as SizedFTests
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))

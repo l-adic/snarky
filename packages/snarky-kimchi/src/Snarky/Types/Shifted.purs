@@ -28,8 +28,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (CVar(..), add_, scale_)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, add_, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -62,7 +61,7 @@ instance CheckedType Vesta.BaseField c (Type1 (FVar Vesta.BaseField)) where
   check (Type1 t) = do
     -- For each forbidden value, check if t equals it
     -- Then assert that NONE of them match
-    let forbiddenConstants = map (\(F f) -> Const f) forbiddenType1Values
+    let forbiddenConstants = map (\(F f) -> const_ f) forbiddenType1Values
     matchesForbidden <- traverse (equals_ t) forbiddenConstants
     anyMatch <- any_ matchesForbidden
     assert_ (not_ anyMatch)
@@ -114,7 +113,7 @@ instance CheckedType Pallas.BaseField c (Type2 (FVar Pallas.BaseField) (BoolVar 
     -- For each forbidden (sDiv2, sOdd) pair, check if current matches
     -- Then assert that NONE of them match
     matchesForbidden <- for forbiddenType2Values \{ sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } -> do
-      sDiv2Matches <- equals_ sDiv2 (Const forbiddenDiv2)
+      sDiv2Matches <- equals_ sDiv2 (const_ forbiddenDiv2)
       let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
       sDiv2Matches `and_` sOddMatches
     anyMatch <- any_ matchesForbidden

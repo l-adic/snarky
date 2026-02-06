@@ -45,10 +45,10 @@ module Test.Pickles.ProofFFI
 import Data.Unit (Unit)
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Types (ProverIndex)
+import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF)
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type

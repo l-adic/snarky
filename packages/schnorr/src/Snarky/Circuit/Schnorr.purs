@@ -36,11 +36,10 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, check, const_, equals_, exists, not_, readCVar, unpack_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEqual_, check, const_, equals_, exists, not_, readCVar, unpack_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
-import Snarky.Circuit.Types (Bool(..), BoolVar, FVar) as Types
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
 import Snarky.Curves.Pallas as Pallas
@@ -72,7 +71,7 @@ pallasScalarOps
   :: forall @nChunks
    . Mul 5 nChunks 255
   => Reflectable nChunks Int
-  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (Type2 (Types.FVar Pallas.BaseField) (Types.BoolVar Pallas.BaseField))
+  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
 pallasScalarOps =
   { toScalar: splitFieldVar
   , scalarMul: scaleFast2 @nChunks
@@ -86,7 +85,7 @@ vestaScalarOps
   :: forall @nChunks
    . Mul 5 nChunks 255
   => Reflectable nChunks Int
-  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (Types.FVar Vesta.BaseField))
+  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (FVar Vesta.BaseField))
 vestaScalarOps =
   { toScalar: \fvar -> do
       let t1 = Type1 fvar

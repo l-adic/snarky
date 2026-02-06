@@ -25,8 +25,8 @@ import Pickles.Linearization.Types (mkLinearizationPoly)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
+import Snarky.Circuit.DSL as SizedF
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.SizedF as SizedF
 import Snarky.Types.Shifted (Type1(..))
 
 -------------------------------------------------------------------------------

@@ -9,11 +9,10 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Circuit.Types (F, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class WeierstrassCurve)

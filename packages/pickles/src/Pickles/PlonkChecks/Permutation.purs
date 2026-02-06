@@ -27,8 +27,7 @@ import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, pow_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, negate_, pow_, sub_)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -178,14 +177,14 @@ permScalarCircuit input = do
     ( \acc (Tuple wi si) -> do
         -- beta * sigma_i requires a multiplication constraint
         betaSigma <- pure input.beta * pure si
-        let term = CVar.add_ (CVar.add_ input.gamma betaSigma) wi
+        let term = add_ (add_ input.gamma betaSigma) wi
         pure acc * pure term
     )
     init'
     wSigma
 
   -- Negate
-  pure (CVar.negate_ result)
+  pure (negate_ result)
 
 -- | Compute the full permutation contribution in-circuit.
 -- | This includes both product terms and the boundary quotient.
@@ -218,7 +217,7 @@ permContributionCircuit input = do
   term1 <- foldM
     ( \acc (Tuple wi si) -> do
         betaSi <- pure input.beta * pure si
-        let term = CVar.add_ (CVar.add_ betaSi wi) input.gamma
+        let term = add_ (add_ betaSi wi) input.gamma
         pure term * pure acc
     )
     term1Init
@@ -233,7 +232,7 @@ permContributionCircuit input = do
   term2 <- foldM
     ( \acc (Tuple wi si) -> do
         betaZetaSi <- pure input.beta * pure input.zeta * pure si
-        let term = CVar.add_ (CVar.add_ input.gamma betaZetaSi) wi
+        let term = add_ (add_ input.gamma betaZetaSi) wi
         pure acc * pure term
     )
     term2Init
@@ -243,14 +242,14 @@ permContributionCircuit input = do
   -- zetaMinusOmega = zeta - omega^{-zkRows}
   -- zetaMinus1 = zeta - 1
   let
-    zetaMinusOmega = CVar.sub_ input.zeta input.omegaToMinusZkRows
-    zetaMinus1 = CVar.sub_ input.zeta (CVar.const_ one)
+    zetaMinusOmega = sub_ input.zeta input.omegaToMinusZkRows
+    zetaMinus1 = sub_ input.zeta (const_ one)
 
   -- nominator = ((zeta^n-1) * alpha^22 * zetaMinusOmega
   --            + (zeta^n-1) * alpha^23 * zetaMinus1) * (1 - z(zeta))
   term22 <- pure input.zetaToNMinus1 * pure alphaPow22 * pure zetaMinusOmega
   term23 <- pure input.zetaToNMinus1 * pure alphaPow23 * pure zetaMinus1
-  oneMinusZ <- pure (CVar.const_ one) - pure input.z.zeta
+  oneMinusZ <- pure (const_ one) - pure input.z.zeta
   nominator <- (pure term22 + pure term23) * pure oneMinusZ
 
   -- denominator = zetaMinusOmega * zetaMinus1
@@ -260,6 +259,6 @@ permContributionCircuit input = do
   boundary <- pure nominator / pure denominator
 
   -- result = term1 - term2 + boundary
-  let term1MinusTerm2 = CVar.sub_ term1 term2
-  pure (CVar.add_ term1MinusTerm2 boundary)
+  let term1MinusTerm2 = sub_ term1 term2
+  pure (add_ term1MinusTerm2 boundary)
 

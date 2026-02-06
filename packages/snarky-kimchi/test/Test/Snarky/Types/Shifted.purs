@@ -6,8 +6,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import JS.BigInt as BigInt
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
-import Snarky.Circuit.Types (F(..))
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)

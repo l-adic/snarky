@@ -17,11 +17,9 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Poseidon as Poseidon
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assert_, const_)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
-import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromAffine, generator, inverse, scalarMul, toAffine)

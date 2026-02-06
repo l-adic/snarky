@@ -22,7 +22,7 @@ import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate)
 import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
-import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 

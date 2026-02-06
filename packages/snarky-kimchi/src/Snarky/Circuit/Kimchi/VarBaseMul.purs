@@ -13,13 +13,11 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (EvaluationError(..))
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
-import Snarky.Circuit.Types (BoolVar, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits)

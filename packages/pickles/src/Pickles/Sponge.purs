@@ -48,14 +48,11 @@ import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, const_, lowestNBits, lowestNBitsPure)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
-import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF, lowestNBits, lowestNBitsPure)
 
 --------------------------------------------------------------------------------
 -- | MonadSponge Typeclass

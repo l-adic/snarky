@@ -15,12 +15,11 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, addConstraint, add_, assertEqual_, const_, exists, mul_, read, scale_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, mul_, read, scale_, toBits)
+import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar, fromInt)
-import Snarky.Data.SizedF (SizedF, coerceViaBits, toBits)
-import Snarky.Data.SizedF as SizedF
 
 -- | Circuit version of endomorphism scalar decomposition.
 -- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.

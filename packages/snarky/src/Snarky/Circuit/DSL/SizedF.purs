@@ -3,7 +3,7 @@
 -- | `SizedF n f` represents a field element known to fit in `n` bits. This enables
 -- | safe coercion between different fields when the value is small enough to fit
 -- | in both. The `CheckedType` instance constrains the high bits to be zero.
-module Snarky.Data.SizedF
+module Snarky.Circuit.DSL.SizedF
   ( SizedF
   , fromField
   , toField
@@ -27,7 +27,10 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F, FVar, Snarky, assertEq, assert_, fieldsToValue, fieldsToVar, isEqual, not_, packPure, pack_, sizeInFields, unpackPure, unpack_, valueToFields, varToFields)
+import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEq, assert_, isEqual)
+import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, not_)
+import Snarky.Circuit.Types (class CircuitType, F, FVar, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
 import Test.QuickCheck (class Arbitrary, arbitrary)

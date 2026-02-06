@@ -27,14 +27,12 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherPr
 import Pickles.Step.Types (BulletproofChallenges)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_)
-import Snarky.Circuit.Types (F(..))
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF (SizedF, coerceViaBits)
 import Snarky.Types.Shifted (Type1, toShifted)
 import Test.Pickles.E2E (computePublicEval, createTestContext, mkIpaTestContext) as E2E
 import Test.Pickles.ProofFFI as ProofFFI

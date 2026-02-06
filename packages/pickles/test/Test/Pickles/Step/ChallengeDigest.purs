@@ -21,12 +21,12 @@ import Pickles.Step.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, F(..))
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL as SizedF
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF as SizedF
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))

@@ -27,8 +27,7 @@ import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit

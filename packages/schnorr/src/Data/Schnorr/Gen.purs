@@ -16,7 +16,7 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.Types (F(..))
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromBigInt, generator, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (class Shifted, Type2, fieldSizeBits, fromShifted, splitField, toShifted)

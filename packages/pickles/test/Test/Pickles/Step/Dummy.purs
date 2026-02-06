@@ -13,8 +13,8 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dummyPlonkMinimal, dummyScalarChallenge, dummyUnfinalizedProof)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.DSL as SizedF
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF as SizedF
 import Snarky.Types.Shifted (Type1(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)

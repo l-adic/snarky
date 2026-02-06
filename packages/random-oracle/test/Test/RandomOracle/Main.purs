@@ -23,11 +23,10 @@ import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
-import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)

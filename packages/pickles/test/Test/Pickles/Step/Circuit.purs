@@ -14,8 +14,7 @@ import Data.Vector (nil, (:<))
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, false_)
-import Snarky.Circuit.Types (F)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Vesta as Vesta

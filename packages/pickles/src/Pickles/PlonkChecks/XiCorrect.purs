@@ -35,11 +35,10 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, initialSponge, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq)
+import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, assertEq, coerceViaBits)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.SizedF (SizedF, coerceViaBits)
 
 -------------------------------------------------------------------------------
 -- | Types

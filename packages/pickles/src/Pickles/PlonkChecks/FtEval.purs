@@ -23,8 +23,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, evaluateGateConstraints)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContributionCircuit)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, sub_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -88,5 +87,5 @@ ftEval0Circuit linPoly { permInput, gateInput, publicEval } = do
   gate <- evaluateGateConstraints linPoly gateInput
 
   -- ft_eval0 = perm + publicEval - gate
-  let permPlusPublic = CVar.add_ perm publicEval
-  pure $ CVar.sub_ permPlusPublic gate
+  let permPlusPublic = add_ perm publicEval
+  pure $ sub_ permPlusPublic gate

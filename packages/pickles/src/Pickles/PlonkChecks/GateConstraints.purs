@@ -34,8 +34,7 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
 
 -------------------------------------------------------------------------------
@@ -181,7 +180,7 @@ evaluateGateConstraints linPoly input =
       { witnessEvals: input.witnessEvals
       , coeffEvals: input.coeffEvals
       , indexEvals: input.indexEvals
-      , defaultVal: Const zero
+      , defaultVal: const_ zero
       }
 
     challenges = buildChallenges
@@ -216,4 +215,4 @@ checkGateConstraints
   -> Snarky c t m Unit
 checkGateConstraints linPoly input = do
   result <- evaluateGateConstraints linPoly input
-  assertEqual_ result (Const zero)
+  assertEqual_ result (const_ zero)

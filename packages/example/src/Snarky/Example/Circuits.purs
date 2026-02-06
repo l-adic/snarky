@@ -15,11 +15,9 @@ import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEq, assertEqual_, exists, read, sum_, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), F(..), FVar, Snarky, assertEq, assertEqual_, const_, exists, read, sum_, unpack_)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Circuit.Types (Bool(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)

@@ -34,11 +34,10 @@ import Prelude
 import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.SizedF (SizedF)
 
 -------------------------------------------------------------------------------
 -- | Scalar Challenge (128-bit)

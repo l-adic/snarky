@@ -17,8 +17,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (for, traverse)
 import Data.Vector (Vector, index, nil, (:<))
 import Data.Vector as Vector
-import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.Types (FVar)
+import Snarky.Circuit.DSL (FVar, Variable)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, KimchiRow)
 import Snarky.Constraint.Kimchi.Types as GateKind

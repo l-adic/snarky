@@ -17,8 +17,8 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon.Class (class PoseidonField)
+import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.RandomOracle (Digest)
-import Snarky.Circuit.Types (F)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (Result, arbitrary, quickCheck, quickCheckGen, withHelp, (===))

@@ -39,7 +39,6 @@ import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Step.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit)
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -263,7 +262,7 @@ buildGateInput plonk witness =
   , alpha: plonk.alpha
   , beta: plonk.beta
   , gamma: plonk.gamma
-  , jointCombiner: CVar.const_ zero
+  , jointCombiner: const_ zero
   , vanishesOnZk: witness.domainValues.vanishesOnZk
   , lagrangeFalse0: witness.domainValues.lagrangeFalse0
   , lagrangeTrue1: witness.domainValues.lagrangeTrue1
