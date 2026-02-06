@@ -24,7 +24,7 @@ import Data.MerkleTree.Sized (AddressVar(..), Path(..)) as Sized
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, exists, if_, read)
 import Snarky.Circuit.MerkleTree (class MerkleRequestM, getElement, getPath, setValue)
 import Snarky.Circuit.RandomOracle (Digest(..))

@@ -16,7 +16,7 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, append, head, (!!))
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField, getRoundConstants)
+import Poseidon (class PoseidonField, getRoundConstants)
 import Snarky.Circuit.DSL (FVar, Variable)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, GateKind(..), KimchiRow)

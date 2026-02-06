@@ -17,7 +17,7 @@ import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
-import Poseidon.Class (class PoseidonField, getMdsMatrix)
+import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Curves.Class (class HasEndo, endoBase, pow)

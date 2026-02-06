@@ -29,7 +29,7 @@ import Data.Show.Generic (genericShow)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField, fullRound, getNumRounds)
+import Poseidon (class PoseidonField, fullRound, getNumRounds)
 import Type.Proxy (Proxy(..))
 
 -- | The state size of the Poseidon sponge (always 3)

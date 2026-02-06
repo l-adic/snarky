@@ -19,7 +19,7 @@ import Data.MerkleTree.Sized (Address, AddressVar(..), Path(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F, FVar, Snarky, assertEqual_, exists, if_, read)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)

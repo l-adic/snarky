@@ -17,7 +17,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField, hash) as Poseidon
+import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge

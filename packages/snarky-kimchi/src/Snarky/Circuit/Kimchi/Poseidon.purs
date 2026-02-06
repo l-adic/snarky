@@ -8,7 +8,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Traversable (traverse)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField, fullRound)
+import Poseidon (class PoseidonField, fullRound)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, exists, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))

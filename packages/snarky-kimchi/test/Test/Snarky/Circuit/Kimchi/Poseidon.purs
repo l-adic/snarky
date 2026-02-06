@@ -6,7 +6,7 @@ import Data.Array as Array
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
-import Poseidon.Class (fullRound)
+import Poseidon (fullRound)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
