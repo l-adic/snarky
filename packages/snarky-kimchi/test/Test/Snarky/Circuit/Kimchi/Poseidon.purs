@@ -7,11 +7,12 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Poseidon.Class (fullRound)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi.Poseidon as PoseidonCircuit
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Circuit.Types (F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
@@ -40,9 +41,11 @@ spec' testName _ = describe ("Poseidon Circuit Tests: " <> testName) do
       referenceHash :: Vector 3 (F f) -> Vector 3 (F f)
       referenceHash inputs =
         let
+          inputs' :: Vector 3 f
+          inputs' = coerce inputs
           rounds = Array.range 0 54
         in
-          Array.foldl (\state round -> fullRound state round) inputs rounds
+          coerce $ Array.foldl (\state round -> fullRound state round) inputs' rounds
 
       solver = makeSolver (Proxy @(KimchiConstraint f)) PoseidonCircuit.poseidon
       s = compilePure

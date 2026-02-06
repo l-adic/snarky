@@ -24,6 +24,7 @@ package:
       - gen
       - newtype
       - quickcheck
+      - safe-coerce
       - snarky-test-utils
       - spec
       - spec-node

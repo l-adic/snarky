@@ -18,9 +18,10 @@ import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpong
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
 import Pickles.Step.Types (BulletproofChallenges)
+import RandomOracle.Sponge (Sponge)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
-import Snarky.Circuit.Types (F(..))
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, F(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt)
@@ -55,15 +56,22 @@ challengeDigestPure
    . ChallengeDigestInput n (F StepField) Boolean
   -> F StepField
 challengeDigestPure { mask, oldChallenges } =
-  evalPureSpongeM initialSponge do
-    -- Absorb challenges conditionally
-    for_ (Vector.zip mask oldChallenges) \(Tuple keep chals) ->
-      when keep do
-        -- Absorb all 16 scalar challenges
-        for_ chals \chal ->
-          Sponge.absorb (SizedF.toField chal)
-    -- Squeeze to get digest
-    Sponge.squeeze
+  let
+    sponge :: Sponge StepField
+    sponge = coerce (initialSponge :: Sponge (F StepField))
+
+    result :: StepField
+    result = evalPureSpongeM sponge do
+      -- Absorb challenges conditionally
+      for_ (Vector.zip mask oldChallenges) \(Tuple keep chals) ->
+        when keep do
+          -- Absorb all 16 scalar challenges
+          for_ chals \chal ->
+            Sponge.absorb (coerce (SizedF.toField chal) :: StepField)
+      -- Squeeze to get digest
+      Sponge.squeeze
+  in
+    F result
 
 -------------------------------------------------------------------------------
 -- | Test Circuit

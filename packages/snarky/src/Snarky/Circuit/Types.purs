@@ -90,7 +90,6 @@ import Data.Tuple (Tuple)
 import Data.Vector (Vector, toVector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Poseidon (class PoseidonField)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
@@ -130,8 +129,6 @@ derive newtype instance Ring f => Ring (F f)
 derive newtype instance EuclideanRing f => EuclideanRing (F f)
 derive newtype instance CommutativeRing f => CommutativeRing (F f)
 derive newtype instance DivisionRing f => DivisionRing (F f)
-derive newtype instance PoseidonField f => PoseidonField (F f)
-
 instance HasEndo f f' => HasEndo (F f) (F f') where
   endoBase = coerce (endoBase :: f)
   endoScalar = coerce (endoScalar :: f')
