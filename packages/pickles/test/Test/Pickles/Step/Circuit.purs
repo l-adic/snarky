@@ -82,6 +82,7 @@ spec = describe "Pickles.Step.Circuit" do
         , previousProofInputs: unit :< nil
         , unfinalizedProofs: dummyUnfinalizedProof :< nil
         , wrapProofWitnesses: dummyWrapProofWitness :< nil
+        , prevChallengeDigests: zero :< nil
         }
 
     circuitSpecPureInputs

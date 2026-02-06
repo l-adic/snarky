@@ -35,7 +35,7 @@ import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, assertEq, assert_, const_, not_, or_)
 import Snarky.Circuit.DSL.Monad (Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 import Snarky.Types.Shifted (Type1)
 
 -------------------------------------------------------------------------------
@@ -100,6 +100,7 @@ type StepInput n input prevInput f sf b =
   , previousProofInputs :: Vector n prevInput
   , unfinalizedProofs :: Vector n (UnfinalizedProof f sf b)
   , wrapProofWitnesses :: Vector n (WrapProofWitness f)
+  , prevChallengeDigests :: Vector n f
   }
 
 -- | The Step circuit's output statement.
@@ -128,18 +129,21 @@ type StepStatement n fv sf b =
 -- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
 -- | Each proof gets its own fresh sponge state.
 finalizeOtherProof
-  :: forall f t m
+  :: forall f f' t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
+  => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => FinalizeOtherProofParams f
+  -> FVar f
   -> UnfinalizedProof (FVar f) (Type1 (FVar f)) (BoolVar f)
   -> WrapProofWitness (FVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
-finalizeOtherProof params unfinalized witness =
+finalizeOtherProof params prevChallengeDigest unfinalized witness =
   evalSpongeM initialSpongeCircuit $
-    finalizeOtherProofCircuit params { unfinalized, witness }
+    finalizeOtherProofCircuit params
+      { unfinalized, witness, prevChallengeDigest }
 
 -------------------------------------------------------------------------------
 -- | Stub Implementations (to be replaced)
@@ -199,24 +203,25 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs`, `unfinalizedProofs`,
 -- | and `wrapProofWitnesses`.
 stepCircuit
-  :: forall n input prevInput output aux f t m
+  :: forall n input prevInput output aux f f' t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
+  => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => FinalizeOtherProofParams f
   -> AppCircuit n input prevInput output aux f (KimchiConstraint f) t m
   -> StepInput n input prevInput (FVar f) (Type1 (FVar f)) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (StepStatement n (FVar f) (Type1 (FVar f)) (BoolVar f))
-stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs, wrapProofWitnesses } = do
+stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs, wrapProofWitnesses, prevChallengeDigests } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. For each previous proof, verify and collect challenges
   let
-    proofsWithData = Vector.zip (Vector.zip unfinalizedProofs wrapProofWitnesses) mustVerify
+    proofsWithData = Vector.zip (Vector.zip (Vector.zip unfinalizedProofs wrapProofWitnesses) prevChallengeDigests) mustVerify
 
-  challengesAndDigests <- for proofsWithData \(Tuple (Tuple unfinalized witness) mustVerifyFlag) -> do
+  challengesAndDigests <- for proofsWithData \(Tuple (Tuple (Tuple unfinalized witness) prevChallengeDigest) mustVerifyFlag) -> do
     let
       shouldFinalize = unfinalized.shouldFinalize
 
@@ -224,7 +229,7 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
     assertEq shouldFinalize mustVerifyFlag
 
     -- 2b. Finalize the proof
-    { finalized, challenges } <- finalizeOtherProof params unfinalized witness
+    { finalized, challenges } <- finalizeOtherProof params prevChallengeDigest unfinalized witness
 
     -- 2c. Key assertion: finalized || not shouldFinalize (wrap_main.ml:431)
     -- This is how bootstrapping works: dummies have shouldFinalize = false,

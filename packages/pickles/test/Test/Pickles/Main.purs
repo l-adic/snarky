@@ -12,6 +12,7 @@ import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.Permutation as Permutation
 import Test.Pickles.Step as Step
+import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.StepE2E as StepE2E
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -24,6 +25,7 @@ main = runSpecAndExitProcess'
   [ consoleReporter ]
   do
     E2E.spec
+    FinalizeOtherProofE2E.realDataSpec
     mapSpec nat do
       Commitments.spec
       IPA.spec

@@ -125,6 +125,7 @@ genStepSchnorrInput =
     , previousProofInputs: unit :< Vector.nil
     , unfinalizedProofs: dummyUnfinalizedProof :< Vector.nil
     , wrapProofWitnesses: dummyWrapProofWitness :< Vector.nil
+    , prevChallengeDigests: zero :< Vector.nil
     }
 
 spec :: Spec Unit

@@ -48,6 +48,7 @@ import Snarky.Backend.Kimchi.Types (ProverIndex)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.SizedF (SizedF)
 
 -- | Opaque proof type, parameterized by curve group and scalar field.
 foreign import data Proof :: Type -> Type -> Type
@@ -69,6 +70,8 @@ type OraclesResult f =
   , publicEvalZeta :: f
   , publicEvalZetaOmega :: f
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
+  , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
+  , zetaChal :: SizedF 128 f -- raw 128-bit zeta challenge (pre-endo-expansion)
   }
 
 -- | Sponge checkpoint for debugging/testing challenge extraction.

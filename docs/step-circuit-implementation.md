@@ -284,21 +284,28 @@ dummyUnfinalizedProof =
   - Squeeze to get challenge_digest
   - Reference: step_verifier.ml:885-896
 
-- [ ] **3. Compose `finalizeOtherProof` circuit**
-  - Input: `UnfinalizedProof`, `WrapProofWitness`, old challenges
-  - Flow:
-    1. Compute challenge_digest from old bulletproof challenges
-    2. Absorb challenge_digest into sponge
-    3. Call `plonkChecksCircuit` → gets xi_correct, combinedInnerProduct
-    4. Absorb combinedInnerProduct for IPA
-    5. Call `bCorrectCircuit` with new bulletproof_challenges
-    6. Call `plonkArithmeticCheckCircuit`
-    7. Return `(Boolean.all [xi_correct, cip_correct, b_correct, plonk_correct], challenges)`
-  - Reference: step_verifier.ml:823-1086
+- [x] **3a. Wire up xi_correct in `finalizeOtherProofCircuit`** ✓
+  - Added `prevChallengeDigest` to `FinalizeOtherProofInput`
+  - Fr-sponge protocol: absorb fqDigest, prevChallengeDigest, allEvals; squeeze xi; compare with claimed xi via `isEqual`
+  - Squeeze evalscale (r) for future b_correct/CIP use
+  - `finalizeOtherProof` helper in `Circuit.purs` passes `const_ emptyPrevChallengeDigest` for base case
+  - Reference: step_verifier.ml:946-954
 
-- [ ] **4. Tests for finalizeOtherProof**
-  - Test with dummy proofs (base case, all checks should pass trivially)
-  - Test with real proof data extracted from Rust FFI (similar to existing IPA tests)
+- [x] **3b. Tests for xi_correct in finalizeOtherProof** ✓
+  - Dummy test updated with `prevChallengeDigest: zero` (still passes with `shouldFinalize = false`)
+  - Real-data test using Schnorr proof: `shouldFinalize = true`, real fqDigest/allEvals/rawXi, asserts `finalized = true`
+  - Both tests pass (circuit satisfiable)
+
+- [ ] **3c. Wire up remaining checks (b_correct, CIP, perm)**
+  - Input: `UnfinalizedProof`, `WrapProofWitness`, old challenges
+  - Remaining flow:
+    1. Call `plonkChecksCircuit` → gets xi_correct (already done inline), combinedInnerProduct
+    2. Absorb combinedInnerProduct for IPA
+    3. Call `bCorrectCircuit` with new bulletproof_challenges
+    4. Call `plonkArithmeticCheckCircuit`
+    5. Return `(Boolean.all [xi_correct, cip_correct, b_correct, plonk_correct], challenges)`
+  - Needs: raw 128-bit plonk.zeta (not available from FFI yet), domain-derived values
+  - Reference: step_verifier.ml:823-1086
 
 ### Other TODOs
 
@@ -394,3 +401,35 @@ dummyUnfinalizedProof =
 **Notes:**
 - Dummy generators for `WrapProofWitness` are NOT needed for bootstrapping. The base case uses `shouldFinalize = false` which skips verification entirely.
 - Real witness values will be needed when implementing `finalizeOtherProof` with actual verification logic.
+
+---
+
+### 4. xi_correct in finalizeOtherProofCircuit
+
+**Final Implementation:**
+- `Pickles.Step.FinalizeOtherProof`:
+  - Added `prevChallengeDigest :: f` to `FinalizeOtherProofInput` record
+  - Replaced skeleton (`const_ one`) with real xi verification:
+    1. Absorb `spongeDigestBeforeEvaluations` (fqDigest)
+    2. Absorb `prevChallengeDigest`
+    3. Absorb all polynomial evaluations via `absorbAllEvals`
+    4. Squeeze 128-bit scalar challenge for xi
+    5. Compare with claimed `deferred.xi` using `isEqual` → `xiCorrect :: BoolVar`
+    6. Squeeze evalscale (r) — consumed but not checked yet
+    7. Return `finalized = xiCorrect`
+- `Pickles.Step.Circuit`: `finalizeOtherProof` passes `const_ emptyPrevChallengeDigest` for base case
+- `Snarky.Circuit.DSL.Assert`: Added `isEqual` method to `AssertEqual` typeclass (returns `BoolVar` instead of asserting). Instances for `FVar`, `BoolVar`, `SizedF`, `Unit`, `Tuple`, `Vector`, `Record`, and Generic types.
+
+**Success Criteria:**
+- Dummy test still passes (shouldFinalize = false, `finalized || not shouldFinalize` holds)
+- Real-data test passes: Schnorr proof data with `shouldFinalize = true`, circuit asserts `finalized = true`
+- All 43 pickles tests and 72 snarky tests pass
+
+**Design Decisions:**
+- `isEqual` was added as a typeclass method rather than using manual `unwrap` + `equals_`, so `SizedF` and other newtypes get it for free. This avoids leaking representation details at call sites.
+- `prevChallengeDigest` is a parameter on `FinalizeOtherProofInput` (not derived in-circuit), matching OCaml's `prev_challenges_digest` parameter to `finalize_other_proof`.
+- For base case, `emptyPrevChallengeDigest` is the squeeze of an initial empty sponge (from `XiCorrect.purs`).
+
+**Follow-up Tasks:**
+- Wire up b_correct, CIP, and perm checks (needs raw 128-bit plonk.zeta from FFI)
+- When all checks are wired, `finalized = all_ [xiCorrect, cipCorrect, bCorrect, plonkCorrect]`

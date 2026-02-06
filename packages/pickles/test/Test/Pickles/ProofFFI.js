@@ -58,9 +58,9 @@ export const vestaProofCoefficientEvals = (proof) =>
   pairEvals(crypto.vestaProofCoefficientEvals(proof));
 
 // Proof oracles (Fiat-Shamir)
-// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 //                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-//                     fq_digest]
+//                     fq_digest, alpha_chal, zeta_chal]
 export const pallasProofOracles = (proverIndex) => ({ proof, publicInput }) => {
   const flat = crypto.pallasProofOracles(proverIndex, proof, publicInput);
   return {
@@ -75,7 +75,9 @@ export const pallasProofOracles = (proverIndex) => ({ proof, publicInput }) => {
     ftEval1: flat[8],
     publicEvalZeta: flat[9],
     publicEvalZetaOmega: flat[10],
-    fqDigest: flat[11]
+    fqDigest: flat[11],
+    alphaChal: flat[12],
+    zetaChal: flat[13]
   };
 };
 
@@ -93,7 +95,9 @@ export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
     ftEval1: flat[8],
     publicEvalZeta: flat[9],
     publicEvalZetaOmega: flat[10],
-    fqDigest: flat[11]
+    fqDigest: flat[11],
+    alphaChal: flat[12],
+    zetaChal: flat[13]
   };
 };
 

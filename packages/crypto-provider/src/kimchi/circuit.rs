@@ -356,9 +356,9 @@ mod generic {
     }
 
     /// Run the verifier's Fiat-Shamir oracle computation.
-    /// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+    /// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
     ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-    ///                     fq_digest]
+    ///                     fq_digest, alpha_chal, zeta_chal]
     pub fn proof_oracles<G, EFqSponge, EFrSponge>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
@@ -398,6 +398,8 @@ mod generic {
             public_eval_zeta,
             public_eval_zeta_omega,
             oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
+            oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
+            oracles_result.oracles.zeta_chal.0,  // raw 128-bit zeta challenge
         ])
     }
 
@@ -1428,9 +1430,9 @@ pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasF
 }
 
 /// Run Fiat-Shamir oracle computation on a Vesta proof (Pallas/Fp circuits).
-/// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+/// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-///                     fq_digest]
+///                     fq_digest, alpha_chal, zeta_chal]
 #[napi]
 pub fn pallas_proof_oracles(
     prover_index: &VestaProverIndexExternal,
@@ -1447,9 +1449,9 @@ pub fn pallas_proof_oracles(
 }
 
 /// Run Fiat-Shamir oracle computation on a Pallas proof (Vesta/Fq circuits).
-/// Returns 12 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+/// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-///                     fq_digest]
+///                     fq_digest, alpha_chal, zeta_chal]
 #[napi]
 pub fn vesta_proof_oracles(
     prover_index: &PallasProverIndexExternal,

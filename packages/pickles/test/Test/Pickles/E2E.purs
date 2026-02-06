@@ -1,7 +1,9 @@
 module Test.Pickles.E2E
   ( TestContext
+  , IPATestContext
   , computePublicEval
   , createTestContext
+  , mkIpaTestContext
   , schnorrBuiltState
   , schnorrCircuit
   , schnorrSolver
