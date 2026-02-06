@@ -4,10 +4,12 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-// Usage: node workspace-deps.js [--exclude pkg1,pkg2]
+// Usage: node workspace-deps.js [--exclude pkg1,pkg2] [--closure pkg]
 const args = process.argv.slice(2);
 const excludeIdx = args.indexOf("--exclude");
 const excludePkgs = new Set(excludeIdx >= 0 ? args[excludeIdx + 1].split(",") : []);
+const closureIdx = args.indexOf("--closure");
+const closurePkg = closureIdx >= 0 ? args[closureIdx + 1] : null;
 
 const ROOT = __dirname;
 const DEPS_JSON = path.join(ROOT, "deps.json");
@@ -42,6 +44,45 @@ for (const [mod, entry] of Object.entries(allDeps)) {
 const validModules = new Set(Object.keys(filtered));
 for (const entry of Object.values(filtered)) {
   entry.depends = entry.depends.filter((dep) => validModules.has(dep));
+}
+
+// 3b. If --closure is specified, compute the transitive closure of that package's
+//     dependencies and drop everything else.
+if (closurePkg) {
+  // Collect all modules belonging to the closure root package
+  const seeds = new Set();
+  for (const [mod, entry] of Object.entries(filtered)) {
+    if (entry.package === closurePkg) seeds.add(mod);
+  }
+  if (seeds.size === 0) {
+    console.error(`No modules found for package "${closurePkg}".`);
+    console.error(`Available packages: ${[...new Set(Object.values(filtered).map((e) => e.package))].sort().join(", ")}`);
+    process.exit(1);
+  }
+
+  // BFS over module-level depends to find all reachable modules
+  const reachable = new Set(seeds);
+  const queue = [...seeds];
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const dep of filtered[cur]?.depends || []) {
+      if (!reachable.has(dep)) {
+        reachable.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+
+  // Remove non-reachable modules
+  for (const mod of Object.keys(filtered)) {
+    if (!reachable.has(mod)) delete filtered[mod];
+  }
+  // Re-trim depends
+  const closureModules = new Set(Object.keys(filtered));
+  for (const entry of Object.values(filtered)) {
+    entry.depends = entry.depends.filter((dep) => closureModules.has(dep));
+  }
+  console.log(`Closure of "${closurePkg}": ${closureModules.size} modules across ${new Set(Object.values(filtered).map((e) => e.package)).size} packages`);
 }
 
 // 4. Transitive reduction — remove edge A->C if A->B->...->C exists
@@ -92,7 +133,17 @@ for (const [mod, entry] of Object.entries(filtered)) {
   byPackage.get(pkg).push(mod);
 }
 
-const lines = ["digraph deps {", "  rankdir=TB;", "  node [shape=box, fontsize=10];", "  compound=true;", ""];
+const lines = [
+  "digraph deps {",
+  "  rankdir=TB;",
+  "  node [shape=box, fontsize=10, margin=\"0.12,0.06\"];",
+  "  edge [color=\"#555555\"];",
+  "  compound=true;",
+  "  newrank=true;",
+  "  ranksep=1.2;",
+  "  nodesep=0.4;",
+  "",
+];
 
 let colorIdx = 0;
 for (const [pkg, mods] of [...byPackage.entries()].sort()) {
@@ -116,6 +167,50 @@ for (const [mod, deps] of reduced) {
   }
 }
 
+// 5b. Add package-layer rank constraints so sibling packages align horizontally.
+// Layers are ordered top-to-bottom (highest-level first).
+const packageLayers = [
+  ["pickles", "pickles-codegen"],
+  ["schnorr", "merkle-tree", "example"],
+  ["random-oracle"],
+  ["poseidon"],
+  ["snarky-curves", "snarky-kimchi"],
+  ["snarky"],
+  ["curves", "vector-sized", "union-find"],
+];
+
+// For each layer, pick one representative node per present package and rank=same them.
+lines.push("");
+lines.push("  // Package layer alignment");
+for (const layer of packageLayers) {
+  const reps = [];
+  for (const pkg of layer) {
+    const mods = byPackage.get(pkg);
+    if (mods && mods.length > 0) {
+      reps.push(mods.sort()[0]); // first alphabetically as representative
+    }
+  }
+  if (reps.length >= 2) {
+    lines.push(`  { rank=same; ${reps.map((r) => `"${r}"`).join("; ")}; }`);
+  }
+}
+
+// Add invisible edges between layers to enforce vertical ordering.
+lines.push("");
+lines.push("  // Layer ordering hints");
+lines.push("  edge [style=invis, weight=100];");
+const layerReps = packageLayers.map((layer) => {
+  for (const pkg of layer) {
+    const mods = byPackage.get(pkg);
+    if (mods && mods.length > 0) return mods.sort()[0];
+  }
+  return null;
+}).filter(Boolean);
+for (let i = 0; i < layerReps.length - 1; i++) {
+  lines.push(`  "${layerReps[i]}" -> "${layerReps[i + 1]}";`);
+}
+lines.push("  edge [style=solid, weight=1];");
+
 lines.push("}", "");
 const dot = lines.join("\n");
 fs.writeFileSync(OUTPUT_DOT, dot);
@@ -129,4 +224,4 @@ try {
 }
 
 const edgeCount = [...reduced.values()].reduce((s, deps) => s + deps.length, 0);
-console.log(`${Object.keys(filtered).length} modules, ${edgeCount} edges, ${workspacePkgs.size} packages`);
+console.log(`${Object.keys(filtered).length} modules, ${edgeCount} edges, ${byPackage.size} packages`);

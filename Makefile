@@ -128,9 +128,11 @@ clean: ## Clean everything
 # Usage:
 #   make dep-graph                                          # all workspace packages
 #   make dep-graph EXCLUDE=snarky-bulletproofs,snarky-groth16  # exclude packages (comma-separated)
+#   make dep-graph CLOSURE=pickles                          # only pickles and its transitive deps
 EXCLUDE ?= snarky-bulletproofs,snarky-groth16
+CLOSURE ?=
 dep-graph: ## Generate module dependency graph as deps.svg
-	node workspace-deps.js --exclude $(EXCLUDE)
+	node workspace-deps.js --exclude $(EXCLUDE) $(if $(CLOSURE),--closure $(CLOSURE))
 
 .PHONY: fetch-srs
 fetch-srs: ## Download the srs-cache from github
