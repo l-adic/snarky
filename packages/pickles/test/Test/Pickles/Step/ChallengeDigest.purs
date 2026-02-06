@@ -8,10 +8,12 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Identity (Identity)
+import Data.Maybe (fromJust)
 import Data.Traversable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (nil, (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
@@ -23,7 +25,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF (SizedF(..))
+import Snarky.Data.SizedF as SizedF
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -58,8 +60,8 @@ challengeDigestPure { mask, oldChallenges } =
     for_ (Vector.zip mask oldChallenges) \(Tuple keep chals) ->
       when keep do
         -- Absorb all 16 scalar challenges
-        for_ chals \(SizedF chal) ->
-          Sponge.absorb chal
+        for_ chals \chal ->
+          Sponge.absorb (SizedF.toField chal)
     -- Squeeze to get digest
     Sponge.squeeze
 
@@ -82,11 +84,13 @@ testCircuit1 input =
 
 -- | Generate dummy scalar challenges (all zeros)
 dummyBulletproofChallenges :: BulletproofChallenges (F StepField)
-dummyBulletproofChallenges = Vector.generate \_ -> SizedF (F zero)
+dummyBulletproofChallenges = Vector.generate \_ ->
+  unsafePartial fromJust $ SizedF.fromField (F zero)
 
 -- | Generate non-zero scalar challenges for testing
 nonZeroBulletproofChallenges :: BulletproofChallenges (F StepField)
-nonZeroBulletproofChallenges = Vector.generate \i -> SizedF (F $ fromInt (getFinite i + 1))
+nonZeroBulletproofChallenges = Vector.generate \i ->
+  unsafePartial fromJust $ SizedF.fromField (F $ fromInt (getFinite i + 1))
 
 -------------------------------------------------------------------------------
 -- | Tests

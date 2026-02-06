@@ -18,13 +18,15 @@ module Pickles.Step.Dummy
 
 import Prelude
 
+import Data.Maybe (fromJust)
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (mkLinearizationPoly)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
-import Pickles.Step.WrapProofWitness (AllEvals, WrapProofWitness)
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.SizedF (SizedF(..))
+import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
+import Snarky.Data.SizedF as SizedF
 import Snarky.Types.Shifted (Type1(..))
 
 -------------------------------------------------------------------------------
@@ -35,8 +37,8 @@ import Snarky.Types.Shifted (Type1(..))
 -- |
 -- | In the real OCaml code, dummy challenges are generated randomly via `Ro.scalar_chal()`.
 -- | For simplicity, we use zero. The value doesn't matter since `shouldFinalize = false`.
-dummyScalarChallenge :: forall f. PrimeField f => ScalarChallenge f
-dummyScalarChallenge = SizedF zero
+dummyScalarChallenge :: forall f. PrimeField f => FieldSizeInBits f 255 => ScalarChallenge f
+dummyScalarChallenge = unsafePartial fromJust $ SizedF.fromField @128 zero
 
 -------------------------------------------------------------------------------
 -- | Dummy Bulletproof Challenges
@@ -45,7 +47,7 @@ dummyScalarChallenge = SizedF zero
 -- | Dummy bulletproof challenges (16 zero challenges).
 -- |
 -- | Reference: dummy.ml:31-34 `Ipa.Wrap.challenges`
-dummyBulletproofChallenges :: forall f. PrimeField f => BulletproofChallenges f
+dummyBulletproofChallenges :: forall f. PrimeField f => FieldSizeInBits f 255 => BulletproofChallenges f
 dummyBulletproofChallenges = Vector.generate \_ -> dummyScalarChallenge
 
 -------------------------------------------------------------------------------
@@ -55,7 +57,7 @@ dummyBulletproofChallenges = Vector.generate \_ -> dummyScalarChallenge
 -- | Dummy PLONK challenges (all zeros).
 -- |
 -- | Reference: unfinalized.ml:33-42
-dummyPlonkMinimal :: forall f. PrimeField f => PlonkMinimal f
+dummyPlonkMinimal :: forall f. PrimeField f => FieldSizeInBits f 255 => PlonkMinimal f
 dummyPlonkMinimal =
   { alpha: dummyScalarChallenge
   , beta: zero
@@ -73,7 +75,7 @@ dummyPlonkMinimal =
 -- | All values are zero, which is fine since `shouldFinalize = false`.
 -- |
 -- | Reference: unfinalized.ml:95-101
-dummyDeferredValues :: forall f. PrimeField f => DeferredValues f (Type1 f)
+dummyDeferredValues :: forall f. PrimeField f => FieldSizeInBits f 255 => DeferredValues f (Type1 f)
 dummyDeferredValues =
   { plonk: dummyPlonkMinimal
   , combinedInnerProduct: Type1 zero
@@ -94,7 +96,7 @@ dummyDeferredValues =
 -- | whether the dummy values actually verify.
 -- |
 -- | Reference: unfinalized.ml:102 `should_finalize = false`
-dummyUnfinalizedProof :: forall f. PrimeField f => UnfinalizedProof f (Type1 f) Boolean
+dummyUnfinalizedProof :: forall f. PrimeField f => FieldSizeInBits f 255 => UnfinalizedProof f (Type1 f) Boolean
 dummyUnfinalizedProof =
   { deferredValues: dummyDeferredValues
   , shouldFinalize: false
@@ -121,12 +123,27 @@ dummyAllEvals =
   , sigmaEvals: Vector.generate \_ -> dummyPointEval
   }
 
+-- | Dummy domain values (all zeros).
+dummyDomainValues :: forall f. PrimeField f => DomainValues f
+dummyDomainValues =
+  { zkPolynomial: zero
+  , zetaToNMinus1: zero
+  , omegaToMinusZkRows: zero
+  , vanishesOnZk: zero
+  , lagrangeFalse0: zero
+  , lagrangeTrue1: zero
+  }
+
 -- | Dummy wrap proof witness for bootstrapping.
 -- |
--- | Contains only polynomial evaluations (all zeros).
+-- | Contains polynomial evaluations, domain values, and public eval (all zeros).
 -- | This is fine since `shouldFinalize = false` makes verification pass.
 dummyWrapProofWitness :: forall f. PrimeField f => WrapProofWitness f
-dummyWrapProofWitness = { allEvals: dummyAllEvals }
+dummyWrapProofWitness =
+  { allEvals: dummyAllEvals
+  , domainValues: dummyDomainValues
+  , publicEvalForFt: zero
+  }
 
 -------------------------------------------------------------------------------
 -- | Dummy FinalizeOtherProofParams

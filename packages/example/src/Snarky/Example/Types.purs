@@ -14,7 +14,7 @@ import Data.Newtype (class Newtype, un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, assertEqGeneric, isEqualGeneric, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, assertEqGeneric, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Test.QuickCheck (class Arbitrary)

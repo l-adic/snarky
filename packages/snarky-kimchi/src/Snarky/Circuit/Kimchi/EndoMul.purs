@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (fromJust)
-import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
@@ -95,7 +94,7 @@ endo g scalar = do
     )
     { nAcc: const_ zero, acc: accInit }
     chunks
-  assertEqual_ nAcc (unwrap scalar)
+  assertEqual_ nAcc (SizedF.toField scalar)
   addConstraint $ KimchiEndoMul { nAcc, s: acc, state: rounds }
   pure acc
   where

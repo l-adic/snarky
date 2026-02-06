@@ -7,7 +7,6 @@ module Snarky.Circuit.Kimchi.EndoScalar
 import Prelude
 
 import Data.Fin (unsafeFinite)
-import Data.Newtype (unwrap)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, chunks, (!!))
@@ -21,6 +20,7 @@ import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar, fromInt)
 import Snarky.Data.SizedF (SizedF, coerceViaBits, toBits)
+import Snarky.Data.SizedF as SizedF
 
 -- | Circuit version of endomorphism scalar decomposition.
 -- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.
@@ -71,7 +71,7 @@ toField scalar endo = do
     }
     nibblesByRow
   addConstraint $ KimchiEndoScalar rowsRev
-  assertEqual_ n (unwrap scalar)
+  assertEqual_ n (SizedF.toField scalar)
   a `mul_` endo <#>
     add_ b
 

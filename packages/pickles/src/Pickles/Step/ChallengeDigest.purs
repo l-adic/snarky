@@ -32,7 +32,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, if_)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
-import Snarky.Data.SizedF (SizedF(..))
+import Snarky.Data.SizedF as SizedF
 
 -------------------------------------------------------------------------------
 -- | Conditional Sponge Operations
@@ -135,8 +135,8 @@ challengeDigestCircuit { mask, oldChallenges } = do
   -- Absorb challenges from each previous proof based on mask
   for_ (Vector.zip mask oldChallenges) \(Tuple keep chals) ->
     -- For each proof, absorb all 16 scalar challenges
-    for_ chals \(SizedF chal) ->
-      absorbConditional keep chal
+    for_ chals \chal ->
+      absorbConditional keep (SizedF.toField chal)
 
   -- Squeeze to get the digest
   squeeze

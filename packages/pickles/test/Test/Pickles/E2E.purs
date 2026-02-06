@@ -1,5 +1,7 @@
 module Test.Pickles.E2E
-  ( computePublicEval
+  ( TestContext
+  , computePublicEval
+  , createTestContext
   , schnorrBuiltState
   , schnorrCircuit
   , schnorrSolver
@@ -75,7 +77,7 @@ import Snarky.Curves.Class (endoScalar, fromAffine, fromBigInt, generator, pow, 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF(..))
+import Snarky.Data.SizedF (SizedF)
 import Snarky.Types.Shifted (Type1, fromShifted, toShifted)
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI (OraclesResult, Proof)

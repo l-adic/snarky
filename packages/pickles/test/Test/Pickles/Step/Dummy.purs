@@ -14,7 +14,7 @@ import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dumm
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.SizedF (SizedF(..))
+import Snarky.Data.SizedF as SizedF
 import Snarky.Types.Shifted (Type1(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -50,7 +50,7 @@ dummyUnfinalizedProof' _ = dummyUnfinalizedProof
 spec :: Spec Unit
 spec = describe "Dummy values" do
   it "dummyScalarChallenge is zero" do
-    let SizedF (F x) = dummyScalarChallenge'
+    let F x = SizedF.toField dummyScalarChallenge'
     x `shouldEqual` zero
 
   it "dummyBulletproofChallenges has 16 zero challenges" do
@@ -58,15 +58,15 @@ spec = describe "Dummy values" do
     let arr = Vector.toUnfoldable chals :: Array _
     Array.length arr `shouldEqual` 16
     -- Check first challenge is zero
-    let SizedF (F first) = unsafePartial fromJust $ Array.head arr
+    let (F first) = SizedF.toField $ unsafePartial fromJust $ Array.head arr
     first `shouldEqual` zero
 
   it "dummyPlonkMinimal has zero challenges" do
     let p = dummyPlonkMinimal'
-    let SizedF (F alpha) = p.alpha
+    let F alpha = SizedF.toField p.alpha
     let F beta = p.beta
     let F gamma = p.gamma
-    let SizedF (F zeta) = p.zeta
+    let F zeta = SizedF.toField p.zeta
     alpha `shouldEqual` zero
     beta `shouldEqual` zero
     gamma `shouldEqual` zero
