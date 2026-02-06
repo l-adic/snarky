@@ -24,7 +24,7 @@ import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Circuit.DSL (class ConstraintM)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)

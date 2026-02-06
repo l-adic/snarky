@@ -35,8 +35,7 @@ import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
-import Snarky.Circuit.DSL.Assert (assertEqual_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
 
 -------------------------------------------------------------------------------

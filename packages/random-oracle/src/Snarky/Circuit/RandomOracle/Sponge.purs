@@ -28,8 +28,7 @@ import RandomOracle.Sponge (Sponge, SpongeState(..), create, rate, state) as ReE
 import RandomOracle.Sponge (Sponge, SpongeState(..), rate)
 import RandomOracle.Sponge as Sponge
 import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

@@ -49,8 +49,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

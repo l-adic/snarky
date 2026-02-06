@@ -28,8 +28,7 @@ import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
-import Snarky.Circuit.DSL.Field (pow_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, pow_)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------

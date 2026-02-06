@@ -6,7 +6,7 @@ import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Snarky.Circuit.DSL.Bits (packPure)
+import Snarky.Circuit.DSL (packPure)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.SizedF (SizedF, fromBits, fromField, toBits, toField)
 import Test.QuickCheck (Result(..), arbitrary, (===))

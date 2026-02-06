@@ -22,8 +22,7 @@ import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge

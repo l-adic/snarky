@@ -20,9 +20,8 @@ import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateTyp
 import Poseidon.Class (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL.Field (pow_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
-import Snarky.Circuit.DSL.Monad (mul_) as Circuit
+import Snarky.Circuit.DSL (class CircuitM, Snarky, pow_)
+import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Circuit.Types (FVar)
 import Snarky.Curves.Class (class HasEndo, endoBase, pow)
 import Type.Proxy (Proxy(..))

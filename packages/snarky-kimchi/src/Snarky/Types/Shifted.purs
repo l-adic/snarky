@@ -29,10 +29,7 @@ import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), add_, scale_)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, and_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
-import Snarky.Circuit.DSL.Assert (assert_)
-import Snarky.Circuit.DSL.Boolean (any_)
-import Snarky.Circuit.DSL.Field (equals_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta

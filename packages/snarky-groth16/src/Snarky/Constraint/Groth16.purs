@@ -11,7 +11,7 @@ import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBui
 import Snarky.Backend.Prover (class SolveCircuit, ProverT)
 import Snarky.Circuit.CVar (CVar, Variable, const_)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
+import Snarky.Circuit.DSL (class ConstraintM)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck.Gen (Gen)
