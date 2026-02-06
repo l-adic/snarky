@@ -2,7 +2,7 @@ module Snarky.Backend.Kimchi.Impl.Vesta where
 
 import Data.Vector (Vector)
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex)
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Vesta as Vesta
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
@@ -25,11 +25,16 @@ foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> V
 
 foreign import vestaProverIndexVerify :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
 
+foreign import pallasVerifierIndex :: ProverIndex Vesta.G Vesta.ScalarField -> VerifierIndex Vesta.G Vesta.ScalarField
+
 createCRS :: Effect (CRS Vesta.G)
 createCRS = vestaCrsLoadFromCache
 
 createProverIndex :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 createProverIndex = vestaProverIndexCreate
+
+createVerifierIndex :: ProverIndex Vesta.G Vesta.ScalarField -> VerifierIndex Vesta.G Vesta.ScalarField
+createVerifierIndex = pallasVerifierIndex
 
 verifyProverIndex :: ProverIndex Vesta.G Vesta.ScalarField -> Vector 15 (Array Vesta.ScalarField) -> Array Vesta.ScalarField -> Boolean
 verifyProverIndex = vestaProverIndexVerify

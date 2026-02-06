@@ -45,6 +45,9 @@ export function pallasProverIndexCreate(cs) {
     };
 }
 
+export const vestaVerifierIndex = (proverIndex) =>
+    napi.vestaVerifierIndex(proverIndex);
+
 export function pallasProverIndexVerify(proverIndex) {
     return function(witnessColumns) {
         return function(publicInputs) {

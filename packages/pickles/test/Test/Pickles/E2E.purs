@@ -64,8 +64,8 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex)
-import Snarky.Backend.Kimchi.Types (ProverIndex)
+import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, const_)
 import Snarky.Circuit.Kimchi (Type1, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -131,6 +131,7 @@ schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorr
 -- | Contains prover index, witness, proof, and oracles.
 type TestContext =
   { proverIndex :: ProverIndex Vesta.G Vesta.ScalarField
+  , verifierIndex :: VerifierIndex Vesta.G Vesta.ScalarField
   , witness :: Vector 15 (Array Vesta.ScalarField)
   , publicInputs :: Array Vesta.ScalarField
   , domainLog2 :: Int
@@ -222,13 +223,14 @@ createTestContext = do
           , constraintSystem
           , crs
           }
+        verifierIndex = createVerifierIndex @Vesta.ScalarField @Vesta.G proverIndex
         domainLog2 = proverIndexDomainLog2 proverIndex
 
         -- Create proof and get oracles
         proof = ProofFFI.createProof { proverIndex, witness }
-        oracles = ProofFFI.proofOracles proverIndex { proof, publicInput: publicInputs }
+        oracles = ProofFFI.proofOracles verifierIndex { proof, publicInput: publicInputs }
 
-      pure { proverIndex, witness, publicInputs, domainLog2, proof, oracles }
+      pure { proverIndex, verifierIndex, witness, publicInputs, domainLog2, proof, oracles }
 
 -------------------------------------------------------------------------------
 -- | Permutation helper
@@ -970,7 +972,7 @@ plonkChecksCircuitTest ctx = do
 -- | Test that the opening proof verifies.
 openingProofTest :: TestContext -> Aff Unit
 openingProofTest ctx = do
-  let verified = ProofFFI.verifyOpeningProof ctx.proverIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
+  let verified = ProofFFI.verifyOpeningProof ctx.verifierIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
   liftEffect $ verified `shouldEqual` true
 
 -- | Test that PureScript computeB matches the Rust FFI computeB0.
@@ -978,7 +980,7 @@ computeBTest :: TestContext -> Aff Unit
 computeBTest ctx = do
   let
     -- Get bulletproof challenges from the proof
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
@@ -1016,7 +1018,7 @@ ipaRoundsTest ctx = do
     ipaRounds = ProofFFI.proofIpaRounds ctx.proof
 
     -- Get bulletproof challenges (their count should match IPA rounds)
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     numChallenges = Array.length challengesArray
 
@@ -1151,7 +1153,7 @@ bulletReduceCircuitTest ctx = do
         lrProd :: Vesta.G
         lrProd = IPA.bulletReduce @Pallas.ScalarField @Vesta.G { pairs: coerce pairs, challenges }
         computedAffine = unsafePartial $ fromJust $ toAffine lrProd
-        expectedLrProd = ProofFFI.pallasProofLrProd ctx.proverIndex
+        expectedLrProd = ProofFFI.pallasProofLrProd ctx.verifierIndex
           { proof: ctx.proof, publicInput: ctx.publicInputs }
       in
         if computedAffine /= expectedLrProd then unsafeThrow "bulletReduce lr_prod doesn't match Rust"
@@ -1193,7 +1195,7 @@ ipaFinalCheckCircuitTest ctx = do
           , zetaOmega: ctx.oracles.zeta * omega
           , evalscale: ctx.oracles.u
           }
-      , blindingGenerator: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.proverIndex
+      , blindingGenerator: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
       }
 
     circuit
@@ -1228,7 +1230,7 @@ ipaFinalCheckCircuitTest ctx = do
 debugVerifyTest :: TestContext -> Aff Unit
 debugVerifyTest ctx = do
   let
-    _ = ProofFFI.pallasDebugVerify ctx.proverIndex
+    _ = ProofFFI.pallasDebugVerify ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     z1Raw = ProofFFI.pallasProofOpeningZ1 ctx.proof
@@ -1297,7 +1299,7 @@ mkIpaTestContext ctx =
   let
 
     -- Get sponge checkpoint (state before L/R processing)
-    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.proverIndex
+    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Parse checkpoint into sponge state
@@ -1307,11 +1309,11 @@ mkIpaTestContext ctx =
 
     -- Combined polynomial commitment
     combinedPolynomial :: AffinePoint Pallas.ScalarField
-    combinedPolynomial = ProofFFI.pallasCombinedPolynomialCommitment ctx.proverIndex
+    combinedPolynomial = ProofFFI.pallasCombinedPolynomialCommitment ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Compute b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.proverIndex
+    challengesArray = ProofFFI.proofBulletproofChallenges ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
     omega = ProofFFI.domainGenerator ctx.domainLog2
   in

@@ -44,7 +44,7 @@ module Test.Pickles.ProofFFI
 
 import Data.Unit (Unit)
 import Data.Vector (Vector)
-import Snarky.Backend.Kimchi.Types (ProverIndex)
+import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -96,9 +96,9 @@ class ProofFFI f g | f -> g where
   proofZEvals :: Proof g f -> PointEval f
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
   proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
-  proofOracles :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
-  proofBulletproofChallenges :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
-  verifyOpeningProof :: ProverIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
+  proofOracles :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
+  proofBulletproofChallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
+  verifyOpeningProof :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
   computeB0 :: { challenges :: Array f, zeta :: f, zetaOmega :: f, evalscale :: f } -> f
@@ -126,14 +126,14 @@ foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 
 foreign import pallasProofCoefficientEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
 foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
 
-foreign import pallasProofOracles :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
-foreign import vestaProofOracles :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
+foreign import pallasProofOracles :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
+foreign import vestaProofOracles :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
 
-foreign import pallasProofBulletproofChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
-foreign import vestaProofBulletproofChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
+foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
+foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
 
-foreign import pallasVerifyOpeningProof :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
-foreign import vestaVerifyOpeningProof :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
+foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
+foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
 
 foreign import pallasPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
@@ -150,8 +150,8 @@ foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
 -- Note: Sponge checkpoint state is in the commitment curve's base field (the "other" field in the 2-cycle)
 -- Pallas circuits use Vesta for commitments, so sponge is over Vesta.BaseField = Pallas.ScalarField
 -- Vesta circuits use Pallas for commitments, so sponge is over Pallas.BaseField = Vesta.ScalarField
-foreign import pallasSpongeCheckpointBeforeChallenges :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> SpongeCheckpoint Pallas.ScalarField
-foreign import vestaSpongeCheckpointBeforeChallenges :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> SpongeCheckpoint Vesta.ScalarField
+foreign import pallasSpongeCheckpointBeforeChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> SpongeCheckpoint Pallas.ScalarField
+foreign import vestaSpongeCheckpointBeforeChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> SpongeCheckpoint Vesta.ScalarField
 
 -- Note: L/R coordinates are in the commitment curve's base field (the "other" field in the 2-cycle)
 -- For Pallas circuits using Vesta commitments: Vesta.BaseField = Pallas.ScalarField
@@ -162,8 +162,8 @@ foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Vector 1
 -- lr_prod: the curve point sum from bullet_reduce
 -- lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
 -- Returns the coordinates of the result point in the commitment curve's base field
-foreign import pallasProofLrProd :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
-foreign import vestaProofLrProd :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
+foreign import pallasProofLrProd :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
+foreign import vestaProofLrProd :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
 
 -- Opening proof delta (curve point)
 -- Coordinates are in the commitment curve's base field
@@ -184,17 +184,17 @@ foreign import pallasProofOpeningZ2 :: Proof Vesta.G Pallas.BaseField -> Pallas.
 foreign import vestaProofOpeningZ2 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
 
 -- Blinding generator H from SRS (coordinates in commitment curve's base field)
-foreign import pallasProverIndexBlindingGenerator :: ProverIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
-foreign import vestaProverIndexBlindingGenerator :: ProverIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+foreign import pallasProverIndexBlindingGenerator :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+foreign import vestaProverIndexBlindingGenerator :: VerifierIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
 
 -- Combined polynomial commitment (coordinates in commitment curve's base field)
 -- This is the batched commitment: sum_i polyscale^i * C_i
-foreign import pallasCombinedPolynomialCommitment :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
-foreign import vestaCombinedPolynomialCommitment :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
+foreign import pallasCombinedPolynomialCommitment :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
+foreign import vestaCombinedPolynomialCommitment :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
 
 -- Debug verification: prints intermediate IPA values to stderr
-foreign import pallasDebugVerify :: ProverIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Unit
-foreign import vestaDebugVerify :: ProverIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Unit
+foreign import pallasDebugVerify :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Unit
+foreign import vestaDebugVerify :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Unit
 
 --------------------------------------------------------------------------------
 -- Instances

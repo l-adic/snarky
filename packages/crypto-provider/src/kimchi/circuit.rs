@@ -12,6 +12,7 @@ use kimchi::circuits::gate::{CircuitGate, GateType};
 use kimchi::circuits::wires::{GateWires, Wire, COLUMNS, PERMUTS};
 use kimchi::proof::ProverProof;
 use kimchi::prover_index::ProverIndex;
+use kimchi::verifier_index::VerifierIndex;
 use poly_commitment::commitment::CommitmentCurve;
 use poly_commitment::ipa::OpeningProof;
 use poly_commitment::{ipa::SRS, precomputed_srs::TestSRS};
@@ -49,6 +50,18 @@ pub type VestaProverIndexExternal = External<
     ProverIndex<
         super::super::pasta::types::VestaGroup,
         OpeningProof<super::super::pasta::types::VestaGroup>,
+    >,
+>;
+pub type PallasVerifierIndexExternal = External<
+    VerifierIndex<
+        super::super::pasta::types::VestaGroup,
+        OpeningProof<super::super::pasta::types::VestaGroup>,
+    >,
+>;
+pub type VestaVerifierIndexExternal = External<
+    VerifierIndex<
+        super::super::pasta::types::PallasGroup,
+        OpeningProof<super::super::pasta::types::PallasGroup>,
     >,
 >;
 pub type PallasProofExternal = External<ProverProof<PallasGroup, OpeningProof<PallasGroup>>>;
@@ -298,26 +311,20 @@ mod generic {
         result
     }
 
-    /// Helper: compute oracles result from prover index and proof.
-    /// Returns (verifier_index, oracles_result).
-    #[allow(clippy::type_complexity)]
+    /// Helper: compute oracles result from verifier index and proof.
+    /// Returns (verifier_index reference, oracles_result).
     fn compute_oracles<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
-    ) -> Result<(
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>,
-        kimchi::oracles::OraclesResult<G, EFqSponge>,
-    )>
+    ) -> Result<kimchi::oracles::OraclesResult<G, EFqSponge>>
     where
         G: KimchiCurve,
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let verifier_index = prover_index.verifier_index();
-
         // Compute public input commitment (same logic as batch_verify)
         let public_comm = {
             let lgr_comm = verifier_index
@@ -343,16 +350,14 @@ mod generic {
             }
         };
 
-        let oracles_result = proof
-            .oracles::<EFqSponge, EFrSponge>(&verifier_index, &public_comm, Some(public_input))
+        proof
+            .oracles::<EFqSponge, EFrSponge>(verifier_index, &public_comm, Some(public_input))
             .map_err(|e| {
                 Error::new(
                     Status::GenericFailure,
                     format!("Oracle computation failed: {e:?}"),
                 )
-            })?;
-
-        Ok((verifier_index, oracles_result))
+            })
     }
 
     /// Run the verifier's Fiat-Shamir oracle computation.
@@ -360,7 +365,7 @@ mod generic {
     ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
     ///                     fq_digest, alpha_chal, zeta_chal]
     pub fn proof_oracles<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> Result<Vec<G::ScalarField>>
@@ -369,10 +374,10 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let (_, oracles_result) =
-            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
 
         // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
         // Each is a Vec because of chunking, but for non-chunked we just take [0]
@@ -399,7 +404,7 @@ mod generic {
             public_eval_zeta_omega,
             oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
             oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
-            oracles_result.oracles.zeta_chal.0,  // raw 128-bit zeta challenge
+            oracles_result.oracles.zeta_chal.0, // raw 128-bit zeta challenge
         ])
     }
 
@@ -414,7 +419,7 @@ mod generic {
     /// Core helper: compute bulletproof challenges and extract all intermediate state.
     /// This is the single source of truth - other functions project from this.
     pub fn bulletproof_challenge_data<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> Result<BulletproofChallengeData<G::ScalarField, G::BaseField>>
@@ -423,10 +428,10 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let (verifier_index, oracles_result) =
-            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
 
         // Get the sponge from oracles, absorb combined_inner_product
         let mut fq_sponge = oracles_result.fq_sponge;
@@ -456,7 +461,7 @@ mod generic {
     /// These are the IPA challenges after applying the endomorphism.
     /// Returns d values where d = domain_log2 (number of IPA rounds).
     pub fn proof_bulletproof_challenges<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> Result<Vec<G::ScalarField>>
@@ -465,10 +470,10 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
         Ok(bulletproof_challenge_data::<G, EFqSponge, EFrSponge>(
-            prover_index,
+            verifier_index,
             proof,
             public_input,
         )?
@@ -506,7 +511,7 @@ mod generic {
     /// (see wrap_verifier.ml bullet_reduce / step_verifier.ml bullet_reduce).
     /// Returns coordinates [x, y] of the result point.
     pub fn proof_lr_prod<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> Result<Vec<G::BaseField>>
@@ -515,10 +520,10 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let (verifier_index, oracles_result) =
-            compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input)?;
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
 
         // Get the sponge from oracles, absorb combined_inner_product
         let mut fq_sponge = oracles_result.fq_sponge;
@@ -565,7 +570,7 @@ mod generic {
     /// Verify the opening proof using batch_verify.
     /// Returns true if verification succeeds.
     pub fn verify_opening_proof<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> bool
@@ -574,13 +579,12 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let verifier_index = prover_index.verifier_index();
         let group_map = <G as CommitmentCurve>::Map::setup();
 
         let context = kimchi::verifier::Context {
-            verifier_index: &verifier_index,
+            verifier_index,
             proof,
             public_input,
         };
@@ -658,16 +662,15 @@ mod generic {
         proof.proof.z2
     }
 
-    /// Get the blinding generator H from the SRS via prover index.
+    /// Get the blinding generator H from the SRS via verifier index.
     /// Returns [x, y] coordinates.
-    pub fn prover_index_blinding_generator<G: KimchiCurve>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+    pub fn blinding_generator<G: KimchiCurve>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
     ) -> Vec<G::BaseField>
     where
         G::BaseField: PrimeField,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
-        let verifier_index = prover_index.verifier_index();
         let h = verifier_index.srs().blinding_commitment();
         if let Some((x, y)) = h.to_coordinates() {
             vec![x, y]
@@ -687,7 +690,7 @@ mod generic {
     ///
     /// Returns [x, y] coordinates of the combined commitment.
     pub fn combined_polynomial_commitment<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) -> Result<Vec<G::BaseField>>
@@ -696,15 +699,13 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
         use poly_commitment::commitment::combine_commitments;
 
-        let verifier_index = prover_index.verifier_index();
-
         // Use Kimchi's to_batch to get the evaluations list in correct order
         let batch = kimchi::verifier::to_batch::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
-            &verifier_index,
+            verifier_index,
             proof,
             public_input,
         )
@@ -738,7 +739,7 @@ mod generic {
 
     /// Debug verification that prints all intermediate IPA values.
     pub fn debug_verify<G, EFqSponge, EFrSponge>(
-        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
     ) where
@@ -746,12 +747,12 @@ mod generic {
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
-        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
     {
         use poly_commitment::commitment::b_poly;
 
-        let (verifier_index, oracles_result) =
-            match compute_oracles::<G, EFqSponge, EFrSponge>(prover_index, proof, public_input) {
+        let oracles_result =
+            match compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input) {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("Failed to compute oracles: {e:?}");
@@ -887,14 +888,12 @@ mod generic {
             (q_computed.into_group() - combined_inner_u.into_group() - lr_prod.into_group())
                 .into_affine();
         if let Some((x, y)) = combined_comm_expected.to_coordinates() {
-            eprintln!(
-                "combined_comm (expected, derived from Q): ({x:?}, {y:?})"
-            );
+            eprintln!("combined_comm (expected, derived from Q): ({x:?}, {y:?})");
         }
 
         // Now compute what our FFI function returns
         match combined_polynomial_commitment::<G, EFqSponge, EFrSponge>(
-            prover_index,
+            verifier_index,
             proof,
             public_input,
         ) {
@@ -1163,6 +1162,24 @@ pub fn vesta_prover_index_create(
         false, // lazy_mode
     );
     External::new(prover_index)
+}
+
+/// Project a VerifierIndex from a Pallas ProverIndex.
+/// For Pallas circuits (Vesta commitment curve): VestaProverIndex -> PallasVerifierIndex.
+#[napi]
+pub fn pallas_verifier_index(
+    prover_index: &VestaProverIndexExternal,
+) -> PallasVerifierIndexExternal {
+    External::new(prover_index.verifier_index())
+}
+
+/// Project a VerifierIndex from a Vesta ProverIndex.
+/// For Vesta circuits (Pallas commitment curve): PallasProverIndex -> VestaVerifierIndex.
+#[napi]
+pub fn vesta_verifier_index(
+    prover_index: &PallasProverIndexExternal,
+) -> VestaVerifierIndexExternal {
+    External::new(prover_index.verifier_index())
 }
 
 #[napi]
@@ -1435,13 +1452,13 @@ pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasF
 ///                     fq_digest, alpha_chal, zeta_chal]
 #[napi]
 pub fn pallas_proof_oracles(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     let result = generic::proof_oracles::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )?;
@@ -1454,13 +1471,13 @@ pub fn pallas_proof_oracles(
 ///                     fq_digest, alpha_chal, zeta_chal]
 #[napi]
 pub fn vesta_proof_oracles(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     let result = generic::proof_oracles::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )?;
@@ -1471,7 +1488,7 @@ pub fn vesta_proof_oracles(
 /// Returns d values where d = domain_log2 (number of IPA rounds).
 #[napi]
 pub fn pallas_proof_bulletproof_challenges(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
@@ -1480,7 +1497,7 @@ pub fn pallas_proof_bulletproof_challenges(
         VestaGroup,
         VestaBaseSponge,
         VestaScalarSponge,
-    >(&**prover_index, &**proof, &public)?;
+    >(&**verifier_index, &**proof, &public)?;
     Ok(result.into_iter().map(External::new).collect())
 }
 
@@ -1488,7 +1505,7 @@ pub fn pallas_proof_bulletproof_challenges(
 /// Returns d values where d = domain_log2 (number of IPA rounds).
 #[napi]
 pub fn vesta_proof_bulletproof_challenges(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
@@ -1497,7 +1514,7 @@ pub fn vesta_proof_bulletproof_challenges(
         PallasGroup,
         PallasBaseSponge,
         PallasScalarSponge,
-    >(&**prover_index, &**proof, &public)?;
+    >(&**verifier_index, &**proof, &public)?;
     Ok(result.into_iter().map(External::new).collect())
 }
 
@@ -1505,13 +1522,13 @@ pub fn vesta_proof_bulletproof_challenges(
 /// Returns true if verification succeeds.
 #[napi]
 pub fn pallas_verify_opening_proof(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> bool {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::verify_opening_proof::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1521,13 +1538,13 @@ pub fn pallas_verify_opening_proof(
 /// Returns true if verification succeeds.
 #[napi]
 pub fn vesta_verify_opening_proof(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> bool {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::verify_opening_proof::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1587,13 +1604,13 @@ pub type VestaSpongeCheckpointExternal =
 /// Returns an opaque checkpoint - use accessor functions to get state/mode.
 #[napi]
 pub fn pallas_sponge_checkpoint(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<PallasSpongeCheckpointExternal> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     let data = generic::bulletproof_challenge_data::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )?;
@@ -1636,7 +1653,7 @@ pub fn pallas_sponge_checkpoint_mode_count(checkpoint: &PallasSpongeCheckpointEx
 /// Returns an opaque checkpoint - use accessor functions to get state/mode.
 #[napi]
 pub fn vesta_sponge_checkpoint(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<VestaSpongeCheckpointExternal> {
@@ -1645,7 +1662,7 @@ pub fn vesta_sponge_checkpoint(
         PallasGroup,
         PallasBaseSponge,
         PallasScalarSponge,
-    >(&**prover_index, &**proof, &public)?;
+    >(&**verifier_index, &**proof, &public)?;
     Ok(External::new(data.sponge_checkpoint))
 }
 
@@ -1708,13 +1725,13 @@ pub fn vesta_proof_opening_lr(proof: &PallasProofExternal) -> Vec<VestaFieldExte
 /// Returns [x, y] coordinates of the result point (in Pallas base field = Fq).
 #[napi]
 pub fn pallas_proof_lr_prod(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::proof_lr_prod::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1726,13 +1743,13 @@ pub fn pallas_proof_lr_prod(
 /// Returns [x, y] coordinates of the result point (in Vesta base field = Fp).
 #[napi]
 pub fn vesta_proof_lr_prod(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::proof_lr_prod::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1819,9 +1836,9 @@ pub fn vesta_proof_opening_z2(proof: &PallasProofExternal) -> PallasFieldExterna
 /// Returns [x, y] coordinates of H (in Pallas base field = Fq).
 #[napi]
 pub fn pallas_prover_index_blinding_generator(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
 ) -> Vec<PallasFieldExternal> {
-    generic::prover_index_blinding_generator::<VestaGroup>(&**prover_index)
+    generic::blinding_generator::<VestaGroup>(&**verifier_index)
         .into_iter()
         .map(External::new)
         .collect()
@@ -1831,9 +1848,9 @@ pub fn pallas_prover_index_blinding_generator(
 /// Returns [x, y] coordinates of H (in Vesta base field = Fp).
 #[napi]
 pub fn vesta_prover_index_blinding_generator(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
 ) -> Vec<VestaFieldExternal> {
-    generic::prover_index_blinding_generator::<PallasGroup>(&**prover_index)
+    generic::blinding_generator::<PallasGroup>(&**verifier_index)
         .into_iter()
         .map(External::new)
         .collect()
@@ -1847,13 +1864,13 @@ pub fn vesta_prover_index_blinding_generator(
 /// Returns [x, y] coordinates of the combined commitment (in Pallas base field = Fq).
 #[napi]
 pub fn pallas_combined_polynomial_commitment(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::combined_polynomial_commitment::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1864,13 +1881,13 @@ pub fn pallas_combined_polynomial_commitment(
 /// Returns [x, y] coordinates of the combined commitment (in Vesta base field = Fp).
 #[napi]
 pub fn vesta_combined_polynomial_commitment(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::combined_polynomial_commitment::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     )
@@ -1885,13 +1902,13 @@ pub fn vesta_combined_polynomial_commitment(
 /// This prints intermediate values to understand the IPA verification.
 #[napi]
 pub fn pallas_debug_verify(
-    prover_index: &VestaProverIndexExternal,
+    verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
 ) {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::debug_verify::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     );
@@ -1901,13 +1918,13 @@ pub fn pallas_debug_verify(
 /// This prints intermediate values to understand the IPA verification.
 #[napi]
 pub fn vesta_debug_verify(
-    prover_index: &PallasProverIndexExternal,
+    verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
 ) {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     generic::debug_verify::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
-        &**prover_index,
+        &**verifier_index,
         &**proof,
         &public,
     );
