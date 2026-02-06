@@ -35,6 +35,12 @@ module Test.Pickles.ProofFFI
   , vestaCombinedPolynomialCommitment
   , pallasDebugVerify
   , vestaDebugVerify
+  , pallasVerifierIndexMaxPolySize
+  , vestaVerifierIndexMaxPolySize
+  , pallasVerifierIndexDigest
+  , pallasPublicComm
+  , pallasProofCommitments
+  , ProofCommitments
   , Proof
   , OraclesResult
   , PointEval
@@ -195,6 +201,27 @@ foreign import vestaCombinedPolynomialCommitment :: VerifierIndex Pallas.G Vesta
 -- Debug verification: prints intermediate IPA values to stderr
 foreign import pallasDebugVerify :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Unit
 foreign import vestaDebugVerify :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Unit
+
+-- Max polynomial size from verifier index
+foreign import pallasVerifierIndexMaxPolySize :: VerifierIndex Vesta.G Pallas.BaseField -> Int
+foreign import vestaVerifierIndexMaxPolySize :: VerifierIndex Pallas.G Vesta.BaseField -> Int
+
+-- Fq-sponge transcript helpers
+-- VK digest: returns Fq element (Pallas.ScalarField)
+foreign import pallasVerifierIndexDigest :: VerifierIndex Vesta.G Pallas.BaseField -> Pallas.ScalarField
+
+-- Public input polynomial commitment: returns array of {x, y} points in Fq (one per chunk)
+foreign import pallasPublicComm :: VerifierIndex Vesta.G Pallas.BaseField -> Array Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
+
+-- | Proof commitments structured for Fq-sponge absorption.
+type ProofCommitments f =
+  { wComm :: Vector 15 (AffinePoint f)
+  , zComm :: AffinePoint f
+  , tComm :: Array (AffinePoint f)
+  }
+
+-- Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points) in Fq
+foreign import pallasProofCommitments :: Proof Vesta.G Pallas.BaseField -> ProofCommitments Pallas.ScalarField
 
 --------------------------------------------------------------------------------
 -- Instances

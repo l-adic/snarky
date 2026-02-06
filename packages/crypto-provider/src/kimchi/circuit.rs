@@ -919,6 +919,100 @@ mod generic {
 
         eprintln!("=== End Debug ===");
     }
+
+    /// Compute the verifier index digest.
+    /// Returns G::BaseField (Fq for VestaGroup).
+    pub fn verifier_index_digest<G, EFqSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+    ) -> G::BaseField
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        verifier_index.digest::<EFqSponge>()
+    }
+
+    /// Compute the public input polynomial commitment as flat affine coordinates.
+    /// Returns [x0, y0, x1, y1, ...] for all chunks in G::BaseField.
+    pub fn public_comm<G>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Vec<G::BaseField>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let public_comm = {
+            let lgr_comm = verifier_index
+                .srs()
+                .get_lagrange_basis(verifier_index.domain);
+            let com: Vec<_> = lgr_comm.iter().take(verifier_index.public).collect();
+            if public_input.is_empty() {
+                poly_commitment::commitment::PolyComm::new(vec![verifier_index
+                    .srs()
+                    .blinding_commitment()])
+            } else {
+                let elm: Vec<_> = public_input.iter().map(|s| -*s).collect();
+                let public_comm =
+                    poly_commitment::commitment::PolyComm::<G>::multi_scalar_mul(&com, &elm);
+                verifier_index
+                    .srs()
+                    .mask_custom(
+                        public_comm.clone(),
+                        &public_comm.map(|_| G::ScalarField::one()),
+                    )
+                    .unwrap()
+                    .commitment
+            }
+        };
+        let mut result = Vec::new();
+        for pt in &public_comm.chunks {
+            if let Some((x, y)) = pt.to_coordinates() {
+                result.push(x);
+                result.push(y);
+            }
+        }
+        result
+    }
+
+    /// Extract proof commitments as flat coordinate arrays.
+    /// Returns flat [w0.x, w0.y, w1.x, w1.y, ..., z.x, z.y, t0.x, t0.y, ...]
+    /// in G::BaseField (the commitment curve's base field).
+    pub fn proof_commitments<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::new();
+        // w_comm: 15 polynomial commitments
+        for w in &proof.commitments.w_comm {
+            for pt in &w.chunks {
+                if let Some((x, y)) = pt.to_coordinates() {
+                    result.push(x);
+                    result.push(y);
+                }
+            }
+        }
+        // z_comm: 1 polynomial commitment
+        for pt in &proof.commitments.z_comm.chunks {
+            if let Some((x, y)) = pt.to_coordinates() {
+                result.push(x);
+                result.push(y);
+            }
+        }
+        // t_comm: quotient polynomial commitment (may have multiple chunks)
+        for pt in &proof.commitments.t_comm.chunks {
+            if let Some((x, y)) = pt.to_coordinates() {
+                result.push(x);
+                result.push(y);
+            }
+        }
+        result
+    }
 }
 
 #[napi]
@@ -1928,4 +2022,93 @@ pub fn vesta_debug_verify(
         &**proof,
         &public,
     );
+}
+
+// ============================================================================
+// Fq-sponge transcript helpers (VK digest, public_comm, proof commitments)
+// ============================================================================
+
+/// Get the verifier index digest (Pallas/Fp circuits).
+/// Returns a single Fq element (Pallas.ScalarField).
+#[napi]
+pub fn pallas_verifier_index_digest(
+    verifier_index: &PallasVerifierIndexExternal,
+) -> PallasFieldExternal {
+    External::new(generic::verifier_index_digest::<VestaGroup, VestaBaseSponge>(&**verifier_index))
+}
+
+/// Get the verifier index digest (Vesta/Fq circuits).
+/// Returns a single Fp element (Vesta.ScalarField).
+#[napi]
+pub fn vesta_verifier_index_digest(
+    verifier_index: &VestaVerifierIndexExternal,
+) -> VestaFieldExternal {
+    External::new(generic::verifier_index_digest::<
+        PallasGroup,
+        PallasBaseSponge,
+    >(&**verifier_index))
+}
+
+/// Compute public input polynomial commitment (Pallas/Fp circuits).
+/// Returns flat [x0, y0, x1, y1, ...] in Fq (Pallas.ScalarField) for all chunks.
+#[napi]
+pub fn pallas_public_comm(
+    verifier_index: &PallasVerifierIndexExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Vec<PallasFieldExternal> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::public_comm::<VestaGroup>(&**verifier_index, &public)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Compute public input polynomial commitment (Vesta/Fq circuits).
+/// Returns flat [x0, y0, x1, y1, ...] in Fp (Vesta.ScalarField) for all chunks.
+#[napi]
+pub fn vesta_public_comm(
+    verifier_index: &VestaVerifierIndexExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Vec<VestaFieldExternal> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::public_comm::<PallasGroup>(&**verifier_index, &public)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract proof commitments from a Vesta proof (Pallas/Fp circuits).
+/// Returns flat array of Fq coordinates: [w0.x, w0.y, ..., z.x, z.y, t0.x, t0.y, ...]
+#[napi]
+pub fn pallas_proof_commitments(proof: &VestaProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_commitments::<VestaGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get max_poly_size from a Pallas verifier index.
+#[napi]
+pub fn pallas_verifier_index_max_poly_size(
+    verifier_index: &PallasVerifierIndexExternal,
+) -> u32 {
+    verifier_index.max_poly_size as u32
+}
+
+/// Get max_poly_size from a Vesta verifier index.
+#[napi]
+pub fn vesta_verifier_index_max_poly_size(
+    verifier_index: &VestaVerifierIndexExternal,
+) -> u32 {
+    verifier_index.max_poly_size as u32
+}
+
+/// Extract proof commitments from a Pallas proof (Vesta/Fq circuits).
+/// Returns flat array of Fp coordinates: [w0.x, w0.y, ..., z.x, z.y, t0.x, t0.y, ...]
+#[napi]
+pub fn vesta_proof_commitments(proof: &PallasProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_commitments::<PallasGroup>(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
 }

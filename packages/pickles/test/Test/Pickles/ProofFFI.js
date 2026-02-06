@@ -263,3 +263,35 @@ export const pallasDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
 
 export const vestaDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
   crypto.vestaDebugVerify(verifierIndex, proof, publicInput);
+
+// Max polynomial size from verifier index
+export const pallasVerifierIndexMaxPolySize = (verifierIndex) =>
+  crypto.pallasVerifierIndexMaxPolySize(verifierIndex);
+
+export const vestaVerifierIndexMaxPolySize = (verifierIndex) =>
+  crypto.vestaVerifierIndexMaxPolySize(verifierIndex);
+
+// Verifier index digest (Fq element)
+export const pallasVerifierIndexDigest = (verifierIndex) =>
+  crypto.pallasVerifierIndexDigest(verifierIndex);
+
+// Public input polynomial commitment (returns array of {x, y} points in Fq, one per chunk)
+export const pallasPublicComm = (verifierIndex) => (publicInput) => {
+  const flat = crypto.pallasPublicComm(verifierIndex, publicInput);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
+export const pallasProofCommitments = (proof) => {
+  const flat = crypto.pallasProofCommitments(proof);
+  const wComm = [];
+  for (let i = 0; i < 30; i += 2) wComm.push({ x: flat[i], y: flat[i+1] });
+  const zComm = { x: flat[30], y: flat[31] };
+  const tComm = [];
+  for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
+  return { wComm, zComm, tComm };
+};
