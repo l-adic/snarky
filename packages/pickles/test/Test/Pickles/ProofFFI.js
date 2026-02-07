@@ -285,6 +285,35 @@ export const pallasPublicComm = (verifierIndex) => (publicInput) => {
   return result;
 };
 
+// Lagrange commitments from SRS
+// Returns array of {x, y} points
+export const pallasLagrangeCommitments = (verifierIndex) => (count) => {
+  const flat = crypto.pallasLagrangeCommitments(verifierIndex, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaLagrangeCommitments = (verifierIndex) => (count) => {
+  const flat = crypto.vestaLagrangeCommitments(verifierIndex, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaPublicComm = (verifierIndex) => (publicInput) => {
+  const flat = crypto.vestaPublicComm(verifierIndex, publicInput);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
 // Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
 export const pallasProofCommitments = (proof) => {
   const flat = crypto.pallasProofCommitments(proof);

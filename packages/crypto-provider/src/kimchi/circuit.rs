@@ -934,6 +934,34 @@ mod generic {
         verifier_index.digest::<EFqSponge>()
     }
 
+    /// Get lagrange commitment points from the SRS as flat affine coordinates.
+    /// Returns [x0, y0, x1, y1, ...] for the first `count` lagrange commitments.
+    pub fn lagrange_commitments<G: KimchiCurve>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        count: usize,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let lgr_comm = verifier_index
+            .srs()
+            .get_lagrange_basis(verifier_index.domain);
+        let mut result = Vec::with_capacity(count * 2);
+        for comm in lgr_comm.iter().take(count) {
+            if let Some(pt) = comm.chunks.first() {
+                if let Some((x, y)) = pt.to_coordinates() {
+                    result.push(x);
+                    result.push(y);
+                    continue;
+                }
+            }
+            result.push(G::BaseField::zero());
+            result.push(G::BaseField::zero());
+        }
+        result
+    }
+
     /// Compute the public input polynomial commitment as flat affine coordinates.
     /// Returns [x0, y0, x1, y1, ...] for all chunks in G::BaseField.
     pub fn public_comm<G>(
@@ -1945,6 +1973,36 @@ pub fn vesta_prover_index_blinding_generator(
     verifier_index: &VestaVerifierIndexExternal,
 ) -> Vec<VestaFieldExternal> {
     generic::blinding_generator::<PallasGroup>(&**verifier_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+// ============================================================================
+// Lagrange commitments
+// ============================================================================
+
+/// Get lagrange commitment points from the SRS for Pallas circuits.
+/// Returns flat [x0, y0, x1, y1, ...] in Fq (Pallas.ScalarField = Vesta base field).
+#[napi]
+pub fn pallas_lagrange_commitments(
+    verifier_index: &PallasVerifierIndexExternal,
+    count: u32,
+) -> Vec<PallasFieldExternal> {
+    generic::lagrange_commitments::<VestaGroup>(&**verifier_index, count as usize)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get lagrange commitment points from the SRS for Vesta circuits.
+/// Returns flat [x0, y0, x1, y1, ...] in Fp (Vesta.ScalarField = Pallas base field).
+#[napi]
+pub fn vesta_lagrange_commitments(
+    verifier_index: &VestaVerifierIndexExternal,
+    count: u32,
+) -> Vec<VestaFieldExternal> {
+    generic::lagrange_commitments::<PallasGroup>(&**verifier_index, count as usize)
         .into_iter()
         .map(External::new)
         .collect()

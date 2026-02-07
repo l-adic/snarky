@@ -39,6 +39,9 @@ module Test.Pickles.ProofFFI
   , vestaVerifierIndexMaxPolySize
   , pallasVerifierIndexDigest
   , pallasPublicComm
+  , vestaPublicComm
+  , pallasLagrangeCommitments
+  , vestaLagrangeCommitments
   , pallasProofCommitments
   , ProofCommitments
   , Proof
@@ -212,6 +215,11 @@ foreign import pallasVerifierIndexDigest :: VerifierIndex Vesta.G Pallas.BaseFie
 
 -- Public input polynomial commitment: returns array of {x, y} points in Fq (one per chunk)
 foreign import pallasPublicComm :: VerifierIndex Vesta.G Pallas.BaseField -> Array Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
+foreign import vestaPublicComm :: VerifierIndex Pallas.G Vesta.BaseField -> Array Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
+
+-- Lagrange commitment points from SRS (constant bases for public input MSM)
+foreign import pallasLagrangeCommitments :: VerifierIndex Vesta.G Pallas.BaseField -> Int -> Array (AffinePoint Pallas.ScalarField)
+foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseField -> Int -> Array (AffinePoint Vesta.ScalarField)
 
 -- | Proof commitments structured for Fq-sponge absorption.
 type ProofCommitments f =
