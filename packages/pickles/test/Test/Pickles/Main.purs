@@ -10,7 +10,9 @@ import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
 import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
+import Test.Pickles.MultiscaleKnown as MultiscaleKnown
 import Test.Pickles.Permutation as Permutation
+import Test.Pickles.PublicInputCommitment as PublicInputCommitment
 import Test.Pickles.Step as Step
 import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.Step.FqSpongeTranscript as FqSpongeTranscript
@@ -28,7 +30,9 @@ main = runSpecAndExitProcess'
     E2E.spec
     FinalizeOtherProofE2E.realDataSpec
     FqSpongeTranscript.spec
+    PublicInputCommitment.spec
     mapSpec nat do
+      MultiscaleKnown.spec
       Commitments.spec
       IPA.spec
       Linearization.spec
