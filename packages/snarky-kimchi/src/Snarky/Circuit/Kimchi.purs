@@ -15,5 +15,5 @@ import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar, toField, toFieldPur
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMap, groupMapCircuit, groupMapParams, potentialXs)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM, verifyCircuit, verifyCircuitM)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
-import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, forbiddenShiftedValues, forbiddenType1Values, forbiddenType2Values, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, joinField, splitField, toShifted)
+import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField, splitFieldVar)
+import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, forbiddenShiftedValues, forbiddenType1Values, forbiddenType2Values, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, toShifted)

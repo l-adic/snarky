@@ -1,6 +1,10 @@
 module Snarky.Circuit.Kimchi.VarBaseMul
   ( scaleFast1
   , scaleFast2
+  , scaleFast2'
+  , splitFieldVar
+  , splitField
+  , joinField
   ) where
 
 import Prelude
@@ -11,6 +15,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
@@ -20,7 +25,7 @@ import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
-import Snarky.Curves.Class (class FieldSizeInBits)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
@@ -152,3 +157,59 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
     negBase <- EllipticCurve.negate base
     { p } <- addComplete g negBase
     pure p
+
+-- | Split a field element into parity decomposition and constrain it.
+-- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then asserts the relationship.
+splitFieldVar
+  :: forall t m f c
+   . CircuitM f c t m
+  => FVar f
+  -> Snarky c t m ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
+splitFieldVar s = do
+  res@{ sDiv2, sOdd } <- exists do
+    F sVal <- readCVar s
+    pure $ splitField (F sVal)
+  assertEqual_ s =<< do
+    pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
+  pure res
+
+splitField :: forall f. PrimeField f => F f -> { sDiv2 :: F f, sOdd :: Boolean }
+splitField (F s) =
+  let
+    sBigInt = toBigInt s
+    sOdd = BigInt.odd sBigInt
+    sDiv2 = (if sOdd then s - one else s) / fromInt 2
+  in
+    { sDiv2: F sDiv2, sOdd }
+
+joinField :: forall f. PrimeField f => { sDiv2 :: f, sOdd :: Boolean } -> f
+joinField { sDiv2, sOdd } =
+  let
+    two = fromInt 2
+  in
+    two * sDiv2 + (if sOdd then one else zero)
+
+{-
+scaleFast2' g s ~ [s + 2^n] * g
+
+Like scaleFast2 but takes a raw field element instead of a pre-split Type2.
+Splits s into (sDiv2, sOdd) where s = 2*sDiv2 + sOdd (parity decomposition),
+constrains the split, then delegates to scaleFast2 which adds the 2^n shift
+via varBaseMul. This matches OCaml's scale_fast2'.
+-}
+scaleFast2'
+  :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
+   . FieldSizeInBits f n
+  => Add bitsUsed _l n
+  => Add sDiv2Bits 1 n
+  => Mul 5 nChunks bitsUsed
+  => Reflectable bitsUsed Int
+  => Reflectable sDiv2Bits Int
+  => CircuitM f (KimchiConstraint f) t m
+  => AffinePoint (FVar f)
+  -> FVar f
+  -> Snarky (KimchiConstraint f) t m
+       (AffinePoint (FVar f))
+scaleFast2' base s = do
+  split <- splitFieldVar s
+  scaleFast2 @nChunks base (Type2 split)

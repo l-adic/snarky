@@ -12,25 +12,13 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, joinField, splitField, toShifted)
+import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, toShifted)
 import Test.QuickCheck (Result, (===))
 import Test.QuickCheck.Gen (Gen, chooseInt, oneOf)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
-
---------------------------------------------------------------------------------
--- splitField / joinField roundtrip (within same field)
---------------------------------------------------------------------------------
-
-splitJoinRoundtrip :: forall @f. PrimeField f => F f -> Result
-splitJoinRoundtrip x =
-  let
-    Type2 { sDiv2: F d, sOdd } = splitField x
-    reconstructed = F (joinField { sDiv2: d, sOdd })
-  in
-    reconstructed === x
 
 --------------------------------------------------------------------------------
 -- Type1 roundtrip: fromShifted (toShifted s) == s
@@ -163,12 +151,6 @@ type2Expected (Type2 { sDiv2: F d, sOdd }) =
 spec :: Spec Unit
 spec = do
   describe "Snarky.Types.Shifted" do
-    describe "splitField / joinField" do
-      it "roundtrips in Vesta.BaseField" $
-        quickCheck (splitJoinRoundtrip @Vesta.BaseField)
-      it "roundtrips in Vesta.ScalarField" $
-        quickCheck (splitJoinRoundtrip @Vesta.ScalarField)
-
     describe "Type1 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.BaseField)
