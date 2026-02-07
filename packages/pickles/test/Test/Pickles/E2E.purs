@@ -67,7 +67,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, const_)
-import Snarky.Circuit.Kimchi (Type1, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (Type1, expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -96,7 +96,7 @@ zkRows = 3
 schnorrCircuit
   :: forall t
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-  => VerifyInput 4 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)
+  => VerifyInput 4 (FVar Vesta.ScalarField)
   -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (BoolVar Vesta.ScalarField)
 schnorrCircuit { signature: { r: sigR, s: sigS }, publicKey, message } =
   let
@@ -113,14 +113,14 @@ schnorrCircuit { signature: { r: sigR, s: sigS }, publicKey, message } =
 -- | Compiled circuit state for the Schnorr circuit.
 schnorrBuiltState :: CircuitBuilderState (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField)
 schnorrBuiltState = compilePure
-  (Proxy @(VerifyInput 4 (F Vesta.ScalarField) Boolean))
+  (Proxy @(VerifyInput 4 (F Vesta.ScalarField)))
   (Proxy @Boolean)
   (Proxy @(KimchiConstraint Vesta.ScalarField))
   schnorrCircuit
   Kimchi.initialState
 
 -- | Solver for the Schnorr circuit.
-schnorrSolver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField) Boolean) Boolean
+schnorrSolver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField)) Boolean
 schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorrCircuit
 
 -------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ type TestContext =
 
 -- | Create a fixed valid Schnorr signature for deterministic testing.
 -- | Uses constant private key and message to ensure reproducible results.
-fixedValidSignature :: VerifyInput 4 (F Vesta.ScalarField) Boolean
+fixedValidSignature :: VerifyInput 4 (F Vesta.ScalarField)
 fixedValidSignature =
   let
     -- Fixed private key (arbitrary non-zero scalar)
@@ -176,14 +176,21 @@ fixedValidSignature =
     -- e = H(pk.x, pk.y, r, message)
     eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
 
-    e :: Pallas.ScalarField
-    e = fromBigInt (toBigInt eBase)
+    -- The circuit uses scaleFast2' which computes [value + 2^n] * base.
+    -- For Schnorr: [s + 2^n]*G - [e + 2^n]*Pk = k*G
+    -- So: s = k + (e + 2^n)*d - 2^n
+    n = fieldSizeBits (Proxy @Vesta.ScalarField)
 
-    -- s = k + e * privateKey
+    twoToN :: Pallas.ScalarField
+    twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+    e :: Pallas.ScalarField
+    e = fromBigInt (toBigInt eBase) + twoToN
+
     s :: Pallas.ScalarField
-    s = k + e * privateKey
+    s = k + e * privateKey - twoToN
   in
-    { signature: { r: F r, s: toShifted $ F s }
+    { signature: { r: F r, s: F $ fromBigInt $ toBigInt s }
     , publicKey: { x: F publicKey.x, y: F publicKey.y }
     , message: map F message
     }

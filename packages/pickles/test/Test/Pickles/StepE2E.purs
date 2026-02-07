@@ -45,7 +45,7 @@ import Type.Proxy (Proxy(..))
 type StepField = Vesta.ScalarField
 
 -- | The Schnorr verification input (application circuit input)
-type SchnorrInput = VerifyInput 4 (F StepField) Boolean
+type SchnorrInput = VerifyInput 4 (F StepField)
 
 -- | Full Step circuit input: Schnorr input + dummy previous proof data
 type StepSchnorrInput =
@@ -54,7 +54,7 @@ type StepSchnorrInput =
 -- | Variable version for circuit
 type StepSchnorrInputVar =
   StepInput 1
-    (VerifyInput 4 (FVar StepField) (BoolVar StepField))
+    (VerifyInput 4 (FVar StepField))
     Unit
     (FVar StepField)
     (Type1 (FVar StepField))
@@ -73,7 +73,7 @@ type StepSchnorrInputVar =
 schnorrAppCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => AppCircuitInput 1 (VerifyInput 4 (FVar StepField) (BoolVar StepField)) Unit
+  => AppCircuitInput 1 (VerifyInput 4 (FVar StepField)) Unit
   -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
 schnorrAppCircuit { appInput } = do
   -- Run Schnorr verification
