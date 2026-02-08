@@ -55,8 +55,9 @@ import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
-import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
+import Pickles.Sponge (evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
+import Pickles.Step.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -67,7 +68,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, const_)
-import Snarky.Circuit.Kimchi (Type1, expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -1196,7 +1197,7 @@ ipaFinalCheckCircuitTest ctx = do
       , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
       , combinedPolynomial: coerce combinedPolynomial
       , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-      , b: toShifted $ (coerce :: Vesta.ScalarField -> F Vesta.ScalarField) $ ProofFFI.computeB0
+      , b: toShifted $ F $ ProofFFI.computeB0
           { challenges: Vector.toUnfoldable challenges
           , zeta: ctx.oracles.zeta
           , zetaOmega: ctx.oracles.zeta * omega
@@ -1304,31 +1305,56 @@ type IPATestContext =
 mkIpaTestContext :: TestContext -> IPATestContext
 mkIpaTestContext ctx =
   let
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
+    publicCommArray = ProofFFI.pallasPublicComm ctx.verifierIndex ctx.publicInputs
 
-    -- Get sponge checkpoint (state before L/R processing)
-    checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.verifierIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    spongeInput :: FqSpongeInput 7 Pallas.ScalarField
+    spongeInput =
+      { indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
+      , publicComm: unsafePartial fromJust $ Array.head publicCommArray
+      , wComm: commitments.wComm
+      , zComm: commitments.zComm
+      , tComm: unsafePartial fromJust $ Vector.toVector @7 commitments.tComm
+      }
 
-    -- Parse checkpoint into sponge state
-    spongeMode = case checkpoint.spongeMode of
-      "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
-      _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
+    -- Run sponge transcript, then absorb shift_scalar(CIP)
+    Tuple _ computedSponge = runPureSpongeM initialSponge do
+      _ <- spongeTranscriptPure spongeInput
+      let Type1 (F absorbValue) = toShifted (F ctx.oracles.combinedInnerProduct)
+      Pickles.Sponge.absorb absorbValue
+      pure unit
 
-    -- Combined polynomial commitment
-    combinedPolynomial :: AffinePoint Pallas.ScalarField
-    combinedPolynomial = ProofFFI.pallasCombinedPolynomialCommitment ctx.verifierIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    ffiSponge =
+      let
 
-    -- Compute b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
-    challengesArray = ProofFFI.proofBulletproofChallenges ctx.verifierIndex
-      { proof: ctx.proof, publicInput: ctx.publicInputs }
-    omega = ProofFFI.domainGenerator ctx.domainLog2
+        -- Get sponge checkpoint (state before L/R processing)
+        checkpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges ctx.verifierIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+        -- Parse checkpoint into sponge state
+        spongeMode = case checkpoint.spongeMode of
+          "Absorbed" -> RandomOracle.Absorbed (unsafeFinite checkpoint.modeCount)
+          _ -> RandomOracle.Squeezed (unsafeFinite checkpoint.modeCount)
+      in
+        { state: checkpoint.state, spongeState: spongeMode }
   in
-    { challenges: unsafePartial $ fromJust $ Vector.toVector @16 challengesArray
-    , spongeState: { state: checkpoint.state, spongeState: spongeMode }
-    , combinedPolynomial
-    , omega
-    }
+
+    if ffiSponge /= computedSponge then unsafeThrow "Mismatch between ffiSponge and computedSpong"
+    else
+      let
+        combinedPolynomial :: AffinePoint Pallas.ScalarField
+        combinedPolynomial = ProofFFI.pallasCombinedPolynomialCommitment ctx.verifierIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+        challengesArray = ProofFFI.proofBulletproofChallenges ctx.verifierIndex
+          { proof: ctx.proof, publicInput: ctx.publicInputs }
+        omega = ProofFFI.domainGenerator ctx.domainLog2
+      in
+        { challenges: unsafePartial $ fromJust $ Vector.toVector @16 challengesArray
+        , spongeState: computedSponge
+        , combinedPolynomial
+        , omega
+        }
 
 -------------------------------------------------------------------------------
 -- | Main spec

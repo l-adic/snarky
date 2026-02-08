@@ -5,6 +5,10 @@
 -- |
 -- | Also includes a circuit spec that proves the same computation can be
 -- | expressed as a Kimchi circuit.
+-- |
+-- | The sponge continuity test validates that the sponge state after the
+-- | transcript correctly threads into check_bulletproof by comparing
+-- | against the Rust sponge checkpoint.
 module Test.Pickles.Step.FqSpongeTranscript (spec) where
 
 import Prelude
@@ -17,6 +21,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
+import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Step.FqSpongeTranscript (FqSpongeInput, FqSpongeOutput, spongeTranscriptCircuit, spongeTranscriptPure)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -46,7 +51,7 @@ spongeTranscriptF
   :: forall chunks
    . FqSpongeInput chunks (F SpongeField)
   -> FqSpongeOutput (F SpongeField)
-spongeTranscriptF = coerce (spongeTranscriptPure :: FqSpongeInput chunks SpongeField -> FqSpongeOutput SpongeField)
+spongeTranscriptF = coerce (evalPureSpongeM initialSponge <<< spongeTranscriptPure :: FqSpongeInput chunks SpongeField -> FqSpongeOutput SpongeField)
 
 -------------------------------------------------------------------------------
 -- | For the Schnorr test circuit, t_comm has 7 chunks.
@@ -58,7 +63,7 @@ type SchnorrTCommChunks = 7
 type SchnorrFqSpongeInput = FqSpongeInput SchnorrTCommChunks (F SpongeField)
 
 -------------------------------------------------------------------------------
--- | Test spec
+-- | Test spec (wrapped in Identity for mapSpec)
 -------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
@@ -97,10 +102,10 @@ spec = beforeAll setupTestContext $
             (Proxy @SchnorrFqSpongeInput)
             (Proxy @(FqSpongeOutput (F SpongeField)))
             (Proxy @(KimchiConstraint SpongeField))
-            spongeTranscriptCircuit
+            (\input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input))
             Kimchi.initialState
         , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint SpongeField)) spongeTranscriptCircuit
+        , solver: makeSolver (Proxy @(KimchiConstraint SpongeField)) (\input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input))
         , testFunction: satisfied spongeTranscriptF
         , postCondition: Kimchi.postCondition
         }
@@ -155,7 +160,7 @@ setupTestContext = do
     tComm = unsafePartial fromJust $ Vector.toVector tCommArray
 
     input = { indexDigest, publicComm, wComm, zComm, tComm }
-    result = spongeTranscriptPure input
+    result = evalPureSpongeM initialSponge (spongeTranscriptPure input)
 
     circuitInput :: SchnorrFqSpongeInput
     circuitInput =
