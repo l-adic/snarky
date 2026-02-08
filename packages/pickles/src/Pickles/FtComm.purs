@@ -1,49 +1,25 @@
 -- | Compute the ft polynomial commitment in-circuit.
 -- |
--- | The ft polynomial commitment is:
--- |   ft_comm = perm_scalar * σ_last + Σ_{i} chunk_scalar[i] * t_comm[i]
--- | where chunk_scalar[i] = (1 - ζ^n) * (ζ^max_poly_size)^i
+-- | Faithful to OCaml `Common.ft_comm` (mina/src/lib/pickles/common.ml:227-246).
+-- | Uses shifted scalar ops and Horner accumulation on curve points.
 -- |
--- | The bases (σ_last, t_comm chunks) are constants from the verifier index and proof.
--- | The scalars (perm_scalar, chunk scalars) are circuit variables.
--- |
--- | Note: The chunk scalar computation from zeta must be done in the commitment
--- | curve's scalar field. When the circuit field differs (e.g., Fq circuit verifying
--- | Vesta commitments with Fp scalars), chunk scalars should be pre-computed outside
--- | the circuit and passed as inputs. Use `squareN` to compute chunk scalars in-circuit
--- | when the circuit field matches the scalar field (which is the case in the real
--- | step verifier).
--- |
--- | Reference: kimchi/src/verifier.rs ft_comm computation
+-- | Reference: kimchi/src/verifier.rs ft_comm computation, common.ml:227-246
 module Pickles.FtComm
-  ( FtCommParams
-  , ftCommCircuit
+  ( ftComm
   , squareN
   ) where
 
 import Prelude
 
-import Data.Array as Array
-import Data.Array.NonEmpty as NEA
-import Data.Maybe (fromJust)
+import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
-import Pickles.MultiscaleKnown (multiscaleKnown)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
+import Prim.Int (class Add)
+import Snarky.Circuit.Curves as Curves
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
-
--- | Parameters for ft polynomial commitment (compile-time constants from VK/proof).
-type FtCommParams numChunks f =
-  { -- | σ_{PERMUTS-1} commitment from verifier index
-    sigmaLast :: AffinePoint (F f)
-  , -- | Quotient polynomial commitment chunks from proof
-    tCommChunks :: Vector numChunks (AffinePoint (F f))
-  , -- | Curve parameters for the commitment curve
-    curveParams :: CurveParams f
-  }
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Compute x^(2^k) via k repeated squarings in-circuit.
 -- |
@@ -63,22 +39,43 @@ squareN k x
 
 -- | Compute the ft polynomial commitment in-circuit.
 -- |
--- | ft_comm = perm_scalar * σ_last + Σ_{i} chunk_scalar[i] * t_comm[i]
+-- | ft_comm = scale(σ_last, perm) + reduced_t + negate(scale(reduced_t, zeta_to_domain))
+-- | where reduced_t = reduce_chunks(t_comm, zeta_to_srs)
 -- |
--- | Takes pre-computed scalars (perm_scalar + chunk scalars) and constant bases.
--- | The chunk scalars should be computed in the commitment curve's scalar field
--- | (which may differ from the circuit field in the Pasta cycle).
-ftCommCircuit
-  :: forall numChunks f t m
-   . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => FtCommParams numChunks f
-  -> { permScalar :: FVar f, chunkScalars :: Vector numChunks (FVar f) }
+-- | reduce_chunks does Horner accumulation: c[0] + scale(c[1] + scale(..., z), z)
+-- |
+-- | Reference: mina/src/lib/pickles/common.ml:227-246
+ftComm
+  :: forall numChunks n1 f t m sf r
+   . CircuitM f (KimchiConstraint f) t m
+  => Add 1 n1 numChunks
+  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f)) 
+     | r
+     }
+  -> { sigmaLast :: AffinePoint (FVar f)
+     , tComm :: Vector numChunks (AffinePoint (FVar f))
+     , perm :: sf
+     , zetaToSrsLength :: sf
+     , zetaToDomainSize :: sf
+     }
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-ftCommCircuit params { permScalar, chunkScalars } =
-  multiscaleKnown @51 params.curveParams
-    $ unsafePartial fromJust
-    $ NEA.fromArray
-    $ Array.cons { scalar: permScalar, base: params.sigmaLast }
-    $ Vector.toUnfoldable
-    $ Vector.zipWith (\scalar base -> { scalar, base }) chunkScalars params.tCommChunks
+ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = do
+  -- Horner reduction of t_comm chunks: c[0] + scale(c[1] + ... + scale(c[n-1], z), z)
+  let { last, init } = Vector.unsnoc tComm
+  reducedT <- foldM
+    ( \acc chunk -> do
+        scaled <- scaleByShifted acc zetaToSrsLength
+        { p } <- addComplete chunk scaled
+        pure p
+    )
+    last
+    (Vector.reverse init)
+  -- scale(σ_last, perm)
+  permTerm <- scaleByShifted sigmaLast perm
+  -- negate(scale(reduced_t, zeta_to_domain))
+  zetaDomTerm <- scaleByShifted reducedT zetaToDomainSize
+  negZetaDomTerm <- Curves.negate zetaDomTerm
+  -- ft_comm = permTerm + reducedT + negZetaDomTerm
+  { p: r1 } <- addComplete permTerm reducedT
+  { p: result } <- addComplete r1 negZetaDomTerm
+  pure result
