@@ -361,9 +361,9 @@ mod generic {
     }
 
     /// Run the verifier's Fiat-Shamir oracle computation.
-    /// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+    /// Returns 15 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
     ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-    ///                     fq_digest, alpha_chal, zeta_chal]
+    ///                     fq_digest, alpha_chal, zeta_chal, v_chal]
     pub fn proof_oracles<G, EFqSponge, EFrSponge>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
@@ -405,6 +405,7 @@ mod generic {
             oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
             oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
             oracles_result.oracles.zeta_chal.0, // raw 128-bit zeta challenge
+            oracles_result.oracles.v_chal.0, // raw 128-bit polyscale challenge
         ])
     }
 
@@ -1148,6 +1149,53 @@ mod generic {
             }
         }
         vec![G::BaseField::zero(), G::BaseField::zero()]
+    }
+
+    /// Extract VK column commitments needed for combine_commitments.
+    /// Returns flat [x0, y0, x1, y1, ...] for 27 points in to_batch order:
+    ///   6 index comms (Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar)
+    ///   15 coefficient comms
+    ///   6 sigma comms (sigma_comm[0..PERMUTS-1])
+    pub fn verifier_index_column_comms<G: KimchiCurve>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let mut result = Vec::with_capacity(27 * 2);
+
+        let push_comm = |result: &mut Vec<G::BaseField>,
+                         comm: &poly_commitment::commitment::PolyComm<G>| {
+            if let Some(pt) = comm.chunks.first() {
+                if let Some((x, y)) = pt.to_coordinates() {
+                    result.push(x);
+                    result.push(y);
+                    return;
+                }
+            }
+            result.push(G::BaseField::zero());
+            result.push(G::BaseField::zero());
+        };
+
+        // Index commitments (6) in to_batch order
+        push_comm(&mut result, &verifier_index.generic_comm);
+        push_comm(&mut result, &verifier_index.psm_comm);
+        push_comm(&mut result, &verifier_index.complete_add_comm);
+        push_comm(&mut result, &verifier_index.mul_comm);
+        push_comm(&mut result, &verifier_index.emul_comm);
+        push_comm(&mut result, &verifier_index.endomul_scalar_comm);
+
+        // Coefficient commitments (15)
+        for comm in &verifier_index.coefficients_comm {
+            push_comm(&mut result, comm);
+        }
+
+        // Sigma commitments (6): sigma_comm[0..PERMUTS-1]
+        for comm in &verifier_index.sigma_comm[..PERMUTS - 1] {
+            push_comm(&mut result, comm);
+        }
+
+        result
     }
 }
 
@@ -2199,6 +2247,36 @@ pub fn pallas_verifier_index_sigma_comm_last(
     verifier_index: &PallasVerifierIndexExternal,
 ) -> Vec<PallasFieldExternal> {
     generic::verifier_index_sigma_comm_last::<VestaGroup>(&**verifier_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+// ============================================================================
+// VK column commitments for combine_commitments
+// ============================================================================
+
+/// Extract VK column commitments for Pallas/Fp circuits.
+/// Returns flat [x0, y0, x1, y1, ...] in Fq for 27 points:
+///   6 index + 15 coefficient + 6 sigma (in to_batch order).
+#[napi]
+pub fn pallas_verifier_index_column_comms(
+    verifier_index: &PallasVerifierIndexExternal,
+) -> Vec<PallasFieldExternal> {
+    generic::verifier_index_column_comms::<VestaGroup>(&**verifier_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract VK column commitments for Vesta/Fq circuits.
+/// Returns flat [x0, y0, x1, y1, ...] in Fp for 27 points:
+///   6 index + 15 coefficient + 6 sigma (in to_batch order).
+#[napi]
+pub fn vesta_verifier_index_column_comms(
+    verifier_index: &VestaVerifierIndexExternal,
+) -> Vec<VestaFieldExternal> {
+    generic::verifier_index_column_comms::<PallasGroup>(&**verifier_index)
         .into_iter()
         .map(External::new)
         .collect()

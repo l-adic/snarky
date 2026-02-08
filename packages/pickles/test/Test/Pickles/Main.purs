@@ -6,6 +6,7 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.CombinedPolyComm as CombinedPolyComm
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
 import Test.Pickles.FtComm as FtComm
@@ -30,6 +31,7 @@ main = runSpecAndExitProcess'
   do
     E2E.spec
     FtComm.spec
+    CombinedPolyComm.spec
     FinalizeOtherProofE2E.realDataSpec
     FqSpongeTranscript.spec
     PublicInputCommitment.spec

@@ -46,6 +46,8 @@ module Test.Pickles.ProofFFI
   , pallasFtComm
   , pallasPermScalar
   , pallasSigmaCommLast
+  , pallasVerifierIndexColumnComms
+  , vestaVerifierIndexColumnComms
   , ProofCommitments
   , Proof
   , OraclesResult
@@ -84,6 +86,7 @@ type OraclesResult f =
   , fqDigest :: f -- Fq-sponge digest before Fr-sponge (for xi derivation)
   , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
   , zetaChal :: SizedF 128 f -- raw 128-bit zeta challenge (pre-endo-expansion)
+  , vChal :: SizedF 128 f -- raw 128-bit polyscale challenge (pre-endo-expansion)
   }
 
 -- | Sponge checkpoint for debugging/testing challenge extraction.
@@ -232,6 +235,10 @@ foreign import pallasPermScalar :: VerifierIndex Vesta.G Pallas.BaseField -> { p
 
 -- sigma_comm[PERMUTS-1] from verifier index (in Fq)
 foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
+
+-- VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
+foreign import pallasVerifierIndexColumnComms :: VerifierIndex Vesta.G Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
+foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
 
 -- | Proof commitments structured for Fq-sponge absorption.
 type ProofCommitments f =

@@ -58,9 +58,9 @@ export const vestaProofCoefficientEvals = (proof) =>
   pairEvals(crypto.vestaProofCoefficientEvals(proof));
 
 // Proof oracles (Fiat-Shamir)
-// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+// Returns 15 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 //                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-//                     fq_digest, alpha_chal, zeta_chal]
+//                     fq_digest, alpha_chal, zeta_chal, v_chal]
 export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput }) => {
   const flat = crypto.pallasProofOracles(verifierIndex, proof, publicInput);
   return {
@@ -77,7 +77,8 @@ export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput }) =>
     publicEvalZetaOmega: flat[10],
     fqDigest: flat[11],
     alphaChal: flat[12],
-    zetaChal: flat[13]
+    zetaChal: flat[13],
+    vChal: flat[14]
   };
 };
 
@@ -97,7 +98,8 @@ export const vestaProofOracles = (verifierIndex) => ({ proof, publicInput }) => 
     publicEvalZetaOmega: flat[10],
     fqDigest: flat[11],
     alphaChal: flat[12],
-    zetaChal: flat[13]
+    zetaChal: flat[13],
+    vChal: flat[14]
   };
 };
 
@@ -331,6 +333,25 @@ export const pallasPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
 export const pallasSigmaCommLast = (verifierIndex) => {
   const coords = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
   return { x: coords[0], y: coords[1] };
+};
+
+// VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
+export const pallasVerifierIndexColumnComms = (verifierIndex) => {
+  const flat = crypto.pallasVerifierIndexColumnComms(verifierIndex);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaVerifierIndexColumnComms = (verifierIndex) => {
+  const flat = crypto.vestaVerifierIndexColumnComms(verifierIndex);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
 };
 
 // Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
