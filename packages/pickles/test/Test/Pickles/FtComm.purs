@@ -2,9 +2,8 @@ module Test.Pickles.FtComm (spec) where
 
 import Prelude
 
-import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
-import Data.Foldable (foldl)
+import Data.Foldable (fold)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector, toVector, zipWith)
@@ -13,7 +12,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.MultiscaleKnown (multiscaleKnown)
+import Pickles.FtComm (ftCommCircuit)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
@@ -31,16 +30,19 @@ import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 -- | The ft_comm circuit runs on Fq (= Pallas.ScalarField = Vesta.BaseField).
+-- | The chunk scalars are pre-computed in Fp (Vesta's scalar field) and coerced
+-- | to Fq as circuit inputs, because computing them in Fq would give wrong results
+-- | (different field arithmetic). In the real step verifier (Fp circuit), the chunk
+-- | scalars can be computed in-circuit since the circuit field matches the scalar field.
 type CircuitField = Pallas.ScalarField
 
 -- | The quotient polynomial t has 7 chunks (degree up to 7 * domain_size).
 type NumTCommChunks = 7
 
--- | Circuit input: perm_scalar is an independent scalar from the linearization;
--- | the 7 chunk scalars are derived from -(zeta^n - 1) * (zeta^max_poly_size)^i.
+-- | Circuit input: perm_scalar and the 7 chunk scalars (pre-computed in Fp, coerced to Fq).
 type FtCommInput f =
   { permScalar :: f
-  , tCommChunkScalars :: Vector NumTCommChunks f
+  , chunkScalars :: Vector NumTCommChunks f
   }
 
 spec :: SpecT Aff Unit Aff Unit
@@ -70,6 +72,7 @@ ftCommTest ctx = do
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Chunk scalars: -(zeta^n - 1) * (zeta^max_poly_size)^i
+    -- Computed in Fp (Vesta's scalar field), the correct field for Vesta MSM
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     zetaToDomainSize = pow ctx.oracles.zeta n
     negZetaNMinusOne = one - zetaToDomainSize
@@ -84,7 +87,7 @@ ftCommTest ctx = do
     fpToFq :: Pallas.BaseField -> F CircuitField
     fpToFq x = F (fromBigInt (toBigInt x))
 
-    -- All 8 scalar-base pairs for the MSM
+    -- All 8 scalar-base pairs for the pure check
     allScalars = Vector.cons permScalar tCommChunkScalars
     allBases = Vector.cons sigmaLast tCommChunks
 
@@ -99,16 +102,22 @@ ftCommTest ctx = do
 
     terms = zipWith (\s pt -> scalarMul s (unwrapPt pt)) allScalars allBases
     pureResult = unsafePartial fromJust $ toAffine @Pallas.ScalarField @Vesta.G $
-      foldl (<>) mempty terms
+      fold terms
 
   liftEffect $ pureResult `shouldEqual` expected
 
-  -- Circuit test
+  -- Circuit test using ftCommCircuit with pre-computed scalars
   let
+    ftCommParams =
+      { sigmaLast
+      , tCommChunks
+      , curveParams: curveParams (Proxy @Vesta.G)
+      }
+
     circuitInput :: FtCommInput (F CircuitField)
     circuitInput =
       { permScalar: fpToFq permScalar
-      , tCommChunkScalars: map fpToFq tCommChunkScalars
+      , chunkScalars: map fpToFq tCommChunkScalars
       }
 
     circuit
@@ -116,14 +125,7 @@ ftCommTest ctx = do
        . CircuitM CircuitField (KimchiConstraint CircuitField) t Identity
       => FtCommInput (FVar CircuitField)
       -> Snarky (KimchiConstraint CircuitField) t Identity (AffinePoint (FVar CircuitField))
-    circuit input =
-      multiscaleKnown @51 (curveParams (Proxy @Vesta.G))
-        $ unsafePartial fromJust
-        $ NEA.fromArray
-        $ Vector.toUnfoldable
-        $ zipWith (\scalar base -> { scalar, base })
-            (Vector.cons input.permScalar input.tCommChunkScalars)
-            allBases
+    circuit = ftCommCircuit ftCommParams
 
     testFn :: FtCommInput (F CircuitField) -> AffinePoint (F CircuitField)
     testFn _ = coerce expected

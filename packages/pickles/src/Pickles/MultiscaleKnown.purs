@@ -36,7 +36,10 @@ multiscaleKnown
   => Reflectable bitsUsed Int
   => CircuitM f (KimchiConstraint f) t m
   => CurveParams f
-  -> NonEmptyArray { scalar :: FVar f, base :: AffinePoint (F f) }
+  -> NonEmptyArray
+       { scalar :: FVar f
+       , base :: AffinePoint (F f)
+       }
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 multiscaleKnown params pairs = unsafePartial do
   let n = reflectType (Proxy :: Proxy n)
