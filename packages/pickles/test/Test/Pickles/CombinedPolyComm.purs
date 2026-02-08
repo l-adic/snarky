@@ -3,7 +3,7 @@ module Test.Pickles.CombinedPolyComm (spec) where
 import Prelude
 
 import Data.Array as Array
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector, (:<))
@@ -11,10 +11,11 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
+import Pickles.IPA (combinePolynomials)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEq, coerceViaBits, const_)
-import Snarky.Circuit.Kimchi (addComplete, endo, expandToEndoScalar)
+import Snarky.Circuit.Kimchi (expandToEndoScalar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromAffine, scalarMul, toAffine)
@@ -118,32 +119,13 @@ combinedPolyCommTest ctx = do
     circuitInput :: CombinedPolyCommInput (F CircuitField)
     circuitInput = { xi: coerce xiChalFq }
 
-    -- Horner right-to-left using endo + addComplete.
-    -- Computes Q = Σ_i xi^i * C_i by processing reversed bases:
-    -- acc = C_{n-1}, then acc = C_i + [xi]*acc for i = n-2..0
-    -- Asserts result equals Rust ground truth.
     circuit
       :: forall t
        . CircuitM CircuitField (KimchiConstraint CircuitField) t Identity
       => CombinedPolyCommInput (FVar CircuitField)
       -> Snarky (KimchiConstraint CircuitField) t Identity Unit
     circuit { xi } = do
-      let
-        constPt :: AffinePoint (F CircuitField) -> AffinePoint (FVar CircuitField)
-        constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
-
-        reversed = Vector.reverse allBases
-        { head: h, tail: t } = Vector.uncons reversed
-
-      result <- foldM
-        ( \acc base -> do
-            -- scale_and_add: base + [xi] * acc
-            xiAcc <- endo acc xi
-            { p } <- addComplete (constPt base) xiAcc
-            pure p
-        )
-        (constPt h)
-        t
+      result <- combinePolynomials allBases xi
       assertEq result { x: const_ expected.x, y: const_ expected.y }
 
   circuitSpecPureInputs

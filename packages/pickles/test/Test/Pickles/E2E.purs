@@ -42,7 +42,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, computeB)
+import Pickles.IPA (BCorrectInput, CheckBulletproofInput, IpaFinalCheckInput, bCorrect, computeB)
 import Pickles.IPA as IPA
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -55,9 +55,9 @@ import Pickles.PlonkChecks.FtEval (ftEval0, ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
-import Pickles.Sponge (evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, runPureSpongeM)
+import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
+import Pickles.Step.FqSpongeTranscript (FqSpongeInput, spongeTranscriptCircuit, spongeTranscriptPure)
 import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -67,7 +67,7 @@ import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, const_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -1212,12 +1212,12 @@ ipaFinalCheckCircuitTest ctx = do
       => IpaFinalCheckInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit input = do
-      result <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
+      { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
         IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
           IPA.type1ScalarOps
           (groupMapParams $ Proxy @Vesta.G)
           input
-      assert_ result
+      assert_ success
 
   circuitSpecPureInputs
     { builtState: compilePure
@@ -1293,6 +1293,148 @@ debugVerifyTest ctx = do
     [ Tuple (coerce genPoint) z1Shifted ]
 
   liftEffect $ log "scaleFast1 mini test passed!"
+
+-- | Full bulletproof check test: composes sponge transcript → checkBulletproof.
+-- | Tests the "right half" of incrementallyVerifyProof.
+checkBulletproofTest :: TestContext -> Aff Unit
+checkBulletproofTest ctx = do
+  let
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
+    publicComm = unsafePartial fromJust $ Array.head $
+      ProofFFI.pallasPublicComm ctx.verifierIndex ctx.publicInputs
+    ftComm = ProofFFI.pallasFtComm ctx.verifierIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+    columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
+
+    indexComms :: Vector 6 (AffinePoint Pallas.ScalarField)
+    indexComms = unsafePartial fromJust $ Vector.toVector $ Array.take 6 columnCommsRaw
+
+    coeffComms :: Vector 15 (AffinePoint Pallas.ScalarField)
+    coeffComms = unsafePartial fromJust $ Vector.toVector $ Array.take 15 $ Array.drop 6 columnCommsRaw
+
+    sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
+    sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
+
+    -- Assemble all 45 commitment bases in to_batch order
+    allBases :: Vector 45 (AffinePoint (F Pallas.ScalarField))
+    allBases = coerce $
+      (publicComm :< ftComm :< commitments.zComm :< Vector.nil)
+        `Vector.append` indexComms
+        `Vector.append` commitments.wComm
+        `Vector.append` coeffComms
+        `Vector.append` sigmaComms
+
+    -- xi from oracles (convert from Fp to Fq representation)
+    xiChalFq :: SizedF 128 Pallas.ScalarField
+    xiChalFq = coerceViaBits ctx.oracles.vChal
+
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Sponge input for transcript (constant data)
+    spongeInput :: FqSpongeInput 7 Pallas.ScalarField
+    spongeInput =
+      { indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
+      , publicComm
+      , wComm: commitments.wComm
+      , zComm: commitments.zComm
+      , tComm: unsafePartial fromJust $ Vector.toVector @7 commitments.tComm
+      }
+
+    -- Convert sponge input to circuit constants
+    constPt :: AffinePoint Pallas.ScalarField -> AffinePoint (FVar Pallas.ScalarField)
+    constPt { x, y } = { x: const_ x, y: const_ y }
+
+    spongeInputCircuit :: FqSpongeInput 7 (FVar Pallas.ScalarField)
+    spongeInputCircuit =
+      { indexDigest: const_ spongeInput.indexDigest
+      , publicComm: constPt spongeInput.publicComm
+      , wComm: map constPt spongeInput.wComm
+      , zComm: constPt spongeInput.zComm
+      , tComm: map constPt spongeInput.tComm
+      }
+
+    -- Rust ground truth for bulletproof challenges
+    rustChallenges :: Vector 16 Vesta.ScalarField
+    rustChallenges = unsafePartial fromJust $ Vector.toVector $
+      ProofFFI.proofBulletproofChallenges ctx.verifierIndex
+        { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Build circuit input for checkBulletproof
+    circuitInput :: CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput =
+      { xi: coerce xiChalFq
+      , delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
+      , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
+      , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+      , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
+      , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
+      , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+      , b: toShifted $ F $ ProofFFI.computeB0
+          { challenges: Vector.toUnfoldable rustChallenges
+          , zeta: ctx.oracles.zeta
+          , zetaOmega: ctx.oracles.zeta * omega
+          , evalscale: ctx.oracles.u
+          }
+      , blindingGenerator: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
+      }
+
+    -- Circuit returns extracted challenges (for validation against Rust)
+    circuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => CheckBulletproofInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
+    circuit input = do
+      { success, challenges } <- evalSpongeM initialSpongeCircuit do
+        _ <- spongeTranscriptCircuit spongeInputCircuit
+        IPA.checkBulletproof @Pallas.ScalarField @Vesta.G
+          IPA.type1ScalarOps
+          (groupMapParams $ Proxy @Vesta.G)
+          allBases
+          input
+      assert_ success
+      pure challenges
+
+    -- Pure test function: replays sponge, extracts challenges, validates against Rust FFI
+    testFn
+      :: CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+      -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    testFn input =
+      let
+        -- Run pure sponge: transcript → absorb CIP → squeeze u → extract challenges
+        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges = evalPureSpongeM initialSponge do
+          _ <- spongeTranscriptPure spongeInput
+          -- Absorb CIP (same as checkBulletproof does)
+          let Type1 (F cipField) = input.combinedInnerProduct
+          Pickles.Sponge.absorb cipField
+          -- Squeeze for u (consumed by ipaFinalCheckCircuit)
+          _ <- Pickles.Sponge.squeeze
+          -- Extract scalar challenges from LR pairs
+          IPA.extractScalarChallengesPure (coerce input.lr)
+
+        -- Endo-expand to full field elements and validate against Rust
+        endoMapped :: Array Pallas.BaseField
+        endoMapped = Vector.toUnfoldable $ map
+          (\c -> expandToEndoScalar c :: Pallas.BaseField)
+          challenges
+      in
+        if endoMapped /= Vector.toUnfoldable rustChallenges then unsafeThrow "checkBulletproof: extracted challenges don't match Rust"
+        else coerce challenges
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @(CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+    , testFunction: satisfied testFn
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
 
 --------------------------------------------------------------------------------
 type IPATestContext =
@@ -1380,3 +1522,4 @@ spec = beforeAll createTestContext $
     it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest
     it "debug verify traces intermediate IPA values" debugVerifyTest
     it "ipaFinalCheckCircuit verifies with Rust proof values" ipaFinalCheckCircuitTest
+    it "checkBulletproof composes transcript and IPA verification" checkBulletproofTest

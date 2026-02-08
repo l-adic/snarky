@@ -34,7 +34,6 @@ main = runSpecAndExitProcess'
     CombinedPolyComm.spec
     FinalizeOtherProofE2E.realDataSpec
     FqSpongeTranscript.spec
-    FqSpongeTranscript.realDataSpec
     PublicInputCommitment.spec
     mapSpec nat do
       MultiscaleKnown.spec
