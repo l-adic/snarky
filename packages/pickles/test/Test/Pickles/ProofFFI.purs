@@ -43,6 +43,9 @@ module Test.Pickles.ProofFFI
   , pallasLagrangeCommitments
   , vestaLagrangeCommitments
   , pallasProofCommitments
+  , pallasFtComm
+  , pallasPermScalar
+  , pallasSigmaCommLast
   , ProofCommitments
   , Proof
   , OraclesResult
@@ -220,6 +223,15 @@ foreign import vestaPublicComm :: VerifierIndex Pallas.G Vesta.BaseField -> Arra
 -- Lagrange commitment points from SRS (constant bases for public input MSM)
 foreign import pallasLagrangeCommitments :: VerifierIndex Vesta.G Pallas.BaseField -> Int -> Array (AffinePoint Pallas.ScalarField)
 foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseField -> Int -> Array (AffinePoint Vesta.ScalarField)
+
+-- ft_comm: the chunked commitment of the linearized constraint polynomial (in Fq)
+foreign import pallasFtComm :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
+
+-- perm_scalar: the scalar multiplier for sigma_comm_last in the linearization (in Fp)
+foreign import pallasPermScalar :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Pallas.BaseField
+
+-- sigma_comm[PERMUTS-1] from verifier index (in Fq)
+foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
 
 -- | Proof commitments structured for Fq-sponge absorption.
 type ProofCommitments f =

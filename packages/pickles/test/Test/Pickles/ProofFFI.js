@@ -314,6 +314,25 @@ export const vestaPublicComm = (verifierIndex) => (publicInput) => {
   return result;
 };
 
+// ft_comm: the chunked commitment of the linearized constraint polynomial
+// Returns { x, y } coordinates in Fq
+export const pallasFtComm = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasFtComm(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization
+// Returns a single Fp element
+export const pallasPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasPermScalar(verifierIndex, proof, publicInput);
+
+// sigma_comm[PERMUTS-1]: the last sigma commitment from verifier index
+// Returns { x, y } coordinates in Fq
+export const pallasSigmaCommLast = (verifierIndex) => {
+  const coords = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
 // Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
 export const pallasProofCommitments = (proof) => {
   const flat = crypto.pallasProofCommitments(proof);

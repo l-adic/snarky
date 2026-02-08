@@ -1041,6 +1041,114 @@ mod generic {
         }
         result
     }
+
+    /// Compute ft_comm: the chunked commitment of the linearized constraint polynomial.
+    ///
+    /// ft_comm = chunk(f_comm, zeta^srs) - chunk(t_comm, zeta^srs) * (zeta^n - 1)
+    /// where f_comm = perm_scalar * sigma_comm_last (no index_terms in kimchi).
+    ///
+    /// Returns [x, y] coordinates in G::BaseField.
+    pub fn ft_comm<G, EFqSponge, EFrSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::BaseField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        // Use to_batch to get the evaluations list, then extract ft_comm (index 1, after public_comm)
+        let batch = kimchi::verifier::to_batch::<G, EFqSponge, EFrSponge, OpeningProof<G>>(
+            verifier_index,
+            proof,
+            public_input,
+        )
+        .map_err(|e| Error::new(Status::GenericFailure, format!("to_batch failed: {e:?}")))?;
+
+        // evaluations[0] = public_comm, evaluations[1] = ft_comm
+        let ft_comm = &batch.evaluations[1].commitment;
+
+        // After chunk_commitment, ft_comm is a single chunk
+        if let Some(pt) = ft_comm.chunks.first() {
+            if let Some((x, y)) = pt.to_coordinates() {
+                Ok(vec![x, y])
+            } else {
+                Err(Error::new(
+                    Status::GenericFailure,
+                    "ft_comm is point at infinity",
+                ))
+            }
+        } else {
+            Err(Error::new(Status::GenericFailure, "ft_comm has no chunks"))
+        }
+    }
+
+    /// Compute perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization.
+    ///
+    /// This is the value from ConstraintSystem::perm_scalars, computed from proof evaluations
+    /// and verifier challenges.
+    pub fn perm_scalar<G, EFqSponge, EFrSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<G::ScalarField>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        use kimchi::circuits::argument::ArgumentType;
+        use kimchi::circuits::polynomials::permutation;
+
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
+
+        let oracles = &oracles_result.oracles;
+
+        // Combine chunked evaluations (same as verifier.rs to_batch)
+        let evals = proof
+            .evals
+            .combine(&oracles_result.powers_of_eval_points_for_chunks);
+
+        // Compute permutation vanishing polynomial at zeta
+        let permutation_vanishing_polynomial = verifier_index
+            .permutation_vanishing_polynomial_m()
+            .evaluate(&oracles.zeta);
+
+        // Get alpha powers for permutation
+        let all_alphas = oracles_result.all_alphas;
+        let alphas = all_alphas.get_alphas(ArgumentType::Permutation, permutation::CONSTRAINTS);
+
+        Ok(ConstraintSystem::<G::ScalarField>::perm_scalars(
+            &evals,
+            oracles.beta,
+            oracles.gamma,
+            alphas,
+            permutation_vanishing_polynomial,
+        ))
+    }
+
+    /// Extract sigma_comm[PERMUTS-1] from verifier index (the last sigma commitment).
+    /// Returns [x, y] coordinates in G::BaseField.
+    pub fn verifier_index_sigma_comm_last<G: KimchiCurve>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let sigma_last = &verifier_index.sigma_comm[PERMUTS - 1];
+        if let Some(pt) = sigma_last.chunks.first() {
+            if let Some((x, y)) = pt.to_coordinates() {
+                return vec![x, y];
+            }
+        }
+        vec![G::BaseField::zero(), G::BaseField::zero()]
+    }
 }
 
 #[napi]
@@ -2047,6 +2155,56 @@ pub fn vesta_combined_polynomial_commitment(
 }
 
 // ============================================================================
+// ft_comm, perm_scalar, sigma_comm_last
+// ============================================================================
+
+/// Compute ft_comm for a Vesta proof (Pallas/Fp circuits).
+/// Returns [x, y] coordinates in Fq (Pallas.ScalarField).
+#[napi]
+pub fn pallas_ft_comm(
+    verifier_index: &PallasVerifierIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::ft_comm::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+/// Compute perm_scalar for a Vesta proof (Pallas/Fp circuits).
+/// Returns a single Fp element (Vesta.ScalarField).
+#[napi]
+pub fn pallas_perm_scalar(
+    verifier_index: &PallasVerifierIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<VestaFieldExternal> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::perm_scalar::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )
+    .map(External::new)
+}
+
+/// Get sigma_comm[PERMUTS-1] from a Pallas verifier index.
+/// Returns [x, y] coordinates in Fq (Pallas.ScalarField).
+#[napi]
+pub fn pallas_verifier_index_sigma_comm_last(
+    verifier_index: &PallasVerifierIndexExternal,
+) -> Vec<PallasFieldExternal> {
+    generic::verifier_index_sigma_comm_last::<VestaGroup>(&**verifier_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+// ============================================================================
 // Debug verification tracing
 // ============================================================================
 
@@ -2147,17 +2305,13 @@ pub fn pallas_proof_commitments(proof: &VestaProofExternal) -> Vec<PallasFieldEx
 
 /// Get max_poly_size from a Pallas verifier index.
 #[napi]
-pub fn pallas_verifier_index_max_poly_size(
-    verifier_index: &PallasVerifierIndexExternal,
-) -> u32 {
+pub fn pallas_verifier_index_max_poly_size(verifier_index: &PallasVerifierIndexExternal) -> u32 {
     verifier_index.max_poly_size as u32
 }
 
 /// Get max_poly_size from a Vesta verifier index.
 #[napi]
-pub fn vesta_verifier_index_max_poly_size(
-    verifier_index: &VestaVerifierIndexExternal,
-) -> u32 {
+pub fn vesta_verifier_index_max_poly_size(verifier_index: &VestaVerifierIndexExternal) -> u32 {
     verifier_index.max_poly_size as u32
 }
 

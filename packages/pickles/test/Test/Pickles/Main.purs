@@ -8,6 +8,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
+import Test.Pickles.FtComm as FtComm
 import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.MultiscaleKnown as MultiscaleKnown
@@ -28,6 +29,7 @@ main = runSpecAndExitProcess'
   [ consoleReporter ]
   do
     E2E.spec
+    FtComm.spec
     FinalizeOtherProofE2E.realDataSpec
     FqSpongeTranscript.spec
     PublicInputCommitment.spec
