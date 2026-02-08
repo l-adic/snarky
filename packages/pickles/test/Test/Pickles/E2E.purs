@@ -1315,9 +1315,9 @@ checkBulletproofTest ctx = do
     sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
     sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
 
-    -- Assemble all 45 commitment bases in to_batch order
-    allBases :: Vector 45 (AffinePoint (F Pallas.ScalarField))
-    allBases = coerce $
+    -- Assemble all 45 commitment bases in to_batch order (as circuit variables)
+    allBases :: Vector 45 (AffinePoint (FVar Pallas.ScalarField))
+    allBases = map constPt $
       (publicComm :< ftComm :< commitments.zComm :< Vector.nil)
         `Vector.append` indexComms
         `Vector.append` commitments.wComm

@@ -63,7 +63,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit, scaleFast1, scaleFast2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
@@ -537,7 +537,7 @@ type1ScalarOps =
 -- | Computes: Q = C_0 + xi*(C_1 + xi*(C_2 + ... + xi*C_{n-1}))
 -- | where xi is a 128-bit scalar challenge (polyscale).
 -- |
--- | All bases are constants (from VK/proof). The xi challenge is a circuit variable.
+-- | Bases can be constants or circuit variables.
 -- |
 -- | Reference: Pcs_batch.combine_split_commitments in OCaml
 combinePolynomials
@@ -547,21 +547,20 @@ combinePolynomials
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => Compare 128 255 LT
-  => Vector n (AffinePoint (F f))
+  => Vector n (AffinePoint (FVar f))
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 combinePolynomials bases xi = do
   let
-    constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
     reversed = Vector.reverse bases
     { head: h, tail: t } = Vector.uncons reversed
   foldM
     ( \acc base -> do
         xiAcc <- endo acc xi
-        { p } <- addComplete (constPt base) xiAcc
+        { p } <- addComplete base xiAcc
         pure p
     )
-    (constPt h)
+    h
     t
 
 -------------------------------------------------------------------------------
@@ -611,7 +610,7 @@ checkBulletproof
   => Compare 128 255 LT
   => IpaScalarOps f (KimchiConstraint f) t m sf
   -> GroupMapParams f
-  -> Vector numBases (AffinePoint (F f))
+  -> Vector numBases (AffinePoint (FVar f))
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 checkBulletproof scalarOps groupMapParams commitmentBases input = do

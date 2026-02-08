@@ -79,8 +79,11 @@ combinedPolyCommTest ctx = do
 
     -- Assemble in to_batch order:
     -- public(1), ft(1), z(1), index(6), w(15), coeff(15), sigma(6) = 45
-    allBases :: Vector 45 (AffinePoint (F CircuitField))
-    allBases = coerce $
+    constPt :: AffinePoint CircuitField -> AffinePoint (FVar CircuitField)
+    constPt { x, y } = { x: const_ x, y: const_ y }
+
+    allBases :: Vector 45 (AffinePoint (FVar CircuitField))
+    allBases = map constPt $
       (publicComm :< ftComm :< commitments.zComm :< Vector.nil)
         `Vector.append` indexComms
         `Vector.append` commitments.wComm
@@ -101,16 +104,23 @@ combinedPolyCommTest ctx = do
     v :: Pallas.BaseField
     v = expandToEndoScalar xiChalFq
 
-    unwrapPt :: AffinePoint (F CircuitField) -> Vesta.G
-    unwrapPt { x: F x', y: F y' } = fromAffine @CircuitField @Vesta.G { x: x', y: y' }
+    toG :: AffinePoint CircuitField -> Vesta.G
+    toG pt = fromAffine @CircuitField @Vesta.G pt
 
     -- Horner right-to-left: Q = C_0 + v*(C_1 + v*(C_2 + ... + v*C_{n-1}))
     -- Fold left over reversed bases: start with C_{n-1}, then acc = C_i + v*acc
-    reversedBases = Vector.reverse allBases
+    rawBases :: Vector 45 (AffinePoint CircuitField)
+    rawBases =
+      (publicComm :< ftComm :< commitments.zComm :< Vector.nil)
+        `Vector.append` indexComms
+        `Vector.append` commitments.wComm
+        `Vector.append` coeffComms
+        `Vector.append` sigmaComms
+    reversedBases = Vector.reverse rawBases
     { head, tail } = Vector.uncons reversedBases
 
     pureResult = unsafePartial fromJust $ toAffine @CircuitField @Vesta.G $
-      foldl (\acc base -> unwrapPt base <> scalarMul v acc) (unwrapPt head) tail
+      foldl (\acc base -> toG base <> scalarMul v acc) (toG head) tail
 
   liftEffect $ pureResult `shouldEqual` expected
 
