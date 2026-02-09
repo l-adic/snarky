@@ -88,13 +88,13 @@ spec = beforeAll setupTestContext $
       let
         psBeta :: Vesta.ScalarField
         psBeta = toField (coerceViaBits ctx.result.beta :: SizedF 128 Vesta.ScalarField)
-      liftEffect $ toBigInt psBeta `shouldEqual` toBigInt ctx.oracles.beta
+      liftEffect $ toBigInt psBeta `shouldEqual` toBigInt (toField ctx.oracles.beta)
 
     it "produces correct gamma matching Rust oracles" \ctx -> do
       let
         psGamma :: Vesta.ScalarField
         psGamma = toField (coerceViaBits ctx.result.gamma :: SizedF 128 Vesta.ScalarField)
-      liftEffect $ toBigInt psGamma `shouldEqual` toBigInt ctx.oracles.gamma
+      liftEffect $ toBigInt psGamma `shouldEqual` toBigInt (toField ctx.oracles.gamma)
 
     it "circuit is satisfiable and matches pure implementation" \ctx -> do
       circuitSpecPureInputs
@@ -120,8 +120,8 @@ type FqSpongeTestContext =
       { fqDigest :: Vesta.ScalarField
       , alphaChal :: SizedF 128 Vesta.ScalarField
       , zetaChal :: SizedF 128 Vesta.ScalarField
-      , beta :: Vesta.ScalarField
-      , gamma :: Vesta.ScalarField
+      , beta :: SizedF 128 Vesta.ScalarField
+      , gamma :: SizedF 128 Vesta.ScalarField
       }
   , result :: FqSpongeOutput SpongeField
   , circuitInput :: SchnorrFqSpongeInput

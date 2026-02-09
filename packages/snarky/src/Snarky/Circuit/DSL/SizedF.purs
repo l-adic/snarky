@@ -5,6 +5,8 @@
 -- | in both. The `CheckedType` instance constrains the high bits to be zero.
 module Snarky.Circuit.DSL.SizedF
   ( SizedF
+  , wrapF
+  , unwrapF
   , fromField
   , toField
   , fromBits
@@ -30,7 +32,7 @@ import Prim.Ordering (LT)
 import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEq, assert_, isEqual)
 import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, not_)
-import Snarky.Circuit.Types (class CircuitType, F, FVar, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
+import Snarky.Circuit.Types (class CircuitType, F(..), FVar, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
 import Test.QuickCheck (class Arbitrary, arbitrary)
@@ -42,6 +44,12 @@ newtype SizedF n f = SizedF f
 derive instance Eq f => Eq (SizedF n f)
 derive instance Ord f => Ord (SizedF n f)
 derive newtype instance Show f => Show (SizedF n f)
+
+wrapF :: forall n f. SizedF n f -> SizedF n (F f)
+wrapF (SizedF a) = SizedF $ F a
+
+unwrapF :: forall n f. SizedF n (F f) -> SizedF n f
+unwrapF (SizedF (F f)) = SizedF f
 
 instance
   ( FieldSizeInBits f m

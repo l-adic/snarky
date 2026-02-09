@@ -35,6 +35,7 @@ import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField, toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
@@ -75,8 +76,8 @@ type BulletproofChallenges f = Vector 16 (ScalarChallenge f)
 -- | Reference: composition_types.ml:36-50 `Plonk.Minimal`
 type PlonkMinimal f =
   { alpha :: ScalarChallenge f
-  , beta :: f -- Note: beta/gamma are full challenges, not scalar
-  , gamma :: f
+  , beta :: ScalarChallenge f
+  , gamma :: ScalarChallenge f
   , zeta :: ScalarChallenge f
   -- jointCombiner omitted (None for now, used for lookups)
   }
@@ -116,8 +117,8 @@ expandPlonkMinimal
   -> PlonkExpanded f
 expandPlonkMinimal endo plonk =
   { alpha: unwrap $ toFieldPure plonk.alpha (F endo)
-  , beta: unwrap plonk.beta
-  , gamma: unwrap plonk.gamma
+  , beta: unwrap $ SizedF.toField plonk.beta
+  , gamma: unwrap $ SizedF.toField plonk.gamma
   , zeta: unwrap $ toFieldPure plonk.zeta (F endo)
   }
 
@@ -139,8 +140,8 @@ expandPlonkMinimalCircuit endo plonk = do
   zeta <- toField plonk.zeta endo
   pure
     { alpha
-    , beta: plonk.beta
-    , gamma: plonk.gamma
+    , beta: SizedF.toField plonk.beta
+    , gamma: SizedF.toField plonk.gamma
     , zeta
     }
 

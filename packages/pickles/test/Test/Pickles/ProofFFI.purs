@@ -73,8 +73,8 @@ type PointEval f = { zeta :: f, omegaTimesZeta :: f }
 -- | Result of running the Fiat-Shamir oracle computation on a proof.
 type OraclesResult f =
   { alpha :: f
-  , beta :: f
-  , gamma :: f
+  , beta :: SizedF 128 f -- 128-bit challenge (no endo expansion, unlike alpha)
+  , gamma :: SizedF 128 f -- 128-bit challenge (no endo expansion, unlike alpha)
   , zeta :: f
   , ftEval0 :: f
   , v :: f -- polyscale (xi)

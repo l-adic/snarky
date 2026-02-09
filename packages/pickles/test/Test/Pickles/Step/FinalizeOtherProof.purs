@@ -27,7 +27,7 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherPr
 import Pickles.Step.Types (BulletproofChallenges)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -175,8 +175,8 @@ createTestContext = do
       , z: zEvals
       , shifts: ProofFFI.proverIndexShifts ctx.proverIndex
       , alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , zkPolynomial: zkPoly
       , zetaToNMinus1
       , omegaToMinusZkRows
@@ -231,8 +231,8 @@ createTestContext = do
     ---------------------------------------------------------------------------
     plonkMinimal =
       { alpha: coerce ctx.oracles.alphaChal :: SizedF 128 (F StepField)
-      , beta: F ctx.oracles.beta
-      , gamma: F ctx.oracles.gamma
+      , beta: wrapF ctx.oracles.beta
+      , gamma: wrapF ctx.oracles.gamma
       , zeta: coerce ctx.oracles.zetaChal :: SizedF 128 (F StepField)
       }
 

@@ -60,8 +60,8 @@ dummyBulletproofChallenges = Vector.generate \_ -> dummyScalarChallenge
 dummyPlonkMinimal :: forall f. PrimeField f => FieldSizeInBits f 255 => PlonkMinimal f
 dummyPlonkMinimal =
   { alpha: dummyScalarChallenge
-  , beta: zero
-  , gamma: zero
+  , beta: dummyScalarChallenge
+  , gamma: dummyScalarChallenge
   , zeta: dummyScalarChallenge
   }
 

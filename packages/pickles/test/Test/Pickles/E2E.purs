@@ -68,7 +68,7 @@ import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -365,8 +365,8 @@ permutationTest ctx = do
       , z: zEvals
       , shifts
       , alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , zkPolynomial: zkPoly
       , zetaToNMinus1
       , omegaToMinusZkRows
@@ -391,8 +391,8 @@ permutationTest ctx = do
       }
     challenges = buildChallenges
       { alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , jointCombiner: zero
       , vanishesOnZk: vanishesOnZk'
       , lagrangeFalse0
@@ -433,8 +433,8 @@ ftEval0Test ctx = do
       , z: zEvals
       , shifts
       , alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , zkPolynomial: zkPoly
       , zetaToNMinus1
       , omegaToMinusZkRows
@@ -459,8 +459,8 @@ ftEval0Test ctx = do
       }
     challenges = buildChallenges
       { alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , jointCombiner: zero
       , vanishesOnZk: vanishesOnZk'
       , lagrangeFalse0
@@ -517,8 +517,8 @@ ftEval0CircuitTest ctx = do
       , z: { zeta: F zEvals.zeta, omegaTimesZeta: F zEvals.omegaTimesZeta }
       , shifts: map F shifts
       , alpha: F ctx.oracles.alpha
-      , beta: F ctx.oracles.beta
-      , gamma: F ctx.oracles.gamma
+      , beta: F (toField ctx.oracles.beta)
+      , gamma: F (toField ctx.oracles.gamma)
       , zkPolynomial: F zkPoly
       , zetaToNMinus1: F zetaToNMinus1
       , omegaToMinusZkRows: F omegaToMinusZkRows
@@ -532,8 +532,8 @@ ftEval0CircuitTest ctx = do
       , coeffEvals: coerce coeffEvals
       , indexEvals: coerce indexEvals
       , alpha: F ctx.oracles.alpha
-      , beta: F ctx.oracles.beta
-      , gamma: F ctx.oracles.gamma
+      , beta: F (toField ctx.oracles.beta)
+      , gamma: F (toField ctx.oracles.gamma)
       , jointCombiner: F zero
       , vanishesOnZk: F vanishesOnZk'
       , lagrangeFalse0: F lagrangeFalse0
@@ -613,8 +613,8 @@ combinedInnerProductCorrectCircuitTest ctx = do
           , z: coerce zEvals
           , shifts: map F (ProofFFI.proverIndexShifts ctx.proverIndex)
           , alpha: F ctx.oracles.alpha
-          , beta: F ctx.oracles.beta
-          , gamma: F ctx.oracles.gamma
+          , beta: F (toField ctx.oracles.beta)
+          , gamma: F (toField ctx.oracles.gamma)
           , zkPolynomial: F $ ProofFFI.permutationVanishingPolynomial
               { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
           , zetaToNMinus1: F $ pow ctx.oracles.zeta n - one
@@ -626,8 +626,8 @@ combinedInnerProductCorrectCircuitTest ctx = do
           , coeffEvals: coerce (evalCoefficientPolys ctx.proverIndex ctx.oracles.zeta)
           , indexEvals: coerce indexEvals
           , alpha: F ctx.oracles.alpha
-          , beta: F ctx.oracles.beta
-          , gamma: F ctx.oracles.gamma
+          , beta: F (toField ctx.oracles.beta)
+          , gamma: F (toField ctx.oracles.gamma)
           , jointCombiner: F zero
           , vanishesOnZk: F $ vanishesOnZkAndPreviousRows
               { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
@@ -885,8 +885,8 @@ plonkChecksCircuitTest ctx = do
           , z: coerce zEvals
           , shifts: map F (ProofFFI.proverIndexShifts ctx.proverIndex)
           , alpha: F ctx.oracles.alpha
-          , beta: F ctx.oracles.beta
-          , gamma: F ctx.oracles.gamma
+          , beta: F (toField ctx.oracles.beta)
+          , gamma: F (toField ctx.oracles.gamma)
           , zkPolynomial: F $ ProofFFI.permutationVanishingPolynomial
               { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
           , zetaToNMinus1: F $ pow ctx.oracles.zeta n - one
@@ -898,8 +898,8 @@ plonkChecksCircuitTest ctx = do
           , coeffEvals: coerce (evalCoefficientPolys ctx.proverIndex ctx.oracles.zeta)
           , indexEvals: coerce indexEvals
           , alpha: F ctx.oracles.alpha
-          , beta: F ctx.oracles.beta
-          , gamma: F ctx.oracles.gamma
+          , beta: F (toField ctx.oracles.beta)
+          , gamma: F (toField ctx.oracles.gamma)
           , jointCombiner: F zero
           , vanishesOnZk: F $ vanishesOnZkAndPreviousRows
               { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
@@ -1512,12 +1512,6 @@ mkIpaTestContext ctx =
 incrementallyVerifyProofTest :: TestContext -> Aff Unit
 incrementallyVerifyProofTest ctx = do
   let
-    -- Oracle values are natively Fq (from the Fq-sponge over commitment coords),
-    -- but the FFI types them as Vesta.ScalarField (the application circuit field).
-    -- Re-interpret as Pallas.ScalarField (the IVP circuit field) — same integers.
-    fpToFq :: Vesta.ScalarField -> Pallas.ScalarField
-    fpToFq x = fromBigInt (toBigInt x)
-
     commitments = ProofFFI.pallasProofCommitments ctx.proof
     numPublic = Array.length ctx.publicInputs
     columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
@@ -1563,8 +1557,8 @@ incrementallyVerifyProofTest ctx = do
       , z: ProofFFI.proofZEvals ctx.proof
       , shifts: ProofFFI.proverIndexShifts ctx.proverIndex
       , alpha: ctx.oracles.alpha
-      , beta: ctx.oracles.beta
-      , gamma: ctx.oracles.gamma
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
       , zkPolynomial: zkPoly
       , zetaToNMinus1
       , omegaToMinusZkRows
@@ -1607,10 +1601,10 @@ incrementallyVerifyProofTest ctx = do
       , sgOld: Vector.nil
       , deferredValues:
           { plonk:
-              { alpha: coerce (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
-              , beta: F (fpToFq ctx.oracles.beta)
-              , gamma: F (fpToFq ctx.oracles.gamma)
-              , zeta: coerce (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
+              { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
+              , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
+              , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
+              , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
               }
           , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
           , xi: xiChalFq

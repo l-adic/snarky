@@ -64,8 +64,8 @@ spec = describe "Dummy values" do
   it "dummyPlonkMinimal has zero challenges" do
     let p = dummyPlonkMinimal'
     let F alpha = SizedF.toField p.alpha
-    let F beta = p.beta
-    let F gamma = p.gamma
+    let F beta = SizedF.toField p.beta
+    let F gamma = SizedF.toField p.gamma
     let F zeta = SizedF.toField p.zeta
     alpha `shouldEqual` zero
     beta `shouldEqual` zero
