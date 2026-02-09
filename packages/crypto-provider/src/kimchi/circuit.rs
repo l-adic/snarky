@@ -1197,6 +1197,42 @@ mod generic {
 
         result
     }
+
+    /// Compute the challenge polynomial commitment: MSM of b_poly_coefficients against SRS.
+    /// The challenge polynomial is b(X) = prod_i (1 + c_i * X^{2^i}).
+    /// Its coefficients are determined by the bit pattern of each index.
+    /// Returns [x, y] coordinates of the commitment point.
+    pub fn challenge_poly_commitment<G: KimchiCurve>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        challenges: &[G::ScalarField],
+    ) -> Result<Vec<G::BaseField>>
+    where
+        G::BaseField: PrimeField,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let n = challenges.len();
+        let size = 1usize << n;
+
+        // b_poly_coefficients: coeff[j] determined by bit pattern of j
+        let mut s = vec![G::ScalarField::one(); size];
+        let mut k: usize = 0;
+        let mut pow: usize = 1;
+        for i in 1..size {
+            k += if i == pow { 1 } else { 0 };
+            pow <<= if i == pow { 1 } else { 0 };
+            s[i] = s[i - (pow >> 1)] * challenges[n - 1 - (k - 1)];
+        }
+
+        let srs = verifier_index.srs();
+        let g = &srs.g[..size];
+        let result = G::Group::msm_unchecked(g, &s).into_affine();
+
+        if let Some((x, y)) = result.to_coordinates() {
+            Ok(vec![x, y])
+        } else {
+            Err(Error::new(Status::GenericFailure, "point at infinity"))
+        }
+    }
 }
 
 #[napi]
@@ -2401,4 +2437,34 @@ pub fn vesta_proof_commitments(proof: &PallasProofExternal) -> Vec<VestaFieldExt
         .into_iter()
         .map(External::new)
         .collect()
+}
+
+// ============================================================================
+// Challenge polynomial commitment
+// ============================================================================
+
+/// Compute the challenge polynomial commitment for Pallas circuits (Vesta commitments).
+/// Takes challenges in the commitment curve's scalar field (Vesta scalar = Fp).
+/// Returns [x, y] coordinates in the commitment curve's base field (Vesta base = Fq = Pallas scalar).
+#[napi]
+pub fn pallas_challenge_poly_commitment(
+    verifier_index: &PallasVerifierIndexExternal,
+    challenges: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let chals: Vec<VestaScalarField> = challenges.iter().map(|f| ***f).collect();
+    generic::challenge_poly_commitment::<VestaGroup>(&**verifier_index, &chals)
+        .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+/// Compute the challenge polynomial commitment for Vesta circuits (Pallas commitments).
+/// Takes challenges in the commitment curve's scalar field (Pallas scalar = Fq).
+/// Returns [x, y] coordinates in the commitment curve's base field (Pallas base = Fp = Vesta scalar).
+#[napi]
+pub fn vesta_challenge_poly_commitment(
+    verifier_index: &VestaVerifierIndexExternal,
+    challenges: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let chals: Vec<PallasScalarField> = challenges.iter().map(|f| ***f).collect();
+    generic::challenge_poly_commitment::<PallasGroup>(&**verifier_index, &chals)
+        .map(|coords| coords.into_iter().map(External::new).collect())
 }

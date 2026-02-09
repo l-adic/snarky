@@ -1421,8 +1421,13 @@ checkBulletproofTest ctx = do
         endoMapped = Vector.toUnfoldable $ map
           (\c -> expandToEndoScalar c :: Pallas.BaseField)
           challenges
+
+        -- Verify challenge polynomial commitment matches proof sg
+        computedSg = ProofFFI.pallasChallengePolyCommitment ctx.verifierIndex endoMapped
+        expectedSg = ProofFFI.pallasProofOpeningSg ctx.proof
       in
         if endoMapped /= Vector.toUnfoldable rustChallenges then unsafeThrow "checkBulletproof: extracted challenges don't match Rust"
+        else if computedSg /= expectedSg then unsafeThrow "checkBulletproof: challenge poly commitment doesn't match proof sg"
         else coerce challenges
 
   circuitSpecPureInputs

@@ -48,6 +48,8 @@ module Test.Pickles.ProofFFI
   , pallasSigmaCommLast
   , pallasVerifierIndexColumnComms
   , vestaVerifierIndexColumnComms
+  , pallasChallengePolyCommitment
+  , vestaChallengePolyCommitment
   , ProofCommitments
   , Proof
   , OraclesResult
@@ -239,6 +241,12 @@ foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> 
 -- VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
 foreign import pallasVerifierIndexColumnComms :: VerifierIndex Vesta.G Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
 foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
+
+-- Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
+-- Challenges are in the commitment curve's scalar field (= circuit field)
+-- Returns point coordinates in the commitment curve's base field
+foreign import pallasChallengePolyCommitment :: VerifierIndex Vesta.G Pallas.BaseField -> Array Pallas.BaseField -> AffinePoint Pallas.ScalarField
+foreign import vestaChallengePolyCommitment :: VerifierIndex Pallas.G Vesta.BaseField -> Array Vesta.BaseField -> AffinePoint Vesta.ScalarField
 
 -- | Proof commitments structured for Fq-sponge absorption.
 type ProofCommitments f =

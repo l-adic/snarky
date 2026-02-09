@@ -316,6 +316,18 @@ export const vestaPublicComm = (verifierIndex) => (publicInput) => {
   return result;
 };
 
+// Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
+// Returns { x, y } coordinates
+export const pallasChallengePolyCommitment = (verifierIndex) => (challenges) => {
+  const coords = crypto.pallasChallengePolyCommitment(verifierIndex, challenges);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaChallengePolyCommitment = (verifierIndex) => (challenges) => {
+  const coords = crypto.vestaChallengePolyCommitment(verifierIndex, challenges);
+  return { x: coords[0], y: coords[1] };
+};
+
 // ft_comm: the chunked commitment of the linearized constraint polynomial
 // Returns { x, y } coordinates in Fq
 export const pallasFtComm = (verifierIndex) => ({ proof, publicInput }) => {
