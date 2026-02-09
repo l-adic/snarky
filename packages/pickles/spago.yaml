@@ -12,6 +12,7 @@ package:
     - maybe
     - newtype
     - partial
+    - pickles-linearization-types
     - poseidon
     - prelude
     - random-oracle
