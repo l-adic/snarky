@@ -117,7 +117,7 @@ incrementallyVerifyProof
   => Reflectable bitsUsed Int
   => Reflectable nPublic Int
   => Add 1 _l2 7
-  => IpaScalarOps f (KimchiConstraint f) t m sf
+  => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> IncrementallyVerifyProofParams nPublic f
   -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
@@ -228,7 +228,7 @@ verify
   => Reflectable bitsUsed Int
   => Reflectable nPublic Int
   => Add 1 _l2 7
-  => IpaScalarOps f (KimchiConstraint f) t m sf
+  => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> IncrementallyVerifyProofParams nPublic f
   -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf

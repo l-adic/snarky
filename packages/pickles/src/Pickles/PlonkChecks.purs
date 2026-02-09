@@ -31,7 +31,7 @@ import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeSc
 import Pickles.Step.Types (ScalarChallenge)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, equals_)
-import Snarky.Circuit.Kimchi (Type1, fromShiftedType1Circuit, toField)
+import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 
@@ -217,23 +217,24 @@ type PlonkArithmeticCheckInput f sf =
 -- |
 -- | The check:
 -- | 1. Computes the actual perm scalar from challenges and evaluations
--- | 2. Unshifts the claimed perm value (Type1 shifted)
+-- | 2. Unshifts the claimed perm value via the provided `unshift` operation
 -- | 3. Returns whether they're equal
 -- |
 -- | Reference: plonk_checks.ml:450-476
 plonkArithmeticCheckCircuit
-  :: forall f n t m
+  :: forall f n t m sf r
    . PrimeField f
   => FieldSizeInBits f n
   => CircuitM f (KimchiConstraint f) t m
-  => PlonkArithmeticCheckInput (FVar f) (Type1 (FVar f))
+  => { unshift :: sf -> FVar f | r }
+  -> PlonkArithmeticCheckInput (FVar f) sf
   -> Snarky (KimchiConstraint f) t m (BoolVar f)
-plonkArithmeticCheckCircuit input = do
+plonkArithmeticCheckCircuit ops input = do
   -- Compute actual perm from challenges and evaluations
   actualPerm <- permScalarCircuit input.permInput
 
   -- Unshift the claimed perm value
-  let claimedPermUnshifted = fromShiftedType1Circuit input.claimedPerm
+  let claimedPermUnshifted = ops.unshift input.claimedPerm
 
   -- Compare: claimed (unshifted) == actual
   equals_ claimedPermUnshifted actualPerm

@@ -86,7 +86,11 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
         => FinalizeOtherProofTestInputVar
         -> Snarky (KimchiConstraint StepField) t Identity Unit
       dummyTestCircuit x =
-        void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit dummyFinalizeOtherProofParams x)
+        let
+          ops :: IPA.IpaScalarOps StepField t Identity (Type1 (FVar StepField))
+          ops = IPA.type1ScalarOps
+        in
+          void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x)
 
     circuitSpecPureInputs
       { builtState: compilePure
@@ -309,7 +313,10 @@ realDataSpec = beforeAll createTestContext $
           => FinalizeOtherProofTestInputVar
           -> Snarky (KimchiConstraint StepField) t Identity Unit
         circuit x = do
-          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit params x)
+          let
+            ops :: IPA.IpaScalarOps StepField t Identity (Type1 (FVar StepField))
+            ops = IPA.type1ScalarOps
+          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
       circuitSpecPureInputs

@@ -40,7 +40,7 @@ import Pickles.Step.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProo
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
-import Snarky.Circuit.Kimchi (Type1, fromShiftedType1Circuit, toField)
+import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 
@@ -121,16 +121,17 @@ type FinalizeOtherProofOutput f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall f f' t m
+  :: forall f f' t m sf r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => FinalizeOtherProofParams f
-  -> FinalizeOtherProofInput (FVar f) (Type1 (FVar f)) (BoolVar f)
+  => { unshift :: sf -> FVar f | r }
+  -> FinalizeOtherProofParams f
+  -> FinalizeOtherProofInput (FVar f) sf (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
-finalizeOtherProofCircuit params { unfinalized, witness, prevChallengeDigest } = do
+finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest } = do
   let
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
@@ -168,7 +169,7 @@ finalizeOtherProofCircuit params { unfinalized, witness, prevChallengeDigest } =
       { polyscale, evalscale }
       cipInput
   cipCorrect <- liftSnarky $
-    equals_ (fromShiftedType1Circuit deferred.combinedInnerProduct) computedCIP
+    equals_ (ops.unshift deferred.combinedInnerProduct) computedCIP
 
   -- 10. Expand bulletproof challenges (16 x 128-bit -> full field via endo)
   expandedChallenges <- liftSnarky $
@@ -181,12 +182,12 @@ finalizeOtherProofCircuit params { unfinalized, witness, prevChallengeDigest } =
     , zeta: plonk.zeta
     , zetaOmega
     , evalscale
-    , expectedB: fromShiftedType1Circuit deferred.b
+    , expectedB: ops.unshift deferred.b
     }
 
   -- 12. perm_correct
   let permInput = buildPermInput plonk witness params
-  permOk <- liftSnarky $ PlonkChecks.plonkArithmeticCheckCircuit
+  permOk <- liftSnarky $ PlonkChecks.plonkArithmeticCheckCircuit ops
     { claimedPerm: deferred.perm, permInput }
 
   -- 13. Combine all checks
