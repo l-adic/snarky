@@ -34,7 +34,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.E2E (computePublicEval, createTestContext, mkIpaTestContext) as E2E
+import Test.Pickles.E2E (computePublicEval, createVestaTestContext, mkIpaTestContext) as E2E
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
@@ -114,7 +114,7 @@ type TestContext =
 
 createTestContext :: Aff TestContext
 createTestContext = do
-  ctx <- E2E.createTestContext
+  ctx <- E2E.createVestaTestContext
   let
     endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
 

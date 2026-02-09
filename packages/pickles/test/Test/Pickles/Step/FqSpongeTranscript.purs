@@ -32,7 +32,7 @@ import Snarky.Curves.Class (toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.E2E (createTestContext)
+import Test.Pickles.E2E (createVestaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
@@ -129,7 +129,7 @@ type FqSpongeTestContext =
 
 setupTestContext :: Aff FqSpongeTestContext
 setupTestContext = do
-  ctx <- createTestContext
+  ctx <- createVestaTestContext
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 

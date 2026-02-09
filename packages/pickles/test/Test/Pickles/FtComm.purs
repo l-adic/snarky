@@ -20,7 +20,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.E2E (TestContext, createTestContext)
+import Test.Pickles.E2E (VestaTestContext, createVestaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
@@ -41,11 +41,11 @@ type FtCommInput f =
   }
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createTestContext $
+spec = beforeAll createVestaTestContext $
   describe "FtComm" do
     it "circuit computes ft_comm matching Rust" ftCommTest
 
-ftCommTest :: TestContext -> Aff Unit
+ftCommTest :: VestaTestContext -> Aff Unit
 ftCommTest ctx = do
   let
     -- Ground truth from Rust
