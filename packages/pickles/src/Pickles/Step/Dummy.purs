@@ -83,6 +83,8 @@ dummyDeferredValues =
   , bulletproofChallenges: dummyBulletproofChallenges
   , b: Type1 zero
   , perm: Type1 zero
+  , zetaToSrsLength: Type1 zero
+  , zetaToDomainSize: Type1 zero
   }
 
 -------------------------------------------------------------------------------

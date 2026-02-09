@@ -48,10 +48,10 @@ type SpongeField = Pallas.ScalarField
 -------------------------------------------------------------------------------
 
 spongeTranscriptF
-  :: forall chunks
-   . FqSpongeInput chunks (F SpongeField)
+  :: forall sgOldN chunks
+   . FqSpongeInput sgOldN chunks (F SpongeField)
   -> FqSpongeOutput (F SpongeField)
-spongeTranscriptF = coerce (evalPureSpongeM initialSponge <<< spongeTranscriptPure :: FqSpongeInput chunks SpongeField -> FqSpongeOutput SpongeField)
+spongeTranscriptF = coerce (evalPureSpongeM initialSponge <<< spongeTranscriptPure :: FqSpongeInput sgOldN chunks SpongeField -> FqSpongeOutput SpongeField)
 
 -------------------------------------------------------------------------------
 -- | For the Schnorr test circuit, t_comm has 7 chunks.
@@ -60,7 +60,7 @@ spongeTranscriptF = coerce (evalPureSpongeM initialSponge <<< spongeTranscriptPu
 
 type SchnorrTCommChunks = 7
 
-type SchnorrFqSpongeInput = FqSpongeInput SchnorrTCommChunks (F SpongeField)
+type SchnorrFqSpongeInput = FqSpongeInput 0 SchnorrTCommChunks (F SpongeField)
 
 -------------------------------------------------------------------------------
 -- | Test spec (wrapped in Identity for mapSpec)
@@ -159,12 +159,13 @@ setupTestContext = do
     tComm :: Vector SchnorrTCommChunks (AffinePoint SpongeField)
     tComm = unsafePartial fromJust $ Vector.toVector tCommArray
 
-    input = { indexDigest, publicComm, wComm, zComm, tComm }
+    input = { indexDigest, sgOld: Vector.nil, publicComm, wComm, zComm, tComm }
     result = evalPureSpongeM initialSponge (spongeTranscriptPure input)
 
     circuitInput :: SchnorrFqSpongeInput
     circuitInput =
       { indexDigest: F indexDigest
+      , sgOld: Vector.nil
       , publicComm: coerce publicComm
       , wComm: coerce wComm
       , zComm: coerce zComm

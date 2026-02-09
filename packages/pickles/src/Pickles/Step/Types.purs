@@ -165,6 +165,8 @@ type DeferredValues f sf =
   , bulletproofChallenges :: BulletproofChallenges f
   , b :: sf
   , perm :: sf -- Permutation argument scalar (shifted)
+  , zetaToSrsLength :: sf -- zeta^maxPolySize (shifted)
+  , zetaToDomainSize :: sf -- zeta^domainSize (shifted)
   }
 
 -------------------------------------------------------------------------------

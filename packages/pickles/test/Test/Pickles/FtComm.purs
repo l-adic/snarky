@@ -87,15 +87,15 @@ ftCommTest ctx = do
        . CircuitM CircuitField (KimchiConstraint CircuitField) t Identity
       => FtCommInput (FVar CircuitField)
       -> Snarky (KimchiConstraint CircuitField) t Identity Unit
-    circuit { perm, zetaToSrsLength, zetaToDomainSize } = do 
+    circuit { perm, zetaToSrsLength, zetaToDomainSize } = do
       res <- ftComm
-          IPA.type1ScalarOps
-          { sigmaLast: constPt sigmaLast
-          , tComm: map constPt tCommChunks
-          , perm
-          , zetaToSrsLength
-          , zetaToDomainSize
-          }
+        IPA.type1ScalarOps
+        { sigmaLast: constPt sigmaLast
+        , tComm: map constPt tCommChunks
+        , perm
+        , zetaToSrsLength
+        , zetaToDomainSize
+        }
       assertEq (constPt $ coerce expected) res
 
   -- Sanity check

@@ -60,8 +60,7 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit, scaleFast1, scaleFast2)
@@ -338,7 +337,6 @@ bulletReduceCircuit
   => FrModule f' g
   => WeierstrassCurve f g
   => CircuitM f (KimchiConstraint f) t m
-  => Compare 128 255 LT
   => BulletReduceInput n (FVar f)
   -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
 bulletReduceCircuit { pairs, challenges } = do
@@ -546,7 +544,6 @@ combinePolynomials
   => FieldSizeInBits f 255
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
-  => Compare 128 255 LT
   => Vector n (AffinePoint (FVar f))
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
@@ -607,7 +604,6 @@ checkBulletproof
   => WeierstrassCurve f g
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Compare 128 255 LT
   => IpaScalarOps f (KimchiConstraint f) t m sf
   -> GroupMapParams f
   -> Vector numBases (AffinePoint (FVar f))

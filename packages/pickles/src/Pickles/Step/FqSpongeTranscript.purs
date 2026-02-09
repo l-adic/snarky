@@ -45,8 +45,9 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | `chunks` is the number of t_comm chunks (= 7 * ceil(domain_size / max_poly_size)).
 -------------------------------------------------------------------------------
 
-type FqSpongeInput chunks f =
+type FqSpongeInput sgOldN chunks f =
   { indexDigest :: f
+  , sgOld :: Vector sgOldN (AffinePoint f)
   , publicComm :: AffinePoint f
   , wComm :: Vector 15 (AffinePoint f)
   , zComm :: AffinePoint f
@@ -73,15 +74,16 @@ type FqSpongeOutput f =
 -- |
 -- | Reference: step_verifier.ml:515-560
 spongeTranscriptCircuit
-  :: forall f chunks t m
+  :: forall f sgOldN chunks t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => FqSpongeInput chunks (FVar f)
+  => FqSpongeInput sgOldN chunks (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
 spongeTranscriptCircuit input = do
   Sponge.absorb input.indexDigest
+  for_ input.sgOld Sponge.absorbPoint
   Sponge.absorbPoint input.publicComm
   for_ input.wComm Sponge.absorbPoint
   beta <- squeezeScalarChallenge
@@ -102,14 +104,15 @@ spongeTranscriptCircuit input = do
 
 -- | Pure sponge transcript. Same sponge-copy semantics as circuit version.
 spongeTranscriptPure
-  :: forall f chunks
+  :: forall f sgOldN chunks
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
-  => FqSpongeInput chunks f
+  => FqSpongeInput sgOldN chunks f
   -> PureSpongeM f (FqSpongeOutput f)
 spongeTranscriptPure input = do
   Sponge.absorb input.indexDigest
+  for_ input.sgOld Sponge.absorbPoint
   Sponge.absorbPoint input.publicComm
   for_ input.wComm Sponge.absorbPoint
   beta <- squeezeScalarChallengePure

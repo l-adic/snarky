@@ -134,6 +134,7 @@ createTestContext = do
     -- Domain-dependent values
     ---------------------------------------------------------------------------
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
     omega = ipaCtx.omega
     zetaToNMinus1 = pow ctx.oracles.zeta n - one
     zkPoly = ProofFFI.permutationVanishingPolynomial
@@ -243,6 +244,8 @@ createTestContext = do
           , bulletproofChallenges
           , b: toShifted $ F bValue
           , perm: toShifted $ F perm
+          , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+          , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
           }
       , shouldFinalize: true
       , spongeDigestBeforeEvaluations: F ctx.oracles.fqDigest
