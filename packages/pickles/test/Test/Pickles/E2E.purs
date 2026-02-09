@@ -58,7 +58,7 @@ import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevCh
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.FqSpongeTranscript (FqSpongeInput, spongeTranscriptCircuit, spongeTranscriptPure)
-import Pickles.Step.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
+import Pickles.Step.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
 import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -68,7 +68,7 @@ import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_, toField, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_, false_, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -1655,6 +1655,163 @@ incrementallyVerifyProofTest ctx = do
     [ circuitInput ]
 
 -------------------------------------------------------------------------------
+-- | verify test
+-------------------------------------------------------------------------------
+
+-- | Full verify circuit test.
+-- | Wraps incrementallyVerifyProof with digest and challenge assertions.
+verifyTest :: TestContext -> Aff Unit
+verifyTest ctx = do
+  let
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
+    numPublic = Array.length ctx.publicInputs
+    columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
+
+    indexComms :: Vector 6 (AffinePoint Pallas.ScalarField)
+    indexComms = unsafePartial fromJust $ Vector.toVector $ Array.take 6 columnCommsRaw
+
+    coeffComms :: Vector 15 (AffinePoint Pallas.ScalarField)
+    coeffComms = unsafePartial fromJust $ Vector.toVector $ Array.take 15 $ Array.drop 6 columnCommsRaw
+
+    sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
+    sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
+
+    -- Build params (compile-time constants)
+    params :: IncrementallyVerifyProofParams 9 Pallas.ScalarField
+    params =
+      { curveParams: curveParams (Proxy @Vesta.G)
+      , lagrangeComms: unsafePartial fromJust $ Vector.toVector $
+          coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
+      , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
+      , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
+      , columnComms:
+          { index: coerce indexComms
+          , coeff: coerce coeffComms
+          , sigma: coerce sigmaComms
+          }
+      , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
+      }
+
+    -- Compute deferred values from oracles
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Perm scalar (pure, using expanded plonk values from oracles)
+    zetaToNMinus1 = pow ctx.oracles.zeta n - one
+    zkPoly = ProofFFI.permutationVanishingPolynomial
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
+    permInput =
+      { w: map _.zeta (Vector.take @7 (ProofFFI.proofWitnessEvals ctx.proof))
+      , sigma: map _.zeta (ProofFFI.proofSigmaEvals ctx.proof)
+      , z: ProofFFI.proofZEvals ctx.proof
+      , shifts: ProofFFI.proverIndexShifts ctx.proverIndex
+      , alpha: ctx.oracles.alpha
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: ctx.oracles.zeta
+      }
+    perm = permScalar permInput
+
+    -- b value from FFI
+    { challenges: rustChallenges } = mkIpaTestContext ctx
+    bValue = ProofFFI.computeB0
+      { challenges: Vector.toUnfoldable rustChallenges
+      , zeta: ctx.oracles.zeta
+      , zetaOmega: ctx.oracles.zeta * omega
+      , evalscale: ctx.oracles.u
+      }
+
+    -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
+    { spongeState } = mkIpaTestContext ctx
+
+    rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+    rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
+      _ <- Pickles.Sponge.squeeze -- squeeze for u
+      IPA.extractScalarChallengesPure (coerce $ ProofFFI.pallasProofOpeningLr ctx.proof)
+
+    bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    bulletproofChallenges = coerce rawBpChallenges
+
+    -- Xi challenge in Fq (coerced from Fp)
+    xiChalFq :: SizedF 128 (F Pallas.ScalarField)
+    xiChalFq = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 Pallas.ScalarField)
+
+    -- Build circuit input
+    tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
+    tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
+
+    circuitInput :: IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput =
+      { publicInput: unsafePartial fromJust $ Vector.toVector $
+          map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
+      , sgOld: Vector.nil
+      , deferredValues:
+          { plonk:
+              { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
+              , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
+              , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
+              , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
+              }
+          , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+          , xi: xiChalFq
+          , bulletproofChallenges
+          , b: toShifted $ F bValue
+          , perm: toShifted $ F perm
+          , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+          , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+          }
+      , wComm: coerce commitments.wComm
+      , zComm: coerce commitments.zComm
+      , tComm
+      , opening:
+          { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
+          , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
+          , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+          , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
+          , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
+          }
+      }
+
+    -- Claimed sponge digest: coerce from Vesta.ScalarField to Pallas.ScalarField
+    claimedDigestFq :: Pallas.ScalarField
+    claimedDigestFq = fromBigInt (toBigInt ctx.oracles.fqDigest)
+
+    circuit
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
+      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
+    circuit input = do
+      success <- evalSpongeM initialSpongeCircuit $
+        verify @51 @Vesta.G
+          IPA.type1ScalarOps
+          (groupMapParams $ Proxy @Vesta.G)
+          params
+          input
+          false_ -- isBaseCase (real proof, not base case)
+          (const_ claimedDigestFq)
+      assert_ success
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @(IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+-------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
 
@@ -1680,3 +1837,4 @@ spec = beforeAll createTestContext $
     it "ipaFinalCheckCircuit verifies with Rust proof values" ipaFinalCheckCircuitTest
     it "checkBulletproof composes transcript and IPA verification" checkBulletproofTest
     it "incrementallyVerifyProof wires all components together" incrementallyVerifyProofTest
+    it "verify wires IVP + deferred value assertions" verifyTest

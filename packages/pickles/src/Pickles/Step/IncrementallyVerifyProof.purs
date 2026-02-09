@@ -13,13 +13,16 @@ module Pickles.Step.IncrementallyVerifyProof
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , verify
   ) where
 
 import Prelude
 
 import Data.Array.NonEmpty as NEA
+import Data.Foldable (for_)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -31,7 +34,7 @@ import Pickles.Step.FqSpongeTranscript (spongeTranscriptCircuit)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -197,3 +200,53 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
   where
   constPt :: AffinePoint (F f) -> AffinePoint (FVar f)
   constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
+
+-------------------------------------------------------------------------------
+-- | verify (Step_verifier.verify)
+-------------------------------------------------------------------------------
+
+-- | Thin wrapper around incrementallyVerifyProof that asserts:
+-- |   1. Sponge digest matches the claimed digest from the unfinalized proof
+-- |   2. Bulletproof challenges match the claimed challenges (bypassed for base case)
+-- |
+-- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
+verify
+  :: forall @nChunks nPublic sgOldN f f' @g sf t m bitsUsed sDiv2Bits _l _l2
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => FieldSizeInBits f' 255
+  => PoseidonField f
+  => HasEndo f f'
+  => HasSqrt f
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => CircuitM f (KimchiConstraint f) t m
+  => Add bitsUsed _l 255
+  => Add sDiv2Bits 1 255
+  => Mul 5 nChunks bitsUsed
+  => Reflectable sDiv2Bits Int
+  => Reflectable bitsUsed Int
+  => Reflectable nPublic Int
+  => Add 1 _l2 7
+  => IpaScalarOps f (KimchiConstraint f) t m sf
+  -> GroupMapParams f
+  -> IncrementallyVerifyProofParams nPublic f
+  -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
+  -> BoolVar f -- isBaseCase
+  -> FVar f -- claimed spongeDigestBeforeEvaluations
+  -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
+verify scalarOps groupMapParams_ params input isBaseCase claimedDigest = do
+  -- 1. Call incrementallyVerifyProof
+  output <- incrementallyVerifyProof @nChunks @g scalarOps groupMapParams_ params input
+
+  -- 2. Assert sponge digest matches (line 1207)
+  liftSnarky $ assertEq output.spongeDigestBeforeEvaluations claimedDigest
+
+  -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
+  liftSnarky $ for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
+    \(Tuple c1 c2) -> do
+      c2' <- if_ isBaseCase c1 c2
+      assertEq c1 c2'
+
+  -- 4. Return bulletproof success
+  pure output.success

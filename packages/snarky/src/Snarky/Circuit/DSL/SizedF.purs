@@ -31,6 +31,7 @@ import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEq, assert_, isEqual)
 import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_)
+import Snarky.Circuit.DSL.Boolean (class IfThenElse, if_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, not_)
 import Snarky.Circuit.Types (class CircuitType, F(..), FVar, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
@@ -80,6 +81,9 @@ instance
 instance AssertEqual f c (SizedF n (FVar f)) where
   assertEq (SizedF x) (SizedF y) = assertEq @f x y
   isEqual (SizedF x) (SizedF y) = isEqual @f x y
+
+instance IfThenElse f c (SizedF n (FVar f)) where
+  if_ b (SizedF x) (SizedF y) = SizedF <$> if_ @f @c b x y
 
 instance
   ( FieldSizeInBits f m
