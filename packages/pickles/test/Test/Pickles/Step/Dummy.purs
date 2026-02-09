@@ -14,7 +14,7 @@ import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dumm
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi (Type1(..))
+import Snarky.Circuit.Kimchi (Type1(..), fromShifted)
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -74,8 +74,8 @@ spec = describe "Dummy values" do
 
   it "dummyDeferredValues has zero values" do
     let d = dummyDeferredValues'
-    let Type1 (F cip) = d.combinedInnerProduct
-    let Type1 (F b) = d.b
+    let F cip = fromShifted d.combinedInnerProduct :: F StepField
+    let F b = fromShifted d.b :: F StepField
     cip `shouldEqual` zero
     b `shouldEqual` zero
 
