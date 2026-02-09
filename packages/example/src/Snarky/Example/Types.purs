@@ -13,8 +13,7 @@ import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable)
 import Data.Newtype (class Newtype, un)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, assertEqGeneric, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.DSL (class AssertEqual, class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, assertEqGeneric, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, isEqualGeneric)
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Test.QuickCheck (class Arbitrary)
@@ -43,6 +42,7 @@ instance CheckedType f c (PublicKey (FVar f)) where
 
 instance AssertEqual f c (PublicKey (FVar f)) where
   assertEq x y = assertEqGeneric x y
+  isEqual x y = isEqualGeneric x y
 
 --------------------------------------------------------------------------------
 -- | TokenAmount type - a single field element representing a token balance

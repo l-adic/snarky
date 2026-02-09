@@ -23,7 +23,8 @@ import Data.Set (Set)
 import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, reduceToAffineExpression)
+import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Groth16 (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
 

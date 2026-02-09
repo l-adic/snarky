@@ -17,17 +17,16 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Partial.Unsafe (unsafePartial)
-import Poseidon.Class (class PoseidonField, hash) as Poseidon
+import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
-import Snarky.Circuit.Types (F(..), FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class PrimeField)
@@ -333,7 +332,12 @@ hashVecCircuitTests
 hashVecCircuitTests _ pn = do
   let
     referenceHash :: Vector n (F f) -> Digest (F f)
-    referenceHash inputs = Digest $ hash (Vector.toUnfoldable inputs)
+    referenceHash inputs =
+      let
+        xs :: Array f
+        xs = coerce (Vector.toUnfoldable inputs :: Array (F f))
+      in
+        Digest $ F $ hash xs
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
     s = compilePure
@@ -366,7 +370,12 @@ hashVecEdgeCase
 hashVecEdgeCase _ input = do
   let
     referenceHash :: Vector n (F f) -> Digest (F f)
-    referenceHash xs = Digest $ hash (Vector.toUnfoldable xs)
+    referenceHash xs =
+      let
+        xs' :: Array f
+        xs' = coerce (Vector.toUnfoldable xs :: Array (F f))
+      in
+        Digest $ F $ hash xs'
 
     solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
     s = compilePure

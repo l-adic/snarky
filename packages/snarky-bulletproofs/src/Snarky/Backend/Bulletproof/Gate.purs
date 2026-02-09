@@ -29,8 +29,9 @@ import Data.Traversable (foldl, for)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..), fst)
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Circuit.CVar (AffineExpression(..), EvaluationError(..), Variable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), reduceToAffineExpression)
 import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Bulletproofs (R1CS(..))
 import Snarky.Curves.Class (class PrimeField)
 

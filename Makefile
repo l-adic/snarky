@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph
 
 .DEFAULT_GOAL := help
 
@@ -123,6 +123,16 @@ clean: ## Clean everything
 	-cd packages/snarky-groth16 && rm -rf output
 	rm -rf output node_modules target
 	rm -f package-lock.json
+
+# Generate workspace module dependency graph (requires deps.json + graphviz)
+# Usage:
+#   make dep-graph                                          # all workspace packages
+#   make dep-graph EXCLUDE=snarky-bulletproofs,snarky-groth16  # exclude packages (comma-separated)
+#   make dep-graph CLOSURE=pickles                          # only pickles and its transitive deps
+EXCLUDE ?= snarky-bulletproofs,snarky-groth16
+CLOSURE ?=
+dep-graph: ## Generate module dependency graph as deps.svg
+	node workspace-deps.js --exclude $(EXCLUDE) $(if $(CLOSURE),--closure $(CLOSURE))
 
 .PHONY: fetch-srs
 fetch-srs: ## Download the srs-cache from github

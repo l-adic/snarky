@@ -18,8 +18,7 @@ import Prelude
 import Data.Foldable (foldM, foldl)
 import Data.Vector (Vector)
 import Pickles.Linearization.FFI (PointEval)
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_)
 import Snarky.Curves.Class (class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -96,16 +95,16 @@ combinedInnerProductCircuit { polyscale, evalscale, evals } = do
       -- evalscale * eval.omegaTimesZeta
       evalscaleTimesOmega <- pure evalscale * pure eval.omegaTimesZeta
       -- eval.zeta + evalscale * eval.omegaTimesZeta
-      let term = CVar.add_ eval.zeta evalscaleTimesOmega
+      let term = add_ eval.zeta evalscaleTimesOmega
       -- scale * term
       scaledTerm <- pure scale * pure term
       -- result + scale * term
-      let newResult = CVar.add_ result scaledTerm
+      let newResult = add_ result scaledTerm
       -- scale * polyscale
       newScale <- pure scale * pure polyscale
       pure { result: newResult, scale: newScale }
 
-    init = { result: CVar.const_ zero, scale: CVar.const_ one }
+    init = { result: const_ zero, scale: const_ one }
 
   { result } <- foldM step init evals
   pure result

@@ -14,7 +14,7 @@ package:
     - node-path
     - node-process
     - partial
-    - pickles
+    - pickles-linearization-types
     - prelude
     - simple-json
     - tidy-codegen

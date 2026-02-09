@@ -1,0 +1,12 @@
+package:
+  name: pickles-linearization-types
+  dependencies:
+    - arrays
+    - control
+    - foreign
+    - maybe
+    - prelude
+    - simple-json
+    - tuples
+  build:
+    strict: true

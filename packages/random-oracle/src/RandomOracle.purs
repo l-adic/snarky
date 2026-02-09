@@ -18,7 +18,7 @@ import Data.Fin (unsafeFinite)
 import Data.Maybe (fromMaybe)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (permute)
 
 -- | The sponge state type

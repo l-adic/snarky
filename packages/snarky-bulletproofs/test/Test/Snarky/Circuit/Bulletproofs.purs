@@ -18,9 +18,8 @@ import Snarky.Backend.Bulletproof.Class (class Bulletproof, circuitIsSatisfiedBy
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
 import Snarky.Backend.Bulletproof.Types (Circuit, Witness)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver)
-import Snarky.Circuit.Curves (assertEqual)
 import Snarky.Circuit.Curves as EC
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assert_, const_, equals_, exists, mul_, neq_, read)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assertEq, assert_, const_, equals_, exists, mul_, neq_, read)
 import Snarky.Constraint.Bulletproofs (R1CS, eval)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Pallas as Pallas
@@ -181,7 +180,7 @@ dlog16Circuit cp p = do
     q4 <- f q2
     q8 <- f q4
     f q8
-  assertEqual qToThe16 p
+  assertEq qToThe16 p
 
 dlogSpec
   :: forall g f curve

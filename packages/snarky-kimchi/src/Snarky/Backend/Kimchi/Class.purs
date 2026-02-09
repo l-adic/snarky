@@ -2,9 +2,9 @@ module Snarky.Backend.Kimchi.Class where
 
 import Data.Vector (Vector)
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, verifyProverIndex) as Pallas
-import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate) as Vesta
-import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, gateKindToString)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, createVerifierIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, verifyProverIndex) as Pallas
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, createVerifierIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate) as Vesta
+import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex, gateKindToString)
 import Snarky.Constraint.Kimchi.Types (GateKind)
 import Snarky.Curves.Pallas (G, ScalarField) as Pallas
 import Snarky.Curves.Vesta (G, ScalarField) as Vesta
@@ -18,6 +18,7 @@ class CircuitGateConstructor f g | f -> g, g -> f where
   constraintSystemCreate :: Array (Gate f) -> Int -> (ConstraintSystem f)
   createCRS :: Effect (CRS g)
   createProverIndex :: { crs :: CRS g, endo :: f, constraintSystem :: ConstraintSystem f } -> ProverIndex g f
+  createVerifierIndex :: ProverIndex g f -> VerifierIndex g f
   verifyProverIndex :: { proverIndex :: ProverIndex g f, witness :: Vector 15 (Array f), publicInputs :: Array f } -> Boolean
 
 instance CircuitGateConstructor Pallas.ScalarField Pallas.G where
@@ -28,6 +29,7 @@ instance CircuitGateConstructor Pallas.ScalarField Pallas.G where
   constraintSystemCreate = Pallas.pallasConstraintSystemCreate
   createCRS = Pallas.createCRS
   createProverIndex { crs, endo, constraintSystem } = Pallas.createProverIndex constraintSystem endo crs
+  createVerifierIndex = Pallas.createVerifierIndex
   verifyProverIndex { proverIndex, witness, publicInputs } = Pallas.verifyProverIndex proverIndex witness publicInputs
 
 instance CircuitGateConstructor Vesta.ScalarField Vesta.G where
@@ -38,4 +40,5 @@ instance CircuitGateConstructor Vesta.ScalarField Vesta.G where
   constraintSystemCreate = Vesta.vestaConstraintSystemCreate
   createCRS = Vesta.createCRS
   createProverIndex { crs, endo, constraintSystem } = Vesta.createProverIndex constraintSystem endo crs
+  createVerifierIndex = Vesta.createVerifierIndex
   verifyProverIndex { proverIndex, witness, publicInputs } = Vesta.verifyProverIndex proverIndex witness publicInputs

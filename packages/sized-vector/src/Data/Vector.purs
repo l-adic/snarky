@@ -82,6 +82,7 @@ import Data.Unfoldable (class Unfoldable, class Unfoldable1, replicateA)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
+import Test.QuickCheck (class Arbitrary, arbitrary)
 import Type.Proxy (Proxy(..))
 
 -- | A vector with a type-level length parameter.
@@ -128,6 +129,9 @@ generator
   -> m a
   -> m (Vector n a)
 generator _ gen = Vector <$> replicateA (reflectType (Proxy @n)) gen
+
+instance (Reflectable n Int, Arbitrary a) => Arbitrary (Vector n a) where
+  arbitrary = generator (Proxy @n) arbitrary
 
 -- | The empty vector.
 nil :: forall a. Vector 0 a

@@ -11,7 +11,8 @@ import Data.Traversable (maximum)
 import Data.Tuple (Tuple(..))
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
-import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
+import Snarky.Circuit.CVar (incrementVariable, v0)
+import Snarky.Circuit.DSL (EvaluationError(..))
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.GenericPlonk (class GenericPlonkVerifiable)
 import Snarky.Constraint.Kimchi.GenericPlonk as Plonk

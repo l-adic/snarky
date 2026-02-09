@@ -34,21 +34,15 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Prim.Int (class Mul)
-import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, const_, exists, not_, readCVar, unpack_)
-import Snarky.Circuit.DSL.Field (equals_)
-import Snarky.Circuit.DSL.Monad (check)
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, check, equals_, not_, unpack_)
+import Snarky.Circuit.Kimchi (Type1(..), addComplete, scaleFast1, scaleFast2')
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
-import Snarky.Circuit.Types (Bool(..), BoolVar, FVar) as Types
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1(..), Type2(..), splitField)
 
 -- | Operations for scalar multiplication in circuits.
 -- |
@@ -70,14 +64,15 @@ type ScalarOps f c scalar =
 
 -- | This is the configuration for Pallas circuits where
 -- | the scalar field is larger than the circuit field.
+-- | Uses scaleFast2' which splits the field element and adds the 2^n shift internally.
 pallasScalarOps
   :: forall @nChunks
    . Mul 5 nChunks 255
   => Reflectable nChunks Int
-  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (Type2 (Types.FVar Pallas.BaseField) (Types.BoolVar Pallas.BaseField))
+  => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (FVar Pallas.BaseField)
 pallasScalarOps =
-  { toScalar: splitFieldVar
-  , scalarMul: scaleFast2 @nChunks
+  { toScalar: pure
+  , scalarMul: scaleFast2' @nChunks
   }
 
 -- | ScalarOps for Vesta.BaseField using Type1 and scaleFast1.
@@ -88,7 +83,7 @@ vestaScalarOps
   :: forall @nChunks
    . Mul 5 nChunks 255
   => Reflectable nChunks Int
-  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (Types.FVar Vesta.BaseField))
+  => ScalarOps Vesta.BaseField (KimchiConstraint Vesta.BaseField) (Type1 (FVar Vesta.BaseField))
 vestaScalarOps =
   { toScalar: \fvar -> do
       let t1 = Type1 fvar
@@ -173,19 +168,3 @@ verifies ops gen { signature: SignatureVar { r, s }, publicKey, message } = do
   negEPk <- EllipticCurve.negate ePk
   { p: rPoint } <- addComplete sG negEPk
   isEven rPoint.y && equals_ rPoint.x r
-
--- | Split a field element into Type2 representation with constraint.
--- | Witnesses (sDiv2, sOdd) where s = 2*sDiv2 + sOdd, then constrains the relationship.
-splitFieldVar
-  :: forall t m f c
-   . CircuitM f c t m
-  => CheckedType f c ((Type2 (FVar f) (BoolVar f)))
-  => FVar f
-  -> Snarky c t m (Type2 (FVar f) (BoolVar f))
-splitFieldVar s = do
-  Type2 { sDiv2, sOdd } <- exists do
-    F sVal <- readCVar s
-    pure $ splitField (F sVal)
-  assertEqual_ s =<< do
-    pure (const_ $ fromInt 2) * pure sDiv2 + pure (coerce sOdd)
-  pure $ Type2 { sDiv2, sOdd }

@@ -11,7 +11,7 @@ import Effect.Class (liftEffect)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Poseidon.Class (getMdsMatrix, getNumRounds, hash)
+import Poseidon (getMdsMatrix, getNumRounds, hash)
 import Simple.JSON as JSON
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (vestaScalarFieldFromHexLe, vestaScalarFieldToHexLe)

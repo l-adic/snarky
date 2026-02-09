@@ -10,7 +10,7 @@ import Data.Maybe (maybe)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Bulletproof.Gate (makeGates, makeGatesWitness, satisfies, sortR1CS)
-import Snarky.Circuit.CVar (EvaluationError(..))
+import Snarky.Circuit.DSL (EvaluationError(..))
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (quickCheckGen', withHelp)

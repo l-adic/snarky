@@ -8,6 +8,7 @@
 -- | - bPoly: The challenge polynomial from the IPA protocol
 -- | - computeB: Combines bPoly evaluations at zeta and zeta*omega
 -- | - Verification that b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
+-- | - ipaFinalCheck: The full IPA verification equation (c*Q + delta = z1*(sg + b*u) + z2*H)
 -- |
 -- | Reference: wrap_verifier.ml in mina/src/lib/pickles
 module Pickles.IPA
@@ -16,6 +17,11 @@ module Pickles.IPA
   , BPolyInput
   , ComputeBInput
   , BCorrectInput
+  , BulletReduceInput
+  , IpaFinalCheckInput
+  , IpaFinalCheckResult
+  , IpaScalarOps
+  , CheckBulletproofInput
   -- Challenge polynomial
   , bPoly
   , bPolyCircuit
@@ -24,28 +30,43 @@ module Pickles.IPA
   , computeBCircuit
   -- Challenge extraction (returns 128-bit scalar challenges)
   , extractScalarChallenges
+  , extractScalarChallengesPure
+  -- Bullet reduce (lr_prod computation)
+  , bulletReduce
+  , bulletReduceCircuit
   -- Verification
   , bCorrect
   , bCorrectCircuit
+  -- Combined polynomial commitment
+  , combinePolynomials
+  -- IPA final check
+  , ipaFinalCheckCircuit
+  -- Full bulletproof check
+  , checkBulletproof
+  -- Scalar ops helpers
+  , type1ScalarOps
+  , type2ScalarOps
   ) where
 
 import Prelude
 
 import Data.Fin (getFinite)
-import Data.Foldable (foldM, product)
+import Data.Foldable (fold, foldM, for_, product)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Pickles.Sponge (SpongeM, absorbPoint, squeezeScalarChallenge)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, equals_)
+import Prim.Int (class Add)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit, scaleFast1, scaleFast2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, pow)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF)
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -71,6 +92,13 @@ type ComputeBInput d f r =
 -- | Input type for bCorrect / bCorrectCircuit.
 -- | Extends ComputeBInput with the expected b value for verification.
 type BCorrectInput n f = ComputeBInput n f (expectedB :: f)
+
+-- | Input type for bulletReduce.
+-- | Contains L/R pairs and the 128-bit scalar challenges.
+type BulletReduceInput n f =
+  { pairs :: Vector n (LrPair f)
+  , challenges :: Vector n (SizedF 128 f)
+  }
 
 -------------------------------------------------------------------------------
 -- | Challenge Polynomial (b_poly)
@@ -119,14 +147,14 @@ bPolyCircuit { challenges: chals, x } = do
     ( \{ product: p, currPower } c -> do
         -- term = 1 + c * currPower
         cp <- pure c * pure currPower
-        let term = CVar.add_ (CVar.const_ one) cp
+        let term = add_ (const_ one) cp
         -- product *= term
         newProduct <- pure p * pure term
         -- currPower = currPower²
         newPower <- pure currPower * pure currPower
         pure { product: newProduct, currPower: newPower }
     )
-    { product: CVar.const_ one, currPower: x }
+    { product: const_ one, currPower: x }
     (Vector.reverse chals)
 
   pure prod
@@ -164,7 +192,7 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
   bZeta <- bPolyCircuit { challenges, x: zeta }
   bZetaOmega <- bPolyCircuit { challenges, x: zetaOmega }
   scaledB <- pure evalscale * pure bZetaOmega
-  pure $ CVar.add_ bZeta scaledB
+  pure $ add_ bZeta scaledB
 
 -------------------------------------------------------------------------------
 -- | Challenge Extraction (In-Circuit)
@@ -189,10 +217,26 @@ extractScalarChallenges pairs = for pairs \{ l, r } -> do
   -- Absorb L and R points into the sponge
   absorbPoint l
   absorbPoint r
-  -- | The result is a 128-bit scalar challenge, NOT a full field element.
-  -- | In pickles, the endo mapping to full field happens separately when needed.
-  -- | This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
+  -- The result is a 128-bit scalar challenge, NOT a full field element.
+  -- In pickles, the endo mapping to full field happens separately when needed.
+  -- This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
   squeezeScalarChallenge
+
+-- | Pure version of extractScalarChallenges for testing.
+-- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
+extractScalarChallengesPure
+  :: forall n f
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => Vector n (LrPair f)
+  -> PureSpongeM f (Vector n (SizedF 128 f))
+extractScalarChallengesPure pairs = for pairs \{ l, r } -> do
+  absorb l.x
+  absorb l.y
+  absorb r.x
+  absorb r.y
+  squeezeScalarChallengePure
 
 -------------------------------------------------------------------------------
 -- | Verification
@@ -231,3 +275,374 @@ bCorrectCircuit
 bCorrectCircuit input@{ expectedB } = do
   computedB <- computeBCircuit input
   computedB `equals_` expectedB
+
+-------------------------------------------------------------------------------
+-- | Bullet Reduce (lr_prod computation)
+-------------------------------------------------------------------------------
+
+-- | Pure version of bullet reduce.
+-- |
+-- | Computes: lr_prod = Σ_i [endoInv(L_i, u_i) + endo(R_i, u_i)]
+-- |
+-- | Where u_i are 128-bit scalar challenges and endo/endoInv apply the
+-- | endomorphism-based scalar multiplication.
+-- |
+-- | This corresponds to `bullet_reduce` in wrap_verifier.ml / step_verifier.ml.
+bulletReduce
+  :: forall n @f f' @g _l
+   . Reflectable n Int
+  => Add 1 _l n
+  => FieldSizeInBits f' 255
+  => FieldSizeInBits f 255
+  => HasEndo f f'
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => BulletReduceInput n f
+  -> g
+bulletReduce { pairs, challenges } =
+  let
+    -- Compute one term: endoInv(L, u) + endo(R, u)
+    -- where u is the full field challenge
+    computeTerm :: LrPair f -> SizedF 128 f -> g
+    computeTerm { l, r } raw128 =
+      let
+        fullChal = expandToEndoScalar raw128 :: f'
+        fullChalInv = recip fullChal
+        -- L * chal_inv
+        lPoint = fromAffine @f @g l
+        lScaled = scalarMul fullChalInv lPoint
+        -- R * chal
+        rPoint = fromAffine @f @g r
+        rScaled = scalarMul fullChal rPoint
+      in
+        lScaled <> rScaled
+
+    -- Compute all terms and sum them
+    terms = Vector.zipWith computeTerm pairs challenges
+  in
+    fold terms
+
+-- | Circuit version of bullet reduce.
+-- |
+-- | Computes: lr_prod = Σ_i [endoInv(L_i, u_i) + endo(R_i, u_i)]
+-- |
+-- | Uses the efficient endo/endoInv circuits for scalar multiplication.
+bulletReduceCircuit
+  :: forall n @f f' @g t m _l
+   . Reflectable n Int
+  => Add 1 _l n
+  => FieldSizeInBits f 255
+  => FieldSizeInBits f' 255
+  => HasEndo f f'
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => CircuitM f (KimchiConstraint f) t m
+  => BulletReduceInput n (FVar f)
+  -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
+bulletReduceCircuit { pairs, challenges } = do
+  -- Process each (L, R, u) triple to compute endoInv(L, u) + endo(R, u)
+  terms <- for (Vector.zip pairs challenges) \(Tuple { l, r } u) -> do
+    -- endoInv(L, u) = L * (1 / toField(u, endo))
+    lScaled <- endoInv @f @f' @g l u
+    -- endo(R, u) = R * toField(u, endo)
+    rScaled <- endo r u
+    -- Sum: endoInv(L, u) + endo(R, u)
+    addComplete lScaled rScaled
+  let
+    { head, tail } = Vector.uncons terms
+  -- Sum all terms using addComplete
+  foldM
+    ( \p q -> do
+        elseBranch <- if_ q.isInfinity p =<< addComplete p.p q.p
+        if_ p.isInfinity q elseBranch
+    )
+    head
+    tail
+
+-------------------------------------------------------------------------------
+-- | IPA Final Check Circuit
+-------------------------------------------------------------------------------
+
+-- | Operations for working with shifted scalar values in the IPA circuit.
+-- |
+-- | This record bundles operations that depend on the specific shifted type
+-- | (Type1 for Vesta scalars in Pallas circuits, Type2 for Pallas scalars in Vesta circuits).
+-- |
+-- | Parameters:
+-- | - `f`: base field type (Pallas.BaseField or Vesta.BaseField)
+-- | - `c`: constraint type
+-- | - `t`: tag type
+-- | - `m`: underlying monad
+-- | - `sf`: shifted scalar type (Type1 (FVar f) or Type2 (FVar f) (BoolVar f))
+type IpaScalarOps f c t m sf =
+  { -- | Scale a curve point by a shifted scalar value.
+    -- | This corresponds to `scale_fast` in wrap_verifier.ml.
+    scaleByShifted ::
+      AffinePoint (FVar f)
+      -> sf
+      -> Snarky c t m (AffinePoint (FVar f))
+  , -- | Get the field elements to absorb for a shifted scalar.
+    -- | For Type1: returns [t] (single field element)
+    -- | For Type2: returns [sDiv2, if sOdd then 1 else 0] (two elements)
+    shiftedToAbsorbFields ::
+      sf
+      -> Array (FVar f)
+  }
+
+-- | Input for IPA final verification.
+-- |
+-- | The verification equation is: c*Q + delta = z1*(sg + b*u) + z2*H
+-- | where:
+-- | - Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
+-- | - u = groupMap(squeeze(sponge)) after absorbing combinedInnerProduct
+-- | - challenges = extracted from L/R pairs via sponge
+-- | - c = squeeze(sponge) after absorbing delta
+-- | - b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
+-- | - lr_prod = Σ_i [chal_inv_i * L_i + chal_i * R_i]
+-- |
+-- | The circuit field is `f`, the commitment curve is `g` with base field `f`.
+-- | Scalars like z1, z2 are in the commitment curve's scalar field,
+-- | represented via the shifted type `sf` in the circuit field.
+type IpaFinalCheckInput n f sf =
+  { -- Opening proof fields (coordinates in f = commitment curve base field)
+    delta :: AffinePoint f
+  , sg :: AffinePoint f -- challenge_polynomial_commitment
+  , lr :: Vector n (LrPair f)
+  -- Scalars from opening proof (shifted representation)
+  , z1 :: sf
+  , z2 :: sf
+  -- Combined polynomial commitment (from verifier index + xi)
+  , combinedPolynomial :: AffinePoint f
+  -- Combined inner product (shifted representation)
+  , combinedInnerProduct :: sf
+  -- b value (shifted representation, verified separately via bCorrectCircuit)
+  , b :: sf
+  -- Blinding generator H (from SRS, constant)
+  , blindingGenerator :: AffinePoint f
+  }
+
+-- | Result of IPA final check, including the success boolean and
+-- | the extracted 128-bit scalar challenges (bulletproof challenges).
+type IpaFinalCheckResult n f =
+  { success :: BoolVar f
+  , challenges :: Vector n (SizedF 128 (FVar f))
+  }
+
+-- | In-circuit IPA final verification.
+-- |
+-- | This circuit implements the IPA verification equation:
+-- |   c*Q + delta = z1*(sg + b*u) + z2*H
+-- |
+-- | It derives u, challenges, and c from the sponge (Fiat-Shamir), verifying
+-- | compatibility with proofs generated by Kimchi.
+-- |
+-- | This circuit stays in `SpongeM` so the caller can manage the sponge lifecycle.
+-- | The sponge should be in the state ready to squeeze for u (i.e., after absorbing
+-- | combined_inner_product).
+-- |
+-- | NOTE: This circuit operates over the commitment curve's base field (circuit field f).
+-- | For Pallas circuits (Fp), the commitment curve is Vesta, use Type1 for sf.
+-- | For Vesta circuits (Fq), the commitment curve is Pallas, use Type2 for sf.
+ipaFinalCheckCircuit
+  :: forall n @f f' @g sf t m _l
+   . Reflectable n Int
+  => Add 1 _l n
+  => FieldSizeInBits f 255
+  => FieldSizeInBits f' 255
+  => HasEndo f f'
+  => HasSqrt f
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => IpaScalarOps f (KimchiConstraint f) t m sf
+  -> GroupMapParams f
+  -> IpaFinalCheckInput n (FVar f) sf
+  -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
+ipaFinalCheckCircuit scalarOps groupMapParams input = do
+  -- 1. Derive u via group_map
+  -- NOTE: combined_inner_product should already be absorbed by caller
+  u <- do
+    t <- squeeze
+    liftSnarky $ groupMapCircuit groupMapParams t
+
+  -- 2. Extract 128-bit scalar challenges from L/R pairs
+  scalarChallenges <- extractScalarChallenges input.lr
+
+  -- 3. Absorb delta point
+  absorbPoint input.delta
+
+  -- 4. Derive c via squeeze (as 128-bit scalar challenge)
+  c <- squeezeScalarChallenge
+
+  success <- liftSnarky $ do
+    -- 5. Compute lr_prod from L/R pairs and challenges
+    { p: lrProd } <- bulletReduceCircuit @f @g
+      { pairs: input.lr
+      , challenges: scalarChallenges
+      }
+
+    -- 6. Compute Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
+    cipU <- scalarOps.scaleByShifted u input.combinedInnerProduct
+    { p: pPrime } <- addComplete input.combinedPolynomial cipU
+    { p: q } <- addComplete pPrime lrProd
+
+    -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
+    cQ <- endo q c
+    { p: lhs } <- addComplete cQ input.delta
+
+    -- 8. Compute RHS: z1*(sg + b*u) + z2*H
+    -- Note: b is provided as input and verified separately via bCorrectCircuit
+    bU <- scalarOps.scaleByShifted u input.b
+    { p: sgPlusBU } <- addComplete input.sg bU
+    z1Term <- scalarOps.scaleByShifted sgPlusBU input.z1
+    z2Term <- scalarOps.scaleByShifted input.blindingGenerator input.z2
+    { p: rhs } <- addComplete z1Term z2Term
+
+    -- 9. Check LHS == RHS
+    xEqual <- equals_ lhs.x rhs.x
+    yEqual <- equals_ lhs.y rhs.y
+    xEqual `and_` yEqual
+
+  pure { success, challenges: scalarChallenges }
+
+-------------------------------------------------------------------------------
+-- | Scalar Ops Implementations
+-------------------------------------------------------------------------------
+
+-- | Type1 scalar ops for circuits where scalar field < circuit field.
+-- |
+-- | Used for Pallas circuits (Fp) with Vesta commitment curve.
+-- | Vesta scalar field = Fq < Fp, so scalars fit in Type1.
+-- |
+-- | For a 255-bit field, nChunks = 51 (since 5 * 51 = 255).
+type1ScalarOps
+  :: forall f t m
+   . FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => IpaScalarOps f (KimchiConstraint f) t m (Type1 (FVar f))
+type1ScalarOps =
+  { scaleByShifted: \p t -> scaleFast1 @51 p t
+  , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
+  }
+
+-------------------------------------------------------------------------------
+-- | Combined Polynomial Commitment
+-------------------------------------------------------------------------------
+
+-- | Combine polynomial commitments using Horner's method with endo scalar multiplication.
+-- |
+-- | Computes: Q = C_0 + xi*(C_1 + xi*(C_2 + ... + xi*C_{n-1}))
+-- | where xi is a 128-bit scalar challenge (polyscale).
+-- |
+-- | Bases can be constants or circuit variables.
+-- |
+-- | Reference: Pcs_batch.combine_split_commitments in OCaml
+combinePolynomials
+  :: forall n f f' t m _l
+   . Add 1 _l n
+  => FieldSizeInBits f 255
+  => HasEndo f f'
+  => CircuitM f (KimchiConstraint f) t m
+  => Vector n (AffinePoint (FVar f))
+  -> SizedF 128 (FVar f)
+  -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+combinePolynomials bases xi = do
+  let
+    reversed = Vector.reverse bases
+    { head: h, tail: t } = Vector.uncons reversed
+  foldM
+    ( \acc base -> do
+        xiAcc <- endo acc xi
+        { p } <- addComplete base xiAcc
+        pure p
+    )
+    h
+    t
+
+-------------------------------------------------------------------------------
+-- | Full Bulletproof Check
+-------------------------------------------------------------------------------
+
+-- | Input for the full bulletproof verification circuit.
+-- | Contains all proof data needed after the Fq-sponge transcript.
+type CheckBulletproofInput n f sf =
+  { -- Polyscale challenge (128-bit, from Fr-sponge)
+    xi :: SizedF 128 f
+  -- Opening proof fields
+  , delta :: AffinePoint f
+  , sg :: AffinePoint f
+  , lr :: Vector n (LrPair f)
+  , z1 :: sf
+  , z2 :: sf
+  -- Advice (from deferred values)
+  , combinedInnerProduct :: sf
+  , b :: sf
+  -- Constant
+  , blindingGenerator :: AffinePoint f
+  }
+
+-- | Full bulletproof verification circuit.
+-- |
+-- | Corresponds to OCaml check_bulletproof (step_verifier.ml:232-334).
+-- | Absorbs CIP, computes combined polynomial, and runs IPA final check.
+-- | Returns success boolean and extracted bulletproof challenges.
+-- |
+-- | The sponge should be in sponge_before_evaluations state (after Fq-transcript).
+-- | Commitment bases are constant points from the verifier index / proof,
+-- | passed separately from the circuit input.
+checkBulletproof
+  :: forall numBases n @f f' @g sf t m _l _l2
+   . Reflectable n Int
+  => Add 1 _l n
+  => Add 1 _l2 numBases
+  => FieldSizeInBits f 255
+  => FieldSizeInBits f' 255
+  => HasEndo f f'
+  => HasSqrt f
+  => FrModule f' g
+  => WeierstrassCurve f g
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => IpaScalarOps f (KimchiConstraint f) t m sf
+  -> GroupMapParams f
+  -> Vector numBases (AffinePoint (FVar f))
+  -> CheckBulletproofInput n (FVar f) sf
+  -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
+checkBulletproof scalarOps groupMapParams commitmentBases input = do
+  -- 1. Absorb shift_scalar(CIP) into sponge
+  let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
+  for_ cipFields absorb
+
+  -- 2. Compute combined polynomial via Horner
+  combinedPolynomial <- liftSnarky $
+    combinePolynomials commitmentBases input.xi
+
+  -- 3. Delegate to ipaFinalCheckCircuit
+  ipaFinalCheckCircuit @f @g scalarOps groupMapParams
+    { delta: input.delta
+    , sg: input.sg
+    , lr: input.lr
+    , z1: input.z1
+    , z2: input.z2
+    , combinedPolynomial
+    , combinedInnerProduct: input.combinedInnerProduct
+    , b: input.b
+    , blindingGenerator: input.blindingGenerator
+    }
+
+-- | Type2 scalar ops for circuits where scalar field > circuit field.
+-- |
+-- | Used for Vesta circuits (Fq) with Pallas commitment curve.
+-- | Pallas scalar field = Fp > Fq, so scalars need Type2 split representation.
+-- |
+-- | For a 255-bit field, nChunks = 51 (since 5 * 51 = 255).
+type2ScalarOps
+  :: forall f t m
+   . FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => IpaScalarOps f (KimchiConstraint f) t m (Type2 (FVar f) (BoolVar f))
+type2ScalarOps =
+  { scaleByShifted: \p t -> scaleFast2 @51 p t
+  , shiftedToAbsorbFields: \(Type2 { sDiv2, sOdd }) -> [ sDiv2, coerce sOdd ]
+  }

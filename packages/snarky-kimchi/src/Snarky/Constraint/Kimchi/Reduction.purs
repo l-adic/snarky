@@ -36,7 +36,8 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Record as Record
-import Snarky.Circuit.CVar (AffineExpression(..), CVar, EvaluationError(..), Variable, evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.CVar (AffineExpression(..), CVar, evalAffineExpression, incrementVariable, reduceToAffineExpression)
+import Snarky.Circuit.DSL (EvaluationError(..), Variable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), GateKind(..), GenericPlonkConstraint, KimchiRow)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))

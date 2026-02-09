@@ -11,9 +11,12 @@ package:
     - js-bigints
     - maybe
     - newtype
+    - partial
+    - pickles-linearization-types
     - poseidon
     - prelude
     - random-oracle
+    - safe-coerce
     - simple-json
     - snarky
     - snarky-curves
@@ -27,6 +30,7 @@ package:
     main: Test.Pickles.Main
     dependencies:
       - aff
+      - console
       - effect
       - either
       - exceptions

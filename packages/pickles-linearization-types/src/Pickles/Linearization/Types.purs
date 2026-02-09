@@ -1,4 +1,22 @@
-module Pickles.Linearization.Types where
+module Pickles.Linearization.Types
+  ( -- Gate and column types (needed for FFI/testing)
+    GateType(..)
+  , LookupPattern(..)
+  , FeatureFlag(..)
+  , Column(..)
+  , CurrOrNext(..)
+  , ChallengeTerm(..)
+  , ConstantTerm(..)
+  , RowOffset
+  , IndexTerm(..)
+  , Linearization
+  -- Opaque linearization polynomial
+  , LinearizationPoly
+  -- Internal: only for Pallas/Vesta/Interpreter modules
+  , PolishToken(..)
+  , mkLinearizationPoly
+  , runLinearizationPoly
+  ) where
 
 import Prelude
 
@@ -384,6 +402,27 @@ type Linearization =
   { constant_term :: Array PolishToken
   , index_terms :: Array IndexTerm
   }
+
+-- | A linearization polynomial parameterized by the circuit field.
+-- |
+-- | The phantom type `f` indicates which field this linearization evaluates in:
+-- | - `LinearizationPoly Vesta.ScalarField` for Pallas-based proofs (circuits on Fp)
+-- | - `LinearizationPoly Pallas.ScalarField` for Vesta-based proofs (circuits on Fq)
+-- |
+-- | This is an opaque type - users cannot construct it directly.
+-- | Use the pre-built linearizations from Pickles.Linearization.Pallas/Vesta.
+newtype LinearizationPoly :: forall k. k -> Type
+newtype LinearizationPoly f = LinearizationPoly (Array PolishToken)
+
+-- | Internal: construct a linearization polynomial.
+-- | Only for use by Pallas/Vesta modules.
+mkLinearizationPoly :: forall f. Array PolishToken -> LinearizationPoly f
+mkLinearizationPoly = LinearizationPoly
+
+-- | Internal: unwrap to get the raw tokens.
+-- | Only for use by Interpreter/GateConstraints modules.
+runLinearizationPoly :: forall f. LinearizationPoly f -> Array PolishToken
+runLinearizationPoly (LinearizationPoly tokens) = tokens
 
 -- Helper to read unit variants that serialize as `{ "VariantName": null }`
 readUnitVariant :: forall a. String -> a -> Foreign -> F a

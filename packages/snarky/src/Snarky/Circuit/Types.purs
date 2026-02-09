@@ -90,7 +90,6 @@ import Data.Tuple (Tuple)
 import Data.Vector (Vector, toVector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Poseidon (class PoseidonField)
 import Prim.Row as Row
 import Prim.RowList (class RowToList)
 import Prim.RowList as RL
@@ -130,8 +129,6 @@ derive newtype instance Ring f => Ring (F f)
 derive newtype instance EuclideanRing f => EuclideanRing (F f)
 derive newtype instance CommutativeRing f => CommutativeRing (F f)
 derive newtype instance DivisionRing f => DivisionRing (F f)
-derive newtype instance PoseidonField f => PoseidonField (F f)
-
 instance HasEndo f f' => HasEndo (F f) (F f') where
   endoBase = coerce (endoBase :: f)
   endoScalar = coerce (endoScalar :: f')
@@ -249,16 +246,26 @@ instance (CircuitType f a var, Reflectable n Int) => CircuitType f (Vector n a) 
   valueToFields as = foldMap valueToFields as
   fieldsToValue as =
     let
-      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToValue <$> cs
+      elemSize = sizeInFields (Proxy @f) (Proxy @a)
+      vecLen = reflectType (Proxy @n)
+      -- Handle zero-sized elements: chunk 0 returns [], so we need to
+      -- generate vecLen elements directly
+      vals =
+        if elemSize == 0 then Array.replicate vecLen (fieldsToValue @f @a [])
+        else fieldsToValue @f @a <$> Vector.chunk elemSize as
     in
       unsafePartial $ fromJust $ toVector @n vals
   sizeInFields pf _ = reflectType (Proxy @n) * sizeInFields pf (Proxy @a)
   varToFields as = foldMap (varToFields @f @a) as
   fieldsToVar as =
     let
-      cs = Vector.chunk (sizeInFields (Proxy @f) (Proxy @a)) as
-      vals = fieldsToVar @f @a <$> cs
+      elemSize = sizeInFields (Proxy @f) (Proxy @a)
+      vecLen = reflectType (Proxy @n)
+      -- Handle zero-sized elements: chunk 0 returns [], so we need to
+      -- generate vecLen elements directly
+      vals =
+        if elemSize == 0 then Array.replicate vecLen (fieldsToVar @f @a [])
+        else fieldsToVar @f @a <$> Vector.chunk elemSize as
     in
       unsafePartial $ fromJust $ toVector @n vals
 

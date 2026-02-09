@@ -17,13 +17,9 @@ import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
-import Poseidon.Class (class PoseidonField, getMdsMatrix)
-import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL.Field (pow_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
-import Snarky.Circuit.DSL.Monad (mul_) as Circuit
-import Snarky.Circuit.Types (FVar)
+import Poseidon (class PoseidonField, getMdsMatrix)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, pow_, sub_)
+import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Curves.Class (class HasEndo, endoBase, pow)
 import Type.Proxy (Proxy(..))
 
@@ -119,16 +115,16 @@ circuitEnv
   -> (String -> f) -- field literal parser
   -> Env (Snarky c t m (FVar f))
 circuitEnv evalPoint challenges parseField =
-  { add: \x y -> CVar.add_ <$> x <*> y
-  , sub: \x y -> CVar.sub_ <$> x <*> y
+  { add: \x y -> add_ <$> x <*> y
+  , sub: \x y -> sub_ <$> x <*> y
   , mul: \x y -> join (Circuit.mul_ <$> x <*> y)
   , pow: \x n -> x >>= \v -> pow_ v n
   , var: \col row -> pure $ lookupCell evalPoint col row
   , cell: identity -- cell is identity since var already returns the value
   , alphaPow: \n -> pow_ challenges.alpha n
-  , mds: \{ row, col } -> pure $ Const $ lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient: pure $ Const (endoBase :: f)
-  , field: \hex -> pure $ Const $ parseField hex
+  , mds: \{ row, col } -> pure $ const_ $ lookupMds (Proxy :: Proxy f) row col
+  , endoCoefficient: pure $ const_ (endoBase :: f)
+  , field: \hex -> pure $ const_ $ parseField hex
   , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args
   , jointCombiner: pure challenges.jointCombiner

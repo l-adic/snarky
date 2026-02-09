@@ -27,9 +27,8 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Circuit.Kimchi.Poseidon (poseidon)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, add_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 

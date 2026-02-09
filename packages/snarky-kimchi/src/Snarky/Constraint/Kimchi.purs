@@ -18,15 +18,13 @@ import Data.Set as Set
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
-import Poseidon.Class (class PoseidonField)
+import Poseidon (class PoseidonField)
 import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
-import Snarky.Circuit.DSL.Monad (class ConstraintM)
-import Snarky.Circuit.Types (FVar)
-import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
+import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.EndoMul (EndoMul)

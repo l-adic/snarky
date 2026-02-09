@@ -38,10 +38,10 @@ import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Poseidon (class PoseidonField)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
-import Snarky.Circuit.Types (F)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
@@ -174,8 +174,11 @@ linearizationReference
   => Array PolishToken
   -> LinearizationInput (F f)
   -> F f
-linearizationReference tokens input =
+linearizationReference tokens input' =
   let
+    input :: LinearizationInput f
+    input = coerce input'
+
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
       , coeffEvals: input.coeffEvals
@@ -195,7 +198,7 @@ linearizationReference tokens input =
 
     env = fieldEnv evalPoint challenges parseHex
   in
-    evaluate tokens env
+    coerce $ evaluate tokens env
 
 -- | Generate an arbitrary PointEval
 genPointEval :: forall f. PrimeField f => Gen (PointEval f)

@@ -27,11 +27,8 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, SpongeState(..), create, rate, state) as ReExports
 import RandomOracle.Sponge (Sponge, SpongeState(..), rate)
 import RandomOracle.Sponge as Sponge
-import Snarky.Circuit.CVar (add_, const_)
-import Snarky.Circuit.DSL (Snarky)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
-import Snarky.Circuit.Kimchi.Poseidon (poseidon)
-import Snarky.Circuit.Types (FVar)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_)
+import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 

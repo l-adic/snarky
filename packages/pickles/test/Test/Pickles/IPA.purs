@@ -9,8 +9,7 @@ import Data.Vector as Vector
 import Pickles.IPA (BPolyInput, ComputeBInput, bPoly, bPolyCircuit, computeB, computeBCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
-import Snarky.Circuit.Types (F)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class HasEndo, class PrimeField)

@@ -23,7 +23,7 @@ import Data.Show.Generic (genericShow)
 import Data.UnionFind (UnionFindData)
 import Data.UnionFind as UnionFind
 import Data.Vector (Vector)
-import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL (Variable)
 
 type GenericPlonkConstraint f =
   { cl :: f -- Left coefficient

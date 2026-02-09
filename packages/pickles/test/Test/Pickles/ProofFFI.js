@@ -58,10 +58,11 @@ export const vestaProofCoefficientEvals = (proof) =>
   pairEvals(crypto.vestaProofCoefficientEvals(proof));
 
 // Proof oracles (Fiat-Shamir)
-// Returns 11 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
-//                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega]
-export const pallasProofOracles = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.pallasProofOracles(proverIndex, proof, publicInput);
+// Returns 15 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+//                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
+//                     fq_digest, alpha_chal, zeta_chal, v_chal]
+export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.pallasProofOracles(verifierIndex, proof, publicInput);
   return {
     alpha: flat[0],
     beta: flat[1],
@@ -73,12 +74,16 @@ export const pallasProofOracles = (proverIndex) => ({ proof, publicInput }) => {
     combinedInnerProduct: flat[7],
     ftEval1: flat[8],
     publicEvalZeta: flat[9],
-    publicEvalZetaOmega: flat[10]
+    publicEvalZetaOmega: flat[10],
+    fqDigest: flat[11],
+    alphaChal: flat[12],
+    zetaChal: flat[13],
+    vChal: flat[14]
   };
 };
 
-export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.vestaProofOracles(proverIndex, proof, publicInput);
+export const vestaProofOracles = (verifierIndex) => ({ proof, publicInput }) => {
+  const flat = crypto.vestaProofOracles(verifierIndex, proof, publicInput);
   return {
     alpha: flat[0],
     beta: flat[1],
@@ -90,23 +95,27 @@ export const vestaProofOracles = (proverIndex) => ({ proof, publicInput }) => {
     combinedInnerProduct: flat[7],
     ftEval1: flat[8],
     publicEvalZeta: flat[9],
-    publicEvalZetaOmega: flat[10]
+    publicEvalZetaOmega: flat[10],
+    fqDigest: flat[11],
+    alphaChal: flat[12],
+    zetaChal: flat[13],
+    vChal: flat[14]
   };
 };
 
 // Bulletproof challenges (IPA)
-export const pallasProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.pallasProofBulletproofChallenges(proverIndex, proof, publicInput);
+export const pallasProofBulletproofChallenges = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasProofBulletproofChallenges(verifierIndex, proof, publicInput);
 
-export const vestaProofBulletproofChallenges = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.vestaProofBulletproofChallenges(proverIndex, proof, publicInput);
+export const vestaProofBulletproofChallenges = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaProofBulletproofChallenges(verifierIndex, proof, publicInput);
 
 // Verify opening proof
-export const pallasVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.pallasVerifyOpeningProof(proverIndex, proof, publicInput);
+export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasVerifyOpeningProof(verifierIndex, proof, publicInput);
 
-export const vestaVerifyOpeningProof = (proverIndex) => ({ proof, publicInput }) =>
-  crypto.vestaVerifyOpeningProof(proverIndex, proof, publicInput);
+export const vestaVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaVerifyOpeningProof(verifierIndex, proof, publicInput);
 
 // Permutation vanishing polynomial
 export const pallasPermutationVanishingPolynomial = ({ domainLog2, zkRows, pt }) =>
@@ -138,8 +147,8 @@ export const vestaProofIpaRounds = (proof) =>
 
 // Sponge checkpoint before L/R processing
 // Returns { state: [f, f, f], spongeMode: String, modeCount: Int }
-export const pallasSpongeCheckpointBeforeChallenges = (proverIndex) => ({ proof, publicInput }) => {
-  const checkpoint = crypto.pallasSpongeCheckpoint(proverIndex, proof, publicInput);
+export const pallasSpongeCheckpointBeforeChallenges = (verifierIndex) => ({ proof, publicInput }) => {
+  const checkpoint = crypto.pallasSpongeCheckpoint(verifierIndex, proof, publicInput);
   return {
     state: crypto.pallasSpongeCheckpointState(checkpoint),
     spongeMode: crypto.pallasSpongeCheckpointMode(checkpoint),
@@ -147,8 +156,8 @@ export const pallasSpongeCheckpointBeforeChallenges = (proverIndex) => ({ proof,
   };
 };
 
-export const vestaSpongeCheckpointBeforeChallenges = (proverIndex) => ({ proof, publicInput }) => {
-  const checkpoint = crypto.vestaSpongeCheckpoint(proverIndex, proof, publicInput);
+export const vestaSpongeCheckpointBeforeChallenges = (verifierIndex) => ({ proof, publicInput }) => {
+  const checkpoint = crypto.vestaSpongeCheckpoint(verifierIndex, proof, publicInput);
   return {
     state: crypto.vestaSpongeCheckpointState(checkpoint),
     spongeMode: crypto.vestaSpongeCheckpointMode(checkpoint),
@@ -174,3 +183,196 @@ export const pallasProofOpeningLr = (proof) =>
 
 export const vestaProofOpeningLr = (proof) =>
   parseLrPairs(crypto.vestaProofOpeningLr(proof));
+
+// lr_prod: the curve point sum from bullet_reduce
+// lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
+// Returns { x, y } coordinates of the result point
+export const pallasProofLrProd = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasProofLrProd(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofLrProd = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.vestaProofLrProd(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Opening proof delta (curve point)
+// Returns { x, y } coordinates
+export const pallasProofOpeningDelta = (proof) => {
+  const coords = crypto.pallasProofOpeningDelta(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofOpeningDelta = (proof) => {
+  const coords = crypto.vestaProofOpeningDelta(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Opening proof sg (challenge polynomial commitment, curve point)
+// Returns { x, y } coordinates
+export const pallasProofOpeningSg = (proof) => {
+  const coords = crypto.pallasProofOpeningSg(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProofOpeningSg = (proof) => {
+  const coords = crypto.vestaProofOpeningSg(proof);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Opening proof z1 scalar
+export const pallasProofOpeningZ1 = (proof) =>
+  crypto.pallasProofOpeningZ1(proof);
+
+export const vestaProofOpeningZ1 = (proof) =>
+  crypto.vestaProofOpeningZ1(proof);
+
+// Opening proof z2 scalar
+export const pallasProofOpeningZ2 = (proof) =>
+  crypto.pallasProofOpeningZ2(proof);
+
+export const vestaProofOpeningZ2 = (proof) =>
+  crypto.vestaProofOpeningZ2(proof);
+
+// Blinding generator H from SRS
+// Returns { x, y } coordinates
+export const pallasProverIndexBlindingGenerator = (verifierIndex) => {
+  const coords = crypto.pallasProverIndexBlindingGenerator(verifierIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaProverIndexBlindingGenerator = (verifierIndex) => {
+  const coords = crypto.vestaProverIndexBlindingGenerator(verifierIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Combined polynomial commitment (batched sum_i polyscale^i * C_i)
+// Returns { x, y } coordinates
+export const pallasCombinedPolynomialCommitment = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasCombinedPolynomialCommitment(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaCombinedPolynomialCommitment = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.vestaCombinedPolynomialCommitment(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Debug verification - prints intermediate IPA values
+export const pallasDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasDebugVerify(verifierIndex, proof, publicInput);
+
+export const vestaDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaDebugVerify(verifierIndex, proof, publicInput);
+
+// Max polynomial size from verifier index
+export const pallasVerifierIndexMaxPolySize = (verifierIndex) =>
+  crypto.pallasVerifierIndexMaxPolySize(verifierIndex);
+
+export const vestaVerifierIndexMaxPolySize = (verifierIndex) =>
+  crypto.vestaVerifierIndexMaxPolySize(verifierIndex);
+
+// Verifier index digest (Fq element)
+export const pallasVerifierIndexDigest = (verifierIndex) =>
+  crypto.pallasVerifierIndexDigest(verifierIndex);
+
+// Public input polynomial commitment (returns array of {x, y} points in Fq, one per chunk)
+export const pallasPublicComm = (verifierIndex) => (publicInput) => {
+  const flat = crypto.pallasPublicComm(verifierIndex, publicInput);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Lagrange commitments from SRS
+// Returns array of {x, y} points
+export const pallasLagrangeCommitments = (verifierIndex) => (count) => {
+  const flat = crypto.pallasLagrangeCommitments(verifierIndex, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaLagrangeCommitments = (verifierIndex) => (count) => {
+  const flat = crypto.vestaLagrangeCommitments(verifierIndex, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaPublicComm = (verifierIndex) => (publicInput) => {
+  const flat = crypto.vestaPublicComm(verifierIndex, publicInput);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
+// Returns { x, y } coordinates
+export const pallasChallengePolyCommitment = (verifierIndex) => (challenges) => {
+  const coords = crypto.pallasChallengePolyCommitment(verifierIndex, challenges);
+  return { x: coords[0], y: coords[1] };
+};
+
+export const vestaChallengePolyCommitment = (verifierIndex) => (challenges) => {
+  const coords = crypto.vestaChallengePolyCommitment(verifierIndex, challenges);
+  return { x: coords[0], y: coords[1] };
+};
+
+// ft_comm: the chunked commitment of the linearized constraint polynomial
+// Returns { x, y } coordinates in Fq
+export const pallasFtComm = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.pallasFtComm(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization
+// Returns a single Fp element
+export const pallasPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasPermScalar(verifierIndex, proof, publicInput);
+
+// sigma_comm[PERMUTS-1]: the last sigma commitment from verifier index
+// Returns { x, y } coordinates in Fq
+export const pallasSigmaCommLast = (verifierIndex) => {
+  const coords = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+// VK column commitments: 27 points (6 index + 15 coefficient + 6 sigma) in to_batch order
+export const pallasVerifierIndexColumnComms = (verifierIndex) => {
+  const flat = crypto.pallasVerifierIndexColumnComms(verifierIndex);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+export const vestaVerifierIndexColumnComms = (verifierIndex) => {
+  const flat = crypto.vestaVerifierIndexColumnComms(verifierIndex);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
+export const pallasProofCommitments = (proof) => {
+  const flat = crypto.pallasProofCommitments(proof);
+  const wComm = [];
+  for (let i = 0; i < 30; i += 2) wComm.push({ x: flat[i], y: flat[i+1] });
+  const zComm = { x: flat[30], y: flat[31] };
+  const tComm = [];
+  for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
+  return { wComm, zComm, tComm };
+};

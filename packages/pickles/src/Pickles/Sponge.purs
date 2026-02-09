@@ -16,16 +16,19 @@ module Pickles.Sponge
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalarChallengePure
-  , lowest128BitsPure
   -- In-circuit sponge monad
   , SpongeM(..)
   , runSpongeM
   , evalSpongeM
   , liftSnarky
+  , getSponge
+  , putSponge
   -- Pure sponge monad
   , PureSpongeM(..)
   , runPureSpongeM
   , evalPureSpongeM
+  , getSpongeState
+  , putSpongeState
   -- Initial state / restore
   , initialSponge
   , initialSpongeCircuit
@@ -35,29 +38,21 @@ module Pickles.Sponge
 import Prelude
 
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
-import Data.Fin (getFinite)
 import Data.Foldable (class Foldable)
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Identity (Identity(..))
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (Snarky, pack_, unpackPure, unpack_)
-import Snarky.Circuit.DSL.Monad (class CircuitM)
+import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, const_, lowestNBits, lowestNBitsPure)
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
-import Snarky.Circuit.Types (FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Data.SizedF (SizedF(..))
 
 --------------------------------------------------------------------------------
 -- | MonadSponge Typeclass
@@ -127,6 +122,21 @@ liftSnarky
   -> SpongeM f c t m a
 liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
 
+-- | Get the current sponge state (for checkpointing)
+getSponge
+  :: forall f c t m
+   . Monad (Snarky c t m)
+  => SpongeM f c t m (Sponge (FVar f))
+getSponge = wrap get
+
+-- | Set the sponge state (for restoring from checkpoint)
+putSponge
+  :: forall f c t m
+   . Monad (Snarky c t m)
+  => Sponge (FVar f)
+  -> SpongeM f c t m Unit
+putSponge = wrap <<< put
+
 -- | MonadSponge instance for the in-circuit sponge monad
 instance
   ( PoseidonField f
@@ -159,8 +169,7 @@ squeezeScalarChallenge
   => SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
 squeezeScalarChallenge = do
   x <- squeeze
-  truncated <- liftSnarky $ lowest128Bits x
-  pure $ SizedF truncated
+  liftSnarky $ lowestNBits @128 x
 
 --------------------------------------------------------------------------------
 -- | Pure Sponge Monad: PureSpongeM
@@ -195,6 +204,14 @@ evalPureSpongeM
 evalPureSpongeM initialState computation =
   un Identity $ evalStateT (unwrap computation) initialState
 
+-- | Get the current sponge state (pure version)
+getSpongeState :: forall f. PureSpongeM f (Sponge f)
+getSpongeState = wrap get
+
+-- | Set the sponge state (pure version)
+putSpongeState :: forall f. Sponge f -> PureSpongeM f Unit
+putSpongeState = wrap <<< put
+
 -- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where
   absorb x = wrap do
@@ -217,7 +234,7 @@ squeezeScalarChallengePure
   => PureSpongeM f (SizedF 128 f)
 squeezeScalarChallengePure = do
   x <- squeeze
-  pure $ SizedF $ lowest128BitsPure x
+  pure $ lowestNBitsPure @128 x
 
 --------------------------------------------------------------------------------
 -- | Initial States
@@ -242,37 +259,3 @@ spongeFromConstants { state, spongeState } =
   { state: map const_ state
   , spongeState
   }
-
---------------------------------------------------------------------------------
-
-lowest128Bits
-  :: forall f c t m
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => CircuitM f c t m
-  => FVar f
-  -> Snarky c t m (FVar f)
-lowest128Bits x = do
-  bits <- unpack_ x
-  let low128 = Vector.take @128 bits
-  pure $ pack_ low128
-
-lowest128BitsPure
-  :: forall f n _l
-   . PrimeField f
-  => FieldSizeInBits f n
-  => Add 128 _l n
-  => f
-  -> f
-lowest128BitsPure x =
-  let
-    -- Unpack to bits (LSB first), take first 128
-    bits :: Vector 128 Boolean
-    bits = Vector.take @128 $ unpackPure x
-    two = fromInt 2
-  in
-    -- Pack back to field element
-    foldlWithIndex
-      (\i acc b -> if b then acc + pow two (BigInt.fromInt $ getFinite i) else acc)
-      zero
-      bits

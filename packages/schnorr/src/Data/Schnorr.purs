@@ -26,7 +26,7 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Circuit.DSL.Bits (packPure, unpackPure)
+import Snarky.Circuit.DSL (packPure, unpackPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 
 -- | Truncating coercion between 255-bit fields.
