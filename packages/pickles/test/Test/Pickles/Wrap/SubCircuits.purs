@@ -25,11 +25,12 @@ import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpong
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit, spongeTranscriptPure)
+import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, wrapF)
-import Snarky.Circuit.Kimchi (Type1, Type1(..), expandToEndoScalar, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (Type1(..), Type1, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
@@ -37,7 +38,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (VestaTestContext, createVestaTestContext, mkIpaTestContext, zkRows)
+import Test.Pickles.TestContext (StepProofContext, createStepProofContext, mkStepIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -46,10 +47,10 @@ import Type.Proxy (Proxy(..))
 -- | Circuit runs over Pallas.ScalarField (Fq) where the sponge operates.
 -- | Extracts 128-bit scalar challenges, verifies circuit matches pure sponge,
 -- | and validates endo-mapped values match Rust.
-extractChallengesCircuitTest :: VestaTestContext -> Aff Unit
+extractChallengesCircuitTest :: StepProofContext -> Aff Unit
 extractChallengesCircuitTest ctx = do
   let
-    { spongeState, challenges: rustChallenges } = mkIpaTestContext ctx
+    { spongeState, challenges: rustChallenges } = mkStepIpaContext ctx
 
     circuit
       :: forall t m
@@ -95,10 +96,10 @@ extractChallengesCircuitTest ctx = do
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
 -- | Extracts 128-bit scalar challenges, computes lr_prod, and verifies
 -- | result matches Rust FFI.
-bulletReduceCircuitTest :: VestaTestContext -> Aff Unit
+bulletReduceCircuitTest :: StepProofContext -> Aff Unit
 bulletReduceCircuitTest ctx = do
   let
-    { spongeState } = mkIpaTestContext ctx
+    { spongeState } = mkStepIpaContext ctx
 
     circuit
       :: forall t m
@@ -145,10 +146,10 @@ bulletReduceCircuitTest ctx = do
 
 -- | In-circuit test for IPA final check.
 -- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
-ipaFinalCheckCircuitTest :: VestaTestContext -> Aff Unit
+ipaFinalCheckCircuitTest :: StepProofContext -> Aff Unit
 ipaFinalCheckCircuitTest ctx = do
   let
-    { challenges, spongeState, combinedPolynomial, omega } = mkIpaTestContext ctx
+    { challenges, spongeState, combinedPolynomial, omega } = mkStepIpaContext ctx
 
     circuitInput :: IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
@@ -197,7 +198,7 @@ ipaFinalCheckCircuitTest ctx = do
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
 -- | Also tests scaleFast1 with z1 and the generator point.
-debugVerifyTest :: VestaTestContext -> Aff Unit
+debugVerifyTest :: StepProofContext -> Aff Unit
 debugVerifyTest ctx = do
   let
     _ = ProofFFI.pallasDebugVerify ctx.verifierIndex
@@ -258,7 +259,7 @@ debugVerifyTest ctx = do
 
 -- | Full bulletproof check test: composes sponge transcript → checkBulletproof.
 -- | Tests the "right half" of incrementallyVerifyProof.
-checkBulletproofTest :: VestaTestContext -> Aff Unit
+checkBulletproofTest :: StepProofContext -> Aff Unit
 checkBulletproofTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -293,7 +294,7 @@ checkBulletproofTest ctx = do
     omega = ProofFFI.domainGenerator ctx.domainLog2
 
     -- Sponge input for transcript (constant data)
-    spongeInput :: Pickles.Verify.FqSpongeTranscript.FqSpongeInput 0 7 Pallas.ScalarField
+    spongeInput :: FqSpongeTranscript.FqSpongeInput 0 7 Pallas.ScalarField
     spongeInput =
       { indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
       , sgOld: Vector.nil
@@ -307,7 +308,7 @@ checkBulletproofTest ctx = do
     constPt :: AffinePoint Pallas.ScalarField -> AffinePoint (FVar Pallas.ScalarField)
     constPt { x, y } = { x: const_ x, y: const_ y }
 
-    spongeInputCircuit :: Pickles.Verify.FqSpongeTranscript.FqSpongeInput 0 7 (FVar Pallas.ScalarField)
+    spongeInputCircuit :: FqSpongeTranscript.FqSpongeInput 0 7 (FVar Pallas.ScalarField)
     spongeInputCircuit =
       { indexDigest: const_ spongeInput.indexDigest
       , sgOld: Vector.nil
@@ -350,7 +351,7 @@ checkBulletproofTest ctx = do
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
     circuit input = do
       { success, challenges } <- evalSpongeM initialSpongeCircuit do
-        _ <- Pickles.Verify.FqSpongeTranscript.spongeTranscriptCircuit spongeInputCircuit
+        _ <- FqSpongeTranscript.spongeTranscriptCircuit spongeInputCircuit
         IPA.checkBulletproof @Pallas.ScalarField @Vesta.G
           IPA.type1ScalarOps
           (groupMapParams $ Proxy @Vesta.G)
@@ -368,7 +369,7 @@ checkBulletproofTest ctx = do
         -- Run pure sponge: transcript → absorb CIP → squeeze u → extract challenges
         challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
         challenges = evalPureSpongeM initialSponge do
-          _ <- Pickles.Verify.FqSpongeTranscript.spongeTranscriptPure spongeInput
+          _ <- FqSpongeTranscript.spongeTranscriptPure spongeInput
           -- Absorb CIP (same as checkBulletproof does)
           let Type1 (F cipField) = input.combinedInnerProduct
           Pickles.Sponge.absorb cipField
@@ -412,7 +413,7 @@ checkBulletproofTest ctx = do
 -- | Full incrementallyVerifyProof circuit test.
 -- | Wires together publicInputCommitment, sponge transcript, ftComm, and
 -- | checkBulletproof in a single circuit and verifies satisfiability.
-incrementallyVerifyProofTest :: VestaTestContext -> Aff Unit
+incrementallyVerifyProofTest :: StepProofContext -> Aff Unit
 incrementallyVerifyProofTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -470,7 +471,7 @@ incrementallyVerifyProofTest ctx = do
     perm = permScalar permInput
 
     -- b value from FFI
-    { challenges: rustChallenges } = mkIpaTestContext ctx
+    { challenges: rustChallenges } = mkStepIpaContext ctx
     bValue = ProofFFI.computeB0
       { challenges: Vector.toUnfoldable rustChallenges
       , zeta: ctx.oracles.zeta
@@ -479,7 +480,7 @@ incrementallyVerifyProofTest ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkIpaTestContext ctx
+    { spongeState } = mkStepIpaContext ctx
 
     rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
     rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
@@ -563,7 +564,7 @@ incrementallyVerifyProofTest ctx = do
 
 -- | Full verify circuit test.
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
-verifyTest :: VestaTestContext -> Aff Unit
+verifyTest :: StepProofContext -> Aff Unit
 verifyTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -621,7 +622,7 @@ verifyTest ctx = do
     perm = permScalar permInput
 
     -- b value from FFI
-    { challenges: rustChallenges } = mkIpaTestContext ctx
+    { challenges: rustChallenges } = mkStepIpaContext ctx
     bValue = ProofFFI.computeB0
       { challenges: Vector.toUnfoldable rustChallenges
       , zeta: ctx.oracles.zeta
@@ -630,7 +631,7 @@ verifyTest ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkIpaTestContext ctx
+    { spongeState } = mkStepIpaContext ctx
 
     rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
     rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
@@ -715,7 +716,7 @@ verifyTest ctx = do
     [ circuitInput ]
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createVestaTestContext $
+spec = beforeAll createStepProofContext $
   describe "Wrap Sub-circuits (Real Data)" do
     it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest
     it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest

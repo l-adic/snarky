@@ -22,8 +22,8 @@ import Snarky.Curves.Class (fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.TestContext (VestaTestContext, createVestaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.Pickles.TestContext (StepProofContext, createStepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -37,11 +37,11 @@ type CircuitField = Pallas.ScalarField
 type CombinedPolyCommInput f = { xi :: SizedF 128 f }
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createVestaTestContext $
+spec = beforeAll createStepProofContext $
   describe "CombinedPolyComm" do
     it "circuit computes combined polynomial commitment matching Rust" combinedPolyCommTest
 
-combinedPolyCommTest :: VestaTestContext -> Aff Unit
+combinedPolyCommTest :: StepProofContext -> Aff Unit
 combinedPolyCommTest ctx = do
   let
     -- Ground truth from Rust

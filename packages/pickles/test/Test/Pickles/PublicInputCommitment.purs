@@ -23,8 +23,8 @@ import Snarky.Curves.Class (curveParams, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.TestContext as E2E
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.Pickles.TestContext as E2E
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
@@ -47,7 +47,7 @@ type NumPublic = 9
 -------------------------------------------------------------------------------
 
 type TestContext =
-  { verifierIndex :: E2E.VestaTestContext
+  { verifierIndex :: E2E.StepProofContext
   , lagrangeComms :: Array (AffinePoint (F CircuitField))
   , blindingH :: AffinePoint (F CircuitField)
   }
@@ -66,7 +66,7 @@ fpRangeGen = (\(F x) -> F (fromBigInt (toBigInt x))) <$> (arbitrary :: Gen (F Pa
 
 setupTestContext :: Aff TestContext
 setupTestContext = do
-  e2eCtx <- E2E.createVestaTestContext
+  e2eCtx <- E2E.createStepProofContext
 
   let
     res =

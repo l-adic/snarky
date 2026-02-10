@@ -6,7 +6,7 @@ module Test.Pickles.WrapInputBuilder
   , WrapCircuitParams
   ) where
 
--- | Shared helpers for constructing Wrap circuit input from a VestaTestContext.
+-- | Shared helpers for constructing Wrap circuit input from a StepProofContext.
 -- |
 -- | This module is separated from both E2E.purs and WrapE2E.purs to avoid
 -- | circular dependencies.
@@ -30,8 +30,8 @@ import Snarky.Curves.Class (curveParams, fromBigInt, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.TestContext (VestaTestContext, mkIpaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.Pickles.TestContext (StepProofContext, mkStepIpaContext)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -49,10 +49,10 @@ type WrapCircuitInput = IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField)
 type WrapCircuitParams = IncrementallyVerifyProofParams 9 Pallas.ScalarField
 
 -------------------------------------------------------------------------------
--- | Build WrapCircuitParams from a VestaTestContext
+-- | Build WrapCircuitParams from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitParams :: VestaTestContext -> WrapCircuitParams
+buildWrapCircuitParams :: StepProofContext -> WrapCircuitParams
 buildWrapCircuitParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
@@ -91,14 +91,14 @@ buildWrapCircuitParams ctx =
 -- | Kimchi's FqSponge::digest() converts BaseField → ScalarField via BigInt.
 -- | For values >= Fp, Kimchi returns zero (see mina_poseidon FqSponge impl).
 -- | Since P(squeeze ∈ [Fp, Fq)) ≈ 2^{-177}, the integer roundtrip is safe.
-buildWrapClaimedDigest :: VestaTestContext -> Pallas.ScalarField
+buildWrapClaimedDigest :: StepProofContext -> Pallas.ScalarField
 buildWrapClaimedDigest ctx = fromBigInt (toBigInt ctx.oracles.fqDigest)
 
 -------------------------------------------------------------------------------
--- | Build WrapCircuitInput from a VestaTestContext
+-- | Build WrapCircuitInput from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitInput :: VestaTestContext -> WrapCircuitInput
+buildWrapCircuitInput :: StepProofContext -> WrapCircuitInput
 buildWrapCircuitInput ctx =
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -129,7 +129,7 @@ buildWrapCircuitInput ctx =
     perm = permScalar permInput
 
     -- b value from FFI
-    { challenges: rustChallenges } = mkIpaTestContext ctx
+    { challenges: rustChallenges } = mkStepIpaContext ctx
     bValue = ProofFFI.computeB0
       { challenges: Vector.toUnfoldable rustChallenges
       , zeta: ctx.oracles.zeta
@@ -138,7 +138,7 @@ buildWrapCircuitInput ctx =
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkIpaTestContext ctx
+    { spongeState } = mkStepIpaContext ctx
 
     rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
     rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do

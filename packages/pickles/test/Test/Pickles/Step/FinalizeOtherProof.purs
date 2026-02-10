@@ -34,8 +34,8 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (computePublicEval, createVestaTestContext, mkIpaTestContext) as E2E
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.Pickles.TestContext (computePublicEval, createStepProofContext, mkStepIpaContext) as E2E
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -118,7 +118,7 @@ type TestContext =
 
 createTestContext :: Aff TestContext
 createTestContext = do
-  ctx <- E2E.createVestaTestContext
+  ctx <- E2E.createStepProofContext
   let
     EndoScalar endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
 
@@ -191,7 +191,7 @@ createTestContext = do
     ---------------------------------------------------------------------------
     -- IPA context (sponge state, expanded challenges, omega)
     ---------------------------------------------------------------------------
-    ipaCtx = E2E.mkIpaTestContext ctx
+    ipaCtx = E2E.mkStepIpaContext ctx
 
     ---------------------------------------------------------------------------
     -- b value (from Rust FFI, using expanded bulletproof challenges)

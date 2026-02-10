@@ -29,13 +29,13 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (VestaTestContext, computePublicEval, createVestaTestContext, zkRows)
+import Test.Pickles.TestContext (StepProofContext, computePublicEval, createStepProofContext, zkRows)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 -- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
 -- | Uses fixed challenges (not proof-derived) to test gate constraint evaluation.
-gateConstraintTest :: VestaTestContext -> Aff Unit
+gateConstraintTest :: StepProofContext -> Aff Unit
 gateConstraintTest ctx = do
   let
     -- Fixed challenges for deterministic testing
@@ -100,7 +100,7 @@ gateConstraintTest ctx = do
   liftEffect $ psResult `shouldEqual` rustResult
 
 -- | Test that PureScript permContribution matches the oracle ft_eval0 value.
-permutationTest :: VestaTestContext -> Aff Unit
+permutationTest :: StepProofContext -> Aff Unit
 permutationTest ctx = do
   let
     -- Get proof evaluations
@@ -168,7 +168,7 @@ permutationTest ctx = do
 
 -- | Test that PureScript ftEval0 matches the Rust FFI value.
 -- | This validates the composition: ftEval0 = permContribution + publicEval - gateConstraints
-ftEval0Test :: VestaTestContext -> Aff Unit
+ftEval0Test :: StepProofContext -> Aff Unit
 ftEval0Test ctx = do
   let
     -- Get proof evaluations
@@ -242,7 +242,7 @@ ftEval0Test ctx = do
   liftEffect $ computed `shouldEqual` ctx.oracles.ftEval0
 
 -- | Test that PureScript combinedInnerProduct matches the Rust FFI value.
-combinedInnerProductTest :: VestaTestContext -> Aff Unit
+combinedInnerProductTest :: StepProofContext -> Aff Unit
 combinedInnerProductTest ctx = do
   let
     -- Get proof evaluations
@@ -294,7 +294,7 @@ combinedInnerProductTest ctx = do
 
 -- | Test xi_correct and r_correct: verify that claimed xi (polyscale) and r (evalscale)
 -- | were computed correctly via Fr-sponge Fiat-Shamir.
-xiCorrectTest :: VestaTestContext -> Aff Unit
+xiCorrectTest :: StepProofContext -> Aff Unit
 xiCorrectTest ctx = do
   let
     -- Get proof evaluations
@@ -332,13 +332,13 @@ xiCorrectTest ctx = do
   liftEffect $ result.evalscale `shouldEqual` ctx.oracles.u
 
 -- | Test that the opening proof verifies.
-openingProofTest :: VestaTestContext -> Aff Unit
+openingProofTest :: StepProofContext -> Aff Unit
 openingProofTest ctx = do
   let verified = ProofFFI.verifyOpeningProof ctx.verifierIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
   liftEffect $ verified `shouldEqual` true
 
 -- | Test that PureScript computeB matches the Rust FFI computeB0.
-computeBTest :: VestaTestContext -> Aff Unit
+computeBTest :: StepProofContext -> Aff Unit
 computeBTest ctx = do
   let
     -- Get bulletproof challenges from the proof
@@ -373,7 +373,7 @@ computeBTest ctx = do
 
 -- | Test that IPA rounds matches the bulletproof challenges length.
 -- | Note: IPA rounds depends on SRS size, not circuit domain size.
-ipaRoundsTest :: VestaTestContext -> Aff Unit
+ipaRoundsTest :: StepProofContext -> Aff Unit
 ipaRoundsTest ctx = do
   let
     -- Get IPA rounds from the proof
@@ -392,7 +392,7 @@ ipaRoundsTest ctx = do
 -------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createVestaTestContext $
+spec = beforeAll createStepProofContext $
   describe "FFI Validation" do
     it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
     it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest

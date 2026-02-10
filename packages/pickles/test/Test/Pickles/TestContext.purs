@@ -1,11 +1,11 @@
 module Test.Pickles.TestContext
-  ( VestaTestContext
+  ( StepProofContext
   , TestContext'
-  , IPATestContext
+  , StepIPAContext
   , computePublicEval
-  , createVestaTestContext
+  , createStepProofContext
   , createTestContext'
-  , mkIpaTestContext
+  , mkStepIpaContext
   , schnorrBuiltState
   , schnorrCircuit
   , schnorrSolver
@@ -122,7 +122,7 @@ type TestContext' f g =
   }
 
 -- | Test context for Fp circuits producing Vesta proofs (step side).
-type VestaTestContext = TestContext' Vesta.ScalarField Vesta.G
+type StepProofContext = TestContext' Vesta.ScalarField Vesta.G
 
 -- | Create a fixed valid Schnorr signature for deterministic testing.
 -- | Uses constant private key and message to ensure reproducible results.
@@ -275,8 +275,8 @@ createTestContext' { builtState, solver, input, targetDomainLog2 } = do
 
 -- | Create a Vesta test context using the fixed Schnorr signature.
 -- | Padded to domain 2^16 to match Pickles Step proof conventions.
-createVestaTestContext :: Aff VestaTestContext
-createVestaTestContext = createTestContext'
+createStepProofContext :: Aff StepProofContext
+createStepProofContext = createTestContext'
   { builtState: schnorrBuiltState
   , solver: schnorrSolver
   , input: fixedValidSignature
@@ -313,15 +313,15 @@ computePublicEval publicInputs domainLog2 zeta =
     zetaToNMinus1 * acc / fromBigInt n
 
 --------------------------------------------------------------------------------
-type IPATestContext =
+type StepIPAContext =
   { challenges :: Vector 16 Vesta.ScalarField
   , spongeState :: Sponge Pallas.ScalarField
   , combinedPolynomial :: AffinePoint Pallas.ScalarField
   , omega :: Vesta.ScalarField
   }
 
-mkIpaTestContext :: VestaTestContext -> IPATestContext
-mkIpaTestContext ctx =
+mkStepIpaContext :: StepProofContext -> StepIPAContext
+mkStepIpaContext ctx =
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
     publicCommArray = ProofFFI.pallasPublicComm ctx.verifierIndex ctx.publicInputs

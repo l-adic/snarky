@@ -31,7 +31,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (VestaTestContext, createTestContext', createVestaTestContext)
+import Test.Pickles.TestContext (StepProofContext, createStepProofContext, createTestContext')
 import Test.Pickles.WrapInputBuilder (WrapCircuitInput, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
@@ -42,7 +42,7 @@ import Type.Proxy (Proxy(..))
 -------------------------------------------------------------------------------
 
 -- | Test that the Wrap circuit is satisfiable with real Step proof data.
-wrapCircuitSatisfiableTest :: VestaTestContext -> Aff Unit
+wrapCircuitSatisfiableTest :: StepProofContext -> Aff Unit
 wrapCircuitSatisfiableTest ctx = do
   let
     params = buildWrapCircuitParams ctx
@@ -71,7 +71,7 @@ wrapCircuitSatisfiableTest ctx = do
     [ circuitInput ]
 
 -- | Test that we can create a real Wrap proof (Pallas proof).
-wrapProofCreationTest :: VestaTestContext -> Aff Unit
+wrapProofCreationTest :: StepProofContext -> Aff Unit
 wrapProofCreationTest ctx = do
   let
     params = buildWrapCircuitParams ctx
@@ -122,7 +122,7 @@ wrapProofCreationTest ctx = do
 -------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createVestaTestContext $
+spec = beforeAll createStepProofContext $
   describe "Wrap E2E" do
     it "Wrap circuit satisfiable on real Step proof" wrapCircuitSatisfiableTest
     it "Wrap proof creation succeeds" wrapProofCreationTest

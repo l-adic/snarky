@@ -7,6 +7,7 @@ module Test.Pickles.Step.SubCircuits (spec) where
 import Prelude
 
 import Data.Identity (Identity)
+import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -21,7 +22,7 @@ import Pickles.PlonkChecks.CombinedInnerProduct (BatchingScalars, CombinedInnerP
 import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
-import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
+import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (evalSpongeM, initialSponge, initialSpongeCircuit, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import RandomOracle.Sponge (Sponge)
@@ -33,7 +34,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (VestaTestContext, computePublicEval, createVestaTestContext, mkIpaTestContext, zkRows)
+import Test.Pickles.TestContext (StepProofContext, computePublicEval, createStepProofContext, mkStepIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -41,7 +42,7 @@ import Type.Proxy (Proxy(..))
 
 -- | Circuit test for ftEval0Circuit.
 -- | Verifies the in-circuit computation matches the Rust FFI ftEval0 value.
-ftEval0CircuitTest :: VestaTestContext -> Aff Unit
+ftEval0CircuitTest :: StepProofContext -> Aff Unit
 ftEval0CircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -143,7 +144,7 @@ ftEval0CircuitTest ctx = do
 -- | Circuit test for combined_inner_product_correct.
 -- | Computes ftEval0 in-circuit, feeds into combinedInnerProductCircuit,
 -- | asserts result equals ctx.oracles.combinedInnerProduct.
-combinedInnerProductCorrectCircuitTest :: VestaTestContext -> Aff Unit
+combinedInnerProductCorrectCircuitTest :: StepProofContext -> Aff Unit
 combinedInnerProductCorrectCircuitTest ctx = do
   let
     -- Shared values used in multiple places
@@ -232,7 +233,7 @@ combinedInnerProductCorrectCircuitTest ctx = do
 
 -- | Circuit test for xi_correct.
 -- | Replays Fr-sponge in-circuit and asserts equality with claimed xi.
-xiCorrectCircuitTest :: VestaTestContext -> Aff Unit
+xiCorrectCircuitTest :: StepProofContext -> Aff Unit
 xiCorrectCircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -302,7 +303,7 @@ xiCorrectCircuitTest ctx = do
 -- | Circuit test for plonkChecksCircuit.
 -- | This tests the composed circuit that verifies xi, derives evalscale,
 -- | and computes combined_inner_product all in one circuit.
-plonkChecksCircuitTest :: VestaTestContext -> Aff Unit
+plonkChecksCircuitTest :: StepProofContext -> Aff Unit
 plonkChecksCircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -441,10 +442,10 @@ plonkChecksCircuitTest ctx = do
 
 -- | Test that bCorrectCircuit verifies using Rust-provided values.
 -- | Uses circuitSpec infrastructure to verify constraint satisfaction.
-bCorrectCircuitTest :: VestaTestContext -> Aff Unit
+bCorrectCircuitTest :: StepProofContext -> Aff Unit
 bCorrectCircuitTest ctx = do
   let
-    { challenges, omega } = mkIpaTestContext ctx
+    { challenges, omega } = mkStepIpaContext ctx
     zetaOmega = ctx.oracles.zeta * omega
 
     circuitInput :: BCorrectInput 16 (F Vesta.ScalarField)
@@ -483,7 +484,7 @@ bCorrectCircuitTest ctx = do
     [ circuitInput ]
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createVestaTestContext $
+spec = beforeAll createStepProofContext $
   describe "Step Sub-circuits (Real Data)" do
     it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
