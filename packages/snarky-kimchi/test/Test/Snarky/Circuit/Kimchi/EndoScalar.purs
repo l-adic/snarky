@@ -16,7 +16,7 @@ import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, endoScalar)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
@@ -34,7 +34,8 @@ circuit
   -> Snarky (KimchiConstraint f) t m (FVar f)
 circuit scalarValue =
   let
-    endoVar = const_ (endoScalar :: f)
+    EndoScalar es = endoScalar @f' @f
+    endoVar = const_ es
   in
     toField scalarValue endoVar
 
@@ -51,7 +52,7 @@ spec' _ curveName = do
     it "Cicuit matches the reference implementation and satisfies constraints" $
       let
         f :: SizedF 128 (F f) -> F f
-        f x = toFieldPure (coerce x) (endoScalar @(F f') @(F f))
+        f x = let EndoScalar e = endoScalar @(F f') @(F f) in toFieldPure (coerce x) e
 
         solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
 

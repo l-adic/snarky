@@ -20,7 +20,7 @@ import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateTyp
 import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
-import Snarky.Curves.Class (class HasEndo, endoBase, pow)
+import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase, pow)
 import Type.Proxy (Proxy(..))
 
 -- | Environment providing operations for polynomial evaluation.
@@ -91,7 +91,11 @@ fieldEnv evalPoint challenges parseField =
   , cell: identity
   , alphaPow: \n -> pow challenges.alpha (fromInt n)
   , mds: \{ row, col } -> lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient: endoBase
+  , endoCoefficient:
+      let
+        EndoBase eb = endoBase @f @f'
+      in
+        eb
   , field: parseField
   , vanishesOnZeroKnowledgeAndPreviousRows: challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: challenges.unnormalizedLagrangeBasis
@@ -123,7 +127,11 @@ circuitEnv evalPoint challenges parseField =
   , cell: identity -- cell is identity since var already returns the value
   , alphaPow: \n -> pow_ challenges.alpha n
   , mds: \{ row, col } -> pure $ const_ $ lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient: pure $ const_ (endoBase :: f)
+  , endoCoefficient:
+      let
+        EndoBase eb = endoBase @f @f'
+      in
+        pure $ const_ eb
   , field: \hex -> pure $ const_ $ parseField hex
   , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args

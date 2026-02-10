@@ -19,11 +19,14 @@ import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, S
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoScalar, fromInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoScalar(..), endoScalar, fromInt)
 
 -- | Circuit version of endomorphism scalar decomposition.
 -- | Takes a 128-bit scalar challenge and endo constant, returns effective scalar.
--- | This is used in conjnuction with EndoMul
+-- | Computes `a * endo + b` where (a, b) is the GLV decomposition.
+-- | The endo parameter is a raw field element — callers should unwrap
+-- | the appropriate newtype (EndoBase or EndoScalar) depending on context.
+-- | This is used in conjunction with EndoMul.
 toField
   :: forall f t m n
    . FieldSizeInBits f n
@@ -94,7 +97,8 @@ toField scalar endo = do
 -- | Pure/constant version of endomorphism scalar decomposition.
 -- | Given a 128-bit scalar challenge and the endomorphism coefficient, computes
 -- | `a * endo + b` where (a, b) is the decomposition of the scalar.
--- | The input is in field f (only 128 bits used), the output is in field f.
+-- | The endo parameter is a raw field element — callers should unwrap
+-- | the appropriate newtype (EndoBase or EndoScalar) depending on context.
 toFieldPure
   :: forall f n
    . PrimeField f
@@ -139,4 +143,8 @@ expandToEndoScalar
   => Compare 128 n LT
   => SizedF 128 f
   -> f'
-expandToEndoScalar f = toFieldPure (coerceViaBits f) (endoScalar :: f')
+expandToEndoScalar f =
+  let
+    EndoScalar e = endoScalar @f @f'
+  in
+    toFieldPure (coerceViaBits f) e

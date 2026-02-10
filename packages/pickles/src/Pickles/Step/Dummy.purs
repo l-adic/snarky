@@ -77,7 +77,8 @@ dummyPlonkMinimal =
 -- | Reference: unfinalized.ml:95-101
 dummyDeferredValues :: forall f sf. PrimeField f => FieldSizeInBits f 255 => Shifted f sf => DeferredValues f sf
 dummyDeferredValues =
-  let zeroSf = toShifted (zero :: f)
+  let
+    zeroSf = toShifted (zero :: f)
   in
     { plonk: dummyPlonkMinimal
     , combinedInnerProduct: zeroSf

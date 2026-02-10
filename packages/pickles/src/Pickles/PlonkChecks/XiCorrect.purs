@@ -62,7 +62,7 @@ type FrSpongeInput f =
   , coeffEvals :: Vector 15 (PointEval f) -- coefficient column evals
   , sigmaEvals :: Vector 6 (PointEval f) -- sigma poly evals
   -- Endomorphism coefficient for scalar challenge expansion
-  , endo :: f
+  , endo :: f -- ^ EndoScalar coefficient (= G::endos().1 = endo_r, for challenge expansion)
   }
 
 -- | Input for xi_correct circuit verification.
@@ -80,7 +80,7 @@ type XiCorrectInput f =
   , witnessEvals :: Vector 15 (PointEval f)
   , coeffEvals :: Vector 15 (PointEval f)
   , sigmaEvals :: Vector 6 (PointEval f)
-  , endo :: f
+  , endo :: f -- ^ EndoScalar coefficient (= G::endos().1 = endo_r, for challenge expansion)
   -- Value to verify - 128-bit scalar challenge (NOT full field element)
   , claimedXi :: SizedF 128 f
   }

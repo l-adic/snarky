@@ -17,7 +17,7 @@ import Data.Vector as Vector
 import Snarky.Circuit.DSL (FVar, Variable)
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, reduceToVariable)
 import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, GateKind(..), KimchiRow)
-import Snarky.Curves.Class (class HasEndo, endoBase)
+import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 type Round f =
@@ -89,7 +89,11 @@ eval lookup (Rows rs) = do
       s1 = before !! unsafeFinite 9
       s3 = before !! unsafeFinite 10
 
-      endoMinus1 = (endoBase @f @f') - one
+      endoMinus1 =
+        let
+          EndoBase eb = endoBase @f @f'
+        in
+          eb - one
       xq1 = (one + b1 * endoMinus1) * xt
       xq2 = (one + b3 * endoMinus1) * xt
 

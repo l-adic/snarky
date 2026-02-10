@@ -62,7 +62,7 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
 type FinalizeOtherProofParams f =
   { domain :: { generator :: f, shifts :: Vector 7 f }
-  , endo :: f
+  , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , zkRows :: Int
   , linearizationPoly :: LinearizationPoly f
   }

@@ -31,7 +31,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky,
 import Snarky.Circuit.Kimchi (Type1, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (endoScalar, pow)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.E2E (computePublicEval, createVestaTestContext, mkIpaTestContext) as E2E
@@ -120,7 +120,7 @@ createTestContext :: Aff TestContext
 createTestContext = do
   ctx <- E2E.createVestaTestContext
   let
-    endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
+    EndoScalar endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
 
     ---------------------------------------------------------------------------
     -- Proof polynomial evaluations

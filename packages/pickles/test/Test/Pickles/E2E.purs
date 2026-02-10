@@ -29,14 +29,14 @@ import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
 import Data.Schnorr (isEven, truncateFieldCoerce)
 import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, error)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error)
@@ -68,15 +68,16 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_, false_, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class HasEndo, curveParams, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (GateKind(..)) as GateKind
+import Snarky.Curves.Class (class HasEndo, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -201,21 +202,53 @@ fixedValidSignature =
     , message: map F message
     }
 
+-- | Integer power of 2.
+pow2 :: Int -> Int
+pow2 0 = 1
+pow2 n = 2 * pow2 (n - 1)
+
+-- | A Zero-gate padding row with no variable references.
+zeroRow :: forall f. KimchiRow f
+zeroRow =
+  { kind: GateKind.Zero
+  , variables: Vector.generate (const Nothing)
+  , coeffs: []
+  }
+
+-- | Pad an array of Kimchi rows to reach at least targetDomainLog2.
+-- | The domain must be a power of 2 that fits: publicInputs + constraints + zkRows.
+padToMinDomain
+  :: forall f
+   . Int -- target domain log2
+  -> Int -- number of public input rows
+  -> Array (KimchiRow f)
+  -> Array (KimchiRow f)
+padToMinDomain targetDomainLog2_ nPublicInputRows rows =
+  let
+    targetRows = pow2 targetDomainLog2_ - nPublicInputRows - zkRows
+    currentRows = Array.length rows
+    padding = max 0 (targetRows - currentRows)
+  in
+    rows <> Array.replicate padding zeroRow
+
 -- | Create a test context from any circuit.
 -- | Given compiled circuit state, a solver, and an input, creates a proof
 -- | and oracle results for testing.
+-- | The targetDomainLog2 pads the circuit to a minimum domain size. In Pickles,
+-- | Step circuits use domain 2^16 and Wrap circuits use 2^15.
 createTestContext'
   :: forall f f' g a b
    . CircuitGateConstructor f g
-  => HasEndo f' f
+  => HasEndo f f'
   => ProofFFI f g
   => LinearizationFFI f g
   => { builtState :: CircuitBuilderState (KimchiGate f) (AuxState f)
      , solver :: Solver f (KimchiGate f) a b
      , input :: a
+     , targetDomainLog2 :: Int
      }
   -> Aff (TestContext' f g)
-createTestContext' { builtState, solver, input } = do
+createTestContext' { builtState, solver, input, targetDomainLog2 } = do
   crs <- liftEffect $ createCRS @f
 
   let
@@ -227,8 +260,11 @@ createTestContext' { builtState, solver, input } = do
     Left e -> liftEffect $ throwError $ error (show e)
     Right (Tuple _ assignments) -> do
       let
+        nPublicInputRows = Array.length builtState.publicInputs
+        kimchiRows = concatMap toKimchiRows builtState.constraints
+        paddedRows = padToMinDomain targetDomainLog2 nPublicInputRows kimchiRows
         { constraintSystem, constraints } = makeConstraintSystem @f
-          { constraints: concatMap toKimchiRows builtState.constraints
+          { constraints: paddedRows
           , publicInputs: builtState.publicInputs
           , unionFind: (un AuxState builtState.aux).wireState.unionFind
           }
@@ -237,24 +273,33 @@ createTestContext' { builtState, solver, input } = do
           , constraints: map _.variables constraints
           , publicInputs: builtState.publicInputs
           }
-        -- The endo coefficient is the scalar endo of the commitment curve.
-        -- For circuit field f with HasEndo f' f, endoScalar :: f gives
-        -- the correct value for the prover index.
-        endo = endoScalar @f' @f
+        endo = let EndoBase e = endoBase @f @f' in e
         proverIndex = createProverIndex @f @g { endo, constraintSystem, crs }
         verifierIndex = createVerifierIndex @f @g proverIndex
         domainLog2 = proverIndexDomainLog2 proverIndex
+        verified = verifyProverIndex @f @g { proverIndex, witness, publicInputs }
+
+      liftEffect $ log $ "[createTestContext'] domainLog2: " <> show domainLog2
+      liftEffect $ log $ "[createTestContext'] verifyProverIndex: " <> show verified
+
+      let
         proof = createProof { proverIndex, witness }
-        oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
+        proofVerified = ProofFFI.verifyOpeningProof verifierIndex { proof, publicInput: publicInputs }
+
+      liftEffect $ log $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
+
+      let oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
 
       pure { proverIndex, verifierIndex, witness, publicInputs, domainLog2, proof, oracles }
 
 -- | Create a Vesta test context using the fixed Schnorr signature.
+-- | Padded to domain 2^16 to match Pickles Step proof conventions.
 createVestaTestContext :: Aff VestaTestContext
 createVestaTestContext = createTestContext'
   { builtState: schnorrBuiltState
   , solver: schnorrSolver
   , input: fixedValidSignature
+  , targetDomainLog2: 0 -- temporarily disable padding to isolate wiring issue
   }
 
 -------------------------------------------------------------------------------
@@ -774,7 +819,7 @@ xiCorrectTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
 
     -- Compute scalar challenges using PureScript Fr-sponge
@@ -809,7 +854,7 @@ xiCorrectCircuitTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
     pureResult = frSpongeChallengesPure spongeInput
 
@@ -829,7 +874,7 @@ xiCorrectCircuitTest ctx = do
       , witnessEvals: coerce witnessEvals
       , coeffEvals: coerce coeffEvals
       , sigmaEvals: coerce sigmaEvals
-      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in F e
       , claimedXi: coerce pureResult.rawXi -- use the verified raw challenge
       }
 
@@ -881,7 +926,7 @@ plonkChecksCircuitTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
     pureResult = frSpongeChallengesPure spongeInput
 
@@ -946,7 +991,7 @@ plonkChecksCircuitTest ctx = do
           , coeffEvals: coerce coeffEvals
           , sigmaEvals: coerce sigmaEvals
           }
-      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in F e
       , claimedXi: coerce pureResult.rawXi -- raw 128-bit challenge
       , claimedR: coerce pureResult.rawR -- raw 128-bit challenge
       , cipInput

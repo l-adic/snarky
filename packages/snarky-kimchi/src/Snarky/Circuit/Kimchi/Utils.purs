@@ -24,7 +24,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, verifyProverIndex)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (class HasEndo, endoBase)
+import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -84,9 +84,8 @@ verifyCircuitM { gen, solver, s } = do
           , constraints: map _.variables constraints
           , publicInputs: s.publicInputs
           }
-        endo = endoBase
         proverIndex = createProverIndex
-          { endo
+          { endo: let EndoBase e = endoBase @f @f' in e
           , constraintSystem
           , crs
           }

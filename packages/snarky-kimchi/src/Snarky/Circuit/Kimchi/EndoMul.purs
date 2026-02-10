@@ -17,7 +17,7 @@ import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, endoBase, fromAffine, scalarMul, toAffine)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 {-
@@ -47,8 +47,9 @@ endo g scalar = do
   let
     chunks :: Vector 32 (Vector 4 (FVar f))
     chunks = Vector.chunks @4 msbBits
+    EndoBase (eb :: f) = endoBase @f @f'
   accInit <- do
-    { p } <- addComplete g (g { x = scale_ (endoBase @f @f') g.x })
+    { p } <- addComplete g (g { x = scale_ eb g.x })
     _.p <$> addComplete p p
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
@@ -62,14 +63,14 @@ endo g scalar = do
             b4 = bits !! unsafeFinite 3
           { x: xp, y: yp } <- read @(AffinePoint _) st.acc
           let
-            xq1 = (one + (F (endoBase @f @f') - one) * b1) * xt
+            xq1 = (one + (F eb - one) * b1) * xt
             yq1 = (double b2 - one) * yt
             s1 = (yq1 - yp) / (xq1 - xp)
             s1Squared = square s1
             s2 = (double yp / (double xp + xq1 - s1Squared)) - s1
             xr = xq1 + square s2 - s1Squared
             yr = ((xp - xr) * s2) - yp
-            xq2 = (one + (F (endoBase @f @f') - one) * b3) * xt
+            xq2 = (one + (F eb - one) * b3) * xt
             yq2 = (double b4 - one) * yt
             s3 = (yq2 - yr) / (xq2 - xr)
             s3Squared = square s3

@@ -95,7 +95,7 @@ absorbAllEvals evals = do
 type PlonkChecksInput f =
   { -- Polynomial evaluations (includes ftEval1)
     allEvals :: AllEvals f
-  -- Endo coefficient for scalar challenge conversion
+  -- EndoScalar coefficient for scalar challenge expansion (= Wrap_inner_curve.scalar)
   , endo :: f
   -- Claimed xi (polyscale) to verify - 128-bit scalar challenge
   , claimedXi :: ScalarChallenge f
