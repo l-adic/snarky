@@ -16,17 +16,22 @@ import Data.Identity (Identity)
 import Data.Reflectable (class Reflectable)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
+import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, verify)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assert_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assert_, const_, false_)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
 
 -- | The Wrap circuit: verifies a Step proof via IPA.
 -- |
--- | Runs incrementallyVerifyProof and asserts the result is successful.
+-- | Runs `verify` which calls incrementallyVerifyProof and additionally asserts:
+-- |   1. Sponge digest matches the claimed value from the Step proof
+-- |   2. Bulletproof challenges match (bypassed for base case)
+-- |
+-- | For Wrap, isBaseCase is always false (Wrap always verifies a real Step proof).
+-- | The claimedDigest comes from the Step proof's Fq-sponge state.
 -- | All fields in the input are private witness data.
 wrapCircuit
   :: forall @nChunks nPublic sgOldN f f' @g sf t bitsUsed sDiv2Bits _l _l2
@@ -49,9 +54,10 @@ wrapCircuit
   => IpaScalarOps f t Identity sf
   -> GroupMapParams f
   -> IncrementallyVerifyProofParams nPublic f
+  -> f -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
   -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
   -> Snarky (KimchiConstraint f) t Identity Unit
-wrapCircuit scalarOps groupMapParams_ params input = do
-  { success } <- evalSpongeM initialSpongeCircuit $
-    incrementallyVerifyProof @nChunks @g scalarOps groupMapParams_ params input
+wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
+  success <- evalSpongeM initialSpongeCircuit $
+    verify @nChunks @g scalarOps groupMapParams_ params input false_ (const_ claimedDigest)
   assert_ success

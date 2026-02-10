@@ -1,6 +1,7 @@
 module Test.Pickles.WrapInputBuilder
   ( buildWrapCircuitInput
   , buildWrapCircuitParams
+  , buildWrapClaimedDigest
   , WrapCircuitInput
   , WrapCircuitParams
   ) where
@@ -78,6 +79,20 @@ buildWrapCircuitParams ctx =
         }
     , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
     }
+
+-------------------------------------------------------------------------------
+-- | Build claimed Fq-sponge digest for the Wrap circuit
+-------------------------------------------------------------------------------
+
+-- | Extract the claimed Fq-sponge digest from the Step proof's oracles,
+-- | coerced to the Wrap circuit field (Pallas.ScalarField = Fq).
+-- |
+-- | The Rust FFI returns fqDigest as Vesta.ScalarField (= Fp) because
+-- | Kimchi's FqSponge::digest() converts BaseField → ScalarField via BigInt.
+-- | For values >= Fp, Kimchi returns zero (see mina_poseidon FqSponge impl).
+-- | Since P(squeeze ∈ [Fp, Fq)) ≈ 2^{-177}, the integer roundtrip is safe.
+buildWrapClaimedDigest :: VestaTestContext -> Pallas.ScalarField
+buildWrapClaimedDigest ctx = fromBigInt (toBigInt ctx.oracles.fqDigest)
 
 -------------------------------------------------------------------------------
 -- | Build WrapCircuitInput from a VestaTestContext
