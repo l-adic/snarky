@@ -21,7 +21,7 @@
 -- | the sponge state is `sponge_before_evaluations` — the state right before
 -- | the digest squeeze, matching OCaml's `Sponge.copy` pattern in
 -- | step_verifier.ml:559.
-module Pickles.Step.FqSpongeTranscript
+module Pickles.Verify.FqSpongeTranscript
   ( FqSpongeInput
   , FqSpongeOutput
   , spongeTranscriptCircuit

@@ -36,7 +36,7 @@ import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.Sponge (SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
-import Pickles.Step.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit)
+import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit)
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)

@@ -26,7 +26,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Sponge (SpongeM, squeeze)
-import Pickles.Step.Types (BulletproofChallenges)
+import Pickles.Verify.Types (BulletproofChallenges)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, if_)
 import Snarky.Circuit.DSL as SizedF
