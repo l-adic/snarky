@@ -47,7 +47,7 @@ type NumPublic = 9
 -------------------------------------------------------------------------------
 
 type TestContext =
-  { verifierIndex :: E2E.TestContext
+  { verifierIndex :: E2E.VestaTestContext
   , lagrangeComms :: Array (AffinePoint (F CircuitField))
   , blindingH :: AffinePoint (F CircuitField)
   }
@@ -66,7 +66,7 @@ fpRangeGen = (\(F x) -> F (fromBigInt (toBigInt x))) <$> (arbitrary :: Gen (F Pa
 
 setupTestContext :: Aff TestContext
 setupTestContext = do
-  e2eCtx <- E2E.createTestContext
+  e2eCtx <- E2E.createVestaTestContext
 
   let
     res =

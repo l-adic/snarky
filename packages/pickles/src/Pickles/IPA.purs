@@ -63,7 +63,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit, scaleFast1, scaleFast2)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, fromShiftedType1Circuit, fromShiftedType2Circuit, groupMapCircuit, scaleFast1, scaleFast2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -370,23 +370,28 @@ bulletReduceCircuit { pairs, challenges } = do
 -- |
 -- | Parameters:
 -- | - `f`: base field type (Pallas.BaseField or Vesta.BaseField)
--- | - `c`: constraint type
 -- | - `t`: tag type
 -- | - `m`: underlying monad
 -- | - `sf`: shifted scalar type (Type1 (FVar f) or Type2 (FVar f) (BoolVar f))
-type IpaScalarOps f c t m sf =
+type IpaScalarOps f t m sf =
   { -- | Scale a curve point by a shifted scalar value.
     -- | This corresponds to `scale_fast` in wrap_verifier.ml.
     scaleByShifted ::
       AffinePoint (FVar f)
       -> sf
-      -> Snarky c t m (AffinePoint (FVar f))
+      -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
   , -- | Get the field elements to absorb for a shifted scalar.
     -- | For Type1: returns [t] (single field element)
     -- | For Type2: returns [sDiv2, if sOdd then 1 else 0] (two elements)
     shiftedToAbsorbFields ::
       sf
       -> Array (FVar f)
+  , -- | Recover the original field element from a shifted representation.
+    -- | For Type1: s = 2*t + 2^n + 1
+    -- | For Type2: s = 2*sDiv2 + sOdd + 2^n
+    unshift ::
+      sf
+      -> FVar f
   }
 
 -- | Input for IPA final verification.
@@ -455,7 +460,7 @@ ipaFinalCheckCircuit
   => WeierstrassCurve f g
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f (KimchiConstraint f) t m sf
+  => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
@@ -520,10 +525,11 @@ type1ScalarOps
   :: forall f t m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f (KimchiConstraint f) t m (Type1 (FVar f))
+  => IpaScalarOps f t m (Type1 (FVar f))
 type1ScalarOps =
   { scaleByShifted: \p t -> scaleFast1 @51 p t
   , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
+  , unshift: fromShiftedType1Circuit
   }
 
 -------------------------------------------------------------------------------
@@ -604,7 +610,7 @@ checkBulletproof
   => WeierstrassCurve f g
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f (KimchiConstraint f) t m sf
+  => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> Vector numBases (AffinePoint (FVar f))
   -> CheckBulletproofInput n (FVar f) sf
@@ -641,8 +647,9 @@ type2ScalarOps
   :: forall f t m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f (KimchiConstraint f) t m (Type2 (FVar f) (BoolVar f))
+  => IpaScalarOps f t m (Type2 (FVar f) (BoolVar f))
 type2ScalarOps =
   { scaleByShifted: \p t -> scaleFast2 @51 p t
   , shiftedToAbsorbFields: \(Type2 { sDiv2, sOdd }) -> [ sDiv2, coerce sOdd ]
+  , unshift: fromShiftedType2Circuit
   }

@@ -11,6 +11,7 @@ import Prelude
 
 import Data.Identity (Identity)
 import Data.Vector (nil, (:<))
+import Pickles.IPA (IpaScalarOps, type1ScalarOps)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -64,7 +65,8 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 testCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams trivialAppCircuit input
+  let ops = (type1ScalarOps :: IpaScalarOps StepField t Identity (Type1 (FVar StepField)))
+  _ <- stepCircuit ops dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------

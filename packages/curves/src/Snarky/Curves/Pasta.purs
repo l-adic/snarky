@@ -39,7 +39,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -344,12 +344,12 @@ instance Ord PallasScalarField where
   compare x y = compare (toBigInt x) (toBigInt y)
 
 instance HasEndo VestaScalarField PallasScalarField where
-  endoBase = _pallasEndoBase unit
-  endoScalar = _pallasEndoScalar unit
+  endoBase = EndoBase $ _pallasEndoBase unit
+  endoScalar = EndoScalar $ _pallasEndoScalar unit
 
 instance HasEndo PallasScalarField VestaScalarField where
-  endoBase = _vestaEndoBase unit
-  endoScalar = _vestaEndoScalar unit
+  endoBase = EndoBase $ _vestaEndoBase unit
+  endoScalar = EndoScalar $ _vestaEndoScalar unit
 
 -- BW19 parameters for Vesta (returns array of base field elements)
 foreign import _vestaBW19Params :: Unit -> Array PallasScalarField

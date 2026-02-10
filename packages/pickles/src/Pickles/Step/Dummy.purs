@@ -26,7 +26,7 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Step.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi (Type1(..))
+import Snarky.Circuit.Kimchi (class Shifted, toShifted)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -71,21 +71,24 @@ dummyPlonkMinimal =
 
 -- | Dummy deferred values for bootstrapping.
 -- |
--- | Uses Type1 shifted values (for Step verifying Wrap).
--- | All values are zero, which is fine since `shouldFinalize = false`.
+-- | All shifted values are `toShifted zero`. The actual values don't matter
+-- | since `shouldFinalize = false` bypasses verification.
 -- |
 -- | Reference: unfinalized.ml:95-101
-dummyDeferredValues :: forall f. PrimeField f => FieldSizeInBits f 255 => DeferredValues f (Type1 f)
+dummyDeferredValues :: forall f sf. PrimeField f => FieldSizeInBits f 255 => Shifted f sf => DeferredValues f sf
 dummyDeferredValues =
-  { plonk: dummyPlonkMinimal
-  , combinedInnerProduct: Type1 zero
-  , xi: dummyScalarChallenge
-  , bulletproofChallenges: dummyBulletproofChallenges
-  , b: Type1 zero
-  , perm: Type1 zero
-  , zetaToSrsLength: Type1 zero
-  , zetaToDomainSize: Type1 zero
-  }
+  let
+    zeroSf = toShifted (zero :: f)
+  in
+    { plonk: dummyPlonkMinimal
+    , combinedInnerProduct: zeroSf
+    , xi: dummyScalarChallenge
+    , bulletproofChallenges: dummyBulletproofChallenges
+    , b: zeroSf
+    , perm: zeroSf
+    , zetaToSrsLength: zeroSf
+    , zetaToDomainSize: zeroSf
+    }
 
 -------------------------------------------------------------------------------
 -- | Dummy Unfinalized Proof
@@ -98,7 +101,7 @@ dummyDeferredValues =
 -- | whether the dummy values actually verify.
 -- |
 -- | Reference: unfinalized.ml:102 `should_finalize = false`
-dummyUnfinalizedProof :: forall f. PrimeField f => FieldSizeInBits f 255 => UnfinalizedProof f (Type1 f) Boolean
+dummyUnfinalizedProof :: forall f sf. PrimeField f => FieldSizeInBits f 255 => Shifted f sf => UnfinalizedProof f sf Boolean
 dummyUnfinalizedProof =
   { deferredValues: dummyDeferredValues
   , shouldFinalize: false

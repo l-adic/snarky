@@ -38,14 +38,19 @@ module Test.Pickles.ProofFFI
   , pallasVerifierIndexMaxPolySize
   , vestaVerifierIndexMaxPolySize
   , pallasVerifierIndexDigest
+  , vestaVerifierIndexDigest
   , pallasPublicComm
   , vestaPublicComm
   , pallasLagrangeCommitments
   , vestaLagrangeCommitments
   , pallasProofCommitments
+  , vestaProofCommitments
   , pallasFtComm
+  , vestaFtComm
   , pallasPermScalar
+  , vestaPermScalar
   , pallasSigmaCommLast
+  , vestaSigmaCommLast
   , pallasVerifierIndexColumnComms
   , vestaVerifierIndexColumnComms
   , pallasChallengePolyCommitment
@@ -257,6 +262,21 @@ type ProofCommitments f =
 
 -- Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points) in Fq
 foreign import pallasProofCommitments :: Proof Vesta.G Pallas.BaseField -> ProofCommitments Pallas.ScalarField
+
+-- Proof commitments from a Pallas proof (Vesta/Fq circuits)
+foreign import vestaProofCommitments :: Proof Pallas.G Vesta.BaseField -> ProofCommitments Vesta.ScalarField
+
+-- ft_comm for Vesta/Fq circuits
+foreign import vestaFtComm :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
+
+-- perm_scalar for Vesta/Fq circuits
+foreign import vestaPermScalar :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Vesta.BaseField
+
+-- sigma_comm[PERMUTS-1] from Vesta verifier index
+foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
+
+-- Verifier index digest for Vesta/Fq circuits (returns Fp element)
+foreign import vestaVerifierIndexDigest :: VerifierIndex Pallas.G Vesta.BaseField -> Vesta.ScalarField
 
 --------------------------------------------------------------------------------
 -- Instances

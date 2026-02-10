@@ -1,8 +1,10 @@
 module Test.Pickles.E2E
-  ( TestContext
+  ( VestaTestContext
+  , TestContext'
   , IPATestContext
   , computePublicEval
-  , createTestContext
+  , createVestaTestContext
+  , createTestContext'
   , mkIpaTestContext
   , schnorrBuiltState
   , schnorrCircuit
@@ -27,14 +29,14 @@ import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
 import Data.Schnorr (isEven, truncateFieldCoerce)
 import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Effect.Aff (Aff)
+import Effect.Aff (Aff, error)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error)
@@ -46,7 +48,7 @@ import Pickles.IPA (BCorrectInput, CheckBulletproofInput, IpaFinalCheckInput, bC
 import Pickles.IPA as IPA
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
-import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evalCoefficientPolys, evalLinearization, evalSelectorPolys, evalWitnessPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks (PlonkChecksInput, plonkChecksCircuit)
@@ -66,20 +68,21 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assertEqual_, assert_, coerceViaBits, const_, false_, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fieldSizeBits, fromShifted, groupMapParams, toShifted)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
-import Snarky.Curves.Class (curveParams, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (GateKind(..)) as GateKind
+import Snarky.Curves.Class (class HasEndo, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.Linearization (buildFFIInput)
-import Test.Pickles.ProofFFI (OraclesResult, Proof)
+import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
@@ -129,17 +132,19 @@ schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorr
 -- | Test setup types
 -------------------------------------------------------------------------------
 
--- | Shared test context created once by beforeAll.
--- | Contains prover index, witness, proof, and oracles.
-type TestContext =
-  { proverIndex :: ProverIndex Vesta.G Vesta.ScalarField
-  , verifierIndex :: VerifierIndex Vesta.G Vesta.ScalarField
-  , witness :: Vector 15 (Array Vesta.ScalarField)
-  , publicInputs :: Array Vesta.ScalarField
+-- | Generic test context, parameterized by circuit field `f` and commitment curve `g`.
+type TestContext' f g =
+  { proverIndex :: ProverIndex g f
+  , verifierIndex :: VerifierIndex g f
+  , witness :: Vector 15 (Array f)
+  , publicInputs :: Array f
   , domainLog2 :: Int
-  , proof :: Proof Vesta.G Vesta.ScalarField
-  , oracles :: OraclesResult Vesta.ScalarField
+  , proof :: Proof g f
+  , oracles :: OraclesResult f
   }
+
+-- | Test context for Fp circuits producing Vesta proofs (step side).
+type VestaTestContext = TestContext' Vesta.ScalarField Vesta.G
 
 -- | Create a fixed valid Schnorr signature for deterministic testing.
 -- | Uses constant private key and message to ensure reproducible results.
@@ -197,49 +202,105 @@ fixedValidSignature =
     , message: map F message
     }
 
--- | Create the shared test context.
--- | Uses a fixed Schnorr signature for deterministic testing.
-createTestContext :: Aff TestContext
-createTestContext = do
-  let input = fixedValidSignature
+-- | Integer power of 2.
+pow2 :: Int -> Int
+pow2 0 = 1
+pow2 n = 2 * pow2 (n - 1)
 
-  crs <- liftEffect $ createCRS @Vesta.ScalarField
+-- | A Zero-gate padding row with no variable references.
+zeroRow :: forall f. KimchiRow f
+zeroRow =
+  { kind: GateKind.Zero
+  , variables: Vector.generate (const Nothing)
+  , coeffs: []
+  }
+
+-- | Pad an array of Kimchi rows to reach at least targetDomainLog2.
+-- | The domain must be a power of 2 that fits: publicInputs + constraints + zkRows.
+padToMinDomain
+  :: forall f
+   . Int -- target domain log2
+  -> Int -- number of public input rows
+  -> Array (KimchiRow f)
+  -> Array (KimchiRow f)
+padToMinDomain targetDomainLog2_ nPublicInputRows rows =
+  let
+    targetRows = pow2 targetDomainLog2_ - nPublicInputRows - zkRows
+    currentRows = Array.length rows
+    padding = max 0 (targetRows - currentRows)
+  in
+    rows <> Array.replicate padding zeroRow
+
+-- | Create a test context from any circuit.
+-- | Given compiled circuit state, a solver, and an input, creates a proof
+-- | and oracle results for testing.
+-- | The targetDomainLog2 pads the circuit to a minimum domain size. In Pickles,
+-- | Step circuits use domain 2^16 and Wrap circuits use 2^15.
+createTestContext'
+  :: forall f f' g a b
+   . CircuitGateConstructor f g
+  => HasEndo f f'
+  => ProofFFI f g
+  => LinearizationFFI f g
+  => { builtState :: CircuitBuilderState (KimchiGate f) (AuxState f)
+     , solver :: Solver f (KimchiGate f) a b
+     , input :: a
+     , targetDomainLog2 :: Int
+     }
+  -> Aff (TestContext' f g)
+createTestContext' { builtState, solver, input, targetDomainLog2 } = do
+  crs <- liftEffect $ createCRS @f
 
   let
     nat :: Identity ~> Aff
     nat = pure <<< un Identity
 
-  eRes <- runSolverT (\a -> hoist nat $ schnorrSolver a) input
+  eRes <- runSolverT (\a -> hoist nat $ solver a) input
   case eRes of
     Left e -> liftEffect $ throwError $ error (show e)
     Right (Tuple _ assignments) -> do
       let
-        -- Build constraint system and witness
-        { constraintSystem, constraints } = makeConstraintSystem @Vesta.ScalarField
-          { constraints: concatMap toKimchiRows schnorrBuiltState.constraints
-          , publicInputs: schnorrBuiltState.publicInputs
-          , unionFind: (un AuxState schnorrBuiltState.aux).wireState.unionFind
+        nPublicInputRows = Array.length builtState.publicInputs
+        kimchiRows = concatMap toKimchiRows builtState.constraints
+        paddedRows = padToMinDomain targetDomainLog2 nPublicInputRows kimchiRows
+        { constraintSystem, constraints } = makeConstraintSystem @f
+          { constraints: paddedRows
+          , publicInputs: builtState.publicInputs
+          , unionFind: (un AuxState builtState.aux).wireState.unionFind
           }
         { witness, publicInputs } = makeWitness
           { assignments
           , constraints: map _.variables constraints
-          , publicInputs: schnorrBuiltState.publicInputs
+          , publicInputs: builtState.publicInputs
           }
-        -- For Vesta commitment curve, use the Vesta endoScalar (in Fp = Vesta.ScalarField)
-        endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
-        proverIndex = createProverIndex @Vesta.ScalarField @Vesta.G
-          { endo
-          , constraintSystem
-          , crs
-          }
-        verifierIndex = createVerifierIndex @Vesta.ScalarField @Vesta.G proverIndex
+        endo = let EndoBase e = endoBase @f @f' in e
+        proverIndex = createProverIndex @f @g { endo, constraintSystem, crs }
+        verifierIndex = createVerifierIndex @f @g proverIndex
         domainLog2 = proverIndexDomainLog2 proverIndex
+        verified = verifyProverIndex @f @g { proverIndex, witness, publicInputs }
 
-        -- Create proof and get oracles
-        proof = ProofFFI.createProof { proverIndex, witness }
-        oracles = ProofFFI.proofOracles verifierIndex { proof, publicInput: publicInputs }
+      liftEffect $ log $ "[createTestContext'] domainLog2: " <> show domainLog2
+      liftEffect $ log $ "[createTestContext'] verifyProverIndex: " <> show verified
+
+      let
+        proof = createProof { proverIndex, witness }
+        proofVerified = ProofFFI.verifyOpeningProof verifierIndex { proof, publicInput: publicInputs }
+
+      liftEffect $ log $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
+
+      let oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
 
       pure { proverIndex, verifierIndex, witness, publicInputs, domainLog2, proof, oracles }
+
+-- | Create a Vesta test context using the fixed Schnorr signature.
+-- | Padded to domain 2^16 to match Pickles Step proof conventions.
+createVestaTestContext :: Aff VestaTestContext
+createVestaTestContext = createTestContext'
+  { builtState: schnorrBuiltState
+  , solver: schnorrSolver
+  , input: fixedValidSignature
+  , targetDomainLog2: 0 -- temporarily disable padding to isolate wiring issue
+  }
 
 -------------------------------------------------------------------------------
 -- | Permutation helper
@@ -276,7 +337,7 @@ computePublicEval publicInputs domainLog2 zeta =
 
 -- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
 -- | Uses fixed challenges (not proof-derived) to test gate constraint evaluation.
-gateConstraintTest :: TestContext -> Aff Unit
+gateConstraintTest :: VestaTestContext -> Aff Unit
 gateConstraintTest ctx = do
   let
     -- Fixed challenges for deterministic testing
@@ -341,7 +402,7 @@ gateConstraintTest ctx = do
   liftEffect $ psResult `shouldEqual` rustResult
 
 -- | Test that PureScript permContribution matches the oracle ft_eval0 value.
-permutationTest :: TestContext -> Aff Unit
+permutationTest :: VestaTestContext -> Aff Unit
 permutationTest ctx = do
   let
     -- Get proof evaluations
@@ -409,7 +470,7 @@ permutationTest ctx = do
 
 -- | Test that PureScript ftEval0 matches the Rust FFI value.
 -- | This validates the composition: ftEval0 = permContribution + publicEval - gateConstraints
-ftEval0Test :: TestContext -> Aff Unit
+ftEval0Test :: VestaTestContext -> Aff Unit
 ftEval0Test ctx = do
   let
     -- Get proof evaluations
@@ -484,7 +545,7 @@ ftEval0Test ctx = do
 
 -- | Circuit test for ftEval0Circuit.
 -- | Verifies the in-circuit computation matches the Rust FFI ftEval0 value.
-ftEval0CircuitTest :: TestContext -> Aff Unit
+ftEval0CircuitTest :: VestaTestContext -> Aff Unit
 ftEval0CircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -586,7 +647,7 @@ ftEval0CircuitTest ctx = do
 -- | Circuit test for combined_inner_product_correct.
 -- | Computes ftEval0 in-circuit, feeds into combinedInnerProductCircuit,
 -- | asserts result equals ctx.oracles.combinedInnerProduct.
-combinedInnerProductCorrectCircuitTest :: TestContext -> Aff Unit
+combinedInnerProductCorrectCircuitTest :: VestaTestContext -> Aff Unit
 combinedInnerProductCorrectCircuitTest ctx = do
   let
     -- Shared values used in multiple places
@@ -674,7 +735,7 @@ combinedInnerProductCorrectCircuitTest ctx = do
     [ circuitInput ]
 
 -- | Test that PureScript combinedInnerProduct matches the Rust FFI value.
-combinedInnerProductTest :: TestContext -> Aff Unit
+combinedInnerProductTest :: VestaTestContext -> Aff Unit
 combinedInnerProductTest ctx = do
   let
     -- Get proof evaluations
@@ -732,7 +793,7 @@ combinedInnerProductTest ctx = do
 -- | polyscale (v) and evalscale (u).
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (lines 946-954)
-xiCorrectTest :: TestContext -> Aff Unit
+xiCorrectTest :: VestaTestContext -> Aff Unit
 xiCorrectTest ctx = do
   let
     -- Get proof evaluations
@@ -758,7 +819,7 @@ xiCorrectTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
 
     -- Compute scalar challenges using PureScript Fr-sponge
@@ -771,7 +832,7 @@ xiCorrectTest ctx = do
 
 -- | Circuit test for xi_correct.
 -- | Replays Fr-sponge in-circuit and asserts equality with claimed xi.
-xiCorrectCircuitTest :: TestContext -> Aff Unit
+xiCorrectCircuitTest :: VestaTestContext -> Aff Unit
 xiCorrectCircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -793,7 +854,7 @@ xiCorrectCircuitTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
     pureResult = frSpongeChallengesPure spongeInput
 
@@ -813,7 +874,7 @@ xiCorrectCircuitTest ctx = do
       , witnessEvals: coerce witnessEvals
       , coeffEvals: coerce coeffEvals
       , sigmaEvals: coerce sigmaEvals
-      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in F e
       , claimedXi: coerce pureResult.rawXi -- use the verified raw challenge
       }
 
@@ -841,7 +902,7 @@ xiCorrectCircuitTest ctx = do
 -- | Circuit test for plonkChecksCircuit.
 -- | This tests the composed circuit that verifies xi, derives evalscale,
 -- | and computes combined_inner_product all in one circuit.
-plonkChecksCircuitTest :: TestContext -> Aff Unit
+plonkChecksCircuitTest :: VestaTestContext -> Aff Unit
 plonkChecksCircuitTest ctx = do
   let
     -- Get proof evaluations
@@ -865,7 +926,7 @@ plonkChecksCircuitTest ctx = do
       , witnessEvals
       , coeffEvals
       , sigmaEvals
-      , endo: endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
       }
     pureResult = frSpongeChallengesPure spongeInput
 
@@ -930,7 +991,7 @@ plonkChecksCircuitTest ctx = do
           , coeffEvals: coerce coeffEvals
           , sigmaEvals: coerce sigmaEvals
           }
-      , endo: F $ endoScalar @Vesta.BaseField @Vesta.ScalarField
+      , endo: let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in F e
       , claimedXi: coerce pureResult.rawXi -- raw 128-bit challenge
       , claimedR: coerce pureResult.rawR -- raw 128-bit challenge
       , cipInput
@@ -979,13 +1040,13 @@ plonkChecksCircuitTest ctx = do
     [ circuitInput ]
 
 -- | Test that the opening proof verifies.
-openingProofTest :: TestContext -> Aff Unit
+openingProofTest :: VestaTestContext -> Aff Unit
 openingProofTest ctx = do
   let verified = ProofFFI.verifyOpeningProof ctx.verifierIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
   liftEffect $ verified `shouldEqual` true
 
 -- | Test that PureScript computeB matches the Rust FFI computeB0.
-computeBTest :: TestContext -> Aff Unit
+computeBTest :: VestaTestContext -> Aff Unit
 computeBTest ctx = do
   let
     -- Get bulletproof challenges from the proof
@@ -1020,7 +1081,7 @@ computeBTest ctx = do
 
 -- | Test that IPA rounds matches the bulletproof challenges length.
 -- | Note: IPA rounds depends on SRS size, not circuit domain size.
-ipaRoundsTest :: TestContext -> Aff Unit
+ipaRoundsTest :: VestaTestContext -> Aff Unit
 ipaRoundsTest ctx = do
   let
     -- Get IPA rounds from the proof
@@ -1040,7 +1101,7 @@ ipaRoundsTest ctx = do
 
 -- | Test that bCorrectCircuit verifies using Rust-provided values.
 -- | Uses circuitSpec infrastructure to verify constraint satisfaction.
-bCorrectCircuitTest :: TestContext -> Aff Unit
+bCorrectCircuitTest :: VestaTestContext -> Aff Unit
 bCorrectCircuitTest ctx = do
   let
     { challenges, omega } = mkIpaTestContext ctx
@@ -1085,7 +1146,7 @@ bCorrectCircuitTest ctx = do
 -- | Circuit runs over Pallas.ScalarField (Fq) where the sponge operates.
 -- | Extracts 128-bit scalar challenges, verifies circuit matches pure sponge,
 -- | and validates endo-mapped values match Rust.
-extractChallengesCircuitTest :: TestContext -> Aff Unit
+extractChallengesCircuitTest :: VestaTestContext -> Aff Unit
 extractChallengesCircuitTest ctx = do
   let
     { spongeState, challenges: rustChallenges } = mkIpaTestContext ctx
@@ -1134,7 +1195,7 @@ extractChallengesCircuitTest ctx = do
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
 -- | Extracts 128-bit scalar challenges, computes lr_prod, and verifies
 -- | result matches Rust FFI.
-bulletReduceCircuitTest :: TestContext -> Aff Unit
+bulletReduceCircuitTest :: VestaTestContext -> Aff Unit
 bulletReduceCircuitTest ctx = do
   let
     { spongeState } = mkIpaTestContext ctx
@@ -1184,7 +1245,7 @@ bulletReduceCircuitTest ctx = do
 
 -- | In-circuit test for IPA final check.
 -- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
-ipaFinalCheckCircuitTest :: TestContext -> Aff Unit
+ipaFinalCheckCircuitTest :: VestaTestContext -> Aff Unit
 ipaFinalCheckCircuitTest ctx = do
   let
     { challenges, spongeState, combinedPolynomial, omega } = mkIpaTestContext ctx
@@ -1236,7 +1297,7 @@ ipaFinalCheckCircuitTest ctx = do
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
 -- | Also tests scaleFast1 with z1 and the generator point.
-debugVerifyTest :: TestContext -> Aff Unit
+debugVerifyTest :: VestaTestContext -> Aff Unit
 debugVerifyTest ctx = do
   let
     _ = ProofFFI.pallasDebugVerify ctx.verifierIndex
@@ -1297,7 +1358,7 @@ debugVerifyTest ctx = do
 
 -- | Full bulletproof check test: composes sponge transcript → checkBulletproof.
 -- | Tests the "right half" of incrementallyVerifyProof.
-checkBulletproofTest :: TestContext -> Aff Unit
+checkBulletproofTest :: VestaTestContext -> Aff Unit
 checkBulletproofTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -1452,7 +1513,7 @@ type IPATestContext =
   , omega :: Vesta.ScalarField
   }
 
-mkIpaTestContext :: TestContext -> IPATestContext
+mkIpaTestContext :: VestaTestContext -> IPATestContext
 mkIpaTestContext ctx =
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -1514,7 +1575,7 @@ mkIpaTestContext ctx =
 -- | Full incrementallyVerifyProof circuit test.
 -- | Wires together publicInputCommitment, sponge transcript, ftComm, and
 -- | checkBulletproof in a single circuit and verifies satisfiability.
-incrementallyVerifyProofTest :: TestContext -> Aff Unit
+incrementallyVerifyProofTest :: VestaTestContext -> Aff Unit
 incrementallyVerifyProofTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -1665,7 +1726,7 @@ incrementallyVerifyProofTest ctx = do
 
 -- | Full verify circuit test.
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
-verifyTest :: TestContext -> Aff Unit
+verifyTest :: VestaTestContext -> Aff Unit
 verifyTest ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -1821,7 +1882,7 @@ verifyTest ctx = do
 -------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createTestContext $
+spec = beforeAll createVestaTestContext $
   describe "E2E Schnorr Circuit" do
     it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
     it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest

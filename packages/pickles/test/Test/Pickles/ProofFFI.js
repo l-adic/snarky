@@ -366,6 +366,41 @@ export const vestaVerifierIndexColumnComms = (verifierIndex) => {
   return result;
 };
 
+// ft_comm: the chunked commitment of the linearized constraint polynomial (Vesta/Fq circuits)
+// Returns { x, y } coordinates in Fp
+export const vestaFtComm = (verifierIndex) => ({ proof, publicInput }) => {
+  const coords = crypto.vestaFtComm(verifierIndex, proof, publicInput);
+  return { x: coords[0], y: coords[1] };
+};
+
+// perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization (Vesta/Fq circuits)
+// Returns a single Fq element
+export const vestaPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaPermScalar(verifierIndex, proof, publicInput);
+
+// sigma_comm[PERMUTS-1]: the last sigma commitment from Vesta verifier index
+// Returns { x, y } coordinates in Fp
+export const vestaSigmaCommLast = (verifierIndex) => {
+  const coords = crypto.vestaVerifierIndexSigmaCommLast(verifierIndex);
+  return { x: coords[0], y: coords[1] };
+};
+
+// Verifier index digest for Vesta/Fq circuits
+// Returns a single Fp element (Vesta.ScalarField)
+export const vestaVerifierIndexDigest = (verifierIndex) =>
+  crypto.vestaVerifierIndexDigest(verifierIndex);
+
+// Proof commitments from a Pallas proof (Vesta/Fq circuits)
+export const vestaProofCommitments = (proof) => {
+  const flat = crypto.vestaProofCommitments(proof);
+  const wComm = [];
+  for (let i = 0; i < 30; i += 2) wComm.push({ x: flat[i], y: flat[i+1] });
+  const zComm = { x: flat[30], y: flat[31] };
+  const tComm = [];
+  for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
+  return { wComm, zComm, tComm };
+};
+
 // Proof commitments: w_comm (15 points), z_comm (1 point), t_comm (1+ points)
 export const pallasProofCommitments = (proof) => {
   const flat = crypto.pallasProofCommitments(proof);

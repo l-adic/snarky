@@ -49,9 +49,7 @@ ftComm
   :: forall numChunks n1 f t m sf r
    . CircuitM f (KimchiConstraint f) t m
   => Add 1 n1 numChunks
-  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-     | r
-     }
+  => { scaleByShifted :: AffinePoint (FVar f) -> sf -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f)) | r }
   -> { sigmaLast :: AffinePoint (FVar f)
      , tComm :: Vector numChunks (AffinePoint (FVar f))
      , perm :: sf

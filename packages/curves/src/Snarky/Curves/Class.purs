@@ -39,6 +39,8 @@ module Snarky.Curves.Class
   , generator
   , class FieldSizeInBits
   , fromInt
+  , EndoBase(..)
+  , EndoScalar(..)
   , class HasEndo
   , endoBase
   , endoScalar
@@ -115,11 +117,16 @@ class (PrimeField f, Reflectable n Int) <= FieldSizeInBits f (n :: Int) | f -> n
 -- |
 -- | This enables faster scalar multiplication via the GLV decomposition.
 -- | The two field types form a 2-cycle (e.g., Pallas/Vesta scalar fields).
+
+newtype EndoBase f = EndoBase f
+
+newtype EndoScalar f = EndoScalar f
+
 class (PrimeField f, PrimeField f') <= HasEndo f f' | f -> f', f' -> f where
   -- | The endomorphism constant for x-coordinates.
-  endoBase :: f
+  endoBase :: EndoBase f
   -- | The scalar λ such that φ(P) = [λ]P.
-  endoScalar :: f'
+  endoScalar :: EndoScalar f'
 
 -- | Square root operations in a prime field.
 -- |

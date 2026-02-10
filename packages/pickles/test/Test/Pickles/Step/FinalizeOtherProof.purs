@@ -31,10 +31,10 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky,
 import Snarky.Circuit.Kimchi (Type1, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (endoScalar, pow)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.E2E (computePublicEval, createTestContext, mkIpaTestContext) as E2E
+import Test.Pickles.E2E (computePublicEval, createVestaTestContext, mkIpaTestContext) as E2E
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
@@ -86,7 +86,11 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
         => FinalizeOtherProofTestInputVar
         -> Snarky (KimchiConstraint StepField) t Identity Unit
       dummyTestCircuit x =
-        void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit dummyFinalizeOtherProofParams x)
+        let
+          ops :: IPA.IpaScalarOps StepField t Identity (Type1 (FVar StepField))
+          ops = IPA.type1ScalarOps
+        in
+          void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x)
 
     circuitSpecPureInputs
       { builtState: compilePure
@@ -114,9 +118,9 @@ type TestContext =
 
 createTestContext :: Aff TestContext
 createTestContext = do
-  ctx <- E2E.createTestContext
+  ctx <- E2E.createVestaTestContext
   let
-    endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
+    EndoScalar endo = endoScalar @Vesta.BaseField @Vesta.ScalarField
 
     ---------------------------------------------------------------------------
     -- Proof polynomial evaluations
@@ -309,7 +313,10 @@ realDataSpec = beforeAll createTestContext $
           => FinalizeOtherProofTestInputVar
           -> Snarky (KimchiConstraint StepField) t Identity Unit
         circuit x = do
-          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit params x)
+          let
+            ops :: IPA.IpaScalarOps StepField t Identity (Type1 (FVar StepField))
+            ops = IPA.type1ScalarOps
+          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
       circuitSpecPureInputs

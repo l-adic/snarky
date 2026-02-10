@@ -21,6 +21,7 @@ import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
+import Pickles.IPA (IpaScalarOps, type1ScalarOps)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -108,7 +109,8 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams schnorrAppCircuit input
+  let ops = (type1ScalarOps :: IpaScalarOps StepField t Identity (Type1 (FVar StepField)))
+  _ <- stepCircuit ops dummyFinalizeOtherProofParams schnorrAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------

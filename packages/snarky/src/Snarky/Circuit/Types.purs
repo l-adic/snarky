@@ -96,7 +96,7 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar, Variable)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, modulus, pow, toBigInt)
 import Test.QuickCheck (class Arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -130,8 +130,16 @@ derive newtype instance EuclideanRing f => EuclideanRing (F f)
 derive newtype instance CommutativeRing f => CommutativeRing (F f)
 derive newtype instance DivisionRing f => DivisionRing (F f)
 instance HasEndo f f' => HasEndo (F f) (F f') where
-  endoBase = coerce (endoBase :: f)
-  endoScalar = coerce (endoScalar :: f')
+  endoBase =
+    let
+      EndoBase f = endoBase @f @f'
+    in
+      EndoBase (F f)
+  endoScalar =
+    let
+      EndoScalar f = endoScalar @f @f'
+    in
+      EndoScalar (F f)
 
 derive instance Newtype (F f) _
 derive instance Generic (F f) _

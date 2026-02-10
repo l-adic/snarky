@@ -450,7 +450,7 @@ mod generic {
         let _u = fq_sponge.challenge_fq();
 
         // Get the challenges using the endomorphism coefficient
-        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+        let challenges = proof.proof.challenges(&G::endos().1, &mut fq_sponge);
 
         Ok(BulletproofChallengeData {
             challenges: challenges.chal,
@@ -537,7 +537,7 @@ mod generic {
 
         // Get the challenges using the endomorphism coefficient
         // This returns Challenges { chal, chal_inv }
-        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+        let challenges = proof.proof.challenges(&G::endos().1, &mut fq_sponge);
 
         // Compute lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
         let lr_pairs = &proof.proof.lr;
@@ -790,7 +790,7 @@ mod generic {
         }
 
         // Get challenges
-        let challenges = proof.proof.challenges(&verifier_index.endo, &mut fq_sponge);
+        let challenges = proof.proof.challenges(&G::endos().1, &mut fq_sponge);
         eprintln!(
             "IPA challenges (first 3): {:?}",
             &challenges.chal[..3.min(challenges.chal.len())]
@@ -798,8 +798,8 @@ mod generic {
 
         // Absorb delta, get c
         fq_sponge.absorb_g(&[proof.proof.delta]);
-        let c = mina_poseidon::sponge::ScalarChallenge(fq_sponge.challenge())
-            .to_field(&verifier_index.endo);
+        let c =
+            mina_poseidon::sponge::ScalarChallenge(fq_sponge.challenge()).to_field(&G::endos().1);
         eprintln!("c (final challenge): {c:?}");
 
         // Compute b0
@@ -2283,6 +2283,52 @@ pub fn pallas_verifier_index_sigma_comm_last(
     verifier_index: &PallasVerifierIndexExternal,
 ) -> Vec<PallasFieldExternal> {
     generic::verifier_index_sigma_comm_last::<VestaGroup>(&**verifier_index)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Compute ft_comm for a Pallas proof (Vesta/Fq circuits).
+/// Returns [x, y] coordinates in Fp (Vesta.ScalarField).
+#[napi]
+pub fn vesta_ft_comm(
+    verifier_index: &VestaVerifierIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::ft_comm::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )
+    .map(|coords| coords.into_iter().map(External::new).collect())
+}
+
+/// Compute perm_scalar for a Pallas proof (Vesta/Fq circuits).
+/// Returns a single Fq element (Pallas.ScalarField).
+#[napi]
+pub fn vesta_perm_scalar(
+    verifier_index: &VestaVerifierIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<PallasFieldExternal> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    generic::perm_scalar::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )
+    .map(External::new)
+}
+
+/// Get sigma_comm[PERMUTS-1] from a Vesta verifier index.
+/// Returns [x, y] coordinates in Fp (Vesta.ScalarField).
+#[napi]
+pub fn vesta_verifier_index_sigma_comm_last(
+    verifier_index: &VestaVerifierIndexExternal,
+) -> Vec<VestaFieldExternal> {
+    generic::verifier_index_sigma_comm_last::<PallasGroup>(&**verifier_index)
         .into_iter()
         .map(External::new)
         .collect()
