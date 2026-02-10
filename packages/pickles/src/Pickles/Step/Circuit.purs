@@ -29,7 +29,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
-import Pickles.Step.Types (BulletproofChallenges, UnfinalizedProof)
+import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, not_, or_)

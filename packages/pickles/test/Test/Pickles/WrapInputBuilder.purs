@@ -21,7 +21,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.IPA as IPA
 import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
+import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, toField, wrapF)
 import Snarky.Circuit.Kimchi (Type1, toShifted)

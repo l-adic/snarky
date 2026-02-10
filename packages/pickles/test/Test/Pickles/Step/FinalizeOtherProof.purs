@@ -24,7 +24,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
-import Pickles.Step.Types (BulletproofChallenges)
+import Pickles.Verify.Types (BulletproofChallenges)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, toField, wrapF)
