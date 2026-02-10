@@ -9,5 +9,6 @@ package:
     - maybe
     - partial
     - prelude
+    - quickcheck
     - tuples
     - unfoldable
