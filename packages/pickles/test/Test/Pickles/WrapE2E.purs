@@ -32,7 +32,7 @@ import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.E2E (VestaTestContext, createTestContext', createVestaTestContext)
-import Test.Pickles.WrapInputBuilder (WrapCircuitInput, buildWrapCircuitInput, buildWrapCircuitParams)
+import Test.Pickles.WrapInputBuilder (WrapCircuitInput, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -46,6 +46,7 @@ wrapCircuitSatisfiableTest :: VestaTestContext -> Aff Unit
 wrapCircuitSatisfiableTest ctx = do
   let
     params = buildWrapCircuitParams ctx
+    claimedDigest = buildWrapClaimedDigest ctx
     circuitInput = buildWrapCircuitInput ctx
 
     circuit
@@ -53,7 +54,7 @@ wrapCircuitSatisfiableTest ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
       => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
-    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
+    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
   circuitSpecPureInputs
     { builtState: compilePure
@@ -74,6 +75,7 @@ wrapProofCreationTest :: VestaTestContext -> Aff Unit
 wrapProofCreationTest ctx = do
   let
     params = buildWrapCircuitParams ctx
+    claimedDigest = buildWrapClaimedDigest ctx
     circuitInput = buildWrapCircuitInput ctx
 
     circuit
@@ -81,7 +83,7 @@ wrapProofCreationTest ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
       => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
-    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
+    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
     builtState = compilePure
       (Proxy @WrapCircuitInput)
