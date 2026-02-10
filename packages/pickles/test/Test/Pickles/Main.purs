@@ -9,6 +9,7 @@ import Effect.Aff (Aff)
 import Test.Pickles.CombinedPolyComm as CombinedPolyComm
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.E2E as E2E
+import Test.Pickles.FFIValidation as FFIValidation
 import Test.Pickles.FtComm as FtComm
 import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
@@ -30,6 +31,7 @@ main = runSpecAndExitProcess'
   { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
   [ consoleReporter ]
   do
+    FFIValidation.spec
     E2E.spec
     WrapE2E.spec
     FtComm.spec

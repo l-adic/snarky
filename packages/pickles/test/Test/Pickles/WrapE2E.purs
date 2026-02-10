@@ -31,7 +31,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.E2E (VestaTestContext, createTestContext', createVestaTestContext)
+import Test.Pickles.TestContext (VestaTestContext, createTestContext', createVestaTestContext)
 import Test.Pickles.WrapInputBuilder (WrapCircuitInput, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)

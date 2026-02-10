@@ -23,7 +23,7 @@ import Snarky.Curves.Class (curveParams, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.E2E as E2E
+import Test.Pickles.TestContext as E2E
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)

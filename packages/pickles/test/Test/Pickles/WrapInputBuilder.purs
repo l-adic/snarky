@@ -30,7 +30,7 @@ import Snarky.Curves.Class (curveParams, fromBigInt, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.E2E (VestaTestContext, mkIpaTestContext)
+import Test.Pickles.TestContext (VestaTestContext, mkIpaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
 import Type.Proxy (Proxy(..))
 

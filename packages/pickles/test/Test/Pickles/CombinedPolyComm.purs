@@ -22,7 +22,7 @@ import Snarky.Curves.Class (fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.E2E (VestaTestContext, createVestaTestContext)
+import Test.Pickles.TestContext (VestaTestContext, createVestaTestContext)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
