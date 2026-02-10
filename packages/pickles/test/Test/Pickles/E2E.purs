@@ -286,8 +286,10 @@ createTestContext' { builtState, solver, input, targetDomainLog2 } = do
         proof = createProof { proverIndex, witness }
         proofVerified = ProofFFI.verifyOpeningProof verifierIndex { proof, publicInput: publicInputs }
 
-      liftEffect $ unless proofVerified $ 
-        throwError $ error $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
+      liftEffect $ unless proofVerified
+        $ throwError
+        $ error
+        $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
 
       let oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
 

@@ -23,8 +23,8 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (mkLinearizationPoly)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, toShifted)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
