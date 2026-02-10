@@ -19,6 +19,7 @@ import Test.Pickles.Step as Step
 import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.Step.FqSpongeTranscript as FqSpongeTranscript
 import Test.Pickles.StepE2E as StepE2E
+import Test.Pickles.WrapE2E as WrapE2E
 import Test.Spec (mapSpec)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -30,6 +31,7 @@ main = runSpecAndExitProcess'
   [ consoleReporter ]
   do
     E2E.spec
+    WrapE2E.spec
     FtComm.spec
     CombinedPolyComm.spec
     FinalizeOtherProofE2E.realDataSpec

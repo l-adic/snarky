@@ -17,7 +17,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
-import Pickles.Step.Types (BulletproofChallenges)
+import Pickles.Verify.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)

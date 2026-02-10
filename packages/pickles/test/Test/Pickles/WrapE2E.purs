@@ -1,0 +1,128 @@
+module Test.Pickles.WrapE2E
+  ( spec
+  ) where
+
+-- | End-to-end tests for the Wrap circuit.
+-- |
+-- | The Wrap circuit runs on Pallas.ScalarField (Fq) and verifies
+-- | a Step proof (Vesta commitments) via incrementallyVerifyProof.
+-- |
+-- | This module:
+-- | 1. Reuses the Schnorr Step proof from E2E
+-- | 2. Constructs WrapCircuitInput from the Step proof + oracles
+-- | 3. Runs the Wrap circuit for satisfiability
+-- | 4. Generates an actual Wrap proof (Pallas proof)
+
+import Prelude
+
+import Data.Array as Array
+import Data.Identity (Identity)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Effect.Console (log)
+import Pickles.IPA (type1ScalarOps)
+import Pickles.Verify (IncrementallyVerifyProofInput)
+import Pickles.Wrap.Circuit (wrapCircuit)
+import Snarky.Backend.Compile (Solver, compilePure, makeSolver)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.Kimchi (Type1, groupMapParams)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Vesta as Vesta
+import Test.Pickles.E2E (VestaTestContext, createTestContext', createVestaTestContext)
+import Test.Pickles.WrapInputBuilder (WrapCircuitInput, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest)
+import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Spec (SpecT, beforeAll, describe, it)
+import Type.Proxy (Proxy(..))
+
+-------------------------------------------------------------------------------
+-- | Tests
+-------------------------------------------------------------------------------
+
+-- | Test that the Wrap circuit is satisfiable with real Step proof data.
+wrapCircuitSatisfiableTest :: VestaTestContext -> Aff Unit
+wrapCircuitSatisfiableTest ctx = do
+  let
+    params = buildWrapCircuitParams ctx
+    claimedDigest = buildWrapClaimedDigest ctx
+    circuitInput = buildWrapCircuitInput ctx
+
+    circuit
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
+      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
+    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @WrapCircuitInput)
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Pallas.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
+
+-- | Test that we can create a real Wrap proof (Pallas proof).
+wrapProofCreationTest :: VestaTestContext -> Aff Unit
+wrapProofCreationTest ctx = do
+  let
+    params = buildWrapCircuitParams ctx
+    claimedDigest = buildWrapClaimedDigest ctx
+    circuitInput = buildWrapCircuitInput ctx
+
+    circuit
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
+      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
+    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
+
+    builtState = compilePure
+      (Proxy @WrapCircuitInput)
+      (Proxy @Unit)
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      circuit
+      Kimchi.initialState
+
+    solver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) WrapCircuitInput Unit
+    solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+
+  -- Log circuit size information
+  let
+    kimchiRows :: Array (KimchiRow Pallas.ScalarField)
+    kimchiRows = Array.concatMap
+      (toKimchiRows :: KimchiGate Pallas.ScalarField -> Array (KimchiRow Pallas.ScalarField))
+      builtState.constraints
+  liftEffect $ log $ "[Wrap] Step proof domainLog2: " <> show ctx.domainLog2
+  liftEffect $ log $ "[Wrap] Circuit gates (high-level): " <> show (Array.length builtState.constraints)
+  liftEffect $ log $ "[Wrap] Kimchi rows (expanded): " <> show (Array.length kimchiRows)
+  liftEffect $ log $ "[Wrap] Public inputs: " <> show (Array.length builtState.publicInputs)
+
+  -- Create a test context which compiles the circuit, generates witness, and creates a Pallas proof
+  -- Wrap proofs use domain 2^15 in Pickles.
+  _pallasCtx <- createTestContext'
+    { builtState
+    , solver
+    , input: circuitInput
+    , targetDomainLog2: 15
+    }
+  -- If we get here without error, the proof was created successfully
+  pure unit
+
+-------------------------------------------------------------------------------
+-- | Spec
+-------------------------------------------------------------------------------
+
+spec :: SpecT Aff Unit Aff Unit
+spec = beforeAll createVestaTestContext $
+  describe "Wrap E2E" do
+    it "Wrap circuit satisfiable on real Step proof" wrapCircuitSatisfiableTest
+    it "Wrap proof creation succeeds" wrapProofCreationTest

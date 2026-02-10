@@ -1,20 +1,15 @@
--- | Core types for the Pickles Step circuit.
+-- | Core types for Pickles proof verification.
 -- |
--- | The Step circuit combines an application circuit with verification of
--- | previous Wrap proofs. These types define the deferred values and unfinalized
--- | proof structures used in this verification.
+-- | These types are shared between Step and Wrap circuits. They define the
+-- | deferred values and unfinalized proof structures used in verification.
 -- |
 -- | Key sizes (Pasta curves):
 -- | - 16 IPA rounds (bulletproof challenges)
 -- | - 128-bit scalar challenges
 -- | - 255-bit field elements
 -- |
--- | Step circuit runs on Vesta.ScalarField (= Pallas.BaseField = Fp).
--- | It verifies Wrap proofs which run on Pallas.ScalarField (= Vesta.BaseField = Fq).
--- | Since |Fq| < |Fp|, we use Type1 shifted values.
--- |
 -- | Reference: mina/src/lib/pickles/unfinalized.ml, composition_types.ml
-module Pickles.Step.Types
+module Pickles.Verify.Types
   ( -- * Bulletproof Challenges
     BulletproofChallenges
   , ScalarChallenge

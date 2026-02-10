@@ -36,7 +36,7 @@ import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Effect.Aff (Aff, error)
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Effect.Exception (error)
@@ -59,8 +59,8 @@ import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution, perm
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.FqSpongeTranscript (FqSpongeInput, spongeTranscriptCircuit, spongeTranscriptPure)
-import Pickles.Step.IncrementallyVerifyProof (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
+import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
+import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptCircuit, spongeTranscriptPure)
 import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -286,7 +286,10 @@ createTestContext' { builtState, solver, input, targetDomainLog2 } = do
         proof = createProof { proverIndex, witness }
         proofVerified = ProofFFI.verifyOpeningProof verifierIndex { proof, publicInput: publicInputs }
 
-      liftEffect $ log $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
+      liftEffect $ unless proofVerified
+        $ throwError
+        $ error
+        $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
 
       let oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
 
@@ -299,7 +302,7 @@ createVestaTestContext = createTestContext'
   { builtState: schnorrBuiltState
   , solver: schnorrSolver
   , input: fixedValidSignature
-  , targetDomainLog2: 0 -- temporarily disable padding to isolate wiring issue
+  , targetDomainLog2: 16
   }
 
 -------------------------------------------------------------------------------

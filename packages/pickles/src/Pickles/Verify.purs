@@ -1,6 +1,6 @@
 -- | Wire together the component circuits for incrementallyVerifyProof.
 -- |
--- | This is the core Step verifier circuit that:
+-- | This is the core verifier circuit, shared by both Step and Wrap:
 -- |   1. Computes x_hat (public input commitment)
 -- |   2. Runs the Fq-sponge transcript (derives alpha/beta/gamma/zeta)
 -- |   3. Asserts deferred values match sponge output
@@ -8,7 +8,7 @@
 -- |   5. Runs checkBulletproof
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml:484-626
-module Pickles.Step.IncrementallyVerifyProof
+module Pickles.Verify
   ( IncrementallyVerifyProofParams
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
@@ -30,8 +30,8 @@ import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, IpaScalarOps, checkBulletproof)
 import Pickles.PublicInputCommitment (publicInputCommitment)
 import Pickles.Sponge (SpongeM, liftSnarky)
-import Pickles.Step.FqSpongeTranscript (spongeTranscriptCircuit)
-import Pickles.Step.Types (BulletproofChallenges, DeferredValues)
+import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_)
@@ -87,7 +87,7 @@ type IncrementallyVerifyProofOutput f =
 -- | Circuit
 -------------------------------------------------------------------------------
 
--- | The core step verifier circuit.
+-- | The core verifier circuit.
 -- |
 -- | Wires together publicInputCommitment, spongeTranscript, ftComm, and
 -- | checkBulletproof. Asserts deferred values match sponge output.
