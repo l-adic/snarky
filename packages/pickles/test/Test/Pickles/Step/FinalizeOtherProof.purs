@@ -29,7 +29,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.StepInputBuilder (buildFinalizeInput, buildFinalizeParams)
-import Test.Pickles.WrapProofContext (createWrapProofContext)
+import Test.Pickles.TestContext (createWrapProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))

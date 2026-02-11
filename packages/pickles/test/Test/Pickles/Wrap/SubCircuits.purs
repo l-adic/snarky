@@ -24,13 +24,11 @@ import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
-import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit, spongeTranscriptPure)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
-import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, wrapF)
-import Snarky.Circuit.Kimchi (Type1(..), Type1, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (curveParams, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)

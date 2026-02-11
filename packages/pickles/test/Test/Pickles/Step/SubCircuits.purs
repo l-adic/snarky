@@ -35,8 +35,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, mkStepIpaContext, zkRows)
-import Test.Pickles.WrapProofContext (createWrapProofContext, mkWrapIpaContext)
+import Test.Pickles.TestContext (StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)

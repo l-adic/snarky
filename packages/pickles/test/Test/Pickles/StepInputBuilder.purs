@@ -42,8 +42,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow, toBigIn
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (WrapProofContext, computePublicEval)
-import Test.Pickles.WrapProofContext (mkWrapIpaContext)
+import Test.Pickles.TestContext (WrapProofContext, computePublicEval, mkWrapIpaContext)
 
 -------------------------------------------------------------------------------
 -- | Types
