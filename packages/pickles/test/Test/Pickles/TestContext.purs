@@ -11,7 +11,6 @@ module Test.Pickles.TestContext
   , schnorrBuiltState
   , schnorrCircuit
   , schnorrSolver
-  , fixedValidSignature
   , padToMinDomain
   , pow2
   , zeroRow
@@ -30,7 +29,7 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Morph (hoist)
-import Data.Array (concatMap, (:))
+import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
@@ -38,8 +37,7 @@ import Data.Foldable (foldl)
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
-import Data.Schnorr (isEven, truncateFieldCoerce)
-import Data.Schnorr.Gen (VerifyInput)
+import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -59,7 +57,6 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Wrap.Circuit (wrapCircuit)
-import Poseidon as Poseidon
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
@@ -69,7 +66,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, coerceViaBits, const_, toField, wrapF)
-import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fieldSizeBits, toShifted)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -77,12 +74,14 @@ import Snarky.Constraint.Kimchi (initialState) as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Constraint.Kimchi.Types (GateKind(..)) as GateKind
-import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), curveParams, endoBase, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), curveParams, endoBase, fromBigInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.QuickCheck.Gen (randomSampleOne)
 import Type.Proxy (Proxy(..))
 
 -- | Standard Kimchi constants
@@ -144,62 +143,6 @@ type StepProofContext = TestContext' Vesta.ScalarField Vesta.G
 
 -- | Test context for Fq circuits producing Pallas proofs (wrap side).
 type WrapProofContext = TestContext' Pallas.ScalarField Pallas.G
-
--- | Create a fixed valid Schnorr signature for deterministic testing.
--- | Uses constant private key and message to ensure reproducible results.
-fixedValidSignature :: VerifyInput 4 (F Vesta.ScalarField)
-fixedValidSignature =
-  let
-    -- Fixed private key (arbitrary non-zero scalar)
-    privateKey :: Pallas.ScalarField
-    privateKey = fromBigInt (BigInt.fromInt 12345)
-
-    -- Fixed message (4 field elements)
-    message :: Vector 4 Vesta.ScalarField
-    message = unsafePartial $ fromJust $ Vector.toVector
-      [ fromBigInt (BigInt.fromInt 1)
-      , fromBigInt (BigInt.fromInt 2)
-      , fromBigInt (BigInt.fromInt 3)
-      , fromBigInt (BigInt.fromInt 4)
-      ]
-
-    -- Compute public key = privateKey * generator
-    publicKey :: AffinePoint Vesta.ScalarField
-    publicKey = unsafePartial fromJust $ toAffine $ scalarMul privateKey (generator @_ @Pallas.G)
-
-    -- Compute k' = H(pk.x, pk.y, message)
-    kPrimeBase = Poseidon.hash $ publicKey.x : publicKey.y : Vector.toUnfoldable message
-
-    kPrime :: Pallas.ScalarField
-    kPrime = truncateFieldCoerce kPrimeBase
-
-    -- R = k' * G
-    { x: r, y: ry } = unsafePartial fromJust $ toAffine $ scalarMul kPrime (generator @_ @Pallas.G)
-
-    -- Adjust k for even y coordinate
-    k = if isEven ry then kPrime else negate kPrime
-
-    -- e = H(pk.x, pk.y, r, message)
-    eBase = Poseidon.hash $ publicKey.x : publicKey.y : r : Vector.toUnfoldable message
-
-    -- The circuit uses scaleFast2' which computes [value + 2^n] * base.
-    -- For Schnorr: [s + 2^n]*G - [e + 2^n]*Pk = k*G
-    -- So: s = k + (e + 2^n)*d - 2^n
-    n = fieldSizeBits (Proxy @Vesta.ScalarField)
-
-    twoToN :: Pallas.ScalarField
-    twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
-
-    e :: Pallas.ScalarField
-    e = fromBigInt (toBigInt eBase) + twoToN
-
-    s :: Pallas.ScalarField
-    s = k + e * privateKey - twoToN
-  in
-    { signature: { r: F r, s: F $ fromBigInt $ toBigInt s }
-    , publicKey: { x: F publicKey.x, y: F publicKey.y }
-    , message: map F message
-    }
 
 -- | Integer power of 2.
 pow2 :: Int -> Int
@@ -297,12 +240,14 @@ createTestContext' { builtState, solver, input, targetDomainLog2 } = do
 -- | Create a Vesta test context using the fixed Schnorr signature.
 -- | Padded to domain 2^16 to match Pickles Step proof conventions.
 createStepProofContext :: Aff StepProofContext
-createStepProofContext = createTestContext'
-  { builtState: schnorrBuiltState
-  , solver: schnorrSolver
-  , input: fixedValidSignature
-  , targetDomainLog2: 16
-  }
+createStepProofContext = do
+  input <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
+  createTestContext'
+    { builtState: schnorrBuiltState
+    , solver: schnorrSolver
+    , input
+    , targetDomainLog2: 16
+    }
 
 -------------------------------------------------------------------------------
 -- | Permutation helper

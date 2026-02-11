@@ -16,6 +16,7 @@ import Test.Pickles.MultiscaleKnown as MultiscaleKnown
 import Test.Pickles.Permutation as Permutation
 import Test.Pickles.PublicInputCommitment as PublicInputCommitment
 import Test.Pickles.Step as Step
+import Test.Pickles.Step.Circuit as StepCircuit
 import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.Step.FqSpongeTranscript as FqSpongeTranscript
 import Test.Pickles.Step.SubCircuits as StepSubCircuits
@@ -39,6 +40,7 @@ main = runSpecAndExitProcess'
     FtComm.spec
     CombinedPolyComm.spec
     FinalizeOtherProofE2E.realDataSpec
+    StepCircuit.realDataSpec
     FqSpongeTranscript.spec
     PublicInputCommitment.spec
     mapSpec nat do

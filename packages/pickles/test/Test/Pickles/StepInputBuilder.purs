@@ -30,7 +30,7 @@ import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
-import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
+import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.Sponge (evalPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
@@ -104,8 +104,8 @@ buildFinalizeParams wrapCtx =
 -- |
 -- | Follows the WrapInputBuilder.buildWrapCircuitInput pattern but in the
 -- | reverse direction (Fq→Fp instead of Fp→Fq).
-buildFinalizeInput :: WrapProofContext -> FinalizeOtherProofTestInput
-buildFinalizeInput wrapCtx =
+buildFinalizeInput :: { prevChallengeDigest :: StepField, wrapCtx :: WrapProofContext } -> FinalizeOtherProofTestInput
+buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
   let
     -----------------------------------------------------------------------
     -- Step 1: Coerce sponge digest
@@ -162,7 +162,7 @@ buildFinalizeInput wrapCtx =
     frInput :: FrSpongeInput StepField
     frInput =
       { fqDigest: spongeDigest
-      , prevChallengeDigest: emptyPrevChallengeDigest
+      , prevChallengeDigest: prevChallengeDigest_
       , ftEval1
       , publicEvals
       , zEvals
@@ -325,7 +325,7 @@ buildFinalizeInput wrapCtx =
             }
         , publicEvalForFt: F publicEvalForFt
         }
-    , prevChallengeDigest: F (emptyPrevChallengeDigest :: StepField)
+    , prevChallengeDigest: F prevChallengeDigest_
     }
 
 -------------------------------------------------------------------------------

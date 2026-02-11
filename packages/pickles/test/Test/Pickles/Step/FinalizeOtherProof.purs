@@ -18,6 +18,7 @@ import Prelude
 import Data.Identity (Identity)
 import Effect.Aff (Aff)
 import Pickles.IPA as IPA
+import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
@@ -106,7 +107,7 @@ createFinalizeOtherProofTestContext = do
   wrapCtx <- createWrapProofContext
   let
     params = buildFinalizeParams wrapCtx
-    input = buildFinalizeInput wrapCtx
+    input = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
   pure { params, input }
 
 realDataSpec :: SpecT Aff Unit Aff Unit
