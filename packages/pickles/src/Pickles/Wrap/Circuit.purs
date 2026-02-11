@@ -12,17 +12,15 @@ module Pickles.Wrap.Circuit
 
 import Prelude
 
-import Data.Identity (Identity)
 import Data.Reflectable (class Reflectable)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, verify)
-import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assert_, const_, false_)
-import Snarky.Circuit.Kimchi (GroupMapParams)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (VestaG)
 
 -- | The Wrap circuit: verifies a Step proof via IPA.
 -- |
@@ -34,30 +32,16 @@ import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo
 -- | The claimedDigest comes from the Step proof's Fq-sponge state.
 -- | All fields in the input are private witness data.
 wrapCircuit
-  :: forall @nChunks nPublic sgOldN f f' @g sf t bitsUsed sDiv2Bits _l _l2
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => PoseidonField f
-  => HasEndo f f'
-  => HasSqrt f
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => CircuitM f (KimchiConstraint f) t Identity
-  => Add bitsUsed _l 255
-  => Add sDiv2Bits 1 255
-  => Mul 5 nChunks bitsUsed
-  => Reflectable sDiv2Bits Int
-  => Reflectable bitsUsed Int
+  :: forall nPublic sgOldN t m
+   . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
   => Reflectable nPublic Int
-  => Add 1 _l2 7
-  => IpaScalarOps f t Identity sf
-  -> GroupMapParams f
-  -> IncrementallyVerifyProofParams nPublic f
-  -> f -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
-  -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
-  -> Snarky (KimchiConstraint f) t Identity Unit
+  => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
+  -> GroupMapParams Pallas.ScalarField
+  -> IncrementallyVerifyProofParams nPublic Pallas.ScalarField
+  -> Pallas.ScalarField -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
+  -> IncrementallyVerifyProofInput nPublic sgOldN (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+  -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
   success <- evalSpongeM initialSpongeCircuit $
-    verify @nChunks @g scalarOps groupMapParams_ params input false_ (const_ claimedDigest)
+    verify @51 @VestaG scalarOps groupMapParams_ params input false_ (const_ claimedDigest)
   assert_ success

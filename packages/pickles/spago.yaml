@@ -2,11 +2,9 @@ package:
   name: pickles
   dependencies:
     - arrays
-    - control
     - curves
     - exceptions
     - foldable-traversable
-    - foreign
     - identity
     - js-bigints
     - maybe
@@ -17,7 +15,6 @@ package:
     - prelude
     - random-oracle
     - safe-coerce
-    - simple-json
     - snarky
     - snarky-curves
     - snarky-kimchi
@@ -35,6 +32,7 @@ package:
       - either
       - exceptions
       - identity
+      - integers
       - mmorph
       - newtype
       - partial
