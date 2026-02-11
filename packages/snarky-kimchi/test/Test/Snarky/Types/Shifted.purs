@@ -38,7 +38,7 @@ type1ShiftRoundtrip s =
     fromShifted shifted === s
 
 --------------------------------------------------------------------------------
--- Type2: fromShifted (toShifted s) == s + 2^n (mod field)
+-- Type2 roundtrip: fromShifted (toShifted s) == s
 --------------------------------------------------------------------------------
 
 type2ShiftRoundtrip
@@ -52,11 +52,8 @@ type2ShiftRoundtrip s =
     shifted :: Type2 (F f') Boolean
     shifted = toShifted s
     unshifted = fromShifted shifted
-    n = fieldSizeBits (Proxy :: Proxy f)
-    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
-    expected = case s of F x -> F (x + twoToN)
   in
-    unshifted === expected
+    unshifted === s
 
 --------------------------------------------------------------------------------
 -- Danger zone generators
@@ -166,7 +163,7 @@ spec = do
     describe "Type2 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
         quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField)
-      it "fromShifted (toShifted s) == s + 2^n (danger zone)" $
+      it "fromShifted (toShifted s) == s (danger zone)" $
         quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField <$> genDangerZone)
 
     describe "fromShiftedType1Circuit" do

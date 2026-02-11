@@ -222,7 +222,13 @@ instance Shifted (F Vesta.ScalarField) (Type1 (F Vesta.ScalarField)) where
 instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.BaseField) Boolean) where
   toShifted (F s) =
     let
-      sBigInt = toBigInt s
+      n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
+
+      shift :: Pallas.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
       sOdd = BigInt.odd sBigInt
 
       sDiv2 :: Pallas.BaseField
@@ -238,11 +244,17 @@ instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.BaseField) Boolean) whe
     in
       F $ fromBigInt (sBigInt + twoToN)
 
--- Same-field Type2: shift a field element within its own field (via BigInt)
+-- Same-field Type2: shift a field element within its own field
 instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) where
   toShifted (F s) =
     let
-      sBigInt = toBigInt s
+      n = fieldSizeBits (Proxy :: Proxy Pallas.ScalarField)
+
+      shift :: Pallas.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
       sOdd = BigInt.odd sBigInt
 
       sDiv2 :: Pallas.ScalarField
@@ -252,6 +264,31 @@ instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) w
   fromShifted (Type2 { sDiv2: F d, sOdd }) =
     let
       n = fieldSizeBits (Proxy :: Proxy Pallas.ScalarField)
+      dBigInt = toBigInt d
+      sBigInt = BigInt.fromInt 2 * dBigInt + (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)
+      twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+    in
+      F $ fromBigInt (sBigInt + twoToN)
+
+instance Shifted (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean) where
+  toShifted (F s) =
+    let
+      n = fieldSizeBits (Proxy :: Proxy Vesta.ScalarField)
+
+      shift :: Vesta.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
+      sOdd = BigInt.odd sBigInt
+
+      sDiv2 :: Vesta.ScalarField
+      sDiv2 = fromBigInt $ (sBigInt - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
+    in
+      Type2 { sDiv2: F sDiv2, sOdd }
+  fromShifted (Type2 { sDiv2: F d, sOdd }) =
+    let
+      n = fieldSizeBits (Proxy :: Proxy Vesta.ScalarField)
       dBigInt = toBigInt d
       sBigInt = BigInt.fromInt 2 * dBigInt + (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)
       twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)

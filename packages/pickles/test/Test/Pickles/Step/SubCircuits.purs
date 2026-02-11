@@ -6,14 +6,13 @@ module Test.Pickles.Step.SubCircuits (spec) where
 
 import Prelude
 
-import Data.Identity (Identity)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Pickles.IPA (BCorrectInput, bCorrect)
+import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, ipaFinalCheckCircuit, type2ScalarOps)
 import Pickles.IPA as IPA
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (evalCoefficientPolys, evalSelectorPolys, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
@@ -23,22 +22,105 @@ import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
-import Pickles.Sponge (evalSpongeM, initialSponge, initialSpongeCircuit, runPureSpongeM)
+import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, const_, toField)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, toField)
+import Snarky.Circuit.Kimchi (Type2, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, computePublicEval, createStepProofContext, mkStepIpaContext, zkRows)
+import Test.Pickles.TestContext (StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, mkStepIpaContext, zkRows)
+import Test.Pickles.WrapProofContext (createWrapProofContext, mkWrapIpaContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+
+-- | Test for ipaFinalCheckCircuit in an Fp circuit verifying an Fq proof (cross-field).
+ipaFinalCheckCrossFieldTest :: WrapProofContext -> Aff Unit
+ipaFinalCheckCrossFieldTest ctx = do
+  let
+    -- Extract Fq proof data
+    z1 = ProofFFI.vestaProofOpeningZ1 ctx.proof
+    z2 = ProofFFI.vestaProofOpeningZ2 ctx.proof
+    b = ProofFFI.computeB0
+      { challenges: ProofFFI.proofBulletproofChallenges ctx.verifierIndex { proof: ctx.proof, publicInput: ctx.publicInputs }
+      , zeta: ctx.oracles.zeta
+      , zetaOmega: ctx.oracles.zeta * ProofFFI.domainGenerator ctx.domainLog2
+      , evalscale: ctx.oracles.u
+      }
+    cip = ctx.oracles.combinedInnerProduct
+
+    -- Convert Fq scalars to Type2 (Fp circuit representation)
+    z1Shifted = toShifted (F z1)
+    z2Shifted = toShifted (F z2)
+    bShifted = toShifted (F b)
+    cipShifted = toShifted (F cip)
+
+    -- Commitment curve for our Fp circuit is Pallas (base Fp).
+    delta = ProofFFI.vestaProofOpeningDelta ctx.proof
+    sg = ProofFFI.vestaProofOpeningSg ctx.proof
+    lr = ProofFFI.vestaProofOpeningLr ctx.proof
+    blindingGenerator = ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
+    combinedPolynomial = ProofFFI.vestaCombinedPolynomialCommitment ctx.verifierIndex
+      { proof: ctx.proof, publicInput: ctx.publicInputs }
+
+    -- Group map params for Pallas
+    pallasGroupMapParams = groupMapParams (Proxy @Pallas.G)
+
+    -- Use mkWrapIpaContext to get correct sponge state
+    ipaCtx = mkWrapIpaContext ctx
+
+    -- Circuit input
+    input :: IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)
+    input =
+      { delta: coerce delta
+      , sg: coerce sg
+      , lr: coerce lr
+      , z1: z1Shifted
+      , z2: z2Shifted
+      , combinedInnerProduct: cipShifted
+      , b: bShifted
+      , blindingGenerator: coerce blindingGenerator
+      , combinedPolynomial: coerce combinedPolynomial
+      }
+
+    circuit
+      :: forall t m
+       . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+      => IpaFinalCheckInput 16 (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+      -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
+    circuit inVar = do
+      let
+        initialSpongeState :: Sponge (FVar Vesta.ScalarField)
+        initialSpongeState =
+          { state: map const_ ipaCtx.spongeState.state
+          , spongeState: ipaCtx.spongeState.spongeState
+          }
+      void $ evalSpongeM initialSpongeState do
+        let ops = type2ScalarOps
+        res <- ipaFinalCheckCircuit @Vesta.ScalarField @Pallas.G ops pallasGroupMapParams inVar
+        liftSnarky $ assert_ res.success
+
+  circuitSpecPureInputs
+    { builtState: compilePure
+        (Proxy @(IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint Vesta.ScalarField))
+        circuit
+        Kimchi.initialState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ input ]
 
 -- | Circuit test for ftEval0Circuit.
 -- | Verifies the in-circuit computation matches the Rust FFI ftEval0 value.
@@ -100,7 +182,12 @@ ftEval0CircuitTest ctx = do
 
     -- Public eval (computed same as pure test)
     publicEval :: F Vesta.ScalarField
-    publicEval = F $ computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+    publicEval = F $ computePublicEval
+      { publicInputs: ctx.publicInputs
+      , domainLog2: ctx.domainLog2
+      , omega
+      , zeta: ctx.oracles.zeta
+      }
 
     -- Expected result from FFI
     expected :: F Vesta.ScalarField
@@ -194,7 +281,12 @@ combinedInnerProductCorrectCircuitTest ctx = do
           , lagrangeTrue1: F $ unnormalizedLagrangeBasis
               { domainLog2: ctx.domainLog2, zkRows, offset: -1, pt: ctx.oracles.zeta }
           }
-      , publicEvalForFt: F $ computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+      , publicEvalForFt: F $ computePublicEval
+          { publicInputs: ctx.publicInputs
+          , domainLog2: ctx.domainLog2
+          , omega
+          , zeta: ctx.oracles.zeta
+          }
       , publicPointEval: { zeta: F ctx.oracles.publicEvalZeta, omegaTimesZeta: F ctx.oracles.publicEvalZetaOmega }
       , ftEval1: F ctx.oracles.ftEval1
       , zEvals: coerce zEvals
@@ -370,7 +462,12 @@ plonkChecksCircuitTest ctx = do
           , lagrangeTrue1: F $ unnormalizedLagrangeBasis
               { domainLog2: ctx.domainLog2, zkRows, offset: -1, pt: ctx.oracles.zeta }
           }
-      , publicEvalForFt: F $ computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+      , publicEvalForFt: F $ computePublicEval
+          { publicInputs: ctx.publicInputs
+          , domainLog2: ctx.domainLog2
+          , omega
+          , zeta: ctx.oracles.zeta
+          }
       , publicPointEval: { zeta: F ctx.oracles.publicEvalZeta, omegaTimesZeta: F ctx.oracles.publicEvalZetaOmega }
       , ftEval1: F ctx.oracles.ftEval1
       , zEvals: coerce zEvals
@@ -484,10 +581,13 @@ bCorrectCircuitTest ctx = do
     [ circuitInput ]
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createStepProofContext $
-  describe "Step Sub-circuits (Real Data)" do
+spec = do
+  describe "Step Sub-circuits (Real Data)" $ beforeAll createStepProofContext $ do
     it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
     it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
     it "plonkChecksCircuit verifies xi, evalscale, and combined_inner_product" plonkChecksCircuitTest
     it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
+
+  describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" $ beforeAll createWrapProofContext $ do
+    it "verifies Fq IPA final check using Type2 shifted values" ipaFinalCheckCrossFieldTest

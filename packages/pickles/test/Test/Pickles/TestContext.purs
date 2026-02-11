@@ -1,7 +1,9 @@
 module Test.Pickles.TestContext
   ( StepProofContext
+  , WrapProofContext
   , TestContext'
   , StepIPAContext
+  , IPAContext'
   , computePublicEval
   , createStepProofContext
   , createTestContext'
@@ -59,7 +61,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Constraint.Kimchi.Types (GateKind(..)) as GateKind
-import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), endoBase, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -123,6 +125,9 @@ type TestContext' f g =
 
 -- | Test context for Fp circuits producing Vesta proofs (step side).
 type StepProofContext = TestContext' Vesta.ScalarField Vesta.G
+
+-- | Test context for Fq circuits producing Pallas proofs (wrap side).
+type WrapProofContext = TestContext' Pallas.ScalarField Pallas.G
 
 -- | Create a fixed valid Schnorr signature for deterministic testing.
 -- | Uses constant private key and message to ensure reproducible results.
@@ -292,13 +297,16 @@ createStepProofContext = createTestContext'
 -- | where Z_H(zeta) = zeta^n - 1, n = 2^domainLog2, omega = domain generator.
 -- | The omega^i factor comes from the Lagrange basis: L_i(x) = omega^i * (x^n - 1) / (n * (x - omega^i))
 computePublicEval
-  :: Array Vesta.ScalarField
-  -> Int
-  -> Vesta.ScalarField
-  -> Vesta.ScalarField
-computePublicEval publicInputs domainLog2 zeta =
+  :: forall f
+   . PrimeField f
+  => { publicInputs :: Array f
+     , domainLog2 :: Int
+     , omega :: f
+     , zeta :: f
+     }
+  -> f
+computePublicEval { publicInputs, domainLog2, omega, zeta } =
   let
-    omega = ProofFFI.domainGenerator domainLog2
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
     zetaToNMinus1 = pow zeta n - one
     { acc } = foldl
@@ -313,11 +321,13 @@ computePublicEval publicInputs domainLog2 zeta =
     zetaToNMinus1 * acc / fromBigInt n
 
 --------------------------------------------------------------------------------
-type StepIPAContext =
-  { challenges :: Vector 16 Vesta.ScalarField
-  , spongeState :: Sponge Pallas.ScalarField
-  , combinedPolynomial :: AffinePoint Pallas.ScalarField
-  , omega :: Vesta.ScalarField
+type StepIPAContext = IPAContext' Vesta.ScalarField Pallas.ScalarField
+
+type IPAContext' f f' =
+  { challenges :: Vector 16 f
+  , spongeState :: Sponge f'
+  , combinedPolynomial :: AffinePoint f'
+  , omega :: f
   }
 
 mkStepIpaContext :: StepProofContext -> StepIPAContext

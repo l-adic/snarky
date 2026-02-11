@@ -161,7 +161,12 @@ permutationTest ctx = do
     gateResult = evaluate PallasTokens.constantTermTokens env
 
     -- Compute public input polynomial evaluation
-    publicEval = computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+    publicEval = computePublicEval
+      { publicInputs: ctx.publicInputs
+      , domainLog2: ctx.domainLog2
+      , omega: ProofFFI.domainGenerator ctx.domainLog2
+      , zeta: ctx.oracles.zeta
+      }
 
   -- Verify: permContribution = ftEval0 - publicEval + gateConstraints
   liftEffect $ permResult `shouldEqual` (ctx.oracles.ftEval0 - publicEval + gateResult)
@@ -229,7 +234,12 @@ ftEval0Test ctx = do
     gateResult = evaluate PallasTokens.constantTermTokens env
 
     -- Compute public input polynomial evaluation (same as permutationTest)
-    publicEval = computePublicEval ctx.publicInputs ctx.domainLog2 ctx.oracles.zeta
+    publicEval = computePublicEval
+      { publicInputs: ctx.publicInputs
+      , domainLog2: ctx.domainLog2
+      , omega: ProofFFI.domainGenerator ctx.domainLog2
+      , zeta: ctx.oracles.zeta
+      }
 
     -- Compute ftEval0 using our composition function
     computed = ftEval0

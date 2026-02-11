@@ -11,74 +11,60 @@ import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dummyPlonkMinimal, dummyScalarChallenge, dummyUnfinalizedProof)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
+import Pickles.Verify.Types (BulletproofChallenges, PlonkMinimal, ScalarChallenge)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi (Type1(..), fromShifted)
+import Snarky.Circuit.Kimchi (Type2, fromShifted)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
 
 -- | Step circuit operates on Vesta.ScalarField (= Pallas.BaseField = Fp)
 -- | It verifies Wrap proofs which use Pallas.ScalarField (= Vesta.BaseField = Fq)
--- | Since |Fq| < |Fp|, we use Type1 shifted values.
+-- | Since |Fq| > |Fp|, we use Type2 shifted values.
 type StepField = Vesta.ScalarField
-
--- Helper to get a dummy scalar challenge for StepField
-dummyScalarChallenge' :: ScalarChallenge (F StepField)
-dummyScalarChallenge' = dummyScalarChallenge
-
--- Helper to get dummy bulletproof challenges for StepField
-dummyBulletproofChallenges' :: BulletproofChallenges (F StepField)
-dummyBulletproofChallenges' = dummyBulletproofChallenges
-
--- Helper to get dummy plonk minimal for StepField
-dummyPlonkMinimal' :: PlonkMinimal (F StepField)
-dummyPlonkMinimal' = dummyPlonkMinimal
-
--- Helper to get dummy deferred values for StepField
-dummyDeferredValues' :: DeferredValues (F StepField) (Type1 (F StepField))
-dummyDeferredValues' = dummyDeferredValues
-
--- Helper to get dummy unfinalized proof for StepField
-dummyUnfinalizedProof'
-  :: Proxy StepField
-  -> UnfinalizedProof (F StepField) (Type1 (F StepField)) Boolean
-dummyUnfinalizedProof' _ = dummyUnfinalizedProof
+type OtherField = Pallas.ScalarField
 
 spec :: Spec Unit
 spec = describe "Dummy values" do
   it "dummyScalarChallenge is zero" do
-    let F x = SizedF.toField dummyScalarChallenge'
+    let
+      F x = SizedF.toField (dummyScalarChallenge :: ScalarChallenge (F StepField))
     x `shouldEqual` zero
 
   it "dummyBulletproofChallenges has 16 zero challenges" do
-    let chals = dummyBulletproofChallenges'
-    let arr = Vector.toUnfoldable chals :: Array _
+    let
+      chals :: BulletproofChallenges (F StepField)
+      chals = dummyBulletproofChallenges
+      arr = Vector.toUnfoldable chals :: Array _
     Array.length arr `shouldEqual` 16
     -- Check first challenge is zero
     let (F first) = SizedF.toField $ unsafePartial fromJust $ Array.head arr
     first `shouldEqual` zero
 
   it "dummyPlonkMinimal has zero challenges" do
-    let p = dummyPlonkMinimal'
-    let F alpha = SizedF.toField p.alpha
-    let F beta = SizedF.toField p.beta
-    let F gamma = SizedF.toField p.gamma
-    let F zeta = SizedF.toField p.zeta
+    let
+      p :: PlonkMinimal (F StepField)
+      p = dummyPlonkMinimal
+      F alpha = SizedF.toField p.alpha
+      F beta = SizedF.toField p.beta
+      F gamma = SizedF.toField p.gamma
+      F zeta = SizedF.toField p.zeta
     alpha `shouldEqual` zero
     beta `shouldEqual` zero
     gamma `shouldEqual` zero
     zeta `shouldEqual` zero
 
-  it "dummyDeferredValues has zero values" do
-    let d = dummyDeferredValues'
-    let F cip = fromShifted d.combinedInnerProduct :: F StepField
-    let F b = fromShifted d.b :: F StepField
-    cip `shouldEqual` zero
-    b `shouldEqual` zero
+  it "dummyDeferredValues has one values (shifted one to avoid forbidden zero)" do
+    let
+      d = dummyDeferredValues @StepField @OtherField @(Type2 (F StepField) Boolean)
+      F cip = fromShifted d.combinedInnerProduct :: F OtherField
+      F b = fromShifted d.b :: F OtherField
+    cip `shouldEqual` one
+    b `shouldEqual` one
 
   it "dummyUnfinalizedProof has shouldFinalize = false" do
-    let proof = dummyUnfinalizedProof' (Proxy :: Proxy StepField)
+    let
+      proof = dummyUnfinalizedProof @StepField @OtherField @(Type2 (F StepField) Boolean)
     proof.shouldFinalize `shouldEqual` false

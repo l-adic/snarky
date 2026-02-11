@@ -54,7 +54,7 @@ wrapCircuitSatisfiableTest ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
       => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
-    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
+    circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
   circuitSpecPureInputs
     { builtState: compilePure
@@ -83,7 +83,7 @@ wrapProofCreationTest ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
       => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
-    circuit = wrapCircuit @51 @Vesta.G type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
+    circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
     builtState = compilePure
       (Proxy @WrapCircuitInput)

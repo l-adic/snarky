@@ -21,12 +21,13 @@ import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.IPA (IpaScalarOps, type1ScalarOps)
+import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_, const_, false_)
-import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -50,7 +51,7 @@ type SchnorrInput = VerifyInput 4 (F StepField)
 
 -- | Full Step circuit input: Schnorr input + dummy previous proof data
 type StepSchnorrInput =
-  StepInput 1 SchnorrInput Unit (F StepField) (Type1 (F StepField)) Boolean
+  StepInput 1 SchnorrInput Unit (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable version for circuit
 type StepSchnorrInputVar =
@@ -58,26 +59,20 @@ type StepSchnorrInputVar =
     (VerifyInput 4 (FVar StepField))
     Unit
     (FVar StepField)
-    (Type1 (FVar StepField))
+    (Type2 (FVar StepField) (BoolVar StepField))
     (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Schnorr Application Circuit
 -------------------------------------------------------------------------------
 
--- | Schnorr verification as an application circuit for Step.
--- |
--- | Takes a Schnorr verification input and returns:
--- | - mustVerify = [false] (base case, no previous proofs)
--- | - publicOutput = Unit
--- | - auxiliaryOutput = Unit
+-- | The application circuit: Schnorr verification.
 schnorrAppCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => AppCircuitInput 1 (VerifyInput 4 (FVar StepField)) Unit
   -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
-schnorrAppCircuit { appInput } = do
-  -- Run Schnorr verification
+schnorrAppCircuit { appInput: { signature: { r: sigR, s: sigS }, publicKey, message } } = do
   let
     genPointVar :: AffinePoint (FVar StepField)
     genPointVar =
@@ -85,13 +80,16 @@ schnorrAppCircuit { appInput } = do
         { x, y } = unsafePartial fromJust $ toAffine (generator @_ @Pallas.G)
       in
         { x: const_ x, y: const_ y }
-    signature = SignatureVar { r: appInput.signature.r, s: appInput.signature.s }
+    signature = SignatureVar { r: sigR, s: sigS }
 
-  verifies (pallasScalarOps @51) genPointVar
-    { signature, publicKey: appInput.publicKey, message: appInput.message } >>= assert_
+  -- Use pallasScalarOps (@51 bits) for Schnorr over Vesta.ScalarField
+  -- Note: pallasScalarOps provides scalar arithmetic for Pallas.ScalarField
+  -- which is the same as Vesta.BaseField.
+  isValid <- verifies (pallasScalarOps @51) genPointVar { signature, publicKey, message }
 
-  -- Return Step circuit output
-  -- For base case: mustVerify = false (no previous proofs to verify)
+  -- For base case, we assert the signature is valid.
+  assert_ isValid
+
   pure
     { mustVerify: false_ :< Vector.nil
     , publicOutput: unit
@@ -99,7 +97,7 @@ schnorrAppCircuit { appInput } = do
     }
 
 -------------------------------------------------------------------------------
--- | Step Circuit with Schnorr
+-- | Test Circuit
 -------------------------------------------------------------------------------
 
 -- | The composed Step circuit with Schnorr as application logic.
@@ -109,24 +107,28 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 stepSchnorrCircuit input = do
-  let ops = (type1ScalarOps :: IpaScalarOps StepField t Identity (Type1 (FVar StepField)))
+  let ops = type2ScalarOps
   _ <- stepCircuit ops dummyFinalizeOtherProofParams schnorrAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------
--- | Tests
+-- | Generator for valid Step+Schnorr inputs
 -------------------------------------------------------------------------------
 
 -- | Generator for valid Step+Schnorr inputs
 genStepSchnorrInput :: Gen StepSchnorrInput
 genStepSchnorrInput =
-  genValidSignature (Proxy @Pallas.G) (Proxy @4) <#> \schnorrInput ->
-    { appInput: schnorrInput
-    , previousProofInputs: unit :< Vector.nil
-    , unfinalizedProofs: dummyUnfinalizedProof :< Vector.nil
-    , wrapProofWitnesses: dummyWrapProofWitness :< Vector.nil
-    , prevChallengeDigests: zero :< Vector.nil
-    }
+  let
+    unfinalizedProof :: UnfinalizedProof (F StepField) (Type2 (F StepField) Boolean) Boolean
+    unfinalizedProof = dummyUnfinalizedProof @StepField @Pallas.ScalarField
+  in
+    genValidSignature (Proxy @Pallas.G) (Proxy @4) <#> \schnorrInput ->
+      { appInput: schnorrInput
+      , previousProofInputs: unit :< Vector.nil
+      , unfinalizedProofs: unfinalizedProof :< Vector.nil
+      , wrapProofWitnesses: dummyWrapProofWitness :< Vector.nil
+      , prevChallengeDigests: zero :< Vector.nil
+      }
 
 spec :: Spec Unit
 spec = describe "Step E2E with Schnorr" do

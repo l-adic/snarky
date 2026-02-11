@@ -27,6 +27,7 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.WrapProofWitness (WrapProofWitness)
@@ -35,6 +36,8 @@ import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
+import Snarky.Curves.Vesta as Vesta
+import Snarky.Types.Shifted (Type2)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -202,17 +205,13 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs`, `unfinalizedProofs`,
 -- | and `wrapProofWitnesses`.
 stepCircuit
-  :: forall n input prevInput output aux f f' t m sf r
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
-  => { unshift :: sf -> FVar f | r }
-  -> FinalizeOtherProofParams f
-  -> AppCircuit n input prevInput output aux f (KimchiConstraint f) t m
-  -> StepInput n input prevInput (FVar f) sf (BoolVar f)
-  -> Snarky (KimchiConstraint f) t m (StepStatement n (FVar f) sf (BoolVar f))
+  :: forall n input prevInput output aux t m
+   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+  -> FinalizeOtherProofParams Vesta.ScalarField
+  -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  -> StepInput n input prevInput (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
 stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs, wrapProofWitnesses, prevChallengeDigests } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }

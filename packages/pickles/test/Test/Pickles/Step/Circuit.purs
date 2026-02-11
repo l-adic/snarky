@@ -11,14 +11,16 @@ import Prelude
 
 import Data.Identity (Identity)
 import Data.Vector (nil, (:<))
-import Pickles.IPA (IpaScalarOps, type1ScalarOps)
+import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
-import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, describe, it)
@@ -32,11 +34,11 @@ type StepField = Vesta.ScalarField
 
 -- | Value type for test input
 type StepTestInput =
-  StepInput 1 Unit Unit (F StepField) (Type1 (F StepField)) Boolean
+  StepInput 1 Unit Unit (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable type for circuit
 type StepTestInputVar =
-  StepInput 1 Unit Unit (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
+  StepInput 1 Unit Unit (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit
@@ -65,7 +67,7 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t Identity Unit
 testCircuit input = do
-  let ops = (type1ScalarOps :: IpaScalarOps StepField t Identity (Type1 (FVar StepField)))
+  let ops = type2ScalarOps
   _ <- stepCircuit ops dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
@@ -77,11 +79,14 @@ spec :: Spec Unit
 spec = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case)" do
     let
+      unfinalizedProof :: UnfinalizedProof (F StepField) (Type2 (F StepField) Boolean) Boolean
+      unfinalizedProof = dummyUnfinalizedProof @StepField @Pallas.ScalarField
+
       input :: StepTestInput
       input =
         { appInput: unit
         , previousProofInputs: unit :< nil
-        , unfinalizedProofs: dummyUnfinalizedProof :< nil
+        , unfinalizedProofs: unfinalizedProof :< nil
         , wrapProofWitnesses: dummyWrapProofWitness :< nil
         , prevChallengeDigests: zero :< nil
         }
