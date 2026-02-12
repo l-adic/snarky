@@ -19,7 +19,7 @@ import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -98,7 +98,7 @@ spec = describe "Pickles.Step.Circuit" do
         { appInput: unit
         , previousProofInputs: unit :< nil
         , unfinalizedProofs: unfinalizedProof :< nil
-        , wrapProofWitnesses: dummyWrapProofWitness :< nil
+        , proofWitnesses: dummyProofWitness :< nil
         , prevChallengeDigests: zero :< nil
         }
 
@@ -123,7 +123,8 @@ spec = describe "Pickles.Step.Circuit" do
 type SchnorrInput = VerifyInput 4 (F StepField)
 type SchnorrInputVar = VerifyInput 4 (FVar StepField)
 
--- | Real Step input: Schnorr verification as the app circuit
+-- | Real Step input: Schnorr verification as the app circuit.
+-- | prevInput = Unit because schnorrAppCircuit's publicOutput is Unit.
 type RealStepTestInput =
   StepInput 1 SchnorrInput Unit (F StepField) (Type2 (F StepField) Boolean) Boolean
 
@@ -163,7 +164,7 @@ createStepCircuitTestContext = do
       { appInput: schnorrInput
       , previousProofInputs: unit :< nil
       , unfinalizedProofs: fopInput.unfinalized :< nil
-      , wrapProofWitnesses: fopInput.witness :< nil
+      , proofWitnesses: fopInput.witness :< nil
       , prevChallengeDigests: fopInput.prevChallengeDigest :< nil
       }
   pure { params, input }

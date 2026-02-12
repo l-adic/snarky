@@ -20,7 +20,7 @@ import Effect.Aff (Aff)
 import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
@@ -61,7 +61,7 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
       input :: FinalizeOtherProofTestInput
       input =
         { unfinalized: dummyUnfinalizedProof @StepField @WrapField @(Type2 (F StepField) Boolean)
-        , witness: dummyWrapProofWitness
+        , witness: dummyProofWitness
         , prevChallengeDigest: zero
         }
 
