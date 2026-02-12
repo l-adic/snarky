@@ -21,10 +21,9 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Pickles.IPA (type1ScalarOps)
-import Pickles.Verify (IncrementallyVerifyProofInput)
-import Pickles.Wrap.Circuit (wrapCircuit)
+import Pickles.Wrap.Circuit (WrapInput, wrapCircuit)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
 import Snarky.Circuit.Kimchi (Type1, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -51,7 +50,7 @@ wrapCircuitSatisfiableTest ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => WrapInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
@@ -80,7 +79,7 @@ wrapProofCreationTest ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => WrapInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 

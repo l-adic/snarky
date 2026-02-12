@@ -26,6 +26,13 @@ make gen-linearization
 # Build everything
 npx spago build
 
+# Type-check only (no JS codegen) — fast compiler feedback
+# Use this routinely after edits instead of full builds
+npx purs compile -g corefn $(npx spago sources -p <package> 2>/dev/null) --json-errors
+
+# Type-check a package including its tests (exclude other packages' test files)
+npx purs compile -g corefn $(npx spago sources -p <package> 2>/dev/null | grep -v '/test/') packages/<package>/test/**/*.purs --json-errors
+
 # Test a specific package
 npx spago test -p snarky-kimchi
 
