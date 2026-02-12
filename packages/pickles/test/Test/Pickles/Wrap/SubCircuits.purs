@@ -27,7 +27,7 @@ import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofPa
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField)
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -36,7 +36,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, createStepProofContext, mkStepIpaContext, zkRows)
+import Test.Pickles.TestContext (StepProofContext, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -478,15 +478,8 @@ incrementallyVerifyProofTest ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkStepIpaContext ctx
-
-    rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-    rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
-      _ <- Pickles.Sponge.squeeze -- squeeze for u
-      IPA.extractScalarChallengesPure (coerce $ ProofFFI.pallasProofOpeningLr ctx.proof)
-
     bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
-    bulletproofChallenges = coerce rawBpChallenges
+    bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
     -- Xi challenge in Fq (coerced from Fp)
     xiChalFq :: SizedF 128 (F Pallas.ScalarField)
@@ -502,12 +495,7 @@ incrementallyVerifyProofTest ctx = do
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
       , sgOld: Vector.nil
       , deferredValues:
-          { plonk:
-              { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
-              , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
-              , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
-              , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
-              }
+          { plonk: coerceStepPlonkChallenges ctx
           , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
           , xi: xiChalFq
           , bulletproofChallenges
@@ -629,15 +617,8 @@ verifyTest ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkStepIpaContext ctx
-
-    rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-    rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
-      _ <- Pickles.Sponge.squeeze -- squeeze for u
-      IPA.extractScalarChallengesPure (coerce $ ProofFFI.pallasProofOpeningLr ctx.proof)
-
     bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
-    bulletproofChallenges = coerce rawBpChallenges
+    bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
     -- Xi challenge in Fq (coerced from Fp)
     xiChalFq :: SizedF 128 (F Pallas.ScalarField)
@@ -653,12 +634,7 @@ verifyTest ctx = do
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
       , sgOld: Vector.nil
       , deferredValues:
-          { plonk:
-              { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
-              , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
-              , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
-              , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
-              }
+          { plonk: coerceStepPlonkChallenges ctx
           , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
           , xi: xiChalFq
           , bulletproofChallenges

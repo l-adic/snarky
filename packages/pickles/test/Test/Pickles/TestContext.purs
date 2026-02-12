@@ -22,6 +22,8 @@ module Test.Pickles.TestContext
   , buildWrapCircuitInput
   , buildWrapCircuitParams
   , buildWrapClaimedDigest
+  , coerceStepPlonkChallenges
+  , extractStepRawBpChallenges
 
   ) where
 
@@ -48,13 +50,13 @@ import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Pickles.IPA (type1ScalarOps)
-import Pickles.IPA as IPA
+import Pickles.IPA (extractScalarChallengesPure, type1ScalarOps)
 import Pickles.Linearization.FFI (class LinearizationFFI, proverIndexDomainLog2)
 import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
+import Pickles.Verify.Types (PlonkMinimal)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Wrap.Circuit (wrapCircuit)
 import RandomOracle.Sponge (Sponge)
@@ -400,6 +402,29 @@ buildWrapClaimedDigest :: StepProofContext -> Pallas.ScalarField
 buildWrapClaimedDigest ctx = fromBigInt (toBigInt ctx.oracles.fqDigest)
 
 -------------------------------------------------------------------------------
+-- | Shared Step→Wrap coercion helpers
+-------------------------------------------------------------------------------
+
+-- | Coerce Step proof plonk challenges (Fp) to Wrap circuit field (Fq) via 128-bit representation.
+coerceStepPlonkChallenges :: StepProofContext -> PlonkMinimal (F Pallas.ScalarField)
+coerceStepPlonkChallenges ctx =
+  { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
+  , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
+  , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
+  , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
+  }
+
+-- | Extract raw 128-bit bulletproof challenges from a Step proof.
+-- | Uses the IPA sponge state from mkStepIpaContext, squeezes u, then
+-- | extracts scalar challenges from the L/R pairs.
+extractStepRawBpChallenges :: StepProofContext -> Vector 16 (SizedF 128 Pallas.ScalarField)
+extractStepRawBpChallenges ctx =
+  let { spongeState } = mkStepIpaContext ctx
+  in Pickles.Sponge.evalPureSpongeM spongeState do
+    _ <- Pickles.Sponge.squeeze -- squeeze for u
+    extractScalarChallengesPure (coerce $ ProofFFI.pallasProofOpeningLr ctx.proof)
+
+-------------------------------------------------------------------------------
 -- | Build WrapCircuitInput from a StepProofContext
 -------------------------------------------------------------------------------
 
@@ -443,15 +468,8 @@ buildWrapCircuitInput ctx =
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    { spongeState } = mkStepIpaContext ctx
-
-    rawBpChallenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
-    rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
-      _ <- Pickles.Sponge.squeeze -- squeeze for u
-      IPA.extractScalarChallengesPure (coerce $ ProofFFI.pallasProofOpeningLr ctx.proof)
-
     bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
-    bulletproofChallenges = coerce rawBpChallenges
+    bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
     -- Xi challenge in Fq (coerced from Fp)
     xiChalFq :: SizedF 128 (F Pallas.ScalarField)
@@ -465,12 +483,7 @@ buildWrapCircuitInput ctx =
         map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
     , sgOld: Vector.nil
     , deferredValues:
-        { plonk:
-            { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 Pallas.ScalarField)
-            , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 Pallas.ScalarField)
-            , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 Pallas.ScalarField)
-            , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 Pallas.ScalarField)
-            }
+        { plonk: coerceStepPlonkChallenges ctx
         , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
         , xi: xiChalFq
         , bulletproofChallenges
