@@ -15,15 +15,15 @@ module Test.Pickles.StepE2E
 
 import Prelude
 
-import Data.Identity (Identity)
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
+import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
-import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
+import Pickles.Step.Circuit (class StepWitnessM, stepCircuit)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -32,7 +32,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Test.Pickles.TestContext (StepField, StepSchnorrInput, StepSchnorrInputVar, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied_)
+import Test.Snarky.Circuit.Utils (circuitSpec', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -42,10 +42,11 @@ import Type.Proxy (Proxy(..))
 
 -- | The composed Step circuit with Schnorr as application logic (base case).
 stepSchnorrCircuit
-  :: forall t
-   . CircuitM StepField (KimchiConstraint StepField) t Identity
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => StepWitnessM 1 m StepField
   => StepSchnorrInputVar
-  -> Snarky (KimchiConstraint StepField) t Identity Unit
+  -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
   _ <- stepCircuit type2ScalarOps dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
   pure unit
@@ -64,20 +65,22 @@ genStepSchnorrInput =
       { appInput: schnorrInput
       , previousProofInputs: unit :< Vector.nil
       , unfinalizedProofs: unfinalizedProof :< Vector.nil
-      , proofWitnesses: dummyProofWitness :< Vector.nil
       , prevChallengeDigests: zero :< Vector.nil
       }
 
 spec :: Spec Unit
 spec = describe "Step E2E with Schnorr" do
   it "Step circuit with Schnorr application is satisfiable (base case)" do
-    circuitSpecPure' 10
-      { builtState: compilePure
-          (Proxy @StepSchnorrInput)
-          (Proxy @Unit)
-          (Proxy @(KimchiConstraint StepField))
-          stepSchnorrCircuit
-          Kimchi.initialState
+
+    builtState <- liftEffect $ compile
+      (Proxy @StepSchnorrInput)
+      (Proxy @Unit)
+      (Proxy @(KimchiConstraint StepField))
+      stepSchnorrCircuit
+      Kimchi.initialState
+
+    circuitSpec' 10 identity
+      { builtState
       , checker: Kimchi.eval
       , solver: makeSolver (Proxy @(KimchiConstraint StepField)) stepSchnorrCircuit
       , testFunction: satisfied_

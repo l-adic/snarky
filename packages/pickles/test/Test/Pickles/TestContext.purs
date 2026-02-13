@@ -9,6 +9,8 @@ module Test.Pickles.TestContext
   , SchnorrInputVar
   , StepSchnorrInput
   , StepSchnorrInputVar
+  , StepProverM(..)
+  , runStepProverM
   , computePublicEval
   , createStepProofContext
   , createTestContext'
@@ -39,20 +41,21 @@ module Test.Pickles.TestContext
 import Prelude
 
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Morph (hoist)
+import Control.Monad.Reader.Trans (ReaderT(..), runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
-import Data.Identity (Identity(..))
+import Data.Map (Map)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Newtype (un)
+import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Schnorr.Gen (VerifyInput, genValidSignature)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
@@ -72,9 +75,10 @@ import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
+import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
+import Pickles.Step.Circuit (class StepWitnessM, AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
@@ -84,10 +88,11 @@ import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolverT)
+import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
+import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, true_, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
@@ -112,15 +117,35 @@ zkRows :: Int
 zkRows = 3
 
 -------------------------------------------------------------------------------
+-- | StepProverM: prove-time advisory monad
+-------------------------------------------------------------------------------
+
+-- | Prove-time monad: provides real proof witness data via ReaderT.
+newtype StepProverM (n :: Int) f a = StepProverM (ReaderT (Vector n (ProofWitness (F f))) Effect a)
+
+derive instance Newtype (StepProverM n f a) _
+derive newtype instance Functor (StepProverM n f)
+derive newtype instance Apply (StepProverM n f)
+derive newtype instance Applicative (StepProverM n f)
+derive newtype instance Bind (StepProverM n f)
+derive newtype instance Monad (StepProverM n f)
+
+runStepProverM :: forall n f a. Vector n (ProofWitness (F f)) -> StepProverM n f a -> Effect a
+runStepProverM witnesses (StepProverM m) = runReaderT m witnesses
+
+instance StepWitnessM n (StepProverM n f) f where
+  getProofWitnesses = StepProverM (ReaderT pure)
+
+-------------------------------------------------------------------------------
 -- | Schnorr circuit setup
 -------------------------------------------------------------------------------
 
 -- | The Schnorr verification circuit over Vesta.ScalarField (= Pallas.BaseField = Fp).
 schnorrCircuit
-  :: forall t
-   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+  :: forall t m
+   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => VerifyInput 4 (FVar Vesta.ScalarField)
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity (BoolVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (BoolVar Vesta.ScalarField)
 schnorrCircuit { signature: { r: sigR, s: sigS }, publicKey, message } =
   let
     genPointVar :: AffinePoint (FVar Vesta.ScalarField)
@@ -166,11 +191,11 @@ type StepSchnorrInputVar =
 -- | - BaseCase: mustVerify = false (no real proofs to verify)
 -- | - InductiveCase: mustVerify = true (verify the previous Wrap proof)
 stepSchnorrAppCircuit
-  :: forall t
-   . CircuitM StepField (KimchiConstraint StepField) t Identity
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
   => Boolean
   -> AppCircuitInput 1 SchnorrInputVar Unit
-  -> Snarky (KimchiConstraint StepField) t Identity (AppCircuitOutput 1 Unit Unit StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
 stepSchnorrAppCircuit mustVerify { appInput } = do
   verified <- schnorrCircuit appInput
   assert_ verified
@@ -248,7 +273,7 @@ createTestContext'
   => ProofFFI f g
   => LinearizationFFI f g
   => { builtState :: CircuitBuilderState (KimchiGate f) (AuxState f)
-     , solver :: Solver f (KimchiGate f) a b
+     , solver :: a -> Aff (Either EvaluationError (Tuple b (Map Variable f)))
      , input :: a
      , targetDomainLog2 :: Int
      }
@@ -256,11 +281,7 @@ createTestContext'
 createTestContext' { builtState, solver, input, targetDomainLog2 } = do
   crs <- liftEffect $ createCRS @f
 
-  let
-    nat :: Identity ~> Aff
-    nat = pure <<< un Identity
-
-  eRes <- runSolverT (\a -> hoist nat $ solver a) input
+  eRes <- solver input
   case eRes of
     Left e -> liftEffect $ throwError $ error (show e)
     Right (Tuple _ assignments) -> do
@@ -305,6 +326,10 @@ createTestContext' { builtState, solver, input, targetDomainLog2 } = do
 -- | For BaseCase: uses dummy previous proof data, mustVerify = false.
 -- | For InductiveCase: uses real Wrap proof data, mustVerify = true.
 -- | Padded to domain 2^16 to match Pickles Step proof conventions.
+-- |
+-- | The circuit is compiled with Identity (StepWitnessM returns dummy witnesses,
+-- | but exists ignores advisory during constraint collection). Witness generation
+-- | uses StepProverM to provide real proof witnesses as private auxiliary data.
 createStepProofContext :: StepCase -> Aff StepProofContext
 createStepProofContext stepCase = do
   schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
@@ -313,25 +338,45 @@ createStepProofContext stepCase = do
       BaseCase -> Tuple false dummyFinalizeOtherProofParams
       InductiveCase wrapCtx -> Tuple true (buildStepFinalizeParams wrapCtx)
 
+    -- Circuit polymorphic in m: compiled with Identity, solved with StepProverM
     circuit
-      :: forall t
-       . CircuitM StepField (KimchiConstraint StepField) t Identity
+      :: forall t m
+       . CircuitM StepField (KimchiConstraint StepField) t m
+      => StepWitnessM 1 m StepField
       => StepSchnorrInputVar
-      -> Snarky (KimchiConstraint StepField) t Identity Unit
+      -> Snarky (KimchiConstraint StepField) t m Unit
     circuit i = do
       _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
       pure unit
 
-    builtState = compilePure
-      (Proxy @StepSchnorrInput)
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint StepField))
-      circuit
-      Kimchi.initialState
+  -- Compile with Identity (StepWitnessM 1 Identity StepField resolved from global instance)
+  builtState <- liftEffect $ compile
+    (Proxy @StepSchnorrInput)
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint StepField))
+    circuit
+    Kimchi.initialState
 
-    solver :: Solver StepField (KimchiGate StepField) StepSchnorrInput Unit
-    solver = makeSolver (Proxy @(KimchiConstraint StepField)) circuit
+  let
+    -- Solver with StepProverM to provide real witnesses
+    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 StepField) StepSchnorrInput Unit
+    rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
+      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepField) Unit)
 
+    -- Witness data for the advisory monad
+    witnessData :: Vector 1 (ProofWitness (F StepField))
+    witnessData = case stepCase of
+      BaseCase -> dummyProofWitness :< Vector.nil
+      InductiveCase wrapCtx ->
+        let
+          fopInput = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
+        in
+          fopInput.witness :< Vector.nil
+
+    -- Wrap solver: StepProverM → Aff
+    solver input_ = liftEffect $ runStepProverM witnessData (runSolverT rawSolver input_)
+
+    -- Public-only input (no proofWitnesses)
     input :: StepSchnorrInput
     input = case stepCase of
       BaseCase ->
@@ -342,7 +387,6 @@ createStepProofContext stepCase = do
           { appInput: schnorrInput
           , previousProofInputs: unit :< Vector.nil
           , unfinalizedProofs: unfinalizedProof :< Vector.nil
-          , proofWitnesses: dummyProofWitness :< Vector.nil
           , prevChallengeDigests: zero :< Vector.nil
           }
       InductiveCase wrapCtx ->
@@ -355,7 +399,6 @@ createStepProofContext stepCase = do
           { appInput: schnorrInput
           , previousProofInputs: unit :< Vector.nil
           , unfinalizedProofs: fopInput.unfinalized :< Vector.nil
-          , proofWitnesses: fopInput.witness :< Vector.nil
           , prevChallengeDigests: fopInput.prevChallengeDigest :< Vector.nil
           }
 
@@ -894,8 +937,8 @@ createWrapProofContext stepCtx =
           claimedDigest
           inVar
 
-      solver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) (WrapInput nPublic 0 (F WrapField) (Type1 (F WrapField)) Boolean) Unit
-      solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+      rawSolver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) (WrapInput nPublic 0 (F WrapField) (Type1 (F WrapField)) Boolean) Unit
+      rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
 
     createTestContext'
       { builtState: compilePure
@@ -904,7 +947,7 @@ createWrapProofContext stepCtx =
           (Proxy @(KimchiConstraint Pallas.ScalarField))
           circuit
           KimchiConstraint.initialState
-      , solver
+      , solver: \a -> pure $ runSolver rawSolver a
       , input
       , targetDomainLog2: 15
       }

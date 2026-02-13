@@ -23,7 +23,7 @@ import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Pickles.IPA (type1ScalarOps)
 import Pickles.Wrap.Circuit (WrapInput, wrapCircuit)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver)
+import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (Type1, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -117,7 +117,7 @@ wrapProofCreationTest ctx =
     -- Wrap proofs use domain 2^15 in Pickles.
     _pallasCtx <- createTestContext'
       { builtState
-      , solver
+      , solver: \a -> pure $ runSolver solver a
       , input: circuitInput
       , targetDomainLog2: 15
       }
