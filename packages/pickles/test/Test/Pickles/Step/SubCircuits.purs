@@ -35,7 +35,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -581,12 +581,12 @@ bCorrectCircuitTest ctx = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = do
-  describe "Step Sub-circuits (Real Data)" $ beforeAll createStepProofContext $ do
+  describe "Step Sub-circuits (Real Data)" $ beforeAll (createStepProofContext BaseCase) $ do
     it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
     it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
     it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
     it "plonkChecksCircuit verifies xi, evalscale, and combined_inner_product" plonkChecksCircuitTest
     it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
 
-  describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" $ beforeAll createWrapProofContext $ do
+  describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" $ beforeAll (createStepProofContext BaseCase >>= createWrapProofContext) $ do
     it "verifies Fq IPA final check using Type2 shifted values" ipaFinalCheckCrossFieldTest

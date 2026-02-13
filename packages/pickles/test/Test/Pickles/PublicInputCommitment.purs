@@ -66,7 +66,7 @@ fpRangeGen = (\(F x) -> F (fromBigInt (toBigInt x))) <$> (arbitrary :: Gen (F Pa
 
 setupTestContext :: Aff TestContext
 setupTestContext = do
-  e2eCtx <- E2E.createStepProofContext
+  e2eCtx <- E2E.createStepProofContext E2E.BaseCase
 
   let
     res =

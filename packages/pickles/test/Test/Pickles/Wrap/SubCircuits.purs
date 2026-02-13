@@ -9,6 +9,7 @@ import Prelude
 import Data.Array as Array
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
+import Data.Reflectable (class Reflectable, reifyType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -23,7 +24,7 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof, verify)
+import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -31,12 +32,12 @@ import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assert_,
 import Snarky.Circuit.Kimchi (Type1(..), expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams, fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
+import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -412,36 +413,21 @@ checkBulletproofTest ctx = do
 -- | Wires together publicInputCommitment, sponge transcript, ftComm, and
 -- | checkBulletproof in a single circuit and verifies satisfiability.
 incrementallyVerifyProofTest :: StepProofContext -> Aff Unit
-incrementallyVerifyProofTest ctx = do
+incrementallyVerifyProofTest ctx =
+  reifyType (Array.length ctx.publicInputs) go
+  where
+  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
+  go _ = incrementallyVerifyProofTest' @nPublic ctx
+
+incrementallyVerifyProofTest'
+  :: forall @nPublic
+   . Reflectable nPublic Int
+  => StepProofContext
+  -> Aff Unit
+incrementallyVerifyProofTest' ctx = do
   let
+    { ivpParams: params } = buildWrapCircuitParams @nPublic ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
-    numPublic = Array.length ctx.publicInputs
-    columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
-
-    indexComms :: Vector 6 (AffinePoint Pallas.ScalarField)
-    indexComms = unsafePartial fromJust $ Vector.toVector $ Array.take 6 columnCommsRaw
-
-    coeffComms :: Vector 15 (AffinePoint Pallas.ScalarField)
-    coeffComms = unsafePartial fromJust $ Vector.toVector $ Array.take 15 $ Array.drop 6 columnCommsRaw
-
-    sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
-    sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
-
-    -- Build params (compile-time constants)
-    params :: IncrementallyVerifyProofParams 9 Pallas.ScalarField
-    params =
-      { curveParams: curveParams (Proxy @Vesta.G)
-      , lagrangeComms: unsafePartial fromJust $ Vector.toVector $
-          coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
-      , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
-      , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
-      , columnComms:
-          { index: coerce indexComms
-          , coeff: coerce coeffComms
-          , sigma: coerce sigmaComms
-          }
-      , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
-      }
 
     -- Compute deferred values from oracles
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
@@ -489,7 +475,7 @@ incrementallyVerifyProofTest ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -519,7 +505,7 @@ incrementallyVerifyProofTest ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       { success } <- evalSpongeM initialSpongeCircuit $
@@ -532,7 +518,7 @@ incrementallyVerifyProofTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -551,36 +537,21 @@ incrementallyVerifyProofTest ctx = do
 -- | Full verify circuit test.
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
 verifyTest :: StepProofContext -> Aff Unit
-verifyTest ctx = do
+verifyTest ctx =
+  reifyType (Array.length ctx.publicInputs) go
+  where
+  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
+  go _ = verifyTest' @nPublic ctx
+
+verifyTest'
+  :: forall @nPublic
+   . Reflectable nPublic Int
+  => StepProofContext
+  -> Aff Unit
+verifyTest' ctx = do
   let
+    { ivpParams: params } = buildWrapCircuitParams @nPublic ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
-    numPublic = Array.length ctx.publicInputs
-    columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
-
-    indexComms :: Vector 6 (AffinePoint Pallas.ScalarField)
-    indexComms = unsafePartial fromJust $ Vector.toVector $ Array.take 6 columnCommsRaw
-
-    coeffComms :: Vector 15 (AffinePoint Pallas.ScalarField)
-    coeffComms = unsafePartial fromJust $ Vector.toVector $ Array.take 15 $ Array.drop 6 columnCommsRaw
-
-    sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
-    sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
-
-    -- Build params (compile-time constants)
-    params :: IncrementallyVerifyProofParams 9 Pallas.ScalarField
-    params =
-      { curveParams: curveParams (Proxy @Vesta.G)
-      , lagrangeComms: unsafePartial fromJust $ Vector.toVector $
-          coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
-      , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
-      , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
-      , columnComms:
-          { index: coerce indexComms
-          , coeff: coerce coeffComms
-          , sigma: coerce sigmaComms
-          }
-      , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
-      }
 
     -- Compute deferred values from oracles
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
@@ -628,7 +599,7 @@ verifyTest ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -662,7 +633,7 @@ verifyTest ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput 9 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       success <- evalSpongeM initialSpongeCircuit $
@@ -677,7 +648,7 @@ verifyTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput 9 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -690,7 +661,7 @@ verifyTest ctx = do
     [ circuitInput ]
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createStepProofContext $
+spec = beforeAll (createStepProofContext BaseCase) $
   describe "Wrap Sub-circuits (Real Data)" do
     it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest
     it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest

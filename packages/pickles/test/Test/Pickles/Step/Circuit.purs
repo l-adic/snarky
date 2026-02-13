@@ -12,7 +12,7 @@ module Test.Pickles.Step.Circuit
 import Prelude
 
 import Data.Identity (Identity)
-import Data.Schnorr.Gen (VerifyInput, genValidSignature)
+import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -23,15 +23,13 @@ import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dum
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_, false_, true_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.StepInputBuilder (buildFinalizeInput, buildFinalizeParams)
-import Test.Pickles.TestContext (createWrapProofContext, schnorrCircuit)
+import Test.Pickles.TestContext (SchnorrInputVar, StepCase(..), StepField, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
@@ -40,8 +38,6 @@ import Type.Proxy (Proxy(..))
 -------------------------------------------------------------------------------
 -- | Types
 -------------------------------------------------------------------------------
-
-type StepField = Vesta.ScalarField
 
 -- | Value type for test input
 type StepTestInput =
@@ -119,47 +115,27 @@ spec = describe "Pickles.Step.Circuit" do
 -------------------------------------------------------------------------------
 -- | Real data test (Step → Wrap → Step cycle)
 -------------------------------------------------------------------------------
-
-type SchnorrInput = VerifyInput 4 (F StepField)
-type SchnorrInputVar = VerifyInput 4 (FVar StepField)
-
--- | Real Step input: Schnorr verification as the app circuit.
--- | prevInput = Unit because schnorrAppCircuit's publicOutput is Unit.
-type RealStepTestInput =
-  StepInput 1 SchnorrInput Unit (F StepField) (Type2 (F StepField) Boolean) Boolean
-
-type RealStepTestInputVar =
+type StepSchnorrInputVar =
   StepInput 1 SchnorrInputVar Unit (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
-
--- | App circuit that verifies a Schnorr signature and returns mustVerify=true
-schnorrAppCircuit
-  :: forall t
-   . CircuitM StepField (KimchiConstraint StepField) t Identity
-  => AppCircuitInput 1 SchnorrInputVar Unit
-  -> Snarky (KimchiConstraint StepField) t Identity (AppCircuitOutput 1 Unit Unit StepField)
-schnorrAppCircuit { appInput } = do
-  verified <- schnorrCircuit appInput
-  assert_ verified
-  pure
-    { mustVerify: true_ :< nil
-    , publicOutput: unit
-    , auxiliaryOutput: unit
-    }
 
 type StepCircuitTestContext =
   { params :: FinalizeOtherProofParams StepField
-  , input :: RealStepTestInput
+  , input :: StepSchnorrInput
   }
 
 createStepCircuitTestContext :: Aff StepCircuitTestContext
 createStepCircuitTestContext = do
-  wrapCtx <- createWrapProofContext
+  stepCtx <- createStepProofContext BaseCase
+  wrapCtx <- createWrapProofContext stepCtx
   schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
   let
-    params = buildFinalizeParams wrapCtx
-    fopInput = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
+    params = buildStepFinalizeParams wrapCtx
+    fopInput = buildStepFinalizeInput
+      { prevChallengeDigest: emptyPrevChallengeDigest
+      , wrapCtx
+      }
 
-    input :: RealStepTestInput
+    input :: StepSchnorrInput
     input =
       { appInput: schnorrInput
       , previousProofInputs: unit :< nil
@@ -177,16 +153,15 @@ realDataSpec = beforeAll createStepCircuitTestContext $
         realCircuit
           :: forall t
            . CircuitM StepField (KimchiConstraint StepField) t Identity
-          => RealStepTestInputVar
+          => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t Identity Unit
         realCircuit i = do
-          let ops = type2ScalarOps
-          _ <- stepCircuit ops params schnorrAppCircuit i
+          _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit true) i
           pure unit
 
       circuitSpecPureInputs
         { builtState: compilePure
-            (Proxy @RealStepTestInput)
+            (Proxy @StepSchnorrInput)
             (Proxy @Unit)
             (Proxy @(KimchiConstraint StepField))
             realCircuit

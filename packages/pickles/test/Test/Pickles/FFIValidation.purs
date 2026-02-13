@@ -29,7 +29,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, computePublicEval, createStepProofContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, computePublicEval, createStepProofContext, zkRows)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -402,7 +402,7 @@ ipaRoundsTest ctx = do
 -------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createStepProofContext $
+spec = beforeAll (createStepProofContext BaseCase) $
   describe "FFI Validation" do
     it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
     it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest

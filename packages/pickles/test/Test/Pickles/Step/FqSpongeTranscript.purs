@@ -33,7 +33,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (createStepProofContext)
+import Test.Pickles.TestContext (StepCase(..), createStepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -129,7 +129,7 @@ type FqSpongeTestContext =
 
 setupTestContext :: Aff FqSpongeTestContext
 setupTestContext = do
-  ctx <- createStepProofContext
+  ctx <- createStepProofContext BaseCase
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 

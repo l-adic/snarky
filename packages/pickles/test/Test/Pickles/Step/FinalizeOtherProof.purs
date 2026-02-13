@@ -27,10 +27,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.StepInputBuilder (buildFinalizeInput, buildFinalizeParams)
-import Test.Pickles.TestContext (createWrapProofContext)
+import Test.Pickles.TestContext (StepCase(..), StepField, WrapField, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -38,9 +35,6 @@ import Type.Proxy (Proxy(..))
 -------------------------------------------------------------------------------
 -- | Types
 -------------------------------------------------------------------------------
-
-type StepField = Vesta.ScalarField
-type WrapField = Pallas.ScalarField
 
 -- | Value type for test input
 type FinalizeOtherProofTestInput =
@@ -104,10 +98,11 @@ type FinalizeOtherProofTestContext =
 -- | cross-field data for the Step verifier.
 createFinalizeOtherProofTestContext :: Aff FinalizeOtherProofTestContext
 createFinalizeOtherProofTestContext = do
-  wrapCtx <- createWrapProofContext
+  stepCtx <- createStepProofContext BaseCase
+  wrapCtx <- createWrapProofContext stepCtx
   let
-    params = buildFinalizeParams wrapCtx
-    input = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
+    params = buildStepFinalizeParams wrapCtx
+    input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
   pure { params, input }
 
 realDataSpec :: SpecT Aff Unit Aff Unit
