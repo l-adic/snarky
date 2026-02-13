@@ -34,9 +34,9 @@ import Pickles.PlonkChecks (absorbAllEvals, plonkArithmeticCheckCircuit, plonkCh
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
+import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
-import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
@@ -77,8 +77,10 @@ type FinalizeOtherProofInput f sf b =
   { -- | Unfinalized proof from public input
     unfinalized :: UnfinalizedProof f sf b
   -- | Private witness data (polynomial evaluations)
-  , witness :: WrapProofWitness f
-  -- | Digest of previous recursion challenges (zero for base case)
+  , witness :: ProofWitness f
+  -- | Poseidon hash of the bulletproof challenges from the previous invocation
+  -- | of this same circuit (i.e., the previous Step/Wrap proof in the recursion
+  -- | chain). At the base case (no prior recursion), use `emptyPrevChallengeDigest`.
   , prevChallengeDigest :: f
   }
 
@@ -210,7 +212,7 @@ buildCipInput
   :: forall f
    . PrimeField f
   => PlonkExpanded (FVar f)
-  -> WrapProofWitness (FVar f)
+  -> ProofWitness (FVar f)
   -> FinalizeOtherProofParams f
   -> CombinedInnerProductCheckInput (FVar f)
 buildCipInput plonk witness params =
@@ -231,7 +233,7 @@ buildPermInput
   :: forall f
    . PrimeField f
   => PlonkExpanded (FVar f)
-  -> WrapProofWitness (FVar f)
+  -> ProofWitness (FVar f)
   -> FinalizeOtherProofParams f
   -> PermutationInput (FVar f)
 buildPermInput plonk witness params =
@@ -253,7 +255,7 @@ buildGateInput
   :: forall f
    . PrimeField f
   => PlonkExpanded (FVar f)
-  -> WrapProofWitness (FVar f)
+  -> ProofWitness (FVar f)
   -> GateConstraintInput (FVar f)
 buildGateInput plonk witness =
   { witnessEvals: witness.allEvals.witnessEvals

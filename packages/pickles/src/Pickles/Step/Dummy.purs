@@ -12,7 +12,7 @@ module Pickles.Step.Dummy
   , dummyPlonkMinimal
   , dummyDeferredValues
   , dummyUnfinalizedProof
-  , dummyWrapProofWitness
+  , dummyProofWitness
   , dummyFinalizeOtherProofParams
   ) where
 
@@ -22,8 +22,8 @@ import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (mkLinearizationPoly)
+import Pickles.ProofWitness (AllEvals, DomainValues, ProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
-import Pickles.Step.WrapProofWitness (AllEvals, DomainValues, WrapProofWitness)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, toShifted)
@@ -73,7 +73,7 @@ dummyUnfinalizedProof =
   }
 
 -------------------------------------------------------------------------------
--- | Dummy Wrap Proof Witness
+-- | Dummy Proof Witness
 -------------------------------------------------------------------------------
 
 dummyPointEval :: forall f. PrimeField f => { zeta :: f, omegaTimesZeta :: f }
@@ -100,8 +100,8 @@ dummyDomainValues =
   , lagrangeTrue1: zero
   }
 
-dummyWrapProofWitness :: forall f. PrimeField f => WrapProofWitness f
-dummyWrapProofWitness =
+dummyProofWitness :: forall f. PrimeField f => ProofWitness f
+dummyProofWitness =
   { allEvals: dummyAllEvals
   , domainValues: dummyDomainValues
   , publicEvalForFt: zero

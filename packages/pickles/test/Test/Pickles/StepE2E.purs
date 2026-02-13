@@ -23,7 +23,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof, dummyWrapProofWitness)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_, const_, false_)
@@ -126,7 +126,7 @@ genStepSchnorrInput =
       { appInput: schnorrInput
       , previousProofInputs: unit :< Vector.nil
       , unfinalizedProofs: unfinalizedProof :< Vector.nil
-      , wrapProofWitnesses: dummyWrapProofWitness :< Vector.nil
+      , proofWitnesses: dummyProofWitness :< Vector.nil
       , prevChallengeDigests: zero :< Vector.nil
       }
 

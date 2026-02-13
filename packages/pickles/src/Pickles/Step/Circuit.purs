@@ -28,9 +28,9 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.IPA (IpaScalarOps)
+import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
-import Pickles.Step.WrapProofWitness (WrapProofWitness)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, not_, or_)
@@ -100,7 +100,7 @@ type StepInput n input prevInput f sf b =
   { appInput :: input
   , previousProofInputs :: Vector n prevInput
   , unfinalizedProofs :: Vector n (UnfinalizedProof f sf b)
-  , wrapProofWitnesses :: Vector n (WrapProofWitness f)
+  , proofWitnesses :: Vector n (ProofWitness f)
   , prevChallengeDigests :: Vector n f
   }
 
@@ -140,7 +140,7 @@ finalizeOtherProof
   -> FinalizeOtherProofParams f
   -> FVar f
   -> UnfinalizedProof (FVar f) sf (BoolVar f)
-  -> WrapProofWitness (FVar f)
+  -> ProofWitness (FVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
 finalizeOtherProof ops params prevChallengeDigest unfinalized witness =
   evalSpongeM initialSpongeCircuit $
@@ -203,7 +203,7 @@ computeMessageForNextWrapProofStub _challenges = do
 -- |
 -- | **For base case (Step0):** All `shouldFinalize = false`, all `mustVerify = false`,
 -- | assertion passes trivially. Pass dummy `previousProofInputs`, `unfinalizedProofs`,
--- | and `wrapProofWitnesses`.
+-- | and `proofWitnesses`.
 stepCircuit
   :: forall n input prevInput output aux t m
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
@@ -212,13 +212,13 @@ stepCircuit
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   -> StepInput n input prevInput (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
   -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
-stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs, wrapProofWitnesses, prevChallengeDigests } = do
+stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs, proofWitnesses, prevChallengeDigests } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. For each previous proof, verify and collect challenges
   let
-    proofsWithData = Vector.zip (Vector.zip (Vector.zip unfinalizedProofs wrapProofWitnesses) prevChallengeDigests) mustVerify
+    proofsWithData = Vector.zip (Vector.zip (Vector.zip unfinalizedProofs proofWitnesses) prevChallengeDigests) mustVerify
 
   challengesAndDigests <- for proofsWithData \(Tuple (Tuple (Tuple unfinalized witness) prevChallengeDigest) mustVerifyFlag) -> do
     let

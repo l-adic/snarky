@@ -65,9 +65,12 @@ instance CheckedType Vesta.BaseField c (Type1 (FVar Vesta.BaseField)) where
     anyMatch <- any_ matchesForbidden
     assert_ (not_ anyMatch)
 
--- | CheckedType instance for Step circuit (runs on Vesta.ScalarField).
+-- | CheckedType instance for Step circuit (runs on Vesta.ScalarField = Pallas.BaseField).
 -- | Type1 values here represent Pallas.ScalarField values shifted into the larger field.
 -- | Since Pallas.ScalarField < Vesta.ScalarField, all values are valid (no forbidden values).
+-- |
+-- | Note: This also covers Pallas.ScalarField (= Vesta.BaseField) for the Wrap circuit,
+-- | since Vesta.ScalarField < Pallas.ScalarField means no forbidden values either.
 instance CheckedType Vesta.ScalarField c (Type1 (FVar Vesta.ScalarField)) where
   check _ = pure unit
 
@@ -212,6 +215,22 @@ instance Shifted (F Vesta.ScalarField) (Type1 (F Vesta.ScalarField)) where
   fromShifted (Type1 (F t)) =
     let
       { c } = shift1 (Proxy :: Proxy Vesta.ScalarField)
+      two = fromBigInt (BigInt.fromInt 2)
+    in
+      F (two * t + c)
+
+-- Same-field Type1: Wrap circuit stores Step-field scalars shifted into its own field.
+-- Since Vesta.ScalarField < Pallas.ScalarField, all values fit and there are no forbidden values.
+instance Shifted (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField)) where
+  toShifted (F s) =
+    let
+      { c, scale } = shift1 (Proxy :: Proxy Pallas.ScalarField)
+      t = (s - c) * scale
+    in
+      Type1 (F t)
+  fromShifted (Type1 (F t)) =
+    let
+      { c } = shift1 (Proxy :: Proxy Pallas.ScalarField)
       two = fromBigInt (BigInt.fromInt 2)
     in
       F (two * t + c)

@@ -1,20 +1,22 @@
--- | Witness data for verifying a Wrap proof in the Step circuit.
+-- | Witness data for `finalizeOtherProof`.
 -- |
--- | When the Step circuit verifies a previous Wrap proof, `finalize_other_proof`
--- | needs polynomial evaluations as private witness data.
+-- | Contains the polynomial evaluations, domain-dependent values, and
+-- | public input evaluation that `finalizeOtherProof` needs as private
+-- | witness data. Used by both the Step circuit (verifying Wrap proofs)
+-- | and the Wrap circuit (verifying Step proofs).
 -- |
 -- | Opening proof data (L/R pairs, sg, delta, z1, z2) belongs in
 -- | `incrementally_verify_proof`, not here. Domain/IPA constants come from
 -- | `FinalizeOtherProofParams` (compile-time parameters), not from witness data.
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml (finalize_other_proof)
-module Pickles.Step.WrapProofWitness
+module Pickles.ProofWitness
   ( -- * Polynomial Evaluations (re-exported from PlonkChecks)
     module PlonkChecks
   -- * Domain-dependent values
   , DomainValues
   -- * Complete Witness
-  , WrapProofWitness
+  , ProofWitness
   ) where
 
 import Pickles.PlonkChecks (AllEvals)
@@ -43,13 +45,13 @@ type DomainValues f =
 -- | Complete Witness
 -------------------------------------------------------------------------------
 
--- | Witness data for verifying a Wrap proof in the Step circuit.
+-- | Witness data for verifying another proof via `finalizeOtherProof`.
 -- |
 -- | Contains the polynomial evaluations, domain-dependent values, and
--- | public input evaluation needed by `finalizeOtherProof`.
+-- | public input evaluation needed by the circuit.
 -- |
 -- | Reference: step_verifier.ml finalize_other_proof
-type WrapProofWitness f =
+type ProofWitness f =
   { allEvals :: AllEvals f
   , domainValues :: DomainValues f
   , publicEvalForFt :: f

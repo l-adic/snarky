@@ -21,6 +21,7 @@ import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.Step.FqSpongeTranscript as FqSpongeTranscript
 import Test.Pickles.Step.SubCircuits as StepSubCircuits
 import Test.Pickles.StepE2E as StepE2E
+import Test.Pickles.Wrap.FinalizeOtherProof as WrapFinalizeOtherProof
 import Test.Pickles.Wrap.SubCircuits as WrapSubCircuits
 import Test.Pickles.WrapE2E as WrapE2E
 import Test.Spec (mapSpec)
@@ -40,6 +41,7 @@ main = runSpecAndExitProcess'
     FtComm.spec
     CombinedPolyComm.spec
     FinalizeOtherProofE2E.realDataSpec
+    WrapFinalizeOtherProof.realDataSpec
     StepCircuit.realDataSpec
     FqSpongeTranscript.spec
     PublicInputCommitment.spec
