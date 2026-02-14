@@ -40,6 +40,14 @@ export function vestaCrsLoadFromCache() {
     return napi.vestaCrsLoadFromCache();
 }
 
+export function vestaCrsCreate(depth) {
+    return napi.vestaCrsCreate(depth);
+}
+
+export function vestaCrsSize(crs) {
+    return napi.vestaCrsSize(crs)
+}
+
 export function vestaProverIndexCreate(cs) {
     return function(endoQ) {
         return function(srs) {

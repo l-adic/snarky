@@ -37,6 +37,15 @@ export function pallasCrsLoadFromCache() {
     return napi.pallasCrsLoadFromCache();
 }
 
+export function pallasCrsCreate(depth) {
+    return napi.pallasCrsCreate(depth);
+}
+
+export function pallasCrsSize(crs) {
+    return napi.pallasCrsSize(crs)
+}
+
+
 export function pallasProverIndexCreate(cs) {
     return function(endoQ) {
         return function(srs) {

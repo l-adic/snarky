@@ -20,6 +20,8 @@ foreign import pallasCircuitGateGetCoeff :: Gate Pallas.ScalarField -> Int -> Pa
 foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -> Int -> ConstraintSystem Pallas.ScalarField
 
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
+foreign import pallasCrsCreate :: Int -> CRS Pallas.G
+foreign import pallasCrsSize :: CRS Pallas.G -> Int
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 
