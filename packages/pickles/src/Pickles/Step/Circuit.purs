@@ -62,10 +62,10 @@ import Snarky.Types.Shifted (Type2)
 -- | - `m`: The advisory monad (e.g., Identity for compilation, ReaderT for proving)
 -- | - `f`: The circuit field type
 class Monad m <= StepWitnessM (n :: Int) m f where
-  getProofWitnesses :: m (Vector n (ProofWitness (F f)))
+  getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
 
 instance (Reflectable n Int, PrimeField f) => StepWitnessM n Effect f where
-  getProofWitnesses =
+  getProofWitnesses _ =
     throw "impossible! getProofWitness called by CircuitBuilder"
 
 -------------------------------------------------------------------------------
@@ -122,13 +122,16 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | - `n`: Number of previous proofs to verify
 -- | - `input`: Application-specific input type
 -- | - `prevInput`: Previous proof public input type
+-- | - `ds`: Step IPA rounds (phantom, carried for type bookkeeping)
+-- | - `dw`: Wrap IPA rounds (used: previous Wrap proofs have dw bulletproof challenges)
 -- | - `f`: Field element type
 -- | - `sf`: Shifted scalar type
 -- | - `b`: Boolean type
-type StepInput n input prevInput f sf b =
+type StepInput :: Int -> Type -> Type -> Int -> Int -> Type -> Type -> Type -> Type
+type StepInput n input prevInput ds dw f sf b =
   { appInput :: input
   , previousProofInputs :: Vector n prevInput
-  , unfinalizedProofs :: Vector n (UnfinalizedProof f sf b)
+  , unfinalizedProofs :: Vector n (UnfinalizedProof dw f sf b)
   , prevChallengeDigests :: Vector n f
   }
 
@@ -141,9 +144,10 @@ type StepInput n input prevInput f sf b =
 -- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
 -- |
 -- | Reference: step_main.ml:587-594 `Types.Step.Statement`
-type StepStatement n fv sf b =
+type StepStatement :: Int -> Int -> Int -> Type -> Type -> Type -> Type
+type StepStatement n ds dw fv sf b =
   { proofState ::
-      { unfinalizedProofs :: Vector n (UnfinalizedProof fv sf b)
+      { unfinalizedProofs :: Vector n (UnfinalizedProof dw fv sf b)
       , messagesForNextStepProof :: fv
       }
   , messagesForNextWrapProof :: Vector n fv
@@ -158,18 +162,19 @@ type StepStatement n fv sf b =
 -- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
 -- | Each proof gets its own fresh sponge state.
 finalizeOtherProof
-  :: forall f f' t m sf r
+  :: forall d f f' t m sf r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => Reflectable d Int
   => { unshift :: sf -> FVar f | r }
   -> FinalizeOtherProofParams f
   -> FVar f
-  -> UnfinalizedProof (FVar f) sf (BoolVar f)
+  -> UnfinalizedProof d (FVar f) sf (BoolVar f)
   -> ProofWitness (FVar f)
-  -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
+  -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProof ops params prevChallengeDigest unfinalized witness =
   evalSpongeM initialSpongeCircuit $
     finalizeOtherProofCircuit ops params
@@ -186,10 +191,10 @@ finalizeOtherProof ops params prevChallengeDigest unfinalized witness =
 -- |
 -- | Reference: step_verifier.ml:1099+
 hashMessagesForNextStepProofStub
-  :: forall n f c t m
+  :: forall n d f c t m
    . PrimeField f
   => CircuitM f c t m
-  => Vector n (BulletproofChallenges (FVar f))
+  => Vector n (BulletproofChallenges d (FVar f))
   -> Snarky c t m (FVar f)
 hashMessagesForNextStepProofStub _challenges = do
   -- Stub: return zero digest
@@ -199,10 +204,10 @@ hashMessagesForNextStepProofStub _challenges = do
 -- |
 -- | Reference: step_main.ml:478-482
 computeMessageForNextWrapProofStub
-  :: forall f c t m
+  :: forall d f c t m
    . PrimeField f
   => CircuitM f c t m
-  => BulletproofChallenges (FVar f)
+  => BulletproofChallenges d (FVar f)
   -> Snarky c t m (FVar f)
 computeMessageForNextWrapProofStub _challenges = do
   -- Stub: return zero digest
@@ -233,21 +238,22 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n input prevInput output aux t m
+  :: forall n ds dw input prevInput output aux t m
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n m Vesta.ScalarField
   => Reflectable n Int
+  => Reflectable dw Int
   => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
   -> FinalizeOtherProofParams Vesta.ScalarField
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  -> StepInput n input prevInput (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
+  -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
 stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs, prevChallengeDigests } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
-  proofWitnesses <- exists (lift getProofWitnesses)
+  proofWitnesses <- exists $ lift $ getProofWitnesses unit
 
   -- 3. For each previous proof, verify and collect challenges
   let

@@ -36,8 +36,9 @@ import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, t
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Pickles.Types (StepIPARounds)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -54,17 +55,17 @@ extractChallengesCircuitTest ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
-      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
+      => Vector StepIPARounds (IPA.LrPair (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector StepIPARounds (SizedF 128 (FVar Pallas.ScalarField)))
     circuit pairs =
       Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
         _ <- Pickles.Sponge.squeeze -- Squeeze for u first
         IPA.extractScalarChallenges pairs
 
-    testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    testFn :: Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField)) -> Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))
     testFn pairs =
       let
-        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges :: Vector StepIPARounds (SizedF 128 Pallas.ScalarField)
         challenges = Pickles.Sponge.evalPureSpongeM spongeState do
           _ <- Pickles.Sponge.squeeze
           IPA.extractScalarChallengesPure (coerce pairs)
@@ -79,8 +80,8 @@ extractChallengesCircuitTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
-        (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
+        (Proxy @(Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField))))
+        (Proxy @(Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))))
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
         Kimchi.initialState
@@ -89,7 +90,7 @@ extractChallengesCircuitTest ctx = do
     , testFunction: satisfied testFn
     , postCondition: Kimchi.postCondition
     }
-    [ coerce $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+    [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
 
 -- | In-circuit test for bullet reduce (lr_prod computation).
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
@@ -103,7 +104,7 @@ bulletReduceCircuitTest ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => Vector 16 (IPA.LrPair (FVar Pallas.ScalarField))
+      => Vector StepIPARounds (IPA.LrPair (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
     circuit pairs =
       Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
@@ -112,10 +113,10 @@ bulletReduceCircuitTest ctx = do
         { p } <- liftSnarky $ IPA.bulletReduceCircuit @Pallas.ScalarField @Vesta.G { pairs, challenges }
         pure p
 
-    testFn :: Vector 16 (IPA.LrPair (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
+    testFn :: Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField)) -> AffinePoint (F Pallas.ScalarField)
     testFn pairs =
       let
-        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges :: Vector StepIPARounds (SizedF 128 Pallas.ScalarField)
         challenges = Pickles.Sponge.evalPureSpongeM spongeState do
           _ <- Pickles.Sponge.squeeze
           IPA.extractScalarChallengesPure (coerce pairs)
@@ -131,7 +132,7 @@ bulletReduceCircuitTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(Vector 16 (IPA.LrPair (F Pallas.ScalarField))))
+        (Proxy @(Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField))))
         (Proxy @(AffinePoint (F Pallas.ScalarField)))
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -141,7 +142,7 @@ bulletReduceCircuitTest ctx = do
     , testFunction: satisfied testFn
     , postCondition: Kimchi.postCondition
     }
-    [ coerce $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+    [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
 
 -- | In-circuit test for IPA final check.
 -- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
@@ -150,11 +151,11 @@ ipaFinalCheckCircuitTest ctx = do
   let
     { challenges, spongeState, combinedPolynomial, omega } = mkStepIpaContext ctx
 
-    circuitInput :: IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IpaFinalCheckInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
       , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
-      , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+      , lr: coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof
       , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
       , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
       , combinedPolynomial: coerce combinedPolynomial
@@ -171,7 +172,7 @@ ipaFinalCheckCircuitTest ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => IpaFinalCheckInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IpaFinalCheckInput StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit input = do
       { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
@@ -183,7 +184,7 @@ ipaFinalCheckCircuitTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IpaFinalCheckInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IpaFinalCheckInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -318,18 +319,18 @@ checkBulletproofTest ctx = do
       }
 
     -- Rust ground truth for bulletproof challenges
-    rustChallenges :: Vector 16 Vesta.ScalarField
+    rustChallenges :: Vector StepIPARounds Vesta.ScalarField
     rustChallenges = unsafePartial fromJust $ Vector.toVector $
       ProofFFI.proofBulletproofChallenges ctx.verifierIndex
         { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Build circuit input for checkBulletproof
-    circuitInput :: CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: CheckBulletproofInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { xi: coerce xiChalFq
       , delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
       , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
-      , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+      , lr: coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof
       , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
       , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
       , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
@@ -346,8 +347,8 @@ checkBulletproofTest ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => CheckBulletproofInput 16 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
-      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector 16 (SizedF 128 (FVar Pallas.ScalarField)))
+      => CheckBulletproofInput StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector StepIPARounds (SizedF 128 (FVar Pallas.ScalarField)))
     circuit input = do
       { success, challenges } <- evalSpongeM initialSpongeCircuit do
         _ <- FqSpongeTranscript.spongeTranscriptCircuit spongeInputCircuit
@@ -361,12 +362,12 @@ checkBulletproofTest ctx = do
 
     -- Pure test function: replays sponge, extracts challenges, validates against Rust FFI
     testFn
-      :: CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
-      -> Vector 16 (SizedF 128 (F Pallas.ScalarField))
+      :: CheckBulletproofInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+      -> Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))
     testFn input =
       let
         -- Run pure sponge: transcript → absorb CIP → squeeze u → extract challenges
-        challenges :: Vector 16 (SizedF 128 Pallas.ScalarField)
+        challenges :: Vector StepIPARounds (SizedF 128 Pallas.ScalarField)
         challenges = evalPureSpongeM initialSponge do
           _ <- FqSpongeTranscript.spongeTranscriptPure spongeInput
           -- Absorb CIP (same as checkBulletproof does)
@@ -393,8 +394,8 @@ checkBulletproofTest ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(CheckBulletproofInput 16 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-        (Proxy @(Vector 16 (SizedF 128 (F Pallas.ScalarField))))
+        (Proxy @(CheckBulletproofInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))))
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
         Kimchi.initialState
@@ -464,7 +465,7 @@ incrementallyVerifyProofTest' ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))
     bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
     -- Xi challenge in Fq (coerced from Fp)
@@ -475,7 +476,7 @@ incrementallyVerifyProofTest' ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -496,7 +497,7 @@ incrementallyVerifyProofTest' ctx = do
       , opening:
           { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
           , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
-          , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+          , lr: coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof
           , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
           , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
           }
@@ -505,7 +506,7 @@ incrementallyVerifyProofTest' ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput nPublic 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       { success } <- evalSpongeM initialSpongeCircuit $
@@ -518,7 +519,7 @@ incrementallyVerifyProofTest' ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -588,7 +589,7 @@ verifyTest' ctx = do
       }
 
     -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
-    bulletproofChallenges :: Vector 16 (SizedF 128 (F Pallas.ScalarField))
+    bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))
     bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
     -- Xi challenge in Fq (coerced from Fp)
@@ -599,7 +600,7 @@ verifyTest' ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -620,7 +621,7 @@ verifyTest' ctx = do
       , opening:
           { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
           , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
-          , lr: coerce $ ProofFFI.pallasProofOpeningLr ctx.proof
+          , lr: coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof
           , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
           , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
           }
@@ -633,7 +634,7 @@ verifyTest' ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput nPublic 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       success <- evalSpongeM initialSpongeCircuit $
@@ -648,7 +649,7 @@ verifyTest' ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput nPublic 0 (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit

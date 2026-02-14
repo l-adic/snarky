@@ -19,6 +19,7 @@ module Pickles.Step.Dummy
 import Prelude
 
 import Data.Maybe (fromJust)
+import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (mkLinearizationPoly)
@@ -34,8 +35,8 @@ import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 dummyScalarChallenge :: forall @f. PrimeField f => FieldSizeInBits f 255 => ScalarChallenge f
 dummyScalarChallenge = unsafePartial fromJust $ SizedF.fromField @128 zero
 
--- | Dummy bulletproof challenges (16 zero challenges).
-dummyBulletproofChallenges :: forall @f. PrimeField f => FieldSizeInBits f 255 => BulletproofChallenges f
+-- | Dummy bulletproof challenges (d zero challenges).
+dummyBulletproofChallenges :: forall @d @f. Reflectable d Int => PrimeField f => FieldSizeInBits f 255 => BulletproofChallenges d f
 dummyBulletproofChallenges = Vector.generate \_ -> dummyScalarChallenge @f
 
 -- | Dummy PLONK challenges (all zeros).
@@ -49,7 +50,7 @@ dummyPlonkMinimal =
 
 -- | Dummy deferred values for bootstrapping.
 -- | Note: We use shifted 'one' because shifted 'zero' is often a forbidden value in these protocols.
-dummyDeferredValues :: forall @f @f_other @sf. PrimeField f => PrimeField f_other => FieldSizeInBits f 255 => Shifted (F f_other) sf => DeferredValues (F f) sf
+dummyDeferredValues :: forall @d @f @f_other @sf. Reflectable d Int => PrimeField f => PrimeField f_other => FieldSizeInBits f 255 => Shifted (F f_other) sf => DeferredValues d (F f) sf
 dummyDeferredValues =
   let
     oneSf = toShifted (one :: F f_other)
@@ -57,7 +58,7 @@ dummyDeferredValues =
     { plonk: dummyPlonkMinimal @(F f)
     , combinedInnerProduct: oneSf
     , xi: dummyScalarChallenge @(F f)
-    , bulletproofChallenges: dummyBulletproofChallenges @(F f)
+    , bulletproofChallenges: dummyBulletproofChallenges @d @(F f)
     , b: oneSf
     , perm: oneSf
     , zetaToSrsLength: oneSf
@@ -65,9 +66,9 @@ dummyDeferredValues =
     }
 
 -- | Dummy unfinalized proof for bootstrapping.
-dummyUnfinalizedProof :: forall @f @f_other @sf. PrimeField f => PrimeField f_other => FieldSizeInBits f 255 => Shifted (F f_other) sf => UnfinalizedProof (F f) sf Boolean
+dummyUnfinalizedProof :: forall @d @f @f_other @sf. Reflectable d Int => PrimeField f => PrimeField f_other => FieldSizeInBits f 255 => Shifted (F f_other) sf => UnfinalizedProof d (F f) sf Boolean
 dummyUnfinalizedProof =
-  { deferredValues: dummyDeferredValues @f @f_other @sf
+  { deferredValues: dummyDeferredValues @d @f @f_other @sf
   , shouldFinalize: false
   , spongeDigestBeforeEvaluations: zero
   }

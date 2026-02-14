@@ -23,7 +23,8 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Test.Pickles.TestContext (StepCase(..), WrapField, buildFinalizeInput, buildFinalizeParams, createStepProofContext)
+import Pickles.Types (StepIPARounds, WrapField)
+import Test.Pickles.TestContext (StepCase(..), buildFinalizeInput, buildFinalizeParams, createStepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -32,13 +33,13 @@ import Type.Proxy (Proxy(..))
 -- | Types
 -------------------------------------------------------------------------------
 
--- | Value type for test input
+-- | Value type for test input (Wrap-side finalize: verifying Step proof → d = StepIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput (F WrapField) (Type1 (F WrapField)) Boolean
+  FinalizeOtherProofInput StepIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
+  FinalizeOtherProofInput StepIPARounds (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
 
 -------------------------------------------------------------------------------
 -- | Real data test (All-checks with Step proof)

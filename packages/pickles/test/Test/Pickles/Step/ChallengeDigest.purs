@@ -26,6 +26,7 @@ import Snarky.Circuit.DSL as SizedF
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt)
+import Pickles.Types (WrapIPARounds)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (Spec, describe, it)
@@ -39,11 +40,11 @@ type StepField = Vesta.ScalarField
 
 -- | Value type for test input (1 previous proof)
 type ChallengeDigestTestInput1 =
-  ChallengeDigestInput 1 (F StepField) Boolean
+  ChallengeDigestInput 1 WrapIPARounds (F StepField) Boolean
 
 -- | Variable type for circuit
 type ChallengeDigestTestInputVar1 =
-  ChallengeDigestInput 1 (FVar StepField) (BoolVar StepField)
+  ChallengeDigestInput 1 WrapIPARounds (FVar StepField) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Pure Reference Implementation
@@ -52,8 +53,8 @@ type ChallengeDigestTestInputVar1 =
 -- | Pure version of challenge digest for reference.
 -- | Conditionally absorbs challenges based on mask, then squeezes.
 challengeDigestPure
-  :: forall n
-   . ChallengeDigestInput n (F StepField) Boolean
+  :: forall n d
+   . ChallengeDigestInput n d (F StepField) Boolean
   -> F StepField
 challengeDigestPure { mask, oldChallenges } =
   let
@@ -91,12 +92,12 @@ testCircuit1 input =
 -------------------------------------------------------------------------------
 
 -- | Generate dummy scalar challenges (all zeros)
-dummyBulletproofChallenges :: BulletproofChallenges (F StepField)
+dummyBulletproofChallenges :: BulletproofChallenges WrapIPARounds (F StepField)
 dummyBulletproofChallenges = Vector.generate \_ ->
   unsafePartial fromJust $ SizedF.fromField (F zero)
 
 -- | Generate non-zero scalar challenges for testing
-nonZeroBulletproofChallenges :: BulletproofChallenges (F StepField)
+nonZeroBulletproofChallenges :: BulletproofChallenges WrapIPARounds (F StepField)
 nonZeroBulletproofChallenges = Vector.generate \i ->
   unsafePartial fromJust $ SizedF.fromField (F $ fromInt (getFinite i + 1))
 

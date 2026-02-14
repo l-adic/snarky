@@ -19,7 +19,7 @@ import Pickles.IPA (type2ScalarOps)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Step.Circuit (class StepWitnessM, AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compile, makeSolver)
@@ -29,7 +29,8 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (SchnorrInputVar, StepCase(..), StepField, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext, runStepProverM, stepSchnorrAppCircuit)
+import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
+import Test.Pickles.TestContext (SchnorrInputVar, StepCase(..), StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
@@ -41,11 +42,11 @@ import Type.Proxy (Proxy(..))
 
 -- | Value type for test input
 type StepTestInput =
-  StepInput 1 Unit Unit (F StepField) (Type2 (F StepField) Boolean) Boolean
+  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable type for circuit
 type StepTestInputVar =
-  StepInput 1 Unit Unit (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit
@@ -87,8 +88,8 @@ spec :: Spec Unit
 spec = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case)" do
     let
-      unfinalizedProof :: UnfinalizedProof (F StepField) (Type2 (F StepField) Boolean) Boolean
-      unfinalizedProof = dummyUnfinalizedProof @StepField @Pallas.ScalarField
+      unfinalizedProof :: UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
+      unfinalizedProof = dummyUnfinalizedProof @WrapIPARounds @StepField @Pallas.ScalarField
 
       input :: StepTestInput
       input =
@@ -105,11 +106,14 @@ spec = describe "Pickles.Step.Circuit" do
       testCircuit
       Kimchi.initialState
 
+    let dummyWitnesses = dummyProofWitness :< nil
+
     circuitSpecInputs
-      identity
+      (runStepProverM dummyWitnesses)
       { builtState
       , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint StepField)) testCircuit
+      , solver: makeSolver (Proxy @(KimchiConstraint StepField))
+          (testCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepField) => StepTestInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepField) Unit)
       , testFunction: satisfied_
       , postCondition: Kimchi.postCondition
       }
@@ -119,7 +123,7 @@ spec = describe "Pickles.Step.Circuit" do
 -- | Real data test (Step → Wrap → Step cycle)
 -------------------------------------------------------------------------------
 type StepSchnorrInputVar =
-  StepInput 1 SchnorrInputVar Unit (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 type StepCircuitTestContext =
   { params :: FinalizeOtherProofParams StepField

@@ -25,6 +25,7 @@ module Pickles.Step.FinalizeOtherProof
 
 import Prelude
 
+import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -73,9 +74,9 @@ type FinalizeOtherProofParams f =
 -- | - `unfinalized`: The deferred values from the proof's public input
 -- | - `witness`: Private witness data (polynomial evaluations only)
 -- | - `prevChallengeDigest`: Digest of previous recursion challenges
-type FinalizeOtherProofInput f sf b =
+type FinalizeOtherProofInput d f sf b =
   { -- | Unfinalized proof from public input
-    unfinalized :: UnfinalizedProof f sf b
+    unfinalized :: UnfinalizedProof d f sf b
   -- | Private witness data (polynomial evaluations)
   , witness :: ProofWitness f
   -- | Poseidon hash of the bulletproof challenges from the previous invocation
@@ -91,9 +92,9 @@ type FinalizeOtherProofInput f sf b =
 -- | - `challenges`: The bulletproof challenges (derived from L/R pairs)
 -- |
 -- | The caller uses these challenges for computing messages for the next proof.
-type FinalizeOtherProofOutput f =
+type FinalizeOtherProofOutput d f =
   { finalized :: BoolVar f
-  , challenges :: BulletproofChallenges (FVar f)
+  , challenges :: BulletproofChallenges d (FVar f)
   }
 
 -------------------------------------------------------------------------------
@@ -123,16 +124,17 @@ type FinalizeOtherProofOutput f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall f f' t m sf r
+  :: forall d f f' t m sf r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => Reflectable d Int
   => { unshift :: sf -> FVar f | r }
   -> FinalizeOtherProofParams f
-  -> FinalizeOtherProofInput (FVar f) sf (BoolVar f)
-  -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput f)
+  -> FinalizeOtherProofInput d (FVar f) sf (BoolVar f)
+  -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest } = do
   let
     deferred = unfinalized.deferredValues
@@ -173,7 +175,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   cipCorrect <- liftSnarky $
     equals_ (ops.unshift deferred.combinedInnerProduct) computedCIP
 
-  -- 10. Expand bulletproof challenges (16 x 128-bit -> full field via endo)
+  -- 10. Expand bulletproof challenges (128-bit -> full field via endo)
   expandedChallenges <- liftSnarky $
     for deferred.bulletproofChallenges \c -> toField c endoVar
 

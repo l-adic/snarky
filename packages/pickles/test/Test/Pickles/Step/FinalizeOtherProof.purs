@@ -27,7 +27,8 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Test.Pickles.TestContext (StepCase(..), StepField, WrapField, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext)
+import Pickles.Types (StepField, WrapField, WrapIPARounds)
+import Test.Pickles.TestContext (StepCase(..), buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (Spec, SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -36,13 +37,13 @@ import Type.Proxy (Proxy(..))
 -- | Types
 -------------------------------------------------------------------------------
 
--- | Value type for test input
+-- | Value type for test input (Step-side finalize: verifying Wrap proof → d = WrapIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput (F StepField) (Type2 (F StepField) Boolean) Boolean
+  FinalizeOtherProofInput WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  FinalizeOtherProofInput WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -54,7 +55,7 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: dummyUnfinalizedProof @StepField @WrapField @(Type2 (F StepField) Boolean)
+        { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @WrapField @(Type2 (F StepField) Boolean)
         , witness: dummyProofWitness
         , prevChallengeDigest: zero
         }

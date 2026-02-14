@@ -7,13 +7,11 @@ module Test.Pickles.FFIValidation (spec) where
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
 import Pickles.IPA (computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -26,10 +24,11 @@ import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Snarky.Circuit.DSL (toField)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
+import Pickles.Types (StepIPARounds)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, computePublicEval, createStepProofContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, computePublicEval, createStepProofContext, toVectorOrThrow, zkRows)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -356,8 +355,8 @@ computeBTest ctx = do
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
-    challenges :: Vector 16 Vesta.ScalarField
-    challenges = unsafePartial $ fromJust $ Vector.toVector challengesArray
+    challenges :: Vector StepIPARounds Vesta.ScalarField
+    challenges = toVectorOrThrow @StepIPARounds "computeBTest proofBulletproofChallenges" challengesArray
 
     -- Compute zeta * omega for the second evaluation point
     omega = ProofFFI.domainGenerator ctx.domainLog2

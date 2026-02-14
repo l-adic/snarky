@@ -93,18 +93,18 @@ absorbManyConditional keep xs = for_ xs (absorbConditional keep)
 -- | Dummy proofs (mask = false) don't contribute to the digest.
 -- |
 -- | Reference: step_verifier.ml:880-909
-type ChallengeDigestInput n f b =
+type ChallengeDigestInput n d f b =
   { -- | Which previous proofs are real (should have challenges absorbed)
     mask :: Vector n b
-  , -- | Bulletproof challenges from each previous proof (16 challenges each)
-    oldChallenges :: Vector n (BulletproofChallenges f)
+  , -- | Bulletproof challenges from each previous proof (d challenges each)
+    oldChallenges :: Vector n (BulletproofChallenges d f)
   }
 
 -- | Compute the challenge digest from old bulletproof challenges.
 -- |
 -- | This circuit:
 -- | 1. Takes a mask indicating which previous proofs are "real"
--- | 2. For each proof where mask = true, absorbs all 16 bulletproof challenges
+-- | 2. For each proof where mask = true, absorbs all bulletproof challenges
 -- | 3. Squeezes the sponge to get the final digest
 -- |
 -- | The caller should initialize the sponge before calling this circuit.
@@ -124,17 +124,17 @@ type ChallengeDigestInput n f b =
 -- |   Opt_sponge.squeeze opt_sponge
 -- | ```
 challengeDigestCircuit
-  :: forall n f t m
+  :: forall n d f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => ChallengeDigestInput n (FVar f) (BoolVar f)
+  => ChallengeDigestInput n d (FVar f) (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
 challengeDigestCircuit { mask, oldChallenges } = do
   -- Absorb challenges from each previous proof based on mask
   for_ (Vector.zip mask oldChallenges) \(Tuple keep chals) ->
-    -- For each proof, absorb all 16 scalar challenges
+    -- For each proof, absorb all scalar challenges
     for_ chals \chal ->
       absorbConditional keep (SizedF.toField chal)
 

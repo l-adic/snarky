@@ -21,8 +21,9 @@ import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Circuit (class StepWitnessM, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F, Snarky)
 import Snarky.Circuit.Kimchi (Type2)
@@ -30,7 +31,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (StepField, StepSchnorrInput, StepSchnorrInputVar, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (StepProverM, StepSchnorrInput, StepSchnorrInputVar, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpec', satisfied_)
 import Test.Spec (Spec, describe, it)
@@ -58,8 +59,8 @@ stepSchnorrCircuit input = do
 genStepSchnorrInput :: Gen StepSchnorrInput
 genStepSchnorrInput =
   let
-    unfinalizedProof :: UnfinalizedProof (F StepField) (Type2 (F StepField) Boolean) Boolean
-    unfinalizedProof = dummyUnfinalizedProof @StepField @Pallas.ScalarField
+    unfinalizedProof :: UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
+    unfinalizedProof = dummyUnfinalizedProof @WrapIPARounds @StepField @Pallas.ScalarField
   in
     genValidSignature (Proxy @PallasG) (Proxy @4) <#> \schnorrInput ->
       { appInput: schnorrInput
@@ -79,10 +80,13 @@ spec = describe "Step E2E with Schnorr" do
       stepSchnorrCircuit
       Kimchi.initialState
 
-    circuitSpec' 10 identity
+    let dummyWitnesses = dummyProofWitness :< Vector.nil
+
+    circuitSpec' 10 (runStepProverM dummyWitnesses)
       { builtState
       , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint StepField)) stepSchnorrCircuit
+      , solver: makeSolver (Proxy @(KimchiConstraint StepField))
+          (stepSchnorrCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepField) Unit)
       , testFunction: satisfied_
       , postCondition: Kimchi.postCondition
       }

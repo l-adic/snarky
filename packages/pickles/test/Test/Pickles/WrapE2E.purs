@@ -31,7 +31,9 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, WrapField, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, createStepProofContext, createTestContext')
+import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
+import Snarky.Backend.Kimchi.Class (crsCreate)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, createStepProofContext, createTestContext', pow2)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -55,13 +57,13 @@ wrapCircuitSatisfiableTest ctx =
       circuit
         :: forall t
          . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-        => WrapInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+        => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
         -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
       circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
     circuitSpecPureInputs
       { builtState: compilePure
-          (Proxy @(WrapInput nPublic 0 (F WrapField) (Type1 (F WrapField)) Boolean))
+          (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
           (Proxy @Unit)
           (Proxy @(KimchiConstraint Pallas.ScalarField))
           circuit
@@ -88,18 +90,18 @@ wrapProofCreationTest ctx =
       circuit
         :: forall t
          . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-        => WrapInput nPublic 0 (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+        => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
         -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
       circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
       builtState = compilePure
-        (Proxy @(WrapInput nPublic 0 (F WrapField) (Type1 (F WrapField)) Boolean))
+        (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
         Kimchi.initialState
 
-      solver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) (WrapInput nPublic 0 (F WrapField) (Type1 (F WrapField)) Boolean) Unit
+      solver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) (WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
       solver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
 
     -- Log circuit size information
@@ -115,11 +117,15 @@ wrapProofCreationTest ctx =
 
     -- Create a test context which compiles the circuit, generates witness, and creates a Pallas proof
     -- Wrap proofs use domain 2^15 in Pickles.
+    liftEffect $ log "[WrapE2E] Creating Pallas CRS of size 2^15..."
+    let crs = crsCreate @WrapField @Pallas.G (pow2 15)
+    liftEffect $ log "[WrapE2E] Pallas CRS created."
     _pallasCtx <- createTestContext'
       { builtState
       , solver: \a -> pure $ runSolver solver a
       , input: circuitInput
       , targetDomainLog2: 15
+      , crs
       }
     -- If we get here without error, the proof was created successfully
     pure unit

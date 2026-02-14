@@ -35,7 +35,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, zkRows)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -65,7 +65,8 @@ ipaFinalCheckCrossFieldTest ctx = do
     -- Commitment curve for our Fp circuit is Pallas (base Fp).
     delta = ProofFFI.vestaProofOpeningDelta ctx.proof
     sg = ProofFFI.vestaProofOpeningSg ctx.proof
-    lr = ProofFFI.vestaProofOpeningLr ctx.proof
+    lr = toVectorOrThrow @16 "ipaFinalCheckCrossFieldTest vestaProofOpeningLr" $
+      ProofFFI.vestaProofOpeningLr ctx.proof
     blindingGenerator = ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     combinedPolynomial = ProofFFI.vestaCombinedPolynomialCommitment ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }

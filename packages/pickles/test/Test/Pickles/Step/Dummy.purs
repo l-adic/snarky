@@ -15,6 +15,7 @@ import Pickles.Verify.Types (BulletproofChallenges, PlonkMinimal, ScalarChalleng
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi (Type2, fromShifted)
+import Pickles.Types (WrapIPARounds)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
@@ -33,10 +34,10 @@ spec = describe "Dummy values" do
       F x = SizedF.toField (dummyScalarChallenge :: ScalarChallenge (F StepField))
     x `shouldEqual` zero
 
-  it "dummyBulletproofChallenges has 16 zero challenges" do
+  it "dummyBulletproofChallenges has correct number of challenges" do
     let
-      chals :: BulletproofChallenges (F StepField)
-      chals = dummyBulletproofChallenges
+      chals :: BulletproofChallenges WrapIPARounds (F StepField)
+      chals = dummyBulletproofChallenges @WrapIPARounds
       arr = Vector.toUnfoldable chals :: Array _
     Array.length arr `shouldEqual` 16
     -- Check first challenge is zero
@@ -58,7 +59,7 @@ spec = describe "Dummy values" do
 
   it "dummyDeferredValues has one values (shifted one to avoid forbidden zero)" do
     let
-      d = dummyDeferredValues @StepField @OtherField @(Type2 (F StepField) Boolean)
+      d = dummyDeferredValues @WrapIPARounds @StepField @OtherField @(Type2 (F StepField) Boolean)
       F cip = fromShifted d.combinedInnerProduct :: F OtherField
       F b = fromShifted d.b :: F OtherField
     cip `shouldEqual` one
@@ -66,5 +67,5 @@ spec = describe "Dummy values" do
 
   it "dummyUnfinalizedProof has shouldFinalize = false" do
     let
-      proof = dummyUnfinalizedProof @StepField @OtherField @(Type2 (F StepField) Boolean)
+      proof = dummyUnfinalizedProof @WrapIPARounds @StepField @OtherField @(Type2 (F StepField) Boolean)
     proof.shouldFinalize `shouldEqual` false

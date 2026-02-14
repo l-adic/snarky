@@ -24,6 +24,7 @@ import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, verify)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, false_, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -35,9 +36,13 @@ import Snarky.Curves.Pasta (VestaG)
 -- | Contains separate inputs for the two independent subcircuits:
 -- | - `ivpInput`: commitments, opening proof, and deferred values for IPA verification
 -- | - `finalizeInput`: deferred values, witness, and digest for finalize check
-type WrapInput nPublic sgOldN fv sf b =
-  { ivpInput :: IncrementallyVerifyProofInput nPublic sgOldN fv sf
-  , finalizeInput :: FinalizeOtherProofInput fv sf b
+-- |
+-- | Both subcircuits verify the Step proof, so both use `ds` (Step IPA rounds).
+-- | `dw` is phantom here (will be needed for sgOld/old Wrap proof challenges).
+type WrapInput :: Int -> Int -> Int -> Int -> Type -> Type -> Type -> Type
+type WrapInput nPublic sgOldN ds dw fv sf b =
+  { ivpInput :: IncrementallyVerifyProofInput nPublic sgOldN ds fv sf
+  , finalizeInput :: FinalizeOtherProofInput ds fv sf b
   }
 
 -- | Combined parameters for the Wrap circuit.
@@ -59,14 +64,16 @@ type WrapParams nPublic f =
 -- | For Wrap, isBaseCase is always false (Wrap always verifies a real Step proof).
 -- | The claimedDigest comes from the Step proof's Fq-sponge state.
 wrapCircuit
-  :: forall nPublic sgOldN t m
+  :: forall nPublic sgOldN ds dw _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
   => Reflectable nPublic Int
+  => Reflectable ds Int
+  => Add 1 _l3 ds
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
   -> WrapParams nPublic Pallas.ScalarField
   -> Pallas.ScalarField -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
-  -> WrapInput nPublic sgOldN (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+  -> WrapInput nPublic sgOldN ds dw (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
   -- 1. Finalize deferred values
