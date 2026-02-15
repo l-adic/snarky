@@ -11,6 +11,8 @@ module Test.Pickles.TestContext
   , StepSchnorrInputVar
   , StepProverM(..)
   , runStepProverM
+  , WrapProverM(..)
+  , runWrapProverM
   , computePublicEval
   , createStepProofContext
   , createTestContext'
@@ -26,6 +28,7 @@ module Test.Pickles.TestContext
   , createWrapProofContext
   , mkWrapIpaContext
   , buildWrapCircuitInput
+  , buildWrapProverWitness
   , buildWrapCircuitParams
   , buildWrapClaimedDigest
   , coerceStepPlonkChallenges
@@ -42,6 +45,7 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -59,7 +63,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
-import Effect.Exception (error)
+import Effect.Exception (error, throw)
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
@@ -84,12 +88,13 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherPr
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
+import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Circuit (WrapInput, WrapParams, wrapCircuit)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolver, runSolverT)
+import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
@@ -136,6 +141,28 @@ runStepProverM witnesses (StepProverM m) = runReaderT m witnesses
 
 instance StepWitnessM n (StepProverM n f) f where
   getProofWitnesses _ = StepProverM $ ask
+
+-------------------------------------------------------------------------------
+-- | WrapProverM: prove-time advisory monad for the Wrap circuit
+-------------------------------------------------------------------------------
+
+-- | Prove-time monad for Wrap: provides private witness data via ReaderT.
+newtype WrapProverM f a = WrapProverM (ReaderT (ProofWitness (F f)) Effect a)
+
+derive instance Newtype (WrapProverM f a) _
+derive newtype instance Functor (WrapProverM f)
+derive newtype instance Apply (WrapProverM f)
+derive newtype instance Applicative (WrapProverM f)
+derive newtype instance Bind (WrapProverM f)
+derive newtype instance Monad (WrapProverM f)
+
+runWrapProverM :: forall f a. ProofWitness (F f) -> WrapProverM f a -> Effect a
+runWrapProverM witness (WrapProverM m) = runReaderT m witness
+
+instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM f) f where
+  getEvals _ = WrapProverM ask
+  getMessages _ = WrapProverM $ lift $ throw "getMessages not yet implemented in WrapProverM"
+  getOpeningProof _ = WrapProverM $ lift $ throw "getOpeningProof not yet implemented in WrapProverM"
 
 -------------------------------------------------------------------------------
 -- | Schnorr circuit setup
@@ -884,7 +911,7 @@ buildWrapCircuitInput ctx =
     ivpZetaToDomain = toShifted $ F (pow ctx.oracles.zeta n) :: Type1 (F WrapField)
 
     -- Build finalize input (computed in Fq, separate from IVP deferred values)
-    finalizeInput = buildFinalizeInput
+    fullFinalizeInput = buildFinalizeInput
       { prevChallengeDigest: emptyPrevChallengeDigest
       , stepCtx: ctx
       }
@@ -915,8 +942,22 @@ buildWrapCircuitInput ctx =
             , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
             }
         }
-    , finalizeInput
+    , finalizeInput:
+        { unfinalized: fullFinalizeInput.unfinalized
+        , prevChallengeDigest: fullFinalizeInput.prevChallengeDigest
+        }
     }
+
+-- | Extract the private witness data for WrapProverM from a StepProofContext.
+buildWrapProverWitness :: StepProofContext -> ProofWitness (F WrapField)
+buildWrapProverWitness ctx =
+  let
+    fullFinalizeInput = buildFinalizeInput
+      { prevChallengeDigest: emptyPrevChallengeDigest
+      , stepCtx: ctx
+      }
+  in
+    fullFinalizeInput.witness
 
 -- | Create a Wrap test context (Pallas proof verifying Vesta Step proof).
 -- | Padded to domain 2^15 to match Pickles Wrap conventions.
@@ -930,11 +971,13 @@ createWrapProofContext stepCtx =
     let
       params = buildWrapCircuitParams @nPublic stepCtx
       input = buildWrapCircuitInput @nPublic stepCtx
+      witnessData = buildWrapProverWitness stepCtx
       claimedDigest = buildWrapClaimedDigest stepCtx
 
       circuit
         :: forall t m
          . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+        => WrapWitnessM StepIPARounds m Pallas.ScalarField
         => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
         -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
       circuit inVar =
@@ -945,20 +988,23 @@ createWrapProofContext stepCtx =
           claimedDigest
           inVar
 
-      rawSolver :: Solver Pallas.ScalarField (KimchiGate Pallas.ScalarField) (WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
-      rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
+      rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM Pallas.ScalarField) (WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
+      rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
+        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM Pallas.ScalarField) => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM Pallas.ScalarField) Unit)
+
+    builtState <- liftEffect $ compile
+      (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
+      (Proxy @Unit)
+      (Proxy @(KimchiConstraint Pallas.ScalarField))
+      circuit
+      KimchiConstraint.initialState
 
     liftEffect $ log "[createWrapProofContext] Creating Pallas CRS of size 2^15..."
     crs <- liftEffect $ createCRS @WrapField
     liftEffect $ log "[createWrapProofContext] Pallas CRS created."
     createTestContext'
-      { builtState: compilePure
-          (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
-          (Proxy @Unit)
-          (Proxy @(KimchiConstraint Pallas.ScalarField))
-          circuit
-          KimchiConstraint.initialState
-      , solver: \a -> pure $ runSolver rawSolver a
+      { builtState
+      , solver: \a -> liftEffect $ runWrapProverM witnessData (runSolverT rawSolver a)
       , input
       , targetDomainLog2: 15
       , crs

@@ -10,6 +10,9 @@
 -- |
 -- | The `shouldFinalize` flag enables bootstrapping: dummy proofs use `false`.
 -- |
+-- | Private witness data (polynomial evaluations for finalize) is obtained
+-- | via the WrapWitnessM advisory monad, not passed as public input.
+-- |
 -- | Reference: mina/src/lib/pickles/wrap_main.ml:422-512
 module Pickles.Wrap.Circuit
   ( WrapInput
@@ -19,13 +22,16 @@ module Pickles.Wrap.Circuit
 
 import Prelude
 
+import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, verify)
+import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, false_, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, exists, false_, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -35,14 +41,18 @@ import Snarky.Curves.Pasta (VestaG)
 -- |
 -- | Contains separate inputs for the two independent subcircuits:
 -- | - `ivpInput`: commitments, opening proof, and deferred values for IPA verification
--- | - `finalizeInput`: deferred values, witness, and digest for finalize check
+-- | - `finalizeInput`: unfinalized proof and digest for finalize check
+-- |     (witness data is obtained privately via WrapWitnessM.getEvals)
 -- |
 -- | Both subcircuits verify the Step proof, so both use `ds` (Step IPA rounds).
 -- | `dw` is phantom here (will be needed for sgOld/old Wrap proof challenges).
 type WrapInput :: Int -> Int -> Int -> Int -> Type -> Type -> Type -> Type
 type WrapInput nPublic sgOldN ds dw fv sf b =
   { ivpInput :: IncrementallyVerifyProofInput nPublic sgOldN ds fv sf
-  , finalizeInput :: FinalizeOtherProofInput ds fv sf b
+  , finalizeInput ::
+      { unfinalized :: UnfinalizedProof ds fv sf b
+      , prevChallengeDigest :: fv
+      }
   }
 
 -- | Combined parameters for the Wrap circuit.
@@ -57,15 +67,17 @@ type WrapParams nPublic f =
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
 -- |
 -- | Steps:
--- | 1. Run `finalizeOtherProofCircuit` on the finalize input's deferred values
--- | 2. Assert `finalized || not shouldFinalize`
--- | 3. Run `verify` (incrementallyVerifyProof) on the IVP input's opening proof
+-- | 1. Obtain polynomial evaluations privately via advisory monad
+-- | 2. Run `finalizeOtherProofCircuit` on the finalize input's deferred values
+-- | 3. Assert `finalized || not shouldFinalize`
+-- | 4. Run `verify` (incrementallyVerifyProof) on the IVP input's opening proof
 -- |
 -- | For Wrap, isBaseCase is always false (Wrap always verifies a real Step proof).
 -- | The claimedDigest comes from the Step proof's Fq-sponge state.
 wrapCircuit
   :: forall nPublic sgOldN ds dw _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+  => WrapWitnessM ds m Pallas.ScalarField
   => Reflectable nPublic Int
   => Reflectable ds Int
   => Add 1 _l3 ds
@@ -76,15 +88,22 @@ wrapCircuit
   -> WrapInput nPublic sgOldN ds dw (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
-  -- 1. Finalize deferred values
-  { finalized } <- evalSpongeM initialSpongeCircuit $
-    finalizeOtherProofCircuit scalarOps params.finalizeParams input.finalizeInput
+  -- 1. Obtain private witness data (polynomial evaluations)
+  witness <- exists $ lift $ getEvals @ds unit
 
-  -- 2. Assert finalized || not shouldFinalize
+  -- 2. Finalize deferred values
+  { finalized } <- evalSpongeM initialSpongeCircuit $
+    finalizeOtherProofCircuit scalarOps params.finalizeParams
+      { unfinalized: input.finalizeInput.unfinalized
+      , witness
+      , prevChallengeDigest: input.finalizeInput.prevChallengeDigest
+      }
+
+  -- 3. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ input.finalizeInput.unfinalized.shouldFinalize)
   assert_ finalizedOrNotRequired
 
-  -- 3. Verify the Step proof's IPA opening
+  -- 4. Verify the Step proof's IPA opening
   success <- evalSpongeM initialSpongeCircuit $
     verify @51 @VestaG scalarOps groupMapParams_ params.ivpParams input.ivpInput false_ (const_ claimedDigest)
   assert_ success
