@@ -24,6 +24,7 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
+import Pickles.Types (StepIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
 import Safe.Coerce (coerce)
@@ -36,7 +37,6 @@ import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, t
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Pickles.Types (StepIPARounds)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)

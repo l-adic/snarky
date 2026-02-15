@@ -11,11 +11,11 @@ import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Step.Dummy (dummyBulletproofChallenges, dummyDeferredValues, dummyPlonkMinimal, dummyScalarChallenge, dummyUnfinalizedProof)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Verify.Types (BulletproofChallenges, PlonkMinimal, ScalarChallenge)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi (Type2, fromShifted)
-import Pickles.Types (WrapIPARounds)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)

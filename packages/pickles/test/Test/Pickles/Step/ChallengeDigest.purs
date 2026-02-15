@@ -17,6 +17,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Verify.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -26,7 +27,6 @@ import Snarky.Circuit.DSL as SizedF
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (fromInt)
-import Pickles.Types (WrapIPARounds)
 import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
 import Test.Spec (Spec, describe, it)

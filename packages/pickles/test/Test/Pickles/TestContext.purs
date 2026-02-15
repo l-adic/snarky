@@ -91,7 +91,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, crsCreate, createProverIndex, createVerifierIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, true_, wrapF)
@@ -949,7 +949,7 @@ createWrapProofContext stepCtx =
       rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
 
     liftEffect $ log "[createWrapProofContext] Creating Pallas CRS of size 2^15..."
-    let crs = crsCreate @WrapField @Pallas.G (pow2 15)
+    crs <- liftEffect $ createCRS @WrapField
     liftEffect $ log "[createWrapProofContext] Pallas CRS created."
     createTestContext'
       { builtState: compilePure

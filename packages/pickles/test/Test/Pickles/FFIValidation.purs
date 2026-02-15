@@ -22,9 +22,9 @@ import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
+import Pickles.Types (StepIPARounds)
 import Snarky.Circuit.DSL (toField)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
-import Pickles.Types (StepIPARounds)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI

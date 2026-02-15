@@ -22,8 +22,10 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
 import Pickles.IPA (type1ScalarOps)
+import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Wrap.Circuit (WrapInput, wrapCircuit)
 import Snarky.Backend.Compile (Solver, compilePure, makeSolver, runSolver)
+import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky)
 import Snarky.Circuit.Kimchi (Type1, groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -31,9 +33,7 @@ import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (KimchiRow, toKimchiRows)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
-import Snarky.Backend.Kimchi.Class (crsCreate)
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, createStepProofContext, createTestContext', pow2)
+import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, createStepProofContext, createTestContext')
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
@@ -115,11 +115,7 @@ wrapProofCreationTest ctx =
     liftEffect $ log $ "[Wrap] Kimchi rows (expanded): " <> show (Array.length kimchiRows)
     liftEffect $ log $ "[Wrap] Public inputs: " <> show (Array.length builtState.publicInputs)
 
-    -- Create a test context which compiles the circuit, generates witness, and creates a Pallas proof
-    -- Wrap proofs use domain 2^15 in Pickles.
-    liftEffect $ log "[WrapE2E] Creating Pallas CRS of size 2^15..."
-    let crs = crsCreate @WrapField @Pallas.G (pow2 15)
-    liftEffect $ log "[WrapE2E] Pallas CRS created."
+    crs <- liftEffect $ createCRS @WrapField
     _pallasCtx <- createTestContext'
       { builtState
       , solver: \a -> pure $ runSolver solver a
