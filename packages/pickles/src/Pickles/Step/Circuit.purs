@@ -214,7 +214,7 @@ computeMessageForNextWrapProofStub _challenges = do
 stepCircuit
   :: forall n ds dw input prevInput output aux t m
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  => StepWitnessM n m Vesta.ScalarField
+  => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int
   => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
@@ -227,7 +227,7 @@ stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedPr
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
-  proofWitnesses <- exists $ lift $ getProofWitnesses unit
+  proofWitnesses <- exists $ lift $ getProofWitnesses @_ @dw unit
 
   -- 3. For each previous proof, verify and collect challenges
   let

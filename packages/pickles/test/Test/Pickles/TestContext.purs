@@ -11,9 +11,10 @@ module Test.Pickles.TestContext
   , SchnorrInputVar
   , StepSchnorrInput
   , StepSchnorrInputVar
+  , StepAdvice
   , StepProverM(..)
   , runStepProverM
-  , WrapPrivateData
+  , WrapAdvice
   , WrapProverM(..)
   , runWrapProverM
   , computePublicEval
@@ -40,6 +41,8 @@ module Test.Pickles.TestContext
   , buildFinalizeInput
   , buildStepFinalizeParams
   , buildStepFinalizeInput
+  , dummyStepAdvice
+  , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPInput
   , module Pickles.Types
@@ -154,29 +157,52 @@ createInductiveTestContext = do
 -- | StepProverM: prove-time advisory monad
 -------------------------------------------------------------------------------
 
+-- | Reader environment for StepProverM: all data the Step advisory monad provides.
+-- | Bundles polynomial evaluations (for finalize) and protocol commitments +
+-- | opening proof (for IVP), for each of the `n` previous Wrap proofs.
+type StepAdvice (n :: Int) (dw :: Int) f =
+  { evals :: Vector n (ProofWitness (F f))
+  , messages ::
+      Vector n
+        { wComm :: Vector 15 (AffinePoint (F f))
+        , zComm :: AffinePoint (F f)
+        , tComm :: Vector 7 (AffinePoint (F f))
+        }
+  , openingProofs ::
+      Vector n
+        { delta :: AffinePoint (F f)
+        , sg :: AffinePoint (F f)
+        , lr :: Vector dw { l :: AffinePoint (F f), r :: AffinePoint (F f) }
+        , z1 :: Type2 (F f) Boolean
+        , z2 :: Type2 (F f) Boolean
+        }
+  }
+
 -- | Prove-time monad: provides real proof witness data via ReaderT.
-newtype StepProverM (n :: Int) f a = StepProverM (ReaderT (Vector n (ProofWitness (F f))) Effect a)
+newtype StepProverM (n :: Int) (dw :: Int) f a = StepProverM (ReaderT (StepAdvice n dw f) Effect a)
 
-derive instance Newtype (StepProverM n f a) _
-derive newtype instance Functor (StepProverM n f)
-derive newtype instance Apply (StepProverM n f)
-derive newtype instance Applicative (StepProverM n f)
-derive newtype instance Bind (StepProverM n f)
-derive newtype instance Monad (StepProverM n f)
+derive instance Newtype (StepProverM n dw f a) _
+derive newtype instance Functor (StepProverM n dw f)
+derive newtype instance Apply (StepProverM n dw f)
+derive newtype instance Applicative (StepProverM n dw f)
+derive newtype instance Bind (StepProverM n dw f)
+derive newtype instance Monad (StepProverM n dw f)
 
-runStepProverM :: forall n f a. Vector n (ProofWitness (F f)) -> StepProverM n f a -> Effect a
-runStepProverM witnesses (StepProverM m) = runReaderT m witnesses
+runStepProverM :: forall n dw f a. StepAdvice n dw f -> StepProverM n dw f a -> Effect a
+runStepProverM privateData (StepProverM m) = runReaderT m privateData
 
-instance StepWitnessM n (StepProverM n f) f where
-  getProofWitnesses _ = StepProverM $ ask
+instance StepWitnessM n dw (StepProverM n dw f) f where
+  getProofWitnesses _ = StepProverM $ map _.evals ask
+  getMessages _ = StepProverM $ map _.messages ask
+  getOpeningProof _ = StepProverM $ map _.openingProofs ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
 -------------------------------------------------------------------------------
 
--- | Private witness data for the Wrap circuit prover.
--- | Combines polynomial evaluations (for finalize) and protocol commitments (for IVP).
-type WrapPrivateData (ds :: Int) f =
+-- | Reader environment for WrapProverM: all data the Wrap advisory monad provides.
+-- | Bundles polynomial evaluations (for finalize) and protocol commitments (for IVP).
+type WrapAdvice (ds :: Int) f =
   { evals :: ProofWitness (F f)
   , messages ::
       { wComm :: Vector 15 (AffinePoint (F f))
@@ -193,7 +219,7 @@ type WrapPrivateData (ds :: Int) f =
   }
 
 -- | Prove-time monad for Wrap: provides private witness data via ReaderT.
-newtype WrapProverM (ds :: Int) f a = WrapProverM (ReaderT (WrapPrivateData ds f) Effect a)
+newtype WrapProverM (ds :: Int) f a = WrapProverM (ReaderT (WrapAdvice ds f) Effect a)
 
 derive instance Newtype (WrapProverM ds f a) _
 derive newtype instance Functor (WrapProverM ds f)
@@ -202,7 +228,7 @@ derive newtype instance Applicative (WrapProverM ds f)
 derive newtype instance Bind (WrapProverM ds f)
 derive newtype instance Monad (WrapProverM ds f)
 
-runWrapProverM :: forall ds f a. WrapPrivateData ds f -> WrapProverM ds f a -> Effect a
+runWrapProverM :: forall ds f a. WrapAdvice ds f -> WrapProverM ds f a -> Effect a
 runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
 instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM ds f) f where
@@ -398,7 +424,7 @@ createStepProofContext stepCase = do
     circuit
       :: forall t m
        . CircuitM StepField (KimchiConstraint StepField) t m
-      => StepWitnessM 1 m StepField
+      => StepWitnessM 1 WrapIPARounds m StepField
       => StepSchnorrInputVar
       -> Snarky (KimchiConstraint StepField) t m Unit
     circuit i = do
@@ -413,19 +439,15 @@ createStepProofContext stepCase = do
     Kimchi.initialState
   let
     -- Solver with StepProverM to provide real witnesses
-    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 StepField) StepSchnorrInput Unit
+    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) StepSchnorrInput Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
-      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepField) Unit)
+      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
 
     -- Witness data for the advisory monad
-    witnessData :: Vector 1 (ProofWitness (F StepField))
+    witnessData :: StepAdvice 1 WrapIPARounds StepField
     witnessData = case stepCase of
-      BaseCase -> dummyProofWitness :< Vector.nil
-      InductiveCase wrapCtx ->
-        let
-          fopInput = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
-        in
-          fopInput.witness :< Vector.nil
+      BaseCase -> dummyStepAdvice
+      InductiveCase wrapCtx -> buildStepProverWitness wrapCtx
 
     -- Wrap solver: StepProverM → Aff
     solver input_ = liftEffect $ runStepProverM witnessData (runSolverT rawSolver input_)
@@ -960,7 +982,7 @@ buildWrapCircuitInput ctx =
 
 -- | Extract the private witness data for WrapProverM from a StepProofContext.
 -- | Includes both polynomial evaluations (for finalize) and protocol commitments (for IVP).
-buildWrapProverWitness :: StepProofContext -> WrapPrivateData StepIPARounds WrapField
+buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
 buildWrapProverWitness ctx =
   let
     fullFinalizeInput = buildFinalizeInput
@@ -1339,6 +1361,62 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
         , publicEvalForFt: F publicEvalForFt
         }
     , prevChallengeDigest: F prevChallengeDigest_
+    }
+
+-------------------------------------------------------------------------------
+-- | Build Step-side private witness data from a WrapProofContext
+-------------------------------------------------------------------------------
+
+-- | Dummy private data for the Step circuit base case (no real Wrap proofs).
+dummyStepAdvice :: StepAdvice 1 WrapIPARounds StepField
+dummyStepAdvice =
+  { evals: dummyProofWitness :< Vector.nil
+  , messages: dummyMessages :< Vector.nil
+  , openingProofs: dummyOpening :< Vector.nil
+  }
+  where
+  dummyMessages =
+    { wComm: Vector.replicate { x: zero, y: zero }
+    , zComm: { x: zero, y: zero }
+    , tComm: Vector.replicate { x: zero, y: zero }
+    }
+  dummyOpening =
+    { delta: { x: zero, y: zero }
+    , sg: { x: zero, y: zero }
+    , lr: Vector.replicate { l: { x: zero, y: zero }, r: { x: zero, y: zero } }
+    , z1: toShifted (F zero :: F StepField)
+    , z2: toShifted (F zero :: F StepField)
+    }
+
+-- | Extract the private witness data for StepProverM from a WrapProofContext.
+-- | Includes polynomial evaluations (for finalize), protocol commitments, and
+-- | opening proof (for IVP) for one previous Wrap proof.
+buildStepProverWitness :: WrapProofContext -> StepAdvice 1 WrapIPARounds StepField
+buildStepProverWitness wrapCtx =
+  let
+    fopInput = buildStepFinalizeInput
+      { prevChallengeDigest: emptyPrevChallengeDigest
+      , wrapCtx
+      }
+    commitments = ProofFFI.vestaProofCommitments wrapCtx.proof
+
+    tComm :: Vector 7 (AffinePoint (F StepField))
+    tComm = toVectorOrThrow @7 "buildStepProverWitness tComm" $ coerce commitments.tComm
+  in
+    { evals: fopInput.witness :< Vector.nil
+    , messages:
+        { wComm: coerce commitments.wComm
+        , zComm: coerce commitments.zComm
+        , tComm
+        } :< Vector.nil
+    , openingProofs:
+        { delta: coerce $ ProofFFI.vestaProofOpeningDelta wrapCtx.proof
+        , sg: coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof
+        , lr: coerce $ toVectorOrThrow @WrapIPARounds "buildStepProverWitness vestaProofOpeningLr" $
+            ProofFFI.vestaProofOpeningLr wrapCtx.proof
+        , z1: toShifted $ F $ ProofFFI.vestaProofOpeningZ1 wrapCtx.proof
+        , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 wrapCtx.proof
+        } :< Vector.nil
     }
 
 -------------------------------------------------------------------------------

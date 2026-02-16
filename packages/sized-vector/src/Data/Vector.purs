@@ -56,6 +56,7 @@ module Data.Vector
   , reverse
   , updateAt
   , modifyAt
+  , replicate
   --
   , chunk
   ) where
@@ -252,6 +253,10 @@ generate f = Vector $ map f (finites @n)
 -- | Create a vector by applying an effectful function to each index.
 generateA :: forall @n a f. Reflectable n Int => Applicative f => (Finite n -> f a) -> f (Vector n a)
 generateA f = Vector <$> traverse f (finites @n)
+
+-- | Create a vector of `n` copies of a value.
+replicate :: forall n a. Reflectable n Int => a -> Vector n a
+replicate a = generate (const a)
 
 -- | Split an array into chunks of the specified size (internal helper).
 chunk :: forall a. Int -> Array a -> Array (Array a)

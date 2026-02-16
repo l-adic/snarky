@@ -57,6 +57,8 @@
 module Pickles.Step.Advice
   ( class StepWitnessM
   , getProofWitnesses
+  , getMessages
+  , getOpeningProof
   ) where
 
 import Prelude
@@ -68,6 +70,8 @@ import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type2)
 
 -- | Advisory monad for the Step circuit.
 -- |
@@ -77,14 +81,47 @@ import Snarky.Curves.Class (class PrimeField)
 -- |
 -- | Parameters:
 -- | - `n`: Number of previous proofs being verified
+-- | - `dw`: Wrap IPA rounds (determines lr vector size in opening proof)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
 -- | - `f`: Circuit field (Vesta.ScalarField for Step)
-class Monad m <= StepWitnessM (n :: Int) m f where
+class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
 
+  -- | Protocol commitments for IVP verification.
+  -- | OCaml: Req.Messages (per previous Wrap proof)
+  getMessages
+    :: Unit
+    -> m
+         ( Vector n
+             { wComm :: Vector 15 (AffinePoint (F f))
+             , zComm :: AffinePoint (F f)
+             , tComm :: Vector 7 (AffinePoint (F f))
+             }
+         )
+
+  -- | Full opening proof for IVP verification.
+  -- | OCaml: Req.Openings_proof (per previous Wrap proof)
+  -- |
+  -- | z1/z2 are returned as Type2-shifted values (cross-field shift for Step).
+  -- | The Wrap proof's opening scalars live in Fq (Wrap scalar field), but the
+  -- | Step circuit operates in Fp. Type2 encodes the cross-field representation.
+  getOpeningProof
+    :: Unit
+    -> m
+         ( Vector n
+             { delta :: AffinePoint (F f)
+             , sg :: AffinePoint (F f)
+             , lr :: Vector dw { l :: AffinePoint (F f), r :: AffinePoint (F f) }
+             , z1 :: Type2 (F f) Boolean
+             , z2 :: Type2 (F f) Boolean
+             }
+         )
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable n Int, PrimeField f) => StepWitnessM n Effect f where
+instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
+  getMessages _ = throw "impossible! getMessages called during compilation"
+  getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
