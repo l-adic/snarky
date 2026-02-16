@@ -10,11 +10,8 @@
 -- |
 -- | Reference: mina/src/lib/pickles/step_main.ml:274-594
 module Pickles.Step.Circuit
-  ( -- * Advisory Monad
-    class StepWitnessM
-  , getProofWitnesses
-  -- * Application Circuit Types
-  , AppCircuit
+  ( -- * Application Circuit Types
+    AppCircuit
   , AppCircuitInput
   , AppCircuitOutput
   -- * Step Circuit Types
@@ -32,41 +29,18 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Effect (Effect)
-import Effect.Exception (throw)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
+import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Types.Shifted (Type2)
-
--------------------------------------------------------------------------------
--- | Advisory Monad for Private Proof Witnesses
--------------------------------------------------------------------------------
-
--- | Advisory monad for providing private proof witnesses to the Step circuit.
--- |
--- | In OCaml Pickles, proof witnesses (polynomial evaluations, domain values)
--- | are private/auxiliary data provided through snarky's exists/handler mechanism.
--- | This class serves the same role: it lets the Step circuit request witness
--- | data privately via `exists` + `lift`, keeping them out of the public input.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs (determines vector size)
--- | - `m`: The advisory monad (e.g., Identity for compilation, ReaderT for proving)
--- | - `f`: The circuit field type
-class Monad m <= StepWitnessM (n :: Int) m f where
-  getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
-
-instance (Reflectable n Int, PrimeField f) => StepWitnessM n Effect f where
-  getProofWitnesses _ =
-    throw "impossible! getProofWitness called by CircuitBuilder"
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types

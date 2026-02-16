@@ -81,7 +81,8 @@ import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, f
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.Circuit (class StepWitnessM, AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
+import Pickles.Step.Advice (class StepWitnessM)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
