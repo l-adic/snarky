@@ -178,8 +178,8 @@ foreign import vestaSpongeCheckpointBeforeChallenges :: VerifierIndex Pallas.G V
 -- Note: L/R coordinates are in the commitment curve's base field (the "other" field in the 2-cycle)
 -- For Pallas circuits using Vesta commitments: Vesta.BaseField = Pallas.ScalarField
 -- For Vesta circuits using Pallas commitments: Pallas.BaseField = Vesta.ScalarField
-foreign import pallasProofOpeningLr :: Proof Vesta.G Pallas.BaseField -> Vector 16 (LrPair Pallas.ScalarField)
-foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Vector 16 (LrPair Vesta.ScalarField)
+foreign import pallasProofOpeningLr :: Proof Vesta.G Pallas.BaseField -> Array (LrPair Pallas.ScalarField)
+foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Array (LrPair Vesta.ScalarField)
 
 -- lr_prod: the curve point sum from bullet_reduce
 -- lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]

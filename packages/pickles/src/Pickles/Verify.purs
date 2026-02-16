@@ -60,26 +60,27 @@ type IncrementallyVerifyProofParams nPublic f =
 
 -- | Circuit input. sgOldN is 0 or 2, nPublic is # of public inputs.
 -- | `fv` is `F f` for values or `FVar f` for circuit variables.
-type IncrementallyVerifyProofInput nPublic sgOldN fv sf =
+-- | `d` is the number of IPA rounds
+type IncrementallyVerifyProofInput nPublic sgOldN d fv sf =
   { publicInput :: Vector nPublic fv
   , sgOld :: Vector sgOldN (AffinePoint fv)
-  , deferredValues :: DeferredValues fv sf
+  , deferredValues :: DeferredValues d fv sf
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
   , tComm :: Vector 7 (AffinePoint fv)
   , opening ::
       { delta :: AffinePoint fv
       , sg :: AffinePoint fv
-      , lr :: Vector 16 { l :: AffinePoint fv, r :: AffinePoint fv }
+      , lr :: Vector d { l :: AffinePoint fv, r :: AffinePoint fv }
       , z1 :: sf
       , z2 :: sf
       }
   }
 
 -- | Output of incrementallyVerifyProof.
-type IncrementallyVerifyProofOutput f =
+type IncrementallyVerifyProofOutput d f =
   { spongeDigestBeforeEvaluations :: FVar f
-  , bulletproofChallenges :: BulletproofChallenges (FVar f)
+  , bulletproofChallenges :: BulletproofChallenges d (FVar f)
   , success :: BoolVar f
   }
 
@@ -100,7 +101,7 @@ type IncrementallyVerifyProofOutput f =
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall @nChunks nPublic sgOldN f f' @g sf t m bitsUsed sDiv2Bits _l _l2
+  :: forall @nChunks nPublic sgOldN d f f' @g sf t m bitsUsed sDiv2Bits _l _l2 _l3
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -116,12 +117,14 @@ incrementallyVerifyProof
   => Reflectable sDiv2Bits Int
   => Reflectable bitsUsed Int
   => Reflectable nPublic Int
+  => Reflectable d Int
   => Add 1 _l2 7
+  => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> IncrementallyVerifyProofParams nPublic f
-  -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
-  -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput f)
+  -> IncrementallyVerifyProofInput nPublic sgOldN d (FVar f) sf
+  -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps groupMapParams_ params input = do
   -- 1. Compute x_hat (public input commitment)
   let
@@ -175,7 +178,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let
-    bpInput :: CheckBulletproofInput 16 (FVar f) sf
+    bpInput :: CheckBulletproofInput d (FVar f) sf
     bpInput =
       { xi: input.deferredValues.xi
       , delta: input.opening.delta
@@ -211,7 +214,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
 verify
-  :: forall @nChunks nPublic sgOldN f f' @g sf t m bitsUsed sDiv2Bits _l _l2
+  :: forall @nChunks nPublic sgOldN d f f' @g sf t m bitsUsed sDiv2Bits _l _l2 _l3
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -227,11 +230,13 @@ verify
   => Reflectable sDiv2Bits Int
   => Reflectable bitsUsed Int
   => Reflectable nPublic Int
+  => Reflectable d Int
   => Add 1 _l2 7
+  => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> GroupMapParams f
   -> IncrementallyVerifyProofParams nPublic f
-  -> IncrementallyVerifyProofInput nPublic sgOldN (FVar f) sf
+  -> IncrementallyVerifyProofInput nPublic sgOldN d (FVar f) sf
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)

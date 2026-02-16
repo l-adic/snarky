@@ -17,56 +17,42 @@ import Effect.Aff (Aff)
 import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
+import Pickles.Types (StepIPARounds, WrapField)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pallas as Pallas
-import Test.Pickles.TestContext (buildFinalizeInput, buildFinalizeParams, createStepProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, buildFinalizeInput, buildFinalizeParams)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
 -- | Types
 -------------------------------------------------------------------------------
 
-type WrapField = Pallas.ScalarField
-
--- | Value type for test input
+-- | Value type for test input (Wrap-side finalize: verifying Step proof → d = StepIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput (F WrapField) (Type1 (F WrapField)) Boolean
+  FinalizeOtherProofInput StepIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
+  FinalizeOtherProofInput StepIPARounds (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
 
 -------------------------------------------------------------------------------
 -- | Real data test (All-checks with Step proof)
 -------------------------------------------------------------------------------
 
-type FinalizeOtherProofTestContext =
-  { params :: FinalizeOtherProofParams WrapField
-  , input :: FinalizeOtherProofTestInput
-  }
-
--- | Build the test context by generating a real Step proof and extracting
--- | cross-field data for the Wrap verifier.
-createFinalizeOtherProofTestContext :: Aff FinalizeOtherProofTestContext
-createFinalizeOtherProofTestContext = do
-  stepCtx <- createStepProofContext
-  let
-    params = buildFinalizeParams stepCtx
-    input = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, stepCtx }
-  pure { params, input }
-
-realDataSpec :: SpecT Aff Unit Aff Unit
-realDataSpec = beforeAll createFinalizeOtherProofTestContext $
+realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
+realDataSpec =
   describe "Pickles.Wrap.FinalizeOtherProof (real data)" do
-    it "all checks pass with real Step proof data" \{ params, input } -> do
+    it "all checks pass with real Step proof data" \{ step0 } -> do
       let
+        params = buildFinalizeParams step0
+        input = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, stepCtx: step0 }
+
         circuit
           :: forall t
            . CircuitM WrapField (KimchiConstraint WrapField) t Identity

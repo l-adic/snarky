@@ -204,7 +204,7 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
 -- | scalar challenge vector. The endo mapping to full field elements
 -- | happens separately, outside this function.
 -- |
--- | The number of rounds `n` equals the SRS log size (e.g., 16 for 2^16 SRS).
+-- | The number of rounds `n` equals the SRS log size
 extractScalarChallenges
   :: forall n f t m
    . PrimeField f

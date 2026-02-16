@@ -21,34 +21,29 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
+import Pickles.Types (StepField, WrapField, WrapIPARounds)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.StepInputBuilder (buildFinalizeInput, buildFinalizeParams)
-import Test.Pickles.TestContext (createWrapProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, buildStepFinalizeInput, buildStepFinalizeParams)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
-import Test.Spec (Spec, SpecT, beforeAll, describe, it)
+import Test.Spec (Spec, SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
 -- | Types
 -------------------------------------------------------------------------------
 
-type StepField = Vesta.ScalarField
-type WrapField = Pallas.ScalarField
-
--- | Value type for test input
+-- | Value type for test input (Step-side finalize: verifying Wrap proof → d = WrapIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput (F StepField) (Type2 (F StepField) Boolean) Boolean
+  FinalizeOtherProofInput WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  FinalizeOtherProofInput WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -60,7 +55,7 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: dummyUnfinalizedProof @StepField @WrapField @(Type2 (F StepField) Boolean)
+        { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @WrapField @(Type2 (F StepField) Boolean)
         , witness: dummyProofWitness
         , prevChallengeDigest: zero
         }
@@ -95,25 +90,13 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
 -- | Real data test (All-checks with Wrap proof)
 -------------------------------------------------------------------------------
 
-type FinalizeOtherProofTestContext =
-  { params :: FinalizeOtherProofParams StepField
-  , input :: FinalizeOtherProofTestInput
-  }
-
--- | Build the test context by generating a real Wrap proof and extracting
--- | cross-field data for the Step verifier.
-createFinalizeOtherProofTestContext :: Aff FinalizeOtherProofTestContext
-createFinalizeOtherProofTestContext = do
-  wrapCtx <- createWrapProofContext
-  let
-    params = buildFinalizeParams wrapCtx
-    input = buildFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
-  pure { params, input }
-
-realDataSpec :: SpecT Aff Unit Aff Unit
-realDataSpec = beforeAll createFinalizeOtherProofTestContext $
+realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
+realDataSpec =
   describe "Pickles.Step.FinalizeOtherProof (real data)" do
-    it "all checks pass with real Wrap proof data" \{ params, input } -> do
+    it "all checks pass with real Wrap proof data" \{ wrap0 } -> do
+      let
+        params = buildStepFinalizeParams wrap0
+        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx: wrap0 }
       let
         circuit
           :: forall t

@@ -21,9 +21,9 @@ import Snarky.Curves.Class (pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, createStepProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
@@ -40,10 +40,10 @@ type FtCommInput f =
   , zetaToDomainSize :: Type1 f
   }
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createStepProofContext $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "FtComm" do
-    it "circuit computes ft_comm matching Rust" ftCommTest
+    it "circuit computes ft_comm matching Rust" \{ step0 } -> ftCommTest step0
 
 ftCommTest :: StepProofContext -> Aff Unit
 ftCommTest ctx = do

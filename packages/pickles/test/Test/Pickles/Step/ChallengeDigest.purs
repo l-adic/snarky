@@ -17,6 +17,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
+import Pickles.Types (WrapIPARounds)
 import Pickles.Verify.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
@@ -39,11 +40,11 @@ type StepField = Vesta.ScalarField
 
 -- | Value type for test input (1 previous proof)
 type ChallengeDigestTestInput1 =
-  ChallengeDigestInput 1 (F StepField) Boolean
+  ChallengeDigestInput 1 WrapIPARounds (F StepField) Boolean
 
 -- | Variable type for circuit
 type ChallengeDigestTestInputVar1 =
-  ChallengeDigestInput 1 (FVar StepField) (BoolVar StepField)
+  ChallengeDigestInput 1 WrapIPARounds (FVar StepField) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Pure Reference Implementation
@@ -52,8 +53,8 @@ type ChallengeDigestTestInputVar1 =
 -- | Pure version of challenge digest for reference.
 -- | Conditionally absorbs challenges based on mask, then squeezes.
 challengeDigestPure
-  :: forall n
-   . ChallengeDigestInput n (F StepField) Boolean
+  :: forall n d
+   . ChallengeDigestInput n d (F StepField) Boolean
   -> F StepField
 challengeDigestPure { mask, oldChallenges } =
   let
@@ -91,12 +92,12 @@ testCircuit1 input =
 -------------------------------------------------------------------------------
 
 -- | Generate dummy scalar challenges (all zeros)
-dummyBulletproofChallenges :: BulletproofChallenges (F StepField)
+dummyBulletproofChallenges :: BulletproofChallenges WrapIPARounds (F StepField)
 dummyBulletproofChallenges = Vector.generate \_ ->
   unsafePartial fromJust $ SizedF.fromField (F zero)
 
 -- | Generate non-zero scalar challenges for testing
-nonZeroBulletproofChallenges :: BulletproofChallenges (F StepField)
+nonZeroBulletproofChallenges :: BulletproofChallenges WrapIPARounds (F StepField)
 nonZeroBulletproofChallenges = Vector.generate \i ->
   unsafePartial fromJust $ SizedF.fromField (F $ fromInt (getFinite i + 1))
 

@@ -7,13 +7,11 @@ module Test.Pickles.FFIValidation (spec) where
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
 import Pickles.IPA (computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -24,13 +22,14 @@ import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
+import Pickles.Types (StepIPARounds)
 import Snarky.Circuit.DSL (toField)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, computePublicEval, createStepProofContext, zkRows)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, computePublicEval, toVectorOrThrow, zkRows)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 -- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
@@ -356,8 +355,8 @@ computeBTest ctx = do
       { proof: ctx.proof, publicInput: ctx.publicInputs }
 
     -- Convert to type-safe vector (16 = IPA rounds for Schnorr circuit's SRS)
-    challenges :: Vector 16 Vesta.ScalarField
-    challenges = unsafePartial $ fromJust $ Vector.toVector challengesArray
+    challenges :: Vector StepIPARounds Vesta.ScalarField
+    challenges = toVectorOrThrow @StepIPARounds "computeBTest proofBulletproofChallenges" challengesArray
 
     -- Compute zeta * omega for the second evaluation point
     omega = ProofFFI.domainGenerator ctx.domainLog2
@@ -401,14 +400,14 @@ ipaRoundsTest ctx = do
 -- | Main spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll createStepProofContext $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "FFI Validation" do
-    it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
-    it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest
-    it "PS ftEval0 matches Rust FFI ftEval0" ftEval0Test
-    it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
-    it "PS Fr-sponge challenges (xi, evalscale) match Rust" xiCorrectTest
-    it "opening proof verifies" openingProofTest
-    it "PS computeB matches Rust computeB0" computeBTest
-    it "IPA rounds matches domain log2" ipaRoundsTest
+    it "PS gate constraint evaluation matches Rust for valid Schnorr witness" \{ step0 } -> gateConstraintTest step0
+    it "PS permContribution matches ftEval0 - publicEval + gateConstraints" \{ step0 } -> permutationTest step0
+    it "PS ftEval0 matches Rust FFI ftEval0" \{ step0 } -> ftEval0Test step0
+    it "PS combinedInnerProduct matches Rust combined_inner_product" \{ step0 } -> combinedInnerProductTest step0
+    it "PS Fr-sponge challenges (xi, evalscale) match Rust" \{ step0 } -> xiCorrectTest step0
+    it "opening proof verifies" \{ step0 } -> openingProofTest step0
+    it "PS computeB matches Rust computeB0" \{ step0 } -> computeBTest step0
+    it "IPA rounds matches domain log2" \{ step0 } -> ipaRoundsTest step0

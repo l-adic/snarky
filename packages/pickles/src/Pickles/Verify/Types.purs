@@ -4,7 +4,6 @@
 -- | deferred values and unfinalized proof structures used in verification.
 -- |
 -- | Key sizes (Pasta curves):
--- | - 16 IPA rounds (bulletproof challenges)
 -- | - 128-bit scalar challenges
 -- | - 255-bit field elements
 -- |
@@ -51,13 +50,14 @@ type ScalarChallenge f = SizedF 128 f
 -- | Bulletproof Challenges
 -------------------------------------------------------------------------------
 
--- | Vector of 16 scalar challenges from IPA rounds.
+-- | Vector of scalar challenges from IPA rounds.
 -- |
--- | For Pasta curves, we have 16 IPA rounds (domain size up to 2^16).
--- | Each challenge is a 128-bit value derived from absorbing L/R pairs.
+-- | The `d` parameter is the number of IPA rounds. 
+-- | Each challenge is a 128-bit value derived
+-- | from absorbing L/R pairs.
 -- |
 -- | Reference: unfinalized.ml:99 `bulletproof_challenges = Dummy.Ipa.Wrap.challenges`
-type BulletproofChallenges f = Vector 16 (ScalarChallenge f)
+type BulletproofChallenges d f = Vector d (ScalarChallenge f)
 
 -------------------------------------------------------------------------------
 -- | Plonk Minimal Values
@@ -154,11 +154,11 @@ expandPlonkMinimalCircuit endo plonk = do
 -- | - Type2 for Wrap verifying Step (Step scalars > Wrap field)
 -- |
 -- | Reference: unfinalized.ml:95-101, composition_types.ml Deferred_values
-type DeferredValues f sf =
+type DeferredValues d f sf =
   { plonk :: PlonkMinimal f
   , combinedInnerProduct :: sf
   , xi :: ScalarChallenge f
-  , bulletproofChallenges :: BulletproofChallenges f
+  , bulletproofChallenges :: BulletproofChallenges d f
   , b :: sf
   , perm :: sf -- Permutation argument scalar (shifted)
   , zetaToSrsLength :: sf -- zeta^maxPolySize (shifted)
@@ -180,8 +180,8 @@ type DeferredValues f sf =
 -- | - `BoolVar f` for circuit variable types
 -- |
 -- | Reference: unfinalized.ml:9-12 (comment), wrap_main.ml:431 (assertion)
-type UnfinalizedProof f sf b =
-  { deferredValues :: DeferredValues f sf
+type UnfinalizedProof d f sf b =
+  { deferredValues :: DeferredValues d f sf
   , shouldFinalize :: b
   , spongeDigestBeforeEvaluations :: f
   }

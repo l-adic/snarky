@@ -35,9 +35,9 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepProofContext, WrapProofContext, computePublicEval, createStepProofContext, createWrapProofContext, mkStepIpaContext, mkWrapIpaContext, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, computePublicEval, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
@@ -65,7 +65,8 @@ ipaFinalCheckCrossFieldTest ctx = do
     -- Commitment curve for our Fp circuit is Pallas (base Fp).
     delta = ProofFFI.vestaProofOpeningDelta ctx.proof
     sg = ProofFFI.vestaProofOpeningSg ctx.proof
-    lr = ProofFFI.vestaProofOpeningLr ctx.proof
+    lr = toVectorOrThrow @16 "ipaFinalCheckCrossFieldTest vestaProofOpeningLr" $
+      ProofFFI.vestaProofOpeningLr ctx.proof
     blindingGenerator = ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     combinedPolynomial = ProofFFI.vestaCombinedPolynomialCommitment ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
@@ -579,14 +580,14 @@ bCorrectCircuitTest ctx = do
     }
     [ circuitInput ]
 
-spec :: SpecT Aff Unit Aff Unit
+spec :: SpecT Aff InductiveTestContext Aff Unit
 spec = do
-  describe "Step Sub-circuits (Real Data)" $ beforeAll createStepProofContext $ do
-    it "ftEval0Circuit matches Rust FFI ftEval0" ftEval0CircuitTest
-    it "combined_inner_product_correct circuit integration" combinedInnerProductCorrectCircuitTest
-    it "xiCorrectCircuit verifies claimed xi" xiCorrectCircuitTest
-    it "plonkChecksCircuit verifies xi, evalscale, and combined_inner_product" plonkChecksCircuitTest
-    it "bCorrectCircuit verifies with Rust-provided values" bCorrectCircuitTest
+  describe "Step Sub-circuits (Real Data)" do
+    it "ftEval0Circuit matches Rust FFI ftEval0" \{ step0 } -> ftEval0CircuitTest step0
+    it "combined_inner_product_correct circuit integration" \{ step0 } -> combinedInnerProductCorrectCircuitTest step0
+    it "xiCorrectCircuit verifies claimed xi" \{ step0 } -> xiCorrectCircuitTest step0
+    it "plonkChecksCircuit verifies xi, evalscale, and combined_inner_product" \{ step0 } -> plonkChecksCircuitTest step0
+    it "bCorrectCircuit verifies with Rust-provided values" \{ step0 } -> bCorrectCircuitTest step0
 
-  describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" $ beforeAll createWrapProofContext $ do
-    it "verifies Fq IPA final check using Type2 shifted values" ipaFinalCheckCrossFieldTest
+  describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" do
+    it "verifies Fq IPA final check using Type2 shifted values" \{ wrap0 } -> ipaFinalCheckCrossFieldTest wrap0

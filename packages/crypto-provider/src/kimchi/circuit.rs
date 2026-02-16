@@ -15,7 +15,7 @@ use kimchi::prover_index::ProverIndex;
 use kimchi::verifier_index::VerifierIndex;
 use poly_commitment::commitment::CommitmentCurve;
 use poly_commitment::ipa::OpeningProof;
-use poly_commitment::{ipa::SRS, precomputed_srs::TestSRS};
+use poly_commitment::{ipa::SRS, precomputed_srs::TestSRS, SRS as _};
 use serde;
 use std::fs::File;
 use std::path::Path;
@@ -1444,8 +1444,28 @@ pub fn pallas_crs_load_from_cache() -> Result<PallasCRSExternal> {
 }
 
 #[napi]
+pub fn pallas_srs_create(depth: u32) -> PallasCRSExternal {
+    External::new(SRS::<PallasGroup>::create(depth as usize))
+}
+
+#[napi]
+pub fn pallas_srs_size(crs: &PallasCRSExternal) -> usize {
+    crs.size()
+}
+
+#[napi]
 pub fn vesta_crs_load_from_cache() -> Result<VestaCRSExternal> {
     Ok(External::new(load_srs_from_cache("srs-cache/vesta.srs")?))
+}
+
+#[napi]
+pub fn vesta_srs_create(depth: u32) -> VestaCRSExternal {
+    External::new(SRS::<VestaGroup>::create(depth as usize))
+}
+
+#[napi]
+pub fn vesta_srs_size(crs: &VestaCRSExternal) -> usize {
+    crs.size()
 }
 
 #[napi]
