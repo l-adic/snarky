@@ -38,11 +38,11 @@ export function pallasCrsLoadFromCache() {
 }
 
 export function pallasCrsCreate(depth) {
-    return napi.pallasCrsCreate(depth);
+    return napi.pallasSrsCreate(depth);
 }
 
 export function pallasCrsSize(crs) {
-    return napi.pallasCrsSize(crs)
+    return napi.pallasSrsSize(crs)
 }
 
 

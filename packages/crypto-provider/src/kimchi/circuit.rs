@@ -1444,12 +1444,12 @@ pub fn pallas_crs_load_from_cache() -> Result<PallasCRSExternal> {
 }
 
 #[napi]
-pub fn pallas_crs_create(depth: u32) -> PallasCRSExternal {
+pub fn pallas_srs_create(depth: u32) -> PallasCRSExternal {
     External::new(SRS::<PallasGroup>::create(depth as usize))
 }
 
 #[napi]
-pub fn pallas_crs_size(crs: &PallasCRSExternal) -> usize {
+pub fn pallas_srs_size(crs: &PallasCRSExternal) -> usize {
     crs.size()
 }
 
@@ -1459,12 +1459,12 @@ pub fn vesta_crs_load_from_cache() -> Result<VestaCRSExternal> {
 }
 
 #[napi]
-pub fn vesta_crs_create(depth: u32) -> VestaCRSExternal {
+pub fn vesta_srs_create(depth: u32) -> VestaCRSExternal {
     External::new(SRS::<VestaGroup>::create(depth as usize))
 }
 
 #[napi]
-pub fn vesta_crs_size(crs: &VestaCRSExternal) -> usize {
+pub fn vesta_srs_size(crs: &VestaCRSExternal) -> usize {
     crs.size()
 }
 

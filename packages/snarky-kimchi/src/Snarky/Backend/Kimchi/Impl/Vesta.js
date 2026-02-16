@@ -41,11 +41,11 @@ export function vestaCrsLoadFromCache() {
 }
 
 export function vestaCrsCreate(depth) {
-    return napi.vestaCrsCreate(depth);
+    return napi.vestaSrsCreate(depth);
 }
 
 export function vestaCrsSize(crs) {
-    return napi.vestaCrsSize(crs)
+    return napi.vestaSrsSize(crs)
 }
 
 export function vestaProverIndexCreate(cs) {
