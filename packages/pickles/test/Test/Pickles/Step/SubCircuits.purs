@@ -597,17 +597,17 @@ incrementallyVerifyProofTest ctx =
   go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
   go _ =
     let
-      params = buildStepIVPParams @nPublic ctx
+      params = buildStepIVPParams ctx
       circuitInput = buildStepIVPInput @nPublic ctx
 
       circuit
         :: forall t
          . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
         -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
       circuit input = do
         { success } <- evalSpongeM initialSpongeCircuit $
-          incrementallyVerifyProof @51 @Pallas.G
+          incrementallyVerifyProof @Pallas.G
             IPA.type2ScalarOps
             (groupMapParams $ Proxy @Pallas.G)
             params
@@ -616,7 +616,7 @@ incrementallyVerifyProofTest ctx =
     in
       circuitSpecPureInputs
         { builtState: compilePure
-            (Proxy @(IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
+            (Proxy @(IncrementallyVerifyProofInput (Vector.Vector nPublic (F Vesta.ScalarField)) 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
             (Proxy @Unit)
             (Proxy @(KimchiConstraint Vesta.ScalarField))
             circuit
@@ -641,7 +641,7 @@ verifyTest ctx =
   go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
   go _ =
     let
-      params = buildStepIVPParams @nPublic ctx
+      params = buildStepIVPParams ctx
       circuitInput = buildStepIVPInput @nPublic ctx
 
       -- Claimed sponge digest: coerce from Pallas.ScalarField (Fq) to Vesta.ScalarField (Fp)
@@ -651,11 +651,11 @@ verifyTest ctx =
       circuit
         :: forall t
          . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
         -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
       circuit input = do
         success <- evalSpongeM initialSpongeCircuit $
-          verify @51 @Pallas.G
+          verify @Pallas.G
             IPA.type2ScalarOps
             (groupMapParams $ Proxy @Pallas.G)
             params
@@ -666,7 +666,7 @@ verifyTest ctx =
     in
       circuitSpecPureInputs
         { builtState: compilePure
-            (Proxy @(IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
+            (Proxy @(IncrementallyVerifyProofInput (Vector.Vector nPublic (F Vesta.ScalarField)) 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
             (Proxy @Unit)
             (Proxy @(KimchiConstraint Vesta.ScalarField))
             circuit

@@ -18,22 +18,19 @@ module Pickles.Verify
 
 import Prelude
 
-import Data.Array.NonEmpty as NEA
 import Data.Foldable (for_)
-import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, IpaScalarOps, checkBulletproof)
-import Pickles.PublicInputCommitment (publicInputCommitment)
+import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
 import Pickles.Sponge (SpongeM, liftSnarky)
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add, class Mul)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -45,9 +42,9 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 -------------------------------------------------------------------------------
 
 -- | Compile-time constants from verifier index / SRS.
-type IncrementallyVerifyProofParams nPublic f =
+type IncrementallyVerifyProofParams f =
   { curveParams :: CurveParams f
-  , lagrangeComms :: Vector nPublic (AffinePoint (F f))
+  , lagrangeComms :: Array (AffinePoint (F f))
   , blindingH :: AffinePoint (F f)
   , sigmaCommLast :: AffinePoint (F f)
   , columnComms ::
@@ -58,11 +55,12 @@ type IncrementallyVerifyProofParams nPublic f =
   , indexDigest :: f
   }
 
--- | Circuit input. sgOldN is 0 or 2, nPublic is # of public inputs.
--- | `fv` is `F f` for values or `FVar f` for circuit variables.
+-- | Circuit input. sgOldN is 0 or 2.
+-- | `publicInput` is the structured public input type (e.g., Vector n (FVar f) for Wrap,
+-- | or a protocol-defined record for Step). Must have a PublicInputCommit instance.
 -- | `d` is the number of IPA rounds
-type IncrementallyVerifyProofInput nPublic sgOldN d fv sf =
-  { publicInput :: Vector nPublic fv
+type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
+  { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
   , deferredValues :: DeferredValues d fv sf
   , wComm :: Vector 15 (AffinePoint fv)
@@ -90,18 +88,18 @@ type IncrementallyVerifyProofOutput d f =
 
 -- | The core verifier circuit.
 -- |
--- | Wires together publicInputCommitment, spongeTranscript, ftComm, and
+-- | Wires together publicInputCommit, spongeTranscript, ftComm, and
 -- | checkBulletproof. Asserts deferred values match sponge output.
 -- |
 -- | Type parameters:
--- | - `nChunks`: chunks for publicInputCommitment MSM (typically 51)
+-- | - `publicInput`: structured public input type with PublicInputCommit instance
 -- | - `sgOldN`: number of previous proof sg points (0 for base case, 2 for recursion)
 -- | - `f`: circuit field (Pallas.ScalarField = Fq for step verifier)
 -- | - `f'`: scalar field of commitment curve
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall @nChunks nPublic sgOldN d f f' @g sf t m bitsUsed sDiv2Bits _l _l2 _l3
+  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -111,30 +109,21 @@ incrementallyVerifyProof
   => FrModule f' g
   => WeierstrassCurve f g
   => CircuitM f (KimchiConstraint f) t m
-  => Add bitsUsed _l 255
-  => Add sDiv2Bits 1 255
-  => Mul 5 nChunks bitsUsed
-  => Reflectable sDiv2Bits Int
-  => Reflectable bitsUsed Int
-  => Reflectable nPublic Int
+  => PublicInputCommit publicInput f
   => Reflectable d Int
   => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> GroupMapParams f
-  -> IncrementallyVerifyProofParams nPublic f
-  -> IncrementallyVerifyProofInput nPublic sgOldN d (FVar f) sf
+  -> IncrementallyVerifyProofParams f
+  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
 incrementallyVerifyProof scalarOps groupMapParams_ params input = do
   -- 1. Compute x_hat (public input commitment)
-  let
-    pairs = unsafePartial fromJust $ NEA.fromFoldable $
-      Vector.zipWith (\scalar base -> { scalar, base })
-        input.publicInput
-        params.lagrangeComms
-  xHat <- liftSnarky $ publicInputCommitment @nChunks
+  xHat <- liftSnarky $ publicInputCommit
     params.curveParams
-    pairs
+    input.publicInput
+    params.lagrangeComms
     params.blindingH
 
   -- 2. Run Fq-sponge transcript
@@ -214,7 +203,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
 verify
-  :: forall @nChunks nPublic sgOldN d f f' @g sf t m bitsUsed sDiv2Bits _l _l2 _l3
+  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -224,28 +213,25 @@ verify
   => FrModule f' g
   => WeierstrassCurve f g
   => CircuitM f (KimchiConstraint f) t m
-  => Add bitsUsed _l 255
-  => Add sDiv2Bits 1 255
-  => Mul 5 nChunks bitsUsed
-  => Reflectable sDiv2Bits Int
-  => Reflectable bitsUsed Int
-  => Reflectable nPublic Int
+  => PublicInputCommit publicInput f
   => Reflectable d Int
   => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> GroupMapParams f
-  -> IncrementallyVerifyProofParams nPublic f
-  -> IncrementallyVerifyProofInput nPublic sgOldN d (FVar f) sf
+  -> IncrementallyVerifyProofParams f
+  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
 verify scalarOps groupMapParams_ params input isBaseCase claimedDigest = do
   -- 1. Call incrementallyVerifyProof
-  output <- incrementallyVerifyProof @nChunks @g scalarOps groupMapParams_ params input
+  output <- incrementallyVerifyProof @g scalarOps groupMapParams_ params input
 
-  -- 2. Assert sponge digest matches (line 1207)
-  liftSnarky $ assertEq output.spongeDigestBeforeEvaluations claimedDigest
+  -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
+  liftSnarky do
+    digest' <- if_ isBaseCase claimedDigest output.spongeDigestBeforeEvaluations
+    assertEq digest' claimedDigest
 
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
   liftSnarky $ for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)

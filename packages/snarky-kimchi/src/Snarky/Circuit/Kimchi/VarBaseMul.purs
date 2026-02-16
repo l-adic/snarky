@@ -30,7 +30,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
 
 varBaseMul
-  :: forall t m @n bitsUsed l @nChunks f
+  :: forall t m n @nChunks @bitsUsed l f
    . FieldSizeInBits f n
   => Add bitsUsed l n
   => Mul 5 nChunks bitsUsed
@@ -115,18 +115,19 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is smaller than the modulus of the circuit field.
 -}
 scaleFast1
-  :: forall t m n @nChunks f
+  :: forall t m n @nChunks @bitsUsed f _l
    . FieldSizeInBits f n
-  => Add n 0 n -- trivial but required for some dumb reason
-  => Mul 5 nChunks n
+  => Add bitsUsed _l n
+  => Mul 5 nChunks bitsUsed
   => Reflectable nChunks Int
+  => Reflectable bitsUsed Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
   -> Type1 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 scaleFast1 p t = do
-  { g } <- varBaseMul @n @nChunks p t
+  { g } <- varBaseMul @nChunks @bitsUsed p t
   pure g
 
 {-
@@ -137,7 +138,7 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is larger than the modulus of the circuit field.
 -}
 scaleFast2
-  :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
+  :: forall t m f n @nChunks sDiv2Bits @bitsUsed _l
    . FieldSizeInBits f n
   => Add bitsUsed _l n
   => Add sDiv2Bits 1 n
@@ -150,7 +151,7 @@ scaleFast2
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 scaleFast2 base (Type2 { sDiv2, sOdd }) = do
-  { g, lsbBits } <- varBaseMul @n @nChunks base (Type1 sDiv2)
+  { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
   let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
   if_ sOdd g =<< do
@@ -212,4 +213,4 @@ scaleFast2'
        (AffinePoint (FVar f))
 scaleFast2' base s = do
   split <- splitFieldVar s
-  scaleFast2 @nChunks base (Type2 split)
+  scaleFast2 @nChunks @bitsUsed base (Type2 split)

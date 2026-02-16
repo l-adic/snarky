@@ -617,7 +617,7 @@ wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Pallas.ScalarField i
 -- | Build WrapCircuitParams from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitParams :: forall @nPublic. Reflectable nPublic Int => StepProofContext -> WrapParams nPublic Pallas.ScalarField
+buildWrapCircuitParams :: StepProofContext -> WrapParams Pallas.ScalarField
 buildWrapCircuitParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
@@ -634,8 +634,7 @@ buildWrapCircuitParams ctx =
   in
     { ivpParams:
         { curveParams: curveParams (Proxy @Vesta.G)
-        , lagrangeComms: unsafePartial fromJust $ Vector.toVector $
-            coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
+        , lagrangeComms: coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
         , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
         , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
         , columnComms:
@@ -1021,7 +1020,7 @@ createWrapProofContext stepCtx = do
   go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff WrapProofContext
   go _ = do
     let
-      params = buildWrapCircuitParams @nPublic stepCtx
+      params = buildWrapCircuitParams stepCtx
       input = buildWrapCircuitInput @nPublic stepCtx
       witnessData = buildWrapProverWitness stepCtx
       claimedDigest = buildWrapClaimedDigest stepCtx
@@ -1424,7 +1423,7 @@ buildStepProverWitness wrapCtx =
 -------------------------------------------------------------------------------
 
 -- | Build compile-time parameters for the Step IVP circuit (Fp circuit verifying Pallas proof).
-buildStepIVPParams :: forall @nPublic. Reflectable nPublic Int => WrapProofContext -> IncrementallyVerifyProofParams nPublic StepField
+buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField
 buildStepIVPParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
@@ -1440,8 +1439,7 @@ buildStepIVPParams ctx =
     sigmaComms = toVectorOrThrow @6 "buildStepIVPParams sigmaComms" $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Pallas.G)
-    , lagrangeComms: toVectorOrThrow @nPublic "buildStepIVPParams lagrangeComms" $
-        coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
+    , lagrangeComms: coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     , sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
     , columnComms:
@@ -1457,7 +1455,7 @@ buildStepIVPInput
   :: forall @nPublic
    . Reflectable nPublic Int
   => WrapProofContext
-  -> IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F StepField) (Type2 (F StepField) Boolean)
+  -> IncrementallyVerifyProofInput (Vector nPublic (F StepField)) 0 WrapIPARounds (F StepField) (Type2 (F StepField) Boolean)
 buildStepIVPInput ctx =
   let
     commitments = ProofFFI.vestaProofCommitments ctx.proof

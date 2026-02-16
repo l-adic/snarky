@@ -66,8 +66,8 @@ type WrapInput nPublic sgOldN ds dw fv sf b =
 -- |
 -- | Contains both IVP params (curve params, commitments) and
 -- | finalize params (domain, endo, linearization).
-type WrapParams nPublic f =
-  { ivpParams :: IncrementallyVerifyProofParams nPublic f
+type WrapParams f =
+  { ivpParams :: IncrementallyVerifyProofParams f
   , finalizeParams :: FinalizeOtherProofParams f
   }
 
@@ -90,7 +90,7 @@ wrapCircuit
   => Add 1 _l3 ds
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
-  -> WrapParams nPublic Pallas.ScalarField
+  -> WrapParams Pallas.ScalarField
   -> Pallas.ScalarField -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
   -> WrapInput nPublic sgOldN ds dw (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
@@ -129,5 +129,5 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
       , opening: openingProof
       }
   success <- evalSpongeM initialSpongeCircuit $
-    verify @51 @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_ (const_ claimedDigest)
+    verify @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_ (const_ claimedDigest)
   assert_ success

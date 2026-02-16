@@ -427,7 +427,7 @@ incrementallyVerifyProofTest'
   -> Aff Unit
 incrementallyVerifyProofTest' ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams @nPublic ctx
+    { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -476,7 +476,7 @@ incrementallyVerifyProofTest' ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput (Vector nPublic (F Pallas.ScalarField)) 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -506,11 +506,11 @@ incrementallyVerifyProofTest' ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput nPublic 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput (Vector nPublic (FVar Pallas.ScalarField)) 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       { success } <- evalSpongeM initialSpongeCircuit $
-        incrementallyVerifyProof @51 @Vesta.G
+        incrementallyVerifyProof @Vesta.G
           IPA.type1ScalarOps
           (groupMapParams $ Proxy @Vesta.G)
           params
@@ -519,7 +519,7 @@ incrementallyVerifyProofTest' ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput (Vector nPublic (F Pallas.ScalarField)) 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit
@@ -551,7 +551,7 @@ verifyTest'
   -> Aff Unit
 verifyTest' ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams @nPublic ctx
+    { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -600,7 +600,7 @@ verifyTest' ctx = do
     tComm :: Vector 7 (AffinePoint (F Pallas.ScalarField))
     tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
 
-    circuitInput :: IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+    circuitInput :: IncrementallyVerifyProofInput (Vector nPublic (F Pallas.ScalarField)) 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { publicInput: unsafePartial fromJust $ Vector.toVector $
           map (\fp -> F (fromBigInt (toBigInt fp) :: Pallas.ScalarField)) ctx.publicInputs
@@ -634,11 +634,11 @@ verifyTest' ctx = do
     circuit
       :: forall t
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t Identity
-      => IncrementallyVerifyProofInput nPublic 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+      => IncrementallyVerifyProofInput (Vector nPublic (FVar Pallas.ScalarField)) 0 StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t Identity Unit
     circuit input = do
       success <- evalSpongeM initialSpongeCircuit $
-        verify @51 @Vesta.G
+        verify @Vesta.G
           IPA.type1ScalarOps
           (groupMapParams $ Proxy @Vesta.G)
           params
@@ -649,7 +649,7 @@ verifyTest' ctx = do
 
   circuitSpecPureInputs
     { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput nPublic 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
+        (Proxy @(IncrementallyVerifyProofInput (Vector nPublic (F Pallas.ScalarField)) 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint Pallas.ScalarField))
         circuit

@@ -47,7 +47,7 @@ wrapCircuitSatisfiableTest ctx =
   go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
   go _ = do
     let
-      params = buildWrapCircuitParams @nPublic ctx
+      params = buildWrapCircuitParams ctx
       claimedDigest = buildWrapClaimedDigest ctx
       circuitInput = buildWrapCircuitInput @nPublic ctx
       witnessData = buildWrapProverWitness ctx
