@@ -6,7 +6,10 @@ module Test.Pickles.Step.SubCircuits (spec) where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Identity (Identity)
 import Data.Newtype (un)
+import Data.Reflectable (class Reflectable, reifyType)
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -24,10 +27,12 @@ import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
+import Pickles.Types (WrapIPARounds)
+import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, toField)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, false_, toField)
 import Snarky.Circuit.Kimchi (Type2, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -35,15 +40,15 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, computePublicEval, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, unsafeFqToFp, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
 -- | Test for ipaFinalCheckCircuit in an Fp circuit verifying an Fq proof (cross-field).
-ipaFinalCheckCrossFieldTest :: WrapProofContext -> Aff Unit
-ipaFinalCheckCrossFieldTest ctx = do
+ipaFinalCheckTest :: WrapProofContext -> Aff Unit
+ipaFinalCheckTest ctx = do
   let
     -- Extract Fq proof data
     z1 = ProofFFI.vestaProofOpeningZ1 ctx.proof
@@ -65,7 +70,7 @@ ipaFinalCheckCrossFieldTest ctx = do
     -- Commitment curve for our Fp circuit is Pallas (base Fp).
     delta = ProofFFI.vestaProofOpeningDelta ctx.proof
     sg = ProofFFI.vestaProofOpeningSg ctx.proof
-    lr = toVectorOrThrow @16 "ipaFinalCheckCrossFieldTest vestaProofOpeningLr" $
+    lr = toVectorOrThrow @16 "ipaFinalCheckTest vestaProofOpeningLr" $
       ProofFFI.vestaProofOpeningLr ctx.proof
     blindingGenerator = ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     combinedPolynomial = ProofFFI.vestaCombinedPolynomialCommitment ctx.verifierIndex
@@ -580,6 +585,99 @@ bCorrectCircuitTest ctx = do
     }
     [ circuitInput ]
 
+-------------------------------------------------------------------------------
+-- | incrementallyVerifyProof test
+-------------------------------------------------------------------------------
+
+-- | Full incrementallyVerifyProof circuit test for Fp circuit verifying a Wrap (Pallas) proof.
+incrementallyVerifyProofTest :: WrapProofContext -> Aff Unit
+incrementallyVerifyProofTest ctx =
+  reifyType (Array.length ctx.publicInputs) go
+  where
+  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
+  go _ =
+    let
+      params = buildStepIVPParams @nPublic ctx
+      circuitInput = buildStepIVPInput @nPublic ctx
+
+      circuit
+        :: forall t
+         . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+        => IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
+      circuit input = do
+        { success } <- evalSpongeM initialSpongeCircuit $
+          incrementallyVerifyProof @51 @Pallas.G
+            IPA.type2ScalarOps
+            (groupMapParams $ Proxy @Pallas.G)
+            params
+            input
+        assert_ success
+    in
+      circuitSpecPureInputs
+        { builtState: compilePure
+            (Proxy @(IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
+            (Proxy @Unit)
+            (Proxy @(KimchiConstraint Vesta.ScalarField))
+            circuit
+            Kimchi.initialState
+        , checker: Kimchi.eval
+        , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+        , testFunction: satisfied_
+        , postCondition: Kimchi.postCondition
+        }
+        [ circuitInput ]
+
+-------------------------------------------------------------------------------
+-- | verify test
+-------------------------------------------------------------------------------
+
+-- | Full verify circuit test for Fp circuit verifying a Wrap (Pallas) proof.
+-- | Wraps incrementallyVerifyProof with digest and challenge assertions.
+verifyTest :: WrapProofContext -> Aff Unit
+verifyTest ctx =
+  reifyType (Array.length ctx.publicInputs) go
+  where
+  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
+  go _ =
+    let
+      params = buildStepIVPParams @nPublic ctx
+      circuitInput = buildStepIVPInput @nPublic ctx
+
+      -- Claimed sponge digest: coerce from Pallas.ScalarField (Fq) to Vesta.ScalarField (Fp)
+      claimedDigestFp :: Vesta.ScalarField
+      claimedDigestFp = unsafeFqToFp ctx.oracles.fqDigest
+
+      circuit
+        :: forall t
+         . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
+        => IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
+      circuit input = do
+        success <- evalSpongeM initialSpongeCircuit $
+          verify @51 @Pallas.G
+            IPA.type2ScalarOps
+            (groupMapParams $ Proxy @Pallas.G)
+            params
+            input
+            false_ -- isBaseCase (real proof, not base case)
+            (const_ claimedDigestFp)
+        assert_ success
+    in
+      circuitSpecPureInputs
+        { builtState: compilePure
+            (Proxy @(IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
+            (Proxy @Unit)
+            (Proxy @(KimchiConstraint Vesta.ScalarField))
+            circuit
+            Kimchi.initialState
+        , checker: Kimchi.eval
+        , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
+        , testFunction: satisfied_
+        , postCondition: Kimchi.postCondition
+        }
+        [ circuitInput ]
+
 spec :: SpecT Aff InductiveTestContext Aff Unit
 spec = do
   describe "Step Sub-circuits (Real Data)" do
@@ -590,4 +688,6 @@ spec = do
     it "bCorrectCircuit verifies with Rust-provided values" \{ step0 } -> bCorrectCircuitTest step0
 
   describe "Step Verifier Cross-Field (Fp circuit verifying Fq proof)" do
-    it "verifies Fq IPA final check using Type2 shifted values" \{ wrap0 } -> ipaFinalCheckCrossFieldTest wrap0
+    it "verifies Fq IPA final check using Type2 shifted values" \{ wrap0 } -> ipaFinalCheckTest wrap0
+    it "incrementallyVerifyProof (Fp circuit verifying Wrap proof)" \{ wrap0 } -> incrementallyVerifyProofTest wrap0
+    it "verify (Fp circuit verifying Wrap proof)" \{ wrap0 } -> verifyTest wrap0

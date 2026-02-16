@@ -33,10 +33,15 @@ module Test.Pickles.TestContext
   , buildWrapClaimedDigest
   , coerceStepPlonkChallenges
   , extractStepRawBpChallenges
+  , unsafeFqToFp
+  , coerceWrapPlonkChallenges
+  , extractWrapRawBpChallenges
   , buildFinalizeParams
   , buildFinalizeInput
   , buildStepFinalizeParams
   , buildStepFinalizeInput
+  , buildStepIVPParams
+  , buildStepIVPInput
   , module Pickles.Types
   , toVectorOrThrow
   ) where
@@ -86,6 +91,7 @@ import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepC
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM)
@@ -1091,19 +1097,43 @@ mkWrapIpaContext ctx =
 -- | Step-side cross-field coercion helpers (Fq → Fp)
 -------------------------------------------------------------------------------
 
--- | Coerce an Fq value to Fp via BigInt roundtrip.
--- | Safe because |Fq - Fp| ≈ 2^78, so P(Fq value >= Fp) ≈ 2^{-177}.
-coerceFq :: WrapField -> StepField
-coerceFq fq = fromBigInt (toBigInt fq)
+-- | Unsafe coercion of an Fq value to Fp via BigInt roundtrip.
+-- | Since Fq > Fp, values >= Fp will be silently reduced mod Fp.
+-- | In practice P(random Fq >= Fp) ≈ 2^{-177}, but callers should be aware.
+unsafeFqToFp :: WrapField -> StepField
+unsafeFqToFp fq = fromBigInt (toBigInt fq)
 
 -- | Coerce a PointEval from Fq to Fp.
-coercePointEvalFq :: PointEval WrapField -> PointEval StepField
-coercePointEvalFq pe = { zeta: coerceFq pe.zeta, omegaTimesZeta: coerceFq pe.omegaTimesZeta }
+unsafePointEvalFqToFp :: PointEval WrapField -> PointEval StepField
+unsafePointEvalFqToFp pe = { zeta: unsafeFqToFp pe.zeta, omegaTimesZeta: unsafeFqToFp pe.omegaTimesZeta }
 
 -- | Endo scalar coefficient for challenge expansion (Vesta.endo_scalar ∈ Fp).
 -- | This is `Wrap_inner_curve.scalar` in OCaml endo.ml.
 stepEndo :: StepField
 stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
+
+-- | Coerce Wrap proof plonk challenges (Fq) to Step circuit field (Fp) via 128-bit representation.
+coerceWrapPlonkChallenges :: WrapProofContext -> PlonkMinimal (F StepField)
+coerceWrapPlonkChallenges ctx =
+  { alpha: wrapF (coerceViaBits ctx.oracles.alphaChal :: SizedF 128 StepField)
+  , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 StepField)
+  , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 StepField)
+  , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 StepField)
+  }
+
+-- | Extract raw 128-bit bulletproof challenges from a Wrap proof.
+-- | Uses the IPA sponge state from mkWrapIpaContext, squeezes u, then
+-- | extracts scalar challenges from the L/R pairs.
+extractWrapRawBpChallenges :: WrapProofContext -> Vector WrapIPARounds (SizedF 128 StepField)
+extractWrapRawBpChallenges ctx =
+  let
+    { spongeState } = mkWrapIpaContext ctx
+    lr = toVectorOrThrow @WrapIPARounds "extractWrapRawBpChallenges vestaProofOpeningLr" $
+      ProofFFI.vestaProofOpeningLr ctx.proof
+  in
+    Pickles.Sponge.evalPureSpongeM spongeState do
+      _ <- Pickles.Sponge.squeeze -- squeeze for u
+      extractScalarChallengesPure (coerce lr)
 
 -------------------------------------------------------------------------------
 -- | Build Step-side FinalizeOtherProofParams from a WrapProofContext
@@ -1115,7 +1145,7 @@ buildStepFinalizeParams :: WrapProofContext -> FinalizeOtherProofParams StepFiel
 buildStepFinalizeParams wrapCtx =
   { domain:
       { generator: (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
-      , shifts: map coerceFq (ProofFFI.proverIndexShifts wrapCtx.proverIndex)
+      , shifts: map unsafeFqToFp (ProofFFI.proverIndexShifts wrapCtx.proverIndex)
       }
   , endo: stepEndo
   , zkRows
@@ -1132,15 +1162,10 @@ buildStepFinalizeInput :: { prevChallengeDigest :: StepField, wrapCtx :: WrapPro
 buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
   let
     -- Coerce sponge digest
-    spongeDigest = coerceFq wrapCtx.oracles.fqDigest
+    spongeDigest = unsafeFqToFp wrapCtx.oracles.fqDigest
 
     -- Coerce PlonkMinimal challenges (128-bit cross-field)
-    plonk =
-      { alpha: wrapF (coerceViaBits wrapCtx.oracles.alphaChal :: SizedF 128 StepField)
-      , beta: wrapF (coerceViaBits wrapCtx.oracles.beta :: SizedF 128 StepField)
-      , gamma: wrapF (coerceViaBits wrapCtx.oracles.gamma :: SizedF 128 StepField)
-      , zeta: wrapF (coerceViaBits wrapCtx.oracles.zetaChal :: SizedF 128 StepField)
-      }
+    plonk = coerceWrapPlonkChallenges wrapCtx
 
     -- Expand plonk and compute domain values
     plonkExpanded = expandPlonkMinimal stepEndo plonk
@@ -1158,18 +1183,18 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
       { domainLog2: wrapCtx.domainLog2, zkRows, offset: -1, pt: plonkExpanded.zeta }
 
     -- Coerce polynomial evaluations (Fq → Fp)
-    witnessEvals = map coercePointEvalFq (ProofFFI.proofWitnessEvals wrapCtx.proof)
-    zEvals = coercePointEvalFq (ProofFFI.proofZEvals wrapCtx.proof)
-    sigmaEvals = map coercePointEvalFq (ProofFFI.proofSigmaEvals wrapCtx.proof)
-    coeffEvals = map coercePointEvalFq (ProofFFI.proofCoefficientEvals wrapCtx.proof)
-    indexEvals = map coercePointEvalFq (evalSelectorPolys wrapCtx.proverIndex wrapCtx.oracles.zeta)
+    witnessEvals = map unsafePointEvalFqToFp (ProofFFI.proofWitnessEvals wrapCtx.proof)
+    zEvals = unsafePointEvalFqToFp (ProofFFI.proofZEvals wrapCtx.proof)
+    sigmaEvals = map unsafePointEvalFqToFp (ProofFFI.proofSigmaEvals wrapCtx.proof)
+    coeffEvals = map unsafePointEvalFqToFp (ProofFFI.proofCoefficientEvals wrapCtx.proof)
+    indexEvals = map unsafePointEvalFqToFp (evalSelectorPolys wrapCtx.proverIndex wrapCtx.oracles.zeta)
 
     publicEvals :: PointEval StepField
     publicEvals =
-      { zeta: coerceFq wrapCtx.oracles.publicEvalZeta
-      , omegaTimesZeta: coerceFq wrapCtx.oracles.publicEvalZetaOmega
+      { zeta: unsafeFqToFp wrapCtx.oracles.publicEvalZeta
+      , omegaTimesZeta: unsafeFqToFp wrapCtx.oracles.publicEvalZetaOmega
       }
-    ftEval1 = coerceFq wrapCtx.oracles.ftEval1
+    ftEval1 = unsafeFqToFp wrapCtx.oracles.ftEval1
 
     -- Run Fp Fr-sponge → xi, r, polyscale, evalscale
     frInput :: FrSpongeInput StepField
@@ -1189,7 +1214,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
 
     -- Compute publicEvalForFt
     publicEvalForFt = computePublicEval
-      { publicInputs: map coerceFq wrapCtx.publicInputs
+      { publicInputs: map unsafeFqToFp wrapCtx.publicInputs
       , domainLog2: wrapCtx.domainLog2
       , omega
       , zeta: plonkExpanded.zeta
@@ -1200,7 +1225,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
       { w: map _.zeta (Vector.take @7 witnessEvals)
       , sigma: map _.zeta sigmaEvals
       , z: zEvals
-      , shifts: map coerceFq (ProofFFI.proverIndexShifts wrapCtx.proverIndex)
+      , shifts: map unsafeFqToFp (ProofFFI.proverIndexShifts wrapCtx.proverIndex)
       , alpha: plonkExpanded.alpha
       , beta: plonkExpanded.beta
       , gamma: plonkExpanded.gamma
@@ -1254,15 +1279,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
       }
 
     -- Extract bulletproof challenges
-    { spongeState } = mkWrapIpaContext wrapCtx
-
-    lr = toVectorOrThrow @WrapIPARounds "buildStepFinalizeInput vestaProofOpeningLr" $
-      ProofFFI.vestaProofOpeningLr wrapCtx.proof
-
-    rawBpChallenges :: Vector WrapIPARounds (SizedF 128 StepField)
-    rawBpChallenges = Pickles.Sponge.evalPureSpongeM spongeState do
-      _ <- Pickles.Sponge.squeeze -- squeeze for u
-      extractScalarChallengesPure (coerce lr)
+    rawBpChallenges = extractWrapRawBpChallenges wrapCtx
 
     bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (F StepField))
     bulletproofChallenges = coerce rawBpChallenges
@@ -1322,4 +1339,119 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
         , publicEvalForFt: F publicEvalForFt
         }
     , prevChallengeDigest: F prevChallengeDigest_
+    }
+
+-------------------------------------------------------------------------------
+-- | Build Step-side IVP params and input from a WrapProofContext
+-------------------------------------------------------------------------------
+
+-- | Build compile-time parameters for the Step IVP circuit (Fp circuit verifying Pallas proof).
+buildStepIVPParams :: forall @nPublic. Reflectable nPublic Int => WrapProofContext -> IncrementallyVerifyProofParams nPublic StepField
+buildStepIVPParams ctx =
+  let
+    numPublic = Array.length ctx.publicInputs
+    columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
+
+    indexComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    indexComms = toVectorOrThrow @6 "buildStepIVPParams indexComms" $ Array.take 6 columnCommsRaw
+
+    coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
+    coeffComms = toVectorOrThrow @15 "buildStepIVPParams coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
+
+    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    sigmaComms = toVectorOrThrow @6 "buildStepIVPParams sigmaComms" $ Array.drop 21 columnCommsRaw
+  in
+    { curveParams: curveParams (Proxy @Pallas.G)
+    , lagrangeComms: toVectorOrThrow @nPublic "buildStepIVPParams lagrangeComms" $
+        coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
+    , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
+    , sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
+    , columnComms:
+        { index: coerce indexComms
+        , coeff: coerce coeffComms
+        , sigma: coerce sigmaComms
+        }
+    , indexDigest: ProofFFI.vestaVerifierIndexDigest ctx.verifierIndex
+    }
+
+-- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.
+buildStepIVPInput
+  :: forall @nPublic
+   . Reflectable nPublic Int
+  => WrapProofContext
+  -> IncrementallyVerifyProofInput nPublic 0 WrapIPARounds (F StepField) (Type2 (F StepField) Boolean)
+buildStepIVPInput ctx =
+  let
+    commitments = ProofFFI.vestaProofCommitments ctx.proof
+
+    -- Compute deferred values from oracles
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
+    maxPolySize = ProofFFI.vestaVerifierIndexMaxPolySize ctx.verifierIndex
+    omega = ProofFFI.domainGenerator ctx.domainLog2
+
+    -- Perm scalar (pure, using expanded plonk values from oracles)
+    zetaToNMinus1 = pow ctx.oracles.zeta n - one
+    zkPoly = ProofFFI.permutationVanishingPolynomial
+      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
+    permInput =
+      { w: map _.zeta (Vector.take @7 (ProofFFI.proofWitnessEvals ctx.proof))
+      , sigma: map _.zeta (ProofFFI.proofSigmaEvals ctx.proof)
+      , z: ProofFFI.proofZEvals ctx.proof
+      , shifts: ProofFFI.proverIndexShifts ctx.proverIndex
+      , alpha: ctx.oracles.alpha
+      , beta: toField ctx.oracles.beta
+      , gamma: toField ctx.oracles.gamma
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: ctx.oracles.zeta
+      }
+    perm = permScalar permInput
+
+    -- b value from FFI
+    { challenges: rustChallenges } = mkWrapIpaContext ctx
+    bValue = ProofFFI.computeB0
+      { challenges: Vector.toUnfoldable rustChallenges
+      , zeta: ctx.oracles.zeta
+      , zetaOmega: ctx.oracles.zeta * omega
+      , evalscale: ctx.oracles.u
+      }
+
+    -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fp)
+    bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (F StepField))
+    bulletproofChallenges = coerce (extractWrapRawBpChallenges ctx)
+
+    -- Xi challenge in Fp (coerced from Fq)
+    xiChalFp :: SizedF 128 (F StepField)
+    xiChalFp = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 StepField)
+
+    -- Build circuit input
+    tComm :: Vector 7 (AffinePoint (F StepField))
+    tComm = toVectorOrThrow @7 "buildStepIVPInput tComm" $ coerce commitments.tComm
+  in
+    { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
+        map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
+    , sgOld: Vector.nil
+    , deferredValues:
+        { plonk: coerceWrapPlonkChallenges ctx
+        , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+        , xi: xiChalFp
+        , bulletproofChallenges
+        , b: toShifted $ F bValue
+        , perm: toShifted $ F perm
+        , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+        , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+        }
+    , wComm: coerce commitments.wComm
+    , zComm: coerce commitments.zComm
+    , tComm
+    , opening:
+        { delta: coerce $ ProofFFI.vestaProofOpeningDelta ctx.proof
+        , sg: coerce $ ProofFFI.vestaProofOpeningSg ctx.proof
+        , lr: coerce $ toVectorOrThrow @WrapIPARounds "buildStepIVPInput vestaProofOpeningLr" $
+            ProofFFI.vestaProofOpeningLr ctx.proof
+        , z1: toShifted $ F $ ProofFFI.vestaProofOpeningZ1 ctx.proof
+        , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 ctx.proof
+        }
     }
