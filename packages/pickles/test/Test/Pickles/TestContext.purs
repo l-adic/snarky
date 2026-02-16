@@ -44,7 +44,6 @@ module Test.Pickles.TestContext
 import Prelude
 
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
-import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -170,32 +169,39 @@ instance StepWitnessM n (StepProverM n f) f where
 
 -- | Private witness data for the Wrap circuit prover.
 -- | Combines polynomial evaluations (for finalize) and protocol commitments (for IVP).
-type WrapPrivateData f =
+type WrapPrivateData (ds :: Int) f =
   { evals :: ProofWitness (F f)
   , messages ::
       { wComm :: Vector 15 (AffinePoint (F f))
       , zComm :: AffinePoint (F f)
       , tComm :: Vector 7 (AffinePoint (F f))
       }
+  , openingProof ::
+      { delta :: AffinePoint (F f)
+      , sg :: AffinePoint (F f)
+      , lr :: Vector ds { l :: AffinePoint (F f), r :: AffinePoint (F f) }
+      , z1 :: Type1 (F f)
+      , z2 :: Type1 (F f)
+      }
   }
 
 -- | Prove-time monad for Wrap: provides private witness data via ReaderT.
-newtype WrapProverM f a = WrapProverM (ReaderT (WrapPrivateData f) Effect a)
+newtype WrapProverM (ds :: Int) f a = WrapProverM (ReaderT (WrapPrivateData ds f) Effect a)
 
-derive instance Newtype (WrapProverM f a) _
-derive newtype instance Functor (WrapProverM f)
-derive newtype instance Apply (WrapProverM f)
-derive newtype instance Applicative (WrapProverM f)
-derive newtype instance Bind (WrapProverM f)
-derive newtype instance Monad (WrapProverM f)
+derive instance Newtype (WrapProverM ds f a) _
+derive newtype instance Functor (WrapProverM ds f)
+derive newtype instance Apply (WrapProverM ds f)
+derive newtype instance Applicative (WrapProverM ds f)
+derive newtype instance Bind (WrapProverM ds f)
+derive newtype instance Monad (WrapProverM ds f)
 
-runWrapProverM :: forall f a. WrapPrivateData f -> WrapProverM f a -> Effect a
+runWrapProverM :: forall ds f a. WrapPrivateData ds f -> WrapProverM ds f a -> Effect a
 runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
-instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM f) f where
+instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM ds f) f where
   getEvals _ = WrapProverM $ map _.evals ask
   getMessages _ = WrapProverM $ map _.messages ask
-  getOpeningProof _ = WrapProverM $ lift $ throw "getOpeningProof not yet implemented in WrapProverM"
+  getOpeningProof _ = WrapProverM $ map _.openingProof ask
 
 -------------------------------------------------------------------------------
 -- | Schnorr circuit setup
@@ -938,14 +944,6 @@ buildWrapCircuitInput ctx =
             , zetaToSrsLength: ivpZetaToSrs
             , zetaToDomainSize: ivpZetaToDomain
             }
-        , opening:
-            { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
-            , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
-            , lr: coerce $ toVectorOrThrow @StepIPARounds "buildWrapCircuitInput pallasProofOpeningLr" $
-                ProofFFI.pallasProofOpeningLr ctx.proof
-            , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
-            , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
-            }
         }
     , finalizeInput:
         { unfinalized: fullFinalizeInput.unfinalized
@@ -955,7 +953,7 @@ buildWrapCircuitInput ctx =
 
 -- | Extract the private witness data for WrapProverM from a StepProofContext.
 -- | Includes both polynomial evaluations (for finalize) and protocol commitments (for IVP).
-buildWrapProverWitness :: StepProofContext -> WrapPrivateData WrapField
+buildWrapProverWitness :: StepProofContext -> WrapPrivateData StepIPARounds WrapField
 buildWrapProverWitness ctx =
   let
     fullFinalizeInput = buildFinalizeInput
@@ -972,6 +970,14 @@ buildWrapProverWitness ctx =
         { wComm: coerce commitments.wComm
         , zComm: coerce commitments.zComm
         , tComm
+        }
+    , openingProof:
+        { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
+        , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
+        , lr: coerce $ toVectorOrThrow @StepIPARounds "buildWrapProverWitness pallasProofOpeningLr" $
+            ProofFFI.pallasProofOpeningLr ctx.proof
+        , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
+        , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
         }
     }
 
@@ -1005,9 +1011,9 @@ createWrapProofContext stepCtx = do
           claimedDigest
           inVar
 
-      rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM Pallas.ScalarField) (WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
+      rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) (WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
       rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM Pallas.ScalarField) => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM Pallas.ScalarField) Unit)
+        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
 
     builtState <- liftEffect $ compile
       (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))

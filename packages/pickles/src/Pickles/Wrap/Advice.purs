@@ -49,6 +49,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
 import Snarky.Circuit.DSL (F)
+import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -79,14 +80,18 @@ class Monad m <= WrapWitnessM (ds :: Int) m f where
 
   -- | Full opening proof for IVP verification.
   -- | OCaml: Req.Openings_proof
+  -- |
+  -- | z1/z2 are returned as Type1-shifted values. In OCaml, the raw Tick.Field.t
+  -- | values are shifted via a Typ transport at `exists` time. Since PureScript
+  -- | lacks Typ transports, the prover applies `toShifted` before returning.
   getOpeningProof
     :: Unit
     -> m
          { delta :: AffinePoint (F f)
          , sg :: AffinePoint (F f)
          , lr :: Vector ds { l :: AffinePoint (F f), r :: AffinePoint (F f) }
-         , z1 :: F f
-         , z2 :: F f
+         , z1 :: Type1 (F f)
+         , z2 :: Type1 (F f)
          }
 
 -- | Compilation instance: never called, exists only to satisfy the constraint

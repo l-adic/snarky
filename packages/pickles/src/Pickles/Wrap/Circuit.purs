@@ -30,7 +30,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Verify (IncrementallyVerifyProofParams, verify)
 import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, exists, false_, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
@@ -55,13 +55,6 @@ type WrapInput nPublic sgOldN ds dw fv sf b =
       { publicInput :: Vector nPublic fv
       , sgOld :: Vector sgOldN (AffinePoint fv)
       , deferredValues :: DeferredValues ds fv sf
-      , opening ::
-          { delta :: AffinePoint fv
-          , sg :: AffinePoint fv
-          , lr :: Vector ds { l :: AffinePoint fv, r :: AffinePoint fv }
-          , z1 :: sf
-          , z2 :: sf
-          }
       }
   , finalizeInput ::
       { unfinalized :: UnfinalizedProof ds fv sf b
@@ -108,7 +101,10 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
   -- 2. Obtain private protocol commitments
   messages <- exists $ lift $ getMessages @ds unit
 
-  -- 3. Finalize deferred values
+  -- 3. Obtain private opening proof
+  openingProof <- exists $ lift $ getOpeningProof @ds unit
+
+  -- 4. Finalize deferred values
   { finalized } <- evalSpongeM initialSpongeCircuit $
     finalizeOtherProofCircuit scalarOps params.finalizeParams
       { unfinalized: input.finalizeInput.unfinalized
@@ -116,12 +112,12 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
       , prevChallengeDigest: input.finalizeInput.prevChallengeDigest
       }
 
-  -- 4. Assert finalized || not shouldFinalize
+  -- 5. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ input.finalizeInput.unfinalized.shouldFinalize)
   assert_ finalizedOrNotRequired
 
-  -- 5. Verify the Step proof's IPA opening
-  --    Reconstruct full IVP input from public parts + private messages
+  -- 6. Verify the Step proof's IPA opening
+  --    Reconstruct full IVP input from public parts + private witness data
   let
     fullIvpInput =
       { publicInput: input.ivpInput.publicInput
@@ -130,7 +126,7 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
       , wComm: messages.wComm
       , zComm: messages.zComm
       , tComm: messages.tComm
-      , opening: input.ivpInput.opening
+      , opening: openingProof
       }
   success <- evalSpongeM initialSpongeCircuit $
     verify @51 @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_ (const_ claimedDigest)
