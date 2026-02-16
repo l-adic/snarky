@@ -24,23 +24,26 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
-import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, verify)
-import Pickles.Verify.Types (UnfinalizedProof)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals)
+import Pickles.Verify (IncrementallyVerifyProofParams, verify)
+import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, exists, false_, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Combined input for the Wrap circuit.
 -- |
--- | Contains separate inputs for the two independent subcircuits:
--- | - `ivpInput`: commitments, opening proof, and deferred values for IPA verification
+-- | Contains public inputs for the two independent subcircuits:
+-- | - `ivpInput`: deferred values and opening proof for IPA verification
+-- |     (commitments wComm/zComm/tComm are obtained privately via WrapWitnessM.getMessages)
 -- | - `finalizeInput`: unfinalized proof and digest for finalize check
 -- |     (witness data is obtained privately via WrapWitnessM.getEvals)
 -- |
@@ -48,7 +51,18 @@ import Snarky.Curves.Pasta (VestaG)
 -- | `dw` is phantom here (will be needed for sgOld/old Wrap proof challenges).
 type WrapInput :: Int -> Int -> Int -> Int -> Type -> Type -> Type -> Type
 type WrapInput nPublic sgOldN ds dw fv sf b =
-  { ivpInput :: IncrementallyVerifyProofInput nPublic sgOldN ds fv sf
+  { ivpInput ::
+      { publicInput :: Vector nPublic fv
+      , sgOld :: Vector sgOldN (AffinePoint fv)
+      , deferredValues :: DeferredValues ds fv sf
+      , opening ::
+          { delta :: AffinePoint fv
+          , sg :: AffinePoint fv
+          , lr :: Vector ds { l :: AffinePoint fv, r :: AffinePoint fv }
+          , z1 :: sf
+          , z2 :: sf
+          }
+      }
   , finalizeInput ::
       { unfinalized :: UnfinalizedProof ds fv sf b
       , prevChallengeDigest :: fv
@@ -91,7 +105,10 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
   -- 1. Obtain private witness data (polynomial evaluations)
   witness <- exists $ lift $ getEvals @ds unit
 
-  -- 2. Finalize deferred values
+  -- 2. Obtain private protocol commitments
+  messages <- exists $ lift $ getMessages @ds unit
+
+  -- 3. Finalize deferred values
   { finalized } <- evalSpongeM initialSpongeCircuit $
     finalizeOtherProofCircuit scalarOps params.finalizeParams
       { unfinalized: input.finalizeInput.unfinalized
@@ -99,11 +116,22 @@ wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
       , prevChallengeDigest: input.finalizeInput.prevChallengeDigest
       }
 
-  -- 3. Assert finalized || not shouldFinalize
+  -- 4. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ input.finalizeInput.unfinalized.shouldFinalize)
   assert_ finalizedOrNotRequired
 
-  -- 4. Verify the Step proof's IPA opening
+  -- 5. Verify the Step proof's IPA opening
+  --    Reconstruct full IVP input from public parts + private messages
+  let
+    fullIvpInput =
+      { publicInput: input.ivpInput.publicInput
+      , sgOld: input.ivpInput.sgOld
+      , deferredValues: input.ivpInput.deferredValues
+      , wComm: messages.wComm
+      , zComm: messages.zComm
+      , tComm: messages.tComm
+      , opening: input.ivpInput.opening
+      }
   success <- evalSpongeM initialSpongeCircuit $
-    verify @51 @VestaG scalarOps groupMapParams_ params.ivpParams input.ivpInput false_ (const_ claimedDigest)
+    verify @51 @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_ (const_ claimedDigest)
   assert_ success

@@ -13,6 +13,7 @@ module Test.Pickles.TestContext
   , StepSchnorrInputVar
   , StepProverM(..)
   , runStepProverM
+  , WrapPrivateData
   , WrapProverM(..)
   , runWrapProverM
   , computePublicEval
@@ -167,8 +168,19 @@ instance StepWitnessM n (StepProverM n f) f where
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
 -------------------------------------------------------------------------------
 
+-- | Private witness data for the Wrap circuit prover.
+-- | Combines polynomial evaluations (for finalize) and protocol commitments (for IVP).
+type WrapPrivateData f =
+  { evals :: ProofWitness (F f)
+  , messages ::
+      { wComm :: Vector 15 (AffinePoint (F f))
+      , zComm :: AffinePoint (F f)
+      , tComm :: Vector 7 (AffinePoint (F f))
+      }
+  }
+
 -- | Prove-time monad for Wrap: provides private witness data via ReaderT.
-newtype WrapProverM f a = WrapProverM (ReaderT (ProofWitness (F f)) Effect a)
+newtype WrapProverM f a = WrapProverM (ReaderT (WrapPrivateData f) Effect a)
 
 derive instance Newtype (WrapProverM f a) _
 derive newtype instance Functor (WrapProverM f)
@@ -177,12 +189,12 @@ derive newtype instance Applicative (WrapProverM f)
 derive newtype instance Bind (WrapProverM f)
 derive newtype instance Monad (WrapProverM f)
 
-runWrapProverM :: forall f a. ProofWitness (F f) -> WrapProverM f a -> Effect a
-runWrapProverM witness (WrapProverM m) = runReaderT m witness
+runWrapProverM :: forall f a. WrapPrivateData f -> WrapProverM f a -> Effect a
+runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
 instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM f) f where
-  getEvals _ = WrapProverM ask
-  getMessages _ = WrapProverM $ lift $ throw "getMessages not yet implemented in WrapProverM"
+  getEvals _ = WrapProverM $ map _.evals ask
+  getMessages _ = WrapProverM $ map _.messages ask
   getOpeningProof _ = WrapProverM $ lift $ throw "getOpeningProof not yet implemented in WrapProverM"
 
 -------------------------------------------------------------------------------
@@ -857,8 +869,6 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
 buildWrapCircuitInput :: forall @nPublic. Reflectable nPublic Int => StepProofContext -> WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
 buildWrapCircuitInput ctx =
   let
-    commitments = ProofFFI.pallasProofCommitments ctx.proof
-
     -- Compute deferred values from oracles
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
@@ -901,10 +911,6 @@ buildWrapCircuitInput ctx =
     xiChalFq :: SizedF 128 (F WrapField)
     xiChalFq = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 WrapField)
 
-    -- Build circuit input
-    tComm :: Vector 7 (AffinePoint (F WrapField))
-    tComm = unsafePartial fromJust $ Vector.toVector @7 $ coerce commitments.tComm
-
     -- IVP deferred values (Fp-origin, cross-field shifted)
     ivpCIP = toShifted $ F ctx.oracles.combinedInnerProduct :: Type1 (F WrapField)
     ivpB = toShifted $ F bValue :: Type1 (F WrapField)
@@ -932,9 +938,6 @@ buildWrapCircuitInput ctx =
             , zetaToSrsLength: ivpZetaToSrs
             , zetaToDomainSize: ivpZetaToDomain
             }
-        , wComm: coerce commitments.wComm
-        , zComm: coerce commitments.zComm
-        , tComm
         , opening:
             { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
             , sg: coerce $ ProofFFI.pallasProofOpeningSg ctx.proof
@@ -951,15 +954,26 @@ buildWrapCircuitInput ctx =
     }
 
 -- | Extract the private witness data for WrapProverM from a StepProofContext.
-buildWrapProverWitness :: StepProofContext -> ProofWitness (F WrapField)
+-- | Includes both polynomial evaluations (for finalize) and protocol commitments (for IVP).
+buildWrapProverWitness :: StepProofContext -> WrapPrivateData WrapField
 buildWrapProverWitness ctx =
   let
     fullFinalizeInput = buildFinalizeInput
       { prevChallengeDigest: emptyPrevChallengeDigest
       , stepCtx: ctx
       }
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
+
+    tComm :: Vector 7 (AffinePoint (F WrapField))
+    tComm = toVectorOrThrow @7 "buildWrapProverWitness tComm" $ coerce commitments.tComm
   in
-    fullFinalizeInput.witness
+    { evals: fullFinalizeInput.witness
+    , messages:
+        { wComm: coerce commitments.wComm
+        , zComm: coerce commitments.zComm
+        , tComm
+        }
+    }
 
 -- | Create a Wrap test context (Pallas proof verifying Vesta Step proof).
 -- | Padded to domain 2^15 to match Pickles Wrap conventions.
