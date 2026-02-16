@@ -23,9 +23,9 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, createStepProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
@@ -36,10 +36,10 @@ type CircuitField = Pallas.ScalarField
 -- | Powers of xi are computed implicitly via Horner accumulation.
 type CombinedPolyCommInput f = { xi :: SizedF 128 f }
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll (createStepProofContext BaseCase) $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "CombinedPolyComm" do
-    it "circuit computes combined polynomial commitment matching Rust" combinedPolyCommTest
+    it "circuit computes combined polynomial commitment matching Rust" \{ step0 } -> combinedPolyCommTest step0
 
 combinedPolyCommTest :: StepProofContext -> Aff Unit
 combinedPolyCommTest ctx = do

@@ -12,15 +12,13 @@ module Test.Pickles.Step.Circuit
 import Prelude
 
 import Data.Schnorr.Gen (genValidSignature)
-import Data.Vector (Vector, nil, (:<))
+import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
-import Pickles.ProofWitness (ProofWitness)
 import Pickles.Step.Circuit (class StepWitnessM, AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compile, makeSolver)
@@ -30,10 +28,10 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (SchnorrInputVar, StepCase(..), StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
-import Test.Spec (Spec, SpecT, beforeAll, describe, it)
+import Test.Spec (Spec, SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -125,37 +123,26 @@ spec = describe "Pickles.Step.Circuit" do
 type StepSchnorrInputVar =
   StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
-type StepCircuitTestContext =
-  { params :: FinalizeOtherProofParams StepField
-  , input :: StepSchnorrInput
-  , witnessData :: Vector 1 (ProofWitness (F StepField))
-  }
-
-createStepCircuitTestContext :: Aff StepCircuitTestContext
-createStepCircuitTestContext = do
-  stepCtx <- createStepProofContext BaseCase
-  wrapCtx <- createWrapProofContext stepCtx
-  schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
-  let
-    params = buildStepFinalizeParams wrapCtx
-    fopInput = buildStepFinalizeInput
-      { prevChallengeDigest: emptyPrevChallengeDigest
-      , wrapCtx
-      }
-
-    input :: StepSchnorrInput
-    input =
-      { appInput: schnorrInput
-      , previousProofInputs: unit :< nil
-      , unfinalizedProofs: fopInput.unfinalized :< nil
-      , prevChallengeDigests: fopInput.prevChallengeDigest :< nil
-      }
-  pure { params, input, witnessData: fopInput.witness :< nil }
-
-realDataSpec :: SpecT Aff Unit Aff Unit
-realDataSpec = beforeAll createStepCircuitTestContext $
+realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
+realDataSpec =
   describe "Pickles.Step.Circuit (real data)" do
-    it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ params, input, witnessData } -> do
+    it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ wrap0 } -> do
+      schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
+      let
+        params = buildStepFinalizeParams wrap0
+        fopInput = buildStepFinalizeInput
+          { prevChallengeDigest: emptyPrevChallengeDigest
+          , wrapCtx: wrap0
+          }
+
+        input :: StepSchnorrInput
+        input =
+          { appInput: schnorrInput
+          , previousProofInputs: unit :< nil
+          , unfinalizedProofs: fopInput.unfinalized :< nil
+          , prevChallengeDigests: fopInput.prevChallengeDigest :< nil
+          }
+        witnessData = fopInput.witness :< nil
       let
         realCircuit
           :: forall t m

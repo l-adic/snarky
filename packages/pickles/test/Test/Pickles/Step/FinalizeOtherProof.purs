@@ -21,16 +21,16 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepField, WrapField, WrapIPARounds)
 import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Test.Pickles.TestContext (StepCase(..), buildStepFinalizeInput, buildStepFinalizeParams, createStepProofContext, createWrapProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, buildStepFinalizeInput, buildStepFinalizeParams)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
-import Test.Spec (Spec, SpecT, beforeAll, describe, it)
+import Test.Spec (Spec, SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -90,26 +90,13 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
 -- | Real data test (All-checks with Wrap proof)
 -------------------------------------------------------------------------------
 
-type FinalizeOtherProofTestContext =
-  { params :: FinalizeOtherProofParams StepField
-  , input :: FinalizeOtherProofTestInput
-  }
-
--- | Build the test context by generating a real Wrap proof and extracting
--- | cross-field data for the Step verifier.
-createFinalizeOtherProofTestContext :: Aff FinalizeOtherProofTestContext
-createFinalizeOtherProofTestContext = do
-  stepCtx <- createStepProofContext BaseCase
-  wrapCtx <- createWrapProofContext stepCtx
-  let
-    params = buildStepFinalizeParams wrapCtx
-    input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx }
-  pure { params, input }
-
-realDataSpec :: SpecT Aff Unit Aff Unit
-realDataSpec = beforeAll createFinalizeOtherProofTestContext $
+realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
+realDataSpec =
   describe "Pickles.Step.FinalizeOtherProof (real data)" do
-    it "all checks pass with real Wrap proof data" \{ params, input } -> do
+    it "all checks pass with real Wrap proof data" \{ wrap0 } -> do
+      let
+        params = buildStepFinalizeParams wrap0
+        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx: wrap0 }
       let
         circuit
           :: forall t

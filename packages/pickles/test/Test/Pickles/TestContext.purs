@@ -1,5 +1,7 @@
 module Test.Pickles.TestContext
-  ( StepProofContext
+  ( InductiveTestContext
+  , createInductiveTestContext
+  , StepProofContext
   , WrapProofContext
   , TestContext'
   , StepIPAContext
@@ -21,9 +23,6 @@ module Test.Pickles.TestContext
   , schnorrCircuit
   , schnorrSolver
   , stepSchnorrAppCircuit
-  , padToMinDomain
-  , pow2
-  , zeroRow
   , zkRows
   , createWrapProofContext
   , mkWrapIpaContext
@@ -43,7 +42,6 @@ module Test.Pickles.TestContext
 
 import Prelude
 
-import Control.Monad.Error.Class (throwError)
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
@@ -62,8 +60,9 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
-import Effect.Exception (error, throw)
+import Effect.Class.Console (debug)
+import Effect.Class.Console as Console
+import Effect.Exception (throw)
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
@@ -96,7 +95,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, toField, true_, wrapF)
@@ -106,8 +105,7 @@ import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi (initialState) as Kimchi
 import Snarky.Constraint.Kimchi as KimchiConstraint
-import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Constraint.Kimchi.Types (GateKind(..)) as GateKind
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromBigInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
@@ -121,6 +119,29 @@ import Type.Proxy (Proxy(..))
 -- | Standard Kimchi constants
 zkRows :: Int
 zkRows = 3
+
+-------------------------------------------------------------------------------
+-- | Shared inductive test context
+-------------------------------------------------------------------------------
+
+-- | Shared context for all tests that need real proof data.
+-- | Created once and shared across test groups via `beforeAll`.
+-- | Field names follow the inductive chain: step0 → wrap0 → step1 → ...
+type InductiveTestContext =
+  { step0 :: StepProofContext -- ^ Base case Step proof (Schnorr circuit)
+  , wrap0 :: WrapProofContext -- ^ Wrap proof verifying step0
+  }
+
+-- | Create the shared inductive test context.
+-- | Builds the full chain: Step(base) → Wrap → ...
+createInductiveTestContext :: Aff InductiveTestContext
+createInductiveTestContext = do
+  Console.debug "[createInductiveTestContext]"
+  Console.info "Creating step0 proof (BaseCase)"
+  step0 <- createStepProofContext BaseCase
+  Console.info "Creating wrap0 proof"
+  wrap0 <- createWrapProofContext step0
+  pure { step0, wrap0 }
 
 -------------------------------------------------------------------------------
 -- | StepProverM: prove-time advisory monad
@@ -265,34 +286,9 @@ pow2 :: Int -> Int
 pow2 0 = 1
 pow2 n = 2 * pow2 (n - 1)
 
--- | A Zero-gate padding row with no variable references.
-zeroRow :: forall f. KimchiRow f
-zeroRow =
-  { kind: GateKind.Zero
-  , variables: Vector.generate (const Nothing)
-  , coeffs: []
-  }
-
--- | Pad an array of Kimchi rows to reach at least targetDomainLog2.
--- | The domain must be a power of 2 that fits: publicInputs + constraints + zkRows.
-padToMinDomain
-  :: forall f
-   . Int -- target domain log2
-  -> Int -- number of public input rows
-  -> Array (KimchiRow f)
-  -> Array (KimchiRow f)
-padToMinDomain targetDomainLog2_ nPublicInputRows rows =
-  let
-    targetRows = pow2 targetDomainLog2_ - nPublicInputRows - zkRows
-    currentRows = Array.length rows
-    padding = max 0 (targetRows - currentRows)
-  in
-    rows <> Array.replicate padding zeroRow
-
 -- | Create a test context from any circuit.
 -- | Given compiled circuit state, a solver, and an input, creates a proof
 -- | and oracle results for testing.
--- | The targetDomainLog2 pads the circuit to a minimum domain size. In Pickles,
 -- | Step circuits use domain 2^16 and Wrap circuits use 2^15.
 createTestContext'
   :: forall f f' g a b
@@ -303,22 +299,23 @@ createTestContext'
   => { builtState :: CircuitBuilderState (KimchiGate f) (AuxState f)
      , solver :: a -> Aff (Either EvaluationError (Tuple b (Map Variable f)))
      , input :: a
-     , targetDomainLog2 :: Int
      , crs :: CRS g
      }
   -> Aff (TestContext' f g)
-createTestContext' { builtState, solver, input, targetDomainLog2, crs } = do
-
+createTestContext' { builtState, solver, input, crs } = do
+  debug "[createTestContext]"
   eRes <- solver input
   case eRes of
-    Left e -> liftEffect $ throwError $ error (show e)
+    Left e -> do
+      Console.error "Failed to run solver"
+      liftEffect $ throw (show e)
     Right (Tuple _ assignments) -> do
+      Console.debug "Ran solver and calculated assignments"
       let
         nPublicInputRows = Array.length builtState.publicInputs
         kimchiRows = concatMap toKimchiRows builtState.constraints
-        paddedRows = padToMinDomain targetDomainLog2 nPublicInputRows kimchiRows
         { constraintSystem, constraints } = makeConstraintSystem @f
-          { constraints: paddedRows
+          { constraints: kimchiRows
           , publicInputs: builtState.publicInputs
           , unionFind: (un AuxState builtState.aux).wireState.unionFind
           }
@@ -333,19 +330,20 @@ createTestContext' { builtState, solver, input, targetDomainLog2, crs } = do
         domainLog2 = proverIndexDomainLog2 proverIndex
         verified = verifyProverIndex @f @g { proverIndex, witness, publicInputs }
 
-      liftEffect $ log $ "[createTestContext'] domainLog2: " <> show domainLog2
-      liftEffect $ log $ "[createTestContext'] verifyProverIndex: " <> show verified
+      Console.info $ "Circuit has " <> show nPublicInputRows <> " public inputs"
+      Console.info $ "Circuit has " <> show (Array.length kimchiRows) <> " constraint rows"
+      Console.debug $ "proverIndex.domainLog2: " <> show domainLog2
+      Console.debug $ "Circuit satisfied for proverIndex: " <> show verified
 
       let
         proof = createProof { proverIndex, witness }
         proofVerified = ProofFFI.verifyOpeningProof verifierIndex { proof, publicInput: publicInputs }
 
-      liftEffect $ unless proofVerified
-        $ throwError
-        $ error
-        $ "[createTestContext'] verifyOpeningProof: " <> show proofVerified
+      if proofVerified then pure unit
+      else liftEffect $ throw "Proof failed to verify"
 
-      let oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
+      let
+        oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
 
       pure { proverIndex, verifierIndex, witness, publicInputs, domainLog2, proof, oracles }
 
@@ -360,12 +358,17 @@ createTestContext' { builtState, solver, input, targetDomainLog2, crs } = do
 -- | uses StepProverM to provide real proof witnesses as private auxiliary data.
 createStepProofContext :: StepCase -> Aff StepProofContext
 createStepProofContext stepCase = do
+  Console.debug "[createStepProofContext]"
   schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
-  let
-    Tuple mustVerify params = case stepCase of
-      BaseCase -> Tuple false dummyFinalizeOtherProofParams
-      InductiveCase wrapCtx -> Tuple true (buildStepFinalizeParams wrapCtx)
+  Tuple mustVerify params <- case stepCase of
+    BaseCase -> do
+      Console.info "creating Step proof for BaseCase"
+      pure $ Tuple false dummyFinalizeOtherProofParams
+    InductiveCase wrapCtx -> do
+      Console.info "creating Step proof for Inductive Step"
+      pure $ Tuple true (buildStepFinalizeParams wrapCtx)
 
+  let
     -- Circuit polymorphic in m: compiled with Identity, solved with StepProverM
     circuit
       :: forall t m
@@ -374,8 +377,7 @@ createStepProofContext stepCase = do
       => StepSchnorrInputVar
       -> Snarky (KimchiConstraint StepField) t m Unit
     circuit i = do
-      _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
-      pure unit
+      void $ stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
 
   -- Compile with Identity (StepWitnessM 1 Identity StepField resolved from global instance)
   builtState <- liftEffect $ compile
@@ -384,7 +386,6 @@ createStepProofContext stepCase = do
     (Proxy @(KimchiConstraint StepField))
     circuit
     Kimchi.initialState
-
   let
     -- Solver with StepProverM to provide real witnesses
     rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 StepField) StepSchnorrInput Unit
@@ -425,17 +426,18 @@ createStepProofContext stepCase = do
             }
         in
           { appInput: schnorrInput
+          -- TODO: why unit here ?
           , previousProofInputs: unit :< Vector.nil
           , unfinalizedProofs: fopInput.unfinalized :< Vector.nil
           , prevChallengeDigests: fopInput.prevChallengeDigest :< Vector.nil
           }
-
+  Console.debug "Creating CRS for Step circuit"
   crs <- liftEffect $ createCRS @StepField
+  Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Step circuit"
   createTestContext'
     { builtState
     , solver
     , input
-    , targetDomainLog2: 16
     , crs
     }
 
@@ -963,7 +965,8 @@ buildWrapProverWitness ctx =
 -- | Padded to domain 2^15 to match Pickles Wrap conventions.
 -- | Uses reifyType to derive nPublic from the Step proof's public input count.
 createWrapProofContext :: StepProofContext -> Aff WrapProofContext
-createWrapProofContext stepCtx =
+createWrapProofContext stepCtx = do
+  Console.debug "[createWrapProofContext]"
   reifyType (Array.length stepCtx.publicInputs) go
   where
   go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff WrapProofContext
@@ -999,14 +1002,13 @@ createWrapProofContext stepCtx =
       circuit
       KimchiConstraint.initialState
 
-    liftEffect $ log "[createWrapProofContext] Creating Pallas CRS of size 2^15..."
+    Console.debug "Creating CRS for Wrap circuit"
     crs <- liftEffect $ createCRS @WrapField
-    liftEffect $ log "[createWrapProofContext] Pallas CRS created."
+    Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Wrap circuit"
     createTestContext'
       { builtState
       , solver: \a -> liftEffect $ runWrapProverM witnessData (runSolverT rawSolver a)
       , input
-      , targetDomainLog2: 15
       , crs
       }
 

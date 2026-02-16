@@ -24,20 +24,17 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
+import Test.Pickles.TestContext (InductiveTestContext)
 import Test.Pickles.TestContext as E2E
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -- | The x_hat circuit runs on Fq (= Pallas.ScalarField = Vesta.BaseField).
 -- | Lagrange commitments from the Schnorr (Fp) verifier are Vesta points (Fq coords).
 type CircuitField = Pallas.ScalarField
-
--------------------------------------------------------------------------------
--- Test context
--------------------------------------------------------------------------------
 
 type TestContext =
   { stepCtx :: E2E.StepProofContext
@@ -50,25 +47,21 @@ type TestContext =
 fpRangeGen :: Gen (F CircuitField)
 fpRangeGen = (\(F x) -> F (fromBigInt (toBigInt x))) <$> (arbitrary :: Gen (F Pallas.BaseField))
 
-setupTestContext :: Aff TestContext
-setupTestContext = do
-  stepCtx <- E2E.createStepProofContext E2E.BaseCase
-  let numPublic = Array.length stepCtx.publicInputs
-  pure
-    { stepCtx
-    , lagrangeComms: coerce $ ProofFFI.pallasLagrangeCommitments stepCtx.verifierIndex numPublic
-    , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator stepCtx.verifierIndex
-    }
-
 -------------------------------------------------------------------------------
 -- Test spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll setupTestContext $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "PublicInputCommitment" do
-    it "circuit matches proof-systems reference" \ctx ->
-      reifyType (Array.length ctx.stepCtx.publicInputs) (go ctx)
+    it "circuit matches proof-systems reference" \{ step0 } -> do
+      let
+        ctx =
+          { stepCtx: step0
+          , lagrangeComms: coerce $ ProofFFI.pallasLagrangeCommitments step0.verifierIndex (Array.length step0.publicInputs)
+          , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator step0.verifierIndex
+          }
+      reifyType (Array.length step0.publicInputs) (go ctx)
   where
   go
     :: forall nPublic

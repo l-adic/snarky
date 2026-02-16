@@ -28,8 +28,8 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, computePublicEval, createStepProofContext, toVectorOrThrow, zkRows)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, computePublicEval, toVectorOrThrow, zkRows)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 -- | Test that PureScript linearization matches Rust for a valid Schnorr circuit.
@@ -400,14 +400,14 @@ ipaRoundsTest ctx = do
 -- | Main spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll (createStepProofContext BaseCase) $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "FFI Validation" do
-    it "PS gate constraint evaluation matches Rust for valid Schnorr witness" gateConstraintTest
-    it "PS permContribution matches ftEval0 - publicEval + gateConstraints" permutationTest
-    it "PS ftEval0 matches Rust FFI ftEval0" ftEval0Test
-    it "PS combinedInnerProduct matches Rust combined_inner_product" combinedInnerProductTest
-    it "PS Fr-sponge challenges (xi, evalscale) match Rust" xiCorrectTest
-    it "opening proof verifies" openingProofTest
-    it "PS computeB matches Rust computeB0" computeBTest
-    it "IPA rounds matches domain log2" ipaRoundsTest
+    it "PS gate constraint evaluation matches Rust for valid Schnorr witness" \{ step0 } -> gateConstraintTest step0
+    it "PS permContribution matches ftEval0 - publicEval + gateConstraints" \{ step0 } -> permutationTest step0
+    it "PS ftEval0 matches Rust FFI ftEval0" \{ step0 } -> ftEval0Test step0
+    it "PS combinedInnerProduct matches Rust combined_inner_product" \{ step0 } -> combinedInnerProductTest step0
+    it "PS Fr-sponge challenges (xi, evalscale) match Rust" \{ step0 } -> xiCorrectTest step0
+    it "opening proof verifies" \{ step0 } -> openingProofTest step0
+    it "PS computeB matches Rust computeB0" \{ step0 } -> computeBTest step0
+    it "IPA rounds matches domain log2" \{ step0 } -> ipaRoundsTest step0

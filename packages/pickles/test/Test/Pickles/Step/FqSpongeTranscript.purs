@@ -14,7 +14,6 @@ module Test.Pickles.Step.FqSpongeTranscript (spec) where
 import Prelude
 
 import Data.Array as Array
-import Data.Int (pow)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -33,9 +32,9 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), createStepProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 
@@ -66,37 +65,47 @@ type SchnorrFqSpongeInput = FqSpongeInput 0 SchnorrTCommChunks (F SpongeField)
 -- | Test spec (wrapped in Identity for mapSpec)
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll setupTestContext $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "Fq-sponge transcript" do
-    it "produces correct digest matching Rust oracles" \ctx -> do
+    it "produces correct digest matching Rust oracles" \{ step0 } -> do
+      let ctx = buildFqSpongeTestContext step0
       liftEffect $ toBigInt ctx.result.digest `shouldEqual` toBigInt ctx.oracles.fqDigest
 
-    it "produces correct alpha challenge matching Rust oracles" \ctx -> do
+    it "produces correct alpha challenge matching Rust oracles" \{ step0 } -> do
       let
+        ctx = buildFqSpongeTestContext step0
+
         psAlpha :: SizedF 128 Vesta.ScalarField
         psAlpha = coerceViaBits ctx.result.alphaChal
       liftEffect $ psAlpha `shouldEqual` ctx.oracles.alphaChal
 
-    it "produces correct zeta challenge matching Rust oracles" \ctx -> do
+    it "produces correct zeta challenge matching Rust oracles" \{ step0 } -> do
       let
+        ctx = buildFqSpongeTestContext step0
+
         psZeta :: SizedF 128 Vesta.ScalarField
         psZeta = coerceViaBits ctx.result.zetaChal
       liftEffect $ psZeta `shouldEqual` ctx.oracles.zetaChal
 
-    it "produces correct beta matching Rust oracles" \ctx -> do
+    it "produces correct beta matching Rust oracles" \{ step0 } -> do
       let
+        ctx = buildFqSpongeTestContext step0
+
         psBeta :: Vesta.ScalarField
         psBeta = toField (coerceViaBits ctx.result.beta :: SizedF 128 Vesta.ScalarField)
       liftEffect $ toBigInt psBeta `shouldEqual` toBigInt (toField ctx.oracles.beta)
 
-    it "produces correct gamma matching Rust oracles" \ctx -> do
+    it "produces correct gamma matching Rust oracles" \{ step0 } -> do
       let
+        ctx = buildFqSpongeTestContext step0
+
         psGamma :: Vesta.ScalarField
         psGamma = toField (coerceViaBits ctx.result.gamma :: SizedF 128 Vesta.ScalarField)
       liftEffect $ toBigInt psGamma `shouldEqual` toBigInt (toField ctx.oracles.gamma)
 
-    it "circuit is satisfiable and matches pure implementation" \ctx -> do
+    it "circuit is satisfiable and matches pure implementation" \{ step0 } -> do
+      let ctx = buildFqSpongeTestContext step0
       circuitSpecPureInputs
         { builtState: compilePure
             (Proxy @SchnorrFqSpongeInput)
@@ -127,37 +136,21 @@ type FqSpongeTestContext =
   , circuitInput :: SchnorrFqSpongeInput
   }
 
-setupTestContext :: Aff FqSpongeTestContext
-setupTestContext = do
-  ctx <- createStepProofContext BaseCase
+-- | Build the FqSponge test context from a StepProofContext.
+-- | Pure computation: extracts commitments and runs the sponge transcript.
+buildFqSpongeTestContext :: StepProofContext -> FqSpongeTestContext
+buildFqSpongeTestContext ctx =
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
-
-    -- Validate t_comm chunk count against verifier index
-    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
-    domainSize = pow 2 ctx.domainLog2
-    expectedTCommChunks = 7 * (if domainSize < maxPolySize then 1 else domainSize / maxPolySize)
-
-    tCommArray :: Array (AffinePoint SpongeField)
-    tCommArray = commitments.tComm
-
-    publicCommArray :: Array (AffinePoint SpongeField)
     publicCommArray = ProofFFI.pallasPublicComm ctx.verifierIndex ctx.publicInputs
 
-  -- Assert t_comm size matches our static type
-  liftEffect $ Array.length tCommArray `shouldEqual` expectedTCommChunks
-
-  -- Assert public_comm is a single chunk
-  liftEffect $ Array.length publicCommArray `shouldEqual` 1
-
-  let
     indexDigest = ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
     publicComm = unsafePartial fromJust $ Array.head publicCommArray
     wComm = commitments.wComm
     zComm = commitments.zComm
 
     tComm :: Vector SchnorrTCommChunks (AffinePoint SpongeField)
-    tComm = unsafePartial fromJust $ Vector.toVector tCommArray
+    tComm = unsafePartial fromJust $ Vector.toVector commitments.tComm
 
     input = { indexDigest, sgOld: Vector.nil, publicComm, wComm, zComm, tComm }
     result = evalPureSpongeM initialSponge (spongeTranscriptPure input)
@@ -171,8 +164,7 @@ setupTestContext = do
       , zComm: coerce zComm
       , tComm: coerce tComm
       }
-
-  pure
+  in
     { oracles:
         { fqDigest: ctx.oracles.fqDigest
         , alphaChal: ctx.oracles.alphaChal

@@ -38,9 +38,9 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (StepCase(..), StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, createStepProofContext, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
-import Test.Spec (SpecT, beforeAll, describe, it)
+import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
 -- | In-circuit test for challenge extraction.
@@ -661,13 +661,13 @@ verifyTest' ctx = do
     }
     [ circuitInput ]
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll (createStepProofContext BaseCase) $
+spec :: SpecT Aff InductiveTestContext Aff Unit
+spec =
   describe "Wrap Sub-circuits (Real Data)" do
-    it "extractScalarChallenges circuit matches pure and Rust" extractChallengesCircuitTest
-    it "bulletReduceCircuit matches Rust lr_prod" bulletReduceCircuitTest
-    it "debug verify traces intermediate IPA values" debugVerifyTest
-    it "ipaFinalCheckCircuit verifies with Rust proof values" ipaFinalCheckCircuitTest
-    it "checkBulletproof composes transcript and IPA verification" checkBulletproofTest
-    it "incrementallyVerifyProof wires all components together" incrementallyVerifyProofTest
-    it "verify wires IVP + deferred value assertions" verifyTest
+    it "extractScalarChallenges circuit matches pure and Rust" \{ step0 } -> extractChallengesCircuitTest step0
+    it "bulletReduceCircuit matches Rust lr_prod" \{ step0 } -> bulletReduceCircuitTest step0
+    it "debug verify traces intermediate IPA values" \{ step0 } -> debugVerifyTest step0
+    it "ipaFinalCheckCircuit verifies with Rust proof values" \{ step0 } -> ipaFinalCheckCircuitTest step0
+    it "checkBulletproof composes transcript and IPA verification" \{ step0 } -> checkBulletproofTest step0
+    it "incrementallyVerifyProof wires all components together" \{ step0 } -> incrementallyVerifyProofTest step0
+    it "verify wires IVP + deferred value assertions" \{ step0 } -> verifyTest step0
