@@ -22,18 +22,15 @@ import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, WrapIPARounds)
-import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compile, makeSolver)
-import Snarky.Circuit.DSL (class CircuitM, F, Snarky)
-import Snarky.Circuit.Kimchi (Type2)
+import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, runStepProverM, stepSchnorrAppCircuit)
-import Test.QuickCheck.Gen (Gen)
+import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
+import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpec', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
@@ -58,21 +55,25 @@ stepSchnorrCircuit input = do
 -------------------------------------------------------------------------------
 
 genStepSchnorrInput :: Gen StepSchnorrInput
-genStepSchnorrInput =
-  let
-    unfinalizedProof :: UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
-    unfinalizedProof = dummyUnfinalizedProof @WrapIPARounds @StepField @Pallas.ScalarField
-  in
-    genValidSignature (Proxy @PallasG) (Proxy @4) <#> \schnorrInput ->
-      { appInput: schnorrInput
-      , previousProofInputs: unit :< Vector.nil
-      , unfinalizedProofs: unfinalizedProof :< Vector.nil
-      , prevChallengeDigests: zero :< Vector.nil
-      }
+genStepSchnorrInput = do
+  schnorrInput <- genValidSignature (Proxy @PallasG) (Proxy @4)
+  unfinalizedProof <- genDummyUnfinalizedProof
+  pure
+    { appInput: schnorrInput
+    , previousProofInputs: unit :< Vector.nil
+    , unfinalizedProofs: unfinalizedProof :< Vector.nil
+    , prevChallengeDigests: zero :< Vector.nil
+    }
+
+-- | Generate random advice paired with the solver wrapper.
+-- | Each test input needs its own random advice to avoid VarBaseMul collisions.
+genStepSchnorrAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
+genStepSchnorrAdvice = dummyStepAdvice
 
 spec :: Spec Unit
 spec = describe "Step E2E with Schnorr" do
   it "Step circuit with Schnorr application is satisfiable (base case)" do
+    advice <- liftEffect $ randomSampleOne genStepSchnorrAdvice
 
     builtState <- liftEffect $ compile
       (Proxy @StepSchnorrInput)
@@ -81,7 +82,7 @@ spec = describe "Step E2E with Schnorr" do
       stepSchnorrCircuit
       Kimchi.initialState
 
-    circuitSpec' 10 (runStepProverM dummyStepAdvice)
+    circuitSpec' 10 (runStepProverM advice)
       { builtState
       , checker: Kimchi.eval
       , solver: makeSolver (Proxy @(KimchiConstraint StepField))

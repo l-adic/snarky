@@ -19,17 +19,15 @@ import Pickles.IPA (type2ScalarOps)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, dummyStepAdvice, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
@@ -86,10 +84,10 @@ testCircuit input = do
 spec :: Spec Unit
 spec = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case)" do
-    let
-      unfinalizedProof :: UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
-      unfinalizedProof = dummyUnfinalizedProof @WrapIPARounds @StepField @Pallas.ScalarField
+    unfinalizedProof <- liftEffect $ randomSampleOne genDummyUnfinalizedProof
+    advice <- liftEffect $ randomSampleOne dummyStepAdvice
 
+    let
       input :: StepTestInput
       input =
         { appInput: unit
@@ -106,7 +104,7 @@ spec = describe "Pickles.Step.Circuit" do
       Kimchi.initialState
 
     circuitSpecInputs
-      (runStepProverM dummyStepAdvice)
+      (runStepProverM advice)
       { builtState
       , checker: Kimchi.eval
       , solver: makeSolver (Proxy @(KimchiConstraint StepField))

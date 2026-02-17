@@ -44,6 +44,7 @@ module Test.Pickles.TestContext
   , buildStepFinalizeParams
   , buildStepFinalizeInput
   , dummyStepAdvice
+  , genDummyUnfinalizedProof
   , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPInput
@@ -93,7 +94,7 @@ import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, StepStatement, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
+import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -125,7 +126,8 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.QuickCheck.Gen (randomSampleOne)
+import Test.QuickCheck (arbitrary)
+import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Type.Proxy (Proxy(..))
 
 -- | Standard Kimchi constants
@@ -453,41 +455,34 @@ createStepProofContext stepCase = do
     rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
       (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar)
 
-    -- Witness data for the advisory monad
-    witnessData :: StepAdvice 1 WrapIPARounds StepField
-    witnessData = case stepCase of
-      BaseCase -> dummyStepAdvice
-      InductiveCase wrapCtx -> buildStepProverWitness wrapCtx
-
-    -- Wrap solver: StepProverM → Aff
-    solver input_ = liftEffect $ runStepProverM witnessData (runSolverT rawSolver input_)
-
-    -- Public-only input (no proofWitnesses)
-    input :: StepSchnorrInput
-    input = case stepCase of
-      BaseCase ->
-        let
-          unfinalizedProof :: UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
-          unfinalizedProof = dummyUnfinalizedProof @WrapIPARounds @StepField @Pallas.ScalarField
-        in
-          { appInput: schnorrInput
-          , previousProofInputs: unit :< Vector.nil
-          , unfinalizedProofs: unfinalizedProof :< Vector.nil
-          , prevChallengeDigests: zero :< Vector.nil
+  Tuple witnessData input <- case stepCase of
+    BaseCase -> liftEffect do
+      advice <- randomSampleOne dummyStepAdvice
+      unfinalizedProof <- randomSampleOne genDummyUnfinalizedProof
+      pure $ Tuple advice
+        { appInput: schnorrInput
+        , previousProofInputs: unit :< Vector.nil
+        , unfinalizedProofs: unfinalizedProof :< Vector.nil
+        , prevChallengeDigests: zero :< Vector.nil
+        }
+    InductiveCase wrapCtx ->
+      let
+        fopInput = buildStepFinalizeInput
+          { prevChallengeDigest: emptyPrevChallengeDigest
+          , wrapCtx
           }
-      InductiveCase wrapCtx ->
-        let
-          fopInput = buildStepFinalizeInput
-            { prevChallengeDigest: emptyPrevChallengeDigest
-            , wrapCtx
-            }
-        in
+      in
+        pure $ Tuple (buildStepProverWitness wrapCtx)
           { appInput: schnorrInput
           -- TODO: why unit here ?
           , previousProofInputs: unit :< Vector.nil
           , unfinalizedProofs: fopInput.unfinalized :< Vector.nil
           , prevChallengeDigests: fopInput.prevChallengeDigest :< Vector.nil
           }
+
+  let
+    -- Wrap solver: StepProverM → Aff
+    solver input_ = liftEffect $ runStepProverM witnessData (runSolverT rawSolver input_)
   Console.debug "Creating CRS for Step circuit"
   crs <- liftEffect $ createCRS @StepField
   Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Step circuit"
@@ -1376,26 +1371,86 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
 -- | Build Step-side private witness data from a WrapProofContext
 -------------------------------------------------------------------------------
 
--- | Dummy private data for the Step circuit base case (no real Wrap proofs).
-dummyStepAdvice :: StepAdvice 1 WrapIPARounds StepField
-dummyStepAdvice =
-  { evals: dummyProofWitness :< Vector.nil
-  , messages: dummyMessages :< Vector.nil
-  , openingProofs: dummyOpening :< Vector.nil
-  }
+-- | Random dummy unfinalized proof for base case. Uses random shifted scalars
+-- | for deferred values to avoid VarBaseMul/EndoMul degenerate cases.
+-- | shouldFinalize = false so the soft-gating assertion passes trivially.
+genDummyUnfinalizedProof :: Gen (UnfinalizedProof WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean)
+genDummyUnfinalizedProof = do
+  let
+    genShifted :: Gen (Type2 (F StepField) Boolean)
+    genShifted = do
+      x <- arbitrary @StepField
+      pure $ toShifted (F x)
+
+    genScalarChallenge :: Gen (SizedF 128 (F StepField))
+    genScalarChallenge = map (wrapF :: SizedF 128 StepField -> SizedF 128 (F StepField)) arbitrary
+  combinedInnerProduct <- genShifted
+  b <- genShifted
+  perm <- genShifted
+  zetaToSrsLength <- genShifted
+  zetaToDomainSize <- genShifted
+  xi <- genScalarChallenge
+  alpha <- genScalarChallenge
+  beta <- genScalarChallenge
+  gamma <- genScalarChallenge
+  zeta <- genScalarChallenge
+  bulletproofChallenges <- Vector.generator (Proxy @WrapIPARounds) genScalarChallenge
+  spongeDigest <- arbitrary @StepField
+  pure
+    { deferredValues:
+        { plonk: { alpha, beta, gamma, zeta }
+        , combinedInnerProduct
+        , xi
+        , bulletproofChallenges
+        , b
+        , perm
+        , zetaToSrsLength
+        , zetaToDomainSize
+        }
+    , shouldFinalize: false
+    , spongeDigestBeforeEvaluations: F spongeDigest
+    }
+
+-- | Random dummy private data for the Step circuit base case (no real Wrap proofs).
+-- | Uses random Pallas curve points and random shifted scalars to avoid
+-- | degenerate cases (division-by-zero) in VarBaseMul during witness generation.
+-- | OCaml Pickles also uses random values for dummy proof data.
+dummyStepAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
+dummyStepAdvice = do
+  messages <- genDummyMessages
+  openingProof <- genDummyOpening
+  pure
+    { evals: dummyProofWitness :< Vector.nil
+    , messages: messages :< Vector.nil
+    , openingProofs: openingProof :< Vector.nil
+    }
   where
-  dummyMessages =
-    { wComm: Vector.replicate { x: zero, y: zero }
-    , zComm: { x: zero, y: zero }
-    , tComm: Vector.replicate { x: zero, y: zero }
-    }
-  dummyOpening =
-    { delta: { x: zero, y: zero }
-    , sg: { x: zero, y: zero }
-    , lr: Vector.replicate { l: { x: zero, y: zero }, r: { x: zero, y: zero } }
-    , z1: toShifted (F zero :: F StepField)
-    , z2: toShifted (F zero :: F StepField)
-    }
+  genPoint :: Gen (AffinePoint (F StepField))
+  genPoint = do
+    p <- arbitrary @Pallas.G
+    pure $ coerce (unsafePartial fromJust $ toAffine p :: AffinePoint StepField)
+
+  genShifted :: Gen (Type2 (F StepField) Boolean)
+  genShifted = do
+    x <- arbitrary @StepField
+    pure $ toShifted (F x)
+
+  genDummyMessages = do
+    wComm <- Vector.generator (Proxy @15) genPoint
+    zComm <- genPoint
+    tComm <- Vector.generator (Proxy @7) genPoint
+    pure { wComm, zComm, tComm }
+
+  genDummyOpening = do
+    delta <- genPoint
+    sg <- genPoint
+    lr <- Vector.generator (Proxy @WrapIPARounds) do
+      l <- genPoint
+      r <- genPoint
+      pure { l, r }
+    z1 <- genShifted
+    z2 <- genShifted
+    pure { delta, sg, lr, z1, z2 }
 
 -- | Extract the private witness data for StepProverM from a WrapProofContext.
 -- | Includes polynomial evaluations (for finalize), protocol commitments, and

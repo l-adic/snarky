@@ -26,7 +26,7 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldM, foldl)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Tuple (Tuple(..))
@@ -46,7 +46,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Types.Shifted (Type2(..))
+import Snarky.Types.Shifted (Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
 -- | Intermediate result from walking the structure.
@@ -91,11 +91,17 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f wh
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (BoolVar f) f where
   scalarMuls params bool bases = scalarMulLeaf @1 params (coerce bool :: FVar f) bases
 
--- | Shifted scalar (Type2): sDiv2 (128 bits → 26 chunks) + sOdd (boolean → 1 chunk).
+-- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks (full width).
+instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
+  scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 params fv bases
+
+-- | Shifted scalar (Type2): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (boolean → 1 chunk).
+-- | sDiv2 = (s - sOdd) / 2 can be up to 254 bits for full-width shifted scalars
+-- | (combinedInnerProduct, b, perm, zetaToSrsLength, zetaToDomainSize).
 -- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (FVar f) (BoolVar f)) f where
   scalarMuls params (Type2 { sDiv2, sOdd }) bases = do
-    { results: r1, rest: rest1 } <- scalarMulLeaf @26 params sDiv2 bases
+    { results: r1, rest: rest1 } <- scalarMulLeaf @51 params sDiv2 bases
     { results: r2, rest: rest2 } <- scalarMulLeaf @1 params (coerce sOdd :: FVar f) rest1
     pure { results: r1 <> r2, rest: rest2 }
 
@@ -189,28 +195,31 @@ publicInputCommit
   -> Array (AffinePoint (F f))
   -> AffinePoint (F f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-publicInputCommit params input lagrangeComms blindingH = unsafePartial do
+publicInputCommit params input lagrangeComms blindingH = do
   { results } <- scalarMuls params input lagrangeComms
-  let results' = fromJust $ NEA.fromArray results
-  let { head, tail } = NEA.uncons results'
+  case NEA.fromArray results of
+    -- No scalar multiplications (e.g., Unit input): x_hat = h
+    Nothing -> pure (constPt blindingH)
+    Just results' -> unsafePartial do
+      let { head, tail } = NEA.uncons results'
 
-  -- 1. Sum circuit results: sum([s_i + 2^n] * B_i)
-  accumulated <- foldM (\acc r -> _.p <$> addComplete acc r.point) head.point tail
+      -- 1. Sum circuit results: sum([s_i + 2^n] * B_i)
+      accumulated <- foldM (\acc r -> _.p <$> addComplete acc r.point) head.point tail
 
-  -- 2. Sum pure corrections: sum([2^n] * B_i)
-  let
-    totalCorrection = foldl
-      (\acc r -> addPurePts params acc r.correction)
-      head.correction
-      tail
+      -- 2. Sum pure corrections: sum([2^n] * B_i)
+      let
+        totalCorrection = foldl
+          (\acc r -> addPurePts params acc r.correction)
+          head.correction
+          tail
 
-  -- 3. Subtract corrections → MSM = sum([s_i] * B_i)
-  let negCorr = wrapPt $ EC.negate_ $ unwrapPt totalCorrection
-  msm <- _.p <$> addComplete accumulated (constPt negCorr)
+      -- 3. Subtract corrections → MSM = sum([s_i] * B_i)
+      let negCorr = wrapPt $ EC.negate_ $ unwrapPt totalCorrection
+      msm <- _.p <$> addComplete accumulated (constPt negCorr)
 
-  -- 4. Negate MSM and add blinding generator
-  negMsm <- Curves.negate msm
-  _.p <$> addComplete negMsm (constPt blindingH)
+      -- 4. Negate MSM and add blinding generator
+      negMsm <- Curves.negate msm
+      _.p <$> addComplete negMsm (constPt blindingH)
 
 -------------------------------------------------------------------------------
 -- | Helpers
