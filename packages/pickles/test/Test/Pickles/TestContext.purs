@@ -11,6 +11,8 @@ module Test.Pickles.TestContext
   , SchnorrInputVar
   , StepSchnorrInput
   , StepSchnorrInputVar
+  , StepSchnorrOutput
+  , StepSchnorrOutputVar
   , StepAdvice
   , StepProverM(..)
   , runStepProverM
@@ -90,7 +92,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, StepStatement, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
@@ -286,6 +288,14 @@ type StepSchnorrInput =
 type StepSchnorrInputVar =
   StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
+-- | Step circuit output type (value level).
+type StepSchnorrOutput =
+  StepStatement 1 StepIPARounds WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
+
+-- | Step circuit output type (variable level).
+type StepSchnorrOutputVar =
+  StepStatement 1 StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+
 -- | Schnorr application circuit embedded in the Step combinator.
 -- | The `mustVerify` parameter controls whether previous proofs are verified:
 -- | - BaseCase: mustVerify = false (no real proofs to verify)
@@ -426,22 +436,22 @@ createStepProofContext stepCase = do
        . CircuitM StepField (KimchiConstraint StepField) t m
       => StepWitnessM 1 WrapIPARounds m StepField
       => StepSchnorrInputVar
-      -> Snarky (KimchiConstraint StepField) t m Unit
-    circuit i = do
-      void $ stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
+      -> Snarky (KimchiConstraint StepField) t m StepSchnorrOutputVar
+    circuit i =
+      stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
 
   -- Compile with Identity (StepWitnessM 1 Identity StepField resolved from global instance)
   builtState <- liftEffect $ compile
     (Proxy @StepSchnorrInput)
-    (Proxy @Unit)
+    (Proxy @StepSchnorrOutput)
     (Proxy @(KimchiConstraint StepField))
     circuit
     Kimchi.initialState
   let
     -- Solver with StepProverM to provide real witnesses
-    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) StepSchnorrInput Unit
+    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) StepSchnorrInput StepSchnorrOutput
     rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
-      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
+      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar)
 
     -- Witness data for the advisory monad
     witnessData :: StepAdvice 1 WrapIPARounds StepField

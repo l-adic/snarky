@@ -15,7 +15,9 @@
 -- | matching CircuitType's field ordering for consistent allocation.
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
+  , class RPublicInputCommit
   , scalarMuls
+  , rScalarMuls
   , publicInputCommit
   ) where
 
@@ -27,6 +29,7 @@ import Data.Foldable (foldM, foldl)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Mul)
@@ -43,6 +46,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Data.EllipticCurve as EC
+import Snarky.Types.Shifted (Type2(..))
 import Type.Proxy (Proxy(..))
 
 -- | Intermediate result from walking the structure.
@@ -87,9 +91,29 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f wh
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (BoolVar f) f where
   scalarMuls params bool bases = scalarMulLeaf @1 params (coerce bool :: FVar f) bases
 
+-- | Shifted scalar (Type2): sDiv2 (128 bits → 26 chunks) + sOdd (boolean → 1 chunk).
+-- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
+instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (FVar f) (BoolVar f)) f where
+  scalarMuls params (Type2 { sDiv2, sOdd }) bases = do
+    { results: r1, rest: rest1 } <- scalarMulLeaf @26 params sDiv2 bases
+    { results: r2, rest: rest2 } <- scalarMulLeaf @1 params (coerce sOdd :: FVar f) rest1
+    pure { results: r1 <> r2, rest: rest2 }
+
 -------------------------------------------------------------------------------
 -- | Structural instances
 -------------------------------------------------------------------------------
+
+-- | Tuple: process first component, then second.
+-- | Used for circuit public inputs = (circuitInput, circuitOutput).
+instance (PublicInputCommit a f, PublicInputCommit b f) => PublicInputCommit (Tuple a b) f where
+  scalarMuls params (Tuple a b) bases = do
+    { results: r1, rest: rest1 } <- scalarMuls params a bases
+    { results: r2, rest: rest2 } <- scalarMuls params b rest1
+    pure { results: r1 <> r2, rest: rest2 }
+
+-- | Unit: contributes no fields.
+instance PublicInputCommit Unit f where
+  scalarMuls _ _ bases = pure { results: [], rest: bases }
 
 -- | Vector: process each element sequentially
 instance
@@ -194,6 +218,10 @@ publicInputCommit params input lagrangeComms blindingH = unsafePartial do
 
 -- | Single scalar mul with shift correction.
 -- | Consumes one Lagrange base from the array.
+-- |
+-- | Uses @nChunks to control the bit width: bitsUsed = 5 * nChunks.
+-- | The correction is [2^bitsUsed] * base, matching OCaml's
+-- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
   :: forall @nChunks f n sDiv2Bits bitsUsed _l t m
    . FieldSizeInBits f n
@@ -209,12 +237,12 @@ scalarMulLeaf
   -> Array (AffinePoint (F f))
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 scalarMulLeaf params scalar bases = do
-  let base = unsafePartial $ fromJust $ Array.head bases
-  point <- scaleFast2' @nChunks (constPt base) scalar
+  let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
+  point <- scaleFast2' @nChunks (constPt head) scalar
   let actualShift = reflectType (Proxy @bitsUsed)
   pure
-    { results: [ { point, correction: pow2pow params base actualShift } ]
-    , rest: Array.drop 1 bases
+    { results: [ { point, correction: pow2pow params head actualShift } ]
+    , rest: tail
     }
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)

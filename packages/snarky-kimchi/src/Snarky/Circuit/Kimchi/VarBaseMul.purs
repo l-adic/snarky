@@ -48,10 +48,12 @@ varBaseMul base (Type1 t) = do
     pure $ unpackPure vVal
   { p } <- addComplete base base
   let
-    msbBits :: Vector n (FVar f)
-    msbBits = coerce $ Vector.reverse lsbBits
+    -- Take bottom bitsUsed LSB bits, then reverse to MSB-first within range.
+    -- Matches OCaml's: List.take num_bits |> Array.of_list_rev_map
+    lsbBitsUsed = Vector.take @bitsUsed lsbBits
 
-    msbBitsUsed = Vector.take @bitsUsed msbBits
+    msbBitsUsed :: Vector bitsUsed (FVar f)
+    msbBitsUsed = coerce $ Vector.reverse lsbBitsUsed
 
     chunks :: Vector nChunks (Vector 5 (FVar f))
     chunks = Vector.chunks @5 msbBitsUsed
