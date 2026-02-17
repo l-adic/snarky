@@ -139,11 +139,8 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
   { beta, gamma, alphaChal, zetaChal, digest } <- spongeTranscriptCircuit spongeInput
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
-  liftSnarky do
-    assertEq beta input.deferredValues.plonk.beta
-    assertEq gamma input.deferredValues.plonk.gamma
-    assertEq alphaChal input.deferredValues.plonk.alpha
-    assertEq zetaChal input.deferredValues.plonk.zeta
+  liftSnarky $
+    assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } input.deferredValues.plonk
 
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ ftComm

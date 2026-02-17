@@ -14,9 +14,8 @@ module Pickles.Step.Circuit
     AppCircuit
   , AppCircuitInput
   , AppCircuitOutput
-  -- * Step Circuit Types
-  , StepInput
-  , StepStatement
+  -- * Step Circuit Types (re-exported from Pickles.Types)
+  , module Pickles.Types
   -- * Step Circuit Combinator
   , stepCircuit
   ) where
@@ -34,6 +33,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
@@ -83,49 +83,6 @@ type AppCircuitOutput n output aux f =
 type AppCircuit n input prevInput output aux f c t m =
   AppCircuitInput n input prevInput
   -> Snarky c t m (AppCircuitOutput n output aux f)
-
--------------------------------------------------------------------------------
--- | Step Circuit Types
--------------------------------------------------------------------------------
-
--- | Input to the Step circuit combinator.
--- |
--- | Bundles the application input with the proof witness data.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs to verify
--- | - `input`: Application-specific input type
--- | - `prevInput`: Previous proof public input type
--- | - `ds`: Step IPA rounds (phantom, carried for type bookkeeping)
--- | - `dw`: Wrap IPA rounds (used: previous Wrap proofs have dw bulletproof challenges)
--- | - `f`: Field element type
--- | - `sf`: Shifted scalar type
--- | - `b`: Boolean type
-type StepInput :: Int -> Type -> Type -> Int -> Int -> Type -> Type -> Type -> Type
-type StepInput n input prevInput ds dw f sf b =
-  { appInput :: input
-  , previousProofInputs :: Vector n prevInput
-  , unfinalizedProofs :: Vector n (UnfinalizedProof dw f sf b)
-  , prevChallengeDigests :: Vector n f
-  }
-
--- | The Step circuit's output statement.
--- |
--- | This becomes part of the public input for the Wrap circuit to verify.
--- |
--- | The `fv` parameter is the field variable type (e.g., `FVar f` in circuits).
--- | The `sf` parameter is the shifted value type (e.g., `Type1 (FVar f)`).
--- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
--- |
--- | Reference: step_main.ml:587-594 `Types.Step.Statement`
-type StepStatement :: Int -> Int -> Int -> Type -> Type -> Type -> Type
-type StepStatement n ds dw fv sf b =
-  { proofState ::
-      { unfinalizedProofs :: Vector n (UnfinalizedProof dw fv sf b)
-      , messagesForNextStepProof :: fv
-      }
-  , messagesForNextWrapProof :: Vector n fv
-  }
 
 -------------------------------------------------------------------------------
 -- | Finalize Other Proof

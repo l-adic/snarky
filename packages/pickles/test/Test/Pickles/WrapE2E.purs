@@ -15,8 +15,6 @@ module Test.Pickles.WrapE2E
 
 import Prelude
 
-import Data.Array as Array
-import Data.Reflectable (class Reflectable, reifyType)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.IPA (type1ScalarOps)
@@ -30,7 +28,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, buildWrapProverWitness, runWrapProverM)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, WrapSchnorrInput, WrapSchnorrInputVar, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, buildWrapProverWitness, runWrapProverM)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -41,41 +39,37 @@ import Type.Proxy (Proxy(..))
 
 -- | Test that the Wrap circuit is satisfiable with real Step proof data.
 wrapCircuitSatisfiableTest :: StepProofContext -> Aff Unit
-wrapCircuitSatisfiableTest ctx =
-  reifyType (Array.length ctx.publicInputs) go
-  where
-  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
-  go _ = do
-    let
-      params = buildWrapCircuitParams ctx
-      claimedDigest = buildWrapClaimedDigest ctx
-      circuitInput = buildWrapCircuitInput @nPublic ctx
-      witnessData = buildWrapProverWitness ctx
+wrapCircuitSatisfiableTest ctx = do
+  let
+    params = buildWrapCircuitParams ctx
+    claimedDigest = buildWrapClaimedDigest ctx
+    circuitInput = buildWrapCircuitInput ctx
+    witnessData = buildWrapProverWitness ctx
 
-      circuit
-        :: forall t m
-         . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-        => WrapWitnessM StepIPARounds m Pallas.ScalarField
-        => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
-        -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-      circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
+    circuit
+      :: forall t m
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
+      => WrapWitnessM StepIPARounds m Pallas.ScalarField
+      => WrapInput 1 WrapSchnorrInputVar Unit 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
+    circuit = wrapCircuit type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest
 
-    builtState <- liftEffect $ compile
-      (Proxy @(WrapInput nPublic 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint Pallas.ScalarField))
-      circuit
-      Kimchi.initialState
+  builtState <- liftEffect $ compile
+    (Proxy @(WrapInput 1 WrapSchnorrInput Unit 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint Pallas.ScalarField))
+    circuit
+    Kimchi.initialState
 
-    circuitSpecInputs (runWrapProverM witnessData)
-      { builtState
-      , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-          (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput nPublic 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
-      , testFunction: satisfied_
-      , postCondition: Kimchi.postCondition
-      }
-      [ circuitInput ]
+  circuitSpecInputs (runWrapProverM witnessData)
+    { builtState
+    , checker: Kimchi.eval
+    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
+        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput 1 WrapSchnorrInputVar Unit 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+    , testFunction: satisfied_
+    , postCondition: Kimchi.postCondition
+    }
+    [ circuitInput ]
 
 -------------------------------------------------------------------------------
 -- | Spec

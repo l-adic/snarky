@@ -24,16 +24,19 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
+import Data.Tuple (Tuple)
 import Data.Vector (Vector)
 import Pickles.IPA (IpaScalarOps)
+import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify (IncrementallyVerifyProofParams, verify)
 import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assert_, const_, exists, false_, not_, or_)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
@@ -49,10 +52,19 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Both subcircuits verify the Step proof, so both use `ds` (Step IPA rounds).
 -- | `dw` is phantom here (will be needed for sgOld/old Wrap proof challenges).
-type WrapInput :: Int -> Int -> Int -> Int -> Type -> Type -> Type -> Type
-type WrapInput nPublic sgOldN ds dw fv sf b =
+-- |
+-- | The `publicInput` field is the full structural Step I/O type:
+-- |   Tuple (StepInput n appInput prevInput ds dw fv stepSf b)
+-- |         (StepStatement n ds dw fv stepSf b)
+-- | where `stepSf = Type2 fv b` (Step verifies Wrap proofs where Fq > Fp).
+-- | This enables per-field-width scalar multiplications in publicInputCommit.
+type WrapInput :: Int -> Type -> Type -> Int -> Int -> Int -> Type -> Type -> Type -> Type
+type WrapInput n appInput prevInput sgOldN ds dw fv sf b =
   { ivpInput ::
-      { publicInput :: Vector nPublic fv
+      { publicInput ::
+          Tuple
+            (StepInput n appInput prevInput ds dw fv (Type2 fv b) b)
+            (StepStatement n ds dw fv (Type2 fv b) b)
       , sgOld :: Vector sgOldN (AffinePoint fv)
       , deferredValues :: DeferredValues ds fv sf
       }
@@ -82,17 +94,20 @@ type WrapParams f =
 -- | For Wrap, isBaseCase is always false (Wrap always verifies a real Step proof).
 -- | The claimedDigest comes from the Step proof's Fq-sponge state.
 wrapCircuit
-  :: forall nPublic sgOldN ds dw _l3 t m
+  :: forall n appInput prevInput sgOldN ds dw _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
   => WrapWitnessM ds m Pallas.ScalarField
-  => Reflectable nPublic Int
   => Reflectable ds Int
+  => Reflectable dw Int
+  => Reflectable n Int
   => Add 1 _l3 ds
+  => PublicInputCommit appInput Pallas.ScalarField
+  => PublicInputCommit prevInput Pallas.ScalarField
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
   -> WrapParams Pallas.ScalarField
   -> Pallas.ScalarField -- ^ claimedDigest: Fq-sponge digest from the Step proof's oracles
-  -> WrapInput nPublic sgOldN ds dw (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+  -> WrapInput n appInput prevInput sgOldN ds dw (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params claimedDigest input = do
   -- 1. Obtain private witness data (polynomial evaluations)
