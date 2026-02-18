@@ -11,6 +11,10 @@ module Test.Pickles.TestContext
   , SchnorrInputVar
   , WrapSchnorrInput
   , WrapSchnorrInputVar
+  , WrapSchnorrStepIOVal
+  , WrapSchnorrStepIOVar
+  , existsSchnorrStepIO
+  , existsSchnorrStepInput
   , StepSchnorrInput
   , StepSchnorrInputVar
   , StepSchnorrOutput
@@ -57,6 +61,7 @@ module Test.Pickles.TestContext
 import Prelude
 
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -94,16 +99,16 @@ import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, f
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Step.Advice (class StepWitnessM)
+import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
-import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
-import Pickles.Wrap.Advice (class WrapWitnessM)
-import Pickles.Wrap.Circuit (WrapInput, WrapParams, wrapCircuit)
+import Pickles.Verify.Types (DeferredValues, PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
+import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
+import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapParams, wrapCircuit)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
@@ -113,7 +118,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, fieldsToValue, toField, true_, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, toField, true_, valueToFields, wrapF)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -164,10 +169,12 @@ createInductiveTestContext = do
 -------------------------------------------------------------------------------
 
 -- | Reader environment for StepProverM: all data the Step advisory monad provides.
--- | Bundles polynomial evaluations (for finalize) and protocol commitments +
--- | opening proof (for IVP), for each of the `n` previous Wrap proofs.
+-- | Bundles the Step circuit input fields (as private witness), polynomial
+-- | evaluations (for finalize) and protocol commitments + opening proof (for IVP),
+-- | for each of the `n` previous Wrap proofs.
 type StepAdvice (n :: Int) (dw :: Int) f =
-  { evals :: Vector n (ProofWitness (F f))
+  { stepInputFields :: Array (F f)
+  , evals :: Vector n (ProofWitness (F f))
   , messages ::
       Vector n
         { wComm :: Vector 15 (AffinePoint (F f))
@@ -198,6 +205,7 @@ runStepProverM :: forall n dw f a. StepAdvice n dw f -> StepProverM n dw f a -> 
 runStepProverM privateData (StepProverM m) = runReaderT m privateData
 
 instance StepWitnessM n dw (StepProverM n dw f) f where
+  getStepInputFields _ = StepProverM $ map _.stepInputFields ask
   getProofWitnesses _ = StepProverM $ map _.evals ask
   getMessages _ = StepProverM $ map _.messages ask
   getOpeningProof _ = StepProverM $ map _.openingProofs ask
@@ -207,7 +215,8 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
 -------------------------------------------------------------------------------
 
 -- | Reader environment for WrapProverM: all data the Wrap advisory monad provides.
--- | Bundles polynomial evaluations (for finalize) and protocol commitments (for IVP).
+-- | Bundles polynomial evaluations (for finalize), protocol commitments (for IVP),
+-- | deferred values, unfinalized proof, and previous challenge digest.
 type WrapAdvice (ds :: Int) f =
   { evals :: ProofWitness (F f)
   , messages ::
@@ -222,6 +231,10 @@ type WrapAdvice (ds :: Int) f =
       , z1 :: Type1 (F f)
       , z2 :: Type1 (F f)
       }
+  , deferredValues :: DeferredValues ds (F f) (Type1 (F f))
+  , unfinalized :: UnfinalizedProof ds (F f) (Type1 (F f)) Boolean
+  , prevChallengeDigest :: F f
+  , stepIOFields :: Array (F f)
   }
 
 -- | Prove-time monad for Wrap: provides private witness data via ReaderT.
@@ -238,9 +251,13 @@ runWrapProverM :: forall ds f a. WrapAdvice ds f -> WrapProverM ds f a -> Effect
 runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
 instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM ds f) f where
+  getStepIOFields _ = WrapProverM $ map _.stepIOFields ask
   getEvals _ = WrapProverM $ map _.evals ask
   getMessages _ = WrapProverM $ map _.messages ask
   getOpeningProof _ = WrapProverM $ map _.openingProof ask
+  getDeferredValues _ = WrapProverM $ map _.deferredValues ask
+  getUnfinalizedProof _ = WrapProverM $ map _.unfinalized ask
+  getPrevChallengeDigest _ = WrapProverM $ map _.prevChallengeDigest ask
 
 -------------------------------------------------------------------------------
 -- | Schnorr circuit setup
@@ -327,6 +344,37 @@ type WrapSchnorrInput = VerifyInput 4 (F WrapField)
 
 -- | Variable-level form of WrapSchnorrInput (CircuitType maps F f → FVar f).
 type WrapSchnorrInputVar = VerifyInput 4 (FVar WrapField)
+
+-- | Step proof public input types for the Schnorr Wrap circuit — value and variable level.
+-- | These are StepStatement only (not full Step I/O), matching OCaml's approach
+-- | where x_hat is computed over the packed Step.Statement.
+type WrapSchnorrStepIOVal = StepPublicInput 1 StepIPARounds WrapIPARounds (F WrapField) Boolean
+type WrapSchnorrStepIOVar = StepPublicInput 1 StepIPARounds WrapIPARounds (FVar WrapField) (BoolVar WrapField)
+
+-- | Allocation action for the Step proof's public input (StepStatement only).
+-- | Constructed here (where concrete types are known) so CircuitType resolves.
+-- | Uses getStepIOFields from the advisory monad and reconstructs the
+-- | structural type via fieldsToValue.
+existsSchnorrStepIO
+  :: forall t m
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => WrapWitnessM StepIPARounds m WrapField
+  => Snarky (KimchiConstraint WrapField) t m WrapSchnorrStepIOVar
+existsSchnorrStepIO = exists $ lift $
+  map (fieldsToValue @WrapField @WrapSchnorrStepIOVal <<< (coerce :: Array (F WrapField) -> Array WrapField))
+    (getStepIOFields @StepIPARounds unit)
+
+-- | Allocation action for the Step circuit input (private witness).
+-- | In OCaml, the Step input enters via Req.App_state + Req.Unfinalized_proofs.
+-- | Here we reconstruct the structural type from flat fields via fieldsToValue.
+existsSchnorrStepInput
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => StepWitnessM 1 WrapIPARounds m StepField
+  => Snarky (KimchiConstraint StepField) t m StepSchnorrInputVar
+existsSchnorrStepInput = exists $ lift $
+  map (fieldsToValue @StepField @StepSchnorrInput <<< (coerce :: Array (F StepField) -> Array StepField))
+    (getStepInputFields @1 @WrapIPARounds unit)
 
 -- | Which case of the Step recursion to run.
 data StepCase
@@ -442,30 +490,34 @@ createStepProofContext stepCase = do
       pure $ Tuple true (buildStepFinalizeParams wrapCtx)
 
   let
-    -- Circuit polymorphic in m: compiled with Identity, solved with StepProverM
+    -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.
+    -- In OCaml, the Step circuit takes Step.Statement as public input and gets
+    -- application data via Req.App_state. Here, Unit input means the Step proof's
+    -- public input is just StepSchnorrOutput (= StepStatement), reducing x_hat MSM cost.
     circuit
       :: forall t m
        . CircuitM StepField (KimchiConstraint StepField) t m
       => StepWitnessM 1 WrapIPARounds m StepField
-      => StepSchnorrInputVar
+      => Unit
       -> Snarky (KimchiConstraint StepField) t m StepSchnorrOutputVar
-    circuit i =
+    circuit _ = do
+      i <- existsSchnorrStepInput
       stepCircuit type2ScalarOps params (stepSchnorrAppCircuit mustVerify) i
 
-  -- Compile with Identity (StepWitnessM 1 Identity StepField resolved from global instance)
+  -- Compile with Unit input — Step proof public input = StepStatement only
   builtState <- liftEffect $ compile
-    (Proxy @StepSchnorrInput)
+    (Proxy @Unit)
     (Proxy @StepSchnorrOutput)
     (Proxy @(KimchiConstraint StepField))
     circuit
     Kimchi.initialState
   let
     -- Solver with StepProverM to provide real witnesses
-    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) StepSchnorrInput StepSchnorrOutput
+    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) Unit StepSchnorrOutput
     rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
-      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar)
+      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => Unit -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar)
 
-  Tuple witnessData input <- case stepCase of
+  Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
       advice <- randomSampleOne dummyStepAdvice
       unfinalizedProof <- randomSampleOne genDummyUnfinalizedProof
@@ -491,15 +543,18 @@ createStepProofContext stepCase = do
           }
 
   let
+    -- StepInput fields for advisory monad (private witness)
+    stepInputFields = map F (valueToFields @StepField @StepSchnorrInput stepInput)
+    witnessDataWithInput = witnessData { stepInputFields = stepInputFields }
     -- Wrap solver: StepProverM → Aff
-    solver input_ = liftEffect $ runStepProverM witnessData (runSolverT rawSolver input_)
+    solver input_ = liftEffect $ runStepProverM witnessDataWithInput (runSolverT rawSolver input_)
   Console.debug "Creating CRS for Step circuit"
   crs <- liftEffect $ createCRS @StepField
   Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Step circuit"
   createTestContext'
     { builtState
     , solver
-    , input
+    , input: unit
     , crs
     }
 
@@ -917,18 +972,29 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
 
 buildWrapCircuitInput
   :: StepProofContext
-  -> WrapInput 1 WrapSchnorrInput Unit 0 StepIPARounds WrapIPARounds
-       (F WrapField)
-       (Type1 (F WrapField))
-       Boolean
-buildWrapCircuitInput ctx =
+  -> WrapInput
+buildWrapCircuitInput _ = unit
+
+-- | Extract the private witness data for WrapProverM from a StepProofContext.
+-- | Includes polynomial evaluations (for finalize), protocol commitments (for IVP),
+-- | IVP deferred values, finalize unfinalized proof, and previous challenge digest.
+buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
+buildWrapProverWitness ctx =
   let
-    -- Compute deferred values from oracles
+    fullFinalizeInput = buildFinalizeInput
+      { prevChallengeDigest: emptyPrevChallengeDigest
+      , stepCtx: ctx
+      }
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
+
+    tComm :: Vector 7 (AffinePoint (F WrapField))
+    tComm = toVectorOrThrow @7 "buildWrapProverWitness tComm" $ coerce commitments.tComm
+
+    -- IVP deferred values (Fp-origin, cross-field shifted to Fq)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
     omega = ProofFFI.domainGenerator ctx.domainLog2
 
-    -- Perm scalar (pure, using expanded plonk values from oracles)
     zetaToNMinus1 = pow ctx.oracles.zeta n - one
     zkPoly = ProofFFI.permutationVanishingPolynomial
       { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
@@ -948,7 +1014,6 @@ buildWrapCircuitInput ctx =
       }
     perm = permScalar permInput
 
-    -- b value from FFI
     { challenges: rustChallenges } = mkStepIpaContext ctx
     bValue = ProofFFI.computeB0
       { challenges: Vector.toUnfoldable rustChallenges
@@ -957,64 +1022,11 @@ buildWrapCircuitInput ctx =
       , evalscale: ctx.oracles.u
       }
 
-    -- Bulletproof challenges (raw 128-bit from IPA sponge, coerced to Fq)
     bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F WrapField))
     bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
 
-    -- Xi challenge in Fq (coerced from Fp)
     xiChalFq :: SizedF 128 (F WrapField)
     xiChalFq = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 WrapField)
-
-    -- IVP deferred values (Fp-origin, cross-field shifted)
-    ivpCIP = toShifted $ F ctx.oracles.combinedInnerProduct :: Type1 (F WrapField)
-    ivpB = toShifted $ F bValue :: Type1 (F WrapField)
-    ivpPerm = toShifted $ F perm :: Type1 (F WrapField)
-    ivpZetaToSrs = toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize)) :: Type1 (F WrapField)
-    ivpZetaToDomain = toShifted $ F (pow ctx.oracles.zeta n) :: Type1 (F WrapField)
-
-    -- Build finalize input (computed in Fq, separate from IVP deferred values)
-    fullFinalizeInput = buildFinalizeInput
-      { prevChallengeDigest: emptyPrevChallengeDigest
-      , stepCtx: ctx
-      }
-
-    -- Reconstruct structural public input from flat field array via CircuitType
-    publicInput = fieldsToValue @WrapField
-      (map (\fp -> fromBigInt (toBigInt fp) :: WrapField) ctx.publicInputs)
-  in
-    { ivpInput:
-        { publicInput
-        , sgOld: Vector.nil
-        , deferredValues:
-            { plonk: coerceStepPlonkChallenges ctx
-            , combinedInnerProduct: ivpCIP
-            , xi: xiChalFq
-            , bulletproofChallenges
-            , b: ivpB
-            , perm: ivpPerm
-            , zetaToSrsLength: ivpZetaToSrs
-            , zetaToDomainSize: ivpZetaToDomain
-            }
-        }
-    , finalizeInput:
-        { unfinalized: fullFinalizeInput.unfinalized
-        , prevChallengeDigest: fullFinalizeInput.prevChallengeDigest
-        }
-    }
-
--- | Extract the private witness data for WrapProverM from a StepProofContext.
--- | Includes both polynomial evaluations (for finalize) and protocol commitments (for IVP).
-buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
-buildWrapProverWitness ctx =
-  let
-    fullFinalizeInput = buildFinalizeInput
-      { prevChallengeDigest: emptyPrevChallengeDigest
-      , stepCtx: ctx
-      }
-    commitments = ProofFFI.pallasProofCommitments ctx.proof
-
-    tComm :: Vector 7 (AffinePoint (F WrapField))
-    tComm = toVectorOrThrow @7 "buildWrapProverWitness tComm" $ coerce commitments.tComm
   in
     { evals: fullFinalizeInput.witness
     , messages:
@@ -1030,11 +1042,23 @@ buildWrapProverWitness ctx =
         , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
         , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
         }
+    , deferredValues:
+        { plonk: coerceStepPlonkChallenges ctx
+        , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+        , xi: xiChalFq
+        , bulletproofChallenges
+        , b: toShifted $ F bValue
+        , perm: toShifted $ F perm
+        , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+        , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+        }
+    , unfinalized: fullFinalizeInput.unfinalized
+    , prevChallengeDigest: fullFinalizeInput.prevChallengeDigest
+    , stepIOFields: map (\fp -> F (fromBigInt (toBigInt fp) :: WrapField)) ctx.publicInputs
     }
 
 -- | Create a Wrap test context (Pallas proof verifying Vesta Step proof).
--- | Padded to domain 2^15 to match Pickles Wrap conventions.
--- | Uses concrete structural type WrapInput 1 SchnorrInput Unit ...
+-- | Uses concrete structural type WrapInput 1 WrapSchnorrInput Unit ...
 createWrapProofContext :: StepProofContext -> Aff WrapProofContext
 createWrapProofContext stepCtx = do
   Console.debug "[createWrapProofContext]"
@@ -1048,22 +1072,23 @@ createWrapProofContext stepCtx = do
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => WrapWitnessM StepIPARounds m Pallas.ScalarField
-      => WrapInput 1 WrapSchnorrInputVar Unit 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+      => WrapInput
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit inVar =
-      wrapCircuit
+      wrapCircuit @StepIPARounds
         type1ScalarOps
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
         claimedDigest
+        existsSchnorrStepIO
         inVar
 
-    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) (WrapInput 1 WrapSchnorrInput Unit 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean) Unit
+    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) WrapInput Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput 1 WrapSchnorrInputVar Unit 0 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField) -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
 
   builtState <- liftEffect $ compile
-    (Proxy @(WrapInput 1 WrapSchnorrInput Unit 0 StepIPARounds WrapIPARounds (F WrapField) (Type1 (F WrapField)) Boolean))
+    (Proxy @WrapInput)
     (Proxy @Unit)
     (Proxy @(KimchiConstraint Pallas.ScalarField))
     circuit
@@ -1434,7 +1459,8 @@ dummyStepAdvice = do
   messages <- genDummyMessages
   openingProof <- genDummyOpening
   pure
-    { evals: dummyProofWitness :< Vector.nil
+    { stepInputFields: []
+    , evals: dummyProofWitness :< Vector.nil
     , messages: messages :< Vector.nil
     , openingProofs: openingProof :< Vector.nil
     }
@@ -1481,7 +1507,8 @@ buildStepProverWitness wrapCtx =
     tComm :: Vector 7 (AffinePoint (F StepField))
     tComm = toVectorOrThrow @7 "buildStepProverWitness tComm" $ coerce commitments.tComm
   in
-    { evals: fopInput.witness :< Vector.nil
+    { stepInputFields: []  -- StepInput fields provided by createStepProofContext
+    , evals: fopInput.witness :< Vector.nil
     , messages:
         { wComm: coerce commitments.wComm
         , zComm: coerce commitments.zComm

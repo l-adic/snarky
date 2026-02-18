@@ -7,8 +7,6 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
-import Data.Schnorr.Gen (VerifyInput)
-import Data.Tuple (Tuple)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -16,7 +14,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.PublicInputCommit (publicInputCommit)
 import Pickles.PublicInputCommitment (publicInputCommitment)
-import Pickles.Step.Circuit (StepInput, StepStatement)
+import Pickles.Step.Circuit (StepStatement)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
@@ -52,32 +50,21 @@ type StepTestContext =
   , blindingH :: AffinePoint (F StepCircuitField)
   }
 
--- | Full Step public input type for x_hat circuit (value level, in StepCircuitField = Fq).
+-- | Step public input type for x_hat circuit (value level, in StepCircuitField = Fq).
 -- | The x_hat computation happens in the Wrap circuit (Fq), so types are parameterized by Fq.
-type StepFullXhat = Tuple
-  ( StepInput 1 (VerifyInput 4 (F StepCircuitField)) Unit StepIPARounds WrapIPARounds
-      (F StepCircuitField)
-      (Type2 (F StepCircuitField) Boolean)
-      Boolean
-  )
-  ( StepStatement 1 StepIPARounds WrapIPARounds
-      (F StepCircuitField)
-      (Type2 (F StepCircuitField) Boolean)
-      Boolean
-  )
+-- | Now just StepStatement (the Step circuit's public input no longer includes StepInput).
+type StepFullXhat =
+  StepStatement 1 StepIPARounds WrapIPARounds
+    (F StepCircuitField)
+    (Type2 (F StepCircuitField) Boolean)
+    Boolean
 
--- | Full Step public input type for x_hat circuit (variable level).
-type StepFullXhatVar = Tuple
-  ( StepInput 1 (VerifyInput 4 (FVar StepCircuitField)) Unit StepIPARounds WrapIPARounds
-      (FVar StepCircuitField)
-      (Type2 (FVar StepCircuitField) (BoolVar StepCircuitField))
-      (BoolVar StepCircuitField)
-  )
-  ( StepStatement 1 StepIPARounds WrapIPARounds
-      (FVar StepCircuitField)
-      (Type2 (FVar StepCircuitField) (BoolVar StepCircuitField))
-      (BoolVar StepCircuitField)
-  )
+-- | Step public input type for x_hat circuit (variable level).
+type StepFullXhatVar =
+  StepStatement 1 StepIPARounds WrapIPARounds
+    (FVar StepCircuitField)
+    (Type2 (FVar StepCircuitField) (BoolVar StepCircuitField))
+    (BoolVar StepCircuitField)
 
 -- | Generate Fp-range values embedded as Fq.
 -- | Fp < Fq in Pasta, so this is always safe.
@@ -113,7 +100,7 @@ spec =
       let ctx = mkStepCtx step0
       reifyType (Array.length step0.publicInputs) (goNewStep ctx)
 
-    it "PublicInputCommit (Tuple StepInput StepStatement) matches reference (step0)" \{ step0 } -> do
+    it "PublicInputCommit StepStatement matches reference (step0)" \{ step0 } -> do
       let ctx = mkStepCtx step0
       goStructuredStep ctx
 
@@ -228,10 +215,10 @@ spec =
 
     liftEffect $ verifyCircuit { s, gen, solver }
 
-  -- | Test that PublicInputCommit on the full structured Step public input type
-  -- | (Tuple StepInput StepStatement) matches the Rust ground truth.
-  -- | This exercises all leaf instances: FVar (51 chunks), SizedF 128 (26 chunks),
-  -- | BoolVar (1 chunk), Type2 (26 + 1 chunks), plus Record/Vector/Tuple walking.
+  -- | Test that PublicInputCommit on the Step public input type (StepStatement)
+  -- | matches the Rust ground truth.
+  -- | This exercises leaf instances: FVar, SizedF 128, BoolVar, Type2,
+  -- | plus Record/Vector walking.
   -- |
   -- | Uses real values from the Step → Wrap → Step test context chain,
   -- | reconstructed via fieldsToValue from step0.publicInputs.

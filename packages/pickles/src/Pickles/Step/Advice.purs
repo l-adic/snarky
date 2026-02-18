@@ -56,6 +56,7 @@
 -- |   are not yet part of our circuit.
 module Pickles.Step.Advice
   ( class StepWitnessM
+  , getStepInputFields
   , getProofWitnesses
   , getMessages
   , getOpeningProof
@@ -85,6 +86,13 @@ import Snarky.Types.Shifted (Type2)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
 -- | - `f`: Circuit field (Vesta.ScalarField for Step)
 class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
+  -- | Step circuit input as flat field elements (for private witness allocation).
+  -- | In OCaml, the Step input (app_state, unfinalized_proofs, etc.) enters as
+  -- | private witness via Req.App_state and Req.Unfinalized_proofs. The caller
+  -- | reconstructs the structural type via `fieldsToValue`.
+  -- | OCaml: Req.App_state + Req.Unfinalized_proofs
+  getStepInputFields :: Unit -> m (Array (F f))
+
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
@@ -122,6 +130,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
+  getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"

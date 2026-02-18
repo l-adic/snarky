@@ -9,7 +9,6 @@ import Prelude
 import Data.Array as Array
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
-import Data.Schnorr.Gen (VerifyInput)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -24,7 +23,7 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.Permutation (permScalar)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
-import Pickles.Types (StepIPARounds, StepInput, StepStatement)
+import Pickles.Types (StepIPARounds, StepStatement)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
 import Safe.Coerce (coerce)
@@ -38,7 +37,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, WrapSchnorrInput, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
 import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -411,17 +410,14 @@ checkBulletproofTest ctx = do
 -------------------------------------------------------------------------------
 
 -- | Structural public input type for the Step circuit (value level, in Fq).
+-- | Now just StepStatement (the Step circuit's public input no longer includes StepInput).
 type StepPublicInput =
-  Tuple
-    (StepInput 1 WrapSchnorrInput Unit StepIPARounds WrapIPARounds (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) Boolean)
-    (StepStatement 1 StepIPARounds WrapIPARounds (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) Boolean)
+  StepStatement 1 StepIPARounds WrapIPARounds (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) Boolean
 
 -- | Structural public input type for the Step circuit (variable level, in Fq).
 -- | CircuitType maps: F f → FVar f, Boolean → BoolVar f, Type2 (F f) Boolean → Type2 (FVar f) (BoolVar f)
 type StepPublicInputVar =
-  Tuple
-    (StepInput 1 (VerifyInput 4 (FVar Pallas.ScalarField)) Unit StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField))
-    (StepStatement 1 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField))
+  StepStatement 1 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
 
 -- | Build the structural public input from a StepProofContext's flat field array.
 buildStepPublicInput :: StepProofContext -> StepPublicInput
