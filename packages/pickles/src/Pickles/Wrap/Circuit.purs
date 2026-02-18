@@ -27,12 +27,12 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
-import Pickles.Types (StepStatement, WrapStatement)
+import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (IncrementallyVerifyProofParams, verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
@@ -83,14 +83,12 @@ type StepPublicInput n ds dw fv b =
 
 -- | Combined parameters for the Wrap circuit.
 -- |
--- | Contains both IVP params (curve params, commitments),
--- | finalize params (domain, endo, linearization), and
--- | dummy challenges for messagesForNextWrapProof padding.
-type WrapParams :: Int -> Type -> Type
-type WrapParams dw f =
+-- | Contains IVP params (curve params, commitments) and
+-- | finalize params (domain, endo, linearization).
+type WrapParams :: Type -> Type
+type WrapParams f =
   { ivpParams :: IncrementallyVerifyProofParams f
   , finalizeParams :: FinalizeOtherProofParams f
-  , dummyChallenges :: Vector dw f
   }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
@@ -119,32 +117,31 @@ type WrapParams dw f =
 -- | StepStatement to `verify`, we match OCaml's approach and avoid the
 -- | expensive MSM over the full ~77 field Step I/O.
 wrapCircuit
-  :: forall @n @ds @dw _l3 t m
+  :: forall @n @ds _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-  => WrapWitnessM ds dw m Pallas.ScalarField
+  => WrapWitnessM ds WrapIPARounds m Pallas.ScalarField
   => Reflectable ds Int
-  => Reflectable dw Int
   => Reflectable n Int
   => Add 1 _l3 ds
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
-  -> WrapParams dw Pallas.ScalarField
+  -> WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
   publicInput <- exists $ lift $ do
-    fs <- getStepIOFields @ds @dw @m @Pallas.ScalarField unit
-    pure $ fieldsToValue @_ @(StepPublicInput n ds dw (F Pallas.ScalarField) Boolean) (map unwrap fs)
-  witness <- exists $ lift $ getEvals @ds @dw unit
-  messages <- exists $ lift $ getMessages @ds @dw unit
-  openingProof <- exists $ lift $ getOpeningProof @ds @dw unit
+    fs <- getStepIOFields @ds @WrapIPARounds @m @Pallas.ScalarField unit
+    pure $ fieldsToValue @_ @(StepPublicInput n ds WrapIPARounds (F Pallas.ScalarField) Boolean) (map unwrap fs)
+  witness <- exists $ lift $ getEvals @ds @WrapIPARounds unit
+  messages <- exists $ lift $ getMessages @ds @WrapIPARounds unit
+  openingProof <- exists $ lift $ getOpeningProof @ds @WrapIPARounds unit
   -- Unfinalized proof for finalize (private witness, Fq-recomputed deferred values).
   -- Distinct from WrapStatement's Fp-origin deferred values used by IVP.
   -- OCaml: prev_proof_state.unfinalized_proofs
-  unfinalized <- exists $ lift $ getUnfinalizedProof @ds @dw @_ @Pallas.ScalarField unit
-  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @dw unit
+  unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
+  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @WrapIPARounds unit
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized, expandedChallenges } <- evalSpongeM initialSpongeCircuit $
@@ -176,6 +173,6 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
     hashMessagesForNextWrapProofCircuit
       { sg: openingProof.sg
       , expandedChallenges
-      , dummyChallenges: params.dummyChallenges
+      , dummyChallenges: dummyWrapChallengesExpanded
       }
   assert_ =<< equals_ computedDigest wrapStmt.proofState.messagesForNextWrapProof

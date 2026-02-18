@@ -430,7 +430,7 @@ buildStepPublicInput ctx = fieldsToValue @Pallas.ScalarField
 incrementallyVerifyProofTest :: StepProofContext -> Aff Unit
 incrementallyVerifyProofTest ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams (Vector.replicate zero) ctx
+    { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -549,7 +549,7 @@ incrementallyVerifyProofTest ctx = do
 verifyTest :: StepProofContext -> Aff Unit
 verifyTest ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams (Vector.replicate zero) ctx
+    { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles

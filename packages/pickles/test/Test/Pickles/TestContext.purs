@@ -50,7 +50,6 @@ module Test.Pickles.TestContext
   , buildStepFinalizeInput
   , dummyStepAdvice
   , genDummyUnfinalizedProof
-  , genDummyChallenges
   , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPInput
@@ -109,6 +108,7 @@ import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
+import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -688,8 +688,8 @@ wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Pallas.ScalarField i
 -- | Build WrapCircuitParams from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitParams :: Vector WrapIPARounds WrapField -> StepProofContext -> WrapParams WrapIPARounds Pallas.ScalarField
-buildWrapCircuitParams dummyChallenges ctx =
+buildWrapCircuitParams :: StepProofContext -> WrapParams Pallas.ScalarField
+buildWrapCircuitParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
     columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
@@ -716,7 +716,6 @@ buildWrapCircuitParams dummyChallenges ctx =
         , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
         }
     , finalizeParams: buildFinalizeParams ctx
-    , dummyChallenges
     }
 
 -------------------------------------------------------------------------------
@@ -964,10 +963,9 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
 -------------------------------------------------------------------------------
 
 buildWrapCircuitInput
-  :: Vector WrapIPARounds WrapField
-  -> StepProofContext
+  :: StepProofContext
   -> WrapInput StepIPARounds
-buildWrapCircuitInput dummyChallenges ctx =
+buildWrapCircuitInput ctx =
   let
     -- Fp-origin deferred values for IVP (cross-field shifted Fp → Type1 Fq).
     -- These use raw Fp oracle values, matching how the prover computed the proof.
@@ -1047,7 +1045,7 @@ buildWrapCircuitInput dummyChallenges ctx =
 
     -- Hash: [dummyChallenges..., expandedChallenges..., sg.x, sg.y]
     messageHash = hashMessagesForNextWrapProof
-      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges }
+      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges: dummyWrapChallengesExpanded }
   in
     { proofState:
         { deferredValues:
@@ -1153,18 +1151,12 @@ buildWrapProverWitness ctx =
 
 -- | Create a Wrap test context (Pallas proof verifying Vesta Step proof).
 -- | Uses concrete structural type WrapInput 1 WrapSchnorrInput Unit ...
--- | Generate random dummy expanded challenges for padding the message hash.
--- | Used as compile-time constants in the Wrap circuit.
-genDummyChallenges :: Gen (Vector WrapIPARounds WrapField)
-genDummyChallenges = Vector.generator (Proxy @WrapIPARounds) arbitrary
-
 createWrapProofContext :: StepProofContext -> Aff WrapProofContext
 createWrapProofContext stepCtx = do
   Console.debug "[createWrapProofContext]"
-  dummyChallenges <- liftEffect $ randomSampleOne genDummyChallenges
   let
-    params = buildWrapCircuitParams dummyChallenges stepCtx
-    input = buildWrapCircuitInput dummyChallenges stepCtx
+    params = buildWrapCircuitParams stepCtx
+    input = buildWrapCircuitInput stepCtx
     witnessData = buildWrapProverWitness stepCtx
 
     circuit
@@ -1174,7 +1166,7 @@ createWrapProofContext stepCtx = do
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit =
-      wrapCircuit @1 @StepIPARounds @WrapIPARounds
+      wrapCircuit @1 @StepIPARounds
         type1ScalarOps
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
