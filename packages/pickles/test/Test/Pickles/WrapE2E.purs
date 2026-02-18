@@ -28,7 +28,8 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, runWrapProverM)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, genDummyChallenges, runWrapProverM)
+import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -40,9 +41,10 @@ import Type.Proxy (Proxy(..))
 -- | Test that the Wrap circuit is satisfiable with real Step proof data.
 wrapCircuitSatisfiableTest :: StepProofContext -> Aff Unit
 wrapCircuitSatisfiableTest ctx = do
+  dummyChallenges <- liftEffect $ randomSampleOne genDummyChallenges
   let
-    params = buildWrapCircuitParams ctx
-    circuitInput = buildWrapCircuitInput ctx
+    params = buildWrapCircuitParams dummyChallenges ctx
+    circuitInput = buildWrapCircuitInput dummyChallenges ctx
     witnessData = buildWrapProverWitness ctx
 
     circuit

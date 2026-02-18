@@ -95,6 +95,7 @@ type FinalizeOtherProofInput d f sf b =
 type FinalizeOtherProofOutput d f =
   { finalized :: BoolVar f
   , challenges :: BulletproofChallenges d (FVar f)
+  , expandedChallenges :: Vector d (FVar f)
   }
 
 -------------------------------------------------------------------------------
@@ -202,7 +203,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 
   let challenges = deferred.bulletproofChallenges
 
-  pure { finalized, challenges }
+  pure { finalized, challenges, expandedChallenges }
 
 -------------------------------------------------------------------------------
 -- | Helpers

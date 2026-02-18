@@ -50,6 +50,7 @@ module Test.Pickles.TestContext
   , buildStepFinalizeInput
   , dummyStepAdvice
   , genDummyUnfinalizedProof
+  , genDummyChallenges
   , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPInput
@@ -108,6 +109,7 @@ import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
@@ -686,8 +688,8 @@ wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Pallas.ScalarField i
 -- | Build WrapCircuitParams from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitParams :: StepProofContext -> WrapParams Pallas.ScalarField
-buildWrapCircuitParams ctx =
+buildWrapCircuitParams :: Vector WrapIPARounds WrapField -> StepProofContext -> WrapParams WrapIPARounds Pallas.ScalarField
+buildWrapCircuitParams dummyChallenges ctx =
   let
     numPublic = Array.length ctx.publicInputs
     columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
@@ -714,6 +716,7 @@ buildWrapCircuitParams ctx =
         , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
         }
     , finalizeParams: buildFinalizeParams ctx
+    , dummyChallenges
     }
 
 -------------------------------------------------------------------------------
@@ -961,9 +964,10 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
 -------------------------------------------------------------------------------
 
 buildWrapCircuitInput
-  :: StepProofContext
+  :: Vector WrapIPARounds WrapField
+  -> StepProofContext
   -> WrapInput StepIPARounds
-buildWrapCircuitInput ctx =
+buildWrapCircuitInput dummyChallenges ctx =
   let
     -- Fp-origin deferred values for IVP (cross-field shifted Fp → Type1 Fq).
     -- These use raw Fp oracle values, matching how the prover computed the proof.
@@ -1020,6 +1024,30 @@ buildWrapCircuitInput ctx =
 
     -- Sponge digest (coerced Fp → Fq)
     spongeDigest = coerceFp ctx.oracles.fqDigest
+
+    -- Compute messagesForNextWrapProof hash.
+    -- The circuit hashes expandedChallenges from finalizeOtherProof, which expands
+    -- the unfinalized proof's bp challenges via endo. We must use the SAME bp
+    -- challenges here: from the decoded Step output's unfinalized proof.
+    stepOutput :: WrapSchnorrStepIOVal
+    stepOutput = fieldsToValue @WrapField
+      (map (\fp -> fromBigInt (toBigInt fp) :: WrapField) ctx.publicInputs)
+    stepUnfinalized = Vector.head stepOutput.proofState.unfinalizedProofs
+
+    -- Expand bp challenges via endo (same as circuit's finalizeOtherProof does)
+    unfinalizedBpChallenges :: Vector WrapIPARounds (SizedF 128 WrapField)
+    unfinalizedBpChallenges = coerce stepUnfinalized.deferredValues.bulletproofChallenges
+
+    expandedChallengesForHash :: Vector WrapIPARounds WrapField
+    expandedChallengesForHash = map (\c -> toFieldPure c wrapEndo) unfinalizedBpChallenges
+
+    -- sg from opening proof
+    sg :: AffinePoint WrapField
+    sg = ProofFFI.pallasProofOpeningSg ctx.proof
+
+    -- Hash: [dummyChallenges..., expandedChallenges..., sg.x, sg.y]
+    messageHash = hashMessagesForNextWrapProof
+      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges }
   in
     { proofState:
         { deferredValues:
@@ -1038,7 +1066,7 @@ buildWrapCircuitInput ctx =
             , b
             }
         , spongeDigestBeforeEvaluations: F spongeDigest
-        , messagesForNextWrapProof: zero -- stub
+        , messagesForNextWrapProof: F messageHash
         }
     , messagesForNextStepProof: zero -- stub
     }
@@ -1125,12 +1153,18 @@ buildWrapProverWitness ctx =
 
 -- | Create a Wrap test context (Pallas proof verifying Vesta Step proof).
 -- | Uses concrete structural type WrapInput 1 WrapSchnorrInput Unit ...
+-- | Generate random dummy expanded challenges for padding the message hash.
+-- | Used as compile-time constants in the Wrap circuit.
+genDummyChallenges :: Gen (Vector WrapIPARounds WrapField)
+genDummyChallenges = Vector.generator (Proxy @WrapIPARounds) arbitrary
+
 createWrapProofContext :: StepProofContext -> Aff WrapProofContext
 createWrapProofContext stepCtx = do
   Console.debug "[createWrapProofContext]"
+  dummyChallenges <- liftEffect $ randomSampleOne genDummyChallenges
   let
-    params = buildWrapCircuitParams stepCtx
-    input = buildWrapCircuitInput stepCtx
+    params = buildWrapCircuitParams dummyChallenges stepCtx
+    input = buildWrapCircuitInput dummyChallenges stepCtx
     witnessData = buildWrapProverWitness stepCtx
 
     circuit

@@ -27,6 +27,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
@@ -34,8 +35,9 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherP
 import Pickles.Types (StepStatement, WrapStatement)
 import Pickles.Verify (IncrementallyVerifyProofParams, verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, exists, false_, fieldsToValue, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -81,11 +83,14 @@ type StepPublicInput n ds dw fv b =
 
 -- | Combined parameters for the Wrap circuit.
 -- |
--- | Contains both IVP params (curve params, commitments) and
--- | finalize params (domain, endo, linearization).
-type WrapParams f =
+-- | Contains both IVP params (curve params, commitments),
+-- | finalize params (domain, endo, linearization), and
+-- | dummy challenges for messagesForNextWrapProof padding.
+type WrapParams :: Int -> Type -> Type
+type WrapParams dw f =
   { ivpParams :: IncrementallyVerifyProofParams f
   , finalizeParams :: FinalizeOtherProofParams f
+  , dummyChallenges :: Vector dw f
   }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
@@ -123,7 +128,7 @@ wrapCircuit
   => Add 1 _l3 ds
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
-  -> WrapParams Pallas.ScalarField
+  -> WrapParams dw Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
@@ -142,7 +147,7 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
   prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @dw unit
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
-  { finalized } <- evalSpongeM initialSpongeCircuit $
+  { finalized, expandedChallenges } <- evalSpongeM initialSpongeCircuit $
     finalizeOtherProofCircuit scalarOps params.finalizeParams
       { unfinalized, witness, prevChallengeDigest }
 
@@ -165,3 +170,12 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
     verify @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_
       wrapStmt.proofState.spongeDigestBeforeEvaluations
   assert_ success
+
+  -- 5. Compute and assert messagesForNextWrapProof hash
+  computedDigest <- evalSpongeM initialSpongeCircuit $
+    hashMessagesForNextWrapProofCircuit
+      { sg: openingProof.sg
+      , expandedChallenges
+      , dummyChallenges: params.dummyChallenges
+      }
+  assert_ =<< equals_ computedDigest wrapStmt.proofState.messagesForNextWrapProof
