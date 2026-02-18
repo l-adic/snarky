@@ -13,10 +13,11 @@ module Pickles.Types
   , WrapCommitmentCurve
   , StepInput
   , StepStatement
+  , WrapStatement
   ) where
 
 import Data.Vector (Vector)
-import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
@@ -80,4 +81,28 @@ type StepStatement n ds dw fv sf b =
       , messagesForNextStepProof :: fv
       }
   , messagesForNextWrapProof :: Vector n fv
+  }
+
+-------------------------------------------------------------------------------
+-- | Wrap Circuit I/O Types
+-------------------------------------------------------------------------------
+
+-- | The Wrap circuit's public input statement.
+-- |
+-- | In OCaml Pickles, the Wrap circuit receives ~29 fields as public input:
+-- | deferred values, sponge digest, and message digests. These values are
+-- | verified by the next Step circuit when it checks the Wrap proof.
+-- |
+-- | The message digest fields are stubs (zero) until hash-based message
+-- | passing is implemented.
+-- |
+-- | Reference: wrap_main.ml lines 140-166
+type WrapStatement :: Int -> Type -> Type -> Type
+type WrapStatement d f sf =
+  { proofState ::
+      { deferredValues :: DeferredValues d f sf
+      , spongeDigestBeforeEvaluations :: f
+      , messagesForNextWrapProof :: f -- stub (zero) until hash implemented
+      }
+  , messagesForNextStepProof :: f -- stub (zero) until hash implemented
   }

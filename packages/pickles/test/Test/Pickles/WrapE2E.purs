@@ -20,7 +20,7 @@ import Effect.Class (liftEffect)
 import Pickles.IPA (type1ScalarOps)
 import Pickles.Types (StepIPARounds)
 import Pickles.Wrap.Advice (class WrapWitnessM)
-import Pickles.Wrap.Circuit (WrapInput, wrapCircuit)
+import Pickles.Wrap.Circuit (WrapInput, WrapInputVar, wrapCircuit)
 import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi (groupMapParams)
@@ -28,7 +28,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapClaimedDigest, buildWrapProverWitness, existsSchnorrStepIO, runWrapProverM)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, existsSchnorrStepIO, runWrapProverM)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -42,7 +42,6 @@ wrapCircuitSatisfiableTest :: StepProofContext -> Aff Unit
 wrapCircuitSatisfiableTest ctx = do
   let
     params = buildWrapCircuitParams ctx
-    claimedDigest = buildWrapClaimedDigest ctx
     circuitInput = buildWrapCircuitInput ctx
     witnessData = buildWrapProverWitness ctx
 
@@ -50,12 +49,12 @@ wrapCircuitSatisfiableTest ctx = do
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => WrapWitnessM StepIPARounds m Pallas.ScalarField
-      => WrapInput
+      => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-    circuit = wrapCircuit @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params claimedDigest existsSchnorrStepIO
+    circuit = wrapCircuit @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params existsSchnorrStepIO
 
   builtState <- liftEffect $ compile
-    (Proxy @WrapInput)
+    (Proxy @(WrapInput StepIPARounds))
     (Proxy @Unit)
     (Proxy @(KimchiConstraint Pallas.ScalarField))
     circuit
@@ -65,7 +64,7 @@ wrapCircuitSatisfiableTest ctx = do
     { builtState
     , checker: Kimchi.eval
     , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
     , testFunction: satisfied_
     , postCondition: Kimchi.postCondition
     }

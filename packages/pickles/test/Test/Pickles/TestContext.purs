@@ -39,7 +39,6 @@ module Test.Pickles.TestContext
   , buildWrapCircuitInput
   , buildWrapProverWitness
   , buildWrapCircuitParams
-  , buildWrapClaimedDigest
   , coerceStepPlonkChallenges
   , extractStepRawBpChallenges
   , unsafeFqToFp
@@ -106,9 +105,9 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherPr
 import Pickles.Types (StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
-import Pickles.Verify.Types (DeferredValues, PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
+import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
-import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapParams, wrapCircuit)
+import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
@@ -216,7 +215,9 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
 
 -- | Reader environment for WrapProverM: all data the Wrap advisory monad provides.
 -- | Bundles polynomial evaluations (for finalize), protocol commitments (for IVP),
--- | deferred values, unfinalized proof, and previous challenge digest.
+-- | unfinalized proof (for finalize, with Fq-recomputed deferred values),
+-- | and previous challenge digest.
+-- | WrapStatement public input provides Fp-origin deferred values for IVP.
 type WrapAdvice (ds :: Int) f =
   { evals :: ProofWitness (F f)
   , messages ::
@@ -231,7 +232,6 @@ type WrapAdvice (ds :: Int) f =
       , z1 :: Type1 (F f)
       , z2 :: Type1 (F f)
       }
-  , deferredValues :: DeferredValues ds (F f) (Type1 (F f))
   , unfinalized :: UnfinalizedProof ds (F f) (Type1 (F f)) Boolean
   , prevChallengeDigest :: F f
   , stepIOFields :: Array (F f)
@@ -255,7 +255,6 @@ instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM ds f
   getEvals _ = WrapProverM $ map _.evals ask
   getMessages _ = WrapProverM $ map _.messages ask
   getOpeningProof _ = WrapProverM $ map _.openingProof ask
-  getDeferredValues _ = WrapProverM $ map _.deferredValues ask
   getUnfinalizedProof _ = WrapProverM $ map _.unfinalized ask
   getPrevChallengeDigest _ = WrapProverM $ map _.prevChallengeDigest ask
 
@@ -718,20 +717,6 @@ buildWrapCircuitParams ctx =
     }
 
 -------------------------------------------------------------------------------
--- | Build claimed Fq-sponge digest for the Wrap circuit
--------------------------------------------------------------------------------
-
--- | Extract the claimed Fq-sponge digest from the Step proof's oracles,
--- | coerced to the Wrap circuit field (Pallas.ScalarField = Fq).
--- |
--- | The Rust FFI returns fqDigest as Vesta.ScalarField (= Fp) because
--- | Kimchi's FqSponge::digest() converts BaseField → ScalarField via BigInt.
--- | For values >= Fp, Kimchi returns zero (see mina_poseidon FqSponge impl).
--- | Since P(squeeze ∈ [Fp, Fq)) ≈ 2^{-177}, the integer roundtrip is safe.
-buildWrapClaimedDigest :: StepProofContext -> Pallas.ScalarField
-buildWrapClaimedDigest ctx = fromBigInt (toBigInt ctx.oracles.fqDigest)
-
--------------------------------------------------------------------------------
 -- | Shared Step→Wrap coercion helpers
 -------------------------------------------------------------------------------
 
@@ -972,29 +957,38 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
 
 buildWrapCircuitInput
   :: StepProofContext
-  -> WrapInput
-buildWrapCircuitInput _ = unit
-
--- | Extract the private witness data for WrapProverM from a StepProofContext.
--- | Includes polynomial evaluations (for finalize), protocol commitments (for IVP),
--- | IVP deferred values, finalize unfinalized proof, and previous challenge digest.
-buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
-buildWrapProverWitness ctx =
+  -> WrapInput StepIPARounds
+buildWrapCircuitInput ctx =
   let
-    fullFinalizeInput = buildFinalizeInput
-      { prevChallengeDigest: emptyPrevChallengeDigest
-      , stepCtx: ctx
-      }
-    commitments = ProofFFI.pallasProofCommitments ctx.proof
+    -- Fp-origin deferred values for IVP (cross-field shifted Fp → Type1 Fq).
+    -- These use raw Fp oracle values, matching how the prover computed the proof.
+    -- Distinct from the Fq-recomputed values used by finalizeOtherProof.
+    plonk = coerceStepPlonkChallenges ctx
 
-    tComm :: Vector 7 (AffinePoint (F WrapField))
-    tComm = toVectorOrThrow @7 "buildWrapProverWitness tComm" $ coerce commitments.tComm
+    -- CIP from raw Fp oracle (cross-field Shifted: F Fp → Type1 (F Fq))
+    combinedInnerProduct = toShifted (F ctx.oracles.combinedInnerProduct)
 
-    -- IVP deferred values (Fp-origin, cross-field shifted to Fq)
-    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
-    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
+    -- Xi challenge coerced via 128-bit representation
+    xi :: SizedF 128 (F WrapField)
+    xi = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 WrapField)
+
+    -- Bulletproof challenges from IPA sponge
+    bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F WrapField))
+    bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
+
+    -- b from FFI (Fp computation, cross-field shifted)
     omega = ProofFFI.domainGenerator ctx.domainLog2
+    { challenges: rustChallenges } = mkStepIpaContext ctx
+    bValue = ProofFFI.computeB0
+      { challenges: Vector.toUnfoldable rustChallenges
+      , zeta: ctx.oracles.zeta
+      , zetaOmega: ctx.oracles.zeta * omega
+      , evalscale: ctx.oracles.u
+      }
+    b = toShifted (F bValue)
 
+    -- Perm scalar in Fp (cross-field shifted)
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt ctx.domainLog2)
     zetaToNMinus1 = pow ctx.oracles.zeta n - one
     zkPoly = ProofFFI.permutationVanishingPolynomial
       { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
@@ -1012,21 +1006,49 @@ buildWrapProverWitness ctx =
       , omegaToMinusZkRows
       , zeta: ctx.oracles.zeta
       }
-    perm = permScalar permInput
+    perm = toShifted (F (permScalar permInput))
 
-    { challenges: rustChallenges } = mkStepIpaContext ctx
-    bValue = ProofFFI.computeB0
-      { challenges: Vector.toUnfoldable rustChallenges
-      , zeta: ctx.oracles.zeta
-      , zetaOmega: ctx.oracles.zeta * omega
-      , evalscale: ctx.oracles.u
+    -- Zeta powers (Fp, cross-field shifted)
+    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize ctx.verifierIndex
+    zetaToSrsLength = toShifted (F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize)))
+    zetaToDomainSize = toShifted (F (pow ctx.oracles.zeta n))
+
+    -- Sponge digest (coerced Fp → Fq)
+    spongeDigest = coerceFp ctx.oracles.fqDigest
+  in
+    { proofState:
+        { deferredValues:
+            { plonk
+            , combinedInnerProduct
+            , xi
+            , bulletproofChallenges
+            , b
+            , perm
+            , zetaToSrsLength
+            , zetaToDomainSize
+            }
+        , spongeDigestBeforeEvaluations: F spongeDigest
+        , messagesForNextWrapProof: zero -- stub
+        }
+    , messagesForNextStepProof: zero -- stub
+    }
+
+-- | Extract the private witness data for WrapProverM from a StepProofContext.
+-- | Includes polynomial evaluations (for finalize), protocol commitments (for IVP),
+-- | unfinalized proof (Fq-recomputed deferred values for finalize), and
+-- | previous challenge digest.
+-- | WrapStatement public input provides Fp-origin deferred values for IVP.
+buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
+buildWrapProverWitness ctx =
+  let
+    fullFinalizeInput = buildFinalizeInput
+      { prevChallengeDigest: emptyPrevChallengeDigest
+      , stepCtx: ctx
       }
+    commitments = ProofFFI.pallasProofCommitments ctx.proof
 
-    bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F WrapField))
-    bulletproofChallenges = coerce (extractStepRawBpChallenges ctx)
-
-    xiChalFq :: SizedF 128 (F WrapField)
-    xiChalFq = coerce (coerceViaBits ctx.oracles.vChal :: SizedF 128 WrapField)
+    tComm :: Vector 7 (AffinePoint (F WrapField))
+    tComm = toVectorOrThrow @7 "buildWrapProverWitness tComm" $ coerce commitments.tComm
   in
     { evals: fullFinalizeInput.witness
     , messages:
@@ -1042,16 +1064,6 @@ buildWrapProverWitness ctx =
         , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
         , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
         }
-    , deferredValues:
-        { plonk: coerceStepPlonkChallenges ctx
-        , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-        , xi: xiChalFq
-        , bulletproofChallenges
-        , b: toShifted $ F bValue
-        , perm: toShifted $ F perm
-        , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-        , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
-        }
     , unfinalized: fullFinalizeInput.unfinalized
     , prevChallengeDigest: fullFinalizeInput.prevChallengeDigest
     , stepIOFields: map (\fp -> F (fromBigInt (toBigInt fp) :: WrapField)) ctx.publicInputs
@@ -1066,29 +1078,26 @@ createWrapProofContext stepCtx = do
     params = buildWrapCircuitParams stepCtx
     input = buildWrapCircuitInput stepCtx
     witnessData = buildWrapProverWitness stepCtx
-    claimedDigest = buildWrapClaimedDigest stepCtx
 
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => WrapWitnessM StepIPARounds m Pallas.ScalarField
-      => WrapInput
+      => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-    circuit inVar =
+    circuit =
       wrapCircuit @StepIPARounds
         type1ScalarOps
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
-        claimedDigest
         existsSchnorrStepIO
-        inVar
 
-    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) WrapInput Unit
+    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInput -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
 
   builtState <- liftEffect $ compile
-    (Proxy @WrapInput)
+    (Proxy @(WrapInput StepIPARounds))
     (Proxy @Unit)
     (Proxy @(KimchiConstraint Pallas.ScalarField))
     circuit
@@ -1507,7 +1516,7 @@ buildStepProverWitness wrapCtx =
     tComm :: Vector 7 (AffinePoint (F StepField))
     tComm = toVectorOrThrow @7 "buildStepProverWitness tComm" $ coerce commitments.tComm
   in
-    { stepInputFields: []  -- StepInput fields provided by createStepProofContext
+    { stepInputFields: [] -- StepInput fields provided by createStepProofContext
     , evals: fopInput.witness :< Vector.nil
     , messages:
         { wComm: coerce commitments.wComm

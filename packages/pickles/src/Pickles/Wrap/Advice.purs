@@ -36,7 +36,6 @@ module Pickles.Wrap.Advice
   , getEvals
   , getMessages
   , getOpeningProof
-  , getDeferredValues
   , getUnfinalizedProof
   , getPrevChallengeDigest
   ) where
@@ -48,7 +47,7 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Curves.Class (class PrimeField)
@@ -101,12 +100,12 @@ class Monad m <= WrapWitnessM (ds :: Int) m f where
          , z2 :: Type1 (F f)
          }
 
-  -- | IVP deferred values (cross-field Fp→Fq shifted).
-  -- | OCaml: derived from Req.Proof_state
-  getDeferredValues :: Unit -> m (DeferredValues ds (F f) (Type1 (F f)))
-
-  -- | Unfinalized proof for finalizeOtherProof (same-field Fq).
-  -- | OCaml: Req.Proof_state
+  -- | Unfinalized proof for finalizeOtherProof (private witness).
+  -- | In OCaml, finalize uses prev_proof_state.unfinalized_proofs (from the Step
+  -- | proof's public output, forwarded from previous Wrap proofs). These deferred
+  -- | values are Fq-recomputed (same-field), distinct from the WrapStatement's
+  -- | Fp-origin deferred values used by IVP.
+  -- | OCaml: derived from Req.Proof_state (unfinalized_proofs)
   getUnfinalizedProof :: Unit -> m (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean)
 
   -- | Previous challenge digest for finalizeOtherProof.
@@ -119,6 +118,5 @@ instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds Effect f where
   getEvals _ = throw "impossible! getEvals called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
-  getDeferredValues _ = throw "impossible! getDeferredValues called during compilation"
   getUnfinalizedProof _ = throw "impossible! getUnfinalizedProof called during compilation"
   getPrevChallengeDigest _ = throw "impossible! getPrevChallengeDigest called during compilation"
