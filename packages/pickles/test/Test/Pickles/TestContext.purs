@@ -916,14 +916,19 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
   in
     { unfinalized:
         { deferredValues:
-            { plonk
+            { plonk:
+                { alpha: plonk.alpha
+                , beta: plonk.beta
+                , gamma: plonk.gamma
+                , zeta: plonk.zeta
+                , perm: toShifted (F perm)
+                , zetaToSrsLength: toShifted (F zetaToSrsLength)
+                , zetaToDomainSize: toShifted (F zetaToDomainSize)
+                }
             , combinedInnerProduct: toShifted (F cip)
             , xi: coerce frResult.rawXi
             , bulletproofChallenges
             , b: toShifted (F b)
-            , perm: toShifted (F perm)
-            , zetaToSrsLength: toShifted (F zetaToSrsLength)
-            , zetaToDomainSize: toShifted (F zetaToDomainSize)
             }
         , shouldFinalize: true
         , spongeDigestBeforeEvaluations: F spongeDigest
@@ -1018,14 +1023,19 @@ buildWrapCircuitInput ctx =
   in
     { proofState:
         { deferredValues:
-            { plonk
+            { plonk:
+                { alpha: plonk.alpha
+                , beta: plonk.beta
+                , gamma: plonk.gamma
+                , zeta: plonk.zeta
+                , perm
+                , zetaToSrsLength
+                , zetaToDomainSize
+                }
             , combinedInnerProduct
             , xi
             , bulletproofChallenges
             , b
-            , perm
-            , zetaToSrsLength
-            , zetaToDomainSize
             }
         , spongeDigestBeforeEvaluations: F spongeDigest
         , messagesForNextWrapProof: zero -- stub
@@ -1049,14 +1059,19 @@ convertUnfinalized u =
     d = u.deferredValues
   in
     { deferredValues:
-        { plonk: d.plonk
+        { plonk:
+            { alpha: d.plonk.alpha
+            , beta: d.plonk.beta
+            , gamma: d.plonk.gamma
+            , zeta: d.plonk.zeta
+            , perm: conv d.plonk.perm
+            , zetaToSrsLength: conv d.plonk.zetaToSrsLength
+            , zetaToDomainSize: conv d.plonk.zetaToDomainSize
+            }
         , combinedInnerProduct: conv d.combinedInnerProduct
         , xi: d.xi
         , bulletproofChallenges: d.bulletproofChallenges
         , b: conv d.b
-        , perm: conv d.perm
-        , zetaToSrsLength: conv d.zetaToSrsLength
-        , zetaToDomainSize: conv d.zetaToDomainSize
         }
     , shouldFinalize: u.shouldFinalize
     , spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations
@@ -1418,14 +1433,19 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, wrapCtx } =
   in
     { unfinalized:
         { deferredValues:
-            { plonk
+            { plonk:
+                { alpha: plonk.alpha
+                , beta: plonk.beta
+                , gamma: plonk.gamma
+                , zeta: plonk.zeta
+                , perm: toShifted (F perm)
+                , zetaToSrsLength: toShifted (F zetaToSrsLength)
+                , zetaToDomainSize: toShifted (F zetaToDomainSize)
+                }
             , combinedInnerProduct: toShifted (F cip)
             , xi: coerce frResult.rawXi
             , bulletproofChallenges
             , b: toShifted (F b)
-            , perm: toShifted (F perm)
-            , zetaToSrsLength: toShifted (F zetaToSrsLength)
-            , zetaToDomainSize: toShifted (F zetaToDomainSize)
             }
         , shouldFinalize: true
         , spongeDigestBeforeEvaluations: F spongeDigest
@@ -1484,14 +1504,11 @@ genDummyUnfinalizedProof = do
   spongeDigest <- arbitrary @StepField
   pure
     { deferredValues:
-        { plonk: { alpha, beta, gamma, zeta }
+        { plonk: { alpha, beta, gamma, zeta, perm, zetaToSrsLength, zetaToDomainSize }
         , combinedInnerProduct
         , xi
         , bulletproofChallenges
         , b
-        , perm
-        , zetaToSrsLength
-        , zetaToDomainSize
         }
     , shouldFinalize: false
     , spongeDigestBeforeEvaluations: F spongeDigest
@@ -1663,14 +1680,21 @@ buildStepIVPInput ctx =
         map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
     , sgOld: Vector.nil
     , deferredValues:
-        { plonk: coerceWrapPlonkChallenges ctx
+        let wrapPlonk = coerceWrapPlonkChallenges ctx
+        in
+        { plonk:
+            { alpha: wrapPlonk.alpha
+            , beta: wrapPlonk.beta
+            , gamma: wrapPlonk.gamma
+            , zeta: wrapPlonk.zeta
+            , perm: toShifted $ F perm
+            , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+            , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+            }
         , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
         , xi: xiChalFp
         , bulletproofChallenges
         , b: toShifted $ F bValue
-        , perm: toShifted $ F perm
-        , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-        , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
         }
     , wComm: coerce commitments.wComm
     , zComm: coerce commitments.zComm

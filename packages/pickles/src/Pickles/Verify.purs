@@ -28,7 +28,7 @@ import Pickles.IPA (CheckBulletproofInput, IpaScalarOps, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
 import Pickles.Sponge (SpongeM, liftSnarky)
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_)
@@ -140,16 +140,16 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky $
-    assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } input.deferredValues.plonk
+    assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
 
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ ftComm
     scalarOps
     { sigmaLast: constPt params.sigmaCommLast
     , tComm: input.tComm
-    , perm: input.deferredValues.perm
-    , zetaToSrsLength: input.deferredValues.zetaToSrsLength
-    , zetaToDomainSize: input.deferredValues.zetaToDomainSize
+    , perm: input.deferredValues.plonk.perm
+    , zetaToSrsLength: input.deferredValues.plonk.zetaToSrsLength
+    , zetaToDomainSize: input.deferredValues.plonk.zetaToDomainSize
     }
 
   -- 5. Assemble 45 commitment bases in to_batch order

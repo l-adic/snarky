@@ -484,14 +484,21 @@ incrementallyVerifyProofTest ctx = do
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
       , deferredValues:
-          { plonk: coerceStepPlonkChallenges ctx
+          let stepPlonk = coerceStepPlonkChallenges ctx
+          in
+          { plonk:
+              { alpha: stepPlonk.alpha
+              , beta: stepPlonk.beta
+              , gamma: stepPlonk.gamma
+              , zeta: stepPlonk.zeta
+              , perm: toShifted $ F perm
+              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+              }
           , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
           , xi: xiChalFq
           , bulletproofChallenges
           , b: toShifted $ F bValue
-          , perm: toShifted $ F perm
-          , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-          , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
           }
       , wComm: coerce commitments.wComm
       , zComm: coerce commitments.zComm
@@ -596,14 +603,21 @@ verifyTest ctx = do
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
       , deferredValues:
-          { plonk: coerceStepPlonkChallenges ctx
+          let stepPlonk = coerceStepPlonkChallenges ctx
+          in
+          { plonk:
+              { alpha: stepPlonk.alpha
+              , beta: stepPlonk.beta
+              , gamma: stepPlonk.gamma
+              , zeta: stepPlonk.zeta
+              , perm: toShifted $ F perm
+              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+              }
           , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
           , xi: xiChalFq
           , bulletproofChallenges
           , b: toShifted $ F bValue
-          , perm: toShifted $ F perm
-          , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-          , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
           }
       , wComm: coerce commitments.wComm
       , zComm: coerce commitments.zComm
