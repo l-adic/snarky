@@ -18,7 +18,7 @@ import Prelude
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.IPA (type1ScalarOps)
-import Pickles.Types (StepIPARounds)
+import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Circuit (WrapInput, WrapInputVar, wrapCircuit)
 import Snarky.Backend.Compile (compile, makeSolver)
@@ -28,7 +28,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, existsSchnorrStepIO, runWrapProverM)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, runWrapProverM)
 import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -51,7 +51,7 @@ wrapCircuitSatisfiableTest ctx = do
       => WrapWitnessM StepIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-    circuit = wrapCircuit @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params existsSchnorrStepIO
+    circuit = wrapCircuit @1 @StepIPARounds @WrapIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
 
   builtState <- liftEffect $ compile
     (Proxy @(WrapInput StepIPARounds))

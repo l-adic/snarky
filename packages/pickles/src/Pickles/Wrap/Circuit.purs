@@ -25,17 +25,17 @@ module Pickles.Wrap.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Pickles.IPA (IpaScalarOps)
-import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapStatement)
 import Pickles.Verify (IncrementallyVerifyProofParams, verify)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getUnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_, exists, false_, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, exists, false_, fieldsToValue, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -114,27 +114,24 @@ type WrapParams f =
 -- | StepStatement to `verify`, we match OCaml's approach and avoid the
 -- | expensive MSM over the full ~77 field Step I/O.
 wrapCircuit
-  :: forall n @ds dw _l3 t m
+  :: forall @n @ds @dw _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
   => WrapWitnessM ds m Pallas.ScalarField
   => Reflectable ds Int
   => Reflectable dw Int
   => Reflectable n Int
   => Add 1 _l3 ds
-  => PublicInputCommit
-       (StepPublicInput n ds dw (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))
-       Pallas.ScalarField
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
   -> GroupMapParams Pallas.ScalarField
   -> WrapParams Pallas.ScalarField
-  -> Snarky (KimchiConstraint Pallas.ScalarField) t m
-       (StepPublicInput n ds dw (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit scalarOps groupMapParams_ params existsStepStatement wrapStmt = do
+wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
-  publicInput <- existsStepStatement
+  publicInput <- exists $ lift $ do
+    fs <- getStepIOFields @ds @m @Pallas.ScalarField unit
+    pure $ fieldsToValue @_ @(StepPublicInput n ds dw (F Pallas.ScalarField) Boolean) (map unwrap fs)
   witness <- exists $ lift $ getEvals @ds unit
   messages <- exists $ lift $ getMessages @ds unit
   openingProof <- exists $ lift $ getOpeningProof @ds unit

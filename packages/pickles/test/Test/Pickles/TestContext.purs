@@ -118,7 +118,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, cre
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toFieldPure, toShifted)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -1033,18 +1033,56 @@ buildWrapCircuitInput ctx =
     , messagesForNextStepProof: zero -- stub
     }
 
+-- | Convert an UnfinalizedProof from Type2 to Type1 shifted representation.
+-- | Used to provide the Step proof's forwarded unfinalized proof (Type2) to
+-- | the Wrap circuit's finalize (which uses Type1 scalar ops).
+-- | The conversion is out-of-circuit: fromShifted recovers the raw value,
+-- | toShifted re-encodes it as Type1.
+convertUnfinalized
+  :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField) Boolean) Boolean
+  -> UnfinalizedProof StepIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
+convertUnfinalized u =
+  let
+    conv :: Type2 (F WrapField) Boolean -> Type1 (F WrapField)
+    conv t2 = toShifted (fromShifted t2 :: F WrapField)
+    d = u.deferredValues
+  in
+    { deferredValues:
+        { plonk: d.plonk
+        , combinedInnerProduct: conv d.combinedInnerProduct
+        , xi: d.xi
+        , bulletproofChallenges: d.bulletproofChallenges
+        , b: conv d.b
+        , perm: conv d.perm
+        , zetaToSrsLength: conv d.zetaToSrsLength
+        , zetaToDomainSize: conv d.zetaToDomainSize
+        }
+    , shouldFinalize: u.shouldFinalize
+    , spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations
+    }
+
 -- | Extract the private witness data for WrapProverM from a StepProofContext.
--- | Includes polynomial evaluations (for finalize), protocol commitments (for IVP),
--- | unfinalized proof (Fq-recomputed deferred values for finalize), and
--- | previous challenge digest.
+-- | Decodes the Step proof's public output to obtain the forwarded unfinalized proof,
+-- | converts Type2→Type1 shifted values, and provides polynomial evaluations for finalize.
 -- | WrapStatement public input provides Fp-origin deferred values for IVP.
 buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
 buildWrapProverWitness ctx =
   let
+    -- Decode the Step proof's public output to get the forwarded unfinalized proof.
+    -- In OCaml, the Wrap prover gets this via Req.Proof_state (private witness).
+    stepOutput :: WrapSchnorrStepIOVal
+    stepOutput = fieldsToValue @WrapField
+      (map (\fp -> fromBigInt (toBigInt fp) :: WrapField) ctx.publicInputs)
+    stepUnfinalized = Vector.head stepOutput.proofState.unfinalizedProofs
+
+    -- Convert Type2→Type1 shifted values (out-of-circuit, pure PureScript).
+    -- The finalize circuit uses type1ScalarOps, so we provide Type1 values.
+    unfinalized = convertUnfinalized stepUnfinalized
+
+    -- Polynomial evaluations for finalize (still from buildFinalizeInput)
     fullFinalizeInput = buildFinalizeInput
-      { prevChallengeDigest: emptyPrevChallengeDigest
-      , stepCtx: ctx
-      }
+      { prevChallengeDigest: emptyPrevChallengeDigest, stepCtx: ctx }
+
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     tComm :: Vector 7 (AffinePoint (F WrapField))
@@ -1064,7 +1102,7 @@ buildWrapProverWitness ctx =
         , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
         , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
         }
-    , unfinalized: fullFinalizeInput.unfinalized
+    , unfinalized
     , prevChallengeDigest: fullFinalizeInput.prevChallengeDigest
     , stepIOFields: map (\fp -> F (fromBigInt (toBigInt fp) :: WrapField)) ctx.publicInputs
     }
@@ -1086,11 +1124,10 @@ createWrapProofContext stepCtx = do
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit =
-      wrapCircuit @StepIPARounds
+      wrapCircuit @1 @StepIPARounds @WrapIPARounds
         type1ScalarOps
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
-        existsSchnorrStepIO
 
     rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
