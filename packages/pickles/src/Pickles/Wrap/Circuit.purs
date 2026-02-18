@@ -116,7 +116,7 @@ type WrapParams f =
 wrapCircuit
   :: forall @n @ds @dw _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-  => WrapWitnessM ds m Pallas.ScalarField
+  => WrapWitnessM ds dw m Pallas.ScalarField
   => Reflectable ds Int
   => Reflectable dw Int
   => Reflectable n Int
@@ -130,16 +130,16 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
   publicInput <- exists $ lift $ do
-    fs <- getStepIOFields @ds @m @Pallas.ScalarField unit
+    fs <- getStepIOFields @ds @dw @m @Pallas.ScalarField unit
     pure $ fieldsToValue @_ @(StepPublicInput n ds dw (F Pallas.ScalarField) Boolean) (map unwrap fs)
-  witness <- exists $ lift $ getEvals @ds unit
-  messages <- exists $ lift $ getMessages @ds unit
-  openingProof <- exists $ lift $ getOpeningProof @ds unit
+  witness <- exists $ lift $ getEvals @ds @dw unit
+  messages <- exists $ lift $ getMessages @ds @dw unit
+  openingProof <- exists $ lift $ getOpeningProof @ds @dw unit
   -- Unfinalized proof for finalize (private witness, Fq-recomputed deferred values).
   -- Distinct from WrapStatement's Fp-origin deferred values used by IVP.
   -- OCaml: prev_proof_state.unfinalized_proofs
-  unfinalized <- exists $ lift $ getUnfinalizedProof @ds @_ @Pallas.ScalarField unit
-  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds unit
+  unfinalized <- exists $ lift $ getUnfinalizedProof @ds @dw @_ @Pallas.ScalarField unit
+  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @dw unit
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized } <- evalSpongeM initialSpongeCircuit $

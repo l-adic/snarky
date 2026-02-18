@@ -48,7 +48,7 @@ wrapCircuitSatisfiableTest ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => WrapWitnessM StepIPARounds m Pallas.ScalarField
+      => WrapWitnessM StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit = wrapCircuit @1 @StepIPARounds @WrapIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
@@ -64,7 +64,7 @@ wrapCircuitSatisfiableTest ctx = do
     { builtState
     , checker: Kimchi.eval
     , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit)
     , testFunction: satisfied_
     , postCondition: Kimchi.postCondition
     }

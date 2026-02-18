@@ -61,9 +61,10 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Parameters:
 -- | - `ds`: Step IPA rounds (determines lr vector size in opening proof)
+-- | - `dw`: Wrap IPA rounds (determines bulletproof challenge dimension in unfinalized proof)
 -- | - `m`: Base monad (Effect for compilation, ProverM for proving)
 -- | - `f`: Circuit field (Pallas.ScalarField for Wrap)
-class Monad m <= WrapWitnessM (ds :: Int) m f where
+class Monad m <= WrapWitnessM (ds :: Int) (dw :: Int) m f where
   -- | Step I/O as flat field elements (for publicInputCommit in IVP).
   -- | The caller reconstructs the structural type via `fieldsToValue` and
   -- | wraps the allocation in an `exists` action with concrete types.
@@ -106,14 +107,14 @@ class Monad m <= WrapWitnessM (ds :: Int) m f where
   -- | values are Fq-recomputed (same-field), distinct from the WrapStatement's
   -- | Fp-origin deferred values used by IVP.
   -- | OCaml: derived from Req.Proof_state (unfinalized_proofs)
-  getUnfinalizedProof :: Unit -> m (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean)
+  getUnfinalizedProof :: Unit -> m (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
 
   -- | Previous challenge digest for finalizeOtherProof.
   getPrevChallengeDigest :: Unit -> m (F f)
 
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds Effect f where
+instance (Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapWitnessM ds dw Effect f where
   getStepIOFields _ = throw "impossible! getStepIOFields called during compilation"
   getEvals _ = throw "impossible! getEvals called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"

@@ -218,7 +218,7 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
 -- | unfinalized proof (for finalize, with Fq-recomputed deferred values),
 -- | and previous challenge digest.
 -- | WrapStatement public input provides Fp-origin deferred values for IVP.
-type WrapAdvice (ds :: Int) f =
+type WrapAdvice (ds :: Int) (dw :: Int) f =
   { evals :: ProofWitness (F f)
   , messages ::
       { wComm :: Vector 15 (AffinePoint (F f))
@@ -232,25 +232,25 @@ type WrapAdvice (ds :: Int) f =
       , z1 :: Type1 (F f)
       , z2 :: Type1 (F f)
       }
-  , unfinalized :: UnfinalizedProof ds (F f) (Type1 (F f)) Boolean
+  , unfinalized :: UnfinalizedProof dw (F f) (Type1 (F f)) Boolean
   , prevChallengeDigest :: F f
   , stepIOFields :: Array (F f)
   }
 
 -- | Prove-time monad for Wrap: provides private witness data via ReaderT.
-newtype WrapProverM (ds :: Int) f a = WrapProverM (ReaderT (WrapAdvice ds f) Effect a)
+newtype WrapProverM (ds :: Int) (dw :: Int) f a = WrapProverM (ReaderT (WrapAdvice ds dw f) Effect a)
 
-derive instance Newtype (WrapProverM ds f a) _
-derive newtype instance Functor (WrapProverM ds f)
-derive newtype instance Apply (WrapProverM ds f)
-derive newtype instance Applicative (WrapProverM ds f)
-derive newtype instance Bind (WrapProverM ds f)
-derive newtype instance Monad (WrapProverM ds f)
+derive instance Newtype (WrapProverM ds dw f a) _
+derive newtype instance Functor (WrapProverM ds dw f)
+derive newtype instance Apply (WrapProverM ds dw f)
+derive newtype instance Applicative (WrapProverM ds dw f)
+derive newtype instance Bind (WrapProverM ds dw f)
+derive newtype instance Monad (WrapProverM ds dw f)
 
-runWrapProverM :: forall ds f a. WrapAdvice ds f -> WrapProverM ds f a -> Effect a
+runWrapProverM :: forall ds dw f a. WrapAdvice ds dw f -> WrapProverM ds dw f a -> Effect a
 runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
-instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds (WrapProverM ds f) f where
+instance (Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapWitnessM ds dw (WrapProverM ds dw f) f where
   getStepIOFields _ = WrapProverM $ map _.stepIOFields ask
   getEvals _ = WrapProverM $ map _.evals ask
   getMessages _ = WrapProverM $ map _.messages ask
@@ -357,11 +357,11 @@ type WrapSchnorrStepIOVar = StepPublicInput 1 StepIPARounds WrapIPARounds (FVar 
 existsSchnorrStepIO
   :: forall t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => WrapWitnessM StepIPARounds m WrapField
+  => WrapWitnessM StepIPARounds WrapIPARounds m WrapField
   => Snarky (KimchiConstraint WrapField) t m WrapSchnorrStepIOVar
 existsSchnorrStepIO = exists $ lift $
   map (fieldsToValue @WrapField @WrapSchnorrStepIOVal <<< (coerce :: Array (F WrapField) -> Array WrapField))
-    (getStepIOFields @StepIPARounds unit)
+    (getStepIOFields @StepIPARounds @WrapIPARounds unit)
 
 -- | Allocation action for the Step circuit input (private witness).
 -- | In OCaml, the Step input enters via Req.App_state + Req.Unfinalized_proofs.
@@ -1039,8 +1039,9 @@ buildWrapCircuitInput ctx =
 -- | The conversion is out-of-circuit: fromShifted recovers the raw value,
 -- | toShifted re-encodes it as Type1.
 convertUnfinalized
-  :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField) Boolean) Boolean
-  -> UnfinalizedProof StepIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
+  :: forall d
+   . UnfinalizedProof d (F WrapField) (Type2 (F WrapField) Boolean) Boolean
+  -> UnfinalizedProof d (F WrapField) (Type1 (F WrapField)) Boolean
 convertUnfinalized u =
   let
     conv :: Type2 (F WrapField) Boolean -> Type1 (F WrapField)
@@ -1065,7 +1066,7 @@ convertUnfinalized u =
 -- | Decodes the Step proof's public output to obtain the forwarded unfinalized proof,
 -- | converts Type2→Type1 shifted values, and provides polynomial evaluations for finalize.
 -- | WrapStatement public input provides Fp-origin deferred values for IVP.
-buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapField
+buildWrapProverWitness :: StepProofContext -> WrapAdvice StepIPARounds WrapIPARounds WrapField
 buildWrapProverWitness ctx =
   let
     -- Decode the Step proof's public output to get the forwarded unfinalized proof.
@@ -1120,7 +1121,7 @@ createWrapProofContext stepCtx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => WrapWitnessM StepIPARounds m Pallas.ScalarField
+      => WrapWitnessM StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit =
@@ -1129,9 +1130,9 @@ createWrapProofContext stepCtx = do
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
 
-    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
+    rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
     rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds Pallas.ScalarField) Unit)
+      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit)
 
   builtState <- liftEffect $ compile
     (Proxy @(WrapInput StepIPARounds))
