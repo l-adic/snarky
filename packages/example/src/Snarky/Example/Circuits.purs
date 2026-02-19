@@ -16,12 +16,12 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), F(..), FVar, Snarky, assertEq, assertEqual_, const_, exists, read, sum_, unpack_)
-import Type.Proxy (Proxy(..))
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- | Advice monad for looking up account addresses from public keys.

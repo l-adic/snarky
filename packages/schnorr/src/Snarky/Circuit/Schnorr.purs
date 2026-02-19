@@ -40,10 +40,10 @@ import Snarky.Circuit.Kimchi (Type1(..), addComplete, scaleFast1, scaleFast2')
 import Snarky.Circuit.RandomOracle (Digest(..), hashVec)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
-import Type.Proxy (Proxy(..))
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 -- | Operations for scalar multiplication in circuits.
 -- |

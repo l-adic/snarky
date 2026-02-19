@@ -3,10 +3,11 @@ module Test.Snarky.Circuit.Kimchi.CircuitJson (spec, structuralMatch, debugCompa
 import Prelude
 
 import Data.Array as Array
-import Data.Traversable (sequence_)
 import Data.Either (Either(..))
+import Data.Traversable (sequence_)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
@@ -14,14 +15,13 @@ import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
-import Type.Proxy (Proxy(..))
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex)
 import Snarky.Curves.Vesta as Vesta
-import Effect.Class.Console (log)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Type.Proxy (Proxy(..))
 
 type Fp = Vesta.ScalarField
 
@@ -165,6 +165,7 @@ loadCircuits ocamlPath psJson = do
   let
     ocamlCircuit :: Either _ (CircuitData f)
     ocamlCircuit = readCircuitJson ocamlJson
+
     psCircuit :: Either _ (CircuitData f)
     psCircuit = readCircuitJson psJson
   case ocamlCircuit, psCircuit of

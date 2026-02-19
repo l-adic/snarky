@@ -21,7 +21,6 @@ import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)

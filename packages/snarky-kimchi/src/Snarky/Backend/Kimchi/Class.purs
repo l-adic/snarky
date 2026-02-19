@@ -2,8 +2,8 @@ module Snarky.Backend.Kimchi.Class where
 
 import Data.Vector (Vector)
 import Effect (Effect)
-import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, createVerifierIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, pallasConstraintSystemToJson, pallasGatesToJson, pallasCrsCreate, pallasCrsSize, verifyProverIndex) as Pallas
-import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, createVerifierIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate, vestaConstraintSystemToJson, vestaGatesToJson, vestaCrsCreate, vestaCrsSize) as Vesta
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS, createProverIndex, createVerifierIndex, pallasCircuitGateCoeffCount, pallasCircuitGateGetCoeff, pallasCircuitGateGetWires, pallasCircuitGateNew, pallasConstraintSystemCreate, pallasConstraintSystemToJson, pallasCrsCreate, pallasCrsSize, pallasGatesToJson, verifyProverIndex) as Pallas
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS, createProverIndex, createVerifierIndex, verifyProverIndex, vestaCircuitGateCoeffCount, vestaCircuitGateGetCoeff, vestaCircuitGateGetWires, vestaCircuitGateNew, vestaConstraintSystemCreate, vestaConstraintSystemToJson, vestaCrsCreate, vestaCrsSize, vestaGatesToJson) as Vesta
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex, gateKindToString)
 import Snarky.Constraint.Kimchi.Types (GateKind)
 import Snarky.Curves.Pallas (G, ScalarField) as Pallas

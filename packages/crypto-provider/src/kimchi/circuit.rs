@@ -108,9 +108,7 @@ mod generic {
             })
     }
 
-    pub fn constraint_system_to_json<F: PrimeField>(
-        cs: &ConstraintSystem<F>,
-    ) -> Result<String>
+    pub fn constraint_system_to_json<F: PrimeField>(cs: &ConstraintSystem<F>) -> Result<String>
     where
         CircuitGate<F>: serde::Serialize,
     {
@@ -1431,16 +1429,12 @@ pub fn vesta_constraint_system_create(
 }
 
 #[napi]
-pub fn pallas_constraint_system_to_json(
-    cs: &PallasConstraintSystemExternal,
-) -> Result<String> {
+pub fn pallas_constraint_system_to_json(cs: &PallasConstraintSystemExternal) -> Result<String> {
     generic::constraint_system_to_json(&**cs)
 }
 
 #[napi]
-pub fn vesta_constraint_system_to_json(
-    cs: &VestaConstraintSystemExternal,
-) -> Result<String> {
+pub fn vesta_constraint_system_to_json(cs: &VestaConstraintSystemExternal) -> Result<String> {
     generic::constraint_system_to_json(&**cs)
 }
 
