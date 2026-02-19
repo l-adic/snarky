@@ -300,38 +300,22 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addEqualsConstraint c
     | c.cl == zero && c.cr == zero = pure unit
     | Just l <- c.vl, Just r <- c.vr, c.cl == c.cr = union l r
-    | Just l <- c.vl, Just r <- c.vr = do
-        ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
-        let
-          ratio = c.cr / c.cl
-          invRatio = c.cl / c.cr
-        case Map.lookup ratio ws.cachedConstants of
-          Just cached -> union l cached
-          Nothing -> case Map.lookup invRatio ws.cachedConstants of
-            Just cached -> union r cached
-            Nothing -> do
-              addGenericPlonkConstraint
-                { vl: Just l
-                , cl: c.cl
-                , vr: Just r
-                , cr: -c.cr
-                , co: zero
-                , vo: Nothing
-                , m: zero
-                , c: zero
-                }
-              modify_ \s -> s
-                { aux = over AuxState
-                    ( \st -> st
-                        { wireState = st.wireState
-                            { cachedConstants =
-                                Map.insert ratio l $ Map.insert invRatio r st.wireState.cachedConstants
-                            }
-                        }
-                    )
-                    s.aux
-
-                }
+    -- Two-variable case: cl * l = cr * r where cl /= cr.
+    -- OCaml only emits a generic constraint here — it does NOT touch cached_constants.
+    -- Caching would be incorrect: l and r are not constants, they are variables
+    -- related by l = (cr/cl) * r. Storing them in cachedConstants would corrupt
+    -- later constant deduplication.
+    | Just l <- c.vl, Just r <- c.vr =
+        addGenericPlonkConstraint
+          { vl: Just l
+          , cl: c.cl
+          , vr: Just r
+          , cr: -c.cr
+          , co: zero
+          , vo: Nothing
+          , m: zero
+          , c: zero
+          }
     | Just l <- c.vl, Nothing <- c.vr, c.cl /= zero = do
         ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
         let constVal = c.cr / c.cl
