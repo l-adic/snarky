@@ -24,8 +24,10 @@ module Snarky.Curves.Pasta
     VestaScalarField
   , VestaBaseField
   , VestaG
-  , -- Hex serialization (for test vectors)
-    vestaScalarFieldFromHexLe
+  , -- Hex serialization (for test vectors / circuit JSON)
+    pallasScalarFieldFromHexLe
+  , pallasScalarFieldToHexLe
+  , vestaScalarFieldFromHexLe
   , vestaScalarFieldToHexLe
   , -- Group map FFI (for testing against Rust implementation)
     pallasGroupMap
@@ -39,7 +41,7 @@ import Data.Function.Uncurried (Fn3, runFn3)
 import Data.Maybe (Maybe(..), fromJust)
 import JS.BigInt (BigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasBW19, class HasEndo, class HasSqrt, class PrimeField, class SerdeHex, class WeierstrassCurve, EndoBase(..), EndoScalar(..), toBigInt)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 
 -- ============================================================================
@@ -72,6 +74,8 @@ foreign import _pallasEndoBase :: Unit -> VestaScalarField
 foreign import _pallasEndoScalar :: Unit -> PallasScalarField
 foreign import _pallasIsSquare :: PallasScalarField -> Boolean
 foreign import _pallasSqrt :: forall a. (a -> Maybe a) -> Maybe a -> PallasScalarField -> Maybe PallasScalarField
+foreign import _pallasScalarFieldFromHexLe :: String -> PallasScalarField
+foreign import _pallasScalarFieldToHexLe :: PallasScalarField -> String
 
 instance Semiring PallasScalarField where
   add = _pallasAdd
@@ -112,6 +116,10 @@ instance FieldSizeInBits PallasScalarField 255
 instance HasSqrt PallasScalarField where
   sqrt = _pallasSqrt Just Nothing
   isSquare = _pallasIsSquare
+
+instance SerdeHex PallasScalarField where
+  fromHexLe = _pallasScalarFieldFromHexLe
+  toHexLe = _pallasScalarFieldToHexLe
 
 -- | The base field of the Pallas curve (F_q).
 -- |
@@ -262,6 +270,18 @@ instance FieldSizeInBits VestaScalarField 255
 instance HasSqrt VestaScalarField where
   sqrt = _vestaScalarFieldSqrt Just Nothing
   isSquare = _vestaScalarFieldIsSquare
+
+instance SerdeHex VestaScalarField where
+  fromHexLe = _vestaScalarFieldFromHexLe
+  toHexLe = _vestaScalarFieldToHexLe
+
+-- | Parse a PallasScalarField (= VestaBaseField) from little-endian hex string
+pallasScalarFieldFromHexLe :: String -> PallasScalarField
+pallasScalarFieldFromHexLe = _pallasScalarFieldFromHexLe
+
+-- | Serialize a PallasScalarField (= VestaBaseField) to little-endian hex string
+pallasScalarFieldToHexLe :: PallasScalarField -> String
+pallasScalarFieldToHexLe = _pallasScalarFieldToHexLe
 
 -- | Parse a VestaScalarField (= PallasBaseField) from little-endian hex string
 vestaScalarFieldFromHexLe :: String -> VestaScalarField

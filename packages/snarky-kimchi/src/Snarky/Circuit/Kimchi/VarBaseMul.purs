@@ -28,6 +28,7 @@ import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
+import Type.Proxy (Proxy(..))
 
 varBaseMul
   :: forall t m @n bitsUsed l @nChunks f
@@ -45,7 +46,7 @@ varBaseMul
 varBaseMul base (Type1 t) = do
   lsbBits <- exists do
     F vVal <- readCVar t
-    pure $ unpackPure vVal
+    pure $ unpackPure vVal (Proxy @n)
   { p } <- addComplete base base
   let
     msbBits :: Vector n (FVar f)

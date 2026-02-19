@@ -37,6 +37,7 @@ module Snarky.Constraint.Basic
   , r1cs
   , boolean
   , equal
+  , square
   ) where
 
 import Prelude
@@ -71,6 +72,8 @@ data Basic f
   -- ^ Rank-1 constraint: `left × right = output`
   | Equal (CVar f Variable) (CVar f Variable)
   -- ^ Equality constraint: the two expressions must be equal
+  | Square (CVar f Variable) (CVar f Variable)
+  -- ^ Square constraint: `a × a = c`
   | Boolean (CVar f Variable)
 
 -- ^ Boolean constraint: the expression must evaluate to 0 or 1
@@ -98,6 +101,10 @@ eval lookup gate =
       in lval * rval == oval
     Equal a b ->
       lift2 eq (CVar.eval lookup a) (CVar.eval lookup b)
+    Square a c -> ado
+      aval <- CVar.eval lookup a
+      cval <- CVar.eval lookup c
+      in aval * aval == cval
     Boolean i -> do
       CVar.eval lookup i <#> \inp ->
         inp == zero || inp == one
@@ -205,6 +212,8 @@ class PrimeField f <= BasicSystem f c | c -> f where
   r1cs :: { left :: CVar f Variable, right :: CVar f Variable, output :: CVar f Variable } -> c
   -- | Create an equality constraint: the two expressions must be equal
   equal :: CVar f Variable -> CVar f Variable -> c
+  -- | Create a square constraint: `a × a = c`
+  square :: CVar f Variable -> CVar f Variable -> c
   -- | Create a boolean constraint: the expression must be 0 or 1
   boolean :: CVar f Variable -> c
 
@@ -215,10 +224,12 @@ class PrimeField f <= BasicSystem f c | c -> f where
 fromBasic :: forall f c. BasicSystem f c => Basic f -> c
 fromBasic = case _ of
   R1CS r -> r1cs r
-  Boolean b -> boolean b
   Equal a b -> equal a b
+  Square a c -> square a c
+  Boolean b -> boolean b
 
 instance PrimeField f => BasicSystem f (Basic f) where
   r1cs = R1CS
   equal = Equal
+  square = Square
   boolean = Boolean

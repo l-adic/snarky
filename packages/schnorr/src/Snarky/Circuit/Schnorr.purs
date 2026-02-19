@@ -43,6 +43,7 @@ import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 -- | Operations for scalar multiplication in circuits.
 -- |
@@ -119,7 +120,7 @@ isEven
   => FVar f
   -> Snarky (KimchiConstraint f) t m (BoolVar f)
 isEven y = do
-  bits <- unpack_ y
+  bits <- unpack_ y (Proxy @n)
   pure $ not_ $ Vector.index bits (unsafeFinite 0)
 
 -- | Hash the message for signature verification in a circuit.

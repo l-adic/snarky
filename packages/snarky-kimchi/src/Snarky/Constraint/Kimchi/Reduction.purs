@@ -21,7 +21,6 @@ import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM)
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)
@@ -73,25 +72,24 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
         let Tuple vl cl = head
         addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, vo: Just vo, co: -one, m: zero, c }
         pure $ Tuple (Just vo) one
-    Cons (Tuple vr cr) Nil -> do
-      let Tuple vl cl = head
-      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
+    Cons first rest -> do
+      -- 2+ terms: head saved for final gate, tail right-recursively reduced.
+      -- Matches OCaml's reduce_lincom + completely_reduce.
+      Tuple rx rs <- completelyReduce first rest
+      let Tuple lx ls = head
+      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple lx ls, Tuple rx rs ] }
+      addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: fromMaybe zero constant }
       pure $ Tuple (Just vo) one
-    Cons head' tail' -> do
-      Tuple vr cr <-
-        foldM
-          ( \(Tuple vr cr) (Tuple vl cl) -> do
-              vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple vl cl, Tuple vr cr ] }
-              addGenericPlonkConstraint { cl, vl: Just vl, cr, vr: Just vr, co: -one, vo: Just vo, m: zero, c: zero }
-              pure $ Tuple vo one
-          )
-          head'
-          tail'
-      let Tuple vl cl = head
-      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
-      pure $ Tuple (Just vo) one
+  where
+  -- Right recursion matching OCaml's completely_reduce.
+  -- Reduces a list of (variable, coefficient) terms into a single variable.
+  completelyReduce :: Tuple Variable f -> List (Tuple Variable f) -> m (Tuple Variable f)
+  completelyReduce single Nil = pure single
+  completelyReduce (Tuple lx ls) (Cons next rest') = do
+    Tuple rx rs <- completelyReduce next rest'
+    vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple lx ls, Tuple rx rs ] }
+    addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: zero }
+    pure $ Tuple vo one
 
 reduceToVariable
   :: forall f m
@@ -236,10 +234,11 @@ handleGateBatching newGate = do
         }
       pure $ Just $ emitDoubleGateRow queuedGate newGate
   where
-  emitDoubleGateRow gate1 gate2 =
+  -- OCaml puts the NEW gate first and the QUEUED gate second
+  emitDoubleGateRow queuedGate newGate =
     let
-      vars = gate1.vl :< gate1.vr :< gate1.vo :< gate2.vl :< gate2.vr :< gate2.vo :< Vector.generate (const Nothing)
-      coeffs = constraintToCoeffs gate1 <> constraintToCoeffs gate2
+      vars = newGate.vl :< newGate.vr :< newGate.vo :< queuedGate.vl :< queuedGate.vr :< queuedGate.vo :< Vector.generate (const Nothing)
+      coeffs = constraintToCoeffs newGate <> constraintToCoeffs queuedGate
 
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }

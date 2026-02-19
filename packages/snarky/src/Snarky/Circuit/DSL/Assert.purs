@@ -41,9 +41,9 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
 import Snarky.Circuit.DSL.Field (equals_)
-import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_, mul_)
+import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
-import Snarky.Constraint.Basic (equal)
+import Snarky.Constraint.Basic (equal, square)
 import Type.Proxy (Proxy(..))
 
 assertNonZero_
@@ -80,9 +80,7 @@ assertSquare_
   => FVar f
   -> FVar f
   -> Snarky c t m Unit
-assertSquare_ x y = do
-  xSquared <- mul_ x x
-  assertEqual_ xSquared y
+assertSquare_ x y = addConstraint $ square x y
 
 assert_
   :: forall f c t m

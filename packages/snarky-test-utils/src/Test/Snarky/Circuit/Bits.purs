@@ -50,7 +50,7 @@ packUnpackCircuit
   => FVar f
   -> Snarky c t m (FVar f)
 packUnpackCircuit value = do
-  unpack_ value >>= \bits ->
+  unpack_ value (Proxy @n) >>= \bits ->
     pure $ pack_ bits
 
 bitSizes :: Int -> Gen Int
@@ -76,13 +76,13 @@ spec pc eval postCondition initialState = describe "Bits Circuit Specs" do
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver pc unpack_
+      solver = makeSolver pc (\v -> unpack_ v (Proxy @n))
       s =
         compilePure
           (Proxy @(F f))
           (Proxy @(Vector n Boolean))
           pc
-          unpack_
+          (\v -> unpack_ v (Proxy @n))
           initialState
     in
       circuitSpecPure' 100

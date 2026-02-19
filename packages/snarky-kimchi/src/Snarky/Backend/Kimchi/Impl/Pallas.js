@@ -46,6 +46,16 @@ export function pallasCrsSize(crs) {
 }
 
 
+export function pallasConstraintSystemToJson(cs) {
+    return napi.pallasConstraintSystemToJson(cs);
+}
+
+export function pallasGatesToJson(gates) {
+    return function(publicInputSize) {
+        return napi.pallasGatesToJson(gates, publicInputSize);
+    };
+}
+
 export function pallasProverIndexCreate(cs) {
     return function(endoQ) {
         return function(srs) {

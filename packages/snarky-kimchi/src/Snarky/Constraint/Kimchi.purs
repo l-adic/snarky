@@ -192,4 +192,5 @@ instance KimchiVerify Vesta.ScalarField Pallas.ScalarField
 instance PrimeField f => BasicSystem f (KimchiConstraint f) where
   r1cs = KimchiBasic <<< R1CS
   equal a b = KimchiBasic $ Equal a b
+  square a c = KimchiBasic $ Square a c
   boolean = KimchiBasic <<< Boolean

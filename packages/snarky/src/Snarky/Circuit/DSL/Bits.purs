@@ -22,17 +22,19 @@ import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Constraint.Basic (r1cs)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, pow, toBigInt)
+import Snarky.Curves.Class (class PrimeField, fromBigInt, pow, toBigInt)
+import Type.Proxy (Proxy)
 
 -- NB: LSB first
 unpack_
   :: forall f c t m n
    . CircuitM f c t m
-  => FieldSizeInBits f n
+  => Reflectable n Int
   => FVar f
+  -> Proxy n
   -> Snarky c t m (Vector n (BoolVar f))
-unpack_ v = do
-  bits :: Vector n (BoolVar f) <- generateA \i -> exists do
+unpack_ v _ = do
+  bits :: Vector n (BoolVar f) <- generateA @n \i -> exists do
     vVal <- readCVar v
     let
       bit =
@@ -75,8 +77,8 @@ pack_ bits =
       (const_ zero)
       (mapWithIndex Tuple bits)
 
-unpackPure :: forall f @n. FieldSizeInBits f n => f -> Vector n Boolean
-unpackPure x = Vector.generate \i ->
+unpackPure :: forall f n. PrimeField f => Reflectable n Int => f -> Proxy n -> Vector n Boolean
+unpackPure x _ = Vector.generate @n \i ->
   if (toBigInt x `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt (getFinite i))) == BigInt.fromInt 0 then false
   else true
 
