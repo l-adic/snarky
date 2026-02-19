@@ -174,7 +174,7 @@ loadCircuits ocamlPath psJson = do
     _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
 
 ocamlDir :: String
-ocamlDir = "mina/src/lib/pickles/dump_circuit/"
+ocamlDir = "packages/snarky-kimchi/test/fixtures/"
 
 -- | Exact match: public input size, gate count, gates
 exactMatch :: String -> String -> Spec Unit
