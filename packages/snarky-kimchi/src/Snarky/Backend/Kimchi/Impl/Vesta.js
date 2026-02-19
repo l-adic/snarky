@@ -32,6 +32,16 @@ export function vestaConstraintSystemCreate(gates) {
     };
 }
 
+export function vestaConstraintSystemToJson(cs) {
+    return napi.vestaConstraintSystemToJson(cs);
+}
+
+export function vestaGatesToJson(gates) {
+    return function(publicInputSize) {
+        return napi.vestaGatesToJson(gates, publicInputSize);
+    };
+}
+
 export function vestaWitnessCreate(witnessColumns) {
     return napi.vestaWitnessCreate(witnessColumns);
 }

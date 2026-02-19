@@ -18,6 +18,8 @@ foreign import vestaCircuitGateCoeffCount :: Gate Vesta.ScalarField -> Int
 foreign import vestaCircuitGateGetCoeff :: Gate Vesta.ScalarField -> Int -> Vesta.ScalarField
 
 foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> Int -> ConstraintSystem Vesta.ScalarField
+foreign import vestaConstraintSystemToJson :: ConstraintSystem Vesta.ScalarField -> String
+foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> String
 
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 foreign import vestaCrsCreate :: Int -> CRS Vesta.G

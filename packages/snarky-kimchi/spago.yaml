@@ -23,7 +23,9 @@ package:
     - prelude
     - quickcheck
     - record
+    - foreign
     - safe-coerce
+    - simple-json
     - snarky
     - snarky-curves
     - snarky-test-utils
@@ -36,9 +38,12 @@ package:
   test:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
+      - aff
       - effect
       - gen
       - identity
+      - node-buffer
+      - node-fs
       - partial
       - quickcheck
       - snarky-test-utils

@@ -81,6 +81,24 @@ reduce = case _ of
                   <> show co
           )
         else pure unit
+  Square v1 v2 -> do
+    Tuple mv1 s1 <- reduceAffineExpression $ reduceToAffineExpression v1
+    Tuple mv2 s2 <- reduceAffineExpression $ reduceToAffineExpression v2
+    case mv1, mv2 of
+      -- (s1 * x1)^2 = s2 * x2  →  s1^2 * x1 * x1 - s2 * x2 = 0
+      Just x1, Just x2 ->
+        addGenericPlonkConstraint { vl: Just x1, cl: zero, vr: Just x1, cr: zero, vo: Just x2, co: negate s2, m: s1 * s1, c: zero }
+      -- (s1 * x1)^2 = s2  →  s1^2 * x1 * x1 - s2 = 0
+      Just x1, Nothing ->
+        addGenericPlonkConstraint { vl: Just x1, cl: zero, vr: Just x1, cr: zero, vo: Nothing, co: zero, m: s1 * s1, c: negate s2 }
+      -- s1^2 = s2 * x2
+      Nothing, Just x2 ->
+        addGenericPlonkConstraint { vl: Nothing, cl: zero, vr: Nothing, cr: zero, vo: Just x2, co: s2, m: zero, c: negate (s1 * s1) }
+      -- s1^2 = s2
+      Nothing, Nothing ->
+        if (s1 * s1 /= s2) then
+          unsafeThrowException $ error $ "Contradiction while reducing square to plonk gates: " <> show (s1 * s1) <> " /= " <> show s2
+        else pure unit
   Equal a b -> do
     Tuple mvl cl <- reduceAffineExpression $ reduceToAffineExpression a
     Tuple mvr cr <- reduceAffineExpression $ reduceToAffineExpression b
@@ -100,7 +118,7 @@ reduce = case _ of
         else pure unit
       -- v * v = v
       Just v -> do
-        addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Just v, m: c * c, c: zero }
+        addGenericPlonkConstraint { vl: Just v, cl: -c, vr: Just v, cr: zero, co: zero, vo: Nothing, m: c * c, c: zero }
 
 foreign import verifyPallasGeneric :: Array Pallas.ScalarField -> Vector 15 Pallas.ScalarField -> Boolean
 
