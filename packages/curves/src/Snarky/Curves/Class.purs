@@ -50,6 +50,9 @@ module Snarky.Curves.Class
   , BW19Params
   , class HasBW19
   , bw19Params
+  , class SerdeHex
+  , fromHexLe
+  , toHexLe
   ) where
 
 import Prelude
@@ -155,3 +158,13 @@ type BW19Params f =
 class (PrimeField f, WeierstrassCurve f g) <= HasBW19 f g | g -> f where
   -- | Get the precomputed BW19 parameters for this curve.
   bw19Params :: Proxy g -> BW19Params f
+
+-- | Serialization to/from little-endian hex strings.
+-- |
+-- | Used for parsing circuit JSON (serde_json serializes arkworks field elements
+-- | as LE hex via `serialize_compressed` + `hex::encode`).
+class PrimeField f <= SerdeHex f where
+  -- | Parse a field element from a little-endian hex string.
+  fromHexLe :: String -> f
+  -- | Serialize a field element to a little-endian hex string.
+  toHexLe :: f -> String

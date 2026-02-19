@@ -43,6 +43,7 @@ hex = { workspace = true }
 
 # serialization
 serde = { workspace = true }
+serde_json = { workspace = true }
 rmp-serde = { workspace = true }
 
 # bulletproofs
