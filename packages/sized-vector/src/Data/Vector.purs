@@ -246,7 +246,7 @@ infixl 8 index as !!
 -- | ```purescript
 -- | generate @3 getFinite = Vector [0, 1, 2]
 -- | ```
-generate :: forall n a. Reflectable n Int => (Finite n -> a) -> Vector n a
+generate :: forall @n a. Reflectable n Int => (Finite n -> a) -> Vector n a
 generate f = Vector $ map f (finites @n)
 
 -- | Create a vector by applying an effectful function to each index.

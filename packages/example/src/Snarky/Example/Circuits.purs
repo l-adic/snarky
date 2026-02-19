@@ -16,6 +16,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), F(..), FVar, Snarky, assertEq, assertEqual_, const_, exists, read, sum_, unpack_)
+import Type.Proxy (Proxy(..))
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -44,7 +45,7 @@ assertU64
   -> Snarky c t m Unit
 assertU64 (TokenAmount v) = do
   -- Unpack to n bits (255 for pasta curves)
-  allBits <- unpack_ v
+  allBits <- unpack_ v (Proxy @n)
   -- Drop the lower 64 bits, keeping the higher (n - 64) bits
   let higherBits = Vector.drop @64 allBits
   -- Check that the sum of higher bits is zero (i.e., all are false)
