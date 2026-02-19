@@ -99,10 +99,12 @@ reduceToVariable
 reduceToVariable var = do
   Tuple mvar c <- reduceAffineExpression $ reduceToAffineExpression var
   case mvar of
-    -- result is a constant
+    -- result is a constant — route through addEqualsConstraint for deduplication
+    -- (OCaml's reduce_to_v uses cached_constants to avoid duplicate constraints for identical constants)
+    -- addEqualsConstraint { cl, vl, cr, vr=Nothing } represents cl*vl = cr, and internally negates cr
     Nothing -> do
       vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
-      addGenericPlonkConstraint { cl: one, vl: Just vl, cr: zero, vr: Nothing, co: zero, vo: Nothing, m: zero, c: (-c) }
+      addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
       pure vl
     -- result is c * v
     Just v ->

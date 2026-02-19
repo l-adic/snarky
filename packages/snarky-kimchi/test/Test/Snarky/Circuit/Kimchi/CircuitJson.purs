@@ -15,16 +15,18 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
-import Snarky.Curves.Class (class SerdeHex)
+import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type Fp = Vesta.ScalarField
 
@@ -178,6 +180,33 @@ addCompleteCircuit (Tuple p1 p2) =
   _.p <$> addComplete p1 p2
 
 --------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: field, output: field)
+
+-- Helper to compile a field→field Kimchi circuit
+compileKFF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => FVar Fp
+       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+     )
+  -> String
+compileKFF circuit = circuitToJson @Fp $
+  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+-- | EndoScalar circuit: matches OCaml's to_field_checked with Wrap_inner_curve.scalar endo.
+-- | Input is a raw field element (the scalar challenge), output is a * endo + b.
+endoScalarCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => FVar Fp
+  -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+endoScalarCircuit scalar =
+  let
+    EndoScalar es = endoScalar @Vesta.BaseField @Fp
+  in
+    toField (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
+
+--------------------------------------------------------------------------------
 -- | Load an OCaml JSON file and parse a PureScript JSON string
 loadCircuits
   :: forall @f
@@ -255,3 +284,4 @@ spec =
       exactMatch "unpack_circuit" (compileFU unpackCircuit)
     describe "Kimchi gate matches" do
       exactMatch "add_complete_circuit" (compilePP addCompleteCircuit)
+      exactMatch "endo_scalar_circuit" (compileKFF endoScalarCircuit)

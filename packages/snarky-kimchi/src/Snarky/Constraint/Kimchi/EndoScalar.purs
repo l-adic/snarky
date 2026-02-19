@@ -45,14 +45,19 @@ reduce
 reduce cs = Rows <$>
   traverse reduceRound cs
   where
+  -- OCaml's Endoscale_scalar_round.map evaluates record fields right-to-left,
+  -- so reduce_to_v is called on xs, b8, a8, b0, a0, n8, n0 in that order.
+  -- This matters for constant deduplication: b0 and a0 are both Const 2 in
+  -- the first round, so whichever is reduced first creates the variable and
+  -- the second reuses it via cached_constants.
   reduceRound c = do
-    n0 <- reduceToVariable c.n0
-    n8 <- reduceToVariable c.n8
-    a0 <- reduceToVariable c.a0
-    b0 <- reduceToVariable c.b0
-    a8 <- reduceToVariable c.a8
-    b8 <- reduceToVariable c.b8
     xs <- traverse reduceToVariable c.xs
+    b8 <- reduceToVariable c.b8
+    a8 <- reduceToVariable c.a8
+    b0 <- reduceToVariable c.b0
+    a0 <- reduceToVariable c.a0
+    n8 <- reduceToVariable c.n8
+    n0 <- reduceToVariable c.n0
     let
       variables =
         let
