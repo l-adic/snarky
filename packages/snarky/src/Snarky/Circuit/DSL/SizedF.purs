@@ -71,7 +71,7 @@ instance
   ) =>
   CheckedType f c (SizedF n (FVar f)) where
   check (SizedF var) = do
-    bits <- unpack_ var
+    bits <- unpack_ var (Proxy @k)
     let
       { after } = Vector.splitAt @n bits
     for_ after \bit ->
@@ -106,7 +106,7 @@ fromField
   -> Maybe (SizedF n f)
 fromField x =
   let
-    bits = Vector.toUnfoldable $ unpackPure x
+    bits = Vector.toUnfoldable $ unpackPure x (Proxy @m)
     { after } = Array.splitAt (reflectType (Proxy @n)) bits
   in
     if all not after then Just (SizedF x)
@@ -139,7 +139,7 @@ toBits (SizedF x) =
     $ Array.take (reflectType (Proxy @n))
     $ Vector.toUnfoldable
     $
-      unpackPure x
+      unpackPure x (Proxy @m)
 
 -- | Coerce between fields by unpacking to bits and repacking.
 -- | Safe because both fields must have at least `m` bits and the value fits in `n < m`.
@@ -166,7 +166,7 @@ lowestNBits
   => FVar f
   -> Snarky c t m (SizedF n (FVar f))
 lowestNBits x = do
-  bits <- unpack_ x
+  bits <- unpack_ x (Proxy @k)
   let
     n = reflectType $ Proxy @n
     lowN =
@@ -189,7 +189,7 @@ lowestNBitsPure x =
   let
     n = reflectType $ Proxy @n
     -- Unpack to bits (LSB first), take first 128
-    bits = Array.take n $ Vector.toUnfoldable $ unpackPure x
+    bits = Array.take n $ Vector.toUnfoldable $ unpackPure x (Proxy @k)
     two = fromInt 2
   in
     -- Pack back to field element
