@@ -4,10 +4,21 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, addConstraint, exists, read, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, read, readCVar, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
+
+-- | Seal an affine point: reduce each coordinate to a single variable if complex.
+sealPoint
+  :: forall f c t m
+   . CircuitM f c t m
+  => AffinePoint (FVar f)
+  -> Snarky c t m (AffinePoint (FVar f))
+sealPoint p = do
+  x <- seal p.x
+  y <- seal p.y
+  pure { x, y }
 
 addComplete
   :: forall f t m
@@ -18,14 +29,14 @@ addComplete
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addComplete p1 p2 = do
-  sameX <- exists $
+addComplete p1' p2' = do
+  p1 <- sealPoint p1'
+  p2 <- sealPoint p2'
+  UnChecked sameX <- exists $ UnChecked <$>
     lift2 eq (readCVar p1.x) (readCVar p2.x)
-  inf <- exists
-    let
-      sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
-    in
-      read sameX && not sameY
+  UnChecked inf <- exists $ UnChecked <$> do
+    let sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
+    read sameX && not sameY
   infZ <- exists $
     lift2 eq (readCVar p1.y) (readCVar p2.y) >>=
       if _ then zero

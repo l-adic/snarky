@@ -5,6 +5,7 @@ import Prelude
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Traversable (sequence_)
+import Data.Tuple (Tuple(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
@@ -16,9 +17,11 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -149,6 +152,32 @@ boolAssertCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t
 boolAssertCircuit x = assert_ x
 
 --------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: two points, output: point)
+
+type TwoPoints = Tuple (AffinePoint (F Fp)) (AffinePoint (F Fp))
+
+type Point = AffinePoint (F Fp)
+
+-- Helper to compile a (point, point)→point Kimchi circuit
+compilePP
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePP circuit = circuitToJson @Fp $
+  compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+addCompleteCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+addCompleteCircuit (Tuple p1 p2) =
+  _.p <$> addComplete p1 p2
+
+--------------------------------------------------------------------------------
 -- | Load an OCaml JSON file and parse a PureScript JSON string
 loadCircuits
   :: forall @f
@@ -224,3 +253,5 @@ spec =
       exactMatch "bool_any_circuit" (compileBB boolAnyCircuit)
       exactMatch "assert_square_circuit" (compileFU assertSquareCircuit)
       exactMatch "unpack_circuit" (compileFU unpackCircuit)
+    describe "Kimchi gate matches" do
+      exactMatch "add_complete_circuit" (compilePP addCompleteCircuit)
