@@ -8,13 +8,9 @@
 -- |   Req.Evals          → getEvals         Polynomial evaluations for finalizeOtherProof
 -- |   Req.Messages        → getMessages      Protocol commitments (wComm, zComm, tComm) for IVP
 -- |   Req.Openings_proof  → getOpeningProof   Opening proof (delta, sg, lr, z1, z2) for IVP
+-- |   Req.Proof_state     → getStepIOFields   Step I/O fields (for publicInputCommit in IVP)
 -- |
 -- | NOT YET NEEDED:
--- |   Req.Proof_state     Our `unfinalized` (deferredValues + shouldFinalize + spongeDigest)
--- |                       is already public input. In OCaml it's a request because the full
--- |                       Proof_state also carries messages_for_next_step_proof which we
--- |                       handle separately. Revisit when adding that field.
--- |
 -- |   Req.Which_branch    Selects which step proof branch is being verified. We only
 -- |                       support a single branch (n=1), so this is always 0. Needed
 -- |                       when we generalize to multiple step proof branches.
@@ -36,9 +32,12 @@
 -- |            mina/src/lib/pickles/wrap_main.ml
 module Pickles.Wrap.Advice
   ( class WrapWitnessM
+  , getStepIOFields
   , getEvals
   , getMessages
   , getOpeningProof
+  , getUnfinalizedProof
+  , getPrevChallengeDigest
   ) where
 
 import Prelude
@@ -48,7 +47,9 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
+import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -60,9 +61,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- |
 -- | Parameters:
 -- | - `ds`: Step IPA rounds (determines lr vector size in opening proof)
+-- | - `dw`: Wrap IPA rounds (determines bulletproof challenge dimension in unfinalized proof)
 -- | - `m`: Base monad (Effect for compilation, ProverM for proving)
 -- | - `f`: Circuit field (Pallas.ScalarField for Wrap)
-class Monad m <= WrapWitnessM (ds :: Int) m f where
+class Monad m <= WrapWitnessM (ds :: Int) (dw :: Int) m f where
+  -- | Step I/O as flat field elements (for publicInputCommit in IVP).
+  -- | The caller reconstructs the structural type via `fieldsToValue` and
+  -- | wraps the allocation in an `exists` action with concrete types.
+  -- | OCaml: Req.Proof_state
+  getStepIOFields :: Unit -> m (Array (F f))
+
   -- | Polynomial evaluations and domain values for finalizeOtherProof.
   -- | OCaml: Req.Evals
   getEvals :: Unit -> m (ProofWitness (F f))
@@ -79,19 +87,37 @@ class Monad m <= WrapWitnessM (ds :: Int) m f where
 
   -- | Full opening proof for IVP verification.
   -- | OCaml: Req.Openings_proof
+  -- |
+  -- | z1/z2 are returned as Type1-shifted values. In OCaml, the raw Tick.Field.t
+  -- | values are shifted via a Typ transport at `exists` time. Since PureScript
+  -- | lacks Typ transports, the prover applies `toShifted` before returning.
   getOpeningProof
     :: Unit
     -> m
          { delta :: AffinePoint (F f)
          , sg :: AffinePoint (F f)
          , lr :: Vector ds { l :: AffinePoint (F f), r :: AffinePoint (F f) }
-         , z1 :: F f
-         , z2 :: F f
+         , z1 :: Type1 (F f)
+         , z2 :: Type1 (F f)
          }
+
+  -- | Unfinalized proof for finalizeOtherProof (private witness).
+  -- | In OCaml, finalize uses prev_proof_state.unfinalized_proofs (from the Step
+  -- | proof's public output, forwarded from previous Wrap proofs). These deferred
+  -- | values are Fq-recomputed (same-field), distinct from the WrapStatement's
+  -- | Fp-origin deferred values used by IVP.
+  -- | OCaml: derived from Req.Proof_state (unfinalized_proofs)
+  getUnfinalizedProof :: Unit -> m (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
+
+  -- | Previous challenge digest for finalizeOtherProof.
+  getPrevChallengeDigest :: Unit -> m (F f)
 
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable ds Int, PrimeField f) => WrapWitnessM ds Effect f where
+instance (Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapWitnessM ds dw Effect f where
+  getStepIOFields _ = throw "impossible! getStepIOFields called during compilation"
   getEvals _ = throw "impossible! getEvals called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
+  getUnfinalizedProof _ = throw "impossible! getUnfinalizedProof called during compilation"
+  getPrevChallengeDigest _ = throw "impossible! getPrevChallengeDigest called during compilation"

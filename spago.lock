@@ -1,6 +1,50 @@
 {
   "workspace": {
     "packages": {
+      "blake2": {
+        "path": "packages/blake2",
+        "core": {
+          "dependencies": [
+            "arrays",
+            "prelude"
+          ],
+          "build_plan": [
+            "arrays",
+            "bifunctors",
+            "const",
+            "contravariant",
+            "control",
+            "distributive",
+            "effect",
+            "either",
+            "exists",
+            "foldable-traversable",
+            "functions",
+            "functors",
+            "identity",
+            "invariant",
+            "maybe",
+            "newtype",
+            "nonempty",
+            "orders",
+            "partial",
+            "prelude",
+            "profunctor",
+            "refs",
+            "safe-coerce",
+            "st",
+            "tailrec",
+            "tuples",
+            "type-equality",
+            "unfoldable",
+            "unsafe-coerce"
+          ]
+        },
+        "test": {
+          "dependencies": [],
+          "build_plan": []
+        }
+      },
       "curves": {
         "path": "packages/curves",
         "core": {
@@ -559,6 +603,7 @@
         "core": {
           "dependencies": [
             "arrays",
+            "blake2",
             "curves",
             "exceptions",
             "foldable-traversable",
@@ -585,6 +630,7 @@
             "arrays",
             "avar",
             "bifunctors",
+            "blake2",
             "catenable-lists",
             "console",
             "const",

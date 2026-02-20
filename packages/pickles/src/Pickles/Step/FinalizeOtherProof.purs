@@ -38,7 +38,7 @@ import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
-import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit)
+import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
 import Snarky.Circuit.Kimchi (toField)
@@ -95,6 +95,7 @@ type FinalizeOtherProofInput d f sf b =
 type FinalizeOtherProofOutput d f =
   { finalized :: BoolVar f
   , challenges :: BulletproofChallenges d (FVar f)
+  , expandedChallenges :: Vector d (FVar f)
   }
 
 -------------------------------------------------------------------------------
@@ -141,7 +142,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
     endoVar = const_ params.endo
 
   -- 1. Expand plonk minimal (raw 128-bit alpha/zeta -> full field via endo)
-  plonk <- liftSnarky $ expandPlonkMinimalCircuit endoVar deferred.plonk
+  plonk <- liftSnarky $ expandPlonkMinimalCircuit endoVar (toPlonkMinimal deferred.plonk)
 
   -- 2. Absorb the sponge digest from before evaluations
   -- This resumes the Fiat-Shamir transcript from where the prover left off
@@ -192,7 +193,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   -- 12. perm_correct
   let permInput = buildPermInput plonk witness params
   permOk <- liftSnarky $ PlonkChecks.plonkArithmeticCheckCircuit ops
-    { claimedPerm: deferred.perm, permInput }
+    { claimedPerm: deferred.plonk.perm, permInput }
 
   -- 13. Combine all checks
   finalized <- liftSnarky do
@@ -202,7 +203,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 
   let challenges = deferred.bulletproofChallenges
 
-  pure { finalized, challenges }
+  pure { finalized, challenges, expandedChallenges }
 
 -------------------------------------------------------------------------------
 -- | Helpers

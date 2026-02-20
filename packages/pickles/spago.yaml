@@ -2,6 +2,7 @@ package:
   name: pickles
   dependencies:
     - arrays
+    - blake2
     - curves
     - exceptions
     - foldable-traversable

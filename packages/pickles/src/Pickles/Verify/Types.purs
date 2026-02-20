@@ -14,6 +14,8 @@ module Pickles.Verify.Types
   , ScalarChallenge
   -- * Plonk Deferred Values
   , PlonkMinimal
+  , PlonkInCircuit
+  , toPlonkMinimal
   , PlonkExpanded
   , expandPlonkMinimal
   , expandPlonkMinimalCircuit
@@ -76,6 +78,27 @@ type PlonkMinimal f =
   , zeta :: ScalarChallenge f
   -- jointCombiner omitted (None for now, used for lookups)
   }
+
+-- | PLONK In_circuit values: minimal challenges plus shifted scalars.
+-- |
+-- | This extends PlonkMinimal with the shifted scalar values (perm, zeta powers)
+-- | that are computed from the plonk challenges. These are stored together in
+-- | the deferred values, matching OCaml's `Plonk.In_circuit`.
+-- |
+-- | Reference: composition_types.ml Plonk.In_circuit
+type PlonkInCircuit f sf =
+  { alpha :: ScalarChallenge f
+  , beta :: ScalarChallenge f
+  , gamma :: ScalarChallenge f
+  , zeta :: ScalarChallenge f
+  , perm :: sf
+  , zetaToSrsLength :: sf
+  , zetaToDomainSize :: sf
+  }
+
+-- | Extract the minimal challenges from PlonkInCircuit.
+toPlonkMinimal :: forall f sf. PlonkInCircuit f sf -> PlonkMinimal f
+toPlonkMinimal p = { alpha: p.alpha, beta: p.beta, gamma: p.gamma, zeta: p.zeta }
 
 -------------------------------------------------------------------------------
 -- | Plonk Expanded Values
@@ -155,14 +178,11 @@ expandPlonkMinimalCircuit endo plonk = do
 -- |
 -- | Reference: unfinalized.ml:95-101, composition_types.ml Deferred_values
 type DeferredValues d f sf =
-  { plonk :: PlonkMinimal f
+  { plonk :: PlonkInCircuit f sf
   , combinedInnerProduct :: sf
   , xi :: ScalarChallenge f
   , bulletproofChallenges :: BulletproofChallenges d f
   , b :: sf
-  , perm :: sf -- Permutation argument scalar (shifted)
-  , zetaToSrsLength :: sf -- zeta^maxPolySize (shifted)
-  , zetaToDomainSize :: sf -- zeta^domainSize (shifted)
   }
 
 -------------------------------------------------------------------------------

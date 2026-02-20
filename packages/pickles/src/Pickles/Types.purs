@@ -1,7 +1,7 @@
 -- | Pickles-specific type aliases for the Pasta 2-cycle.
 -- |
--- | Centralizes field types, IPA round counts, and commitment curve aliases
--- | used throughout the Pickles Step/Wrap circuit modules and tests.
+-- | Centralizes field types, IPA round counts, commitment curve aliases,
+-- | and Step circuit I/O types used throughout the Pickles modules and tests.
 -- |
 -- | Reference: mina/src/lib/pickles/common/nat.ml, kimchi_pasta_basic.ml
 module Pickles.Types
@@ -11,8 +11,13 @@ module Pickles.Types
   , WrapIPARounds
   , StepCommitmentCurve
   , WrapCommitmentCurve
+  , StepInput
+  , StepStatement
+  , WrapStatement
   ) where
 
+import Data.Vector (Vector)
+import Pickles.Verify.Types (DeferredValues, UnfinalizedProof)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 
@@ -34,3 +39,70 @@ type StepCommitmentCurve = Vesta.G
 
 -- | Wrap proofs commit on Pallas (scalar field = Fq = WrapField).
 type WrapCommitmentCurve = Pallas.G
+
+-------------------------------------------------------------------------------
+-- | Step Circuit I/O Types
+-------------------------------------------------------------------------------
+
+-- | Input to the Step circuit combinator.
+-- |
+-- | Bundles the application input with the proof witness data.
+-- |
+-- | Parameters:
+-- | - `n`: Number of previous proofs to verify
+-- | - `input`: Application-specific input type
+-- | - `prevInput`: Previous proof public input type
+-- | - `ds`: Step IPA rounds (phantom, carried for type bookkeeping)
+-- | - `dw`: Wrap IPA rounds (used: previous Wrap proofs have dw bulletproof challenges)
+-- | - `f`: Field element type
+-- | - `sf`: Shifted scalar type
+-- | - `b`: Boolean type
+type StepInput :: Int -> Type -> Type -> Int -> Int -> Type -> Type -> Type -> Type
+type StepInput n input prevInput ds dw f sf b =
+  { appInput :: input
+  , previousProofInputs :: Vector n prevInput
+  , unfinalizedProofs :: Vector n (UnfinalizedProof dw f sf b)
+  , prevChallengeDigests :: Vector n f
+  }
+
+-- | The Step circuit's output statement.
+-- |
+-- | This becomes part of the public input for the Wrap circuit to verify.
+-- |
+-- | The `fv` parameter is the field variable type (e.g., `FVar f` in circuits).
+-- | The `sf` parameter is the shifted value type (e.g., `Type1 (FVar f)`).
+-- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
+-- |
+-- | Reference: step_main.ml:587-594 `Types.Step.Statement`
+type StepStatement :: Int -> Int -> Int -> Type -> Type -> Type -> Type
+type StepStatement n ds dw fv sf b =
+  { proofState ::
+      { unfinalizedProofs :: Vector n (UnfinalizedProof dw fv sf b)
+      , messagesForNextStepProof :: fv
+      }
+  , messagesForNextWrapProof :: Vector n fv
+  }
+
+-------------------------------------------------------------------------------
+-- | Wrap Circuit I/O Types
+-------------------------------------------------------------------------------
+
+-- | The Wrap circuit's public input statement.
+-- |
+-- | In OCaml Pickles, the Wrap circuit receives ~29 fields as public input:
+-- | deferred values, sponge digest, and message digests. These values are
+-- | verified by the next Step circuit when it checks the Wrap proof.
+-- |
+-- | The message digest fields are stubs (zero) until hash-based message
+-- | passing is implemented.
+-- |
+-- | Reference: wrap_main.ml lines 140-166
+type WrapStatement :: Int -> Type -> Type -> Type
+type WrapStatement d f sf =
+  { proofState ::
+      { deferredValues :: DeferredValues d f sf
+      , spongeDigestBeforeEvaluations :: f
+      , messagesForNextWrapProof :: f -- stub (zero) until hash implemented
+      }
+  , messagesForNextStepProof :: f -- stub (zero) until hash implemented
+  }

@@ -10,16 +10,12 @@
 -- |
 -- | Reference: mina/src/lib/pickles/step_main.ml:274-594
 module Pickles.Step.Circuit
-  ( -- * Advisory Monad
-    class StepWitnessM
-  , getProofWitnesses
-  -- * Application Circuit Types
-  , AppCircuit
+  ( -- * Application Circuit Types
+    AppCircuit
   , AppCircuitInput
   , AppCircuitOutput
-  -- * Step Circuit Types
-  , StepInput
-  , StepStatement
+  -- * Step Circuit Types (re-exported from Pickles.Types)
+  , module Pickles.Types
   -- * Step Circuit Combinator
   , stepCircuit
   ) where
@@ -32,41 +28,19 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Effect (Effect)
-import Effect.Exception (throw)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
+import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Types.Shifted (Type2)
-
--------------------------------------------------------------------------------
--- | Advisory Monad for Private Proof Witnesses
--------------------------------------------------------------------------------
-
--- | Advisory monad for providing private proof witnesses to the Step circuit.
--- |
--- | In OCaml Pickles, proof witnesses (polynomial evaluations, domain values)
--- | are private/auxiliary data provided through snarky's exists/handler mechanism.
--- | This class serves the same role: it lets the Step circuit request witness
--- | data privately via `exists` + `lift`, keeping them out of the public input.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs (determines vector size)
--- | - `m`: The advisory monad (e.g., Identity for compilation, ReaderT for proving)
--- | - `f`: The circuit field type
-class Monad m <= StepWitnessM (n :: Int) m f where
-  getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
-
-instance (Reflectable n Int, PrimeField f) => StepWitnessM n Effect f where
-  getProofWitnesses _ =
-    throw "impossible! getProofWitness called by CircuitBuilder"
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -109,49 +83,6 @@ type AppCircuitOutput n output aux f =
 type AppCircuit n input prevInput output aux f c t m =
   AppCircuitInput n input prevInput
   -> Snarky c t m (AppCircuitOutput n output aux f)
-
--------------------------------------------------------------------------------
--- | Step Circuit Types
--------------------------------------------------------------------------------
-
--- | Input to the Step circuit combinator.
--- |
--- | Bundles the application input with the proof witness data.
--- |
--- | Parameters:
--- | - `n`: Number of previous proofs to verify
--- | - `input`: Application-specific input type
--- | - `prevInput`: Previous proof public input type
--- | - `ds`: Step IPA rounds (phantom, carried for type bookkeeping)
--- | - `dw`: Wrap IPA rounds (used: previous Wrap proofs have dw bulletproof challenges)
--- | - `f`: Field element type
--- | - `sf`: Shifted scalar type
--- | - `b`: Boolean type
-type StepInput :: Int -> Type -> Type -> Int -> Int -> Type -> Type -> Type -> Type
-type StepInput n input prevInput ds dw f sf b =
-  { appInput :: input
-  , previousProofInputs :: Vector n prevInput
-  , unfinalizedProofs :: Vector n (UnfinalizedProof dw f sf b)
-  , prevChallengeDigests :: Vector n f
-  }
-
--- | The Step circuit's output statement.
--- |
--- | This becomes part of the public input for the Wrap circuit to verify.
--- |
--- | The `fv` parameter is the field variable type (e.g., `FVar f` in circuits).
--- | The `sf` parameter is the shifted value type (e.g., `Type1 (FVar f)`).
--- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
--- |
--- | Reference: step_main.ml:587-594 `Types.Step.Statement`
-type StepStatement :: Int -> Int -> Int -> Type -> Type -> Type -> Type
-type StepStatement n ds dw fv sf b =
-  { proofState ::
-      { unfinalizedProofs :: Vector n (UnfinalizedProof dw fv sf b)
-      , messagesForNextStepProof :: fv
-      }
-  , messagesForNextWrapProof :: Vector n fv
-  }
 
 -------------------------------------------------------------------------------
 -- | Finalize Other Proof
@@ -240,7 +171,7 @@ computeMessageForNextWrapProofStub _challenges = do
 stepCircuit
   :: forall n ds dw input prevInput output aux t m
    . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  => StepWitnessM n m Vesta.ScalarField
+  => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int
   => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
@@ -253,7 +184,7 @@ stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedPr
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
-  proofWitnesses <- exists $ lift $ getProofWitnesses unit
+  proofWitnesses <- exists $ lift $ getProofWitnesses @_ @dw unit
 
   -- 3. For each previous proof, verify and collect challenges
   let

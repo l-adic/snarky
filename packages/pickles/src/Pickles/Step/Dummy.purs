@@ -55,14 +55,19 @@ dummyDeferredValues =
   let
     oneSf = toShifted (one :: F f_other)
   in
-    { plonk: dummyPlonkMinimal @(F f)
+    { plonk:
+        { alpha: dummyScalarChallenge @(F f)
+        , beta: dummyScalarChallenge @(F f)
+        , gamma: dummyScalarChallenge @(F f)
+        , zeta: dummyScalarChallenge @(F f)
+        , perm: oneSf
+        , zetaToSrsLength: oneSf
+        , zetaToDomainSize: oneSf
+        }
     , combinedInnerProduct: oneSf
     , xi: dummyScalarChallenge @(F f)
     , bulletproofChallenges: dummyBulletproofChallenges @d @(F f)
     , b: oneSf
-    , perm: oneSf
-    , zetaToSrsLength: oneSf
-    , zetaToDomainSize: oneSf
     }
 
 -- | Dummy unfinalized proof for bootstrapping.

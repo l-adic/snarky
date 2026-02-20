@@ -237,10 +237,10 @@ handleGateBatching newGate = do
       pure $ Just $ emitDoubleGateRow queuedGate newGate
   where
   -- OCaml puts the NEW gate first and the QUEUED gate second
-  emitDoubleGateRow queuedGate newGate =
+  emitDoubleGateRow queued new_ =
     let
-      vars = newGate.vl :< newGate.vr :< newGate.vo :< queuedGate.vl :< queuedGate.vr :< queuedGate.vo :< Vector.generate (const Nothing)
-      coeffs = constraintToCoeffs newGate <> constraintToCoeffs queuedGate
+      vars = new_.vl :< new_.vr :< new_.vo :< queued.vl :< queued.vr :< queued.vo :< Vector.generate (const Nothing)
+      coeffs = constraintToCoeffs new_ <> constraintToCoeffs queued
 
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
