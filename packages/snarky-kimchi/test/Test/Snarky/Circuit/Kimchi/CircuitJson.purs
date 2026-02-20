@@ -6,6 +6,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Traversable (sequence_)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
@@ -20,6 +21,7 @@ import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
+import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
@@ -233,6 +235,28 @@ varBaseMulCircuit
 varBaseMulCircuit (Tuple g scalar) =
   scaleFast1 @51 g (Type1 scalar)
 
+--------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: Vector 3 field, output: Vector 3 field)
+
+type V3 = Vector 3 (F Fp)
+
+compileV3
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Vector 3 (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+     )
+  -> String
+compileV3 circuit = circuitToJson @Fp $
+  compilePure (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+poseidonCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Vector 3 (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+poseidonCircuit = poseidon
+
 endoMulCircuit
   :: forall t m
    . CircuitM Fp (KimchiConstraint Fp) t m
@@ -322,3 +346,4 @@ spec =
       exactMatch "endo_scalar_circuit" (compileKFF endoScalarCircuit)
       exactMatch "var_base_mul_circuit" (compilePF varBaseMulCircuit)
       exactMatch "endo_mul_circuit" (compilePF endoMulCircuit)
+      exactMatch "poseidon_circuit" (compileV3 poseidonCircuit)

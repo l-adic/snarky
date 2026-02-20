@@ -20,12 +20,15 @@ poseidon
   => Vector 3 (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 poseidon initialState = do
-  state <- exists do
+  -- Witness only the 55 round outputs (not the initial state).
+  -- OCaml's block_cipher does t.(0) <- init after witnessing, overwriting row 0
+  -- with the actual input CVars. We achieve the same by prepending the original
+  -- initialState outside exists.
+  roundOutputs <- exists do
     initialValues <- traverse readCVar initialState
     let
       rounds = Vector.generate (\i -> \state -> fullRound state (getFinite i))
-      roundOutputs = Vector.scanl (\state roundFn -> roundFn state) (coerce initialValues) rounds
-      allStates = (coerce initialValues) Vector.:< roundOutputs
-    pure (map (map F) allStates)
+    pure $ map (map F) $ Vector.scanl (\state roundFn -> roundFn state) (coerce initialValues) rounds
+  let state = initialState Vector.:< roundOutputs
   addConstraint $ KimchiPoseidon { state }
   pure $ Vector.index state (unsafeFinite 55)
