@@ -31,9 +31,9 @@ The workflow is:
 | PureScript Circuit | Gate Type | Status |
 |---|---|---|
 | `AddComplete` → `addComplete` | `CompleteAdd` | exact match |
-| `VarBaseMul` → `scaleFast1` | `VarBaseMul` | not yet compared |
+| `VarBaseMul` → `scaleFast1` | `VarBaseMul` | exact match |
 | `VarBaseMul` → `scaleFast2` | `VarBaseMul` | not yet compared |
-| `EndoMul` → `endo` | `EndoMul` | not yet compared |
+| `EndoMul` → `endo` | `EndoMul` | exact match |
 | `EndoScalar` → `toField` | `EndoMulScalar` | exact match |
 | `Poseidon` → `poseidon` | `Poseidon` | not yet compared |
 | `GroupMap` → `groupMapCircuit` | (generic gates only) | not yet compared |
@@ -189,6 +189,47 @@ This affects:
 ### Constant deduplication in `reduceToVariable`
 
 OCaml's `reduce_to_v` (in `plonk_constraint_system.ml` line 1555) uses a `cached_constants` hashtable: when reducing a `Const c` to a variable, it checks the cache first and reuses an existing variable if the same constant was already reduced. PureScript's `reduceToVariable` must route the constant case through `addEqualsConstraint` (which checks `cachedConstants`) rather than directly emitting `addGenericPlonkConstraint`. Without this, identical constants like `a=2` and `b=2` produce duplicate constraints and extra gates.
+
+### check_finite and addComplete' true
+
+OCaml's `add_fast` defaults to `check_finite=true`, which sets `inf = Field.zero` (a constant CVar). PureScript's `addComplete` used `exists` for `inf`. Use `addComplete' true` when matching OCaml's default `add_fast`:
+
+```purescript
+-- Before: inf from exists (fresh variable)
+{ p } <- addComplete g1 g2
+
+-- After: inf = false_ (constant zero), matching OCaml's check_finite=true
+{ p } <- addComplete' true g1 g2
+```
+
+This matters for permutation wiring: the constant-zero inf variable gets deduplicated via `cachedConstants`, sharing a permutation cycle with other zero constants (like `nPrev` in VarBaseMul or `nAcc` initial value in EndoMul).
+
+### Direct CVar references vs fresh exists variables
+
+OCaml's `endo` function uses `!acc` and `!n_acc` directly (not via `mk`/`exists`) for the round's input point and previous accumulator. These are the actual CVars from the previous round's output. PureScript must do the same — use `st.acc` and `st.nAcc` directly in the round record, NOT re-create them inside `exists`:
+
+```purescript
+-- Wrong: creates fresh variables, breaks permutation links
+{ p, nAccPrev, ... } <- exists do
+  { x: xp, y: yp } <- read @(AffinePoint _) st.acc
+  nAccPrevVal <- readCVar st.nAcc
+  pure { p: { x: xp, y: yp }, nAccPrev: nAccPrevVal, ... }
+
+-- Correct: preserves variable identity for permutation wiring
+{ r, s1, s3, s, nAccNext } <- exists do ...  -- only computed values
+pure $ Tuple
+  { p: st.acc, nAcc: st.nAcc, ... }  -- direct CVar references
+  { nAcc: nAccNext, acc: s }
+```
+
+### Seal outside add_fast to match OCaml constraint ordering
+
+OCaml's `endo` seals `Field.scale xt Endo.base` **before** calling `G.(+)` (which is `add_fast`). The seal constraint is queued in the generic gate batcher, and the `inf=0` constraint from `add_fast`'s reduction pairs with it into a double-generic gate. In PureScript, seal `scale_ eb g.x` before calling `addComplete'`:
+
+```purescript
+phix <- seal (scale_ eb g.x)
+{ p } <- addComplete' true g (g { x = phix })
+```
 
 ### Using `scale_` instead of `mul_` for constant endo
 
