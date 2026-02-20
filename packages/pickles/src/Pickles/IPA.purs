@@ -649,7 +649,7 @@ type2ScalarOps
   => CircuitM f (KimchiConstraint f) t m
   => IpaScalarOps f t m (Type2 (FVar f) (BoolVar f))
 type2ScalarOps =
-  { scaleByShifted: \p t -> scaleFast2 @51 p t
+  { scaleByShifted: \p t -> scaleFast2 @51 @254 p t
   , shiftedToAbsorbFields: \(Type2 { sDiv2, sOdd }) -> [ sDiv2, coerce sOdd ]
   , unshift: fromShiftedType2Circuit
   }

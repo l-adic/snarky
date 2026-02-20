@@ -79,10 +79,11 @@ instance IfThenElse f c Unit where
   if_ _ _ _ = pure unit
 
 -- Instance for Tuple
+-- Process snd before fst to match OCaml's reverse array evaluation order.
 instance (IfThenElse f c a, IfThenElse f c b) => IfThenElse f c (Tuple a b) where
   if_ b (Tuple a1 b1) (Tuple a2 b2) = do
-    a <- if_ @f b a1 a2
     b' <- if_ @f b b1 b2
+    a <- if_ @f b a1 a2
     pure $ Tuple a b'
 
 -- Instance for Vector
@@ -106,10 +107,11 @@ instance GIfThenElse f c NoArguments where
 instance IfThenElse f c a => GIfThenElse f c (Argument a) where
   gIfThenElse b (Argument a1) (Argument a2) = Argument <$> if_ @f b a1 a2
 
+-- Process snd before fst to match OCaml's reverse array evaluation order.
 instance (GIfThenElse f c a, GIfThenElse f c b) => GIfThenElse f c (Product a b) where
   gIfThenElse b (Product a1 b1) (Product a2 b2) = do
-    a <- gIfThenElse @f @c b a1 a2
     b' <- gIfThenElse @f @c b b1 b2
+    a <- gIfThenElse @f @c b a1 a2
     pure $ Product a b'
 
 instance GIfThenElse f c a => GIfThenElse f c (Constructor name a) where
@@ -133,9 +135,12 @@ instance
   , RIfThenElse f c tail rest
   ) =>
   RIfThenElse f c (RL.Cons s a tail) r where
+  -- Process tail before head to match OCaml's reverse array evaluation order.
+  -- OCaml's Monad_sequence.Array.init processes elements from n-1 down to 0,
+  -- so for {x, y} it evaluates y first, then x.
   rIfThenElse _ b r1 r2 = do
-    val <- if_ @f b (Record.get (Proxy @s) r1) (Record.get (Proxy @s) r2)
     rest <- rIfThenElse @f @c (Proxy @tail) b (Record.delete (Proxy @s) r1) (Record.delete (Proxy @s) r2)
+    val <- if_ @f b (Record.get (Proxy @s) r1) (Record.get (Proxy @s) r2)
     pure $ Record.insert (Proxy @s) val rest
 
 --------------------------------------------------------------------------------

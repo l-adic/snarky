@@ -32,10 +32,10 @@ The workflow is:
 |---|---|---|
 | `AddComplete` → `addComplete` | `CompleteAdd` | exact match |
 | `VarBaseMul` → `scaleFast1` | `VarBaseMul` | exact match |
-| `VarBaseMul` → `scaleFast2` | `VarBaseMul` | not yet compared |
+| `VarBaseMul` → `scaleFast2'` (128-bit) | `VarBaseMul` | exact match |
 | `EndoMul` → `endo` | `EndoMul` | exact match |
 | `EndoScalar` → `toField` | `EndoMulScalar` | exact match |
-| `Poseidon` → `poseidon` | `Poseidon` | not yet compared |
+| `Poseidon` → `poseidon` | `Poseidon` | exact match |
 | `GroupMap` → `groupMapCircuit` | (generic gates only) | not yet compared |
 | All 16 DSL operations | `Generic` | exact match |
 

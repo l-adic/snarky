@@ -1,10 +1,10 @@
-module Test.Snarky.Circuit.Kimchi.CircuitJson (spec, structuralMatch, debugCompare) where
+module Test.Snarky.Circuit.Kimchi.CircuitJson (spec) where
 
 import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Traversable (sequence_)
+import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
@@ -15,14 +15,14 @@ import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
+import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, diffCircuits, formatCircuit, readCircuitJson)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Vesta as Vesta
@@ -35,35 +35,77 @@ import Unsafe.Coerce (unsafeCoerce)
 
 type Fp = Vesta.ScalarField
 
--- Helper to compile a field→field circuit
+--------------------------------------------------------------------------------
+-- File IO helpers (test-only, not in library code)
+
+loadCircuits
+  :: forall @f
+   . SerdeHex f
+  => String
+  -> String
+  -> Aff { ocaml :: CircuitData f, ps :: CircuitData f }
+loadCircuits ocamlPath psJson = do
+  ocamlJson <- liftEffect do
+    buf <- FS.readFile ocamlPath
+    Buffer.toString UTF8 buf
+  let
+    ocamlCircuit :: Either _ (CircuitData f)
+    ocamlCircuit = readCircuitJson ocamlJson
+
+    psCircuit :: Either _ (CircuitData f)
+    psCircuit = readCircuitJson psJson
+  case ocamlCircuit, psCircuit of
+    Right oc, Right ps -> pure { ocaml: oc, ps }
+    Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
+    _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
+
+fixtureDir :: String
+fixtureDir = "packages/snarky-kimchi/test/fixtures/"
+
+exactMatch :: String -> String -> Spec Unit
+exactMatch name psJson =
+  it (name <> " matches OCaml exactly") do
+    c <- loadCircuits @Fp (fixtureDir <> name <> ".json") psJson
+    c.ps.publicInputSize `shouldEqual` c.ocaml.publicInputSize
+    c.ps.gates `shouldEqual` c.ocaml.gates
+
+debugCompare :: String -> String -> Spec Unit
+debugCompare name psJson =
+  it (name <> " debug comparison") do
+    c <- loadCircuits @Fp (fixtureDir <> name <> ".json") psJson
+    traverse_ log $ formatCircuit "OCaml" c.ocaml
+    traverse_ log $ formatCircuit "PS" c.ps
+    let diffs = diffCircuits c.ocaml c.ps
+    when (not $ Array.null diffs) do
+      log $ show (Array.length diffs) <> " gate(s) differ"
+
+--------------------------------------------------------------------------------
+-- Field arithmetic circuits (input: field, output: field)
+
 compileFF
   :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp))
   -> String
 compileFF circuit = circuitToJson @Fp $
   compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
--- Helper to compile a field→bool circuit
 compileFB
   :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp))
   -> String
 compileFB circuit = circuitToJson @Fp $
   compilePure (Proxy @(F Fp)) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
--- Helper to compile a field→unit circuit
 compileFU
   :: (forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit)
   -> String
 compileFU circuit = circuitToJson @Fp $
   compilePure (Proxy @(F Fp)) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
--- Helper to compile a bool→bool circuit
 compileBB
   :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp))
   -> String
 compileBB circuit = circuitToJson @Fp $
   compilePure (Proxy @Boolean) (Proxy @Boolean) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
--- Helper to compile a bool→unit circuit
 compileBU
   :: (forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit)
   -> String
@@ -71,7 +113,58 @@ compileBU circuit = circuitToJson @Fp $
   compilePure (Proxy @Boolean) (Proxy @Unit) (Proxy @(KimchiConstraint Fp)) circuit initialState
 
 --------------------------------------------------------------------------------
--- Field arithmetic circuits (input: field, output: field)
+-- Kimchi gate compile helpers
+
+type TwoPoints = Tuple (AffinePoint (F Fp)) (AffinePoint (F Fp))
+
+type Point = AffinePoint (F Fp)
+
+compilePP
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePP circuit = circuitToJson @Fp $
+  compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+type PointField = Tuple (AffinePoint (F Fp)) (F Fp)
+
+compilePF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePF circuit = circuitToJson @Fp $
+  compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+compileKFF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => FVar Fp
+       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+     )
+  -> String
+compileKFF circuit = circuitToJson @Fp $
+  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+type V3 = Vector 3 (F Fp)
+
+compileV3
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Vector 3 (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+     )
+  -> String
+compileV3 circuit = circuitToJson @Fp $
+  compilePure (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+--------------------------------------------------------------------------------
+-- Field arithmetic circuits
 
 mulCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
 mulCircuit x = do
@@ -92,14 +185,13 @@ ifCircuit x = do
   b <- exists (pure true)
   if_ b x y
 
--- Field→Boolean circuit
 equalsCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (BoolVar Fp)
 equalsCircuit x = do
   y <- exists (pure (zero :: F Fp))
   equals_ x y
 
 --------------------------------------------------------------------------------
--- Assertion circuits (input: field, output: unit)
+-- Assertion circuits
 
 assertEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
 assertEqualCircuit x = do
@@ -125,7 +217,7 @@ unpackCircuit x = do
   pure unit
 
 --------------------------------------------------------------------------------
--- Boolean circuits (input: bool, output: bool)
+-- Boolean circuits
 
 boolAndCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m (BoolVar Fp)
 boolAndCircuit x = do
@@ -154,27 +246,11 @@ boolAnyCircuit x = do
   w <- exists (pure true)
   any_ [ x, y, w ]
 
--- Boolean assertion (input: bool, output: unit)
 boolAssertCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t m Unit
 boolAssertCircuit x = assert_ x
 
 --------------------------------------------------------------------------------
--- Kimchi gate circuits (input: two points, output: point)
-
-type TwoPoints = Tuple (AffinePoint (F Fp)) (AffinePoint (F Fp))
-
-type Point = AffinePoint (F Fp)
-
--- Helper to compile a (point, point)→point Kimchi circuit
-compilePP
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
-       => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
-     )
-  -> String
-compilePP circuit = circuitToJson @Fp $
-  compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+-- Kimchi gate circuits
 
 addCompleteCircuit
   :: forall t m
@@ -184,22 +260,6 @@ addCompleteCircuit
 addCompleteCircuit (Tuple p1 p2) =
   _.p <$> addComplete p1 p2
 
---------------------------------------------------------------------------------
--- Kimchi gate circuits (input: field, output: field)
-
--- Helper to compile a field→field Kimchi circuit
-compileKFF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
-       => FVar Fp
-       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
-     )
-  -> String
-compileKFF circuit = circuitToJson @Fp $
-  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
-
--- | EndoScalar circuit: matches OCaml's to_field_checked with Wrap_inner_curve.scalar endo.
--- | Input is a raw field element (the scalar challenge), output is a * endo + b.
 endoScalarCircuit
   :: forall t m
    . CircuitM Fp (KimchiConstraint Fp) t m
@@ -211,22 +271,6 @@ endoScalarCircuit scalar =
   in
     toField (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
 
---------------------------------------------------------------------------------
--- Kimchi gate circuits (input: (point, field), output: point)
-
-type PointField = Tuple (AffinePoint (F Fp)) (F Fp)
-
--- Helper to compile a (point, field)→point Kimchi circuit
-compilePF
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
-       => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
-     )
-  -> String
-compilePF circuit = circuitToJson @Fp $
-  compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
-
 varBaseMulCircuit
   :: forall t m
    . CircuitM Fp (KimchiConstraint Fp) t m
@@ -234,28 +278,6 @@ varBaseMulCircuit
   -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
 varBaseMulCircuit (Tuple g scalar) =
   scaleFast1 @51 g (Type1 scalar)
-
---------------------------------------------------------------------------------
--- Kimchi gate circuits (input: Vector 3 field, output: Vector 3 field)
-
-type V3 = Vector 3 (F Fp)
-
-compileV3
-  :: ( forall t m
-        . CircuitM Fp (KimchiConstraint Fp) t m
-       => Vector 3 (FVar Fp)
-       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
-     )
-  -> String
-compileV3 circuit = circuitToJson @Fp $
-  compilePure (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit initialState
-
-poseidonCircuit
-  :: forall t m
-   . CircuitM Fp (KimchiConstraint Fp) t m
-  => Vector 3 (FVar Fp)
-  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
-poseidonCircuit = poseidon
 
 endoMulCircuit
   :: forall t m
@@ -265,61 +287,23 @@ endoMulCircuit
 endoMulCircuit (Tuple g scalar) =
   endo g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
 
+scaleFast2_128Circuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+scaleFast2_128Circuit (Tuple g scalar) =
+  scaleFast2' @26 @127 g scalar
+
+poseidonCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Vector 3 (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+poseidonCircuit = poseidon
+
 --------------------------------------------------------------------------------
--- | Load an OCaml JSON file and parse a PureScript JSON string
-loadCircuits
-  :: forall @f
-   . SerdeHex f
-  => Eq f
-  => Show f
-  => String
-  -> String
-  -> Aff { ocaml :: CircuitData f, ps :: CircuitData f }
-loadCircuits ocamlPath psJson = do
-  ocamlJson <- liftEffect do
-    buf <- FS.readFile ocamlPath
-    Buffer.toString UTF8 buf
-  let
-    ocamlCircuit :: Either _ (CircuitData f)
-    ocamlCircuit = readCircuitJson ocamlJson
-
-    psCircuit :: Either _ (CircuitData f)
-    psCircuit = readCircuitJson psJson
-  case ocamlCircuit, psCircuit of
-    Right oc, Right ps -> pure { ocaml: oc, ps }
-    Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
-    _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
-
-ocamlDir :: String
-ocamlDir = "packages/snarky-kimchi/test/fixtures/"
-
--- | Exact match: public input size, gate count, gates
-exactMatch :: String -> String -> Spec Unit
-exactMatch name psJson =
-  it (name <> " matches OCaml exactly") do
-    c <- loadCircuits @Fp (ocamlDir <> name <> ".json") psJson
-    c.ps.publicInputSize `shouldEqual` c.ocaml.publicInputSize
-    c.ps.gates `shouldEqual` c.ocaml.gates
-
--- | Structural match: public input size, gate count, gate kinds
-structuralMatch :: String -> String -> Spec Unit
-structuralMatch name psJson =
-  it (name <> " structurally matches OCaml (pi, gate count, gate kinds)") do
-    c <- loadCircuits @Fp (ocamlDir <> name <> ".json") psJson
-    c.ps.publicInputSize `shouldEqual` c.ocaml.publicInputSize
-    Array.length c.ps.gates `shouldEqual` Array.length c.ocaml.gates
-    map _.kind c.ps.gates `shouldEqual` map _.kind c.ocaml.gates
-
--- | Debug: print both circuits for comparison
-debugCompare :: String -> String -> Spec Unit
-debugCompare name psJson =
-  it (name <> " debug comparison") do
-    c <- loadCircuits @Fp (ocamlDir <> name <> ".json") psJson
-    log $ "\n=== " <> name <> " ==="
-    log $ "OCaml (pi=" <> show c.ocaml.publicInputSize <> ", gates=" <> show (Array.length c.ocaml.gates) <> "):"
-    Array.mapWithIndex (\i g -> log $ "  [" <> show i <> "] " <> show g.kind <> " wires=" <> show g.wires <> " coeffs=" <> show g.coeffs) c.ocaml.gates # sequence_
-    log $ "PS (pi=" <> show c.ps.publicInputSize <> ", gates=" <> show (Array.length c.ps.gates) <> "):"
-    Array.mapWithIndex (\i g -> log $ "  [" <> show i <> "] " <> show g.kind <> " wires=" <> show g.wires <> " coeffs=" <> show g.coeffs) c.ps.gates # sequence_
+-- Test spec
 
 spec :: Spec Unit
 spec =
@@ -347,3 +331,4 @@ spec =
       exactMatch "var_base_mul_circuit" (compilePF varBaseMulCircuit)
       exactMatch "endo_mul_circuit" (compilePF endoMulCircuit)
       exactMatch "poseidon_circuit" (compileV3 poseidonCircuit)
+      exactMatch "scale_fast2_128_circuit" (compilePF scaleFast2_128Circuit)

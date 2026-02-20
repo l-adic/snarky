@@ -27,13 +27,13 @@ import Type.Proxy (Proxy(..))
 -- | Internally uses `scaleFast2'` which computes `[s + 2^n] * B` (shifted),
 -- | then corrects by subtracting `sum_i [2^n] * B_i` as a constant.
 multiscaleKnown
-  :: forall @nChunks f n bitsUsed sDiv2Bits t m _l
+  :: forall @nChunks @sDiv2Bits f n bitsUsed t m _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
+  => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
-  => Reflectable sDiv2Bits Int
   => Reflectable bitsUsed Int
+  => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => CurveParams f
   -> NonEmptyArray
@@ -46,7 +46,7 @@ multiscaleKnown params pairs = unsafePartial do
   results <- traverse
     ( \{ scalar, base } -> do
         -- scaleFast2' splits scalar, constrains the split, then computes [scalar + 2^n] * base
-        result <- scaleFast2' @nChunks (constPoint base) scalar
+        result <- scaleFast2' @nChunks @sDiv2Bits (constPoint base) scalar
         -- Pure: [2^n] * base (shift correction)
         let correction = pow2pow base n
         pure { result, correction }

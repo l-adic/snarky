@@ -21,20 +21,20 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 -- | The lagrange commitments and blinding generator H are compile-time constants
 -- | (precomputed from the SRS/verifier index).
 publicInputCommitment
-  :: forall @nChunks f n bitsUsed sDiv2Bits t m _l
+  :: forall @nChunks @sDiv2Bits f n bitsUsed t m _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
+  => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
-  => Reflectable sDiv2Bits Int
   => Reflectable bitsUsed Int
+  => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => CurveParams f
   -> NonEmptyArray { scalar :: FVar f, base :: AffinePoint (F f) }
   -> AffinePoint (F f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 publicInputCommitment params pairs blindingH = do
-  msm <- multiscaleKnown @nChunks params pairs
+  msm <- multiscaleKnown @nChunks @sDiv2Bits params pairs
   negMsm <- Curves.negate msm
   _.p <$> addComplete negMsm (constPoint blindingH)
   where
