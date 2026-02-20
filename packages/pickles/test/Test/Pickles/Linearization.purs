@@ -22,17 +22,19 @@ module Test.Pickles.Linearization where
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Fin (Finite(..), unsafeFinite)
+import Data.Int (pow) as Int
 import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Pickles.Linearization.Env (Env, circuitEnv, fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, evalLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.Env (Env, EnvM, buildCircuitEnvM, circuitEnv, fieldEnv, precomputeAlphaPowers)
+import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator, evalLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
-import Pickles.Linearization.Interpreter (evaluate)
+import Pickles.Linearization.Interpreter (evaluate, evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
@@ -40,8 +42,8 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, par
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.CVar (CVar(..), const_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, mul_, pow_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
@@ -322,6 +324,152 @@ linearizationTests _ tokens = do
 -------------------------------------------------------------------------------
 -- | Main spec
 -------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+-- | Monadic circuit matching OCaml's 90-field input layout
+-------------------------------------------------------------------------------
+
+-- | Maximum alpha power appearing in the constant_term tokens.
+-- | OCaml precomputes 71 elements (0..70) but only 0..31 are used.
+maxAlphaPower :: Int
+maxAlphaPower = 70
+
+-- | Circuit that evaluates the linearization polynomial using the monadic
+-- | interpreter, matching OCaml's structure:
+-- | - 90 input fields (matching OCaml dump_circuit_impl.ml layout)
+-- | - Precomputed alpha powers via successive multiplication
+-- | - Domain values computed from zeta (omega constants, zk_polynomial, zeta^n-1)
+-- | - Monadic interpreter (evaluateM) with peephole alpha optimization
+linearizationTickCircuit
+  :: forall f f' g t m
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
+  => Array PolishToken
+  -> Vector 90 (FVar f)
+  -> Snarky (KimchiConstraint f) t m (FVar f)
+linearizationTickCircuit tokens inputs = do
+  let
+    -- Unpack 90 inputs matching OCaml layout:
+    -- 0-29: witness evals (15 pairs of (zeta, zetaw))
+    -- 30-59: coefficient evals (15 pairs of (zeta, zetaw))
+    -- 60-61: z eval (unused in constant_term)
+    -- 62-73: s evals (6 pairs, unused in constant_term)
+    -- 74-85: selector evals (6 pairs: generic, poseidon, completeadd, vbm, emul, emulscalar)
+    -- 86: alpha, 87: beta, 88: gamma, 89: zeta
+    at i = inputs !! unsafeFinite i
+
+    -- Witness evals: 15 pairs at indices 0-29
+    witnessEval row col =
+      let
+        base = 2 * (coerce col :: Int)
+      in
+        case row of
+          Env.Curr -> at base
+          Env.Next -> at (base + 1)
+
+    -- Coefficient evals: 15 pairs at indices 30-59
+    -- OCaml treats coefficients as pairs (zeta, zetaw) but we only use zeta
+    coeffEval col = at (30 + 2 * (coerce col :: Int))
+
+    -- Selector evals: 6 pairs at indices 74-85
+    -- Order: Generic=0, Poseidon=1, CompleteAdd=2, VarBaseMul=3, EndoMul=4, EndoMulScalar=5
+    selectorEval row gt =
+      let
+        idx = case gt of
+          Env.Generic -> 0
+          Env.Poseidon -> 1
+          Env.CompleteAdd -> 2
+          Env.VarBaseMul -> 3
+          Env.EndoMul -> 4
+          Env.EndoMulScalar -> 5
+          _ -> 0 -- Unsupported gates default to generic
+        base = 74 + 2 * idx
+      in
+        case row of
+          Env.Curr -> at base
+          Env.Next -> at (base + 1)
+
+    alpha = at 86
+    beta = at 87
+    gamma = at 88
+    zeta = at 89
+
+    -- Build eval point using direct lookups
+    evalPoint =
+      { witness: \row col -> witnessEval row col
+      , coefficient: \col -> coeffEval col
+      , index: \row gt -> selectorEval row gt
+      , lookupAggreg: \_ -> Const zero
+      , lookupSorted: \_ _ -> Const zero
+      , lookupTable: \_ -> Const zero
+      , lookupRuntimeTable: \_ -> Const zero
+      , lookupRuntimeSelector: \_ -> Const zero
+      , lookupKindIndex: \_ -> Const zero
+      }
+
+    -- Domain generator is a constant (from FFI)
+    gen = domainGenerator @f domainLog2
+
+    -- All omega values are constants (no circuit constraints)
+    -- omega^(-1) = 1/gen (constant fold)
+    omegaToMinus1 = recip gen
+    -- omega^(n - zk_rows - 1) = omega^(n-4) = omega^(-4) since omega^n = 1
+    -- = (omega^(-1))^4
+    omegaToMinus4 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1 * omegaToMinus1
+    -- omega^(n - zk_rows) = omega^(-3)
+    omegaToMinus3 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1
+    -- omega^(n - zk_rows + 1) = omega^(-2)
+    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
+
+    -- Omega constant lookup for unnormalized lagrange basis
+    -- Matches OCaml's unnormalized_lagrange_basis omega resolution
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then one -- omega^0 = 1
+      else if zk && offset == (-1) then omegaToMinus4 -- omega^(n - zk_rows - 1)
+      else if not zk && offset == 1 then gen -- omega^1
+      else if not zk && offset == (-1) then omegaToMinus1 -- omega^(-1)
+      else if not zk && offset == (-2) then omegaToMinus2 -- omega^(-2)
+      else if zk && offset == 0 then omegaToMinus3 -- omega^(n - zk_rows) = omega^(-zk_rows)
+      else one -- fallback (shouldn't happen for constant_term tokens)
+
+  -- 1. Precompute alpha powers (69 R1CS constraints for successive multiplication)
+  alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+
+  -- 2. Compute zk_polynomial (matches OCaml: 2 R1CS constraints)
+  -- zk_polynomial = (zeta - omega^(-1)) * (zeta - omega^(-2)) * (zeta - omega^(-3))
+  -- With zk_rows = zk_rows_by_default = 3, OCaml's omega_to_zk_plus_1 = omega^(-2),
+  -- omega_to_zk = omega^(-3). See plonk_checks.ml lines 240-278.
+  zk1 <- mul_ (zeta `sub_` const_ omegaToMinus1) (zeta `sub_` const_ omegaToMinus2)
+  _zkPoly <- mul_ zk1 (zeta `sub_` const_ omegaToMinus3)
+
+  -- 3. Compute zeta^n - 1 via repeated squaring (16 R1CS constraints)
+  zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
+  let zetaToNMinus1 = zetaToN `sub_` const_ one
+
+  -- 4. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
+  -- OCaml: when joint_combiner = None, returns F.one
+  let vanishesOnZk = const_ one
+
+  -- 5. Build monadic env
+  let
+    env :: EnvM f (Snarky (KimchiConstraint f) t m)
+    env = buildCircuitEnvM
+      alphaPowers
+      zetaToNMinus1
+      zeta
+      omegaForLagrange
+      evalPoint
+      vanishesOnZk
+      beta
+      gamma
+      (const_ one) -- jointCombiner (None → 1)
+      parseHex
+
+  -- 6. Evaluate tokens using monadic interpreter
+  evaluateM tokens env
 
 spec :: Spec Unit
 spec = describe "Linearization Interpreter" do

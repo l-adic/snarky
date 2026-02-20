@@ -73,3 +73,10 @@ export const vestaProverIndexCoefficientEvaluations = (proverIndex) => (zeta) =>
 
 export const vestaProverIndexSelectorEvaluations = (proverIndex) => (zeta) =>
   pairEvals(crypto.vestaProverIndexSelectorEvaluations(proverIndex, zeta));
+
+// Domain generators
+export const pallasDomainGenerator = (domainLog2) =>
+  crypto.pallasDomainGenerator(domainLog2);
+
+export const vestaDomainGenerator = (domainLog2) =>
+  crypto.vestaDomainGenerator(domainLog2);

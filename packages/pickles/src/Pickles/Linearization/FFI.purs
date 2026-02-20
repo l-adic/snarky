@@ -5,6 +5,7 @@ module Pickles.Linearization.FFI
   , evalLinearization
   , unnormalizedLagrangeBasis
   , vanishesOnZkAndPreviousRows
+  , domainGenerator
   , proverIndexDomainLog2
   , evalWitnessPolys
   , evalCoefficientPolys
@@ -48,6 +49,7 @@ class LinearizationFFI f g | f -> g where
   evalLinearization :: LinearizationInput f -> f
   unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
   vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
+  domainGenerator :: Int -> f
   proverIndexDomainLog2 :: ProverIndex g f -> Int
   evalWitnessPolys :: ProverIndex g f -> Vector 15 (Array f) -> f -> Vector 15 (PointEval f)
   evalCoefficientPolys :: ProverIndex g f -> f -> Vector 15 f
@@ -65,6 +67,9 @@ foreign import vestaUnnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: 
 
 foreign import pallasVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
+
+foreign import pallasDomainGenerator :: Int -> Pallas.BaseField
+foreign import vestaDomainGenerator :: Int -> Vesta.BaseField
 
 foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
 foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
@@ -86,6 +91,7 @@ instance LinearizationFFI Pallas.BaseField Vesta.G where
   evalLinearization = evaluatePallasLinearization
   unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
+  domainGenerator = pallasDomainGenerator
   proverIndexDomainLog2 = pallasProverIndexDomainLog2
   evalWitnessPolys = pallasProverIndexWitnessEvaluations
   evalCoefficientPolys = pallasProverIndexCoefficientEvaluations
@@ -95,6 +101,7 @@ instance LinearizationFFI Vesta.BaseField Pallas.G where
   evalLinearization = evaluateVestaLinearization
   unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
+  domainGenerator = vestaDomainGenerator
   proverIndexDomainLog2 = vestaProverIndexDomainLog2
   evalWitnessPolys = vestaProverIndexWitnessEvaluations
   evalCoefficientPolys = vestaProverIndexCoefficientEvaluations

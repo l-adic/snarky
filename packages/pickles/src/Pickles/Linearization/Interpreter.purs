@@ -3,6 +3,7 @@
 -- | overwhelm the compiler's type checker.
 module Pickles.Linearization.Interpreter
   ( evaluate
+  , evaluateM
   , EvalState
   , initialState
   ) where
@@ -11,8 +12,9 @@ import Prelude
 
 import Data.Array as Array
 import Data.Maybe (Maybe(..), fromMaybe)
-import Pickles.Linearization.Env (Env)
+import Pickles.Linearization.Env (Env, EnvM)
 import Pickles.Linearization.Types (ChallengeTerm(..), ConstantTerm(..), PolishToken(..))
+import Snarky.Circuit.DSL (FVar)
 
 -- | Evaluation state: stack of values and stored values for Load
 type EvalState a =
@@ -206,4 +208,181 @@ evaluate tokens env =
     pure { a, b, newState: s2 }
 
   advance :: EvalState a -> EvalState a
+  advance state = state { position = state.position + 1 }
+
+-- | Monadic interpreter for Polish notation linearization polynomials.
+-- | Unlike `evaluate`, this runs in the Snarky monad with FVar stack values.
+-- | Key differences:
+-- | - Stack holds already-evaluated FVar values (not monadic actions)
+-- | - Store saves FVar values; Load retrieves them without re-execution
+-- | - Peephole: Challenge Alpha + Pow N → alphaPow(N) pure lookup
+-- | - Mul/Pow/UnnormalizedLagrangeBasis are monadic (create R1CS constraints)
+-- | - Add/Sub are pure CVar operations (no constraints)
+evaluateM
+  :: forall f n
+   . Monad n
+  => Array PolishToken
+  -> EnvM f n
+  -> n (FVar f)
+evaluateM tokens env = do
+  finalState <- evalLoopM tokens (initialState :: EvalState (FVar f))
+  pure $ fromMaybe (env.field "0x0") (Array.last finalState.stack)
+  where
+  -- Main evaluation loop (monadic)
+  evalLoopM :: Array PolishToken -> EvalState (FVar f) -> n (EvalState (FVar f))
+  evalLoopM toks state =
+    if state.position >= Array.length toks then
+      pure state
+    else
+      case Array.index toks state.position of
+        Nothing -> pure state
+        Just token -> do
+          newState <- evalTokenM toks token state
+          evalLoopM toks newState
+
+  -- Evaluate a single token (monadic)
+  evalTokenM :: Array PolishToken -> PolishToken -> EvalState (FVar f) -> n (EvalState (FVar f))
+  evalTokenM toks token state = case token of
+    -- Constants (pure)
+    Constant term -> pure $ push (evalConstantM term) (advance state)
+
+    -- Challenges
+    -- Peephole optimization: Challenge Alpha followed by Pow N → alphaPow(N) lookup
+    Challenge Alpha ->
+      case Array.index toks (state.position + 1) of
+        Just (Pow n) ->
+          -- Consume both tokens, push precomputed alpha^n
+          pure $ push (env.alphaPow n) (state { position = state.position + 2 })
+        _ ->
+          -- Standalone Challenge Alpha (no Pow following) → alpha^1
+          pure $ push (env.alphaPow 1) (advance state)
+    Challenge Beta -> pure $ push env.beta (advance state)
+    Challenge Gamma -> pure $ push env.gamma (advance state)
+    Challenge JointCombiner -> pure $ push env.jointCombiner (advance state)
+
+    -- Cell access (pure)
+    Cell { col, row } ->
+      pure $ push (env.cell (env.var col row)) (advance state)
+
+    -- Stack operations (pure)
+    Dup ->
+      case Array.last state.stack of
+        Just top -> pure $ push top (advance state)
+        Nothing -> pure $ advance state
+
+    -- Arithmetic
+    Add ->
+      case pop2' state of
+        Just { a, b, newState } ->
+          pure $ push (env.add a b) (advance newState)
+        Nothing -> pure $ advance state
+
+    Mul ->
+      case pop2' state of
+        Just { a, b, newState } -> do
+          result <- env.mul a b
+          pure $ push result (advance newState)
+        Nothing -> pure $ advance state
+
+    Sub ->
+      case pop2' state of
+        Just { a, b, newState } ->
+          pure $ push (env.sub a b) (advance newState)
+        Nothing -> pure $ advance state
+
+    Pow n ->
+      case pop' state of
+        Just { value, newState } -> do
+          result <- env.pow value n
+          pure $ push result (advance newState)
+        Nothing -> pure $ advance state
+
+    -- Store/Load for sharing subexpressions
+    -- Store saves the already-evaluated FVar value
+    Store ->
+      case pop' state of
+        Just { value, newState } ->
+          let
+            storeState = newState { store = Array.snoc newState.store value }
+          in
+            pure $ push value (advance storeState)
+        Nothing -> pure $ advance state
+
+    -- Load retrieves the saved FVar value (no re-execution!)
+    Load n ->
+      case Array.index state.store n of
+        Just value -> pure $ push value (advance state)
+        Nothing -> pure $ advance state
+
+    -- Special terms
+    VanishesOnZeroKnowledgeAndPreviousRows ->
+      pure $ push env.vanishesOnZeroKnowledgeAndPreviousRows (advance state)
+
+    UnnormalizedLagrangeBasis { zk_rows, offset } -> do
+      result <- env.unnormalizedLagrangeBasis { zkRows: zk_rows, offset }
+      pure $ push result (advance state)
+
+    -- Conditional execution (features always disabled)
+    SkipIfNot flag count ->
+      env.ifFeature
+        { flag
+        , onTrue: \_ -> do
+            subResult <- evalSubExprM toks (state.position + 1) count state.store
+            let newState = state { position = state.position + 1 + count, store = subResult.store }
+            pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
+        , onFalse: \_ ->
+            let
+              newState = state { position = state.position + 1 + count }
+            in
+              if count <= 1 then pure $ push (env.field "0x0") newState
+              else pure newState
+        }
+
+    SkipIf flag count ->
+      env.ifFeature
+        { flag
+        , onTrue: \_ ->
+            let
+              newState = state { position = state.position + 1 + count }
+            in
+              if count <= 1 then pure $ push (env.field "0x0") newState
+              else pure newState
+        , onFalse: \_ -> do
+            subResult <- evalSubExprM toks (state.position + 1) count state.store
+            let newState = state { position = state.position + 1 + count, store = subResult.store }
+            pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
+        }
+
+  -- Evaluate a sub-expression (for SkipIf/SkipIfNot blocks)
+  evalSubExprM :: Array PolishToken -> Int -> Int -> Array (FVar f) -> n (EvalState (FVar f))
+  evalSubExprM toks startPos count store =
+    let
+      subTokens = Array.slice startPos (startPos + count) toks
+      initState = { stack: [], store, position: 0 }
+    in
+      evalLoopM subTokens initState
+
+  -- Evaluate a constant term (pure)
+  evalConstantM :: ConstantTerm -> FVar f
+  evalConstantM = case _ of
+    EndoCoefficient -> env.endoCoefficient
+    Mds { row, col } -> env.mds { row, col }
+    Literal hex -> env.field hex
+
+  -- Stack helpers
+  push :: FVar f -> EvalState (FVar f) -> EvalState (FVar f)
+  push value state = state { stack = Array.snoc state.stack value }
+
+  pop' :: EvalState (FVar f) -> Maybe { value :: FVar f, newState :: EvalState (FVar f) }
+  pop' state = do
+    { init, last } <- Array.unsnoc state.stack
+    pure { value: last, newState: state { stack = init } }
+
+  pop2' :: EvalState (FVar f) -> Maybe { a :: FVar f, b :: FVar f, newState :: EvalState (FVar f) }
+  pop2' state = do
+    { value: b, newState: s1 } <- pop' state
+    { value: a, newState: s2 } <- pop' s1
+    pure { a, b, newState: s2 }
+
+  advance :: EvalState (FVar f) -> EvalState (FVar f)
   advance state = state { position = state.position + 1 }
