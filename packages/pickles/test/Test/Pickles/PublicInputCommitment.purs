@@ -153,7 +153,7 @@ spec =
                   (varToFields @StepCircuitField @(Vector nPublic (F StepCircuitField)) inputs)
                   (ctx.lagrangeComms)
         in
-          publicInputCommitment @51 (curveParams (Proxy @Vesta.G)) pairs ctx.blindingH
+          publicInputCommitment @51 @254 (curveParams (Proxy @Vesta.G)) pairs ctx.blindingH
 
       solver = makeSolver (Proxy @(KimchiConstraint StepCircuitField)) circuit
 

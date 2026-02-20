@@ -73,7 +73,7 @@ pallasScalarOps
   => ScalarOps Pallas.BaseField (KimchiConstraint Pallas.BaseField) (FVar Pallas.BaseField)
 pallasScalarOps =
   { toScalar: pure
-  , scalarMul: scaleFast2' @nChunks
+  , scalarMul: scaleFast2' @nChunks @254
   }
 
 -- | ScalarOps for Vesta.BaseField using Type1 and scaleFast1.

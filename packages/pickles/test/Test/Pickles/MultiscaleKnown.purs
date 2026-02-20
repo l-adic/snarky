@@ -100,7 +100,7 @@ multiscaleKnownTest pn = do
        . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
       => Vector numTerms (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
-    circuit scalars = multiscaleKnown @51 params
+    circuit scalars = multiscaleKnown @51 @254 params
       $ unsafePartial fromJust
       $ NonEmptyArray.fromArray
       $

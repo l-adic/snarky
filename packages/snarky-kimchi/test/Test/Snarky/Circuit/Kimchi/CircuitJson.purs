@@ -22,7 +22,7 @@ import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
-import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Vesta as Vesta
@@ -265,6 +265,14 @@ endoMulCircuit
 endoMulCircuit (Tuple g scalar) =
   endo g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
 
+scaleFast2_128Circuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+scaleFast2_128Circuit (Tuple g scalar) =
+  scaleFast2' @26 @127 g scalar
+
 --------------------------------------------------------------------------------
 -- | Load an OCaml JSON file and parse a PureScript JSON string
 loadCircuits
@@ -347,3 +355,4 @@ spec =
       exactMatch "var_base_mul_circuit" (compilePF varBaseMulCircuit)
       exactMatch "endo_mul_circuit" (compilePF endoMulCircuit)
       exactMatch "poseidon_circuit" (compileV3 poseidonCircuit)
+      exactMatch "scale_fast2_128_circuit" (compilePF scaleFast2_128Circuit)

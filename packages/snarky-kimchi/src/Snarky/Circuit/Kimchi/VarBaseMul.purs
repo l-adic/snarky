@@ -166,10 +166,10 @@ the pure function on the RHS. This is used when the modulus
 of the scalar field is larger than the modulus of the circuit field.
 -}
 scaleFast2
-  :: forall t m f n @nChunks sDiv2Bits @bitsUsed _l
+  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
+  => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
@@ -227,10 +227,10 @@ constrains the split, then delegates to scaleFast2 which adds the 2^n shift
 via varBaseMul. This matches OCaml's scale_fast2'.
 -}
 scaleFast2'
-  :: forall t m f n @nChunks sDiv2Bits bitsUsed _l
+  :: forall t m f n @nChunks @sDiv2Bits bitsUsed _l _afterBits
    . FieldSizeInBits f n
   => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
+  => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
@@ -241,4 +241,4 @@ scaleFast2'
        (AffinePoint (FVar f))
 scaleFast2' base s = do
   split <- splitFieldVar s
-  scaleFast2 @nChunks @bitsUsed base (Type2 split)
+  scaleFast2 @nChunks @sDiv2Bits base (Type2 split)

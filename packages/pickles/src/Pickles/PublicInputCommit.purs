@@ -79,21 +79,21 @@ class PublicInputCommit a f where
 -- | Leaf instances
 -------------------------------------------------------------------------------
 
--- | Full field element: 255 bits → 51 chunks
+-- | Full field element: 255 bits → 51 chunks, sDiv2Bits = 254
 instance (FieldSizeInBits f 255) => PublicInputCommit (FVar f) f where
-  scalarMuls = scalarMulLeaf @51
+  scalarMuls = scalarMulLeaf @51 @254
 
--- | 128-bit challenge: 130 bits → 26 chunks
+-- | 128-bit challenge: 130 bits → 26 chunks, sDiv2Bits = 127
 instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f where
-  scalarMuls params sized bases = scalarMulLeaf @26 params (toField sized) bases
+  scalarMuls params sized bases = scalarMulLeaf @26 @127 params (toField sized) bases
 
--- | Boolean: 5 bits → 1 chunk
+-- | Boolean: 5 bits → 1 chunk, sDiv2Bits = 0
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (BoolVar f) f where
-  scalarMuls params bool bases = scalarMulLeaf @1 params (coerce bool :: FVar f) bases
+  scalarMuls params bool bases = scalarMulLeaf @1 @0 params (coerce bool :: FVar f) bases
 
--- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks (full width).
+-- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
-  scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 params fv bases
+  scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 @254 params fv bases
 
 -- | Shifted scalar (Type2): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (boolean → 1 chunk).
 -- | sDiv2 = (s - sOdd) / 2 can be up to 254 bits for full-width shifted scalars
@@ -101,8 +101,8 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
 -- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (FVar f) (BoolVar f)) f where
   scalarMuls params (Type2 { sDiv2, sOdd }) bases = do
-    { results: r1, rest: rest1 } <- scalarMulLeaf @51 params sDiv2 bases
-    { results: r2, rest: rest2 } <- scalarMulLeaf @1 params (coerce sOdd :: FVar f) rest1
+    { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
+    { results: r2, rest: rest2 } <- scalarMulLeaf @1 @0 params (coerce sOdd :: FVar f) rest1
     pure { results: r1 <> r2, rest: rest2 }
 
 -------------------------------------------------------------------------------
@@ -232,10 +232,10 @@ publicInputCommit params input lagrangeComms blindingH = do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks f n sDiv2Bits bitsUsed _l t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed _l _afterBits t m
    . FieldSizeInBits f n
   => Add bitsUsed _l n
-  => Add sDiv2Bits 1 n
+  => Add sDiv2Bits _afterBits n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
@@ -247,7 +247,7 @@ scalarMulLeaf
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 scalarMulLeaf params scalar bases = do
   let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-  point <- scaleFast2' @nChunks (constPt head) scalar
+  point <- scaleFast2' @nChunks @sDiv2Bits (constPt head) scalar
   let actualShift = reflectType (Proxy @bitsUsed)
   pure
     { results: [ { point, correction: pow2pow params head actualShift } ]

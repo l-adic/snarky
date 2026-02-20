@@ -160,7 +160,7 @@ spec = do
           => AffinePoint (FVar Pallas.BaseField)
           -> Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
-        circuit p t = scaleFast2 @51 p t
+        circuit p t = scaleFast2 @51 @254 p t
         s =
           compilePure
             (Proxy @(Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean)))
@@ -196,7 +196,7 @@ spec = do
           => AffinePoint (FVar Pallas.BaseField)
           -> Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)
           -> Snarky (KimchiConstraint Pallas.BaseField) t m (AffinePoint (FVar Pallas.BaseField))
-        circuit p t = scaleFast2 @51 p t
+        circuit p t = scaleFast2 @51 @254 p t
 
         solver
           :: SolverT Pallas.BaseField (KimchiConstraint Pallas.BaseField) Effect
@@ -261,7 +261,7 @@ spec = do
           => AffinePoint (FVar Pallas.BaseField)
           -> FVar Pallas.BaseField
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
-        circuit p scalar = scaleFast2' @51 p scalar
+        circuit p scalar = scaleFast2' @51 @254 p scalar
 
         solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) (uncurry circuit)
 
