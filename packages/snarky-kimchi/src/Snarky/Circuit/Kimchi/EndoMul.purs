@@ -11,9 +11,9 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, read, scale_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_, seal)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete')
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -49,11 +49,18 @@ endo g scalar = do
     chunks = Vector.chunks @4 msbBits
     EndoBase (eb :: f) = endoBase @f @f'
   accInit <- do
-    { p } <- addComplete g (g { x = scale_ eb g.x })
-    _.p <$> addComplete p p
+    -- Seal the endo-scaled x coordinate BEFORE addComplete, matching OCaml's
+    -- seal(Field.scale xt Endo.base) which happens outside add_fast.
+    phix <- seal (scale_ eb g.x)
+    -- Use addComplete' true (check_finite=true) matching OCaml's add_fast default.
+    -- This makes inf = Const 0, whose reduce_to_v pairs with the queued seal constraint.
+    { p } <- addComplete' true g (g { x = phix })
+    _.p <$> addComplete' true p p
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
-        { p, r, s, s1, s3, nAccNext, nAccPrev } <- exists do
+        -- OCaml uses !acc and !n_acc directly (not mk/exists) for xp, yp, n_acc_prev.
+        -- This preserves variable identity for permutation wiring.
+        { r, s1, s3, s, nAccNext } <- exists do
           { x: xt, y: yt } <- read @(AffinePoint _) g
           bits <- read bs
           let
@@ -77,18 +84,16 @@ endo g scalar = do
             s4 = (double yr / (double xr + xq2 - s3Squared)) - s3
             xs = xq2 + square s4 - s3Squared
             ys = ((xr - xs) * s4) - yr
-          nAccPrevVal <- read st.nAcc
+          nAccPrevVal <- readCVar st.nAcc
           pure
-            { p: { x: xp, y: yp }
-            , r: { x: xr, y: yr }
+            { r: { x: xr, y: yr }
             , s1
             , s3
             , s: { x: xs, y: ys }
-            , nAccPrev: nAccPrevVal
             , nAccNext: double (double (double (double nAccPrevVal + b1) + b2) + b3) + b4
             }
         pure $ Tuple
-          { bits: bs, p, r, s1, s3, t: g, nAcc: nAccPrev, nAccNext, s }
+          { bits: bs, p: st.acc, r, s1, s3, t: g, nAcc: st.nAcc, nAccNext, s }
           { nAcc: nAccNext, acc: s }
     )
     { nAcc: const_ zero, acc: accInit }

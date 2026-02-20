@@ -5,6 +5,8 @@ import Prelude
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Traversable (sequence_)
+import Data.Tuple (Tuple(..))
+import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
@@ -14,14 +16,22 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.EndoMul (endo)
+import Snarky.Circuit.Kimchi.EndoScalar (toField)
+import Snarky.Circuit.Kimchi.Poseidon (poseidon)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
-import Snarky.Curves.Class (class SerdeHex)
+import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type1(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 type Fp = Vesta.ScalarField
 
@@ -149,6 +159,113 @@ boolAssertCircuit :: forall c t m. CircuitM Fp c t m => BoolVar Fp -> Snarky c t
 boolAssertCircuit x = assert_ x
 
 --------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: two points, output: point)
+
+type TwoPoints = Tuple (AffinePoint (F Fp)) (AffinePoint (F Fp))
+
+type Point = AffinePoint (F Fp)
+
+-- Helper to compile a (point, point)→point Kimchi circuit
+compilePP
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePP circuit = circuitToJson @Fp $
+  compilePure (Proxy @TwoPoints) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+addCompleteCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+addCompleteCircuit (Tuple p1 p2) =
+  _.p <$> addComplete p1 p2
+
+--------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: field, output: field)
+
+-- Helper to compile a field→field Kimchi circuit
+compileKFF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => FVar Fp
+       -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+     )
+  -> String
+compileKFF circuit = circuitToJson @Fp $
+  compilePure (Proxy @(F Fp)) (Proxy @(F Fp)) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+-- | EndoScalar circuit: matches OCaml's to_field_checked with Wrap_inner_curve.scalar endo.
+-- | Input is a raw field element (the scalar challenge), output is a * endo + b.
+endoScalarCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => FVar Fp
+  -> Snarky (KimchiConstraint Fp) t m (FVar Fp)
+endoScalarCircuit scalar =
+  let
+    EndoScalar es = endoScalar @Vesta.BaseField @Fp
+  in
+    toField (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
+
+--------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: (point, field), output: point)
+
+type PointField = Tuple (AffinePoint (F Fp)) (F Fp)
+
+-- Helper to compile a (point, field)→point Kimchi circuit
+compilePF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePF circuit = circuitToJson @Fp $
+  compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+varBaseMulCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+varBaseMulCircuit (Tuple g scalar) =
+  scaleFast1 @51 g (Type1 scalar)
+
+--------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: Vector 3 field, output: Vector 3 field)
+
+type V3 = Vector 3 (F Fp)
+
+compileV3
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Vector 3 (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+     )
+  -> String
+compileV3 circuit = circuitToJson @Fp $
+  compilePure (Proxy @V3) (Proxy @V3) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+poseidonCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Vector 3 (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (Vector 3 (FVar Fp))
+poseidonCircuit = poseidon
+
+endoMulCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+endoMulCircuit (Tuple g scalar) =
+  endo g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
+
+--------------------------------------------------------------------------------
 -- | Load an OCaml JSON file and parse a PureScript JSON string
 loadCircuits
   :: forall @f
@@ -224,3 +341,9 @@ spec =
       exactMatch "bool_any_circuit" (compileBB boolAnyCircuit)
       exactMatch "assert_square_circuit" (compileFU assertSquareCircuit)
       exactMatch "unpack_circuit" (compileFU unpackCircuit)
+    describe "Kimchi gate matches" do
+      exactMatch "add_complete_circuit" (compilePP addCompleteCircuit)
+      exactMatch "endo_scalar_circuit" (compileKFF endoScalarCircuit)
+      exactMatch "var_base_mul_circuit" (compilePF varBaseMulCircuit)
+      exactMatch "endo_mul_circuit" (compilePF endoMulCircuit)
+      exactMatch "poseidon_circuit" (compileV3 poseidonCircuit)
