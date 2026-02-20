@@ -19,10 +19,13 @@ import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqu
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
+import Snarky.Circuit.Kimchi.EndoMul (endo)
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
 import Snarky.Curves.Class (class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type1(..))
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
@@ -207,6 +210,38 @@ endoScalarCircuit scalar =
     toField (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
 
 --------------------------------------------------------------------------------
+-- Kimchi gate circuits (input: (point, field), output: point)
+
+type PointField = Tuple (AffinePoint (F Fp)) (F Fp)
+
+-- Helper to compile a (point, field)→point Kimchi circuit
+compilePF
+  :: ( forall t m
+        . CircuitM Fp (KimchiConstraint Fp) t m
+       => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+       -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+     )
+  -> String
+compilePF circuit = circuitToJson @Fp $
+  compilePure (Proxy @PointField) (Proxy @Point) (Proxy @(KimchiConstraint Fp)) circuit initialState
+
+varBaseMulCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+varBaseMulCircuit (Tuple g scalar) =
+  scaleFast1 @51 g (Type1 scalar)
+
+endoMulCircuit
+  :: forall t m
+   . CircuitM Fp (KimchiConstraint Fp) t m
+  => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
+  -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
+endoMulCircuit (Tuple g scalar) =
+  endo g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
+
+--------------------------------------------------------------------------------
 -- | Load an OCaml JSON file and parse a PureScript JSON string
 loadCircuits
   :: forall @f
@@ -285,3 +320,5 @@ spec =
     describe "Kimchi gate matches" do
       exactMatch "add_complete_circuit" (compilePP addCompleteCircuit)
       exactMatch "endo_scalar_circuit" (compileKFF endoScalarCircuit)
+      exactMatch "var_base_mul_circuit" (compilePF varBaseMulCircuit)
+      debugCompare "endo_mul_circuit" (compilePF endoMulCircuit)

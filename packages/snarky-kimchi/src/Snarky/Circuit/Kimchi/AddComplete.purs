@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, read, readCVar, seal)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, read, readCVar, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -20,6 +20,9 @@ sealPoint p = do
   y <- seal p.y
   pure { x, y }
 
+-- | Complete addition. When checkFinite is true, inf is set to the constant zero
+-- | (matching OCaml's add_fast ~check_finite:true where inf = Field.zero).
+-- | When false, inf is a fresh witness variable (matching ~check_finite:false).
 addComplete
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m
@@ -29,14 +32,30 @@ addComplete
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addComplete p1' p2' = do
+addComplete = addComplete' false
+
+addComplete'
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => Boolean
+  -> AffinePoint (FVar f)
+  -> AffinePoint (FVar f)
+  -> Snarky (KimchiConstraint f) t m
+       { p :: AffinePoint (FVar f)
+       , isInfinity :: BoolVar f
+       }
+addComplete' checkFinite p1' p2' = do
   p1 <- sealPoint p1'
   p2 <- sealPoint p2'
   UnChecked sameX <- exists $ UnChecked <$>
     lift2 eq (readCVar p1.x) (readCVar p2.x)
-  UnChecked inf <- exists $ UnChecked <$> do
-    let sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
-    read sameX && not sameY
+  inf <-
+    if checkFinite then pure false_
+    else do
+      UnChecked r <- exists $ UnChecked <$> do
+        let sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
+        read sameX && not sameY
+      pure r
   infZ <- exists $
     lift2 eq (readCVar p1.y) (readCVar p2.y) >>=
       if _ then zero
