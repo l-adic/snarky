@@ -21,7 +21,6 @@ import Data.Array as A
 import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldM)
 import Data.List.NonEmpty (fromFoldable)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Map (Map)
@@ -73,25 +72,24 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
         let Tuple vl cl = head
         addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, vo: Just vo, co: -one, m: zero, c }
         pure $ Tuple (Just vo) one
-    Cons (Tuple vr cr) Nil -> do
-      let Tuple vl cl = head
-      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
+    Cons first rest -> do
+      -- 2+ terms: head saved for final gate, tail right-recursively reduced.
+      -- Matches OCaml's reduce_lincom + completely_reduce.
+      Tuple rx rs <- completelyReduce first rest
+      let Tuple lx ls = head
+      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple lx ls, Tuple rx rs ] }
+      addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: fromMaybe zero constant }
       pure $ Tuple (Just vo) one
-    Cons head' tail' -> do
-      Tuple vr cr <-
-        foldM
-          ( \(Tuple vr cr) (Tuple vl cl) -> do
-              vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple vl cl, Tuple vr cr ] }
-              addGenericPlonkConstraint { cl, vl: Just vl, cr, vr: Just vr, co: -one, vo: Just vo, m: zero, c: zero }
-              pure $ Tuple vo one
-          )
-          head'
-          tail'
-      let Tuple vl cl = head
-      vo <- createInternalVariable $ AffineExpression { constant, terms: [ Tuple vl cl, Tuple vr cr ] }
-      addGenericPlonkConstraint { vl: Just vl, cl, vr: Just vr, cr, vo: Just vo, co: -one, m: zero, c: fromMaybe zero constant }
-      pure $ Tuple (Just vo) one
+  where
+  -- Right recursion matching OCaml's completely_reduce.
+  -- Reduces a list of (variable, coefficient) terms into a single variable.
+  completelyReduce :: Tuple Variable f -> List (Tuple Variable f) -> m (Tuple Variable f)
+  completelyReduce single Nil = pure single
+  completelyReduce (Tuple lx ls) (Cons next rest') = do
+    Tuple rx rs <- completelyReduce next rest'
+    vo <- createInternalVariable $ AffineExpression { constant: Nothing, terms: [ Tuple lx ls, Tuple rx rs ] }
+    addGenericPlonkConstraint { cl: ls, vl: Just lx, cr: rs, vr: Just rx, co: -one, vo: Just vo, m: zero, c: zero }
+    pure $ Tuple vo one
 
 reduceToVariable
   :: forall f m
@@ -101,10 +99,12 @@ reduceToVariable
 reduceToVariable var = do
   Tuple mvar c <- reduceAffineExpression $ reduceToAffineExpression var
   case mvar of
-    -- result is a constant
+    -- result is a constant — route through addEqualsConstraint for deduplication
+    -- (OCaml's reduce_to_v uses cached_constants to avoid duplicate constraints for identical constants)
+    -- addEqualsConstraint { cl, vl, cr, vr=Nothing } represents cl*vl = cr, and internally negates cr
     Nothing -> do
       vl <- createInternalVariable $ AffineExpression { constant: Just c, terms: mempty }
-      addGenericPlonkConstraint { cl: one, vl: Just vl, cr: zero, vr: Nothing, co: zero, vo: Nothing, m: zero, c: (-c) }
+      addEqualsConstraint { cl: one, vl: Just vl, cr: c, vr: Nothing }
       pure vl
     -- result is c * v
     Just v ->
@@ -236,10 +236,11 @@ handleGateBatching newGate = do
         }
       pure $ Just $ emitDoubleGateRow queuedGate newGate
   where
-  emitDoubleGateRow gate1 gate2 =
+  -- OCaml puts the NEW gate first and the QUEUED gate second
+  emitDoubleGateRow queued new_ =
     let
-      vars = gate1.vl :< gate1.vr :< gate1.vo :< gate2.vl :< gate2.vr :< gate2.vo :< Vector.generate (const Nothing)
-      coeffs = constraintToCoeffs gate1 <> constraintToCoeffs gate2
+      vars = new_.vl :< new_.vr :< new_.vo :< queued.vl :< queued.vr :< queued.vo :< Vector.generate (const Nothing)
+      coeffs = constraintToCoeffs new_ <> constraintToCoeffs queued
 
     in
       { kind: GenericPlonkGate, coeffs, variables: vars }
@@ -299,38 +300,22 @@ instance PrimeField f => PlonkReductionM (PlonkBuilder f) f where
   addEqualsConstraint c
     | c.cl == zero && c.cr == zero = pure unit
     | Just l <- c.vl, Just r <- c.vr, c.cl == c.cr = union l r
-    | Just l <- c.vl, Just r <- c.vr = do
-        ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
-        let
-          ratio = c.cr / c.cl
-          invRatio = c.cl / c.cr
-        case Map.lookup ratio ws.cachedConstants of
-          Just cached -> union l cached
-          Nothing -> case Map.lookup invRatio ws.cachedConstants of
-            Just cached -> union r cached
-            Nothing -> do
-              addGenericPlonkConstraint
-                { vl: Just l
-                , cl: c.cl
-                , vr: Just r
-                , cr: -c.cr
-                , co: zero
-                , vo: Nothing
-                , m: zero
-                , c: zero
-                }
-              modify_ \s -> s
-                { aux = over AuxState
-                    ( \st -> st
-                        { wireState = st.wireState
-                            { cachedConstants =
-                                Map.insert ratio l $ Map.insert invRatio r st.wireState.cachedConstants
-                            }
-                        }
-                    )
-                    s.aux
-
-                }
+    -- Two-variable case: cl * l = cr * r where cl /= cr.
+    -- OCaml only emits a generic constraint here — it does NOT touch cached_constants.
+    -- Caching would be incorrect: l and r are not constants, they are variables
+    -- related by l = (cr/cl) * r. Storing them in cachedConstants would corrupt
+    -- later constant deduplication.
+    | Just l <- c.vl, Just r <- c.vr =
+        addGenericPlonkConstraint
+          { vl: Just l
+          , cl: c.cl
+          , vr: Just r
+          , cr: -c.cr
+          , co: zero
+          , vo: Nothing
+          , m: zero
+          , c: zero
+          }
     | Just l <- c.vl, Nothing <- c.vr, c.cl /= zero = do
         ws <- gets (\{ aux: AuxState aux } -> aux.wireState)
         let constVal = c.cr / c.cl

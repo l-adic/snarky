@@ -203,4 +203,4 @@ all_ as =
           let
             n = fromBigInt $ BigInt.fromInt $ Array.length as
           in
-            equals_ (sum_ (coerce as)) (Const n)
+            equals_ (Const n) (sum_ (coerce as))

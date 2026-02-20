@@ -21,13 +21,14 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete')
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..), Type2(..))
+import Type.Proxy (Proxy(..))
 
 varBaseMul
   :: forall t m n @nChunks @bitsUsed l f
@@ -43,10 +44,18 @@ varBaseMul
        , lsbBits :: Vector n (FVar f)
        }
 varBaseMul base (Type1 t) = do
+  -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
+  -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
   lsbBits <- exists do
     F vVal <- readCVar t
-    pure $ unpackPure vVal
-  { p } <- addComplete base base
+    pure
+      $ map (\b -> if b then one else zero :: F f)
+      $
+        unpackPure vVal (Proxy @n)
+  -- Use addComplete' true to match OCaml's add_fast (default check_finite=true),
+  -- where inf = Field.zero (constant). This ensures inf shares the cached constant
+  -- variable with nPrev = const_ zero, matching OCaml's permutation wiring.
+  { p } <- addComplete' true base base
   let
     -- Take bottom bitsUsed LSB bits, then reverse to MSB-first within range.
     -- Matches OCaml's: List.take num_bits |> Array.of_list_rev_map
@@ -57,33 +66,51 @@ varBaseMul base (Type1 t) = do
 
     chunks :: Vector nChunks (Vector 5 (FVar f))
     chunks = Vector.chunks @5 msbBitsUsed
-  Tuple rounds_rev { nAccPrev: nAcc, acc: g } <- mapAccumM
+  Tuple rounds { nAccPrev: nAcc, acc: g } <- mapAccumM
     ( \s bs -> do
         nAcc <- exists do
           nAccPrevVal :: F f <- readCVar s.nAccPrev
           bsVal <- read @(Vector _ _) bs
           pure $ foldl (\a b -> double a + b) nAccPrevVal bsVal
+        -- Individual exists per variable to match OCaml's allocation order:
+        -- s1, s1_squared, s2, x_res, y_res per bit step
         Tuple accs slopes <- Vector.unzip <<< fst <$> do
           mapAccumM
-            ( \a b -> exists do
-                { x: xAcc, y: yAcc } <- read @(AffinePoint _) a
-                bVal <- readCVar b
-                { x: xBase, y: yBase } <- read @(AffinePoint _) base
-                s1 <-
-                  let
-                    d = xAcc - xBase
-                  in
-                    if d == zero then throwAsProver $ DivisionByZero
-                      { context: "varBaseMul"
-                      , expression: Just "xAcc - xBase"
-                      }
-                    else pure $ (yAcc - (yBase * (double bVal - one))) / d
-                let
-                  s1Squared = s1 * s1
-                  s2 = (double yAcc / (double xAcc + xBase - s1Squared)) - s1
-                  xRes = (xBase + (s2 * s2) - s1Squared)
-                  yRes = (xAcc - xRes) * s2 - yAcc
-                  a' = { x: xRes, y: yRes }
+            ( \a b -> do
+                s1 <- exists do
+                  xAcc <- readCVar a.x
+                  yAcc <- readCVar a.y
+                  bVal <- readCVar b
+                  xBase <- readCVar base.x
+                  yBase <- readCVar base.y
+                  let d = xAcc - xBase
+                  if d == zero then throwAsProver $ DivisionByZero
+                    { context: "varBaseMul"
+                    , expression: Just "xAcc - xBase"
+                    }
+                  else pure $ (yAcc - (yBase * (double bVal - one))) / d
+                s1Sq <- exists do
+                  v <- readCVar s1
+                  pure $ v * v
+                s2 <- exists do
+                  xAcc <- readCVar a.x
+                  yAcc <- readCVar a.y
+                  xBase <- readCVar base.x
+                  sq <- readCVar s1Sq
+                  sv <- readCVar s1
+                  pure $ (double yAcc / (double xAcc + xBase - sq)) - sv
+                xRes <- exists do
+                  xBase <- readCVar base.x
+                  s2v <- readCVar s2
+                  sq <- readCVar s1Sq
+                  pure $ xBase + s2v * s2v - sq
+                yRes <- exists do
+                  xAcc <- readCVar a.x
+                  yAcc <- readCVar a.y
+                  xR <- readCVar xRes
+                  s2v <- readCVar s2
+                  pure $ (xAcc - xR) * s2v - yAcc
+                let a' = { x: xRes, y: yRes }
                 pure $ Tuple (Tuple a' s1) a'
             )
             s.acc
@@ -102,10 +129,9 @@ varBaseMul base (Type1 t) = do
     )
     { nAccPrev: const_ zero, acc: p }
     chunks
-  let rounds = Vector.reverse rounds_rev
   addConstraint $ KimchiVarBaseMul $ Vector.toUnfoldable rounds
   assertEqual_ nAcc t
-  pure { g, lsbBits: coerce lsbBits }
+  pure { g, lsbBits }
   where
   double x = x + x
 
@@ -158,7 +184,7 @@ scaleFast2 base (Type2 { sDiv2, sOdd }) = do
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
   if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
-    { p } <- addComplete g negBase
+    { p } <- addComplete' true g negBase
     pure p
 
 -- | Split a field element into parity decomposition and constrain it.

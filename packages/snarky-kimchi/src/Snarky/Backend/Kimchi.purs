@@ -1,5 +1,6 @@
 module Snarky.Backend.Kimchi
   ( makeConstraintSystem
+  , makeGateData
   , makeWitness
   ) where
 
@@ -128,6 +129,34 @@ makeGates wireMap rows =
         Just w -> w
         Nothing -> wireNew i (getFinite j)
 
+-- | Build gates and constraint rows without creating a full ConstraintSystem.
+-- | Use this when you only need the gate data (e.g., for JSON serialization).
+makeGateData
+  :: forall @f g
+   . CircuitGateConstructor f g
+  => PrimeField f
+  => { constraints :: Array (KimchiRow f)
+     , publicInputs :: Array Variable
+     , unionFind :: UnionFindData Variable
+     }
+  -> { constraints :: Array (KimchiRow f)
+     , gates :: Array (Gate f)
+     , publicInputSize :: Int
+     }
+makeGateData arg =
+  let
+    publicInputRows = makePublicInputRows arg.publicInputs
+    rows = publicInputRows <> arg.constraints
+    placement = placeVariables rows
+    wireMapping = makeWireMapping arg.unionFind placement
+    gates = makeGates wireMapping rows
+    publicInputSize = Array.length publicInputRows
+  in
+    { constraints: rows
+    , gates
+    , publicInputSize
+    }
+
 makeConstraintSystem
   :: forall @f g
    . CircuitGateConstructor f g
@@ -138,17 +167,17 @@ makeConstraintSystem
      }
   -> { constraintSystem :: ConstraintSystem f
      , constraints :: Array (KimchiRow f)
+     , gates :: Array (Gate f)
+     , publicInputSize :: Int
      }
 makeConstraintSystem arg =
   let
-    publicInputRows = makePublicInputRows arg.publicInputs
-    rows = publicInputRows <> arg.constraints
-    placement = placeVariables rows
-    wireMapping = makeWireMapping arg.unionFind placement
-    gates = makeGates wireMapping rows
+    gd = makeGateData @f arg
   in
-    { constraintSystem: constraintSystemCreate @f gates (Array.length publicInputRows)
-    , constraints: rows
+    { constraintSystem: constraintSystemCreate @f gd.gates gd.publicInputSize
+    , constraints: gd.constraints
+    , gates: gd.gates
+    , publicInputSize: gd.publicInputSize
     }
 
 makeWitness

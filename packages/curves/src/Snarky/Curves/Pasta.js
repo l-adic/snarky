@@ -75,6 +75,14 @@ export function _pallasPow(base) {
     };
 }
 
+export function _pallasScalarFieldFromHexLe(hex) {
+    return napi.pallasScalarfieldFromHexLe(hex);
+}
+
+export function _pallasScalarFieldToHexLe(x) {
+    return napi.pallasScalarfieldToHexLe(x);
+}
+
 // Note: Pallas base field functions removed - now handled via VestaScalarField type alias
 
 // Pallas Weierstrass Parameters (Pallas curve coefficients in Pallas base field)

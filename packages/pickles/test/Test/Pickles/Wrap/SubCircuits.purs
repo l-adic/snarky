@@ -484,22 +484,23 @@ incrementallyVerifyProofTest ctx = do
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
       , deferredValues:
-          let stepPlonk = coerceStepPlonkChallenges ctx
+          let
+            stepPlonk = coerceStepPlonkChallenges ctx
           in
-          { plonk:
-              { alpha: stepPlonk.alpha
-              , beta: stepPlonk.beta
-              , gamma: stepPlonk.gamma
-              , zeta: stepPlonk.zeta
-              , perm: toShifted $ F perm
-              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
-              }
-          , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-          , xi: xiChalFq
-          , bulletproofChallenges
-          , b: toShifted $ F bValue
-          }
+            { plonk:
+                { alpha: stepPlonk.alpha
+                , beta: stepPlonk.beta
+                , gamma: stepPlonk.gamma
+                , zeta: stepPlonk.zeta
+                , perm: toShifted $ F perm
+                , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+                , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+                }
+            , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+            , xi: xiChalFq
+            , bulletproofChallenges
+            , b: toShifted $ F bValue
+            }
       , wComm: coerce commitments.wComm
       , zComm: coerce commitments.zComm
       , tComm
@@ -603,22 +604,23 @@ verifyTest ctx = do
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
       , deferredValues:
-          let stepPlonk = coerceStepPlonkChallenges ctx
+          let
+            stepPlonk = coerceStepPlonkChallenges ctx
           in
-          { plonk:
-              { alpha: stepPlonk.alpha
-              , beta: stepPlonk.beta
-              , gamma: stepPlonk.gamma
-              , zeta: stepPlonk.zeta
-              , perm: toShifted $ F perm
-              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
-              }
-          , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-          , xi: xiChalFq
-          , bulletproofChallenges
-          , b: toShifted $ F bValue
-          }
+            { plonk:
+                { alpha: stepPlonk.alpha
+                , beta: stepPlonk.beta
+                , gamma: stepPlonk.gamma
+                , zeta: stepPlonk.zeta
+                , perm: toShifted $ F perm
+                , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+                , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+                }
+            , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+            , xi: xiChalFq
+            , bulletproofChallenges
+            , b: toShifted $ F bValue
+            }
       , wComm: coerce commitments.wComm
       , zComm: coerce commitments.zComm
       , tComm

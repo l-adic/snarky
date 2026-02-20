@@ -21,6 +21,7 @@ import Snarky.Circuit.RandomOracle (Digest)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- | Advice monad for looking up account addresses from public keys.
@@ -44,7 +45,7 @@ assertU64
   -> Snarky c t m Unit
 assertU64 (TokenAmount v) = do
   -- Unpack to n bits (255 for pasta curves)
-  allBits <- unpack_ v
+  allBits <- unpack_ v (Proxy @n)
   -- Drop the lower 64 bits, keeping the higher (n - 64) bits
   let higherBits = Vector.drop @64 allBits
   -- Check that the sum of higher bits is zero (i.e., all are false)

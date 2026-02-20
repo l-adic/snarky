@@ -59,6 +59,7 @@ data GateKind
   | EndoScalar
   | Zero
 
+derive instance Eq GateKind
 derive instance Generic GateKind _
 instance Show GateKind where
   show x = genericShow x

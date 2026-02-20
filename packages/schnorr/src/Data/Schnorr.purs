@@ -28,6 +28,7 @@ import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
 import Snarky.Circuit.DSL (packPure, unpackPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class PrimeField, class WeierstrassCurve, fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
+import Type.Proxy (Proxy(..))
 
 -- | Truncating coercion between 255-bit fields.
 -- | WARNING: This truncates to 254 bits, discarding the MSB. For values >= 2^254,
@@ -44,7 +45,7 @@ truncateFieldCoerce
   -> f'
 truncateFieldCoerce x =
   let
-    bits = unpackPure x -- Vector 255 Boolean, LSB first
+    bits = unpackPure x (Proxy @255) -- Vector 255 Boolean, LSB first
     truncated = Vector.take @254 bits -- Vector 254 Boolean (lower 254 bits)
     padded = Vector.snoc truncated false -- Vector 255 Boolean with MSB = 0
   in

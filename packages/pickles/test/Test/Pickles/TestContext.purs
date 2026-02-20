@@ -84,6 +84,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
+import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.IPA (computeB, extractScalarChallengesPure, type1ScalarOps, type2ScalarOps)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -108,7 +109,6 @@ import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
-import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
@@ -1706,22 +1706,23 @@ buildStepIVPInput ctx =
         map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
     , sgOld: Vector.nil
     , deferredValues:
-        let wrapPlonk = coerceWrapPlonkChallenges ctx
+        let
+          wrapPlonk = coerceWrapPlonkChallenges ctx
         in
-        { plonk:
-            { alpha: wrapPlonk.alpha
-            , beta: wrapPlonk.beta
-            , gamma: wrapPlonk.gamma
-            , zeta: wrapPlonk.zeta
-            , perm: toShifted $ F perm
-            , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-            , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
-            }
-        , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-        , xi: xiChalFp
-        , bulletproofChallenges
-        , b: toShifted $ F bValue
-        }
+          { plonk:
+              { alpha: wrapPlonk.alpha
+              , beta: wrapPlonk.beta
+              , gamma: wrapPlonk.gamma
+              , zeta: wrapPlonk.zeta
+              , perm: toShifted $ F perm
+              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+              }
+          , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+          , xi: xiChalFp
+          , bulletproofChallenges
+          , b: toShifted $ F bValue
+          }
     , wComm: coerce commitments.wComm
     , zComm: coerce commitments.zComm
     , tComm

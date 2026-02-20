@@ -105,8 +105,10 @@ generateChallenges startCounter =
   let
     n = reflectType (Proxy @n)
     go { counter, acc } _idx =
-      let { counter: next, challenge } = scalarChal @128 @255 counter
-      in { counter: next, acc: acc <> [ challenge ] }
+      let
+        { counter: next, challenge } = scalarChal @128 @255 counter
+      in
+        { counter: next, acc: acc <> [ challenge ] }
     result = Array.foldl go { counter: startCounter, acc: [] }
       (Array.range 0 (n - 1))
   in

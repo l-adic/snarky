@@ -108,6 +108,40 @@ mod generic {
             })
     }
 
+    pub fn constraint_system_to_json<F: PrimeField>(cs: &ConstraintSystem<F>) -> Result<String>
+    where
+        CircuitGate<F>: serde::Serialize,
+    {
+        use kimchi::circuits::gate::Circuit;
+        let circuit = Circuit::new(cs.public, &cs.gates);
+        serde_json::to_string(&circuit).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to serialize circuit to JSON: {e}"),
+            )
+        })
+    }
+
+    /// Serialize raw gates to JSON without building a full ConstraintSystem
+    /// (which pads gates to a minimum size). This matches the OCaml `to_json`
+    /// behavior which serializes the gate vector directly.
+    pub fn gates_to_json<F: PrimeField>(
+        gates: &[CircuitGate<F>],
+        public_input_size: usize,
+    ) -> Result<String>
+    where
+        CircuitGate<F>: serde::Serialize,
+    {
+        use kimchi::circuits::gate::Circuit;
+        let circuit = Circuit::new(public_input_size, gates);
+        serde_json::to_string(&circuit).map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Failed to serialize gates to JSON: {e}"),
+            )
+        })
+    }
+
     pub fn prover_index_verify<G>(
         prover_index: &ProverIndex<G, OpeningProof<G>>,
         witness: &[Vec<G::ScalarField>; COLUMNS],
@@ -1392,6 +1426,34 @@ pub fn vesta_constraint_system_create(
 
     let cs = generic::constraint_system_create(internal_gates, public_inputs_count as usize)?;
     Ok(External::new(cs))
+}
+
+#[napi]
+pub fn pallas_constraint_system_to_json(cs: &PallasConstraintSystemExternal) -> Result<String> {
+    generic::constraint_system_to_json(&**cs)
+}
+
+#[napi]
+pub fn vesta_constraint_system_to_json(cs: &VestaConstraintSystemExternal) -> Result<String> {
+    generic::constraint_system_to_json(&**cs)
+}
+
+#[napi]
+pub fn pallas_gates_to_json(
+    gates: Vec<&PallasCircuitGateExternal>,
+    public_input_size: u32,
+) -> Result<String> {
+    let internal_gates: Vec<_> = gates.iter().map(|g| (**g).clone()).collect();
+    generic::gates_to_json(&internal_gates, public_input_size as usize)
+}
+
+#[napi]
+pub fn vesta_gates_to_json(
+    gates: Vec<&VestaCircuitGateExternal>,
+    public_input_size: u32,
+) -> Result<String> {
+    let internal_gates: Vec<_> = gates.iter().map(|g| (**g).clone()).collect();
+    generic::gates_to_json(&internal_gates, public_input_size as usize)
 }
 
 fn load_srs_from_cache<G>(cache_path: &str) -> Result<SRS<G>>

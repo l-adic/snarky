@@ -63,6 +63,7 @@ eval lookup (R1CS c) = ado
 
 instance PrimeField f => Basic.BasicSystem f (R1CS f) where
   r1cs { left, right, output } = R1CS { left, right, output }
+  square a c = R1CS { left: a, right: a, output: c }
   boolean v = R1CS { left: v, right: v, output: v }
   -- NB: DO NOT CHANGE THIS TO 1 * (a - b) = zero
   equal a b = R1CS { left: a, right: const_ one, output: b }
