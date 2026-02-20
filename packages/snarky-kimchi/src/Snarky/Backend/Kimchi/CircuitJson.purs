@@ -4,15 +4,21 @@ module Snarky.Backend.Kimchi.CircuitJson
   , readCircuitJson
   , circuitToJson
   , gateKindFromRust
+  , GateDiff
+  , diffCircuits
+  , formatGate
+  , formatCircuit
   ) where
 
 import Prelude
 
-import Data.Array (concatMap)
+import Data.Array (concatMap, mapWithIndex)
+import Data.Array as Array
 import Data.Either (Either, note)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import Foreign (ForeignError(..), MultipleErrors)
 import Simple.JSON (readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState)
@@ -92,3 +98,37 @@ circuitToJson s =
       }
   in
     gatesToJson gates publicInputSize
+
+--------------------------------------------------------------------------------
+-- | Comparison utilities
+
+-- | A gate that differs between two circuits.
+type GateDiff f =
+  { index :: Int
+  , ocaml :: CircuitGateData f
+  , ps :: CircuitGateData f
+  }
+
+-- | Find gates that differ between two circuits.
+diffCircuits :: forall f. Eq f => CircuitData f -> CircuitData f -> Array (GateDiff f)
+diffCircuits ocaml ps =
+  Array.catMaybes $ mapWithIndex
+    ( \i (Tuple o p) ->
+        if o == p then Nothing
+        else Just { index: i, ocaml: o, ps: p }
+    )
+    (Array.zip ocaml.gates ps.gates)
+
+-- | Format a single gate for display.
+formatGate :: forall f. Show f => Int -> CircuitGateData f -> String
+formatGate i g = "  [" <> show i <> "] " <> show g.kind
+  <> " wires="
+  <> show g.wires
+  <> " coeffs="
+  <> show g.coeffs
+
+-- | Format an entire circuit for display.
+formatCircuit :: forall f. Show f => String -> CircuitData f -> Array String
+formatCircuit label c =
+  [ label <> " (pi=" <> show c.publicInputSize <> ", gates=" <> show (Array.length c.gates) <> "):" ]
+    <> mapWithIndex formatGate c.gates
