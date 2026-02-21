@@ -39,6 +39,7 @@ package:
     main: Test.Snarky.Circuit.Kimchi.Main
     dependencies:
       - aff
+      - console
       - effect
       - gen
       - identity
@@ -51,3 +52,4 @@ package:
       - spec-node
       - spec-quickcheck
       - strings
+      - unsafe-coerce

@@ -4,9 +4,11 @@ package:
     - arrays
     - blake2
     - curves
+    - effect
     - exceptions
     - foldable-traversable
     - identity
+    - integers
     - js-bigints
     - maybe
     - newtype
@@ -15,6 +17,7 @@ package:
     - poseidon
     - prelude
     - random-oracle
+    - record
     - safe-coerce
     - snarky
     - snarky-curves
@@ -33,9 +36,8 @@ package:
       - either
       - exceptions
       - identity
-      - integers
-      - mmorph
       - newtype
+      - ordered-collections
       - partial
       - quickcheck
       - schnorr

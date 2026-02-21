@@ -65,6 +65,7 @@ sum_
   -> FVar f
 sum_ = foldl CVar.add_ (Const zero)
 
+-- | Compute x^n using repeated squaring (matches OCaml's evaluation order).
 pow_
   :: forall f c t m
    . CircuitM f c t m
@@ -74,4 +75,8 @@ pow_
 pow_ x n
   | n == 0 = one
   | n == 1 = pure x
-  | otherwise = pure x * pow_ x (n - 1)
+  | otherwise = do
+      sq <- pure x * pure x
+      y <- pow_ sq (n / 2)
+      if n `mod` 2 == 0 then pure y
+      else pure x * pure y
