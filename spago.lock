@@ -4,41 +4,8 @@
       "blake2": {
         "path": "packages/blake2",
         "core": {
-          "dependencies": [
-            "arrays",
-            "prelude"
-          ],
-          "build_plan": [
-            "arrays",
-            "bifunctors",
-            "const",
-            "contravariant",
-            "control",
-            "distributive",
-            "effect",
-            "either",
-            "exists",
-            "foldable-traversable",
-            "functions",
-            "functors",
-            "identity",
-            "invariant",
-            "maybe",
-            "newtype",
-            "nonempty",
-            "orders",
-            "partial",
-            "prelude",
-            "profunctor",
-            "refs",
-            "safe-coerce",
-            "st",
-            "tailrec",
-            "tuples",
-            "type-equality",
-            "unfoldable",
-            "unsafe-coerce"
-          ]
+          "dependencies": [],
+          "build_plan": []
         },
         "test": {
           "dependencies": [],
@@ -605,9 +572,11 @@
             "arrays",
             "blake2",
             "curves",
+            "effect",
             "exceptions",
             "foldable-traversable",
             "identity",
+            "integers",
             "js-bigints",
             "maybe",
             "newtype",
@@ -616,6 +585,7 @@
             "poseidon",
             "prelude",
             "random-oracle",
+            "record",
             "safe-coerce",
             "snarky",
             "snarky-curves",
@@ -710,9 +680,8 @@
             "either",
             "exceptions",
             "identity",
-            "integers",
-            "mmorph",
             "newtype",
+            "ordered-collections",
             "partial",
             "quickcheck",
             "schnorr",
@@ -2308,6 +2277,7 @@
         "test": {
           "dependencies": [
             "aff",
+            "console",
             "effect",
             "gen",
             "identity",
@@ -2319,7 +2289,8 @@
             "spec",
             "spec-node",
             "spec-quickcheck",
-            "strings"
+            "strings",
+            "unsafe-coerce"
           ],
           "build_plan": [
             "aff",

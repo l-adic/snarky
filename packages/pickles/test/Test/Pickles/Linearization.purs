@@ -23,15 +23,14 @@ module Test.Pickles.Linearization where
 import Prelude
 
 import Data.Fin (Finite(..), unsafeFinite)
-import Data.Int (pow) as Int
 import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Pickles.Linearization.Env (Env, EnvM, buildCircuitEnvM, circuitEnv, fieldEnv, precomputeAlphaPowers)
 import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
+import Pickles.Linearization.Env (Env, EnvM, buildCircuitEnvM, circuitEnv, fieldEnv, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator, evalLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.FFI as FFI
 import Pickles.Linearization.Interpreter (evaluate, evaluateM)
@@ -42,8 +41,8 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, par
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.CVar (CVar(..), const_, sub_)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, mul_, pow_)
+import Snarky.Circuit.CVar (CVar(..), const_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
@@ -335,10 +334,10 @@ maxAlphaPower :: Int
 maxAlphaPower = 70
 
 -- | Circuit that evaluates the linearization polynomial using the monadic
--- | interpreter, matching OCaml's structure:
+-- | interpreter with compact Store/Load token stream:
 -- | - 90 input fields (matching OCaml dump_circuit_impl.ml layout)
 -- | - Precomputed alpha powers via successive multiplication
--- | - Domain values computed from zeta (omega constants, zk_polynomial, zeta^n-1)
+-- | - Domain values computed from zeta (omega constants for lagrange basis)
 -- | - Monadic interpreter (evaluateM) with peephole alpha optimization
 linearizationTickCircuit
   :: forall f f' g t m
@@ -438,28 +437,19 @@ linearizationTickCircuit tokens inputs = do
   -- 1. Precompute alpha powers (69 R1CS constraints for successive multiplication)
   alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
 
-  -- 2. Compute zk_polynomial (matches OCaml: 2 R1CS constraints)
-  -- zk_polynomial = (zeta - omega^(-1)) * (zeta - omega^(-2)) * (zeta - omega^(-3))
-  -- With zk_rows = zk_rows_by_default = 3, OCaml's omega_to_zk_plus_1 = omega^(-2),
-  -- omega_to_zk = omega^(-3). See plonk_checks.ml lines 240-278.
-  zk1 <- mul_ (zeta `sub_` const_ omegaToMinus1) (zeta `sub_` const_ omegaToMinus2)
-  _zkPoly <- mul_ zk1 (zeta `sub_` const_ omegaToMinus3)
-
-  -- 3. Compute zeta^n - 1 via repeated squaring (16 R1CS constraints)
-  zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
-  let zetaToNMinus1 = zetaToN `sub_` const_ one
-
-  -- 4. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
-  -- OCaml: when joint_combiner = None, returns F.one
+  -- 2. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
   let vanishesOnZk = const_ one
 
-  -- 5. Build monadic env
+  -- 3. Build monadic env
+  -- Note: zeta^n-1 is NOT precomputed here. The env's computeZetaToNMinus1 will be
+  -- called lazily at the first UnnormalizedLagrangeBasis token during evaluation,
+  -- matching OCaml's lazy binding (plonk_checks.ml:280).
   let
     env :: EnvM f (Snarky (KimchiConstraint f) t m)
     env = buildCircuitEnvM
       alphaPowers
-      zetaToNMinus1
       zeta
+      domainLog2
       omegaForLagrange
       evalPoint
       vanishesOnZk
@@ -468,7 +458,7 @@ linearizationTickCircuit tokens inputs = do
       (const_ one) -- jointCombiner (None → 1)
       parseHex
 
-  -- 6. Evaluate tokens using monadic interpreter
+  -- 4. Evaluate tokens using monadic interpreter
   evaluateM tokens env
 
 spec :: Spec Unit

@@ -109,7 +109,8 @@ fn generate_linearization_json<F: PrimeField>() -> String {
     // Linearize the expression
     let linearization = expr.linearize(evaluated_cols).unwrap();
 
-    // Convert to polish notation and then to hex representation
+    // Convert to compact polish notation and then to hex representation.
+    // to_polish() uses Store/Load for shared subexpressions, producing fewer tokens.
     let constant_polish = polish_tokens_to_hex(&linearization.constant_term.to_polish());
     let index_polish: Vec<_> = linearization
         .index_terms

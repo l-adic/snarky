@@ -1,5 +1,3 @@
 package:
   name: blake2
-  dependencies:
-    - arrays
-    - prelude
+  dependencies: []

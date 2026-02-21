@@ -19,6 +19,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (Finite, unsafeFinite)
+import Data.Int (pow) as Int
 import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
@@ -168,7 +169,8 @@ type EnvM f n =
   , endoCoefficient :: FVar f
   , field :: String -> FVar f
   , vanishesOnZeroKnowledgeAndPreviousRows :: FVar f
-  , unnormalizedLagrangeBasis :: { zkRows :: Boolean, offset :: Int } -> n (FVar f)
+  , computeZetaToNMinus1 :: n (FVar f) -- ^ Compute zeta^n - 1 (called at most once, memoized by interpreter)
+  , lagrangeBasis :: FVar f -> { zkRows :: Boolean, offset :: Int } -> n (FVar f) -- ^ div_ zetaToNMinus1 / (zeta - omega^i)
   , jointCombiner :: FVar f
   , beta :: FVar f
   , gamma :: FVar f
@@ -196,14 +198,17 @@ precomputeAlphaPowers maxPow alpha = go 2 [ const_ one, alpha ]
 -- | Construct a monadic circuit environment for evaluating linearization polynomials.
 -- | Unlike `circuitEnv`, this environment operates directly on `FVar f` values,
 -- | avoiding re-computation when stored values are loaded.
+-- | The `computeZetaToNMinus1` field defers the zeta^n-1 computation to match
+-- | OCaml's lazy binding (plonk_checks.ml:280), which is forced mid-evaluation
+-- | at the first UnnormalizedLagrangeBasis token.
 buildCircuitEnvM
   :: forall f f' c t m
    . CircuitM f c t m
   => PoseidonField f
   => HasEndo f f'
   => Array (FVar f) -- ^ precomputed alpha powers (alpha^0 .. alpha^n)
-  -> FVar f -- ^ zetaToNMinus1 (precomputed zeta^n - 1)
-  -> FVar f -- ^ zeta (for lagrange basis denominator)
+  -> FVar f -- ^ zeta
+  -> Int -- ^ domainLog2 (for computing zeta^n - 1)
   -> ({ zkRows :: Boolean, offset :: Int } -> f) -- ^ omega constant for lagrange basis call
   -> EvalPoint (FVar f)
   -> FVar f -- ^ vanishesOnZeroKnowledgeAndPreviousRows
@@ -212,7 +217,7 @@ buildCircuitEnvM
   -> FVar f -- ^ jointCombiner
   -> (String -> f) -- ^ field literal parser
   -> EnvM f (Snarky c t m)
-buildCircuitEnvM alphaPowers zetaToNMinus1 zeta omegaForLagrange evalPoint vanishesOnZk beta gamma jointCombiner parseField =
+buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishesOnZk beta gamma jointCombiner parseField =
   { add: add_
   , sub: sub_
   , mul: Circuit.mul_
@@ -228,8 +233,10 @@ buildCircuitEnvM alphaPowers zetaToNMinus1 zeta omegaForLagrange evalPoint vanis
         const_ eb
   , field: \hex -> const_ $ parseField hex
   , vanishesOnZeroKnowledgeAndPreviousRows: vanishesOnZk
-  , unnormalizedLagrangeBasis: \args ->
-      -- (zeta^n - 1) / (zeta - omega^i) where omega^i is a field constant
+  , computeZetaToNMinus1: do
+      zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
+      pure (zetaToN `sub_` const_ one)
+  , lagrangeBasis: \zetaToNMinus1 args ->
       div_ zetaToNMinus1 (zeta `sub_` const_ (omegaForLagrange args))
   , jointCombiner
   , beta

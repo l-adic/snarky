@@ -210,6 +210,16 @@ evaluate tokens env =
   advance :: EvalState a -> EvalState a
   advance state = state { position = state.position + 1 }
 
+-- | Monadic evaluation state: extends EvalState with a lazy cache for zeta^n-1.
+-- | The cache matches OCaml's `lazy (domain#vanishing_polynomial zeta)` binding
+-- | (plonk_checks.ml:280), which is forced on first UnnormalizedLagrangeBasis call.
+type EvalStateM a =
+  { stack :: Array a
+  , store :: Array a
+  , position :: Int
+  , zetaCache :: Maybe a -- ^ Memoized zeta^n-1, computed on first UnnormalizedLagrangeBasis
+  }
+
 -- | Monadic interpreter for Polish notation linearization polynomials.
 -- | Unlike `evaluate`, this runs in the Snarky monad with FVar stack values.
 -- | Key differences:
@@ -218,6 +228,7 @@ evaluate tokens env =
 -- | - Peephole: Challenge Alpha + Pow N → alphaPow(N) pure lookup
 -- | - Mul/Pow/UnnormalizedLagrangeBasis are monadic (create R1CS constraints)
 -- | - Add/Sub are pure CVar operations (no constraints)
+-- | - Lazy zeta^n-1: computed on first UnnormalizedLagrangeBasis, cached for reuse
 evaluateM
   :: forall f n
    . Monad n
@@ -225,11 +236,12 @@ evaluateM
   -> EnvM f n
   -> n (FVar f)
 evaluateM tokens env = do
-  finalState <- evalLoopM tokens (initialState :: EvalState (FVar f))
+  let initState = { stack: [], store: [], position: 0, zetaCache: Nothing } :: EvalStateM (FVar f)
+  finalState <- evalLoopM tokens initState
   pure $ fromMaybe (env.field "0x0") (Array.last finalState.stack)
   where
   -- Main evaluation loop (monadic)
-  evalLoopM :: Array PolishToken -> EvalState (FVar f) -> n (EvalState (FVar f))
+  evalLoopM :: Array PolishToken -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
   evalLoopM toks state =
     if state.position >= Array.length toks then
       pure state
@@ -241,7 +253,7 @@ evaluateM tokens env = do
           evalLoopM toks newState
 
   -- Evaluate a single token (monadic)
-  evalTokenM :: Array PolishToken -> PolishToken -> EvalState (FVar f) -> n (EvalState (FVar f))
+  evalTokenM :: Array PolishToken -> PolishToken -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
   evalTokenM toks token state = case token of
     -- Constants (pure)
     Constant term -> pure $ push (evalConstantM term) (advance state)
@@ -298,7 +310,7 @@ evaluateM tokens env = do
         Nothing -> pure $ advance state
 
     -- Store/Load for sharing subexpressions
-    -- Store saves the already-evaluated FVar value
+    -- Store saves the already-evaluated FVar value.
     Store ->
       case pop' state of
         Just { value, newState } ->
@@ -318,17 +330,25 @@ evaluateM tokens env = do
     VanishesOnZeroKnowledgeAndPreviousRows ->
       pure $ push env.vanishesOnZeroKnowledgeAndPreviousRows (advance state)
 
-    UnnormalizedLagrangeBasis { zk_rows, offset } -> do
-      result <- env.unnormalizedLagrangeBasis { zkRows: zk_rows, offset }
-      pure $ push result (advance state)
+    -- Lazy zeta^n-1: compute on first use, cache for subsequent calls.
+    -- Matches OCaml's Lazy.force zeta_to_n_minus_1 in unnormalized_lagrange_basis.
+    UnnormalizedLagrangeBasis { zk_rows, offset } ->
+      case state.zetaCache of
+        Just cached -> do
+          result <- env.lagrangeBasis cached { zkRows: zk_rows, offset }
+          pure $ push result (advance state)
+        Nothing -> do
+          zetaToNMinus1 <- env.computeZetaToNMinus1
+          result <- env.lagrangeBasis zetaToNMinus1 { zkRows: zk_rows, offset }
+          pure $ push result (advance (state { zetaCache = Just zetaToNMinus1 }))
 
     -- Conditional execution (features always disabled)
     SkipIfNot flag count ->
       env.ifFeature
         { flag
         , onTrue: \_ -> do
-            subResult <- evalSubExprM toks (state.position + 1) count state.store
-            let newState = state { position = state.position + 1 + count, store = subResult.store }
+            subResult <- evalSubExprM toks (state.position + 1) count state.store state.zetaCache
+            let newState = state { position = state.position + 1 + count, store = subResult.store, zetaCache = subResult.zetaCache }
             pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
         , onFalse: \_ ->
             let
@@ -348,17 +368,17 @@ evaluateM tokens env = do
               if count <= 1 then pure $ push (env.field "0x0") newState
               else pure newState
         , onFalse: \_ -> do
-            subResult <- evalSubExprM toks (state.position + 1) count state.store
-            let newState = state { position = state.position + 1 + count, store = subResult.store }
+            subResult <- evalSubExprM toks (state.position + 1) count state.store state.zetaCache
+            let newState = state { position = state.position + 1 + count, store = subResult.store, zetaCache = subResult.zetaCache }
             pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
         }
 
   -- Evaluate a sub-expression (for SkipIf/SkipIfNot blocks)
-  evalSubExprM :: Array PolishToken -> Int -> Int -> Array (FVar f) -> n (EvalState (FVar f))
-  evalSubExprM toks startPos count store =
+  evalSubExprM :: Array PolishToken -> Int -> Int -> Array (FVar f) -> Maybe (FVar f) -> n (EvalStateM (FVar f))
+  evalSubExprM toks startPos count store zetaCache =
     let
       subTokens = Array.slice startPos (startPos + count) toks
-      initState = { stack: [], store, position: 0 }
+      initState = { stack: [], store, position: 0, zetaCache }
     in
       evalLoopM subTokens initState
 
@@ -370,19 +390,19 @@ evaluateM tokens env = do
     Literal hex -> env.field hex
 
   -- Stack helpers
-  push :: FVar f -> EvalState (FVar f) -> EvalState (FVar f)
+  push :: FVar f -> EvalStateM (FVar f) -> EvalStateM (FVar f)
   push value state = state { stack = Array.snoc state.stack value }
 
-  pop' :: EvalState (FVar f) -> Maybe { value :: FVar f, newState :: EvalState (FVar f) }
+  pop' :: EvalStateM (FVar f) -> Maybe { value :: FVar f, newState :: EvalStateM (FVar f) }
   pop' state = do
     { init, last } <- Array.unsnoc state.stack
     pure { value: last, newState: state { stack = init } }
 
-  pop2' :: EvalState (FVar f) -> Maybe { a :: FVar f, b :: FVar f, newState :: EvalState (FVar f) }
+  pop2' :: EvalStateM (FVar f) -> Maybe { a :: FVar f, b :: FVar f, newState :: EvalStateM (FVar f) }
   pop2' state = do
     { value: b, newState: s1 } <- pop' state
     { value: a, newState: s2 } <- pop' s1
     pure { a, b, newState: s2 }
 
-  advance :: EvalState (FVar f) -> EvalState (FVar f)
+  advance :: EvalStateM (FVar f) -> EvalStateM (FVar f)
   advance state = state { position = state.position + 1 }
