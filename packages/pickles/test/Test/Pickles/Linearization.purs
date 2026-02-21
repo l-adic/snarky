@@ -22,13 +22,21 @@ module Test.Pickles.Linearization where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Fin (Finite(..), unsafeFinite)
+import Data.Int (pow) as Int
 import Data.Newtype (unwrap, wrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
+import Effect.Class.Console (log)
+import Effect.Exception (throw)
+import Node.Buffer as Buffer
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
 import Pickles.Linearization.Env (CurrOrNext(..), GateType(..)) as Env
 import Pickles.Linearization.Env (Env, EnvM, buildCircuitEnvM, circuitEnv, fieldEnv, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator, evalLinearization, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
@@ -41,8 +49,9 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, par
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure, makeSolver)
+import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
 import Snarky.Circuit.CVar (CVar(..), const_)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, mul_, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
@@ -52,6 +61,7 @@ import Test.QuickCheck (arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (Gen)
 import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
 import Test.Spec (Spec, describe, it)
+import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
@@ -437,13 +447,25 @@ linearizationTickCircuit tokens inputs = do
   -- 1. Precompute alpha powers (69 R1CS constraints for successive multiplication)
   alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
 
-  -- 2. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
+  -- 2. Eager zk_polynomial = (zeta - ω⁻¹)(zeta - ω⁻²)(zeta - ω⁻³)
+  -- Matches OCaml plonk_checks.ml:272-279
+  _zkPoly <- do
+    t1 <- mul_ (zeta `sub_` const_ omegaToMinus1) (zeta `sub_` const_ omegaToMinus2)
+    mul_ t1 (zeta `sub_` const_ omegaToMinus3)
+
+  -- 3. Eager zeta_to_n_minus_1 = zeta^(2^domainLog2) - 1
+  -- Matches OCaml plonk_checks.ml:294 (separate from the lazy binding at :281)
+  _eagerZetaToNMinus1 <- do
+    zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
+    pure (zetaToN `sub_` const_ one)
+
+  -- 4. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
   let vanishesOnZk = const_ one
 
-  -- 3. Build monadic env
-  -- Note: zeta^n-1 is NOT precomputed here. The env's computeZetaToNMinus1 will be
-  -- called lazily at the first UnnormalizedLagrangeBasis token during evaluation,
-  -- matching OCaml's lazy binding (plonk_checks.ml:280).
+  -- 5. Build monadic env
+  -- Note: zeta^n-1 is ALSO computed lazily inside the env (computeZetaToNMinus1),
+  -- matching OCaml's lazy binding (plonk_checks.ml:281) forced inside
+  -- unnormalized_lagrange_basis.
   let
     env :: EnvM f (Snarky (KimchiConstraint f) t m)
     env = buildCircuitEnvM
@@ -458,8 +480,43 @@ linearizationTickCircuit tokens inputs = do
       (const_ one) -- jointCombiner (None → 1)
       parseHex
 
-  -- 4. Evaluate tokens using monadic interpreter
+  -- 6. Evaluate tokens using monadic interpreter
   evaluateM tokens env
+
+type V90 = Vector 90 (F Pallas.BaseField)
+
+compileLinearizationTick :: String
+compileLinearizationTick = circuitToJson @Pallas.BaseField $
+  compilePure
+    (Proxy @V90)
+    (Proxy @(F Pallas.BaseField))
+    (Proxy @(KimchiConstraint Pallas.BaseField))
+    (linearizationTickCircuit PallasTokens.constantTermTokens)
+    Kimchi.initialState
+
+fixtureDir :: String
+fixtureDir = "packages/snarky-kimchi/test/fixtures/"
+
+linearizationTickCircuitComparison :: Spec Unit
+linearizationTickCircuitComparison =
+  it "linearization_tick_circuit matches OCaml" do
+    ocamlJson <- liftEffect do
+      buf <- FS.readFile (fixtureDir <> "linearization_tick_circuit.json")
+      Buffer.toString UTF8 buf
+    let
+      ocamlCircuit :: Either _ (CircuitData Pallas.BaseField)
+      ocamlCircuit = readCircuitJson ocamlJson
+
+      psCircuit :: Either _ (CircuitData Pallas.BaseField)
+      psCircuit = readCircuitJson compileLinearizationTick
+    case ocamlCircuit, psCircuit of
+      Right ocaml, Right ps -> do
+        log $ "OCaml: pi=" <> show ocaml.publicInputSize <> ", gates=" <> show (Array.length ocaml.gates)
+        log $ "PS:    pi=" <> show ps.publicInputSize <> ", gates=" <> show (Array.length ps.gates)
+        ps.publicInputSize `shouldEqual` ocaml.publicInputSize
+        ps.gates `shouldEqual` ocaml.gates
+      Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
+      _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
 
 spec :: Spec Unit
 spec = describe "Linearization Interpreter" do
@@ -467,3 +524,5 @@ spec = describe "Linearization Interpreter" do
     linearizationTests (Proxy @Pallas.BaseField) PallasTokens.constantTermTokens
   describe "Vesta" do
     linearizationTests (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
+  describe "Circuit comparison" do
+    linearizationTickCircuitComparison

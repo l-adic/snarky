@@ -681,6 +681,8 @@
             "exceptions",
             "identity",
             "newtype",
+            "node-buffer",
+            "node-fs",
             "ordered-collections",
             "partial",
             "quickcheck",

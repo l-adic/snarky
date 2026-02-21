@@ -52,11 +52,7 @@ evaluate tokens env =
 
   -- Evaluate a single token
   evalToken :: Array PolishToken -> PolishToken -> EvalState a -> EvalState a
-  evalToken _toks token state = evalTokenInner _toks token state
-
-  -- Inner token evaluation (no tracing)
-  evalTokenInner :: Array PolishToken -> PolishToken -> EvalState a -> EvalState a
-  evalTokenInner toks token state = case token of
+  evalToken _toks token state = case token of
     -- Constants
     Constant term -> push (evalConstant term) (advance state)
 
@@ -123,67 +119,27 @@ evaluate tokens env =
     UnnormalizedLagrangeBasis { zk_rows, offset } ->
       push (env.unnormalizedLagrangeBasis { zkRows: zk_rows, offset }) (advance state)
 
-    -- Conditional execution
-    -- SkipIfNot: if feature is NOT enabled, skip count tokens
-    --
-    -- The expression uses a pattern where each feature has:
-    -- - SkipIfNot(feat, N): large block with gate computation
-    -- - SkipIfNot(feat, 1): small block with zero constant
-    -- - Add: combines results
-    --
-    -- When disabled (all features treated as disabled for testing):
-    -- - Large block (count > 1): skip, DON'T push (the block would produce a value)
-    -- - Small block (count <= 1): skip, push zero (provides the "else" value)
-    --
-    -- IMPORTANT: When skipping, we must NOT evaluate the sub-expression at all
-    -- (no side effects like Store operations should occur).
+    -- Conditional: SkipIfNot — if feature is NOT enabled, skip count tokens.
+    -- Used for the true branch of IfFeature(feat, e1, e2):
+    --   SkipIfNot(feat, len_e1) [e1 tokens] SkipIf(feat, len_e2) [e2 tokens]
+    -- When enabled, e1 evaluates inline; when disabled, e1 is skipped.
     SkipIfNot flag count ->
       env.ifFeature
         { flag
-        , onTrue: \_ ->
-            -- Feature enabled: evaluate sub-expression and use result
-            let
-              subResult = evalSubExpr toks (state.position + 1) count state.store
-              newState = state { position = state.position + 1 + count, store = subResult.store }
-            in
-              push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
-        , onFalse: \_ ->
-            -- Feature disabled: skip entirely, don't evaluate sub-expression
-            let
-              newState = state { position = state.position + 1 + count }
-            in
-              if count <= 1 then push (env.field "0x0") newState -- Small blocks push zero
-              else newState -- Large blocks: just skip, don't push
+        , onTrue: \_ -> advance state
+        , onFalse: \_ -> state { position = state.position + 1 + count }
         }
 
-    -- SkipIf: if feature IS enabled, skip count tokens (opposite of SkipIfNot)
+    -- Conditional: SkipIf — if feature IS enabled, skip count tokens.
+    -- Used for the false branch of IfFeature(feat, e1, e2):
+    --   SkipIfNot(feat, len_e1) [e1 tokens] SkipIf(feat, len_e2) [e2 tokens]
+    -- When enabled, e2 is skipped; when disabled, e2 evaluates inline.
     SkipIf flag count ->
       env.ifFeature
         { flag
-        , onTrue: \_ ->
-            -- Feature enabled: skip entirely, don't evaluate sub-expression
-            let
-              newState = state { position = state.position + 1 + count }
-            in
-              if count <= 1 then push (env.field "0x0") newState
-              else newState
-        , onFalse: \_ ->
-            -- Feature disabled: evaluate sub-expression and use result
-            let
-              subResult = evalSubExpr toks (state.position + 1) count state.store
-              newState = state { position = state.position + 1 + count, store = subResult.store }
-            in
-              push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
+        , onTrue: \_ -> state { position = state.position + 1 + count }
+        , onFalse: \_ -> advance state
         }
-
-  -- Evaluate a sub-expression (for SkipIf/SkipIfNot blocks)
-  evalSubExpr :: Array PolishToken -> Int -> Int -> Array a -> EvalState a
-  evalSubExpr toks startPos count store =
-    let
-      subTokens = Array.slice startPos (startPos + count) toks
-      initState = { stack: [], store, position: 0 }
-    in
-      evalLoop subTokens initState
 
   -- Evaluate a constant term
   evalConstant :: ConstantTerm -> a
@@ -342,45 +298,21 @@ evaluateM tokens env = do
           result <- env.lagrangeBasis zetaToNMinus1 { zkRows: zk_rows, offset }
           pure $ push result (advance (state { zetaCache = Just zetaToNMinus1 }))
 
-    -- Conditional execution (features always disabled)
+    -- Conditional: SkipIfNot — if feature is NOT enabled, skip count tokens.
     SkipIfNot flag count ->
       env.ifFeature
         { flag
-        , onTrue: \_ -> do
-            subResult <- evalSubExprM toks (state.position + 1) count state.store state.zetaCache
-            let newState = state { position = state.position + 1 + count, store = subResult.store, zetaCache = subResult.zetaCache }
-            pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
-        , onFalse: \_ ->
-            let
-              newState = state { position = state.position + 1 + count }
-            in
-              if count <= 1 then pure $ push (env.field "0x0") newState
-              else pure newState
+        , onTrue: \_ -> pure $ advance state
+        , onFalse: \_ -> pure $ state { position = state.position + 1 + count }
         }
 
+    -- Conditional: SkipIf — if feature IS enabled, skip count tokens.
     SkipIf flag count ->
       env.ifFeature
         { flag
-        , onTrue: \_ ->
-            let
-              newState = state { position = state.position + 1 + count }
-            in
-              if count <= 1 then pure $ push (env.field "0x0") newState
-              else pure newState
-        , onFalse: \_ -> do
-            subResult <- evalSubExprM toks (state.position + 1) count state.store state.zetaCache
-            let newState = state { position = state.position + 1 + count, store = subResult.store, zetaCache = subResult.zetaCache }
-            pure $ push (fromMaybe (env.field "0x0") (Array.last subResult.stack)) newState
+        , onTrue: \_ -> pure $ state { position = state.position + 1 + count }
+        , onFalse: \_ -> pure $ advance state
         }
-
-  -- Evaluate a sub-expression (for SkipIf/SkipIfNot blocks)
-  evalSubExprM :: Array PolishToken -> Int -> Int -> Array (FVar f) -> Maybe (FVar f) -> n (EvalStateM (FVar f))
-  evalSubExprM toks startPos count store zetaCache =
-    let
-      subTokens = Array.slice startPos (startPos + count) toks
-      initState = { stack: [], store, position: 0, zetaCache }
-    in
-      evalLoopM subTokens initState
 
   -- Evaluate a constant term (pure)
   evalConstantM :: ConstantTerm -> FVar f
