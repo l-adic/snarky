@@ -349,17 +349,18 @@ maxAlphaPower = 70
 -- | - Precomputed alpha powers via successive multiplication
 -- | - Domain values computed from zeta (omega constants for lagrange basis)
 -- | - Monadic interpreter (evaluateM) with peephole alpha optimization
-linearizationTickCircuit
+linearizationCircuitM
   :: forall f f' g t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
-  => Array PolishToken
+  => Int -- ^ domainLog2
+  -> Array PolishToken
   -> Vector 90 (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
-linearizationTickCircuit tokens inputs = do
+linearizationCircuitM domLog2 tokens inputs = do
   let
     -- Unpack 90 inputs matching OCaml layout:
     -- 0-29: witness evals (15 pairs of (zeta, zetaw))
@@ -420,7 +421,7 @@ linearizationTickCircuit tokens inputs = do
       }
 
     -- Domain generator is a constant (from FFI)
-    gen = domainGenerator @f domainLog2
+    gen = domainGenerator @f domLog2
 
     -- All omega values are constants (no circuit constraints)
     -- omega^(-1) = 1/gen (constant fold)
@@ -456,7 +457,7 @@ linearizationTickCircuit tokens inputs = do
   -- 3. Eager zeta_to_n_minus_1 = zeta^(2^domainLog2) - 1
   -- Matches OCaml plonk_checks.ml:294 (separate from the lazy binding at :281)
   _eagerZetaToNMinus1 <- do
-    zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
+    zetaToN <- pow_ zeta (Int.pow 2 domLog2)
     pure (zetaToN `sub_` const_ one)
 
   -- 4. vanishes_on_zero_knowledge_and_previous_rows = 1 (joint_combiner is None)
@@ -471,7 +472,7 @@ linearizationTickCircuit tokens inputs = do
     env = buildCircuitEnvM
       alphaPowers
       zeta
-      domainLog2
+      domLog2
       omegaForLagrange
       evalPoint
       vanishesOnZk
@@ -483,15 +484,25 @@ linearizationTickCircuit tokens inputs = do
   -- 6. Evaluate tokens using monadic interpreter
   evaluateM tokens env
 
-type V90 = Vector 90 (F Pallas.BaseField)
+type V90Pallas = Vector 90 (F Pallas.BaseField)
+type V90Vesta = Vector 90 (F Vesta.BaseField)
 
 compileLinearizationTick :: String
 compileLinearizationTick = circuitToJson @Pallas.BaseField $
   compilePure
-    (Proxy @V90)
+    (Proxy @V90Pallas)
     (Proxy @(F Pallas.BaseField))
     (Proxy @(KimchiConstraint Pallas.BaseField))
-    (linearizationTickCircuit PallasTokens.constantTermTokens)
+    (linearizationCircuitM 16 PallasTokens.constantTermTokens)
+    Kimchi.initialState
+
+compileLinearizationTock :: String
+compileLinearizationTock = circuitToJson @Vesta.BaseField $
+  compilePure
+    (Proxy @V90Vesta)
+    (Proxy @(F Vesta.BaseField))
+    (Proxy @(KimchiConstraint Vesta.BaseField))
+    (linearizationCircuitM 15 VestaTokens.constantTermTokens)
     Kimchi.initialState
 
 fixtureDir :: String
@@ -518,6 +529,27 @@ linearizationTickCircuitComparison =
       Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
       _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
 
+linearizationTockCircuitComparison :: Spec Unit
+linearizationTockCircuitComparison =
+  it "linearization_tock_circuit matches OCaml" do
+    ocamlJson <- liftEffect do
+      buf <- FS.readFile (fixtureDir <> "linearization_tock_circuit.json")
+      Buffer.toString UTF8 buf
+    let
+      ocamlCircuit :: Either _ (CircuitData Vesta.BaseField)
+      ocamlCircuit = readCircuitJson ocamlJson
+
+      psCircuit :: Either _ (CircuitData Vesta.BaseField)
+      psCircuit = readCircuitJson compileLinearizationTock
+    case ocamlCircuit, psCircuit of
+      Right ocaml, Right ps -> do
+        log $ "OCaml: pi=" <> show ocaml.publicInputSize <> ", gates=" <> show (Array.length ocaml.gates)
+        log $ "PS:    pi=" <> show ps.publicInputSize <> ", gates=" <> show (Array.length ps.gates)
+        ps.publicInputSize `shouldEqual` ocaml.publicInputSize
+        ps.gates `shouldEqual` ocaml.gates
+      Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
+      _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
+
 spec :: Spec Unit
 spec = describe "Linearization Interpreter" do
   describe "Pallas" do
@@ -526,3 +558,4 @@ spec = describe "Linearization Interpreter" do
     linearizationTests (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
   describe "Circuit comparison" do
     linearizationTickCircuitComparison
+    linearizationTockCircuitComparison
