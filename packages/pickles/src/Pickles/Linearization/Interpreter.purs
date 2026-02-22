@@ -57,6 +57,10 @@ evaluate tokens env =
     Constant term -> push (evalConstant term) (advance state)
 
     -- Challenges
+    -- Note: this pure interpreter does not do the Alpha+Pow peephole
+    -- because over concrete fields, alphaPow is just a lookup and the
+    -- separate Pow case handles exponentiation. The peephole matters
+    -- in evaluateM where it avoids generating unnecessary constraints.
     Challenge Alpha -> push (env.alphaPow 1) (advance state)
     Challenge Beta -> push env.beta (advance state)
     Challenge Gamma -> push env.gamma (advance state)
@@ -215,14 +219,15 @@ evaluateM tokens env = do
     Constant term -> pure $ push (evalConstantM term) (advance state)
 
     -- Challenges
-    -- Peephole optimization: Challenge Alpha followed by Pow N → alphaPow(N) lookup
+    -- Peephole: Challenge Alpha is always followed by Pow N in the
+    -- generated token streams (Rust's to_polish only emits Alpha as
+    -- part of Expr::Pow(alpha, n)). The fallback to alphaPow 1 is
+    -- defensive and never fires in practice.
     Challenge Alpha ->
       case Array.index toks (state.position + 1) of
         Just (Pow n) ->
-          -- Consume both tokens, push precomputed alpha^n
           pure $ push (env.alphaPow n) (state { position = state.position + 2 })
         _ ->
-          -- Standalone Challenge Alpha (no Pow following) → alpha^1
           pure $ push (env.alphaPow 1) (advance state)
     Challenge Beta -> pure $ push env.beta (advance state)
     Challenge Gamma -> pure $ push env.gamma (advance state)
