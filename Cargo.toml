@@ -7,7 +7,6 @@ members = [
 ]
 
 exclude = [
-    "vendor/proof-systems",
     "mina",
 ]
 
@@ -37,10 +36,10 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rmp-serde = "1.0"
 
-kimchi = { path = "vendor/proof-systems/kimchi", features = ["bn254"] }
-mina-curves = { path = "vendor/proof-systems/curves" }
-mina-poseidon = { path = "vendor/proof-systems/poseidon" }
-poly-commitment = { path = "vendor/proof-systems/poly-commitment" }
+kimchi = { path = "mina/src/lib/crypto/proof-systems/kimchi", features = ["bn254"] }
+mina-curves = { path = "mina/src/lib/crypto/proof-systems/curves" }
+mina-poseidon = { path = "mina/src/lib/crypto/proof-systems/poseidon" }
+poly-commitment = { path = "mina/src/lib/crypto/proof-systems/poly-commitment" }
 
 [workspace.dependencies.proptest]
 version = "1.0"

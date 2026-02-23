@@ -1,4 +1,3 @@
-[submodule "vendor/proof-systems"]
-	path = vendor/proof-systems
-	url = https://github.com/o1-labs/proof-systems
-	shallow = true
+[submodule "mina"]
+	path = mina
+	url = git@github.com:MinaProtocol/mina.git
