@@ -16,7 +16,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, diffCircuits, formatCircuit, readCircuitJson)
-import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, unpack_, xor_)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
@@ -190,6 +190,12 @@ equalsCircuit x = do
   y <- exists (pure (zero :: F Fp))
   equals_ x y
 
+pow7Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow7Circuit x = pow_ x 7
+
+pow8Circuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m (FVar Fp)
+pow8Circuit x = pow_ x 8
+
 --------------------------------------------------------------------------------
 -- Assertion circuits
 
@@ -325,6 +331,8 @@ spec =
       exactMatch "bool_any_circuit" (compileBB boolAnyCircuit)
       exactMatch "assert_square_circuit" (compileFU assertSquareCircuit)
       exactMatch "unpack_circuit" (compileFU unpackCircuit)
+      exactMatch "pow7_circuit" (compileFF pow7Circuit)
+      exactMatch "pow8_circuit" (compileFF pow8Circuit)
     describe "Kimchi gate matches" do
       exactMatch "add_complete_circuit" (compilePP addCompleteCircuit)
       exactMatch "endo_scalar_circuit" (compileKFF endoScalarCircuit)
