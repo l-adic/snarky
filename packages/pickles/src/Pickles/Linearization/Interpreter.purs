@@ -31,15 +31,15 @@ initialState = { stack: [], store: [], position: 0 }
 evaluate :: forall a. Array PolishToken -> Env a -> a
 evaluate tokens env =
   let
-    finalState = evalLoop tokens initialState
+    finalState = evalLoop tokens (Array.length tokens) initialState
   in
     -- Result is the top of the stack (or zero if empty)
     fromMaybe (env.field "0x0") (Array.last finalState.stack)
   where
-  -- Main evaluation loop
-  evalLoop :: Array PolishToken -> EvalState a -> EvalState a
-  evalLoop toks state =
-    if state.position >= Array.length toks then
+  -- Main evaluation loop — processes tokens from position until endPos
+  evalLoop :: Array PolishToken -> Int -> EvalState a -> EvalState a
+  evalLoop toks endPos state =
+    if state.position >= endPos then
       state
     else
       case Array.index toks state.position of
@@ -48,11 +48,11 @@ evaluate tokens env =
           let
             newState = evalToken toks token state
           in
-            evalLoop toks newState
+            evalLoop toks endPos newState
 
   -- Evaluate a single token
   evalToken :: Array PolishToken -> PolishToken -> EvalState a -> EvalState a
-  evalToken _toks token state = case token of
+  evalToken toks token state = case token of
     -- Constants
     Constant term -> push (evalConstant term) (advance state)
 
@@ -123,27 +123,31 @@ evaluate tokens env =
     UnnormalizedLagrangeBasis { zk_rows, offset } ->
       push (env.unnormalizedLagrangeBasis { zkRows: zk_rows, offset }) (advance state)
 
-    -- Conditional: SkipIfNot — if feature is NOT enabled, skip count tokens.
-    -- Used for the true branch of IfFeature(feat, e1, e2):
-    --   SkipIfNot(feat, len_e1) [e1 tokens] SkipIf(feat, len_e2) [e2 tokens]
-    -- When enabled, e1 evaluates inline; when disabled, e1 is skipped.
-    SkipIfNot flag count ->
-      env.ifFeature
-        { flag
-        , onTrue: \_ -> advance state
-        , onFalse: \_ -> state { position = state.position + 1 + count }
-        }
+    -- Conditional: IfFeature is encoded as a pair:
+    --   SkipIfNot(flag, len_e1) [e1 tokens] SkipIf(flag, len_e2) [e2 tokens]
+    -- We evaluate both branches as bounded sub-sequences, extract their
+    -- top-of-stack values, and let ifFeature select the result.
+    SkipIfNot flag countTrue ->
+      let
+        trueEnd = state.position + 1 + countTrue
+        countFalse = case Array.index toks trueEnd of
+          Just (SkipIf _ c) -> c
+          _ -> 0
+        falseEnd = trueEnd + 1 + countFalse
+        extractTop s = fromMaybe (env.field "0x0") (Array.last s.stack)
+        result = env.ifFeature
+          { flag
+          , onTrue: \_ ->
+              extractTop (evalLoop toks trueEnd (state { position = state.position + 1 }))
+          , onFalse: \_ ->
+              extractTop (evalLoop toks falseEnd (state { position = trueEnd + 1 }))
+          }
+      in
+        push result (state { position = falseEnd })
 
-    -- Conditional: SkipIf — if feature IS enabled, skip count tokens.
-    -- Used for the false branch of IfFeature(feat, e1, e2):
-    --   SkipIfNot(feat, len_e1) [e1 tokens] SkipIf(feat, len_e2) [e2 tokens]
-    -- When enabled, e2 is skipped; when disabled, e2 evaluates inline.
-    SkipIf flag count ->
-      env.ifFeature
-        { flag
-        , onTrue: \_ -> state { position = state.position + 1 + count }
-        , onFalse: \_ -> advance state
-        }
+    -- SkipIf is consumed by the SkipIfNot handler above.
+    SkipIf _ count ->
+      state { position = state.position + 1 + count }
 
   -- Evaluate a constant term
   evalConstant :: ConstantTerm -> a
@@ -197,20 +201,20 @@ evaluateM
   -> n (FVar f)
 evaluateM tokens env = do
   let initState = { stack: [], store: [], position: 0, zetaCache: Nothing } :: EvalStateM (FVar f)
-  finalState <- evalLoopM tokens initState
+  finalState <- evalLoopM tokens (Array.length tokens) initState
   pure $ fromMaybe (env.field "0x0") (Array.last finalState.stack)
   where
-  -- Main evaluation loop (monadic)
-  evalLoopM :: Array PolishToken -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
-  evalLoopM toks state =
-    if state.position >= Array.length toks then
+  -- Main evaluation loop (monadic) — processes tokens from position until endPos
+  evalLoopM :: Array PolishToken -> Int -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
+  evalLoopM toks endPos state =
+    if state.position >= endPos then
       pure state
     else
       case Array.index toks state.position of
         Nothing -> pure state
         Just token -> do
           newState <- evalTokenM toks token state
-          evalLoopM toks newState
+          evalLoopM toks endPos newState
 
   -- Evaluate a single token (monadic)
   evalTokenM :: Array PolishToken -> PolishToken -> EvalStateM (FVar f) -> n (EvalStateM (FVar f))
@@ -303,21 +307,32 @@ evaluateM tokens env = do
           result <- env.lagrangeBasis zetaToNMinus1 { zkRows: zk_rows, offset }
           pure $ push result (advance (state { zetaCache = Just zetaToNMinus1 }))
 
-    -- Conditional: SkipIfNot — if feature is NOT enabled, skip count tokens.
-    SkipIfNot flag count ->
-      env.ifFeature
+    -- Conditional: IfFeature is encoded as a pair:
+    --   SkipIfNot(flag, len_e1) [e1 tokens] SkipIf(flag, len_e2) [e2 tokens]
+    -- We evaluate both branches as bounded sub-sequences, extract their
+    -- top-of-stack values, and let ifFeature select the result.
+    SkipIfNot flag countTrue -> do
+      let
+        trueEnd = state.position + 1 + countTrue
+        countFalse = case Array.index toks trueEnd of
+          Just (SkipIf _ c) -> c
+          _ -> 0
+        falseEnd = trueEnd + 1 + countFalse
+        extractTop s = fromMaybe (env.field "0x0") (Array.last s.stack)
+      result <- env.ifFeature
         { flag
-        , onTrue: \_ -> pure $ advance state
-        , onFalse: \_ -> pure $ state { position = state.position + 1 + count }
+        , onTrue: \_ -> do
+            s <- evalLoopM toks trueEnd (state { position = state.position + 1 })
+            pure $ extractTop s
+        , onFalse: \_ -> do
+            s <- evalLoopM toks falseEnd (state { position = trueEnd + 1 })
+            pure $ extractTop s
         }
+      pure $ push result (state { position = falseEnd })
 
-    -- Conditional: SkipIf — if feature IS enabled, skip count tokens.
-    SkipIf flag count ->
-      env.ifFeature
-        { flag
-        , onTrue: \_ -> pure $ state { position = state.position + 1 + count }
-        , onFalse: \_ -> pure $ advance state
-        }
+    -- SkipIf is consumed by the SkipIfNot handler above.
+    SkipIf _ count ->
+      pure $ state { position = state.position + 1 + count }
 
   -- Evaluate a constant term (pure)
   evalConstantM :: ConstantTerm -> FVar f
