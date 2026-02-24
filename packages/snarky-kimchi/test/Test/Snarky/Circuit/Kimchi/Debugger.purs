@@ -9,7 +9,7 @@ import Data.Identity (Identity)
 import Data.String as String
 import Data.Tuple (Tuple(..), uncurry)
 import Snarky.Circuit.CVar (EvaluationError(..))
-import Snarky.Circuit.DSL (class CircuitM, class WithLabel, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Test.Snarky.Circuit.Debugger (debugCircuitPure)
@@ -83,7 +83,7 @@ spec = describe "CircuitDebuggerT" do
 
   it "label wraps errors with WithContext" do
     let
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => WithLabel t => FV -> Snarky KC t Identity FV
+      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
       circuit input = label "my-label" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }
@@ -101,7 +101,7 @@ spec = describe "CircuitDebuggerT" do
 
   it "labels nest correctly" do
     let
-      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => WithLabel t => FV -> Snarky KC t Identity FV
+      circuit :: forall t. CircuitM Pallas.BaseField KC t Identity => FV -> Snarky KC t Identity FV
       circuit input = label "outer" $ label "inner" do
         res <- mul_ input input
         addConstraint $ r1cs { left: input, right: input, output: const_ zero }

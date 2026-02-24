@@ -222,7 +222,7 @@ runSnarky (Snarky m) = m
 -- | `exists`, which introduces witness variables with prover-side computation.
 -- | The functional dependencies ensure the field type is determined by either
 -- | the transformer `t` or the constraint type `c`.
-class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
+class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c, WithLabel t) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CircuitType f a var => CheckedType f c var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a
