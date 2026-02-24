@@ -31,7 +31,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky, check, fresh)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky, check, fresh)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -159,3 +159,6 @@ putState
   => (CircuitBuilderState c r)
   -> CircuitBuilderT c r m Unit
 putState = CircuitBuilderT <<< put
+
+instance WithLabel (CircuitBuilderT c r) where
+  withLabel _ = identity

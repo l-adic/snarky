@@ -65,6 +65,10 @@ module Snarky.Circuit.DSL.Monad
   , gCheck
   , class RCheckedType
   , rCheck
+  --
+  , class WithLabel
+  , withLabel
+  , label
   ) where
 
 import Prelude
@@ -449,3 +453,15 @@ instance
     afs <- check $ Record.get (Proxy @s) r
     asfs <- rCheck (Proxy @tailvars) $ Record.delete (Proxy @s) r
     pure $ afs <> asfs
+
+--------------------------------------------------------------------------------
+
+-- | Label a block of circuit code for debugging. When the debugger catches an
+-- | error inside a labeled block, it wraps it with `WithContext`.
+-- | No-op for ProverT and CircuitBuilderT.
+class WithLabel :: forall k. ((Type -> Type) -> k -> Type) -> Constraint
+class WithLabel t where
+  withLabel :: forall m a. Monad m => String -> t m a -> t m a
+
+label :: forall c t m a. WithLabel t => Monad m => String -> Snarky c t m a -> Snarky c t m a
+label s (Snarky a) = Snarky (withLabel s a)

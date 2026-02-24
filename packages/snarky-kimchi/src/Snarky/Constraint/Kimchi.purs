@@ -11,6 +11,7 @@ import Prelude
 
 import Data.Array (all)
 import Data.Array as Array
+import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
@@ -21,9 +22,13 @@ import Data.UnionFind (equivalenceClasses)
 import Poseidon (class PoseidonField)
 import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT)
 import Snarky.Backend.Builder as CircuitBuilder
+import Snarky.Backend.Debugger (class DebugCircuit, CircuitDebuggerT, throwDebuggerError)
+import Snarky.Backend.Debugger as Debugger
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
-import Snarky.Circuit.CVar (Variable, v0)
+import Snarky.Circuit.CVar (EvaluationError(..), Variable, v0)
+import Snarky.Constraint.Basic as Basic
+import Data.Map as Map
 import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -140,6 +145,44 @@ instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) of
         Left e -> throwProverError e
         Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+
+instance PoseidonField f => DebugCircuit f (KimchiConstraint f)
+
+instance (PoseidonField f) => ConstraintM (CircuitDebuggerT f) (KimchiConstraint f) where
+  addConstraint' = case _ of
+    KimchiAddComplete c -> go AddComplete.reduce c
+    KimchiPoseidon c -> go Poseidon.reduce c
+    KimchiBasic c -> goBasic c
+    KimchiVarBaseMul c -> go VarBaseMul.reduce c
+    KimchiEndoScalar c -> go EndoScalar.reduce c
+    KimchiEndoMul c -> go EndoMul.reduce c
+    where
+    go :: forall a c m. Monad m => (forall n. PlonkReductionM n f => c -> n a) -> c -> CircuitDebuggerT f m Unit
+    go reducer c = do
+      s <- Debugger.getState
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) of
+        Left e -> throwDebuggerError e
+        Right (Tuple _ res) -> Debugger.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+    -- Basic constraints: reduce (to compute internal variables), then eagerly evaluate
+    goBasic :: forall m. Monad m => Basic f -> CircuitDebuggerT f m Unit
+    goBasic c = do
+      go GenericPlonk.reduce c
+      assignments <- Debugger.getAssignments
+      let
+        lookup :: Variable -> Except EvaluationError f
+        lookup v = case Map.lookup v assignments of
+          Nothing -> throwError $ MissingVariable v
+          Just val -> pure val
+      case runExcept (Basic.eval lookup c) of
+        Left e -> throwDebuggerError e
+        Right satisfied -> unless satisfied $
+          throwDebuggerError $ FailedAssertion $ constraintName c
+    constraintName :: Basic f -> String
+    constraintName = case _ of
+      R1CS _ -> "R1CS constraint unsatisfied: left * right != output"
+      Equal _ _ -> "Equality constraint unsatisfied"
+      Square _ _ -> "Square constraint unsatisfied: a^2 != c"
+      Boolean _ -> "Boolean constraint unsatisfied: value not in {0,1}"
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =

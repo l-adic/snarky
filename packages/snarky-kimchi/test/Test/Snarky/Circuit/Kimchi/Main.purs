@@ -10,6 +10,7 @@ import Snarky.Curves.Vesta as Vesta
 import Test.Snarky.Circuit as CircuitTests
 import Test.Snarky.Circuit.Kimchi.AddComplete as AddCompleteTests
 import Test.Snarky.Circuit.Kimchi.CircuitJson as CircuitJsonTests
+import Test.Snarky.Circuit.Kimchi.Debugger as DebuggerTests
 import Test.Snarky.Circuit.Kimchi.EndoMul as EndoMulTests
 import Test.Snarky.Circuit.Kimchi.EndoScalar as EndoScalarTests
 import Test.Snarky.Circuit.Kimchi.GenericTest as GenericTests
@@ -47,4 +48,5 @@ spec = do
   EndoScalarTests.spec
   ShiftedTests.spec
   GroupMapTests.spec
+  DebuggerTests.spec
   CircuitJsonTests.spec
