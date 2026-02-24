@@ -3,9 +3,11 @@ module Test.Snarky.Circuit.Utils where
 import Prelude
 
 import Control.Monad.Except (Except, runExcept, throwError)
+import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, traverse_)
+import Data.Foldable (foldM, for_, traverse_)
 import Data.Identity (Identity(..))
+import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
@@ -14,13 +16,15 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
-import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, SolverT, runSolverT)
-import Snarky.Circuit.DSL (class CircuitType, EvaluationError(..), Variable)
+import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
+import Snarky.Backend.Prover (class SolveCircuit)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
-import Test.QuickCheck (class Arbitrary, Result(..), arbitrary, quickCheck', withHelp)
+import Test.QuickCheck (Result(..), quickCheck', withHelp)
 import Test.QuickCheck.Gen (Gen)
 import Test.Spec.Assertions (fail)
+import Type.Proxy (Proxy(..))
 
 data Expectation a
   = Satisfied a
@@ -57,156 +61,130 @@ type PostCondition f c r =
 nullPostCondition :: forall f c r. PostCondition f c r
 nullPostCondition _ _ = pure true
 
-type CircuitSpec :: forall k. Type -> Type -> Type -> (Type -> Type) -> Type -> k -> Type -> Type
-type CircuitSpec f c r m a avar b =
-  { builtState :: CircuitBuilderState c r
-  , solver :: SolverT f c m a b
-  , checker :: Checker f c
-  , testFunction :: a -> Expectation b
+-- | Backend-specific configuration for circuit tests.
+-- | Define one value per constraint family to avoid repeating these three fields everywhere.
+type TestConfig f c r =
+  { checker :: Checker f c
   , postCondition :: PostCondition f c r
+  , initState :: CircuitBuilderState c r
   }
 
-runCircuitSpec
-  :: forall f c r m a avar b
+-- | Core test runner: given a solver, checker, and inputs, produce a QuickCheck Result.
+runTest
+  :: forall f c c' r a avar b
+   . CircuitType f a avar
+  => PrimeField f
+  => Eq b
+  => Show b
+  => { builtState :: CircuitBuilderState c r
+     , solver :: Solver f c' a b
+     , checker :: Checker f c
+     , postCondition :: PostCondition f c r
+     }
+  -> (a -> Expectation b)
+  -> a
+  -> Result
+runTest { builtState, solver, checker, postCondition } testFunction inputs =
+  let
+    solverResult = un Identity $ runSolverT solver inputs
+  in
+    checkResult builtState checker postCondition testFunction inputs solverResult
+
+-- | Core test runner for effectful solvers.
+runTestM
+  :: forall f c c' r m a avar b
    . CircuitType f a avar
   => Monad m
+  => PrimeField f
   => Eq b
   => Show b
-  => PrimeField f
-  => CircuitSpec f c r m a avar b
+  => { builtState :: CircuitBuilderState c r
+     , solver :: SolverT f c' m a b
+     , checker :: Checker f c
+     , postCondition :: PostCondition f c r
+     }
+  -> (a -> Expectation b)
   -> a
   -> m Result
-runCircuitSpec { builtState, solver, checker, testFunction, postCondition } inputs = do
-  runSolverT solver inputs <#> case _ of
-    Left e ->
-      case testFunction inputs of
-        ProverError f -> withHelp (f e) ("Prover exited with error " <> show e)
-        _ -> withHelp false ("Encountered unexpected  error when proving circuit: " <> show e)
-    Right (Tuple b assignments) ->
-      let
-        lookup :: Variable -> Except EvaluationError f
-        lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
-          Just res -> pure res
+runTestM { builtState, solver, checker, postCondition } testFunction inputs =
+  runSolverT solver inputs <#>
+    checkResult builtState checker postCondition testFunction inputs
 
-        checks = foldM (\acc c -> conj acc <$> checker lookup c) true
-        satisfiedRes = do
-          constraintsResult <- checks builtState.constraints
-          postConditionResult <- postCondition lookup builtState
-          pure { constraintsResult, postConditionResult }
-      in
-        case runExcept satisfiedRes of
-          Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
-          Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
-            Satisfied expected | constraintsResult && postConditionResult ->
-              withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
-            Unsatisfied | not (constraintsResult && postConditionResult) -> Success
-            res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
-
-circuitSpecPure
-  :: forall a avar b bvar f c r
-   . CircuitType f a avar
-  => CircuitType f b bvar
-  => PrimeField f
+-- | Check a solver result against the circuit constraints and test function.
+checkResult
+  :: forall f c r a b
+   . PrimeField f
   => Eq b
   => Show b
-  => Arbitrary a
-  => CircuitSpec f c r Identity a avar b
-  -> Aff Unit
-circuitSpecPure arg =
-  circuitSpecPure' 100 arg arbitrary
+  => CircuitBuilderState c r
+  -> Checker f c
+  -> PostCondition f c r
+  -> (a -> Expectation b)
+  -> a
+  -> Either EvaluationError (Tuple b (Map Variable f))
+  -> Result
+checkResult builtState checker postCondition testFunction inputs = case _ of
+  Left e ->
+    case testFunction inputs of
+      ProverError f -> withHelp (f e) ("Prover exited with error " <> show e)
+      _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> show e)
+  Right (Tuple b assignments) ->
+    let
+      lookup :: Variable -> Except EvaluationError f
+      lookup v = case Map.lookup v assignments of
+        Nothing -> throwError $ MissingVariable v
+        Just res -> pure res
 
-circuitSpecPure'
-  :: forall a b avar bvar f c r
-   . CircuitType f a avar
+      checks = foldM (\acc c -> conj acc <$> checker lookup c) true
+      satisfiedRes = do
+        constraintsResult <- checks builtState.constraints
+        postConditionResult <- postCondition lookup builtState
+        pure { constraintsResult, postConditionResult }
+    in
+      case runExcept satisfiedRes of
+        Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
+        Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
+          Satisfied expected | constraintsResult && postConditionResult ->
+            withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
+          Unsatisfied | not (constraintsResult && postConditionResult) -> Success
+          res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
+
+-- | Compile a circuit and run QuickCheck-based tests against it.
+-- |
+-- | Takes a `NonEmptyArray` of `{ gen, testFunction }` pairs so you can compile
+-- | once and test multiple scenarios (e.g. satisfiable and unsatisfiable inputs).
+circuitTest'
+  :: forall @f c c' r a b avar bvar
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => CheckedType f c' avar
+  => CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
   => Int
-  -> CircuitSpec f c r Identity a avar b
-  -> Gen a
-  -> Aff Unit
-circuitSpecPure' numTests arg g = liftEffect
+  -> TestConfig f c r
+  -> NonEmptyArray { testFunction :: a -> Expectation b, gen :: Gen a }
+  -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
+  -> Aff { builtState :: CircuitBuilderState c r, solver :: Solver f c' a b }
+circuitTest' n { checker, postCondition, initState } scenarios circuit = do
   let
-    spc = un Identity <<<
-      runCircuitSpec arg
-  in
-    quickCheck' numTests $
-      g <#> spc
+    builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
+    solver = makeSolver (Proxy @c') circuit
+  for_ scenarios \{ testFunction, gen } ->
+    liftEffect $ quickCheck' n $ gen <#>
+      runTest { builtState, solver, checker, postCondition } testFunction
+  pure { builtState, solver }
 
--- | Like circuitSpecPure' but takes an Array of specific test cases instead of a generator.
--- | Useful for testing edge cases with deterministic inputs.
-circuitSpecPureInputs
-  :: forall a b avar bvar f c r
-   . CircuitType f a avar
-  => CircuitType f b bvar
-  => PrimeField f
-  => Eq b
-  => Show b
-  => Show a
-  => CircuitSpec f c r Identity a avar b
-  -> Array a
-  -> Aff Unit
-circuitSpecPureInputs arg inputs =
-  let
-    spc = un Identity <<< runCircuitSpec arg
-  in
-    traverse_
-      ( \a -> case spc a of
-          Success -> pure unit
-          Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
-      )
-      inputs
-
--- | Like circuitSpec' but takes an Array of specific test cases instead of a generator.
--- | Useful for testing edge cases with deterministic inputs.
-circuitSpecInputs
-  :: forall a avar b bvar f m c r
-   . CircuitType f a avar
-  => CircuitType f b bvar
-  => PrimeField f
-  => Eq b
-  => Show b
-  => Show a
-  => Monad m
-  => (m ~> Effect)
-  -> CircuitSpec f c r m a avar b
-  -> Array a
-  -> Aff Unit
-circuitSpecInputs nat spec inputs =
-  let
-    spc = runCircuitSpec spec
-  in
-    traverse_
-      ( \a -> do
-          result <- liftEffect $ nat $ spc a
-          case result of
-            Success -> pure unit
-            Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
-      )
-      inputs
-
--- Warning: circuitSpec and circuitSpec' use unsafePerformEffect
--- to run their effects layer, use with caution
-circuitSpec
-  :: forall a avar b bvar f m c r
-   . CircuitType f a avar
-  => CircuitType f b bvar
-  => PrimeField f
-  => Eq b
-  => Show b
-  => Monad m
-  => Arbitrary a
-  => (m ~> Effect)
-  -> CircuitSpec f c r m a avar b
-  -> Aff Unit
-circuitSpec nat spc =
-  circuitSpec' 100 nat spc arbitrary
-
-circuitSpec'
-  :: forall a avar b bvar f m c r
-   . CircuitType f a avar
+-- | Like `circuitTest'` but for circuits with an effectful base monad.
+-- | Takes a natural transformation `m ~> Effect` to run the monad.
+circuitTestM'
+  :: forall @f c c' r a b avar bvar m
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => CheckedType f c' avar
+  => CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
   => Eq b
@@ -214,33 +192,82 @@ circuitSpec'
   => Monad m
   => Int
   -> (m ~> Effect)
-  -> CircuitSpec f c r m a avar b
-  -> Gen a
-  -> Aff Unit
-circuitSpec' numTests nat spec g =
-  let
-    spc = runCircuitSpec spec
-  in
-    liftEffect (quickCheck' numTests $ g <#> \a -> unsafePerformEffect $ nat $ spc a)
+  -> TestConfig f c r
+  -> NonEmptyArray { testFunction :: a -> Expectation b, gen :: Gen a }
+  -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
+  -> Aff { builtState :: CircuitBuilderState c r, solver :: SolverT f c' m a b }
+circuitTestM' n nat { checker, postCondition, initState } scenarios circuit = do
+  builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
+  let solver = makeSolver (Proxy @c') circuit
+  for_ scenarios \{ testFunction, gen } ->
+    liftEffect $ quickCheck' n $ gen <#> \a ->
+      unsafePerformEffect $ nat $ runTestM { builtState, solver, checker, postCondition } testFunction a
+  pure { builtState, solver }
 
--- | Like circuitSpec' but allows the natural transformation to depend on the input.
--- | This is useful for stateful circuits like merkle trees where the monad needs
--- | to be initialized with per-test state derived from the input.
-circuitSpecStateful'
-  :: forall a avar b bvar f m c r
-   . CircuitType f a avar
+-- | Like `circuitTest'` but takes an array of specific inputs instead of generators.
+-- | Useful for testing with deterministic inputs or edge cases.
+circuitTestInputs'
+  :: forall @f c c' r a b avar bvar
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => CheckedType f c' avar
+  => CircuitType f a avar
   => CircuitType f b bvar
   => PrimeField f
   => Eq b
   => Show b
-  => Monad m
-  => Int
-  -> (a -> m ~> Effect)
-  -> CircuitSpec f c r m a avar b
-  -> Gen a
-  -> Aff Unit
-circuitSpecStateful' numTests nat spec g =
+  => Show a
+  => { checker :: Checker f c
+     , postCondition :: PostCondition f c r
+     , initState :: CircuitBuilderState c r
+     , testFunction :: a -> Expectation b
+     }
+  -> Array a
+  -> (forall t. CircuitM f c' t Identity => avar -> Snarky c' t Identity bvar)
+  -> Aff { builtState :: CircuitBuilderState c r, solver :: Solver f c' a b }
+circuitTestInputs' { checker, postCondition, initState, testFunction } inputs circuit = do
   let
-    spc = runCircuitSpec spec
-  in
-    liftEffect (quickCheck' numTests $ g <#> \a -> unsafePerformEffect $ nat a $ spc a)
+    builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
+    solver = makeSolver (Proxy @c') circuit
+  traverse_
+    ( \a -> case runTest { builtState, solver, checker, postCondition } testFunction a of
+        Success -> pure unit
+        Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
+    )
+    inputs
+  pure { builtState, solver }
+
+-- | Like `circuitTestInputs'` but for circuits with an effectful base monad.
+circuitTestInputsM'
+  :: forall @f c c' r a b avar bvar m
+   . CompileCircuit f c c' r
+  => SolveCircuit f c'
+  => CheckedType f c' avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => PrimeField f
+  => Eq b
+  => Show b
+  => Show a
+  => Monad m
+  => (m ~> Effect)
+  -> { checker :: Checker f c
+     , postCondition :: PostCondition f c r
+     , initState :: CircuitBuilderState c r
+     , testFunction :: a -> Expectation b
+     }
+  -> Array a
+  -> (forall t. CircuitM f c' t m => avar -> Snarky c' t m bvar)
+  -> Aff { builtState :: CircuitBuilderState c r, solver :: SolverT f c' m a b }
+circuitTestInputsM' nat { checker, postCondition, initState, testFunction } inputs circuit = do
+  builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
+  let solver = makeSolver (Proxy @c') circuit
+  traverse_
+    ( \a -> do
+        result <- liftEffect $ nat $ runTestM { builtState, solver, checker, postCondition } testFunction a
+        case result of
+          Success -> pure unit
+          Failed msg -> fail $ "Failed on input " <> show a <> ": " <> msg
+    )
+    inputs
+  pure { builtState, solver }

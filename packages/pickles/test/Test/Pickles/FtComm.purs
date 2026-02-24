@@ -11,21 +11,24 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
 import Pickles.IPA as IPA
+import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEq, const_)
 import Snarky.Circuit.Kimchi (Type1, toShifted)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | The ft_comm circuit runs on Fq (= Pallas.ScalarField = Vesta.BaseField).
 type CircuitField = Pallas.ScalarField
@@ -101,16 +104,7 @@ ftCommTest ctx = do
   -- Sanity check
   liftEffect $ (expected.x /= zero) `shouldEqual` true
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(FtCommInput (F CircuitField)))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint CircuitField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint CircuitField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @CircuitField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit

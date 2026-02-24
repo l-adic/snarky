@@ -5,21 +5,26 @@ module Test.Pickles.IPA where
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Vector as Vector
 import Pickles.IPA (BPolyInput, ComputeBInput, bPoly, bPolyCircuit, computeB, computeBCircuit)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 spec :: Spec Unit
 spec = do
@@ -72,63 +77,45 @@ ipaTests
 ipaTests _ = do
   it "bPolyCircuit matches bPoly" do
     let
-      circuit
-        :: forall t m
-         . CircuitM f (KimchiConstraint f) t m
+      circuit'
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
         => BPolyInput TestChallengeSize (FVar f)
-        -> Snarky (KimchiConstraint f) t m (FVar f)
-      circuit = bPolyCircuit
-
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-
-      builtState = compilePure
-        (Proxy @(BPolyInput TestChallengeSize (F f)))
-        (Proxy @(F f))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        Kimchi.initialState
+        -> Snarky (KimchiConstraint f) t Identity (FVar f)
+      circuit' = bPolyCircuit
 
       -- Reference function: convert BPolyInput to bPoly call
       bPolyRef :: BPolyInput TestChallengeSize (F f) -> F f
       bPolyRef { challenges, x } = bPoly challenges x
 
-    circuitSpecPure' 1
-      { builtState
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied bPolyRef
-      , postCondition: Kimchi.postCondition
-      }
-      (genBPolyInput :: Gen (BPolyInput TestChallengeSize (F f)))
+    void $ circuitTest' @f 1
+      kimchiTestConfig
+      ( NEA.singleton
+          { testFunction: satisfied bPolyRef
+          , gen: genBPolyInput :: Gen (BPolyInput TestChallengeSize (F f))
+          }
+      )
+      circuit'
 
   it "computeBCircuit matches computeB" do
     let
-      circuit
-        :: forall t m
-         . CircuitM f (KimchiConstraint f) t m
+      circuit'
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
         => ComputeBInput TestChallengeSize (FVar f) ()
-        -> Snarky (KimchiConstraint f) t m (FVar f)
-      circuit = computeBCircuit
-
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-
-      builtState = compilePure
-        (Proxy @(ComputeBInput TestChallengeSize (F f) ()))
-        (Proxy @(F f))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        Kimchi.initialState
+        -> Snarky (KimchiConstraint f) t Identity (FVar f)
+      circuit' = computeBCircuit
 
       -- Reference function: convert ComputeBInput to computeB call
       computeBRef :: ComputeBInput TestChallengeSize (F f) () -> F f
       computeBRef { challenges, zeta, zetaOmega, evalscale } =
         computeB challenges { zeta, zetaOmega, evalscale }
 
-    circuitSpecPure' 1
-      { builtState
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied computeBRef
-      , postCondition: Kimchi.postCondition
-      }
-      (genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f) ()))
+    void $ circuitTest' @f 1
+      kimchiTestConfig
+      ( NEA.singleton
+          { testFunction: satisfied computeBRef
+          , gen: genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f) ())
+          }
+      )
+      circuit'

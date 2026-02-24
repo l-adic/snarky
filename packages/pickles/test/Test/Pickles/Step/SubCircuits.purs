@@ -30,21 +30,25 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Types (WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import RandomOracle.Sponge (Sponge)
+import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, false_, toField)
 import Snarky.Circuit.Kimchi (Type2, groupMapParams, toShifted)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, unsafeFqToFp, zkRows)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | Test for ipaFinalCheckCircuit in an Fp circuit verifying an Fq proof (cross-field).
 ipaFinalCheckTest :: WrapProofContext -> Aff Unit
@@ -113,19 +117,10 @@ ipaFinalCheckTest ctx = do
         res <- ipaFinalCheckCircuit @Vesta.ScalarField @Pallas.G ops pallasGroupMapParams inVar
         liftSnarky $ assert_ res.success
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ input ]
+    circuit
 
 -- | Circuit test for ftEval0Circuit.
 -- | Verifies the in-circuit computation matches the Rust FFI ftEval0 value.
@@ -214,24 +209,10 @@ ftEval0CircuitTest ctx = do
       result <- ftEval0Circuit Linearization.pallas input
       assertEqual_ result (const_ (un F expected))
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        ( Proxy
-            @{ permInput :: PermutationInput (F Vesta.ScalarField)
-            , gateInput :: GateConstraintInput (F Vesta.ScalarField)
-            , publicEval :: F Vesta.ScalarField
-            }
-        )
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -- | Circuit test for combined_inner_product_correct.
 -- | Computes ftEval0 in-circuit, feeds into combinedInnerProductCircuit,
@@ -314,19 +295,10 @@ combinedInnerProductCorrectCircuitTest ctx = do
       cipResult <- combinedInnerProductCheckCircuit Linearization.pallas s input
       assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(Tuple (BatchingScalars (F Vesta.ScalarField)) (CombinedInnerProductCheckInput (F Vesta.ScalarField))))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -- | Circuit test for xi_correct.
 -- | Replays Fr-sponge in-circuit and asserts equality with claimed xi.
@@ -383,19 +355,10 @@ xiCorrectCircuitTest ctx = do
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit input = void $ evalSpongeM initialSpongeCircuit (xiCorrectCircuit input)
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(XiCorrectInput (F Vesta.ScalarField)))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -- | Circuit test for plonkChecksCircuit.
 -- | This tests the composed circuit that verifies xi, derives evalscale,
@@ -528,19 +491,10 @@ plonkChecksCircuitTest ctx = do
       assertEqual_ output.evalscale (const_ ctx.oracles.u)
       assertEqual_ output.combinedInnerProduct (const_ ctx.oracles.combinedInnerProduct)
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(PlonkChecksInput (F Vesta.ScalarField)))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -- | Test that bCorrectCircuit verifies using Rust-provided values.
 -- | Uses circuitSpec infrastructure to verify constraint satisfaction.
@@ -571,19 +525,10 @@ bCorrectCircuitTest ctx = do
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m (BoolVar Vesta.ScalarField)
     circuit = IPA.bCorrectCircuit
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(BCorrectInput 16 (F Vesta.ScalarField)))
-        (Proxy @Boolean)
-        (Proxy @(KimchiConstraint Vesta.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-    , testFunction: satisfied bCorrect
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Vesta.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied bCorrect })
     [ circuitInput ]
+    circuit
 
 -------------------------------------------------------------------------------
 -- | incrementallyVerifyProof test
@@ -614,19 +559,10 @@ incrementallyVerifyProofTest ctx =
             input
         assert_ success
     in
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @(IncrementallyVerifyProofInput (Vector.Vector nPublic (F Vesta.ScalarField)) 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
-            (Proxy @Unit)
-            (Proxy @(KimchiConstraint Vesta.ScalarField))
-            circuit
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @Vesta.ScalarField
+        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
         [ circuitInput ]
+        circuit
 
 -------------------------------------------------------------------------------
 -- | verify test
@@ -664,19 +600,10 @@ verifyTest ctx =
             (const_ claimedDigestFp)
         assert_ success
     in
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @(IncrementallyVerifyProofInput (Vector.Vector nPublic (F Vesta.ScalarField)) 0 WrapIPARounds (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)))
-            (Proxy @Unit)
-            (Proxy @(KimchiConstraint Vesta.ScalarField))
-            circuit
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) circuit
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @Vesta.ScalarField
+        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
         [ circuitInput ]
+        circuit
 
 spec :: SpecT Aff InductiveTestContext Aff Unit
 spec = do

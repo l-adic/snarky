@@ -35,7 +35,7 @@ import Type.Proxy (Proxy(..))
 
 spec :: Spec Unit
 spec = do
-  CircuitTests.spec (Proxy @Vesta.BaseField) (Proxy @(R1CS Vesta.BaseField)) eval nullPostCondition initialState
+  CircuitTests.spec (Proxy @Vesta.BaseField) { checker: eval, postCondition: nullPostCondition, initState: initialState }
   factorsSpec (Proxy @Pallas.G) (Proxy @Pallas.ScalarField) (Proxy @(R1CS Pallas.ScalarField)) "Pallas"
   factorsSpec (Proxy @Vesta.G) (Proxy @Vesta.ScalarField) (Proxy @(R1CS Vesta.ScalarField)) "Vesta"
 

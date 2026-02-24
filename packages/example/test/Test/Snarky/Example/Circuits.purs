@@ -20,6 +20,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Effect.Ref (write)
 import Effect.Ref as Ref
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -36,8 +37,9 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Example.Circuits (class AccountMapM, transfer)
 import Snarky.Example.Types (Account(..), PublicKey(..), TokenAmount(..), Transaction)
+import Test.QuickCheck (quickCheck')
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (circuitSpec', satisfied, unsatisfied)
+import Test.Snarky.Circuit.Utils (runTestM, satisfied, unsatisfied)
 import Test.Snarky.Example.Monad (TransferCompileM, TransferRefM, TransferState, lookupAddress, runTransferCompileM, runTransferRefM)
 import Test.Snarky.Example.Utils (chooseBigInt)
 import Test.Spec (SpecT, describe, it)
@@ -142,27 +144,15 @@ transferSpec _ _ = do
       runTransferRefM ref m
 
   Console.log "Checking the Valid case"
-  circuitSpec' 100 natWithReset
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    (genValidTransaction initialState')
+  liftEffect $ quickCheck' 100 $ genValidTransaction initialState' <#> \a ->
+    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } (satisfied testFunction) a
 
   liftEffect $ write initialState' ref
   liftEffect $ runTransferRefM ref $ verifyCircuitM { s, gen: genValidTransaction initialState', solver }
 
   Console.log "Checking the overdraft case"
-  circuitSpec' 100 natWithReset
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: unsatisfied
-    , postCondition: Kimchi.postCondition
-    }
-    (genOverdraftTransaction initialState')
+  liftEffect $ quickCheck' 100 $ genOverdraftTransaction initialState' <#> \a ->
+    unsafePerformEffect $ natWithReset $ runTestM { builtState: s, solver, checker: eval, postCondition: Kimchi.postCondition } unsatisfied a
   liftEffect $ write initialState' ref
 
 --------------------------------------------------------------------------------

@@ -21,17 +21,21 @@ import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Snarky.Backend.Compile (compile, makeSolver)
+import Record as Record
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (Type2)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
 import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
-import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputsM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -96,23 +100,11 @@ spec = describe "Pickles.Step.Circuit" do
         , prevChallengeDigests: zero :< nil
         }
 
-    builtState <- liftEffect $ compile
-      (Proxy @StepTestInput)
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint StepField))
-      testCircuit
-      Kimchi.initialState
-
-    circuitSpecInputs
+    void $ circuitTestInputsM' @StepField
       (runStepProverM advice)
-      { builtState
-      , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint StepField))
-          (testCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepTestInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
-      , testFunction: satisfied_
-      , postCondition: Kimchi.postCondition
-      }
+      (Record.merge kimchiTestConfig { testFunction: satisfied_ })
       [ input ]
+      (testCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepTestInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
 
 -------------------------------------------------------------------------------
 -- | Real data test (Step → Wrap → Step cycle)
@@ -151,19 +143,8 @@ realDataSpec =
           _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit true) i
           pure unit
 
-      builtState <- liftEffect $ compile
-        (Proxy @StepSchnorrInput)
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint StepField))
-        realCircuit
-        Kimchi.initialState
-
-      circuitSpecInputs (runStepProverM witnessData)
-        { builtState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint StepField))
-            (realCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputsM' @StepField
+        (runStepProverM witnessData)
+        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
         [ input ]
+        (realCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)

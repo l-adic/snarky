@@ -65,6 +65,9 @@ module Snarky.Circuit.DSL.Monad
   , gCheck
   , class RCheckedType
   , rCheck
+  , class WithLabel
+  , withLabel
+  , label
   ) where
 
 import Prelude
@@ -218,7 +221,7 @@ runSnarky (Snarky m) = m
 -- | `exists`, which introduces witness variables with prover-side computation.
 -- | The functional dependencies ensure the field type is determined by either
 -- | the transformer `t` or the constraint type `c`.
-class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c) <= CircuitM f c t m | t -> f, c -> f where
+class (Monad m, MonadFresh (t m), BasicSystem f c, ConstraintM t c, WithLabel t) <= CircuitM f c t m | t -> f, c -> f where
   exists :: forall a var. CircuitType f a var => CheckedType f c var => ConstraintM t c => AsProverT f m a -> Snarky c t m var
 
 throwAsProver :: forall f m a. Monad m => EvaluationError -> AsProverT f m a
@@ -449,3 +452,15 @@ instance
     afs <- check $ Record.get (Proxy @s) r
     asfs <- rCheck (Proxy @tailvars) $ Record.delete (Proxy @s) r
     pure $ afs <> asfs
+
+--------------------------------------------------------------------------------
+
+-- | Label a block of circuit code for debugging. When the debugger catches an
+-- | error inside a labeled block, it wraps it with `WithContext`.
+-- | No-op for ProverT and CircuitBuilderT.
+class WithLabel :: forall k. ((Type -> Type) -> k -> Type) -> Constraint
+class WithLabel t where
+  withLabel :: forall m a. Monad m => String -> t m a -> t m a
+
+label :: forall c t m a. WithLabel t => Monad m => String -> Snarky c t m a -> Snarky c t m a
+label s (Snarky a) = Snarky (withLabel s a)

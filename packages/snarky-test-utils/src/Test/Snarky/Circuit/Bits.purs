@@ -5,20 +5,21 @@ import Prelude
 import Control.Monad.Gen as Gen
 import Data.Array (foldl)
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
+import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, generate)
 import JS.BigInt as BigInt
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
+import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, pack_, unpack_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, pack_, unpack_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Test.QuickCheck.Gen (Gen, chooseInt)
-import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -61,56 +62,32 @@ spec
    . CompileCircuit f c c' r
   => SolveCircuit f c'
   => FieldSizeInBits f n
-  => Proxy c'
-  -> Checker f c
-  -> PostCondition f c r
-  -> CircuitBuilderState c r
+  => TestConfig f c r
   -> Spec Unit
-spec pc eval postCondition initialState = describe "Bits Circuit Specs" do
-  it "unpack Circuit is Valid" $
+spec cfg = describe "Bits Circuit Specs" do
+  it "unpack Circuit is Valid" $ void $
     let
-
       f :: forall k. Reflectable k Int => F f -> Vector k Boolean
       f (F v) =
         let
           toBit i = (toBigInt v `BigInt.and` (BigInt.fromInt 1 `BigInt.shl` BigInt.fromInt i)) /= zero
         in
           generate (toBit <<< getFinite)
-      solver = makeSolver pc (\v -> unpack_ v (Proxy @n))
-      s =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(Vector n Boolean))
-          pc
-          (\v -> unpack_ v (Proxy @n))
-          initialState
-    in
-      circuitSpecPure' 100
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
-        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
 
-  it "pack/unpack round trip is Valid" $
-    let
-      f = identity
-      solver = makeSolver pc (packUnpackCircuit)
-      s =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(F f))
-          pc
-          (packUnpackCircuit)
-          initialState
+      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (Vector n (BoolVar f))
+      circuit = \v -> unpack_ v (Proxy @n)
     in
-      circuitSpecPure' 100
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
-        (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem)
+      circuitTest' @f 100
+        cfg
+        (NEA.singleton { testFunction: satisfied f, gen: bitSizes (reflectType $ Proxy @n) >>= smallFieldElem })
+        circuit
+
+  it "pack/unpack round trip is Valid" $ void $
+    let
+      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit = packUnpackCircuit
+    in
+      circuitTest' @f 100
+        cfg
+        (NEA.singleton { testFunction: satisfied identity, gen: bitSizes (reflectType $ Proxy @n) >>= smallFieldElem })
+        circuit

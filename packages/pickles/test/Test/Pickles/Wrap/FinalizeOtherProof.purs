@@ -19,15 +19,18 @@ import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Record as Record
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildFinalizeInput, buildFinalizeParams)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied_)
 import Test.Spec (SpecT, describe, it)
-import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -65,16 +68,7 @@ realDataSpec =
           { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @FinalizeOtherProofTestInput)
-            (Proxy @Unit)
-            (Proxy @(KimchiConstraint WrapField))
-            circuit
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint WrapField)) circuit
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @WrapField
+        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
         [ input ]
+        circuit

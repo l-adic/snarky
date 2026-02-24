@@ -20,17 +20,20 @@ import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircui
 import Pickles.Types (WrapIPARounds)
 import Pickles.Verify.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
+import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied)
 import Test.Spec (Spec, describe, it)
-import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -120,19 +123,10 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @ChallengeDigestTestInput1)
-            (Proxy @(F StepField))
-            (Proxy @(KimchiConstraint StepField))
-            testCircuit1
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint StepField)) testCircuit1
-        , testFunction: satisfied testFn
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @StepField
+        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
         [ input ]
+        testCircuit1
 
     it "produces correct digest with mask=false (skips challenges)" do
       let
@@ -146,19 +140,10 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @ChallengeDigestTestInput1)
-            (Proxy @(F StepField))
-            (Proxy @(KimchiConstraint StepField))
-            testCircuit1
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint StepField)) testCircuit1
-        , testFunction: satisfied testFn
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @StepField
+        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
         [ input ]
+        testCircuit1
 
     it "circuit matches pure implementation for dummy challenges" do
       -- Note: Absorbing zeros still changes sponge state due to permutation.
@@ -180,16 +165,7 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @ChallengeDigestTestInput1)
-            (Proxy @(F StepField))
-            (Proxy @(KimchiConstraint StepField))
-            testCircuit1
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint StepField)) testCircuit1
-        , testFunction: satisfied testFn
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @StepField
+        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
         [ inputTrue, inputFalse ]
+        testCircuit1

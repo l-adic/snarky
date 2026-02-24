@@ -23,15 +23,18 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepField, WrapField, WrapIPARounds)
-import Snarky.Backend.Compile (compilePure, makeSolver)
+import Record as Record
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type2)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildStepFinalizeInput, buildStepFinalizeParams)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
-import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -72,19 +75,10 @@ spec = describe "Pickles.Step.FinalizeOtherProof" do
         in
           void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x)
 
-    circuitSpecPureInputs
-      { builtState: compilePure
-          (Proxy @FinalizeOtherProofTestInput)
-          (Proxy @Unit)
-          (Proxy @(KimchiConstraint StepField))
-          dummyTestCircuit
-          Kimchi.initialState
-      , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint StepField)) dummyTestCircuit
-      , testFunction: satisfied_
-      , postCondition: Kimchi.postCondition
-      }
+    void $ circuitTestInputs' @StepField
+      (Record.merge kimchiTestConfig { testFunction: satisfied_ })
       [ input ]
+      dummyTestCircuit
 
 -------------------------------------------------------------------------------
 -- | Real data test (All-checks with Wrap proof)
@@ -110,16 +104,7 @@ realDataSpec =
           { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @FinalizeOtherProofTestInput)
-            (Proxy @Unit)
-            (Proxy @(KimchiConstraint StepField))
-            circuit
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint StepField)) circuit
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
+      void $ circuitTestInputs' @StepField
+        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
         [ input ]
+        circuit

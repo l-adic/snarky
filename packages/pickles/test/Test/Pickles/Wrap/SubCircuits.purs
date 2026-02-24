@@ -26,21 +26,25 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Types (StepIPARounds, StepStatement)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
+import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, fieldsToValue, toField)
 import Snarky.Circuit.Kimchi (Type1(..), Type2, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | In-circuit test for challenge extraction.
 -- | Circuit runs over Pallas.ScalarField (Fq) where the sponge operates.
@@ -77,19 +81,10 @@ extractChallengesCircuitTest ctx = do
         if endoMappedChallenges /= Vector.toUnfoldable rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
         else coerce challenges
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField))))
-        (Proxy @(Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))))
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied testFn
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
     [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+    circuit
 
 -- | In-circuit test for bullet reduce (lr_prod computation).
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
@@ -129,19 +124,10 @@ bulletReduceCircuitTest ctx = do
         if computedAffine /= expectedLrProd then unsafeThrow "bulletReduce lr_prod doesn't match Rust"
         else coerce computedAffine
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField))))
-        (Proxy @(AffinePoint (F Pallas.ScalarField)))
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied testFn
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
     [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+    circuit
 
 -- | In-circuit test for IPA final check.
 -- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
@@ -181,19 +167,10 @@ ipaFinalCheckCircuitTest ctx = do
           input
       assert_ success
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(IpaFinalCheckInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
 -- | Also tests scaleFast1 with z1 and the generator point.
@@ -240,19 +217,10 @@ debugVerifyTest ctx = do
         coerce $ unsafePartial fromJust $ toAffine @Pallas.ScalarField $
           scalarMul scalar (fromAffine @Pallas.ScalarField @Vesta.G (coerce p))
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))))
-        (Proxy @(AffinePoint (F Pallas.ScalarField)))
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied testFn
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
     [ Tuple (coerce genPoint) z1Shifted ]
+    circuit
 
   liftEffect $ log "scaleFast1 mini test passed!"
 
@@ -391,19 +359,10 @@ checkBulletproofTest ctx = do
         else if computedSg /= expectedSg then unsafeThrow "checkBulletproof: challenge poly commitment doesn't match proof sg"
         else coerce challenges
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(CheckBulletproofInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-        (Proxy @(Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))))
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied testFn
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
     [ circuitInput ]
+    circuit
 
 -------------------------------------------------------------------------------
 -- | incrementallyVerifyProof test
@@ -527,19 +486,10 @@ incrementallyVerifyProofTest ctx = do
           input
       assert_ success
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput StepPublicInput 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 -------------------------------------------------------------------------------
 -- | verify test
@@ -653,19 +603,10 @@ verifyTest ctx = do
           (const_ claimedDigestFq)
       assert_ success
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(IncrementallyVerifyProofInput StepPublicInput 0 StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint Pallas.ScalarField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @Pallas.ScalarField
+    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
     [ circuitInput ]
+    circuit
 
 spec :: SpecT Aff InductiveTestContext Aff Unit
 spec =

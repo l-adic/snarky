@@ -3,27 +3,31 @@ module Test.Snarky.Circuit.Kimchi.AddComplete (spec) where
 import Prelude
 
 import Control.Monad.Gen (suchThat)
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, const_)
 import Snarky.Circuit.DSL as Snarky
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, Point(..))
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 spec :: Spec Unit
 spec = do
@@ -32,7 +36,7 @@ spec = do
 
 spec'
   :: forall g g' f f'
-   . Kimchi.KimchiVerify f f'
+   . KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Arbitrary g
   => WeierstrassCurve f g
@@ -40,13 +44,12 @@ spec'
   -> Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
-spec' testName pg pc =
+spec' testName pg _ =
   describe ("Kimchi AddComplete: " <> testName) do
 
-    it "addComplete Circuit is Valid" $ unsafePartial $
+    it "addComplete Circuit is Valid" $ unsafePartial do
       let
         f = uncurry EC.addAffine
-        solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry circuit)
 
         circuit
           :: forall t
@@ -60,13 +63,6 @@ spec' testName pg pc =
           y <- Snarky.if_ isInfinity (const_ one) p.y
           z <- Snarky.if_ isInfinity (const_ zero) (const_ one)
           pure $ Point { x, y, z }
-        s =
-          compilePure
-            (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
-            (Proxy @(Point (F f)))
-            pc
-            (uncurry circuit)
-            Kimchi.initialState
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2
@@ -83,24 +79,19 @@ spec' testName pg pc =
           p1 <- EC.genAffinePoint pg
           let p2 = p1 { y = -p1.y }
           pure $ Tuple p1 p2
-      in
-        do
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Kimchi.eval
-            , solver: solver
-            , testFunction: satisfied f
-            , postCondition: Kimchi.postCondition
-            }
-            gen
-          liftEffect $ verifyCircuit { s, gen, solver }
 
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Kimchi.eval
-            , solver: solver
-            , testFunction: satisfied f
-            , postCondition: Kimchi.postCondition
+      { builtState, solver } <- circuitTest' @f 100
+        kimchiTestConfig
+        ( NEA.cons'
+            { testFunction: satisfied f
+            , gen
             }
-            genInverse
-          liftEffect $ verifyCircuit { s, gen: genInverse, solver }
+            [ { testFunction: satisfied f
+              , gen: genInverse
+              }
+            ]
+        )
+        (uncurry circuit)
+
+      liftEffect $ verifyCircuit { s: builtState, gen, solver }
+      liftEffect $ verifyCircuit { s: builtState, gen: genInverse, solver }

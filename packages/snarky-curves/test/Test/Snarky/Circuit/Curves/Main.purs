@@ -4,28 +4,31 @@ import Prelude
 
 import Control.Monad.Gen (suchThat)
 import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Tuple.Nested (Tuple3, tuple3, uncurry3)
 import Effect (Effect)
 import Partial.Unsafe (unsafePartial)
 import Snarky.Backend.Builder (class CompileCircuit, initialState)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.Curves (add_, assertOnCurve, double)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (Basic, F(..), assertEq, if_)
+import Snarky.Circuit.DSL (class CircuitM, Basic, BoolVar, F(..), FVar, Snarky, assertEq, if_)
 import Snarky.Constraint.Basic as Basic
-import Snarky.Curves.Class (class WeierstrassCurve, curveParams)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', nullPostCondition, satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (Expectation, TestConfig, circuitTest', nullPostCondition, satisfied, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
+
+basicTestConfig :: forall f. PrimeField f => TestConfig f (Basic f) Unit
+basicTestConfig = { checker: Basic.eval, postCondition: nullPostCondition, initState: initialState }
 
 main :: Effect Unit
 main =
@@ -41,25 +44,19 @@ spec
   => Proxy g
   -> Proxy (Basic f)
   -> Spec Unit
-spec pg pc =
+spec pg _pc =
   describe "Snarky.Circuit.Curves" do
 
-    it "assertOnCurve Circuit is Valid" $
+    it "assertOnCurve Circuit is Valid" do
       let
         { a, b } = curveParams pg
-        solver = makeSolver pc (uncurry assertOnCurve)
-        s =
-          compilePure
-            ( Proxy
-                @( Tuple
-                    (CurveParams (F f))
-                    (AffinePoint (F f))
-                )
-            )
-            (Proxy @Unit)
-            pc
-            (uncurry assertOnCurve)
-            initialState
+
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => Tuple (CurveParams (FVar f)) (AffinePoint (FVar f))
+          -> Snarky (Basic f) t Identity Unit
+        circuit' = uncurry assertOnCurve
 
         onCurve = do
           p :: AffinePoint (F f) <- genAffinePoint pg
@@ -71,40 +68,28 @@ spec pg pc =
           x <- arbitrary
           y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + F a * x + F b
           pure $ Tuple { a: F a, b: F b } { x, y }
-      in
-        do
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Basic.eval
-            , solver: solver
-            , testFunction: unsatisfied
-            , postCondition: nullPostCondition
-            }
-            offCurve
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Basic.eval
-            , solver: solver
-            , testFunction: satisfied_
-            , postCondition: nullPostCondition
-            }
-            onCurve
 
-    it "assertEqual Circuit is Valid" $
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.cons'
+            { testFunction: (unsatisfied :: _ -> Expectation Unit)
+            , gen: offCurve
+            }
+            [ { testFunction: satisfied_
+              , gen: onCurve
+              }
+            ]
+        )
+        circuit'
+
+    it "assertEqual Circuit is Valid" do
       let
-        solver = makeSolver (Proxy @(Basic f)) (uncurry assertEq)
-        s =
-          compilePure
-            ( Proxy
-                @( Tuple
-                    (AffinePoint (F f))
-                    (AffinePoint (F f))
-                )
-            )
-            (Proxy @Unit)
-            pc
-            (uncurry assertEq)
-            initialState
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
+          -> Snarky (Basic f) t Identity Unit
+        circuit' = uncurry assertEq
 
         same = do
           p :: AffinePoint (F f) <- genAffinePoint pg
@@ -113,60 +98,55 @@ spec pg pc =
           p1 :: AffinePoint (F f) <- genAffinePoint pg
           p2 <- genAffinePoint pg `suchThat` \p -> p /= p1
           pure $ Tuple p1 p2
-      in
-        do
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Basic.eval
-            , solver: solver
-            , testFunction: satisfied_
-            , postCondition: nullPostCondition
-            }
-            same
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Basic.eval
-            , solver: solver
-            , testFunction: unsatisfied
-            , postCondition: nullPostCondition
-            }
-            distinct
 
-    it "negate Circuit is Valid" $
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.cons'
+            { testFunction: satisfied_
+            , gen: same
+            }
+            [ { testFunction: (unsatisfied :: _ -> Expectation Unit)
+              , gen: distinct
+              }
+            ]
+        )
+        circuit'
+
+    it "negate Circuit is Valid" do
       let
         pureNegate :: AffinePoint (F f) -> AffinePoint (F f)
         pureNegate { x, y } = { x, y: negate y }
-        solver = makeSolver (Proxy @(Basic f)) Curves.negate
-        s =
-          compilePure
-            (Proxy @(AffinePoint (F f)))
-            (Proxy @(AffinePoint (F f)))
-            pc
-            Curves.negate
-            initialState
-        gen = genAffinePoint pg
-      in
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: Basic.eval
-          , solver: solver
-          , testFunction: (satisfied pureNegate)
-          , postCondition: nullPostCondition
-          }
-          gen
 
-    it "if_ Circuit is Valid" $
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => AffinePoint (FVar f)
+          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+        circuit' = Curves.negate
+
+        gen = genAffinePoint pg
+
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.singleton
+            { testFunction: satisfied pureNegate
+            , gen
+            }
+        )
+        circuit'
+
+    it "if_ Circuit is Valid" do
       let
         pureIf :: Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         pureIf = uncurry3 \b then_ else_ -> if b then then_ else else_
-        solver = makeSolver (Proxy @(Basic f)) (uncurry3 if_)
-        s =
-          compilePure
-            (Proxy @(Tuple3 Boolean (AffinePoint (F f)) (AffinePoint (F f))))
-            (Proxy @(AffinePoint (F f)))
-            pc
-            (uncurry3 if_)
-            initialState
+
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => Tuple3 (BoolVar f) (AffinePoint (FVar f)) (AffinePoint (FVar f))
+          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+        circuit' = uncurry3 if_
+
         gen = do
           b <- arbitrary
           frequency $ NEA.cons'
@@ -179,27 +159,26 @@ spec pg pc =
                 p2 <- genAffinePoint pg
                 pure $ tuple3 b p1 p2
             ]
-      in
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: Basic.eval
-          , solver: solver
-          , testFunction: (satisfied pureIf)
-          , postCondition: nullPostCondition
-          }
-          gen
 
-    it "unsafeAdd Circuit is Valid" $ unsafePartial $
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.singleton
+            { testFunction: satisfied pureIf
+            , gen
+            }
+        )
+        circuit'
+
+    it "unsafeAdd Circuit is Valid" $ unsafePartial do
       let
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
-        solver = makeSolver (Proxy @(Basic f)) (uncurry add_)
-        s =
-          compilePure
-            (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
-            (Proxy @(AffinePoint (F f)))
-            pc
-            (uncurry add_)
-            initialState
+
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
+          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+        circuit' = uncurry add_
 
         -- Generate distinct points to avoid division by zero in slope calculation
         -- Avoid x1 = x2
@@ -212,17 +191,17 @@ spec pg pc =
             in
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
-      in
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: Basic.eval
-          , solver: solver
-          , testFunction: (satisfied f)
-          , postCondition: nullPostCondition
-          }
-          gen
 
-    it "double Circuit is Valid" $
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.singleton
+            { testFunction: satisfied f
+            , gen
+            }
+        )
+        circuit'
+
+    it "double Circuit is Valid" do
       let
         pureDouble :: AffinePoint (F f) -> AffinePoint (F f)
         pureDouble { x, y } =
@@ -236,23 +215,21 @@ spec pg pc =
           in
             { x: x', y: y' }
 
-        solver = makeSolver (Proxy @(Basic f)) (double $ curveParams pg)
-        s =
-          compilePure
-            (Proxy @(AffinePoint (F f)))
-            (Proxy @(AffinePoint (F f)))
-            pc
-            (double $ curveParams pg)
-            initialState
+        circuit'
+          :: forall t
+           . CircuitM f (Basic f) t Identity
+          => AffinePoint (FVar f)
+          -> Snarky (Basic f) t Identity (AffinePoint (FVar f))
+        circuit' = double (curveParams pg)
 
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
-      in
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: Basic.eval
-          , solver: solver
-          , testFunction: (satisfied pureDouble)
-          , postCondition: nullPostCondition
-          }
-          gen
+
+      void $ circuitTest' @f 100
+        basicTestConfig
+        ( NEA.singleton
+            { testFunction: satisfied pureDouble
+            , gen
+            }
+        )
+        circuit'

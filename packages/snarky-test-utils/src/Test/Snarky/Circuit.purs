@@ -2,8 +2,7 @@ module Test.Snarky.Circuit (spec) where
 
 import Prelude
 
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker)
+import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Curves.Class (class FieldSizeInBits)
 import Test.Snarky.Circuit.Assert as AssertTest
@@ -12,7 +11,7 @@ import Test.Snarky.Circuit.Boolean as BoolTest
 import Test.Snarky.Circuit.CheckedType as CheckedTypeTest
 import Test.Snarky.Circuit.Factors as Factors
 import Test.Snarky.Circuit.Field as FieldTest
-import Test.Snarky.Circuit.Utils (PostCondition)
+import Test.Snarky.Circuit.Utils (TestConfig)
 import Test.Spec (Spec)
 import Type.Proxy (Proxy)
 
@@ -22,15 +21,12 @@ spec
   => SolveCircuit f c'
   => FieldSizeInBits f n
   => Proxy f
-  -> Proxy c'
-  -> Checker f c
-  -> PostCondition f c r
-  -> CircuitBuilderState c r
+  -> TestConfig f c r
   -> Spec Unit
-spec pf pc eval cbs postCondition = do
+spec pf cfg = do
   CheckedTypeTest.spec pf
-  FieldTest.spec pc eval cbs postCondition
-  BoolTest.spec pc eval cbs postCondition
-  AssertTest.spec pc eval cbs postCondition
-  BitsTest.spec pc eval cbs postCondition
-  Factors.spec pc eval cbs postCondition
+  FieldTest.spec cfg
+  BoolTest.spec cfg
+  AssertTest.spec cfg
+  BitsTest.spec cfg
+  Factors.spec cfg

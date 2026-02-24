@@ -5,24 +5,29 @@ module Test.Snarky.Circuit.Kimchi.EndoScalar
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Effect.Class (liftEffect)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 circuit
   :: forall f f' t m n
@@ -49,33 +54,28 @@ spec'
   -> Spec Unit
 spec' _ curveName = do
   describe ("EndoScalar: " <> curveName) do
-    it "Cicuit matches the reference implementation and satisfies constraints" $
+    it "Cicuit matches the reference implementation and satisfies constraints" $ do
       let
         f :: SizedF 128 (F f) -> F f
         f x = let EndoScalar e = endoScalar @(F f') @(F f) in toFieldPure (coerce x) e
 
-        solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+        circuit'
+          :: forall t
+           . CircuitM f (KimchiConstraint f) t Identity
+          => SizedF 128 (FVar f)
+          -> Snarky (KimchiConstraint f) t Identity (FVar f)
+        circuit' = circuit
 
-        s = compilePure
-          (Proxy @(SizedF 128 (F f)))
-          (Proxy @(F f))
-          (Proxy @(KimchiConstraint f))
-          circuit
-          Kimchi.initialState
-
-      in
-        do
-          -- Test that circuit matches reference on random 128-bit boolean arrays
-          circuitSpecPure' 100
-            { builtState: s
-            , checker: Kimchi.eval
-            , solver: solver
-            , testFunction: satisfied f
-            , postCondition: Kimchi.postCondition
+      { builtState, solver } <- circuitTest' @f 100
+        kimchiTestConfig
+        ( NEA.singleton
+            { testFunction: satisfied f
+            , gen: arbitrary
             }
-            arbitrary
+        )
+        circuit'
 
-          liftEffect $ verifyCircuit { s, gen: arbitrary, solver }
+      liftEffect $ verifyCircuit { s: builtState, gen: arbitrary, solver }
 
 spec :: Spec Unit
 spec = do

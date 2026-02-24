@@ -5,7 +5,9 @@ import Prelude
 import Control.Monad.Gen (chooseInt)
 import Data.Array ((:))
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
+import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Traversable (for_)
@@ -21,14 +23,15 @@ import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
+import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
 import Snarky.Circuit.RandomOracle as Checked
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
-import Snarky.Constraint.Kimchi (KimchiConstraint, eval)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -36,13 +39,16 @@ import Test.QuickCheck (arbitrary, (===))
 import Test.QuickCheck.Gen (randomSample', randomSampleOne)
 import Test.RandomOracle.FFI.Pallas as PallasSpongeFFI
 import Test.RandomOracle.FFI.Vesta as VestaSpongeFFI
-import Test.Snarky.Circuit.Utils (circuitSpecPure', circuitSpecPureInputs, satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', circuitTestInputs', satisfied)
 import Test.Spec (Spec, before, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 import Test.Spec.QuickCheck (quickCheck)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | Record type to abstract over sponge FFI operations
 type SpongeFFI f sponge =
@@ -296,29 +302,24 @@ hash2CircuitTests
   => Proxy f
   -> Aff Unit
 hash2CircuitTests _ = do
-
   let
     -- Reference: pure hash of 2 elements
     referenceHash :: Tuple (F f) (F f) -> Digest (F f)
     referenceHash (Tuple (F a) (F b)) = Digest $ F $ hash [ a, b ]
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) (uncurry Checked.hash2)
-    s = compilePure
-      (Proxy @(Tuple (F f) (F f)))
-      (Proxy @(Digest (F f)))
-      (Proxy @(KimchiConstraint f))
-      (uncurry Checked.hash2)
-      Kimchi.initialState
+    circuit'
+      :: forall t
+       . CircuitM f (KimchiConstraint f) t Identity
+      => Tuple (FVar f) (FVar f)
+      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+    circuit' = uncurry Checked.hash2
+
     genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
-  circuitSpecPure' 100
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied referenceHash
-    , postCondition: Kimchi.postCondition
-    }
-    genInputs
+  void $ circuitTest' @f 100
+    kimchiTestConfig
+    (NEA.singleton { testFunction: satisfied referenceHash, gen: genInputs })
+    circuit'
 
 hashVecCircuitTests
   :: forall f f' n
@@ -339,23 +340,19 @@ hashVecCircuitTests _ pn = do
       in
         Digest $ F $ hash xs
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
-    s = compilePure
-      (Proxy @(Vector n (F f)))
-      (Proxy @((Digest (F f))))
-      (Proxy @(KimchiConstraint f))
-      (\x -> Checked.hashVec (Vector.toUnfoldable x))
-      Kimchi.initialState
+    circuit'
+      :: forall t
+       . CircuitM f (KimchiConstraint f) t Identity
+      => Vector n (FVar f)
+      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+    circuit' x = Checked.hashVec (Vector.toUnfoldable x)
+
     genInputs = Vector.generator pn (F <$> arbitrary)
 
-  circuitSpecPure' 100
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied referenceHash
-    , postCondition: Kimchi.postCondition
-    }
-    genInputs
+  void $ circuitTest' @f 100
+    kimchiTestConfig
+    (NEA.singleton { testFunction: satisfied referenceHash, gen: genInputs })
+    circuit'
 
 -- | Test hashVec circuit with a specific input
 hashVecEdgeCase
@@ -377,22 +374,17 @@ hashVecEdgeCase _ input = do
       in
         Digest $ F $ hash xs'
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) (\x -> Checked.hashVec (Vector.toUnfoldable x))
-    s = compilePure
-      (Proxy @(Vector n (F f)))
-      (Proxy @((Digest (F f))))
-      (Proxy @(KimchiConstraint f))
-      (\x -> Checked.hashVec (Vector.toUnfoldable x))
-      Kimchi.initialState
+    circuit'
+      :: forall t
+       . CircuitM f (KimchiConstraint f) t Identity
+      => Vector n (FVar f)
+      -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
+    circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
-  circuitSpecPureInputs
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied referenceHash
-    , postCondition: Kimchi.postCondition
-    }
+  void $ circuitTestInputs' @f
+    (Record.merge kimchiTestConfig { testFunction: satisfied referenceHash })
     [ input ]
+    circuit'
 
 -- | Test circuit sponge absorb/squeeze matches pure sponge
 circuitSpongeTests
@@ -412,7 +404,7 @@ circuitSpongeTests _ = do
   where
   -- Test: absorb 2 elements, squeeze 1
   absorbSqueezeTest :: Aff Unit
-  absorbSqueezeTest =
+  absorbSqueezeTest = do
     let
       -- Reference: pure sponge
       referenceFn :: Tuple (F f) (F f) -> F f
@@ -424,40 +416,29 @@ circuitSpongeTests _ = do
         in
           F (Sponge.squeeze s2).result
 
-      -- Circuit version
-      circuitFn
-        :: forall t m
-         . CircuitM f (KimchiConstraint f) t m
+      -- Circuit version (fixed to Identity)
+      circuit'
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
         => Tuple (FVar f) (FVar f)
-        -> Snarky (KimchiConstraint f) t m (FVar f)
-      circuitFn (Tuple a b) = do
+        -> Snarky (KimchiConstraint f) t Identity (FVar f)
+      circuit' (Tuple a b) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0
         sponge2 <- CircuitSponge.absorb b sponge1
         { result } <- CircuitSponge.squeeze sponge2
         pure result
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuitFn
-      builtState = compilePure
-        (Proxy @(Tuple (F f) (F f)))
-        (Proxy @(F f))
-        (Proxy @(KimchiConstraint f))
-        circuitFn
-        Kimchi.initialState
       genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
-    in
-      circuitSpecPure' 100
-        { builtState
-        , checker: eval
-        , solver
-        , testFunction: satisfied referenceFn
-        , postCondition: Kimchi.postCondition
-        }
-        genInputs
+
+    void $ circuitTest' @f 100
+      kimchiTestConfig
+      (NEA.singleton { testFunction: satisfied referenceFn, gen: genInputs })
+      circuit'
 
   -- Test: absorb 3, squeeze 2
   multiCycleTest :: Aff Unit
-  multiCycleTest =
+  multiCycleTest = do
     let
       -- Reference: pure sponge
       referenceFn :: Tuple (F f) (Tuple (F f) (F f)) -> Tuple (F f) (F f)
@@ -472,13 +453,13 @@ circuitSpongeTests _ = do
         in
           Tuple (F r1) (F r2)
 
-      -- Circuit version
-      circuitFn
-        :: forall t m
-         . CircuitM f (KimchiConstraint f) t m
+      -- Circuit version (fixed to Identity)
+      circuit'
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
         => Tuple (FVar f) (Tuple (FVar f) (FVar f))
-        -> Snarky (KimchiConstraint f) t m (Tuple (FVar f) (FVar f))
-      circuitFn (Tuple a (Tuple b c)) = do
+        -> Snarky (KimchiConstraint f) t Identity (Tuple (FVar f) (FVar f))
+      circuit' (Tuple a (Tuple b c)) = do
         let sponge0 = CircuitSponge.create CircuitSponge.initialState
         sponge1 <- CircuitSponge.absorb a sponge0
         sponge2 <- CircuitSponge.absorb b sponge1
@@ -487,20 +468,9 @@ circuitSpongeTests _ = do
         { result: r2 } <- CircuitSponge.squeeze sponge4
         pure $ Tuple r1 r2
 
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuitFn
-      builtState = compilePure
-        (Proxy @(Tuple (F f) (Tuple (F f) (F f))))
-        (Proxy @(Tuple (F f) (F f)))
-        (Proxy @(KimchiConstraint f))
-        circuitFn
-        Kimchi.initialState
       genInputs = Tuple <$> (F <$> arbitrary) <*> (Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary))
-    in
-      circuitSpecPure' 100
-        { builtState
-        , checker: eval
-        , solver
-        , testFunction: satisfied referenceFn
-        , postCondition: Kimchi.postCondition
-        }
-        genInputs
+
+    void $ circuitTest' @f 100
+      kimchiTestConfig
+      (NEA.singleton { testFunction: satisfied referenceFn, gen: genInputs })
+      circuit'

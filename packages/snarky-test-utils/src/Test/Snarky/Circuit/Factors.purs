@@ -3,19 +3,17 @@ module Test.Snarky.Circuit.Factors (spec) where
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array.NonEmpty as NEA
 import Effect (Effect)
-import Effect.Class (liftEffect)
 import Effect.Exception (throw)
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, compile, makeSolver)
+import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assert_, const_, equals_, exists, mul_, neq_, read)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (PostCondition, circuitSpec', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
-import Type.Proxy (Proxy(..))
 
 class Monad m <= FactorM f m where
   factor :: F f -> m { a :: F f, b :: F f }
@@ -50,31 +48,19 @@ spec
   :: forall f c c' r
    . CompileCircuit f c c' r
   => SolveCircuit f c'
-  => Proxy c'
-  -> Checker f c
-  -> PostCondition f c r
-  -> CircuitBuilderState c r
+  => TestConfig f c r
   -> Spec Unit
-spec pc eval postCondition initialState = describe "Factors Specs" do
+spec cfg = describe "Factors Specs" do
 
-  it "factors Circuit is Valid" do
-
-    s <- liftEffect $
-      compile
-        (Proxy @(F f))
-        (Proxy @Unit)
-        pc
-        factorsCircuit
-        initialState
-    let solver = makeSolver pc factorsCircuit
+  it "factors Circuit is Valid" $ void $
     let
       gen :: Gen (F f)
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
-    circuitSpec' 100 randomSampleOne
-      { builtState: s
-      , checker: eval
-      , solver: solver
-      , testFunction: satisfied_
-      , postCondition: postCondition
-      }
-      gen
+
+      circuit :: forall t. CircuitM f c' t Gen => FVar f -> Snarky c' t Gen Unit
+      circuit = factorsCircuit
+    in
+      circuitTestM' @f 100 randomSampleOne
+        cfg
+        (NEA.singleton { testFunction: satisfied_, gen })
+        circuit

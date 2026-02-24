@@ -5,22 +5,27 @@ module Test.Pickles.Commitments where
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Vector as Vector
 import Pickles.Commitments (CombinedInnerProductInput, NumEvals, combinedInnerProduct, combinedInnerProductCircuit)
 import Pickles.Linearization.FFI (PointEval)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 spec :: Spec Unit
 spec = do
@@ -64,27 +69,17 @@ commitmentsTests
 commitmentsTests _ = do
   it "combinedInnerProductCircuit matches combinedInnerProduct" do
     let
-      circuit
-        :: forall t m
-         . CircuitM f (KimchiConstraint f) t m
+      circuit'
+        :: forall t
+         . CircuitM f (KimchiConstraint f) t Identity
         => CombinedInnerProductInput (FVar f)
-        -> Snarky (KimchiConstraint f) t m (FVar f)
-      circuit = combinedInnerProductCircuit
-
-      solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-
-      builtState = compilePure
-        (Proxy @(CombinedInnerProductInput (F f)))
-        (Proxy @(F f))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        Kimchi.initialState
-
-    circuitSpecPure' 1
-      { builtState
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied (combinedInnerProduct :: CombinedInnerProductInput (F f) -> F f)
-      , postCondition: Kimchi.postCondition
-      }
-      (genCombinedInnerProductInput :: Gen (CombinedInnerProductInput (F f)))
+        -> Snarky (KimchiConstraint f) t Identity (FVar f)
+      circuit' = combinedInnerProductCircuit
+    void $ circuitTest' @f 1
+      kimchiTestConfig
+      ( NEA.singleton
+          { testFunction: satisfied (combinedInnerProduct :: CombinedInnerProductInput (F f) -> F f)
+          , gen: genCombinedInnerProductInput :: Gen (CombinedInnerProductInput (F f))
+          }
+      )
+      circuit'

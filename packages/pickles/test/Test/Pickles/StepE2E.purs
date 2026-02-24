@@ -15,6 +15,7 @@ module Test.Pickles.StepE2E
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
@@ -24,16 +25,19 @@ import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, WrapIPARounds)
-import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
 import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
-import Test.Snarky.Circuit.Utils (circuitSpec', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
+
+kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Test Circuit
@@ -75,19 +79,7 @@ spec = describe "Step E2E with Schnorr" do
   it "Step circuit with Schnorr application is satisfiable (base case)" do
     advice <- liftEffect $ randomSampleOne genStepSchnorrAdvice
 
-    builtState <- liftEffect $ compile
-      (Proxy @StepSchnorrInput)
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint StepField))
-      stepSchnorrCircuit
-      Kimchi.initialState
-
-    circuitSpec' 10 (runStepProverM advice)
-      { builtState
-      , checker: Kimchi.eval
-      , solver: makeSolver (Proxy @(KimchiConstraint StepField))
-          (stepSchnorrCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
-      , testFunction: satisfied_
-      , postCondition: Kimchi.postCondition
-      }
-      genStepSchnorrInput
+    void $ circuitTestM' @StepField 10 (runStepProverM advice)
+      kimchiTestConfig
+      (NEA.singleton { testFunction: satisfied_, gen: genStepSchnorrInput })
+      (stepSchnorrCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
