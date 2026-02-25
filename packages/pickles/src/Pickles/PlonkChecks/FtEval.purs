@@ -15,12 +15,14 @@
 module Pickles.PlonkChecks.FtEval
   ( ftEval0
   , ftEval0Circuit
+  , ftEval0CircuitM
   ) where
 
 import Prelude
 
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, evaluateGateConstraints)
+import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, evaluateGateConstraints, evaluateGateConstraintsM)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContributionCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, sub_)
@@ -87,5 +89,28 @@ ftEval0Circuit linPoly { permInput, gateInput, publicEval } = do
   gate <- evaluateGateConstraints linPoly gateInput
 
   -- ft_eval0 = perm + publicEval - gate
+  let permPlusPublic = add_ perm publicEval
+  pure $ sub_ permPlusPublic gate
+
+-- | Monadic version of ftEval0Circuit using precomputed alpha powers.
+-- | Uses evaluateGateConstraintsM which matches OCaml's scalars_env approach.
+ftEval0CircuitM
+  :: forall f f' g c t m
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => CircuitM f c t m
+  => LinearizationFFI f g
+  => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded)
+  -> { permInput :: PermutationInput (FVar f)
+     , gateInput :: GateConstraintInput (FVar f)
+     , publicEval :: FVar f
+     }
+  -> Snarky c t m (FVar f)
+ftEval0CircuitM linPoly domLog2 zeta { permInput, gateInput, publicEval } = do
+  perm <- permContributionCircuit permInput
+  gate <- evaluateGateConstraintsM linPoly domLog2 zeta gateInput
   let permPlusPublic = add_ perm publicEval
   pure $ sub_ permPlusPublic gate

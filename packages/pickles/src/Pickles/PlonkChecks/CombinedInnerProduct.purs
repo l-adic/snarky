@@ -10,6 +10,7 @@ module Pickles.PlonkChecks.CombinedInnerProduct
   ( CombinedInnerProductCheckInput
   , BatchingScalars
   , combinedInnerProductCheckCircuit
+  , combinedInnerProductCheckCircuitM
   ) where
 
 import Prelude
@@ -17,9 +18,9 @@ import Prelude
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Commitments (combinedInnerProductCircuit)
-import Pickles.Linearization.FFI (PointEval)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
+import Pickles.PlonkChecks.FtEval (ftEval0Circuit, ftEval0CircuitM)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Poseidon (class PoseidonField)
@@ -101,6 +102,49 @@ combinedInnerProductCheckCircuit linPoly scalars input = do
 
   -- 3. Build full 45-element evaluation vector
   -- Order: public (1) + ft (1) + z (1) + index (6) + witness (15) + coeff (15) + sigma (6)
+  let
+    allEvals :: Vector 45 (PointEval (FVar f))
+    allEvals =
+      (input.publicPointEval :< ftPointEval :< input.zEvals :< Vector.nil)
+        `Vector.append` input.indexEvals
+        `Vector.append` input.witnessEvals
+        `Vector.append` input.coeffEvals
+        `Vector.append` input.sigmaEvals
+
+  -- 4. Compute combined inner product in-circuit
+  combinedInnerProductCircuit
+    { polyscale: scalars.polyscale
+    , evalscale: scalars.evalscale
+    , evals: allEvals
+    }
+
+-- | Monadic version using precomputed alpha powers for gate constraint evaluation.
+-- | Produces ~2100 fewer GenericPlonkGate constraints than `combinedInnerProductCheckCircuit`.
+combinedInnerProductCheckCircuitM
+  :: forall f f' g c t m
+   . PrimeField f
+  => PoseidonField f
+  => HasEndo f f'
+  => CircuitM f c t m
+  => LinearizationFFI f g
+  => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded)
+  -> BatchingScalars (FVar f)
+  -> CombinedInnerProductCheckInput (FVar f)
+  -> Snarky c t m (FVar f)
+combinedInnerProductCheckCircuitM linPoly domLog2 zeta scalars input = do
+  -- 1. Compute ftEval0 using monadic gate constraint evaluation
+  ftEval0Computed <- ftEval0CircuitM linPoly domLog2 zeta
+    { permInput: input.permInput
+    , gateInput: input.gateInput
+    , publicEval: input.publicEvalForFt
+    }
+
+  -- 2. Build ft PointEval
+  let ftPointEval = { zeta: ftEval0Computed, omegaTimesZeta: input.ftEval1 }
+
+  -- 3. Build full 45-element evaluation vector
   let
     allEvals :: Vector 45 (PointEval (FVar f))
     allEvals =
