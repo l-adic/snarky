@@ -10,7 +10,7 @@ import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (suchThat)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', expectDivideByZero, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', expectDivideByZero, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 
 spec
@@ -30,11 +30,11 @@ spec cfg = describe "Assertion Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity Unit
       circuit = assertNonZero_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
         ( NEA.cons'
-            { testFunction: satisfied_, gen }
-            [ { testFunction: expectDivideByZero, gen: pure zero } ]
+            { testFunction: satisfied_, input: QuickCheck 100 gen }
+            [ { testFunction: expectDivideByZero, input: QuickCheck 100 (pure zero) } ]
         )
         circuit
 
@@ -49,11 +49,11 @@ spec cfg = describe "Assertion Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
       circuit = uncurry assertEqual_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
         ( NEA.cons'
-            { testFunction: unsatisfied, gen: distinct }
-            [ { testFunction: satisfied_, gen: same } ]
+            { testFunction: unsatisfied, input: QuickCheck 100 distinct }
+            [ { testFunction: satisfied_, input: QuickCheck 100 same } ]
         )
         circuit
 
@@ -68,11 +68,11 @@ spec cfg = describe "Assertion Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
       circuit = uncurry assertNotEqual_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
         ( NEA.cons'
-            { testFunction: expectDivideByZero, gen: same }
-            [ { testFunction: satisfied_, gen: distinct } ]
+            { testFunction: expectDivideByZero, input: QuickCheck 100 same }
+            [ { testFunction: satisfied_, input: QuickCheck 100 distinct } ]
         )
         circuit
 
@@ -89,10 +89,10 @@ spec cfg = describe "Assertion Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity Unit
       circuit = uncurry assertSquare_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
         ( NEA.cons'
-            { testFunction: satisfied_, gen: squares }
-            [ { testFunction: unsatisfied, gen: nonSquares } ]
+            { testFunction: satisfied_, input: QuickCheck 100 squares }
+            [ { testFunction: unsatisfied, input: QuickCheck 100 nonSquares } ]
         )
         circuit

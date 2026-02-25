@@ -11,28 +11,24 @@ import Data.Vector as Vector
 import Pickles.IPA (BPolyInput, ComputeBInput, bPoly, bPolyCircuit, computeB, computeBCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "Pickles.IPA" do
     describe "Pallas" do
-      ipaTests (Proxy :: Proxy Pallas.BaseField)
+      ipaTests cfg (Proxy :: Proxy Pallas.BaseField)
     describe "Vesta" do
-      ipaTests (Proxy :: Proxy Vesta.BaseField)
+      ipaTests cfg (Proxy :: Proxy Vesta.BaseField)
 
 -------------------------------------------------------------------------------
 -- | Test size for bPoly / computeB
@@ -72,9 +68,10 @@ ipaTests
   => PoseidonField f
   => HasEndo f f'
   => KimchiVerify f f'
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Spec Unit
-ipaTests _ = do
+ipaTests cfg _ = do
   it "bPolyCircuit matches bPoly" do
     let
       circuit'
@@ -88,11 +85,11 @@ ipaTests _ = do
       bPolyRef :: BPolyInput TestChallengeSize (F f) -> F f
       bPolyRef { challenges, x } = bPoly challenges x
 
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied bPolyRef
-          , gen: genBPolyInput :: Gen (BPolyInput TestChallengeSize (F f))
+          , input: QuickCheck 1 (genBPolyInput :: Gen (BPolyInput TestChallengeSize (F f)))
           }
       )
       circuit'
@@ -111,11 +108,11 @@ ipaTests _ = do
       computeBRef { challenges, zeta, zetaOmega, evalscale } =
         computeB challenges { zeta, zetaOmega, evalscale }
 
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied computeBRef
-          , gen: genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f) ())
+          , input: QuickCheck 1 (genComputeBInput :: Gen (ComputeBInput TestChallengeSize (F f) ()))
           }
       )
       circuit'

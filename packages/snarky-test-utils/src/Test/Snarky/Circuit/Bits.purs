@@ -19,7 +19,7 @@ import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, pack_, unpack_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Test.QuickCheck.Gen (Gen, chooseInt)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -77,9 +77,9 @@ spec cfg = describe "Bits Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (Vector n (BoolVar f))
       circuit = \v -> unpack_ v (Proxy @n)
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied f, gen: bitSizes (reflectType $ Proxy @n) >>= smallFieldElem })
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) })
         circuit
 
   it "pack/unpack round trip is Valid" $ void $
@@ -87,7 +87,7 @@ spec cfg = describe "Bits Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
       circuit = packUnpackCircuit
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied identity, gen: bitSizes (reflectType $ Proxy @n) >>= smallFieldElem })
+        (NEA.singleton { testFunction: satisfied identity, input: QuickCheck 100 (bitSizes (reflectType $ Proxy @n) >>= smallFieldElem) })
         circuit

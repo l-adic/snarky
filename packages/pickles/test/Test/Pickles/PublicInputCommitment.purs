@@ -19,8 +19,7 @@ import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, fieldsToValue, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (curveParams, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
@@ -32,12 +31,9 @@ import Test.Pickles.TestContext (InductiveTestContext)
 import Test.Pickles.TestContext as E2E
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- Step x_hat (Fq circuit, Vesta commitments)
@@ -92,8 +88,8 @@ type WrapTestContext =
 -- Test spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "PublicInputCommitment" do
     it "old publicInputCommitment matches proof-systems reference (step0)" \{ step0 } -> do
       let ctx = mkStepCtx step0
@@ -160,9 +156,9 @@ spec =
 
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
-    { builtState: s, solver } <- circuitTest' @StepCircuitField 2
-      kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), gen })
+    { builtState: s, solver } <- circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), input: QuickCheck 2 gen })
       circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }
@@ -185,9 +181,9 @@ spec =
 
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
-    { builtState: s, solver } <- circuitTest' @StepCircuitField 2
-      kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), gen })
+    { builtState: s, solver } <- circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), input: QuickCheck 2 gen })
       circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }
@@ -229,9 +225,9 @@ spec =
 
       gen = pure structuredInput
 
-    void $ circuitTest' @StepCircuitField 1
-      kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied rustFn, gen })
+    void $ circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied rustFn, input: QuickCheck 1 gen })
       circuit
 
   -- Wrap helpers
@@ -274,9 +270,9 @@ spec =
 
       gen = Vector.generator (Proxy @nPublic) (arbitrary :: Gen (F WrapCircuitField))
 
-    { builtState: s, solver } <- circuitTest' @WrapCircuitField 2
-      kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied (rustFnWrap ctx), gen })
+    { builtState: s, solver } <- circuitTest' @WrapCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnWrap ctx), input: QuickCheck 2 gen })
       circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }

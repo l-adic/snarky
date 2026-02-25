@@ -12,28 +12,24 @@ import Data.Vector as Vector
 import Pickles.PlonkChecks.Permutation (PermutationInput, permContribution, permContributionCircuit, permScalar, permScalarCircuit)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "Pickles.Permutation" do
     describe "Pallas" do
-      permutationTests (Proxy :: Proxy Pallas.BaseField)
+      permutationTests cfg (Proxy :: Proxy Pallas.BaseField)
     describe "Vesta" do
-      permutationTests (Proxy :: Proxy Vesta.BaseField)
+      permutationTests cfg (Proxy :: Proxy Vesta.BaseField)
 
 -------------------------------------------------------------------------------
 -- | Reference functions
@@ -91,9 +87,10 @@ permutationTests
   => PoseidonField f
   => HasEndo f f'
   => KimchiVerify f f'
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Spec Unit
-permutationTests _ = do
+permutationTests cfg _ = do
   it "permScalarCircuit matches permScalar" do
     let
       circuit'
@@ -102,11 +99,11 @@ permutationTests _ = do
         => PermutationInput (FVar f)
         -> Snarky (KimchiConstraint f) t Identity (FVar f)
       circuit' = permScalarCircuit
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied (permScalar :: PermutationInput (F f) -> F f)
-          , gen: genPermutationInput :: Gen (PermutationInput (F f))
+          , input: QuickCheck 1 (genPermutationInput :: Gen (PermutationInput (F f)))
           }
       )
       circuit'
@@ -119,11 +116,11 @@ permutationTests _ = do
         => PermutationInput (FVar f)
         -> Snarky (KimchiConstraint f) t Identity (FVar f)
       circuit' = permContributionCircuit
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied (permContribution :: PermutationInput (F f) -> F f)
-          , gen: genPermutationInputNonZeroDenom :: Gen (PermutationInput (F f))
+          , input: QuickCheck 1 (genPermutationInputNonZeroDenom :: Gen (PermutationInput (F f)))
           }
       )
       circuit'

@@ -26,18 +26,14 @@ import Pickles.Step.Circuit (stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
 import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestM', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Test Circuit
@@ -74,12 +70,14 @@ genStepSchnorrInput = do
 genStepSchnorrAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
 genStepSchnorrAdvice = dummyStepAdvice
 
-spec :: Spec Unit
-spec = describe "Step E2E with Schnorr" do
+spec
+  :: TestConfig StepField (KimchiGate StepField) (AuxState StepField)
+  -> Spec Unit
+spec cfg = describe "Step E2E with Schnorr" do
   it "Step circuit with Schnorr application is satisfiable (base case)" do
     advice <- liftEffect $ randomSampleOne genStepSchnorrAdvice
 
-    void $ circuitTestM' @StepField 10 (runStepProverM advice)
-      kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied_, gen: genStepSchnorrInput })
+    void $ circuitTestM' @StepField (runStepProverM advice)
+      cfg
+      (NEA.singleton { testFunction: satisfied_, input: QuickCheck 10 genStepSchnorrInput })
       (stepSchnorrCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)

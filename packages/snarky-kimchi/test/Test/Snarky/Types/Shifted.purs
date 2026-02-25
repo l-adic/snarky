@@ -7,8 +7,7 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import JS.BigInt as BigInt
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
 import Snarky.Curves.Pallas as Pallas
@@ -16,13 +15,10 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, forbiddenType1Values, forbiddenType2Values, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, toShifted)
 import Test.QuickCheck (Result, (===))
 import Test.QuickCheck.Gen (Gen, chooseInt, oneOf)
-import Test.Snarky.Circuit.Utils (Expectation(..), TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (Expectation(..), TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 --------------------------------------------------------------------------------
 -- Type1 roundtrip: fromShifted (toShifted s) == s
@@ -176,8 +172,8 @@ type2TestFn input
 -- Spec
 --------------------------------------------------------------------------------
 
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "Snarky.Types.Shifted" do
     describe "Type1 Shifted (crossField)" do
       it "fromShifted (toShifted s) == s" $
@@ -201,25 +197,25 @@ spec = do
       it "circuit matches pure implementation" do
         let
           gen = toShifted <$> genDangerZone @Vesta.ScalarField
-        void $ circuitTest' @Vesta.BaseField 100
-          kimchiTestConfig
-          (NEA.singleton { testFunction: type1TestFn, gen })
+        void $ circuitTest' @Vesta.BaseField
+          cfg
+          (NEA.singleton { testFunction: type1TestFn, input: QuickCheck 100 gen })
           type1Circuit
 
     describe "fromShiftedType1Circuit (sameField)" do
       it "circuit matches pure implementation" do
         let
           gen = toShifted <$> genDangerZone @Vesta.ScalarField
-        void $ circuitTest' @Vesta.ScalarField 100
-          kimchiTestConfig
-          (NEA.singleton { testFunction: satisfied type1SameFieldExpected, gen })
+        void $ circuitTest' @Vesta.ScalarField
+          cfg
+          (NEA.singleton { testFunction: satisfied type1SameFieldExpected, input: QuickCheck 100 gen })
           type1SameFieldCircuit
 
     describe "fromShiftedType2Circuit" do
       it "circuit matches pure implementation" do
         let
           gen = toShifted <$> genDangerZone @Pallas.ScalarField
-        void $ circuitTest' @Pallas.BaseField 100
-          kimchiTestConfig
-          (NEA.singleton { testFunction: type2TestFn, gen })
+        void $ circuitTest' @Pallas.BaseField
+          cfg
+          (NEA.singleton { testFunction: type2TestFn, input: QuickCheck 100 gen })
           type2Circuit

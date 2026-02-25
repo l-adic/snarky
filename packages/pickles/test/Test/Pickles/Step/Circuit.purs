@@ -11,6 +11,7 @@ module Test.Pickles.Step.Circuit
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
@@ -21,21 +22,16 @@ import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Record as Record
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (Type2)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
 import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputsM', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -85,8 +81,8 @@ testCircuit input = do
 -- | Tests
 -------------------------------------------------------------------------------
 
-spec :: Spec Unit
-spec = describe "Pickles.Step.Circuit" do
+spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec Unit
+spec cfg = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case)" do
     unfinalizedProof <- liftEffect $ randomSampleOne genDummyUnfinalizedProof
     advice <- liftEffect $ randomSampleOne dummyStepAdvice
@@ -100,10 +96,10 @@ spec = describe "Pickles.Step.Circuit" do
         , prevChallengeDigests: zero :< nil
         }
 
-    void $ circuitTestInputsM' @StepField
+    void $ circuitTestM' @StepField
       (runStepProverM advice)
-      (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-      [ input ]
+      cfg
+      (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
       (testCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepTestInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
 
 -------------------------------------------------------------------------------
@@ -112,8 +108,8 @@ spec = describe "Pickles.Step.Circuit" do
 type StepSchnorrInputVar =
   StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
-realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
-realDataSpec =
+realDataSpec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> SpecT Aff InductiveTestContext Aff Unit
+realDataSpec cfg =
   describe "Pickles.Step.Circuit (real data)" do
     it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ wrap0 } -> do
       schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
@@ -143,8 +139,8 @@ realDataSpec =
           _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit true) i
           pure unit
 
-      void $ circuitTestInputsM' @StepField
+      void $ circuitTestM' @StepField
         (runStepProverM witnessData)
-        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-        [ input ]
+        cfg
+        (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
         (realCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)

@@ -7,6 +7,7 @@ module Test.Pickles.Wrap.SubCircuits (spec) where
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..))
@@ -26,12 +27,10 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Types (StepIPARounds, StepStatement)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
-import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, fieldsToValue, toField)
 import Snarky.Circuit.Kimchi (Type1(..), Type2, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
@@ -39,19 +38,16 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | In-circuit test for challenge extraction.
 -- | Circuit runs over Pallas.ScalarField (Fq) where the sponge operates.
 -- | Extracts 128-bit scalar challenges, verifies circuit matches pure sponge,
 -- | and validates endo-mapped values match Rust.
-extractChallengesCircuitTest :: StepProofContext -> Aff Unit
-extractChallengesCircuitTest ctx = do
+extractChallengesCircuitTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+extractChallengesCircuitTest cfg ctx = do
   let
     { spongeState, challenges: rustChallenges } = mkStepIpaContext ctx
 
@@ -81,17 +77,17 @@ extractChallengesCircuitTest ctx = do
         if endoMappedChallenges /= Vector.toUnfoldable rustChallenges then unsafeThrow "unexpected endoMappedChallenges"
         else coerce challenges
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-    [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ] })
     circuit
 
 -- | In-circuit test for bullet reduce (lr_prod computation).
 -- | Circuit runs over Pallas.ScalarField (Fq) where the L/R points are.
 -- | Extracts 128-bit scalar challenges, computes lr_prod, and verifies
 -- | result matches Rust FFI.
-bulletReduceCircuitTest :: StepProofContext -> Aff Unit
-bulletReduceCircuitTest ctx = do
+bulletReduceCircuitTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+bulletReduceCircuitTest cfg ctx = do
   let
     { spongeState } = mkStepIpaContext ctx
 
@@ -124,15 +120,15 @@ bulletReduceCircuitTest ctx = do
         if computedAffine /= expectedLrProd then unsafeThrow "bulletReduce lr_prod doesn't match Rust"
         else coerce computedAffine
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-    [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ] })
     circuit
 
 -- | In-circuit test for IPA final check.
 -- | Tests the full IPA verification equation: c*Q + delta = z1*(sg + b*u) + z2*H
-ipaFinalCheckCircuitTest :: StepProofContext -> Aff Unit
-ipaFinalCheckCircuitTest ctx = do
+ipaFinalCheckCircuitTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+ipaFinalCheckCircuitTest cfg ctx = do
   let
     { challenges, spongeState, combinedPolynomial, omega } = mkStepIpaContext ctx
 
@@ -167,15 +163,15 @@ ipaFinalCheckCircuitTest ctx = do
           input
       assert_ success
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-    [ circuitInput ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
     circuit
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
 -- | Also tests scaleFast1 with z1 and the generator point.
-debugVerifyTest :: StepProofContext -> Aff Unit
-debugVerifyTest ctx = do
+debugVerifyTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+debugVerifyTest cfg ctx = do
   let
     _ = ProofFFI.pallasDebugVerify ctx.verifierIndex
       { proof: ctx.proof, publicInput: ctx.publicInputs }
@@ -217,17 +213,17 @@ debugVerifyTest ctx = do
         coerce $ unsafePartial fromJust $ toAffine @Pallas.ScalarField $
           scalarMul scalar (fromAffine @Pallas.ScalarField @Vesta.G (coerce p))
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-    [ Tuple (coerce genPoint) z1Shifted ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ Tuple (coerce genPoint) z1Shifted ] })
     circuit
 
   liftEffect $ log "scaleFast1 mini test passed!"
 
 -- | Full bulletproof check test: composes sponge transcript → checkBulletproof.
 -- | Tests the "right half" of incrementallyVerifyProof.
-checkBulletproofTest :: StepProofContext -> Aff Unit
-checkBulletproofTest ctx = do
+checkBulletproofTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+checkBulletproofTest cfg ctx = do
   let
     commitments = ProofFFI.pallasProofCommitments ctx.proof
     publicComm = unsafePartial fromJust $ Array.head $
@@ -359,9 +355,9 @@ checkBulletproofTest ctx = do
         else if computedSg /= expectedSg then unsafeThrow "checkBulletproof: challenge poly commitment doesn't match proof sg"
         else coerce challenges
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-    [ circuitInput ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ circuitInput ] })
     circuit
 
 -------------------------------------------------------------------------------
@@ -386,8 +382,8 @@ buildStepPublicInput ctx = fieldsToValue @Pallas.ScalarField
 -- | Full incrementallyVerifyProof circuit test.
 -- | Wires together publicInputCommitment, sponge transcript, ftComm, and
 -- | checkBulletproof in a single circuit and verifies satisfiability.
-incrementallyVerifyProofTest :: StepProofContext -> Aff Unit
-incrementallyVerifyProofTest ctx = do
+incrementallyVerifyProofTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+incrementallyVerifyProofTest cfg ctx = do
   let
     { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -486,9 +482,9 @@ incrementallyVerifyProofTest ctx = do
           input
       assert_ success
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-    [ circuitInput ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
     circuit
 
 -------------------------------------------------------------------------------
@@ -497,8 +493,8 @@ incrementallyVerifyProofTest ctx = do
 
 -- | Full verify circuit test.
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
-verifyTest :: StepProofContext -> Aff Unit
-verifyTest ctx = do
+verifyTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+verifyTest cfg ctx = do
   let
     { ivpParams: params } = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
@@ -603,18 +599,18 @@ verifyTest ctx = do
           (const_ claimedDigestFq)
       assert_ success
 
-  void $ circuitTestInputs' @Pallas.ScalarField
-    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-    [ circuitInput ]
+  void $ circuitTest' @Pallas.ScalarField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
     circuit
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "Wrap Sub-circuits (Real Data)" do
-    it "extractScalarChallenges circuit matches pure and Rust" \{ step0 } -> extractChallengesCircuitTest step0
-    it "bulletReduceCircuit matches Rust lr_prod" \{ step0 } -> bulletReduceCircuitTest step0
-    it "debug verify traces intermediate IPA values" \{ step0 } -> debugVerifyTest step0
-    it "ipaFinalCheckCircuit verifies with Rust proof values" \{ step0 } -> ipaFinalCheckCircuitTest step0
-    it "checkBulletproof composes transcript and IPA verification" \{ step0 } -> checkBulletproofTest step0
-    it "incrementallyVerifyProof wires all components together" \{ step0 } -> incrementallyVerifyProofTest step0
-    it "verify wires IVP + deferred value assertions" \{ step0 } -> verifyTest step0
+    it "extractScalarChallenges circuit matches pure and Rust" \{ step0 } -> extractChallengesCircuitTest cfg step0
+    it "bulletReduceCircuit matches Rust lr_prod" \{ step0 } -> bulletReduceCircuitTest cfg step0
+    it "debug verify traces intermediate IPA values" \{ step0 } -> debugVerifyTest cfg step0
+    it "ipaFinalCheckCircuit verifies with Rust proof values" \{ step0 } -> ipaFinalCheckCircuitTest cfg step0
+    it "checkBulletproof composes transcript and IPA verification" \{ step0 } -> checkBulletproofTest cfg step0
+    it "incrementallyVerifyProof wires all components together" \{ step0 } -> incrementallyVerifyProofTest cfg step0
+    it "verify wires IVP + deferred value assertions" \{ step0 } -> verifyTest cfg step0

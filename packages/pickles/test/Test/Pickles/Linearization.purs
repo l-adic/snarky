@@ -62,7 +62,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary, quickCheckGen, (===))
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -75,7 +75,7 @@ kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initSta
 main :: Effect Unit
 main =
   runSpecAndExitProcess [ consoleReporter ] do
-    spec
+    spec kimchiTestConfig
 
 -- Standard Kimchi constants
 domainLog2 :: Int
@@ -270,10 +270,11 @@ linearizationTests
   => HasEndo f f'
   => Kimchi.KimchiVerify f f'
   => LinearizationFFI f g
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Array PolishToken
   -> Spec Unit
-linearizationTests _ tokens = do
+linearizationTests cfg _ tokens = do
   it "PureScript interpreter matches Rust evaluator on arbitrary inputs" do
     liftEffect $ quickCheckGen do
       -- Generate arbitrary field elements
@@ -317,11 +318,11 @@ linearizationTests _ tokens = do
         => LinearizationInput (FVar f)
         -> Snarky (KimchiConstraint f) t Identity (FVar f)
       circuit' = linearizationCircuit tokens
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied (linearizationReference tokens)
-          , gen: genLinearizationInput :: Gen (LinearizationInput (F f))
+          , input: QuickCheck 1 (genLinearizationInput :: Gen (LinearizationInput (F f)))
           }
       )
       circuit'
@@ -546,12 +547,12 @@ linearizationTockCircuitComparison =
       Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
       _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
 
-spec :: Spec Unit
-spec = describe "Linearization Interpreter" do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = describe "Linearization Interpreter" do
   describe "Pallas" do
-    linearizationTests (Proxy @Pallas.BaseField) PallasTokens.constantTermTokens
+    linearizationTests cfg (Proxy @Pallas.BaseField) PallasTokens.constantTermTokens
   describe "Vesta" do
-    linearizationTests (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
+    linearizationTests cfg (Proxy @Vesta.BaseField) VestaTokens.constantTermTokens
   describe "Circuit comparison" do
     linearizationTickCircuitComparison
     linearizationTockCircuitComparison

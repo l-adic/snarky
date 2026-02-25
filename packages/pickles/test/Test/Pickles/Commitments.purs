@@ -12,28 +12,24 @@ import Pickles.Commitments (CombinedInnerProductInput, NumEvals, combinedInnerPr
 import Pickles.Linearization.FFI (PointEval)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "Pickles.Commitments" do
     describe "Pallas" do
-      commitmentsTests (Proxy :: Proxy Pallas.BaseField)
+      commitmentsTests cfg (Proxy :: Proxy Pallas.BaseField)
     describe "Vesta" do
-      commitmentsTests (Proxy :: Proxy Vesta.BaseField)
+      commitmentsTests cfg (Proxy :: Proxy Vesta.BaseField)
 
 -------------------------------------------------------------------------------
 -- | Generators
@@ -64,9 +60,10 @@ commitmentsTests
   => PoseidonField f
   => HasEndo f f'
   => KimchiVerify f f'
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Spec Unit
-commitmentsTests _ = do
+commitmentsTests cfg _ = do
   it "combinedInnerProductCircuit matches combinedInnerProduct" do
     let
       circuit'
@@ -75,11 +72,11 @@ commitmentsTests _ = do
         => CombinedInnerProductInput (FVar f)
         -> Snarky (KimchiConstraint f) t Identity (FVar f)
       circuit' = combinedInnerProductCircuit
-    void $ circuitTest' @f 1
-      kimchiTestConfig
+    void $ circuitTest' @f
+      cfg
       ( NEA.singleton
           { testFunction: satisfied (combinedInnerProduct :: CombinedInnerProductInput (F f) -> F f)
-          , gen: genCombinedInnerProductInput :: Gen (CombinedInnerProductInput (F f))
+          , input: QuickCheck 1 (genCombinedInnerProductInput :: Gen (CombinedInnerProductInput (F f)))
           }
       )
       circuit'

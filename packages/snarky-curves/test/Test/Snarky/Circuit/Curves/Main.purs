@@ -21,7 +21,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, frequency)
-import Test.Snarky.Circuit.Utils (Expectation, TestConfig, circuitTest', nullPostCondition, satisfied, satisfied_, unsatisfied)
+import Test.Snarky.Circuit.Utils (Expectation, TestConfig, TestInput(..), circuitTest', nullPostCondition, satisfied, satisfied_, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
@@ -69,14 +69,14 @@ spec pg _pc =
           y <- arbitrary `suchThat` \_y -> _y * _y /= x * x * x + F a * x + F b
           pure $ Tuple { a: F a, b: F b } { x, y }
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.cons'
             { testFunction: (unsatisfied :: _ -> Expectation Unit)
-            , gen: offCurve
+            , input: QuickCheck 100 offCurve
             }
             [ { testFunction: satisfied_
-              , gen: onCurve
+              , input: QuickCheck 100 onCurve
               }
             ]
         )
@@ -99,14 +99,14 @@ spec pg _pc =
           p2 <- genAffinePoint pg `suchThat` \p -> p /= p1
           pure $ Tuple p1 p2
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.cons'
             { testFunction: satisfied_
-            , gen: same
+            , input: QuickCheck 100 same
             }
             [ { testFunction: (unsatisfied :: _ -> Expectation Unit)
-              , gen: distinct
+              , input: QuickCheck 100 distinct
               }
             ]
         )
@@ -126,11 +126,11 @@ spec pg _pc =
 
         gen = genAffinePoint pg
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.singleton
             { testFunction: satisfied pureNegate
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit'
@@ -160,11 +160,11 @@ spec pg _pc =
                 pure $ tuple3 b p1 p2
             ]
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.singleton
             { testFunction: satisfied pureIf
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit'
@@ -192,11 +192,11 @@ spec pg _pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit'
@@ -225,11 +225,11 @@ spec pg _pc =
         -- Generate points where y ≠ 0 to avoid division by zero in doubling
         gen = genAffinePoint pg `suchThat` \{ y } -> y /= zero
 
-      void $ circuitTest' @f 100
+      void $ circuitTest' @f
         basicTestConfig
         ( NEA.singleton
             { testFunction: satisfied pureDouble
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit'

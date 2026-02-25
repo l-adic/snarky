@@ -16,8 +16,7 @@ import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class PrimeField, fromAffine, fromBigInt, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
@@ -27,17 +26,14 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (Type1(..), Type2(..), fieldSizeBits, forbiddenType1Values, forbiddenType2Values, fromShifted, toShifted)
 import Test.QuickCheck (Result, arbitrary, (===))
 import Test.QuickCheck.Gen (Gen, elements)
-import Test.Snarky.Circuit.Utils (Expectation, TestConfig, circuitTest', circuitTestM', satisfied, unsatisfied)
+import Test.Snarky.Circuit.Utils (Expectation, TestConfig, TestInput(..), circuitTest', circuitTestM', satisfied, unsatisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
 
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "splitField / joinField" do
     it "roundtrips in Vesta.BaseField" $
       quickCheck (splitJoinRoundtrip @Vesta.BaseField)
@@ -77,11 +73,11 @@ spec = do
           t <- arbitrary @(F Vesta.ScalarField)
           pure $ Tuple p (toShifted t)
 
-      { builtState, solver } <- circuitTest' @Vesta.BaseField 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @Vesta.BaseField
+        cfg
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit1
@@ -105,11 +101,11 @@ spec = do
           forbiddenVal <- elements (fromJust $ NEA.fromArray forbiddenType1Values)
           pure $ Tuple p (Type1 forbiddenVal)
 
-      void $ circuitTest' @Vesta.BaseField 10
-        kimchiTestConfig
+      void $ circuitTest' @Vesta.BaseField
+        cfg
         ( NEA.singleton
             { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint (F Vesta.BaseField)))
-            , gen: genForbidden
+            , input: QuickCheck 10 genForbidden
             }
         )
         circuit1
@@ -143,11 +139,11 @@ spec = do
           circuitVal <- arbitrary @(F Pallas.ScalarField)
           pure $ Tuple p (toShifted circuitVal)
 
-      { builtState, solver } <- circuitTest' @Pallas.BaseField 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @Pallas.BaseField
+        cfg
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit2
@@ -173,11 +169,11 @@ spec = do
 
       -- Run in Effect to catch JS FFI exception as test failure
       try
-        ( circuitTestM' @Pallas.BaseField 10 identity
-            kimchiTestConfig
+        ( circuitTestM' @Pallas.BaseField identity
+            cfg
             ( NEA.singleton
                 { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint (F Pallas.BaseField)))
-                , gen: genForbidden
+                , input: QuickCheck 10 genForbidden
                 }
             )
             circuit2M
@@ -220,11 +216,11 @@ spec = do
           scalar <- arbitrary @(F Pallas.BaseField)
           pure $ Tuple p scalar
 
-      { builtState, solver } <- circuitTest' @Pallas.BaseField 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @Pallas.BaseField
+        cfg
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         circuit3

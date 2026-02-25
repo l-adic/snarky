@@ -15,19 +15,15 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, const_)
 import Snarky.Circuit.Kimchi.EndoScalar (toField, toFieldPure)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 circuit
   :: forall f f' t m n
@@ -49,10 +45,11 @@ spec'
    . FieldSizeInBits f 255
   => CircuitGateConstructor f g'
   => KimchiVerify f f'
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> String
   -> Spec Unit
-spec' _ curveName = do
+spec' cfg _ curveName = do
   describe ("EndoScalar: " <> curveName) do
     it "Cicuit matches the reference implementation and satisfies constraints" $ do
       let
@@ -66,18 +63,18 @@ spec' _ curveName = do
           -> Snarky (KimchiConstraint f) t Identity (FVar f)
         circuit' = circuit
 
-      { builtState, solver } <- circuitTest' @f 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @f
+        cfg
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen: arbitrary
+            , input: QuickCheck 100 arbitrary
             }
         )
         circuit'
 
       liftEffect $ verifyCircuit { s: builtState, gen: arbitrary, solver }
 
-spec :: Spec Unit
-spec = do
-  spec' (Proxy @Vesta.ScalarField) "Vesta"
-  spec' (Proxy @Pallas.ScalarField) "Pallas"
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
+  spec' cfg (Proxy @Vesta.ScalarField) "Vesta"
+  spec' cfg (Proxy @Pallas.ScalarField) "Pallas"

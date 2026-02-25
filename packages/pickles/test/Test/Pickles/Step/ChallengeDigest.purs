@@ -6,6 +6,7 @@ module Test.Pickles.Step.ChallengeDigest
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Fin (getFinite)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
@@ -20,20 +21,15 @@ import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircui
 import Pickles.Types (WrapIPARounds)
 import Pickles.Verify.Types (BulletproofChallenges)
 import RandomOracle.Sponge (Sponge)
-import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -108,8 +104,10 @@ nonZeroBulletproofChallenges = Vector.generate \i ->
 -- | Tests
 -------------------------------------------------------------------------------
 
-spec :: Spec Unit
-spec = describe "Pickles.Step.ChallengeDigest" do
+spec
+  :: TestConfig StepField (KimchiGate StepField) (AuxState StepField)
+  -> Spec Unit
+spec cfg = describe "Pickles.Step.ChallengeDigest" do
   describe "challengeDigestCircuit" do
     it "produces correct digest with mask=true (absorbs challenges)" do
       let
@@ -123,9 +121,9 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      void $ circuitTestInputs' @StepField
-        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-        [ input ]
+      void $ circuitTest' @StepField
+        cfg
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ input ] })
         testCircuit1
 
     it "produces correct digest with mask=false (skips challenges)" do
@@ -140,9 +138,9 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      void $ circuitTestInputs' @StepField
-        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-        [ input ]
+      void $ circuitTest' @StepField
+        cfg
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ input ] })
         testCircuit1
 
     it "circuit matches pure implementation for dummy challenges" do
@@ -165,7 +163,7 @@ spec = describe "Pickles.Step.ChallengeDigest" do
         testFn :: ChallengeDigestTestInput1 -> F StepField
         testFn i = challengeDigestPure i
 
-      void $ circuitTestInputs' @StepField
-        (Record.merge kimchiTestConfig { testFunction: satisfied testFn })
-        [ inputTrue, inputFalse ]
+      void $ circuitTest' @StepField
+        cfg
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ inputTrue, inputFalse ] })
         testCircuit1

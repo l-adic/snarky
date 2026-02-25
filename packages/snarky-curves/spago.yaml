@@ -13,6 +13,7 @@ package:
       - arrays
       - effect
       - gen
+      - identity
       - quickcheck
       - snarky-test-utils
       - spec

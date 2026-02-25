@@ -6,6 +6,7 @@ import Control.Monad.Gen (chooseInt)
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
@@ -23,7 +24,6 @@ import Poseidon (class PoseidonField, hash) as Poseidon
 import RandomOracle (digest, hash, initialState, update)
 import RandomOracle.DomainSeparator (class HasDomainSeparator, initWithDomain)
 import RandomOracle.Sponge as Sponge
-import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.RandomOracle (Digest(..))
@@ -39,7 +39,7 @@ import Test.QuickCheck (arbitrary, (===))
 import Test.QuickCheck.Gen (randomSample', randomSampleOne)
 import Test.RandomOracle.FFI.Pallas as PallasSpongeFFI
 import Test.RandomOracle.FFI.Vesta as VestaSpongeFFI
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', circuitTestInputs', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, before, describe, it)
 import Test.Spec.Assertions (shouldEqual, shouldNotEqual)
 import Test.Spec.QuickCheck (quickCheck)
@@ -316,9 +316,9 @@ hash2CircuitTests _ = do
 
     genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
-  void $ circuitTest' @f 100
+  void $ circuitTest' @f
     kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied referenceHash, gen: genInputs })
+    (NEA.singleton { testFunction: satisfied referenceHash, input: QuickCheck 100 genInputs })
     circuit'
 
 hashVecCircuitTests
@@ -349,9 +349,9 @@ hashVecCircuitTests _ pn = do
 
     genInputs = Vector.generator pn (F <$> arbitrary)
 
-  void $ circuitTest' @f 100
+  void $ circuitTest' @f
     kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied referenceHash, gen: genInputs })
+    (NEA.singleton { testFunction: satisfied referenceHash, input: QuickCheck 100 genInputs })
     circuit'
 
 -- | Test hashVec circuit with a specific input
@@ -381,9 +381,9 @@ hashVecEdgeCase _ input = do
       -> Snarky (KimchiConstraint f) t Identity (Digest (FVar f))
     circuit' x = Checked.hashVec (Vector.toUnfoldable x)
 
-  void $ circuitTestInputs' @f
-    (Record.merge kimchiTestConfig { testFunction: satisfied referenceHash })
-    [ input ]
+  void $ circuitTest' @f
+    kimchiTestConfig
+    (NEA.singleton { testFunction: satisfied referenceHash, input: Exact [ input ] })
     circuit'
 
 -- | Test circuit sponge absorb/squeeze matches pure sponge
@@ -431,9 +431,9 @@ circuitSpongeTests _ = do
 
       genInputs = Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary)
 
-    void $ circuitTest' @f 100
+    void $ circuitTest' @f
       kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied referenceFn, gen: genInputs })
+      (NEA.singleton { testFunction: satisfied referenceFn, input: QuickCheck 100 genInputs })
       circuit'
 
   -- Test: absorb 3, squeeze 2
@@ -470,7 +470,7 @@ circuitSpongeTests _ = do
 
       genInputs = Tuple <$> (F <$> arbitrary) <*> (Tuple <$> (F <$> arbitrary) <*> (F <$> arbitrary))
 
-    void $ circuitTest' @f 100
+    void $ circuitTest' @f
       kimchiTestConfig
-      (NEA.singleton { testFunction: satisfied referenceFn, gen: genInputs })
+      (NEA.singleton { testFunction: satisfied referenceFn, input: QuickCheck 100 genInputs })
       circuit'

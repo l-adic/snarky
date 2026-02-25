@@ -3,6 +3,7 @@ module Test.Pickles.CombinedPolyComm (spec) where
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
@@ -12,12 +13,10 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (combinePolynomials)
-import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, assertEq, coerceViaBits, const_)
 import Snarky.Circuit.Kimchi (expandToEndoScalar)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
@@ -25,12 +24,9 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -- | The combined polynomial commitment circuit runs on Fq (= Pallas.ScalarField).
 type CircuitField = Pallas.ScalarField
@@ -39,13 +35,13 @@ type CircuitField = Pallas.ScalarField
 -- | Powers of xi are computed implicitly via Horner accumulation.
 type CombinedPolyCommInput f = { xi :: SizedF 128 f }
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: TestConfig CircuitField (KimchiGate CircuitField) (AuxState CircuitField) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "CombinedPolyComm" do
-    it "circuit computes combined polynomial commitment matching Rust" \{ step0 } -> combinedPolyCommTest step0
+    it "circuit computes combined polynomial commitment matching Rust" \{ step0 } -> combinedPolyCommTest cfg step0
 
-combinedPolyCommTest :: StepProofContext -> Aff Unit
-combinedPolyCommTest ctx = do
+combinedPolyCommTest :: TestConfig CircuitField (KimchiGate CircuitField) (AuxState CircuitField) -> StepProofContext -> Aff Unit
+combinedPolyCommTest cfg ctx = do
   let
     -- Ground truth from Rust
     expected :: AffinePoint CircuitField
@@ -141,7 +137,7 @@ combinedPolyCommTest ctx = do
       result <- combinePolynomials allBases xi
       assertEq result { x: const_ expected.x, y: const_ expected.y }
 
-  void $ circuitTestInputs' @CircuitField
-    (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-    [ circuitInput ]
+  void $ circuitTest' @CircuitField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
     circuit

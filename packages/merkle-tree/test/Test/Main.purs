@@ -6,6 +6,8 @@ import Data.Identity (Identity(..))
 import Data.Newtype (un)
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Snarky.Constraint.Kimchi (eval)
+import Snarky.Constraint.Kimchi as Kimchi
 import Test.Data.MerkleTree as DynamicMerkleTree
 import Test.Data.MerkleTree.Sized as SizedMerkleTree
 import Test.Data.MerkleTree.Sparse as SparseMerkleTree
@@ -16,6 +18,8 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
 import Test.Spec.Runner.Node.Config as Cfg
 
+kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
+
 main :: Effect Unit
 main = runSpecAndExitProcess'
   { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
@@ -25,8 +29,8 @@ main = runSpecAndExitProcess'
       DynamicMerkleTree.spec
       SizedMerkleTree.spec
       SparseMerkleTree.spec
-    CircuitMerkleTree.spec
-    CircuitSparseMerkleTree.spec
+    CircuitMerkleTree.spec kimchiTestConfig
+    CircuitSparseMerkleTree.spec kimchiTestConfig
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x

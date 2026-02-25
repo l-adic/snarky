@@ -32,14 +32,14 @@ import Snarky.Circuit.Kimchi (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -189,19 +189,17 @@ genSparseTree _ = go 0 Sparse.empty
 
 --------------------------------------------------------------------------------
 
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
-
 -- | Test for impliedRoot circuit - pure computation
 sparseImpliedRootSpec
   :: forall f f' g' d
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-sparseImpliedRootSpec _ pd = do
+sparseImpliedRootSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genSparseTree pd)
 
   let
@@ -233,9 +231,9 @@ sparseImpliedRootSpec _ pd = do
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
       pure $ Tuple addr (Tuple entryHash path)
 
-  { builtState: s, solver } <- circuitTest' @f 100
-    kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied testFunction, gen })
+  { builtState: s, solver } <- circuitTest' @f
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit
 
   liftEffect $ verifyCircuit { s, gen, solver }
@@ -248,10 +246,11 @@ sparseCheckAndUpdateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-sparseCheckAndUpdateSpec _ pd = do
+sparseCheckAndUpdateSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genSparseTree pd)
 
   let
@@ -296,32 +295,32 @@ sparseCheckAndUpdateSpec _ pd = do
         oldRoot = Sparse.root tree
       pure { addr, oldValueHash, newValueHash, path, oldRoot }
 
-  { builtState: s, solver } <- circuitTest' @f 100
-    kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied testFunction, gen })
+  { builtState: s, solver } <- circuitTest' @f
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit
 
   liftEffect $ verifyCircuit { s, gen, solver }
 
 --------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll genSize $
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> SpecT Aff Unit Aff Unit
+spec cfg = beforeAll genSize $
   describe "Sparse Merkle Tree Circuit Specs" do
     describe "impliedRoot" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          sparseImpliedRootSpec (Proxy @Vesta.ScalarField) pd
+          sparseImpliedRootSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          sparseImpliedRootSpec (Proxy @Pallas.ScalarField) pd
+          sparseImpliedRootSpec cfg (Proxy @Pallas.ScalarField) pd
     describe "checkAndUpdate" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          sparseCheckAndUpdateSpec (Proxy @Vesta.ScalarField) pd
+          sparseCheckAndUpdateSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          sparseCheckAndUpdateSpec (Proxy @Pallas.ScalarField) pd
+          sparseCheckAndUpdateSpec cfg (Proxy @Pallas.ScalarField) pd
   where
   genSize = liftEffect do
     d <- randomSampleOne $ chooseInt 3 6

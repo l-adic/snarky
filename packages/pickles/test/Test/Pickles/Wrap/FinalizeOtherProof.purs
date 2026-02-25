@@ -12,6 +12,7 @@ module Test.Pickles.Wrap.FinalizeOtherProof
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Effect.Aff (Aff)
 import Pickles.IPA as IPA
@@ -19,18 +20,13 @@ import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
-import Record as Record
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildFinalizeInput, buildFinalizeParams)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestInputs', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (SpecT, describe, it)
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -48,8 +44,8 @@ type FinalizeOtherProofTestInputVar =
 -- | Real data test (All-checks with Step proof)
 -------------------------------------------------------------------------------
 
-realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
-realDataSpec =
+realDataSpec :: TestConfig WrapField (KimchiGate WrapField) (AuxState WrapField) -> SpecT Aff InductiveTestContext Aff Unit
+realDataSpec cfg =
   describe "Pickles.Wrap.FinalizeOtherProof (real data)" do
     it "all checks pass with real Step proof data" \{ step0 } -> do
       let
@@ -68,7 +64,7 @@ realDataSpec =
           { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
-      void $ circuitTestInputs' @WrapField
-        (Record.merge kimchiTestConfig { testFunction: satisfied_ })
-        [ input ]
+      void $ circuitTest' @WrapField
+        cfg
+        (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
         circuit

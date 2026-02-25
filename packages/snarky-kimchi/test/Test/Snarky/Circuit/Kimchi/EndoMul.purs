@@ -14,8 +14,7 @@ import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate, eval)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, fromAffine, scalarMul, toAffine)
 import Snarky.Curves.Pallas as Pallas
@@ -24,12 +23,9 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 endoSpec
   :: forall f f' g g'
@@ -40,11 +36,12 @@ endoSpec
   => Arbitrary g
   => WeierstrassCurve f g
   => FrModule f' g
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy g
   -> String
   -> Spec Unit
-endoSpec _ curveProxy curveName =
+endoSpec cfg _ curveProxy curveName =
   describe ("EndoMul " <> curveName) do
     it ("EndoMul circuit is valid for " <> curveName) $ unsafePartial $ do
       let
@@ -74,11 +71,11 @@ endoSpec _ curveProxy curveName =
           scalar <- arbitrary
           pure $ Tuple p scalar
 
-      { builtState, solver } <- circuitTest' @f 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @f
+        cfg
         ( NEA.singleton
             { testFunction: satisfied f
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         (uncurry circuit)
@@ -95,11 +92,12 @@ endoInvSpec
   => Arbitrary g
   => WeierstrassCurve f g
   => FrModule f' g
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy g
   -> String
   -> Spec Unit
-endoInvSpec _ curveProxy curveName =
+endoInvSpec cfg _ curveProxy curveName =
   describe ("EndoInv " <> curveName) do
     it ("EndoInv circuit is valid for " <> curveName) $ unsafePartial $ do
       let
@@ -132,20 +130,20 @@ endoInvSpec _ curveProxy curveName =
           scalar <- arbitrary
           pure $ Tuple p scalar
 
-      { builtState, solver } <- circuitTest' @f 100
-        kimchiTestConfig
+      { builtState, solver } <- circuitTest' @f
+        cfg
         ( NEA.singleton
             { testFunction: satisfied refFn
-            , gen
+            , input: QuickCheck 100 gen
             }
         )
         (uncurry circuit)
 
       liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
-spec :: Spec Unit
-spec = do
-  endoSpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Pallas"
-  endoSpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Vesta"
-  endoInvSpec (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Pallas"
-  endoInvSpec (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Vesta"
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
+  endoSpec cfg (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Pallas"
+  endoSpec cfg (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Vesta"
+  endoInvSpec cfg (Proxy @Vesta.ScalarField) (Proxy @Pallas.G) "Pallas"
+  endoInvSpec cfg (Proxy @Pallas.ScalarField) (Proxy @Vesta.G) "Vesta"

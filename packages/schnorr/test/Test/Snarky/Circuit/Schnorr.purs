@@ -21,18 +21,14 @@ import Poseidon as Poseidon
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assert_, const_)
 import Snarky.Circuit.Kimchi (fieldSizeBits, verifyCircuit)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
-
-kimchiTestConfig :: forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)
-kimchiTestConfig = { checker: Kimchi.eval, postCondition: Kimchi.postCondition, initState: Kimchi.initialState }
 
 --------------------------------------------------------------------------------
 -- | Circuit specification for Schnorr verification
@@ -41,9 +37,10 @@ kimchiTestConfig = { checker: Kimchi.eval, postCondition: Kimchi.postCondition, 
 verifySpec
   :: forall k
    . Reflectable k Int
-  => Proxy k
+  => TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Proxy k
   -> Aff Unit
-verifySpec _pk = do
+verifySpec cfg _pk = do
   let
     -- Generator as circuit constants
     genPointVar :: AffinePoint (FVar Pallas.BaseField)
@@ -105,9 +102,9 @@ verifySpec _pk = do
 
     gen = genValidSignature (Proxy @Pallas.G) _pk
 
-  { builtState, solver } <- circuitTest' @Pallas.BaseField 100
-    kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied testFunction, gen })
+  { builtState, solver } <- circuitTest' @Pallas.BaseField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
     circuit'
   liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
@@ -116,9 +113,10 @@ verifySpec _pk = do
 verifyWithAssertSpec
   :: forall k
    . Reflectable k Int
-  => Proxy k
+  => TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Proxy k
   -> Aff Unit
-verifyWithAssertSpec _pk = do
+verifyWithAssertSpec cfg _pk = do
   let
     genPointVar :: AffinePoint (FVar Pallas.BaseField)
     genPointVar =
@@ -139,15 +137,17 @@ verifyWithAssertSpec _pk = do
 
     gen = genValidSignature (Proxy @Pallas.G) _pk
 
-  void $ circuitTest' @Pallas.BaseField 100
-    kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied_, gen })
+  void $ circuitTest' @Pallas.BaseField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: QuickCheck 100 gen })
     circuit'
 
-spec :: Spec Unit
-spec = describe "Snarky.Circuit.Schnorr" do
+spec
+  :: TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Spec Unit
+spec cfg = describe "Snarky.Circuit.Schnorr" do
   describe "verifies" do
     it "Pallas curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @5)
+      verifySpec cfg (Proxy @5)
     it "Pallas curve verification with assert_ inside circuit" do
-      verifyWithAssertSpec (Proxy @5)
+      verifyWithAssertSpec cfg (Proxy @5)

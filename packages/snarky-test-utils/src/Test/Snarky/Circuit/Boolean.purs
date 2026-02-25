@@ -16,7 +16,7 @@ import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, all_, and_, any_, if_, not_, or_, xor_)
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -33,9 +33,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => BoolVar f -> Snarky c' t Identity (BoolVar f)
       circuit = pure <<< not_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied (not :: Boolean -> Boolean), gen: arbitrary })
+        (NEA.singleton { testFunction: satisfied (not :: Boolean -> Boolean), input: QuickCheck 100 arbitrary })
         circuit
 
   it "and Circuit is Valid" $ void $
@@ -43,9 +43,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (BoolVar f) (BoolVar f) -> Snarky c' t Identity (BoolVar f)
       circuit = uncurry and_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied (uncurry (&&) :: Tuple Boolean Boolean -> Boolean), gen: arbitrary })
+        (NEA.singleton { testFunction: satisfied (uncurry (&&) :: Tuple Boolean Boolean -> Boolean), input: QuickCheck 100 arbitrary })
         circuit
 
   it "or Circuit is Valid" $ void $
@@ -53,9 +53,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (BoolVar f) (BoolVar f) -> Snarky c' t Identity (BoolVar f)
       circuit = uncurry or_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied (uncurry (||) :: Tuple Boolean Boolean -> Boolean), gen: arbitrary })
+        (NEA.singleton { testFunction: satisfied (uncurry (||) :: Tuple Boolean Boolean -> Boolean), input: QuickCheck 100 arbitrary })
         circuit
 
   it "xor Circuit is Valid" $ void $
@@ -66,9 +66,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple (BoolVar f) (BoolVar f) -> Snarky c' t Identity (BoolVar f)
       circuit = uncurry xor_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied f, gen: arbitrary })
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 arbitrary })
         circuit
 
   it "if Circuit is Valid" $ void $
@@ -80,9 +80,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Tuple3 (BoolVar f) (FVar f) (FVar f) -> Snarky c' t Identity (FVar f)
       circuit = uncurry3 if_
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied f, gen: arbitrary })
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 arbitrary })
         circuit
 
   it "all Circuit is Valid" $ void $
@@ -93,9 +93,9 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Vector 10 (BoolVar f) -> Snarky c' t Identity (BoolVar f)
       circuit = all_ <<< Vector.toUnfoldable
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied f, gen: Vector.generator (Proxy @10) arbitrary })
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 (Vector.generator (Proxy @10) arbitrary) })
         circuit
 
   it "any Circuit is Valid" $ void $
@@ -106,7 +106,7 @@ spec cfg = describe "Boolean Circuit Specs" do
       circuit :: forall t. CircuitM f c' t Identity => Vector 10 (BoolVar f) -> Snarky c' t Identity (BoolVar f)
       circuit = any_ <<< Vector.toUnfoldable
     in
-      circuitTest' @f 100
+      circuitTest' @f
         cfg
-        (NEA.singleton { testFunction: satisfied f, gen: Vector.generator (Proxy @10) arbitrary })
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 (Vector.generator (Proxy @10) arbitrary) })
         circuit

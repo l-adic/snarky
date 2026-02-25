@@ -46,13 +46,13 @@ spec :: Spec Unit
 spec = do
   circuitSpec
   GenericPlonkSpec.spec
-  PoseidonTests.spec
-  AddCompleteTests.spec
-  GenericTests.spec
-  VarBaseMulTests.spec
-  EndoMulTests.spec
-  EndoScalarTests.spec
-  ShiftedTests.spec
-  GroupMapTests.spec
+  PoseidonTests.spec kimchiTestConfig
+  AddCompleteTests.spec kimchiTestConfig
+  GenericTests.spec kimchiTestConfig
+  VarBaseMulTests.spec kimchiTestConfig
+  EndoMulTests.spec kimchiTestConfig
+  EndoScalarTests.spec kimchiTestConfig
+  ShiftedTests.spec kimchiTestConfig
+  GroupMapTests.spec kimchiTestConfig
   CircuitJsonTests.spec
   DebuggerTests.spec

@@ -12,7 +12,7 @@ import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, all_, assert_, const
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, randomSampleOne, suchThat)
-import Test.Snarky.Circuit.Utils (TestConfig, circuitTestM', satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
 
 class Monad m <= FactorM f m where
@@ -60,7 +60,7 @@ spec cfg = describe "Factors Specs" do
       circuit :: forall t. CircuitM f c' t Gen => FVar f -> Snarky c' t Gen Unit
       circuit = factorsCircuit
     in
-      circuitTestM' @f 100 randomSampleOne
+      circuitTestM' @f randomSampleOne
         cfg
-        (NEA.singleton { testFunction: satisfied_, gen })
+        (NEA.singleton { testFunction: satisfied_, input: QuickCheck 100 gen })
         circuit

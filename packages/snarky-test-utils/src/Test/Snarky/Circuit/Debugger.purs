@@ -5,7 +5,7 @@
 -- | `EvaluationError` at the exact point in circuit execution where it occurred.
 -- |
 -- | ```purescript
--- | -- When circuitTestInputs' fails, diagnose with:
+-- | -- When circuitTest' with Exact inputs fails, diagnose with:
 -- | debugCircuitPure (Proxy @(KimchiConstraint f)) circuit failingInput
 -- | -- → Left (FailedAssertion "R1CS constraint unsatisfied: ...")
 -- | ```
@@ -73,7 +73,7 @@ debugCircuitPure pc circuit inputs = un Identity $ debugCircuit pc circuit input
 
 -- | Run circuit tests with automatic debugger re-run on failure.
 -- |
--- | Same interface as `circuitTestInputsM'` but takes the circuit function directly.
+-- | Same interface as `circuitTestM'` with `Exact` inputs but takes the circuit function directly.
 -- | On failure, re-runs the failing input through `ProverT` with debug mode
 -- | and prints the labeled error for diagnosis.
 debugCircuitInputs
