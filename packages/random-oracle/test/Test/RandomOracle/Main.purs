@@ -6,7 +6,6 @@ import Control.Monad.Gen (chooseInt)
 import Data.Array ((:))
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)

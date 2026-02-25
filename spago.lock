@@ -2281,7 +2281,6 @@
         "test": {
           "dependencies": [
             "aff",
-            "console",
             "effect",
             "gen",
             "identity",

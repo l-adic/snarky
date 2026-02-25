@@ -9,7 +9,6 @@ module Snarky.Constraint.Kimchi
 
 import Prelude
 
-import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array (all)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -25,8 +24,7 @@ import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBui
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
-import Snarky.Circuit.CVar (EvaluationError(..), Variable, v0)
-import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
@@ -151,28 +149,9 @@ instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
       go GenericPlonk.reduce c
       s <- Prover.getState
       when s.debug do
-        let
-          lookup :: Variable -> Except EvaluationError f
-          lookup v = case Map.lookup v s.assignments of
-            Nothing -> throwError $ MissingVariable v
-            Just val -> pure val
-          evalCVar cv = case runExcept (CVar.eval lookup cv) of
-            Left _ -> "[unknown]"
-            Right val -> show val
-        case runExcept (Basic.eval lookup c) of
-          Left e -> throwProverError e
-          Right satisfied -> unless satisfied
-            $ throwProverError
-            $ FailedAssertion
-            $ case c of
-                R1CS { left, right, output } ->
-                  "R1CS failed: " <> evalCVar left <> " * " <> evalCVar right <> " != " <> evalCVar output
-                Equal a b ->
-                  "Equal failed: " <> evalCVar a <> " != " <> evalCVar b
-                Square a sq ->
-                  "Square failed: " <> evalCVar a <> "^2 != " <> evalCVar sq
-                Boolean b ->
-                  "Boolean failed: " <> evalCVar b <> " not in {0,1}"
+        case Basic.debugCheck (flip Map.lookup s.assignments) c of
+          Nothing -> pure unit
+          Just e -> throwProverError e
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =

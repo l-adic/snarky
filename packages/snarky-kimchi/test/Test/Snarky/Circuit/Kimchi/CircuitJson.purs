@@ -2,20 +2,17 @@ module Test.Snarky.Circuit.Kimchi.CircuitJson (spec) where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, diffCircuits, formatCircuit, readCircuitJson)
+import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -68,16 +65,6 @@ exactMatch name psJson =
     c <- loadCircuits @Fp (fixtureDir <> name <> ".json") psJson
     c.ps.publicInputSize `shouldEqual` c.ocaml.publicInputSize
     c.ps.gates `shouldEqual` c.ocaml.gates
-
-debugCompare :: String -> String -> Spec Unit
-debugCompare name psJson =
-  it (name <> " debug comparison") do
-    c <- loadCircuits @Fp (fixtureDir <> name <> ".json") psJson
-    traverse_ log $ formatCircuit "OCaml" c.ocaml
-    traverse_ log $ formatCircuit "PS" c.ps
-    let diffs = diffCircuits c.ocaml c.ps
-    when (not $ Array.null diffs) do
-      log $ show (Array.length diffs) <> " gate(s) differ"
 
 --------------------------------------------------------------------------------
 -- Field arithmetic circuits (input: field, output: field)

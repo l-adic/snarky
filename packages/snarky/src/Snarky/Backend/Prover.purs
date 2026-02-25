@@ -21,11 +21,11 @@ module Snarky.Backend.Prover
 
 import Prelude
 
-import Control.Monad.Except (Except, ExceptT(..), catchError, lift, runExcept, runExceptT, throwError)
+import Control.Monad.Except (ExceptT(..), catchError, lift, runExceptT, throwError)
 import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (foldl, zip)
-import Data.Either (Either(..))
+import Data.Either (Either)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
@@ -34,10 +34,9 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError(..), Variable, incrementVariable, v0)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky(..), check, fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
-import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
+import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
@@ -88,31 +87,9 @@ instance PrimeField f => ConstraintM (ProverT f) (Basic f) where
   addConstraint' c = ProverT do
     { debug: d, assignments } <- get
     when d do
-      let
-        lookup :: Variable -> Except EvaluationError f
-        lookup v = case Map.lookup v assignments of
-          Nothing -> throwError $ MissingVariable v
-          Just val -> pure val
-
-        evalCVar :: CVar f Variable -> String
-        evalCVar cv = case runExcept (CVar.eval lookup cv) of
-          Left _ -> "[unknown]"
-          Right val -> show val
-
-      case runExcept (Basic.eval lookup c) of
-        Left e -> throwError e
-        Right satisfied -> unless satisfied
-          $ throwError
-          $ FailedAssertion
-          $ case c of
-              R1CS { left, right, output } ->
-                "R1CS failed: " <> evalCVar left <> " * " <> evalCVar right <> " != " <> evalCVar output
-              Equal a b ->
-                "Equal failed: " <> evalCVar a <> " != " <> evalCVar b
-              Square a sq ->
-                "Square failed: " <> evalCVar a <> "^2 != " <> evalCVar sq
-              Boolean v ->
-                "Boolean failed: " <> evalCVar v <> " not in {0, 1}"
+      case Basic.debugCheck (flip Map.lookup assignments) c of
+        Nothing -> pure unit
+        Just e -> throwError e
 
 class
   ( BasicSystem f c

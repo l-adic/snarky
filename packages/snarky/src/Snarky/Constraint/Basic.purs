@@ -31,6 +31,7 @@
 module Snarky.Constraint.Basic
   ( Basic(..)
   , eval
+  , debugCheck
   , genWithAssignments
   , class BasicSystem
   , fromBasic
@@ -44,7 +45,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.Except (runExcept)
+import Control.Monad.Except (Except, runExcept)
 import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..))
 import Data.Generic.Rep (class Generic)
@@ -108,6 +109,40 @@ eval lookup gate =
     Boolean i -> do
       CVar.eval lookup i <#> \inp ->
         inp == zero || inp == one
+
+-- | Eagerly check a Basic constraint against current variable assignments.
+-- | Returns `Nothing` if satisfied, `Just errorMessage` if violated.
+debugCheck
+  :: forall f
+   . PrimeField f
+  => (Variable -> Maybe f)
+  -> Basic f
+  -> Maybe EvaluationError
+debugCheck lookupVar c =
+  let
+    lookup :: Variable -> Except EvaluationError f
+    lookup v = case lookupVar v of
+      Nothing -> throwError $ MissingVariable v
+      Just val -> pure val
+
+    evalCVar :: CVar f Variable -> String
+    evalCVar cv = case runExcept (CVar.eval lookup cv) of
+      Left _ -> "[unknown]"
+      Right val -> show val
+  in
+    case runExcept (eval lookup c) of
+      Left e -> Just e
+      Right satisfied
+        | satisfied -> Nothing
+        | otherwise -> Just $ FailedAssertion $ case c of
+            R1CS { left, right, output } ->
+              "R1CS failed: " <> evalCVar left <> " * " <> evalCVar right <> " != " <> evalCVar output
+            Equal a b ->
+              "Equal failed: " <> evalCVar a <> " != " <> evalCVar b
+            Square a sq ->
+              "Square failed: " <> evalCVar a <> "^2 != " <> evalCVar sq
+            Boolean v ->
+              "Boolean failed: " <> evalCVar v <> " not in {0,1}"
 
 -- | Generate a random constraint with satisfying variable assignments.
 -- |
