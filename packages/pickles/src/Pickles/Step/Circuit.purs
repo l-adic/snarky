@@ -24,6 +24,7 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
+import Prim.Int (class Add)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
@@ -93,8 +94,9 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
 -- | Each proof gets its own fresh sponge state.
 finalizeOtherProof
-  :: forall d f f' t m sf r
-   . PrimeField f
+  :: forall _d d f f' t m sf r
+   . Add 1 _d d
+  => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
@@ -169,8 +171,9 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n ds dw input prevInput output aux t m
-   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  :: forall n ds _dw dw input prevInput output aux t m
+   . Add 1 _dw dw
+  => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int

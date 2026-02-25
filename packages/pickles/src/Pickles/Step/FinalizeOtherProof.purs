@@ -26,6 +26,7 @@ module Pickles.Step.FinalizeOtherProof
 import Prelude
 
 import Data.Reflectable (class Reflectable)
+import Prim.Int (class Add)
 import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -125,8 +126,9 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall d f f' t m sf r
-   . PrimeField f
+  :: forall _d d f f' t m sf r
+   . Add 1 _d d
+  => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
