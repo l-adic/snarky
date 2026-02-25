@@ -3,13 +3,15 @@ module Test.Snarky.Circuit.Utils where
 import Prelude
 
 import Control.Monad.Except (Except, runExcept, throwError)
+import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, for_, traverse_)
+import Data.Foldable (foldM, intercalate, traverse_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -65,6 +67,23 @@ type PostCondition f c r =
 
 nullPostCondition :: forall f c r. PostCondition f c r
 nullPostCondition _ _ = pure true
+
+-- | Render an EvaluationError with variable birth context from the builder state.
+decorateError :: forall c r. CircuitBuilderState c r -> EvaluationError -> String
+decorateError builtState = go
+  where
+  go = case _ of
+    WithContext ctx inner -> "[" <> ctx <> "] " <> go inner
+    FailedAssertion msg -> "FailedAssertion: " <> msg
+    MissingVariable v ->
+      let
+        context = maybe "" formatContext (Map.lookup v builtState.varMetadata)
+      in
+        "MissingVariable " <> show v <> context
+    e -> show e
+  formatContext labels
+    | Array.null labels = ""
+    | otherwise = " (" <> intercalate " > " labels <> ")"
 
 -- | Backend-specific configuration for circuit tests.
 -- | Define one value per constraint family to avoid repeating these three fields everywhere.
@@ -131,8 +150,8 @@ checkResult
 checkResult builtState checker postCondition testFunction inputs = case _ of
   Left e ->
     case testFunction inputs of
-      ProverError f -> withHelp (f e) ("Prover exited with error " <> show e)
-      _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> show e)
+      ProverError f -> withHelp (f e) ("Prover exited with error " <> decorateError builtState e)
+      _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> decorateError builtState e)
   Right (Tuple b assignments) ->
     let
       lookup :: Variable -> Except EvaluationError f
@@ -147,7 +166,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
         pure { constraintsResult, postConditionResult }
     in
       case runExcept satisfiedRes of
-        Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> show e)
+        Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> decorateError builtState e)
         Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
           Satisfied expected | constraintsResult && postConditionResult ->
             withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
@@ -177,8 +196,8 @@ circuitTest' { checker, postCondition, initState } scenarios circuit = do
   let
     builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
     solver = makeSolver (Proxy @c') circuit
-  for_ scenarios \{ testFunction, input } ->
-    runScenario (runTest { builtState, solver, checker, postCondition } testFunction) input
+  forWithIndex_ scenarios \idx { testFunction, input } ->
+    runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
 
 -- | Like `circuitTest'` but for circuits with an effectful base monad.
@@ -202,26 +221,26 @@ circuitTestM'
 circuitTestM' nat { checker, postCondition, initState } scenarios circuit = do
   builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
   let solver = makeSolver (Proxy @c') circuit
-  for_ scenarios \{ testFunction, input } ->
-    runScenarioM nat (runTestM { builtState, solver, checker, postCondition } testFunction) input
+  forWithIndex_ scenarios \idx { testFunction, input } ->
+    runScenarioM idx nat (runTestM { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
 
 -- | Run a single test scenario with the given test runner.
-runScenario :: forall a. (a -> Result) -> TestInput a -> Aff Unit
-runScenario run = case _ of
+runScenario :: forall a. Int -> (a -> Result) -> TestInput a -> Aff Unit
+runScenario idx run = case _ of
   QuickCheck n gen ->
     liftEffect $ quickCheck' n $ gen <#> run
   Exact inputs ->
     traverse_
       ( \a -> case run a of
           Success -> pure unit
-          Failed msg -> fail msg
+          Failed msg -> fail $ "Scenario #" <> show idx <> " failed: " <> msg
       )
       inputs
 
 -- | Run a single test scenario with an effectful test runner.
-runScenarioM :: forall a m. Monad m => (m ~> Effect) -> (a -> m Result) -> TestInput a -> Aff Unit
-runScenarioM nat run = case _ of
+runScenarioM :: forall a m. Monad m => Int -> (m ~> Effect) -> (a -> m Result) -> TestInput a -> Aff Unit
+runScenarioM idx nat run = case _ of
   QuickCheck n gen ->
     liftEffect $ quickCheck' n $ gen <#> \a ->
       unsafePerformEffect $ nat $ run a
@@ -231,6 +250,6 @@ runScenarioM nat run = case _ of
           result <- liftEffect $ nat $ run a
           case result of
             Success -> pure unit
-            Failed msg -> fail msg
+            Failed msg -> fail $ "Scenario #" <> show idx <> " failed: " <> msg
       )
       inputs

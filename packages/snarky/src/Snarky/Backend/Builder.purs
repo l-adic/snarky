@@ -26,7 +26,11 @@ import Prelude
 import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
+import Data.Array as Array
 import Data.Identity (Identity(..))
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
@@ -42,6 +46,8 @@ type CircuitBuilderState c r =
   , constraints :: Array c
   , publicInputs :: Array Variable
   , aux :: r
+  , labelStack :: Array String
+  , varMetadata :: Map Variable (Array String)
   }
 
 newtype CircuitBuilderT c r m a = CircuitBuilderT (StateT (CircuitBuilderState c r) m a)
@@ -86,9 +92,13 @@ runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
 instance Monad m => MonadFresh (CircuitBuilderT c r m) where
   fresh = CircuitBuilderT do
-    { nextVar } <- get
-    modify_ _ { nextVar = incrementVariable nextVar }
-    pure nextVar
+    s <- get
+    let v = s.nextVar
+    put $ s
+      { nextVar = incrementVariable v
+      , varMetadata = Map.insert v s.labelStack s.varMetadata
+      }
+    pure v
 
 class
   ( BasicSystem f c'
@@ -109,6 +119,8 @@ initialState =
   , constraints: mempty
   , publicInputs: mempty
   , aux: unit
+  , labelStack: []
+  , varMetadata: Map.empty
   }
 
 instance
@@ -162,4 +174,8 @@ putState
 putState = CircuitBuilderT <<< put
 
 instance WithLabel (CircuitBuilderT c r) where
-  withLabel _ = identity
+  withLabel l (CircuitBuilderT m) = CircuitBuilderT do
+    modify_ \s -> s { labelStack = Array.snoc s.labelStack l }
+    res <- m
+    modify_ \s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }
+    pure res

@@ -34,6 +34,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), EvaluationError(..), Variable, incrementVariable, v0)
+import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky(..), check, fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic(..))
@@ -92,18 +93,26 @@ instance PrimeField f => ConstraintM (ProverT f) (Basic f) where
         lookup v = case Map.lookup v assignments of
           Nothing -> throwError $ MissingVariable v
           Just val -> pure val
+
+        evalCVar :: CVar f Variable -> String
+        evalCVar cv = case runExcept (CVar.eval lookup cv) of
+          Left _ -> "[unknown]"
+          Right val -> show val
+
       case runExcept (Basic.eval lookup c) of
         Left e -> throwError e
         Right satisfied -> unless satisfied
           $ throwError
           $ FailedAssertion
-          $ constraintName c
-    where
-    constraintName = case _ of
-      R1CS _ -> "R1CS constraint unsatisfied: left * right != output"
-      Equal _ _ -> "Equality constraint unsatisfied"
-      Square _ _ -> "Square constraint unsatisfied: a^2 != c"
-      Boolean _ -> "Boolean constraint unsatisfied: value not in {0,1}"
+          $ case c of
+              R1CS { left, right, output } ->
+                "R1CS failed: " <> evalCVar left <> " * " <> evalCVar right <> " != " <> evalCVar output
+              Equal a b ->
+                "Equal failed: " <> evalCVar a <> " != " <> evalCVar b
+              Square a sq ->
+                "Square failed: " <> evalCVar a <> "^2 != " <> evalCVar sq
+              Boolean v ->
+                "Boolean failed: " <> evalCVar v <> " not in {0, 1}"
 
 class
   ( BasicSystem f c

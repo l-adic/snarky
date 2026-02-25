@@ -26,6 +26,7 @@ import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, v0)
+import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
@@ -155,19 +156,23 @@ instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
           lookup v = case Map.lookup v s.assignments of
             Nothing -> throwError $ MissingVariable v
             Just val -> pure val
+          evalCVar cv = case runExcept (CVar.eval lookup cv) of
+            Left _ -> "[unknown]"
+            Right val -> show val
         case runExcept (Basic.eval lookup c) of
           Left e -> throwProverError e
           Right satisfied -> unless satisfied
             $ throwProverError
             $ FailedAssertion
-            $ constraintName c
-
-    constraintName :: Basic f -> String
-    constraintName = case _ of
-      R1CS _ -> "R1CS constraint unsatisfied: left * right != output"
-      Equal _ _ -> "Equality constraint unsatisfied"
-      Square _ _ -> "Square constraint unsatisfied: a^2 != c"
-      Boolean _ -> "Boolean constraint unsatisfied: value not in {0,1}"
+            $ case c of
+                R1CS { left, right, output } ->
+                  "R1CS failed: " <> evalCVar left <> " * " <> evalCVar right <> " != " <> evalCVar output
+                Equal a b ->
+                  "Equal failed: " <> evalCVar a <> " != " <> evalCVar b
+                Square a sq ->
+                  "Square failed: " <> evalCVar a <> "^2 != " <> evalCVar sq
+                Boolean b ->
+                  "Boolean failed: " <> evalCVar b <> " not in {0,1}"
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
@@ -175,6 +180,8 @@ initialState =
   , constraints: mempty
   , publicInputs: mempty
   , aux: initialAuxState
+  , labelStack: []
+  , varMetadata: Map.empty
   }
 
 eval
