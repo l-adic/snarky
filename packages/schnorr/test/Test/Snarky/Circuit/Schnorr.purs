@@ -5,6 +5,7 @@ module Test.Snarky.Circuit.Schnorr
 import Prelude
 
 import Data.Array ((:))
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
@@ -17,16 +18,15 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon as Poseidon
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assert_, const_)
 import Snarky.Circuit.Kimchi (fieldSizeBits, verifyCircuit)
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, inverse, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -37,9 +37,10 @@ import Type.Proxy (Proxy(..))
 verifySpec
   :: forall k
    . Reflectable k Int
-  => Proxy k
+  => TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Proxy k
   -> Aff Unit
-verifySpec _pk = do
+verifySpec cfg _pk = do
   let
     -- Generator as circuit constants
     genPointVar :: AffinePoint (FVar Pallas.BaseField)
@@ -88,45 +89,34 @@ verifySpec _pk = do
           Nothing -> false
           Just { x: rx, y: ry } -> Schnorr.isEven ry && rx == r
 
-    circuit
+    circuit'
       :: forall t
        . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
       => VerifyInput k (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (BoolVar Pallas.BaseField)
-    circuit { signature: { r: sigR, s: sigS }, publicKey, message } =
+    circuit' { signature: { r: sigR, s: sigS }, publicKey, message } =
       let
         signature = SignatureVar { r: sigR, s: sigS }
       in
         verifies (pallasScalarOps @51) genPointVar { signature, publicKey, message }
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) circuit
-    st = compilePure
-      (Proxy @(VerifyInput k (F Pallas.BaseField)))
-      (Proxy @Boolean)
-      (Proxy @(KimchiConstraint Pallas.BaseField))
-      circuit
-      Kimchi.initialState
-
     gen = genValidSignature (Proxy @Pallas.G) _pk
 
-  circuitSpecPure' 100
-    { builtState: st
-    , checker: Kimchi.eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
-  liftEffect $ verifyCircuit { s: st, gen, solver }
+  { builtState, solver } <- circuitTest' @Pallas.BaseField
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit'
+  liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
 --------------------------------------------------------------------------------
 -- | Test that uses assert_ inside the circuit instead of returning the result
 verifyWithAssertSpec
   :: forall k
    . Reflectable k Int
-  => Proxy k
+  => TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Proxy k
   -> Aff Unit
-verifyWithAssertSpec _pk = do
+verifyWithAssertSpec cfg _pk = do
   let
     genPointVar :: AffinePoint (FVar Pallas.BaseField)
     genPointVar =
@@ -135,39 +125,29 @@ verifyWithAssertSpec _pk = do
       in
         { x: const_ x, y: const_ y }
 
-    circuit
+    circuit'
       :: forall t
        . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
       => VerifyInput k (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity Unit
-    circuit { signature: { r: sigR, s: sigS }, publicKey, message } = do
+    circuit' { signature: { r: sigR, s: sigS }, publicKey, message } = do
       let signature = SignatureVar { r: sigR, s: sigS }
       verified <- verifies (pallasScalarOps @51) genPointVar { signature, publicKey, message }
       assert_ verified
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) circuit
-    st = compilePure
-      (Proxy @(VerifyInput k (F Pallas.BaseField)))
-      (Proxy @Unit)
-      (Proxy @(KimchiConstraint Pallas.BaseField))
-      circuit
-      Kimchi.initialState
-
     gen = genValidSignature (Proxy @Pallas.G) _pk
 
-  circuitSpecPure' 100
-    { builtState: st
-    , checker: Kimchi.eval
-    , solver: solver
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  void $ circuitTest' @Pallas.BaseField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: QuickCheck 100 gen })
+    circuit'
 
-spec :: Spec Unit
-spec = describe "Snarky.Circuit.Schnorr" do
+spec
+  :: TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Spec Unit
+spec cfg = describe "Snarky.Circuit.Schnorr" do
   describe "verifies" do
     it "Pallas curve verification circuit matches pure implementation" do
-      verifySpec (Proxy @5)
+      verifySpec cfg (Proxy @5)
     it "Pallas curve verification with assert_ inside circuit" do
-      verifyWithAssertSpec (Proxy @5)
+      verifyWithAssertSpec cfg (Proxy @5)

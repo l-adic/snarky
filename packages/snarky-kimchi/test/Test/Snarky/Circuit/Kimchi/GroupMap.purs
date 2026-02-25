@@ -4,20 +4,21 @@ module Test.Snarky.Circuit.Kimchi.GroupMap
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Effect.Class (liftEffect)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMap, groupMapCircuit, groupMapParams)
-import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (pallasGroupMap, vestaGroupMap)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.QuickCheck (arbitrary, quickCheck')
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -56,10 +57,11 @@ spec'
   => HasBW19 f g
   => CircuitGateConstructor f g'
   => KimchiVerify f f'
-  => Proxy g
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy g
   -> String
   -> Spec Unit
-spec' proxyG curveName = do
+spec' cfg proxyG curveName = do
   let params = groupMapParams proxyG
 
   describe ("GroupMap: " <> curveName) do
@@ -67,7 +69,7 @@ spec' proxyG curveName = do
       $ liftEffect
       $ quickCheck' 100 (testValidCurvePoints params)
 
-    it "circuit matches groupMap and satisfies constraints" $
+    it "circuit matches groupMap and satisfies constraints" do
       let
         f :: F f -> AffinePoint (F f)
         f (F t) =
@@ -76,37 +78,27 @@ spec' proxyG curveName = do
           in
             { x: F x, y: F y }
 
-        circuit
-          :: forall t m
-           . CircuitM f (KimchiConstraint f) t m
+        circuit'
+          :: forall t
+           . CircuitM f (KimchiConstraint f) t Identity
           => FVar f
-          -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-        circuit = groupMapCircuit params
+          -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
+        circuit' = groupMapCircuit params
 
-        solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
+      void $ circuitTest' @f
+        cfg
+        ( NEA.singleton
+            { testFunction: satisfied f
+            , input: QuickCheck 10 arbitrary
+            }
+        )
+        circuit'
 
-        s = compilePure
-          (Proxy @(F f))
-          (Proxy @(AffinePoint (F f)))
-          (Proxy @(KimchiConstraint f))
-          circuit
-          Kimchi.initialState
-
-      in
-        circuitSpecPure' 10
-          { builtState: s
-          , checker: Kimchi.eval
-          , solver: solver
-          , testFunction: satisfied f
-          , postCondition: Kimchi.postCondition
-          }
-          arbitrary
-
-spec :: Spec Unit
-spec = do
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
   describe "GroupMap" do
-    spec' (Proxy @Pallas.G) "Pallas"
-    spec' (Proxy @Vesta.G) "Vesta"
+    spec' cfg (Proxy @Pallas.G) "Pallas"
+    spec' cfg (Proxy @Vesta.G) "Vesta"
 
     it "Pallas groupMap matches Rust FFI"
       $ liftEffect

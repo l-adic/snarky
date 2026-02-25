@@ -10,15 +10,19 @@ module Test.Pickles.Step
 
 import Prelude
 
+import Pickles.Types (StepField)
+import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.Step.ChallengeDigest as ChallengeDigest
 import Test.Pickles.Step.Circuit as Circuit
 import Test.Pickles.Step.Dummy as Dummy
 import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProof
+import Test.Snarky.Circuit.Utils (TestConfig)
 import Test.Spec (Spec, describe)
 
-spec :: Spec Unit
-spec = describe "Pickles.Step" do
+spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec Unit
+spec cfg = describe "Pickles.Step" do
   Dummy.spec
-  Circuit.spec
-  ChallengeDigest.spec
-  FinalizeOtherProof.spec
+  Circuit.spec cfg
+  ChallengeDigest.spec cfg
+  FinalizeOtherProof.spec cfg

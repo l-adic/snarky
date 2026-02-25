@@ -12,6 +12,7 @@ module Test.Pickles.Wrap.FinalizeOtherProof
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Effect.Aff (Aff)
 import Pickles.IPA as IPA
@@ -19,15 +20,13 @@ import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildFinalizeInput, buildFinalizeParams)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (SpecT, describe, it)
-import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -45,8 +44,8 @@ type FinalizeOtherProofTestInputVar =
 -- | Real data test (All-checks with Step proof)
 -------------------------------------------------------------------------------
 
-realDataSpec :: SpecT Aff InductiveTestContext Aff Unit
-realDataSpec =
+realDataSpec :: TestConfig WrapField (KimchiGate WrapField) (AuxState WrapField) -> SpecT Aff InductiveTestContext Aff Unit
+realDataSpec cfg =
   describe "Pickles.Wrap.FinalizeOtherProof (real data)" do
     it "all checks pass with real Step proof data" \{ step0 } -> do
       let
@@ -65,16 +64,7 @@ realDataSpec =
           { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
           assert_ finalized
 
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @FinalizeOtherProofTestInput)
-            (Proxy @Unit)
-            (Proxy @(KimchiConstraint WrapField))
-            circuit
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint WrapField)) circuit
-        , testFunction: satisfied_
-        , postCondition: Kimchi.postCondition
-        }
-        [ input ]
+      void $ circuitTest' @WrapField
+        cfg
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
+        circuit

@@ -5,45 +5,44 @@ module Test.Snarky.Circuit.Kimchi.GenericTest
 import Prelude
 
 import Control.Monad.Gen (suchThat)
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, compilePure, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.Curves (add_)
-import Snarky.Circuit.DSL (F)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, addAffine, genAffinePoint, toAffine)
 import Test.QuickCheck (class Arbitrary)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
-spec :: Spec Unit
-spec = do
-  spec' "Vesta" (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
-  spec' "Pallas" (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> Spec Unit
+spec cfg = do
+  spec' cfg "Vesta" (Proxy @Vesta.G) (Proxy @(KimchiConstraint Vesta.BaseField))
+  spec' cfg "Pallas" (Proxy @Pallas.G) (Proxy @(KimchiConstraint Pallas.BaseField))
 
 spec'
   :: forall g g' f f'
-   . Kimchi.KimchiVerify f f'
+   . KimchiVerify f f'
   => Arbitrary g
   => WeierstrassCurve f g
-  => KimchiVerify f f'
   => CircuitGateConstructor f g'
-  => String
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> String
   -> Proxy g
   -> Proxy (KimchiConstraint f)
   -> Spec Unit
-spec' testName pg pc =
+spec' cfg testName pg _ =
   describe ("Kimchi Generic (EC Add): " <> testName) do
 
     it "unsafeAdd Circuit generates valid Generic constraints" $ unsafePartial do
@@ -51,17 +50,12 @@ spec' testName pg pc =
         f :: Tuple (AffinePoint (F f)) (AffinePoint (F f)) -> AffinePoint (F f)
         f (Tuple x y) = unsafePartial $ fromJust $ toAffine $ addAffine x y
 
-        s :: CircuitBuilderState (KimchiGate f) (AuxState f)
-        s =
-          compilePure
-            (Proxy @(Tuple (AffinePoint (F f)) (AffinePoint (F f))))
-            (Proxy @(AffinePoint (F f)))
-            pc
-            (uncurry add_)
-            Kimchi.initialState
-
-        solver :: Solver f (KimchiGate f) (Tuple (AffinePoint (F f)) (AffinePoint (F f))) (AffinePoint (F f))
-        solver = makeSolver pc (uncurry add_)
+        circuit'
+          :: forall t
+           . CircuitM f (KimchiConstraint f) t Identity
+          => Tuple (AffinePoint (FVar f)) (AffinePoint (FVar f))
+          -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
+        circuit' = uncurry add_
 
         gen = do
           p1 <- genAffinePoint pg
@@ -73,13 +67,13 @@ spec' testName pg pc =
               x1 /= x2 && y1 /= negate y2
           pure $ Tuple p1 p2
 
-      circuitSpecPure' 100
-        { builtState: s
-        , checker: Kimchi.eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: Kimchi.postCondition
-        }
-        gen
+      { builtState, solver } <- circuitTest' @f
+        cfg
+        ( NEA.singleton
+            { testFunction: satisfied f
+            , input: QuickCheck 100 gen
+            }
+        )
+        circuit'
 
-      liftEffect $ verifyCircuit { s, gen, solver }
+      liftEffect $ verifyCircuit { s: builtState, gen, solver }

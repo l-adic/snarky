@@ -9,8 +9,8 @@ All cryptographic computation and proof generation logic is governed by the `pro
 ### The Constraint
 We **NEVER** re-implement cryptographic primitives from scratch in PureScript if they exist in Rust. Our goal is to match the Rust behavior exactly.
 
-### Modifying Vendored Code
-Because `vendor/proof-systems/` is a locally vendored dependency, we **can and should** modify it to expose internals for testing.
+### Modifying proof-systems Code
+The `proof-systems` Rust library lives at `mina/src/lib/crypto/proof-systems/` (a git submodule of the mina repo). All Cargo workspace dependencies point there. We **can and should** modify it to expose internals for testing.
 - ✅ **DO**: Make private fields or methods `pub`.
 - ✅ **DO**: Add "checkpoint" methods to return internal state (e.g., sponge state).
 - ❌ **DON'T**: Re-implement Rust logic in the FFI layer (`crypto-provider/`). This creates a risk of testing PureScript against a flawed re-implementation rather than the actual audited code.

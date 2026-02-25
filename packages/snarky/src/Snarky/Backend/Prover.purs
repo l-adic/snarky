@@ -21,7 +21,7 @@ module Snarky.Backend.Prover
 
 import Prelude
 
-import Control.Monad.Except (ExceptT(..), lift, runExceptT, throwError)
+import Control.Monad.Except (ExceptT(..), catchError, lift, runExceptT, throwError)
 import Control.Monad.State (StateT, get, gets, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (foldl, zip)
@@ -29,25 +29,29 @@ import Data.Either (Either)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
+import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Snarky.Circuit.CVar (CVar(Var), EvaluationError, Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky(..), check, fresh, runAsProverT)
+import Snarky.Circuit.CVar (CVar(Var), EvaluationError(..), Variable, incrementVariable, v0)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky(..), check, fresh, runAsProverT)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields, valueToFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
+import Snarky.Constraint.Basic as Basic
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
 type ProverState f =
   { nextVar :: Variable
   , assignments :: Map Variable f
+  , debug :: Boolean
   }
 
 emptyProverState :: forall f. ProverState f
 emptyProverState =
   { nextVar: v0
   , assignments: Map.empty
+  , debug: false
   }
 
 newtype ProverT f m a = ProverT (ExceptT EvaluationError (StateT (ProverState f) m) a)
@@ -79,8 +83,13 @@ runProver
   -> Tuple (Either EvaluationError a) (ProverState f)
 runProver (ProverT m) s = un Identity $ runStateT (runExceptT m) s
 
-instance ConstraintM (ProverT f) (Basic f) where
-  addConstraint' _ = pure unit
+instance PrimeField f => ConstraintM (ProverT f) (Basic f) where
+  addConstraint' c = ProverT do
+    { debug: d, assignments } <- get
+    when d do
+      case Basic.debugCheck (flip Map.lookup assignments) c of
+        Nothing -> pure unit
+        Just e -> throwError e
 
 class
   ( BasicSystem f c
@@ -157,3 +166,9 @@ putState
   => ProverState f
   -> ProverT f m Unit
 putState = ProverT <<< put
+
+instance WithLabel (ProverT f) where
+  withLabel s (ProverT action) = ProverT do
+    { debug: d } <- get
+    if d then catchError action \e -> throwError $ WithContext s e
+    else action

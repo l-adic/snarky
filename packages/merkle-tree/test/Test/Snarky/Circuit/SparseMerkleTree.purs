@@ -5,15 +5,16 @@ module Test.Snarky.Circuit.SparseMerkleTree
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask)
+import Data.Array.NonEmpty as NEA
 import Data.Generic.Rep (class Generic)
-import Data.Identity (Identity(..))
+import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.Maybe (Maybe(..))
 import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, defaultHash, hash)
 import Data.MerkleTree.Sized (Address(..), AddressVar, Path(..))
 import Data.MerkleTree.Sized as Sized
 import Data.MerkleTree.Sparse as Sparse
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -25,20 +26,20 @@ import Effect.Ref (Ref, read, write)
 import JS.BigInt as BigInt
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.MerkleTree.Sparse as SparseCircuit
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
-import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -109,28 +110,6 @@ instance
       case Sparse.set (Sparse.Address addr) v tree of
         Just tree' -> tree'
         Nothing -> unsafeThrow "setValue: invalid address"
-
--- | Newtype wrapper for compilation phase (throws on any request)
-newtype SparseCompileM :: Int -> Type -> Type -> Type
-newtype SparseCompileM d f a = SparseCompileM (Identity a)
-
-derive instance Newtype (SparseCompileM d f a) _
-derive newtype instance Functor (SparseCompileM d f)
-derive newtype instance Apply (SparseCompileM d f)
-derive newtype instance Applicative (SparseCompileM d f)
-derive newtype instance Bind (SparseCompileM d f)
-derive newtype instance Monad (SparseCompileM d f)
-
--- | Instance for compilation phase - throws on any request
-instance
-  ( Reflectable d Int
-  , PoseidonField f
-  , CircuitType f (Account (F f)) (Account (FVar f))
-  ) =>
-  CMT.MerkleRequestM (SparseCompileM d f) f (Account (F f)) d (Account (FVar f)) where
-  getElement _ = unsafeThrow "unhandled request: getElement"
-  getPath _ = unsafeThrow "unhandled request: getPath"
-  setValue _ _ = unsafeThrow "unhandled request: setValue"
 
 --------------------------------------------------------------------------------
 -- | Account type for merkle tree leaves (reusing from circuit tests)
@@ -216,10 +195,11 @@ sparseImpliedRootSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-sparseImpliedRootSpec _ pd = do
+sparseImpliedRootSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genSparseTree pd)
 
   let
@@ -238,15 +218,6 @@ sparseImpliedRootSpec _ pd = do
     circuit (Tuple addr (Tuple entryHash (Path pathVec))) =
       SparseCircuit.impliedRoot addr entryHash (Sized.Path pathVec)
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s = un Identity $
-      compile
-        (Proxy @(Tuple (Address d) (Tuple (Digest (F f)) (Path d (Digest (F f))))))
-        (Proxy @(Digest (F f)))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        initialState
-
     -- Generator: produce valid (address, entryHash, path) triples from sparse tree
     gen = do
       addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
@@ -260,14 +231,10 @@ sparseImpliedRootSpec _ pd = do
         path = fromSparsePath $ Sparse.getWitness sparseAddr tree
       pure $ Tuple addr (Tuple entryHash path)
 
-  circuitSpecPure' 100
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTest' @f
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   liftEffect $ verifyCircuit { s, gen, solver }
 
@@ -279,10 +246,11 @@ sparseCheckAndUpdateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-sparseCheckAndUpdateSpec _ pd = do
+sparseCheckAndUpdateSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genSparseTree pd)
 
   let
@@ -311,23 +279,6 @@ sparseCheckAndUpdateSpec _ pd = do
     circuit { addr, oldValueHash, newValueHash, path: Path pathVec, oldRoot } =
       SparseCircuit.checkAndUpdate addr oldValueHash newValueHash (Sized.Path pathVec) oldRoot
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s = un Identity $
-      compile
-        ( Proxy
-            @
-            { addr :: Address d
-            , oldValueHash :: Digest (F f)
-            , newValueHash :: Digest (F f)
-            , path :: Path d (Digest (F f))
-            , oldRoot :: Digest (F f)
-            }
-        )
-        (Proxy @(Digest (F f)))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        initialState
-
     -- Generator: produce valid inputs
     gen = do
       addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
@@ -344,36 +295,32 @@ sparseCheckAndUpdateSpec _ pd = do
         oldRoot = Sparse.root tree
       pure { addr, oldValueHash, newValueHash, path, oldRoot }
 
-  circuitSpecPure' 100
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTest' @f
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   liftEffect $ verifyCircuit { s, gen, solver }
 
 --------------------------------------------------------------------------------
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll genSize $
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> SpecT Aff Unit Aff Unit
+spec cfg = beforeAll genSize $
   describe "Sparse Merkle Tree Circuit Specs" do
     describe "impliedRoot" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          sparseImpliedRootSpec (Proxy @Vesta.ScalarField) pd
+          sparseImpliedRootSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          sparseImpliedRootSpec (Proxy @Pallas.ScalarField) pd
+          sparseImpliedRootSpec cfg (Proxy @Pallas.ScalarField) pd
     describe "checkAndUpdate" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          sparseCheckAndUpdateSpec (Proxy @Vesta.ScalarField) pd
+          sparseCheckAndUpdateSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          sparseCheckAndUpdateSpec (Proxy @Pallas.ScalarField) pd
+          sparseCheckAndUpdateSpec cfg (Proxy @Pallas.ScalarField) pd
   where
   genSize = liftEffect do
     d <- randomSampleOne $ chooseInt 3 6

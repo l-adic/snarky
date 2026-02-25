@@ -2,17 +2,18 @@ module Test.Snarky.Circuit.Field (spec) where
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (sum)
+import Data.Identity (Identity)
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..), uncurry)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, compilePure, makeSolver)
+import Snarky.Backend.Builder (class CompileCircuit)
 import Snarky.Backend.Prover (class SolveCircuit)
-import Snarky.Circuit.DSL (F(..), div_, equals_, inv_, mul_, negate_, seal, sum_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, div_, equals_, inv_, mul_, negate_, seal, sum_)
 import Test.QuickCheck (arbitrary)
-import Test.Snarky.Circuit.Utils (PostCondition, circuitSpecPure, circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -20,46 +21,24 @@ spec
   :: forall f c r c'
    . CompileCircuit f c c' r
   => SolveCircuit f c'
-  => Proxy c'
-  -> Checker f c
-  -> PostCondition f c r
-  -> CircuitBuilderState c r
+  => TestConfig f c r
   -> Spec Unit
-spec pc eval postCondition initialState = describe "Field Circuit Specs" do
+spec cfg = describe "Field Circuit Specs" do
 
-  it "mul Circuit is Valid" $
+  it "mul Circuit is Valid" $ void $
     let
-      f (Tuple (F a) (F b)) = F (a * b)
-
-      solver = makeSolver pc (uncurry mul_)
-      s =
-        compilePure
-          (Proxy @(Tuple (F f) (F f)))
-          (Proxy @(F f))
-          pc
-          (uncurry mul_)
-          initialState
+      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit = uncurry mul_
     in
-      circuitSpecPure
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied \(Tuple (F a) (F b)) -> F (a * b), input: QuickCheck 100 arbitrary })
+        circuit
 
-  it "eq Circuit is Valid" $
+  it "eq Circuit is Valid" $ void $
     let
       f :: Tuple (F f) (F f) -> Boolean
       f = uncurry (==)
-      solver = makeSolver pc (uncurry equals_)
-      s =
-        compilePure
-          (Proxy @(Tuple (F f) (F f)))
-          (Proxy @Boolean)
-          pc
-          (uncurry equals_)
-          initialState
       same = do
         a <- arbitrary
         pure $ Tuple (F a) (F a)
@@ -67,128 +46,75 @@ spec pc eval postCondition initialState = describe "Field Circuit Specs" do
         a <- arbitrary
         b <- arbitrary
         pure $ Tuple (F a) (F b)
-    in
-      do
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: eval
-          , solver: solver
-          , testFunction: satisfied f
-          , postCondition: postCondition
-          }
-          same
-        circuitSpecPure' 100
-          { builtState: s
-          , checker: eval
-          , solver: solver
-          , testFunction: satisfied f
-          , postCondition: postCondition
-          }
-          distinct
 
-  it "inv Circuit is Valid" $
+      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (BoolVar f)
+      circuit = uncurry equals_
+    in
+      circuitTest' @f
+        cfg
+        ( NEA.cons'
+            { testFunction: satisfied f, input: QuickCheck 100 same }
+            [ { testFunction: satisfied f, input: QuickCheck 100 distinct } ]
+        )
+        circuit
+
+  it "inv Circuit is Valid" $ void $
     let
       f (F a) =
         if a == zero then F zero
         else F @f (recip a)
-      solver = makeSolver pc inv_
-      s =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(F f))
-          pc
-          inv_
-          initialState
-    in
-      circuitSpecPure
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
 
-  it "div Circuit is Valid" $
+      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit = inv_
+    in
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 arbitrary })
+        circuit
+
+  it "div Circuit is Valid" $ void $
     let
       f (Tuple (F a) (F b)) =
         if b == zero then F zero
         else F @f (a / b)
-      solver = makeSolver pc (uncurry div_)
-      s =
-        compilePure
-          (Proxy @(Tuple (F f) (F f)))
-          (Proxy @(F f))
-          pc
-          (uncurry div_)
-          initialState
-    in
-      circuitSpecPure
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
 
-  it "sum Circuit is Valid" $
+      circuit :: forall t. CircuitM f c' t Identity => Tuple (FVar f) (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit = uncurry div_
+    in
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 arbitrary })
+        circuit
+
+  it "sum Circuit is Valid" $ void $
     let
       f :: Vector 10 (F f) -> F f
       f as = F $ sum (un F <$> as)
-      solver = makeSolver pc (pure <<< sum_ <<< Vector.toUnfoldable)
-      s =
-        compilePure
-          (Proxy @(Vector 10 (F f)))
-          (Proxy @(F f))
-          pc
-          (pure <<< sum_ <<< Vector.toUnfoldable)
-          initialState
-    in
-      circuitSpecPure' 100
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
-        (Vector.generator (Proxy @10) arbitrary)
 
-  it "negate Circuit is Valid" $
-    let
-      f (F a) = F (negate a)
-      solver = makeSolver pc (pure <<< negate_)
-      s =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(F f))
-          pc
-          (pure <<< negate_)
-          initialState
+      circuit :: forall t. CircuitM f c' t Identity => Vector 10 (FVar f) -> Snarky c' t Identity (FVar f)
+      circuit = pure <<< sum_ <<< Vector.toUnfoldable
     in
-      circuitSpecPure
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied f, input: QuickCheck 100 (Vector.generator (Proxy @10) arbitrary) })
+        circuit
 
-  it "seal Circuit is Valid" $
+  it "negate Circuit is Valid" $ void $
     let
-      f :: F f -> F f
-      f = identity
-      solver = makeSolver pc seal
-      s =
-        compilePure
-          (Proxy @(F f))
-          (Proxy @(F f))
-          pc
-          seal
-          initialState
+      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit = pure <<< negate_
     in
-      circuitSpecPure
-        { builtState: s
-        , checker: eval
-        , solver: solver
-        , testFunction: satisfied f
-        , postCondition: postCondition
-        }
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied \(F a) -> F (negate a), input: QuickCheck 100 arbitrary })
+        circuit
+
+  it "seal Circuit is Valid" $ void $
+    let
+      circuit :: forall t. CircuitM f c' t Identity => FVar f -> Snarky c' t Identity (FVar f)
+      circuit = seal
+    in
+      circuitTest' @f
+        cfg
+        (NEA.singleton { testFunction: satisfied (identity :: F f -> F f), input: QuickCheck 100 arbitrary })
+        circuit

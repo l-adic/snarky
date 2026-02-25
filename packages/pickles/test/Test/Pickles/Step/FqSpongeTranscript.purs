@@ -14,6 +14,8 @@ module Test.Pickles.Step.FqSpongeTranscript (spec) where
 import Prelude
 
 import Data.Array as Array
+import Data.Array.NonEmpty as NEA
+import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -23,20 +25,18 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, FqSpongeOutput, spongeTranscriptCircuit, spongeTranscriptPure)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
-import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, toField)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Circuit.DSL (class CircuitM, F(..), SizedF, Snarky, coerceViaBits, toField)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
 
 -- | For the Schnorr test, the sponge operates over Pallas.ScalarField.
 type SpongeField = Pallas.ScalarField
@@ -65,8 +65,8 @@ type SchnorrFqSpongeInput = FqSpongeInput 0 SchnorrTCommChunks (F SpongeField)
 -- | Test spec (wrapped in Identity for mapSpec)
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: TestConfig SpongeField (KimchiGate SpongeField) (AuxState SpongeField) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "Fq-sponge transcript" do
     it "produces correct digest matching Rust oracles" \{ step0 } -> do
       let ctx = buildFqSpongeTestContext step0
@@ -105,20 +105,15 @@ spec =
       liftEffect $ toBigInt psGamma `shouldEqual` toBigInt (toField ctx.oracles.gamma)
 
     it "circuit is satisfiable and matches pure implementation" \{ step0 } -> do
-      let ctx = buildFqSpongeTestContext step0
-      circuitSpecPureInputs
-        { builtState: compilePure
-            (Proxy @SchnorrFqSpongeInput)
-            (Proxy @(FqSpongeOutput (F SpongeField)))
-            (Proxy @(KimchiConstraint SpongeField))
-            (\input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input))
-            Kimchi.initialState
-        , checker: Kimchi.eval
-        , solver: makeSolver (Proxy @(KimchiConstraint SpongeField)) (\input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input))
-        , testFunction: satisfied spongeTranscriptF
-        , postCondition: Kimchi.postCondition
-        }
-        [ ctx.circuitInput ]
+      let
+        ctx = buildFqSpongeTestContext step0
+
+        circuit :: forall t. CircuitM SpongeField (KimchiConstraint SpongeField) t Identity => _ -> Snarky (KimchiConstraint SpongeField) t Identity _
+        circuit = \input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input)
+      void $ circuitTest' @SpongeField
+        cfg
+        (NEA.singleton { testFunction: satisfied spongeTranscriptF, input: Exact (NEA.singleton ctx.circuitInput) })
+        circuit
 
 -------------------------------------------------------------------------------
 -- | Test context

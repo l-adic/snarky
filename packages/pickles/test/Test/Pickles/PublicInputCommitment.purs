@@ -17,11 +17,10 @@ import Pickles.PublicInputCommitment (publicInputCommitment)
 import Pickles.Step.Circuit (StepStatement)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, fieldsToValue, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (curveParams, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -32,7 +31,7 @@ import Test.Pickles.TestContext (InductiveTestContext)
 import Test.Pickles.TestContext as E2E
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen)
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -89,8 +88,8 @@ type WrapTestContext =
 -- Test spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "PublicInputCommitment" do
     it "old publicInputCommitment matches proof-systems reference (step0)" \{ step0 } -> do
       let ctx = mkStepCtx step0
@@ -155,25 +154,12 @@ spec =
         in
           publicInputCommitment @51 @254 (curveParams (Proxy @Vesta.G)) pairs ctx.blindingH
 
-      solver = makeSolver (Proxy @(KimchiConstraint StepCircuitField)) circuit
-
-      s = compilePure
-        (Proxy @(Vector nPublic (F StepCircuitField)))
-        (Proxy @(AffinePoint (F StepCircuitField)))
-        (Proxy @(KimchiConstraint StepCircuitField))
-        circuit
-        Kimchi.initialState
-
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
-    circuitSpecPure' 2
-      { builtState: s
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied (rustFnStep ctx)
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+    { builtState: s, solver } <- circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), input: QuickCheck 2 gen })
+      circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }
 
@@ -193,25 +179,12 @@ spec =
       circuit inputs =
         publicInputCommit (curveParams (Proxy @Vesta.G)) inputs ctx.lagrangeComms ctx.blindingH
 
-      solver = makeSolver (Proxy @(KimchiConstraint StepCircuitField)) circuit
-
-      s = compilePure
-        (Proxy @(Vector nPublic (F StepCircuitField)))
-        (Proxy @(AffinePoint (F StepCircuitField)))
-        (Proxy @(KimchiConstraint StepCircuitField))
-        circuit
-        Kimchi.initialState
-
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
-    circuitSpecPure' 2
-      { builtState: s
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied (rustFnStep ctx)
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+    { builtState: s, solver } <- circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnStep ctx), input: QuickCheck 2 gen })
+      circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }
 
@@ -241,15 +214,6 @@ spec =
       circuit inputs =
         publicInputCommit (curveParams (Proxy @Vesta.G)) inputs ctx.lagrangeComms ctx.blindingH
 
-      solver = makeSolver (Proxy @(KimchiConstraint StepCircuitField)) circuit
-
-      s = compilePure
-        (Proxy @StepFullXhat)
-        (Proxy @(AffinePoint (F StepCircuitField)))
-        (Proxy @(KimchiConstraint StepCircuitField))
-        circuit
-        Kimchi.initialState
-
       rustFn :: StepFullXhat -> AffinePoint (F StepCircuitField)
       rustFn tup = unsafePartial $
         let
@@ -261,14 +225,10 @@ spec =
 
       gen = pure structuredInput
 
-    circuitSpecPure' 1
-      { builtState: s
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied rustFn
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+    void $ circuitTest' @StepCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied rustFn, input: QuickCheck 1 gen })
+      circuit
 
   -- Wrap helpers
 
@@ -308,24 +268,11 @@ spec =
       circuit inputs =
         publicInputCommit (curveParams (Proxy @Pallas.G)) inputs ctx.lagrangeComms ctx.blindingH
 
-      solver = makeSolver (Proxy @(KimchiConstraint WrapCircuitField)) circuit
-
-      s = compilePure
-        (Proxy @(Vector nPublic (F WrapCircuitField)))
-        (Proxy @(AffinePoint (F WrapCircuitField)))
-        (Proxy @(KimchiConstraint WrapCircuitField))
-        circuit
-        Kimchi.initialState
-
       gen = Vector.generator (Proxy @nPublic) (arbitrary :: Gen (F WrapCircuitField))
 
-    circuitSpecPure' 2
-      { builtState: s
-      , checker: Kimchi.eval
-      , solver
-      , testFunction: satisfied (rustFnWrap ctx)
-      , postCondition: Kimchi.postCondition
-      }
-      gen
+    { builtState: s, solver } <- circuitTest' @WrapCircuitField
+      cfg
+      (NEA.singleton { testFunction: satisfied (rustFnWrap ctx), input: QuickCheck 2 gen })
+      circuit
 
     liftEffect $ verifyCircuit { s, gen, solver }

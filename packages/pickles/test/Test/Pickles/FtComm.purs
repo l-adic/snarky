@@ -2,6 +2,7 @@ module Test.Pickles.FtComm (spec) where
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Vector (Vector, toVector)
@@ -12,20 +13,18 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
 import Pickles.IPA as IPA
 import Safe.Coerce (coerce)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEq, const_)
 import Snarky.Circuit.Kimchi (Type1, toShifted)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
-import Test.Snarky.Circuit.Utils (circuitSpecPureInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
 
 -- | The ft_comm circuit runs on Fq (= Pallas.ScalarField = Vesta.BaseField).
 type CircuitField = Pallas.ScalarField
@@ -40,13 +39,13 @@ type FtCommInput f =
   , zetaToDomainSize :: Type1 f
   }
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: TestConfig CircuitField (KimchiGate CircuitField) (AuxState CircuitField) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "FtComm" do
-    it "circuit computes ft_comm matching Rust" \{ step0 } -> ftCommTest step0
+    it "circuit computes ft_comm matching Rust" \{ step0 } -> ftCommTest cfg step0
 
-ftCommTest :: StepProofContext -> Aff Unit
-ftCommTest ctx = do
+ftCommTest :: TestConfig CircuitField (KimchiGate CircuitField) (AuxState CircuitField) -> StepProofContext -> Aff Unit
+ftCommTest cfg ctx = do
   let
     -- Ground truth from Rust
     expected :: AffinePoint CircuitField
@@ -101,16 +100,7 @@ ftCommTest ctx = do
   -- Sanity check
   liftEffect $ (expected.x /= zero) `shouldEqual` true
 
-  circuitSpecPureInputs
-    { builtState: compilePure
-        (Proxy @(FtCommInput (F CircuitField)))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint CircuitField))
-        circuit
-        Kimchi.initialState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint CircuitField)) circuit
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
-    [ circuitInput ]
+  void $ circuitTest' @CircuitField
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
+    circuit

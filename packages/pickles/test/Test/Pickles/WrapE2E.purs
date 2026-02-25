@@ -15,21 +15,20 @@ module Test.Pickles.WrapE2E
 
 import Prelude
 
+import Data.Array.NonEmpty as NEA
 import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
 import Pickles.IPA (type1ScalarOps)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Advice (class WrapWitnessM)
-import Pickles.Wrap.Circuit (WrapInput, WrapInputVar, wrapCircuit)
-import Snarky.Backend.Compile (compile, makeSolver)
+import Pickles.Wrap.Circuit (WrapInputVar, wrapCircuit)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi (groupMapParams)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, runWrapProverM)
-import Test.Snarky.Circuit.Utils (circuitSpecInputs, satisfied_)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -38,8 +37,8 @@ import Type.Proxy (Proxy(..))
 -------------------------------------------------------------------------------
 
 -- | Test that the Wrap circuit is satisfiable with real Step proof data.
-wrapCircuitSatisfiableTest :: StepProofContext -> Aff Unit
-wrapCircuitSatisfiableTest ctx = do
+wrapCircuitSatisfiableTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
+wrapCircuitSatisfiableTest cfg ctx = do
   let
     params = buildWrapCircuitParams ctx
     circuitInput = buildWrapCircuitInput ctx
@@ -53,28 +52,23 @@ wrapCircuitSatisfiableTest ctx = do
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit = wrapCircuit @1 @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
 
-  builtState <- liftEffect $ compile
-    (Proxy @(WrapInput StepIPARounds))
-    (Proxy @Unit)
-    (Proxy @(KimchiConstraint Pallas.ScalarField))
-    circuit
-    Kimchi.initialState
-
-  circuitSpecInputs (runWrapProverM witnessData)
-    { builtState
-    , checker: Kimchi.eval
-    , solver: makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-        (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit)
-    , testFunction: satisfied_
-    , postCondition: Kimchi.postCondition
-    }
-    [ circuitInput ]
+  let
+    circuit'
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField)
+      => WrapInputVar StepIPARounds
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit
+    circuit' = circuit
+  void $ circuitTestM' @Pallas.ScalarField (runWrapProverM witnessData)
+    cfg
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
+    circuit'
 
 -------------------------------------------------------------------------------
 -- | Spec
 -------------------------------------------------------------------------------
 
-spec :: SpecT Aff InductiveTestContext Aff Unit
-spec =
+spec :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> SpecT Aff InductiveTestContext Aff Unit
+spec cfg =
   describe "Wrap E2E" do
-    it "Wrap circuit satisfiable on real Step proof" \{ step0 } -> wrapCircuitSatisfiableTest step0
+    it "Wrap circuit satisfiable on real Step proof" \{ step0 } -> wrapCircuitSatisfiableTest cfg step0

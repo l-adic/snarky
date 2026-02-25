@@ -7,14 +7,14 @@ import Prelude
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array.NonEmpty as NEA
 import Data.Generic.Rep (class Generic)
-import Data.Identity (Identity(..))
+import Data.Identity (Identity)
 import Data.Int (pow)
 import Data.List as List
 import Data.Maybe (Maybe(..), fromJust)
 import Data.MerkleTree.Hashable (class Hashable, class MerkleHashable, hash)
 import Data.MerkleTree.Sized (Address(..))
 import Data.MerkleTree.Sized as SMT
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
@@ -28,19 +28,19 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Poseidon as Poseidon
-import Snarky.Backend.Compile (compile, makeSolver)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Circuit.Kimchi (verifyCircuit, verifyCircuitM)
 import Snarky.Circuit.MerkleTree as CMT
 import Snarky.Circuit.RandomOracle (Digest(..), hash2)
-import Snarky.Constraint.Kimchi (KimchiConstraint, eval, initialState)
+import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, chooseInt, randomSampleOne, vectorOf)
-import Test.Snarky.Circuit.Utils (circuitSpec', circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', circuitTestM', satisfied)
 import Test.Spec (SpecT, beforeAll, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -104,49 +104,6 @@ instance
         Just tree' -> tree'
         Nothing -> unsafeThrow "setValue: invalid address"
 
--- | Newtype wrapper for compilation phase (throws on any request)
-newtype MerkleCompileM :: Int -> Type -> Type -> Type
-newtype MerkleCompileM d f a = MerkleCompileM (Identity a)
-
-derive instance Newtype (MerkleCompileM d f a) _
-derive newtype instance Functor (MerkleCompileM d f)
-derive newtype instance Apply (MerkleCompileM d f)
-derive newtype instance Applicative (MerkleCompileM d f)
-derive newtype instance Bind (MerkleCompileM d f)
-derive newtype instance Monad (MerkleCompileM d f)
-
-runMerkleCompileM :: forall d f a. MerkleCompileM d f a -> a
-runMerkleCompileM (MerkleCompileM m) = un Identity m
-
--- | Instance for compilation phase - throws on any request
-instance
-  ( Reflectable d Int
-  , PoseidonField f
-  , CircuitType f (Account (F f)) (Account (FVar f))
-  ) =>
-  CMT.MerkleRequestM (MerkleCompileM d f) f (Account (F f)) d (Account (FVar f)) where
-  getElement _ = unsafeThrow "unhandled request: getElement"
-  getPath _ = unsafeThrow "unhandled request: getPath"
-  setValue _ _ = unsafeThrow "unhandled request: setValue"
-
--- | Generate a random filled merkle tree of depth d (with Account leaves)
-genTree
-  :: forall d f
-   . Reflectable d Int
-  => PoseidonField f
-  => Proxy d
-  -> Gen (SMT.MerkleTree d (Digest (F f)) (Account (F f)))
-genTree _ = do
-  let numElements = 2 `pow` (reflectType (Proxy @d))
-  vs <- vectorOf numElements (arbitrary @(Account (F f)))
-  let
-    nea = unsafePartial fromJust $ NEA.fromArray vs
-    { head: a, tail: as } = NEA.uncons nea
-
-    base :: SMT.MerkleTree d (Digest (F f)) (Account (F f))
-    base = SMT.create a
-  pure $ SMT.addMany base (List.fromFoldable as)
-
 --------------------------------------------------------------------------------
 -- | Account type for merkle tree leaves
 -- | Uses two field elements: publicKey and tokenBalance
@@ -202,6 +159,24 @@ instance
   ) =>
   MerkleHashable (Account (FVar f)) (Snarky (KimchiConstraint f) t m (Digest (FVar f)))
 
+-- | Generate a random filled merkle tree of depth d (with Account leaves)
+genTree
+  :: forall d f
+   . Reflectable d Int
+  => PoseidonField f
+  => Proxy d
+  -> Gen (SMT.MerkleTree d (Digest (F f)) (Account (F f)))
+genTree _ = do
+  let numElements = 2 `pow` (reflectType (Proxy @d))
+  vs <- vectorOf numElements (arbitrary @(Account (F f)))
+  let
+    nea = unsafePartial fromJust $ NEA.fromArray vs
+    { head: a, tail: as } = NEA.uncons nea
+
+    base :: SMT.MerkleTree d (Digest (F f)) (Account (F f))
+    base = SMT.create a
+  pure $ SMT.addMany base (List.fromFoldable as)
+
 --------------------------------------------------------------------------------
 
 -- | Test for impliedRoot circuit - pure computation, no MerkleRequestM needed
@@ -210,10 +185,11 @@ impliedRootSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-impliedRootSpec _ pd = do
+impliedRootSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
@@ -232,15 +208,6 @@ impliedRootSpec _ pd = do
     circuit (Tuple addr (Tuple entryHash path)) =
       CMT.impliedRoot addr entryHash path
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s = un Identity $
-      compile
-        (Proxy @(Tuple (Address d) (Tuple (Digest (F f)) (SMT.Path d (Digest (F f))))))
-        (Proxy @(Digest (F f)))
-        (Proxy @(KimchiConstraint f))
-        circuit
-        initialState
-
     -- Generator: produce valid (address, entryHash, path) triples from fixed tree
     gen = do
       addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
@@ -251,14 +218,10 @@ impliedRootSpec _ pd = do
         path = unsafePartial fromJust $ SMT.getPath tree addr
       pure $ Tuple addr (Tuple entryHash path)
 
-  circuitSpecPure' 100
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTest' @f
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   liftEffect $ verifyCircuit { s, gen, solver }
 
@@ -270,10 +233,11 @@ getSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-getSpec _ pd = do
+getSpec cfg _ pd = do
   tree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
@@ -294,15 +258,6 @@ getSpec _ pd = do
       -> Snarky (KimchiConstraint f) t m (Account (FVar f))
     circuit addr = CMT.get addr rootVar
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s =
-      runMerkleCompileM $
-        compile
-          (Proxy @(Address d))
-          (Proxy @(Account (F f)))
-          (Proxy @(KimchiConstraint f))
-          (circuit @(MerkleCompileM d f))
-          initialState
     gen =
       let
         maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
@@ -311,14 +266,10 @@ getSpec _ pd = do
 
   ref <- liftEffect $ Ref.new tree
 
-  circuitSpec' 100 (runMerkleRefM ref)
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTestM' @f (runMerkleRefM ref)
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
 
@@ -330,10 +281,11 @@ fetchAndUpdateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-fetchAndUpdateSpec _ pd = do
+fetchAndUpdateSpec cfg _ pd = do
   initialTree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
@@ -379,16 +331,6 @@ fetchAndUpdateSpec _ pd = do
       -> Snarky (KimchiConstraint f) t m { root :: Digest (FVar f), old :: Account (FVar f), new :: Account (FVar f) }
     circuit addr = CMT.fetchAndUpdate addr rootVar modifyF
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s =
-      runMerkleCompileM $
-        compile
-          (Proxy @(Address d))
-          (Proxy @{ root :: Digest (F f), old :: Account (F f), new :: Account (F f) })
-          (Proxy @(KimchiConstraint f))
-          (circuit @(MerkleCompileM d f))
-          initialState
-
     gen =
       let
         maxAddress = (2 `pow` reflectType (Proxy @d)) - 1
@@ -404,14 +346,10 @@ fetchAndUpdateSpec _ pd = do
       write initialTree ref
       runMerkleRefM ref m
 
-  circuitSpec' 100 natWithReset
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTestM' @f natWithReset
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   -- Reset for verify
   liftEffect $ write initialTree ref
@@ -425,10 +363,11 @@ updateSpec
    . Kimchi.KimchiVerify f f'
   => CircuitGateConstructor f g'
   => Reflectable d Int
-  => Proxy f
+  => TestConfig f (KimchiGate f) (AuxState f)
+  -> Proxy f
   -> Proxy d
   -> Aff Unit
-updateSpec _ pd = do
+updateSpec cfg _ pd = do
   initialTree <- liftEffect $ randomSampleOne (genTree pd)
 
   let
@@ -457,16 +396,6 @@ updateSpec _ pd = do
       -> Snarky (KimchiConstraint f) t m (Digest (FVar f))
     circuit (Tuple addr (Tuple old new)) = CMT.update addr rootVar old new
 
-    solver = makeSolver (Proxy @(KimchiConstraint f)) circuit
-    s =
-      runMerkleCompileM $
-        compile
-          (Proxy @(Tuple (Address d) (Tuple (Account (F f)) (Account (F f)))))
-          (Proxy @(Digest (F f)))
-          (Proxy @(KimchiConstraint f))
-          (circuit @(MerkleCompileM d f))
-          initialState
-
     -- Generator: produce (address, oldValue, newValue) from fixed tree
     gen = do
       addrInt <- chooseInt 0 ((2 `pow` reflectType pd) - 1)
@@ -485,50 +414,46 @@ updateSpec _ pd = do
       write initialTree ref
       runMerkleRefM ref m
 
-  circuitSpec' 100 natWithReset
-    { builtState: s
-    , checker: eval
-    , solver: solver
-    , testFunction: satisfied testFunction
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTestM' @f natWithReset
+    cfg
+    (NEA.singleton { testFunction: satisfied testFunction, input: QuickCheck 100 gen })
+    circuit
 
   -- Reset for verify
   liftEffect $ write initialTree ref
   liftEffect $ (runMerkleRefM ref) $ verifyCircuitM { s, gen, solver }
 
-spec :: SpecT Aff Unit Aff Unit
-spec = beforeAll genSize $
+spec :: (forall f f'. KimchiVerify f f' => TestConfig f (KimchiGate f) (AuxState f)) -> SpecT Aff Unit Aff Unit
+spec cfg = beforeAll genSize $
   describe "Merkle Tree Circuit Specs" do
     describe "impliedRoot" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          impliedRootSpec (Proxy @Vesta.ScalarField) pd
+          impliedRootSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          impliedRootSpec (Proxy @Pallas.ScalarField) pd
+          impliedRootSpec cfg (Proxy @Pallas.ScalarField) pd
     describe "get" do
       it "Vesta" \d ->
         reifyType d \pd -> do
-          getSpec (Proxy @Vesta.ScalarField) pd
+          getSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          getSpec (Proxy @Pallas.ScalarField) pd
+          getSpec cfg (Proxy @Pallas.ScalarField) pd
     describe "fetchAndUpdate" do
       it "Vesta" \d ->
         reifyType d \pd ->
-          fetchAndUpdateSpec (Proxy @Vesta.ScalarField) pd
+          fetchAndUpdateSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          fetchAndUpdateSpec (Proxy @Pallas.ScalarField) pd
+          fetchAndUpdateSpec cfg (Proxy @Pallas.ScalarField) pd
     describe "update" do
       it "Vesta" \d ->
         reifyType d \pd ->
-          updateSpec (Proxy @Vesta.ScalarField) pd
+          updateSpec cfg (Proxy @Vesta.ScalarField) pd
       it "Pallas" \d ->
         reifyType d \pd ->
-          updateSpec (Proxy @Pallas.ScalarField) pd
+          updateSpec cfg (Proxy @Pallas.ScalarField) pd
   where
   genSize = liftEffect do
     d <- randomSampleOne $ chooseInt 3 8

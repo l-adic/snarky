@@ -12,6 +12,7 @@ module Snarky.Backend.Compile
   , compilePure
   , compile
   , makeSolver
+  , makeSolver'
   , runSolver
   , runSolverT
   ) where
@@ -30,7 +31,7 @@ import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState, finalize, runCircuitBuilderT, setPublicInputVars)
-import Snarky.Backend.Prover (class SolveCircuit, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
+import Snarky.Backend.Prover (class SolveCircuit, ProverState, ProverT, emptyProverState, getAssignments, runProverT, setAssignments, throwProverError)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError, Variable)
 import Snarky.Circuit.DSL.Assert (assertEqual_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, check, fresh, read, runAsProverT, runSnarky)
@@ -82,18 +83,21 @@ compile _ _ _ circuit cbs = finalize <$> do
       pure out
   pure s
 
-makeSolver
+-- | Create a solver with an explicit initial prover state.
+-- | Useful for enabling debug mode: pass `emptyProverState { debug = true }`.
+makeSolver'
   :: forall f a b c m avar bvar
    . SolveCircuit f c
   => CheckedType f c avar
   => CircuitType f a avar
   => CircuitType f b bvar
   => Monad m
-  => Proxy c
+  => ProverState f
+  -> Proxy c
   -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
   -> SolverT f c m a b
-makeSolver _ circuit = \inputs -> do
-  eres <- lift $ flip runProverT emptyProverState do
+makeSolver' initialState _ circuit = \inputs -> do
+  eres <- lift $ flip runProverT initialState do
     let n = sizeInFields (Proxy @f) (Proxy @a)
     let m = sizeInFields (Proxy @f) (Proxy @b)
     vars <- replicateA (n + m) fresh
@@ -116,6 +120,18 @@ makeSolver _ circuit = \inputs -> do
   case eres of
     Tuple (Left e) _ -> throwError e
     Tuple (Right c) { assignments } -> pure $ Tuple c assignments
+
+makeSolver
+  :: forall f a b c m avar bvar
+   . SolveCircuit f c
+  => CheckedType f c avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => Monad m
+  => Proxy c
+  -> (forall t. CircuitM f c t m => avar -> Snarky c t m bvar)
+  -> SolverT f c m a b
+makeSolver = makeSolver' emptyProverState
 
 type SolverT :: Type -> Type -> (Type -> Type) -> Type -> Type -> Type
 type SolverT f c m a b = a -> ExceptT EvaluationError m (Tuple b (Map Variable f))

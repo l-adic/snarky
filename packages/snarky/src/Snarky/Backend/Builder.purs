@@ -26,12 +26,16 @@ import Prelude
 import Control.Monad.State (StateT, execStateT, get, modify_, put, runStateT)
 import Control.Monad.Trans.Class (class MonadTrans)
 import Data.Array (snoc)
+import Data.Array as Array
 import Data.Identity (Identity(..))
+import Data.Map (Map)
+import Data.Map as Map
+import Data.Maybe (fromMaybe)
 import Data.Newtype (un)
 import Data.Tuple (Tuple)
 import Data.Unfoldable (replicateA)
 import Snarky.Circuit.CVar (CVar(Var), Variable, incrementVariable, v0)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, AsProverT, Snarky, check, fresh)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, class ConstraintM, class MonadFresh, class WithLabel, AsProverT, Snarky, check, fresh)
 import Snarky.Circuit.Types (class CircuitType, fieldsToVar, sizeInFields)
 import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
@@ -42,6 +46,8 @@ type CircuitBuilderState c r =
   , constraints :: Array c
   , publicInputs :: Array Variable
   , aux :: r
+  , labelStack :: Array String
+  , varMetadata :: Map Variable (Array String)
   }
 
 newtype CircuitBuilderT c r m a = CircuitBuilderT (StateT (CircuitBuilderState c r) m a)
@@ -86,9 +92,13 @@ runCircuitBuilder (CircuitBuilderT m) s = un Identity $ runStateT m s
 
 instance Monad m => MonadFresh (CircuitBuilderT c r m) where
   fresh = CircuitBuilderT do
-    { nextVar } <- get
-    modify_ _ { nextVar = incrementVariable nextVar }
-    pure nextVar
+    s <- get
+    let v = s.nextVar
+    put $ s
+      { nextVar = incrementVariable v
+      , varMetadata = Map.insert v s.labelStack s.varMetadata
+      }
+    pure v
 
 class
   ( BasicSystem f c'
@@ -96,6 +106,7 @@ class
   , Finalizer c r
   ) <=
   CompileCircuit f c c' r
+  | f c -> c'
 
 instance ConstraintM (CircuitBuilderT (Basic f) r) (Basic f) where
   addConstraint' = appendConstraint
@@ -108,6 +119,8 @@ initialState =
   , constraints: mempty
   , publicInputs: mempty
   , aux: unit
+  , labelStack: []
+  , varMetadata: Map.empty
   }
 
 instance
@@ -159,3 +172,10 @@ putState
   => (CircuitBuilderState c r)
   -> CircuitBuilderT c r m Unit
 putState = CircuitBuilderT <<< put
+
+instance WithLabel (CircuitBuilderT c r) where
+  withLabel l (CircuitBuilderT m) = CircuitBuilderT do
+    modify_ \s -> s { labelStack = Array.snoc s.labelStack l }
+    res <- m
+    modify_ \s -> s { labelStack = Array.init s.labelStack # fromMaybe [] }
+    pure res

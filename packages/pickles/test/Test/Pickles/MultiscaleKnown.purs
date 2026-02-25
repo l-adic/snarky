@@ -3,7 +3,7 @@ module Test.Pickles.MultiscaleKnown where
 import Prelude
 
 import Data.Array as Array
-import Data.Array.NonEmpty as NonEmptyArray
+import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType, reifyType)
@@ -16,18 +16,17 @@ import Effect.Class.Console as Console
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.MultiscaleKnown (multiscaleKnown)
-import Snarky.Backend.Compile (compilePure, makeSolver)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (curveParams, fromAffine, fromBigInt, generator, scalarMul, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
 import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (chooseInt, randomSample')
-import Test.Snarky.Circuit.Utils (circuitSpecPure', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, before, describe, it)
 import Type.Proxy (Proxy(..))
 
@@ -65,14 +64,16 @@ pureMultiscale terms = unsafePartial $
   in
     { x: F summed.x, y: F summed.y }
 
-spec :: Spec Unit
-spec = do
+spec
+  :: TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Spec Unit
+spec cfg = do
   describe "MultiscaleKnown" do
     before genLengths $ it "variable number of terms" \ns ->
       for_ ns \numTerms -> do
         Console.log $ "Testing with " <> show numTerms <> " terms"
         reifyType numTerms \pn ->
-          multiscaleKnownTest pn
+          multiscaleKnownTest cfg pn
 
 genLengths :: Aff (Array Int)
 genLengths = liftEffect do
@@ -82,9 +83,10 @@ genLengths = liftEffect do
 multiscaleKnownTest
   :: forall numTerms
    . Reflectable numTerms Int
-  => Proxy numTerms
+  => TestConfig Pallas.BaseField (KimchiGate Pallas.BaseField) (AuxState Pallas.BaseField)
+  -> Proxy numTerms
   -> Aff Unit
-multiscaleKnownTest pn = do
+multiscaleKnownTest cfg pn = do
   let
     n = reflectType pn
     bases = map mkBase (Array.range 1 n)
@@ -95,36 +97,23 @@ multiscaleKnownTest pn = do
         (Vector.toUnfoldable scalars)
         bases
 
-    circuit
+    circuit'
       :: forall t
        . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
       => Vector numTerms (FVar Pallas.BaseField)
       -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
-    circuit scalars = multiscaleKnown @51 @254 params
+    circuit' scalars = multiscaleKnown @51 @254 params
       $ unsafePartial fromJust
-      $ NonEmptyArray.fromArray
+      $ NEA.fromArray
       $
         Array.zipWith (\scalar base -> { scalar, base })
           (Vector.toUnfoldable scalars)
           bases
 
-    solver = makeSolver (Proxy @(KimchiConstraint Pallas.BaseField)) circuit
-
-    s = compilePure
-      (Proxy @(Vector numTerms (F Pallas.BaseField)))
-      (Proxy @(AffinePoint (F Pallas.BaseField)))
-      (Proxy @(KimchiConstraint Pallas.BaseField))
-      circuit
-      Kimchi.initialState
-
     gen = Vector.generator pn arbitrary
 
-  circuitSpecPure' 5
-    { builtState: s
-    , checker: Kimchi.eval
-    , solver
-    , testFunction: satisfied pureFn
-    , postCondition: Kimchi.postCondition
-    }
-    gen
+  { builtState: s, solver } <- circuitTest' @Pallas.BaseField
+    cfg
+    (NEA.singleton { testFunction: satisfied pureFn, input: QuickCheck 5 gen })
+    circuit'
   liftEffect $ verifyCircuit { s, gen, solver }

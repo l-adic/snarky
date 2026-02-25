@@ -144,12 +144,15 @@ data EvaluationError
   = MissingVariable Variable
   | DivisionByZero { context :: String, expression :: Maybe String }
   | FailedAssertion String
+  | WithContext String EvaluationError
 
 derive instance Eq EvaluationError
 derive instance Generic EvaluationError _
 
 instance Show EvaluationError where
-  show x = genericShow x
+  show = case _ of
+    WithContext ctx inner -> "[" <> ctx <> "] " <> show inner
+    x -> genericShow x
 
 -- Given a way of looking up variable assignmetns 'i -> vars -> Maybe f', 
 -- recursively evaluate the CVar

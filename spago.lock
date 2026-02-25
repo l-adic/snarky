@@ -1205,6 +1205,7 @@
             "console",
             "effect",
             "gen",
+            "identity",
             "newtype",
             "quickcheck",
             "safe-coerce",
@@ -1901,6 +1902,7 @@
             "arrays",
             "effect",
             "gen",
+            "identity",
             "quickcheck",
             "snarky-test-utils",
             "spec",
@@ -2279,7 +2281,6 @@
         "test": {
           "dependencies": [
             "aff",
-            "console",
             "effect",
             "gen",
             "identity",

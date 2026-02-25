@@ -12,6 +12,7 @@ import Prelude
 import Data.Array (all)
 import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
 import Data.Newtype (over, un)
 import Data.Set as Set
@@ -25,6 +26,7 @@ import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
 import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
+import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
 import Snarky.Constraint.Kimchi.EndoMul (EndoMul)
@@ -129,7 +131,7 @@ instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
     KimchiAddComplete c -> go AddComplete.reduce c
     KimchiPoseidon c -> go Poseidon.reduce c
-    KimchiBasic c -> go GenericPlonk.reduce c
+    KimchiBasic c -> goBasic c
     KimchiVarBaseMul c -> go VarBaseMul.reduce c
     KimchiEndoScalar c -> go EndoScalar.reduce c
     KimchiEndoMul c -> go EndoMul.reduce c
@@ -141,12 +143,24 @@ instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
         Left e -> throwProverError e
         Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
 
+    -- Basic constraints: reduce (to compute internal variables), then eagerly evaluate in debug mode
+    goBasic :: forall m. Monad m => Basic f -> ProverT f m Unit
+    goBasic c = do
+      go GenericPlonk.reduce c
+      s <- Prover.getState
+      when s.debug do
+        case Basic.debugCheck (flip Map.lookup s.assignments) c of
+          Nothing -> pure unit
+          Just e -> throwProverError e
+
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
   { nextVar: v0
   , constraints: mempty
   , publicInputs: mempty
   , aux: initialAuxState
+  , labelStack: []
+  , varMetadata: Map.empty
   }
 
 eval
