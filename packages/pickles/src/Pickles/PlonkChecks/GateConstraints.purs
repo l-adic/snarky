@@ -30,7 +30,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
-import Pickles.Linearization.Env (Challenges, EvalPoint, EnvM, buildCircuitEnvM, circuitEnv, precomputeAlphaPowers)
+import Pickles.Linearization.Env (Challenges, EnvM, EvalPoint, buildCircuitEnvM, circuitEnv, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluate, evaluateM)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)

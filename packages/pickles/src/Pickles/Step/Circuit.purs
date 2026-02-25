@@ -24,7 +24,6 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Reflectable (class Reflectable)
-import Prim.Int (class Add)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
@@ -37,6 +36,7 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherP
 import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)

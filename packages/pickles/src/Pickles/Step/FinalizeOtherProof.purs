@@ -26,7 +26,6 @@ module Pickles.Step.FinalizeOtherProof
 import Prelude
 
 import Data.Reflectable (class Reflectable)
-import Prim.Int (class Add)
 import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -41,6 +40,7 @@ import Pickles.Sponge (SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit, toPlonkMinimal)
 import Poseidon (class PoseidonField)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)

@@ -8,9 +8,7 @@ module Test.Pickles.CircuitJson (spec) where
 import Prelude
 
 import Data.Array as Array
-import Effect.Aff (Aff)
 import Data.Either (Either(..))
-import Foreign (MultipleErrors)
 import Data.Fin (getFinite)
 import Data.Foldable (foldl, intercalate)
 import Data.Map as Map
@@ -18,9 +16,11 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (throw)
+import Foreign (MultipleErrors)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -77,8 +77,10 @@ stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 -- | Unsafe array index into a Vector (for compile-time circuit building only)
 unsafeIdx :: forall n f. Vector n f -> Int -> f
 unsafeIdx v i =
-  let arr = Vector.toUnfoldable v :: Array f
-  in unsafePartial $ Array.unsafeIndex arr i
+  let
+    arr = Vector.toUnfoldable v :: Array f
+  in
+    unsafePartial $ Array.unsafeIndex arr i
 
 -- | Parse a PointEval from two consecutive array positions
 pointEval :: forall n f. Vector n f -> Int -> PointEval f
@@ -402,16 +404,24 @@ compareCircuit name psJson ocamlResult = do
         let
           first = unsafePartial $ Array.unsafeIndex diffs 0
           msg = "First divergence at gate " <> show first.index <> ":\n"
-            <> "  OCaml: " <> formatGate first.index first.ocaml <> "\n"
-            <> "  PS:    " <> formatGate first.index first.ps <> "\n"
-            <> "Total differences: " <> show (Array.length diffs) <> " / "
+            <> "  OCaml: "
+            <> formatGate first.index first.ocaml
+            <> "\n"
+            <> "  PS:    "
+            <> formatGate first.index first.ps
+            <> "\n"
+            <> "Total differences: "
+            <> show (Array.length diffs)
+            <> " / "
             <> show (max ocamlLen psLen)
         liftEffect $ throw msg
       else pure unit
       -- If all zipped gates match but lengths differ, that's still a failure
       if ocamlLen /= psLen then
         liftEffect $ throw $ "Gate count mismatch: OCaml=" <> show ocamlLen <> " PS=" <> show psLen
-            <> ". All " <> show (min ocamlLen psLen) <> " shared gates match."
+          <> ". All "
+          <> show (min ocamlLen psLen)
+          <> " shared gates match."
       else pure unit
     Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
     _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
@@ -434,22 +444,26 @@ type V151 = Vector 151 (F StepField)
 compileExpandPlonk :: String
 compileExpandPlonk = circuitToJson @StepField $
   compilePure (Proxy @V4) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    expandPlonkCircuit Kimchi.initialState
+    expandPlonkCircuit
+    Kimchi.initialState
 
 compileChallengeDigest :: String
 compileChallengeDigest = circuitToJson @StepField $
   compilePure (Proxy @V34) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    challengeDigestStandaloneCircuit Kimchi.initialState
+    challengeDigestStandaloneCircuit
+    Kimchi.initialState
 
 compileBCorrect :: String
 compileBCorrect = circuitToJson @StepField $
   compilePure (Proxy @V20) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    bCorrectStandaloneCircuit Kimchi.initialState
+    bCorrectStandaloneCircuit
+    Kimchi.initialState
 
 compileFopStep :: String
 compileFopStep = circuitToJson @StepField $
   compilePure (Proxy @V151) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    finalizeOtherProofWrapperCircuit Kimchi.initialState
+    finalizeOtherProofWrapperCircuit
+    Kimchi.initialState
 
 -------------------------------------------------------------------------------
 -- | Spec
