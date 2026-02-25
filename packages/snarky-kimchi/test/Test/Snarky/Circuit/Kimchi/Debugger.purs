@@ -5,19 +5,20 @@ module Test.Snarky.Circuit.Kimchi.Debugger
 import Prelude
 
 import Data.Either (Either(..), isRight)
-import Data.Identity (Identity)
+import Data.Identity (Identity(..))
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
 import Data.String as String
-import Data.Tuple (Tuple(..), uncurry)
+import Data.Tuple (Tuple(..), fst, uncurry)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Compile (compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), incrementVariable, v0)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, F(..), FVar, Snarky, addConstraint, const_, div_, label, mul_, r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate, initialState)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
-import Test.Snarky.Circuit.Debugger (debugCircuitPure)
 import Test.Snarky.Circuit.Utils (decorateError)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual, shouldSatisfy)
@@ -28,6 +29,20 @@ type FV = FVar Pallas.BaseField
 type KC = KimchiConstraint Pallas.BaseField
 type KG = KimchiGate Pallas.BaseField
 type AS = AuxState Pallas.BaseField
+
+debugCircuitPure
+  :: forall f c a b avar bvar
+   . SolveCircuit f c
+  => CheckedType f c avar
+  => CircuitType f a avar
+  => CircuitType f b bvar
+  => Proxy c
+  -> (forall t. CircuitM f c t Identity => avar -> Snarky c t Identity bvar)
+  -> a
+  -> Either EvaluationError b
+debugCircuitPure pc circuit inputs =
+  un Identity (runSolverT (makeSolver' (emptyProverState { debug = true }) pc circuit) inputs)
+    <#> fst
 
 spec :: Spec Unit
 spec = describe "ProverT debug mode" do

@@ -31,7 +31,7 @@ import Type.Proxy (Proxy(..))
 -- | How to provide test inputs: either via a QuickCheck generator or as exact values.
 data TestInput a
   = QuickCheck Int (Gen a)
-  | Exact (Array a)
+  | Exact (NonEmptyArray a)
 
 data Expectation a
   = Satisfied a
@@ -177,7 +177,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
 -- |
 -- | Takes a `NonEmptyArray` of `{ testFunction, input }` pairs so you can compile
 -- | once and test multiple scenarios (e.g. satisfiable and unsatisfiable inputs).
--- | Each scenario provides inputs via `QuickCheck n gen` or `Exact [values]`.
+-- | Each scenario provides inputs via `QuickCheck n gen` or `Exact values`.
 circuitTest'
   :: forall @f c c' r a b avar bvar
    . CompileCircuit f c c' r

@@ -52,10 +52,17 @@ wrapCircuitSatisfiableTest cfg ctx = do
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit = wrapCircuit @1 @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
 
+  let
+    circuit'
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField)
+      => WrapInputVar StepIPARounds
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit
+    circuit' = circuit
   void $ circuitTestM' @Pallas.ScalarField (runWrapProverM witnessData)
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
-    (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit)
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
+    circuit'
 
 -------------------------------------------------------------------------------
 -- | Spec

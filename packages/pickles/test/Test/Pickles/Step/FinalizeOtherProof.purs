@@ -75,7 +75,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
 
     void $ circuitTest' @StepField
       cfg
-      (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
+      (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
       dummyTestCircuit
 
 -------------------------------------------------------------------------------
@@ -104,5 +104,5 @@ realDataSpec cfg =
 
       void $ circuitTest' @StepField
         cfg
-        (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
         circuit

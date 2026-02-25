@@ -96,11 +96,18 @@ spec cfg = describe "Pickles.Step.Circuit" do
         , prevChallengeDigests: zero :< nil
         }
 
+    let
+      testCircuit'
+        :: forall t
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+        => StepTestInputVar
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+      testCircuit' = testCircuit
     void $ circuitTestM' @StepField
       (runStepProverM advice)
       cfg
-      (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
-      (testCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepTestInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
+      (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
+      testCircuit'
 
 -------------------------------------------------------------------------------
 -- | Real data test (Step → Wrap → Step cycle)
@@ -139,8 +146,15 @@ realDataSpec cfg =
           _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit true) i
           pure unit
 
+      let
+        realCircuit'
+          :: forall t
+           . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+          => StepSchnorrInputVar
+          -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+        realCircuit' = realCircuit
       void $ circuitTestM' @StepField
         (runStepProverM witnessData)
         cfg
-        (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
-        (realCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
+        realCircuit'

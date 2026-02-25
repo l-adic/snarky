@@ -34,7 +34,7 @@ spec cfg = describe "Assertion Circuit Specs" do
         cfg
         ( NEA.cons'
             { testFunction: satisfied_, input: QuickCheck 100 gen }
-            [ { testFunction: expectDivideByZero, input: QuickCheck 100 (pure zero) } ]
+            [ { testFunction: expectDivideByZero, input: Exact (NEA.singleton zero) } ]
         )
         circuit
 

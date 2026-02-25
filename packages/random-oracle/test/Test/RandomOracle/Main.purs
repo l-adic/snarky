@@ -383,7 +383,7 @@ hashVecEdgeCase _ input = do
 
   void $ circuitTest' @f
     kimchiTestConfig
-    (NEA.singleton { testFunction: satisfied referenceHash, input: Exact [ input ] })
+    (NEA.singleton { testFunction: satisfied referenceHash, input: Exact (NEA.singleton input) })
     circuit'
 
 -- | Test circuit sponge absorb/squeeze matches pure sponge

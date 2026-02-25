@@ -123,7 +123,7 @@ spec cfg = describe "Pickles.Step.ChallengeDigest" do
 
       void $ circuitTest' @StepField
         cfg
-        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ input ] })
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton input) })
         testCircuit1
 
     it "produces correct digest with mask=false (skips challenges)" do
@@ -140,7 +140,7 @@ spec cfg = describe "Pickles.Step.ChallengeDigest" do
 
       void $ circuitTest' @StepField
         cfg
-        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ input ] })
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton input) })
         testCircuit1
 
     it "circuit matches pure implementation for dummy challenges" do
@@ -165,5 +165,5 @@ spec cfg = describe "Pickles.Step.ChallengeDigest" do
 
       void $ circuitTest' @StepField
         cfg
-        (NEA.singleton { testFunction: satisfied testFn, input: Exact [ inputTrue, inputFalse ] })
+        (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.cons' inputTrue [ inputFalse ]) })
         testCircuit1

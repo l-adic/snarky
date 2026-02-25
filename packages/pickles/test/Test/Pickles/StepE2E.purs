@@ -77,7 +77,14 @@ spec cfg = describe "Step E2E with Schnorr" do
   it "Step circuit with Schnorr application is satisfiable (base case)" do
     advice <- liftEffect $ randomSampleOne genStepSchnorrAdvice
 
+    let
+      stepSchnorrCircuit'
+        :: forall t
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+        => StepSchnorrInputVar
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+      stepSchnorrCircuit' = stepSchnorrCircuit
     void $ circuitTestM' @StepField (runStepProverM advice)
       cfg
       (NEA.singleton { testFunction: satisfied_, input: QuickCheck 10 genStepSchnorrInput })
-      (stepSchnorrCircuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => StepSchnorrInputVar -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit)
+      stepSchnorrCircuit'

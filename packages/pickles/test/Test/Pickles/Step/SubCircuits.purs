@@ -115,7 +115,7 @@ ipaFinalCheckTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
     circuit
 
 -- | Circuit test for ftEval0Circuit.
@@ -207,7 +207,7 @@ ftEval0CircuitTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -- | Circuit test for combined_inner_product_correct.
@@ -293,7 +293,7 @@ combinedInnerProductCorrectCircuitTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -- | Circuit test for xi_correct.
@@ -353,7 +353,7 @@ xiCorrectCircuitTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -- | Circuit test for plonkChecksCircuit.
@@ -489,7 +489,7 @@ plonkChecksCircuitTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -- | Test that bCorrectCircuit verifies using Rust-provided values.
@@ -523,7 +523,7 @@ bCorrectCircuitTest cfg ctx = do
 
   void $ circuitTest' @Vesta.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied bCorrect, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied bCorrect, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -------------------------------------------------------------------------------
@@ -557,7 +557,7 @@ incrementallyVerifyProofTest cfg ctx =
     in
       void $ circuitTest' @Vesta.ScalarField
         cfg
-        (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
         circuit
 
 -------------------------------------------------------------------------------
@@ -598,7 +598,7 @@ verifyTest cfg ctx =
     in
       void $ circuitTest' @Vesta.ScalarField
         cfg
-        (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
         circuit
 
 spec :: TestConfig Vesta.ScalarField (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField) -> SpecT Aff InductiveTestContext Aff Unit

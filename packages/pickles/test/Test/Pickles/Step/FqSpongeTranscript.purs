@@ -112,7 +112,7 @@ spec cfg =
         circuit = \input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input)
       void $ circuitTest' @SpongeField
         cfg
-        (NEA.singleton { testFunction: satisfied spongeTranscriptF, input: Exact [ ctx.circuitInput ] })
+        (NEA.singleton { testFunction: satisfied spongeTranscriptF, input: Exact (NEA.singleton ctx.circuitInput) })
         circuit
 
 -------------------------------------------------------------------------------

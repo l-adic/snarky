@@ -79,7 +79,7 @@ extractChallengesCircuitTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ] })
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton $ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof) })
     circuit
 
 -- | In-circuit test for bullet reduce (lr_prod computation).
@@ -122,7 +122,7 @@ bulletReduceCircuitTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof ] })
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton $ coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof) })
     circuit
 
 -- | In-circuit test for IPA final check.
@@ -165,7 +165,7 @@ ipaFinalCheckCircuitTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -- | Debug verification test: prints intermediate IPA values to stderr.
@@ -215,7 +215,7 @@ debugVerifyTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ Tuple (coerce genPoint) z1Shifted ] })
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton $ Tuple (coerce genPoint) z1Shifted) })
     circuit
 
   liftEffect $ log "scaleFast1 mini test passed!"
@@ -357,7 +357,7 @@ checkBulletproofTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied testFn, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied testFn, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -------------------------------------------------------------------------------
@@ -484,7 +484,7 @@ incrementallyVerifyProofTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 -------------------------------------------------------------------------------
@@ -601,7 +601,7 @@ verifyTest cfg ctx = do
 
   void $ circuitTest' @Pallas.ScalarField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit
 
 spec :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> SpecT Aff InductiveTestContext Aff Unit

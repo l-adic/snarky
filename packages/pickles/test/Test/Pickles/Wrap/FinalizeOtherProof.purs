@@ -66,5 +66,5 @@ realDataSpec cfg =
 
       void $ circuitTest' @WrapField
         cfg
-        (NEA.singleton { testFunction: satisfied_, input: Exact [ input ] })
+        (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
         circuit

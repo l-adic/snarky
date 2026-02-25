@@ -139,5 +139,5 @@ combinedPolyCommTest cfg ctx = do
 
   void $ circuitTest' @CircuitField
     cfg
-    (NEA.singleton { testFunction: satisfied_, input: Exact [ circuitInput ] })
+    (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton circuitInput) })
     circuit

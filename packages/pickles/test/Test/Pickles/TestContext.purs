@@ -514,9 +514,15 @@ createStepProofContext stepCase = do
     Kimchi.initialState
   let
     -- Solver with StepProverM to provide real witnesses
+    solverCircuit
+      :: forall t
+       . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+      => Unit
+      -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar
+    solverCircuit = circuit
+
     rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) Unit StepSchnorrOutput
-    rawSolver = makeSolver (Proxy @(KimchiConstraint StepField))
-      (circuit :: forall t. CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) => Unit -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar)
+    rawSolver = makeSolver (Proxy @(KimchiConstraint StepField)) solverCircuit
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
@@ -1171,9 +1177,15 @@ createWrapProofContext stepCtx = do
         (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
 
+    solverCircuit
+      :: forall t
+       . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField)
+      => WrapInputVar StepIPARounds
+      -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit
+    solverCircuit = circuit
+
     rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
-    rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField))
-      (circuit :: forall t. CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) => WrapInputVar StepIPARounds -> Snarky (KimchiConstraint Pallas.ScalarField) t (WrapProverM StepIPARounds WrapIPARounds Pallas.ScalarField) Unit)
+    rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) solverCircuit
 
   builtState <- liftEffect $ compile
     (Proxy @(WrapInput StepIPARounds))
