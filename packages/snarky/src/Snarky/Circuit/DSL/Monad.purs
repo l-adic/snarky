@@ -349,8 +349,8 @@ mul_
 mul_ a b =
   case a, b of
     Const f, Const f' -> pure $ Const (f * f')
-    Const f, c -> pure $ ScalarMul f c
-    c, Const f -> pure $ ScalarMul f c
+    Const f, c -> pure $ CVar.scale_ f c
+    c, Const f -> pure $ CVar.scale_ f c
     _, _ -> do
       z <- exists do
         aVal <- readCVar a

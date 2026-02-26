@@ -33,13 +33,15 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
+import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Types (StepField)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
+import Snarky.Circuit.CVar (Variable(..), const_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -137,24 +139,34 @@ expandPlonkCircuit inputs = do
 -- |   18-33: prev_challenges[1] (16 fields)
 -------------------------------------------------------------------------------
 
--- challengeDigestStandaloneCircuit
---   :: forall t m
---    . CircuitM StepField (KimchiConstraint StepField) t m
---   => Vector 34 (FVar StepField)
---   -> Snarky (KimchiConstraint StepField) t m Unit
--- challengeDigestStandaloneCircuit inputs = do
---   let
---     mask :: Vector 2 (BoolVar StepField)
---     mask = Vector.generate \j -> asBool $ unsafeIdx inputs (getFinite j)
---
---     prevChallenges :: Vector 2 (Vector 16 (SizedF 128 (FVar StepField)))
---     prevChallenges = Vector.generate \j ->
---       Vector.generate \k ->
---         asSizedF128 $ unsafeIdx inputs (2 + 16 * getFinite j + getFinite k)
---
---   -- Run opt_sponge in a fresh sponge (OCaml creates a new Opt_sponge here)
---   evalSpongeM initialSpongeCircuit do
---     void $ challengeDigestCircuit { mask, oldChallenges: prevChallenges }
+challengeDigestStandaloneCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 34 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+challengeDigestStandaloneCircuit inputs = do
+  let
+    -- Inputs 0-1 are mask booleans (coerce FVar to BoolVar)
+    mask :: Vector 2 (BoolVar StepField)
+    mask = Vector.generate \j -> coerce $ unsafeIdx inputs (getFinite j)
+
+    -- Inputs 2-33 are prev_challenges (2 proofs × 16 challenges)
+    prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
+    prevChallenges = Vector.generate \j ->
+      Vector.generate \k ->
+        unsafeIdx inputs (2 + 16 * getFinite j + getFinite k)
+
+    -- Build pending absorptions: for each proof, for each challenge, (keep, chal)
+    pending :: Array (Tuple (BoolVar StepField) (FVar StepField))
+    pending = Array.concat $ Vector.toUnfoldable $
+      Vector.zipWith
+        ( \keep chals ->
+            map (Tuple keep) (Vector.toUnfoldable chals :: Array _)
+        )
+        mask
+        prevChallenges
+
+  void $ OptSponge.squeeze (OptSponge.create :: OptSponge.OptSponge StepField) pending
 
 -------------------------------------------------------------------------------
 -- | Sub-circuit 3: b_correct (Step 12)
@@ -660,11 +672,11 @@ compileExpandPlonk = circuitToJson @StepField $
     expandPlonkCircuit
     Kimchi.initialState
 
--- compileChallengeDigest :: String
--- compileChallengeDigest = circuitToJson @StepField $
---   compilePure (Proxy @V34) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
---     challengeDigestStandaloneCircuit
---     Kimchi.initialState
+compileChallengeDigest :: String
+compileChallengeDigest = circuitToJson @StepField $
+  compilePure (Proxy @V34) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    challengeDigestStandaloneCircuit
+    Kimchi.initialState
 
 compileBCorrect :: String
 compileBCorrect = circuitToJson @StepField $
@@ -701,10 +713,9 @@ spec =
       ocaml <- loadFixture "expand_plonk_circuit"
       compareCircuit "expand_plonk" compileExpandPlonk ocaml
 
-    -- TODO: challenge_digest and full_fop not ready yet
-    -- it "Sub-circuit 2: challenge_digest (Step 7a)" do
-    --   ocaml <- loadFixture "challenge_digest_circuit"
-    --   compareCircuit "challenge_digest" compileChallengeDigest ocaml
+    it "Sub-circuit 2: challenge_digest (Step 7a)" do
+      ocaml <- loadFixture "challenge_digest_circuit"
+      compareCircuit "challenge_digest" compileChallengeDigest ocaml
 
     it "Sub-circuit 3: b_correct (Step 12)" do
       ocaml <- loadFixture "b_correct_circuit"
