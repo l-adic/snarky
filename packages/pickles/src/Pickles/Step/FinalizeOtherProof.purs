@@ -63,12 +63,14 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | - `linearizationPoly`: The linearization polynomial for gate constraints
 -- |
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
-type FinalizeOtherProofParams f =
+type FinalizeOtherProofParams :: Type -> Row Type -> Type
+type FinalizeOtherProofParams f r =
   { domain :: { generator :: f, shifts :: Vector 7 f }
   , domainLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , zkRows :: Int
   , linearizationPoly :: LinearizationPoly f
+  | r
   }
 
 -- | Input for finalizing another proof.
@@ -128,7 +130,7 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall _d d f f' g t m sf r
+  :: forall _d d f f' g t m sf r r2
    . Add 1 _d d
   => PrimeField f
   => FieldSizeInBits f 255
@@ -138,7 +140,7 @@ finalizeOtherProofCircuit
   => LinearizationFFI f g
   => Reflectable d Int
   => { unshift :: sf -> FVar f, shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f) | r }
-  -> FinalizeOtherProofParams f
+  -> FinalizeOtherProofParams f r2
   -> FinalizeOtherProofInput d (FVar f) sf (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest } = do
@@ -160,13 +162,13 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   PlonkChecks.absorbAllEvals witness.allEvals
 
   -- 5. Squeeze xi (128-bit scalar challenge)
-  rawXi <- squeezeScalarChallenge
+  rawXi <- squeezeScalarChallenge { endo: endoVar }
 
   -- 6. xi_correct: compare squeezed xi with claimed xi
   xiCorrect <- liftSnarky $ isEqual rawXi deferred.xi
 
   -- 7. Squeeze evalscale (r)
-  rawR <- squeezeScalarChallenge
+  rawR <- squeezeScalarChallenge { endo: endoVar }
 
   -- 8. Expand xi and r via endo -> polyscale/evalscale
   polyscale <- liftSnarky $ toField rawXi endoVar
@@ -175,7 +177,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   -- 9. CIP computation + check
   let cipInput = buildCipInput plonk witness params
   computedCIP <- liftSnarky $
-    combinedInnerProductCheckCircuit params.linearizationPoly params.domainLog2 plonk.zeta
+    combinedInnerProductCheckCircuit params plonk.zeta
       { polyscale, evalscale }
       cipInput
   cipCorrect <- liftSnarky $
@@ -217,11 +219,11 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 -- | Build the CombinedInnerProductCheckInput from expanded plonk values,
 -- | witness evaluations, and compile-time parameters.
 buildCipInput
-  :: forall f
+  :: forall f r
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f
+  -> FinalizeOtherProofParams f r
   -> CombinedInnerProductCheckInput (FVar f)
 buildCipInput plonk witness params =
   { permInput: buildPermInput plonk witness params
@@ -238,11 +240,11 @@ buildCipInput plonk witness params =
 
 -- | Build the PermutationInput for the perm_correct check.
 buildPermInput
-  :: forall f
+  :: forall f r
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f
+  -> FinalizeOtherProofParams f r
   -> PermutationInput (FVar f)
 buildPermInput plonk witness params =
   { w: map _.zeta (Vector.take @7 witness.allEvals.witnessEvals)

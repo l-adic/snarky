@@ -399,7 +399,7 @@ ftEval0StandaloneCircuit inputs = do
   term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
   let wSigma = zipWith Tuple (Vector.take @6 w0) s0
   term1 <- foldM
-    (\acc (Tuple wi si) -> do
+    ( \acc (Tuple wi si) -> do
         betaSi <- mul_ beta si
         mul_ (add_ (add_ betaSi wi) gamma) acc
     )
@@ -415,7 +415,7 @@ ftEval0StandaloneCircuit inputs = do
   term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
   let wShifts = zipWith Tuple (Vector.take @7 w0) (map (const_ :: StepField -> FVar StepField) shifts)
   term2 <- foldM
-    (\acc (Tuple wi si) -> do
+    ( \acc (Tuple wi si) -> do
         betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
         mul_ acc (add_ (add_ gamma betaZetaSi) wi)
     )

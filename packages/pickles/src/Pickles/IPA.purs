@@ -224,21 +224,22 @@ computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
 -- |
 -- | The number of rounds `n` equals the SRS log size
 extractScalarChallenges
-  :: forall n f t m
+  :: forall n f t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Vector n (LrPair (FVar f))
+  => { endo :: FVar f | r }
+  -> Vector n (LrPair (FVar f))
   -> SpongeM f (KimchiConstraint f) t m (Vector n (SizedF 128 (FVar f)))
-extractScalarChallenges pairs = for pairs \{ l, r } -> do
+extractScalarChallenges params pairs = for pairs \{ l, r } -> do
   -- Absorb L and R points into the sponge
   absorbPoint l
   absorbPoint r
   -- The result is a 128-bit scalar challenge, NOT a full field element.
   -- In pickles, the endo mapping to full field happens separately when needed.
   -- This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
-  squeezeScalarChallenge
+  squeezeScalarChallenge params
 
 -- | Pure version of extractScalarChallenges for testing.
 -- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
@@ -475,7 +476,7 @@ type IpaFinalCheckResult n f =
 -- | For Pallas circuits (Fp), the commitment curve is Vesta, use Type1 for sf.
 -- | For Vesta circuits (Fq), the commitment curve is Pallas, use Type2 for sf.
 ipaFinalCheckCircuit
-  :: forall n @f f' @g sf t m _l
+  :: forall n @f f' @g sf t m _l r
    . Reflectable n Int
   => Add 1 _l n
   => FieldSizeInBits f 255
@@ -487,24 +488,24 @@ ipaFinalCheckCircuit
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => IpaScalarOps f t m sf
-  -> GroupMapParams f
+  -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
-ipaFinalCheckCircuit scalarOps groupMapParams input = do
+ipaFinalCheckCircuit scalarOps params input = do
   -- 1. Derive u via group_map
   -- NOTE: combined_inner_product should already be absorbed by caller
   u <- do
     t <- squeeze
-    liftSnarky $ groupMapCircuit groupMapParams t
+    liftSnarky $ groupMapCircuit params.groupMapParams t
 
   -- 2. Extract 128-bit scalar challenges from L/R pairs
-  scalarChallenges <- extractScalarChallenges input.lr
+  scalarChallenges <- extractScalarChallenges params input.lr
 
   -- 3. Absorb delta point
   absorbPoint input.delta
 
   -- 4. Derive c via squeeze (as 128-bit scalar challenge)
-  c <- squeezeScalarChallenge
+  c <- squeezeScalarChallenge params
 
   success <- liftSnarky $ do
     -- 5. Compute lr_prod from L/R pairs and challenges
@@ -625,7 +626,7 @@ type CheckBulletproofInput n f sf =
 -- | Commitment bases are constant points from the verifier index / proof,
 -- | passed separately from the circuit input.
 checkBulletproof
-  :: forall numBases n @f f' @g sf t m _l _l2
+  :: forall numBases n @f f' @g sf t m _l _l2 r
    . Reflectable n Int
   => Add 1 _l n
   => Add 1 _l2 numBases
@@ -638,11 +639,11 @@ checkBulletproof
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => IpaScalarOps f t m sf
-  -> GroupMapParams f
+  -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> Vector numBases (AffinePoint (FVar f))
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
-checkBulletproof scalarOps groupMapParams commitmentBases input = do
+checkBulletproof scalarOps params commitmentBases input = do
   -- 1. Absorb shift_scalar(CIP) into sponge
   let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
   for_ cipFields absorb
@@ -652,7 +653,7 @@ checkBulletproof scalarOps groupMapParams commitmentBases input = do
     combinePolynomials commitmentBases input.xi
 
   -- 3. Delegate to ipaFinalCheckCircuit
-  ipaFinalCheckCircuit @f @g scalarOps groupMapParams
+  ipaFinalCheckCircuit @f @g scalarOps params
     { delta: input.delta
     , sg: input.sg
     , lr: input.lr

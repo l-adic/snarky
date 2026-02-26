@@ -53,6 +53,8 @@ module Test.Pickles.TestContext
   , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPInput
+  , stepEndo
+  , wrapEndo
   , module Pickles.Types
   , toVectorOrThrow
   ) where
@@ -709,19 +711,25 @@ buildWrapCircuitParams ctx =
     sigmaComms :: Vector 6 (AffinePoint Pallas.ScalarField)
     sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
   in
-    { ivpParams:
-        { curveParams: curveParams (Proxy @Vesta.G)
-        , lagrangeComms: coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
-        , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
-        , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
-        , columnComms:
-            { index: coerce indexComms
-            , coeff: coerce coeffComms
-            , sigma: coerce sigmaComms
-            }
-        , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
+    { curveParams: curveParams (Proxy @Vesta.G)
+    , lagrangeComms: coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
+    , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
+    , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
+    , columnComms:
+        { index: coerce indexComms
+        , coeff: coerce coeffComms
+        , sigma: coerce sigmaComms
         }
-    , finalizeParams: buildFinalizeParams ctx
+    , indexDigest: ProofFFI.pallasVerifierIndexDigest ctx.verifierIndex
+    , endo: wrapEndo
+    , domain:
+        { generator: (ProofFFI.domainGenerator ctx.domainLog2 :: Pallas.ScalarField)
+        , shifts: map coerceFp (ProofFFI.proverIndexShifts ctx.proverIndex)
+        }
+    , domainLog2: ctx.domainLog2
+    , zkRows
+    , linearizationPoly: Linearization.vesta
+    , groupMapParams: Kimchi.groupMapParams (Proxy @Vesta.G)
     }
 
 -------------------------------------------------------------------------------
@@ -756,7 +764,7 @@ extractStepRawBpChallenges ctx =
 -------------------------------------------------------------------------------
 
 -- | Build compile-time parameters for the FinalizeOtherProof circuit.
-buildFinalizeParams :: StepProofContext -> FinalizeOtherProofParams WrapField
+buildFinalizeParams :: StepProofContext -> FinalizeOtherProofParams WrapField ()
 buildFinalizeParams stepCtx =
   { domain:
       { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
@@ -1175,7 +1183,6 @@ createWrapProofContext stepCtx = do
     circuit =
       wrapCircuit @1 @StepIPARounds
         type1ScalarOps
-        (Kimchi.groupMapParams (Proxy @Vesta.G))
         params
 
     solverCircuit
@@ -1307,7 +1314,7 @@ extractWrapRawBpChallenges ctx =
 
 -- | Build compile-time parameters for the Step FinalizeOtherProof circuit.
 -- | Takes a WrapProofContext (Fq data) and produces Fp parameters.
-buildStepFinalizeParams :: WrapProofContext -> FinalizeOtherProofParams StepField
+buildStepFinalizeParams :: WrapProofContext -> FinalizeOtherProofParams StepField ()
 buildStepFinalizeParams wrapCtx =
   { domain:
       { generator: (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
@@ -1633,7 +1640,7 @@ buildStepProverWitness wrapCtx =
 -------------------------------------------------------------------------------
 
 -- | Build compile-time parameters for the Step IVP circuit (Fp circuit verifying Pallas proof).
-buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField
+buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField ()
 buildStepIVPParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
@@ -1658,6 +1665,8 @@ buildStepIVPParams ctx =
         , sigma: coerce sigmaComms
         }
     , indexDigest: ProofFFI.vestaVerifierIndexDigest ctx.verifierIndex
+    , endo: stepEndo
+    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
     }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.

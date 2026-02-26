@@ -22,15 +22,12 @@ import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Circuit (WrapInputVar, wrapCircuit)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
-import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProverM, buildWrapCircuitInput, buildWrapCircuitParams, buildWrapProverWitness, runWrapProverM)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (SpecT, describe, it)
-import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -50,7 +47,7 @@ wrapCircuitSatisfiableTest cfg ctx = do
       => WrapWitnessM StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-    circuit = wrapCircuit @1 @StepIPARounds type1ScalarOps (groupMapParams $ Proxy @Vesta.G) params
+    circuit = wrapCircuit @1 @StepIPARounds type1ScalarOps params
 
   let
     circuit'

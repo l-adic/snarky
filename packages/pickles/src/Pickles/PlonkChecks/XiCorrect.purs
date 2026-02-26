@@ -138,14 +138,14 @@ xiCorrectCircuit input = do
   absorbEvaluations input
 
   -- 5. Squeeze scalar challenge (128 bits) for xi
-  rawXi <- squeezeScalarChallenge
+  rawXi <- squeezeScalarChallenge input
 
   -- 6. Assert raw xi equals claimed xi (128-bit comparison)
   -- This matches OCaml's xi_correct which compares raw scalar challenges
   liftSnarky $ assertEq rawXi input.claimedXi
 
   -- 7. Squeeze scalar challenge (128 bits) for r
-  rawR <- squeezeScalarChallenge
+  rawR <- squeezeScalarChallenge input
 
   -- 8. Expand to full field via endo for CIP use
   xi <- liftSnarky $ toField rawXi input.endo

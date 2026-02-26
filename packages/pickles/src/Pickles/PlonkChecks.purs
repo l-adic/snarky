@@ -141,23 +141,22 @@ type PlonkChecksOutput f =
 -- | Reference: step_verifier.ml - xi_correct and r comparisons happen on raw
 -- | 128-bit scalar challenges, NOT on endo-converted full field elements.
 plonkChecksCircuit
-  :: forall f f' g t m
+  :: forall f f' g t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> PlonkChecksInput (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (PlonkChecksOutput (FVar f))
-plonkChecksCircuit linPoly domainLog2 input = do
+plonkChecksCircuit params input = do
   -- 1. Absorb all polynomial evaluations in Kimchi's order
   absorbAllEvals input.allEvals
 
   -- 2. Squeeze scalar challenge (128-bit) for xi
-  rawXi <- squeezeScalarChallenge
+  rawXi <- squeezeScalarChallenge input
 
   -- 3. Assert raw xi matches claimed value (128-bit comparison)
   -- This is xi_correct from OCaml - compares raw scalar challenges
@@ -167,7 +166,7 @@ plonkChecksCircuit linPoly domainLog2 input = do
   polyscale <- liftSnarky $ toField rawXi input.endo
 
   -- 5. Squeeze scalar challenge (128-bit) for evalscale (r)
-  rawR <- squeezeScalarChallenge
+  rawR <- squeezeScalarChallenge input
 
   -- 6. Assert raw r matches claimed value (128-bit comparison)
   liftSnarky $ assertEq rawR input.claimedR
@@ -178,7 +177,7 @@ plonkChecksCircuit linPoly domainLog2 input = do
   -- 8. Compute combined inner product using derived values
   -- zeta comes from the permutation input (it's the evaluation point)
   combinedInnerProduct <- liftSnarky $
-    combinedInnerProductCheckCircuit linPoly domainLog2 input.cipInput.permInput.zeta
+    combinedInnerProductCheckCircuit params input.cipInput.permInput.zeta
       { polyscale, evalscale }
       input.cipInput
 
