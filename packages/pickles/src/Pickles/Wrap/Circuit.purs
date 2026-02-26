@@ -35,15 +35,16 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
-import Pickles.Verify (IncrementallyVerifyProofParams, verify)
+import Pickles.Verify (verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
-import Snarky.Circuit.Kimchi (Type1, Type2)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -- | Public input for the Wrap circuit (value level).
 -- |
@@ -85,17 +86,34 @@ type StepPublicInput n ds dw fv b =
 
 -- | Combined parameters for the Wrap circuit.
 -- |
--- | Flat record containing all IVP params (curve params, commitments, groupMapParams)
--- | and finalize params (domain, endo, linearization). The `endo` field is shared
--- | between both subcircuits. Row-polymorphic functions accept this as a superset
--- | of their required fields.
+-- | Flat record containing all fields needed by both subcircuits:
+-- | - IVP: curveParams, lagrangeComms, blindingH, sigmaCommLast, columnComms, indexDigest, groupMapParams
+-- | - Finalize: domain, domainLog2, zkRows, linearizationPoly
+-- | - Shared: endo
+-- |
+-- | Row-polymorphic functions accept this as a superset of their required fields.
 type WrapParams :: Type -> Type
-type WrapParams f = IncrementallyVerifyProofParams f
-  ( domain :: { generator :: f, shifts :: Vector 7 f }
+type WrapParams f =
+  { -- IVP params
+    curveParams :: CurveParams f
+  , lagrangeComms :: Array (AffinePoint (F f))
+  , blindingH :: AffinePoint (F f)
+  , sigmaCommLast :: AffinePoint (F f)
+  , columnComms ::
+      { index :: Vector 6 (AffinePoint (F f))
+      , coeff :: Vector 15 (AffinePoint (F f))
+      , sigma :: Vector 6 (AffinePoint (F f))
+      }
+  , indexDigest :: f
+  , groupMapParams :: GroupMapParams f
+  -- Finalize params
+  , domain :: { generator :: f, shifts :: Vector 7 f }
   , domainLog2 :: Int
   , zkRows :: Int
   , linearizationPoly :: LinearizationPoly f
-  )
+  -- Shared
+  , endo :: f
+  }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
 -- |

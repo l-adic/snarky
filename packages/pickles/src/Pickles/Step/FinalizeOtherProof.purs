@@ -130,7 +130,7 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall _d d f f' g t m sf r r2
+  :: forall _d d f f' g t m sf r1 r2
    . Add 1 _d d
   => PrimeField f
   => FieldSizeInBits f 255
@@ -139,7 +139,10 @@ finalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f, shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f) | r }
+  => { unshift :: sf -> FVar f
+     , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
+     | r1
+     }
   -> FinalizeOtherProofParams f r2
   -> FinalizeOtherProofInput d (FVar f) sf (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
@@ -175,7 +178,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   evalscale <- liftSnarky $ toField rawR endoVar
 
   -- 9. CIP computation + check
-  let cipInput = buildCipInput plonk witness params
+  let cipInput = buildCipInput plonk witness params.domain
   computedCIP <- liftSnarky $
     combinedInnerProductCheckCircuit params plonk.zeta
       { polyscale, evalscale }
@@ -198,7 +201,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
     }
 
   -- 12. perm_correct
-  let permInput = buildPermInput plonk witness params
+  let permInput = buildPermInput plonk witness params.domain
   actualPerm <- liftSnarky $ PlonkChecks.permScalarCircuit permInput
   permOk <- liftSnarky $ ops.shiftedEqual deferred.plonk.perm actualPerm
 
@@ -223,7 +226,7 @@ buildCipInput
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f r
+  -> { generator :: f, shifts :: Vector 7 f | r }
   -> CombinedInnerProductCheckInput (FVar f)
 buildCipInput plonk witness params =
   { permInput: buildPermInput plonk witness params
@@ -244,13 +247,13 @@ buildPermInput
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f r
+  -> { generator :: f, shifts :: Vector 7 f | r }
   -> PermutationInput (FVar f)
 buildPermInput plonk witness params =
   { w: map _.zeta (Vector.take @7 witness.allEvals.witnessEvals)
   , sigma: map _.zeta witness.allEvals.sigmaEvals
   , z: witness.allEvals.zEvals
-  , shifts: map const_ params.domain.shifts
+  , shifts: map const_ params.shifts
   , alpha: plonk.alpha
   , beta: plonk.beta
   , gamma: plonk.gamma

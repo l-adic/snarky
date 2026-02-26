@@ -190,7 +190,11 @@ publicInputCommit
    . PublicInputCommit a f
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
-  => { curveParams :: CurveParams f, lagrangeComms :: Array (AffinePoint (F f)), blindingH :: AffinePoint (F f) | r }
+  => { curveParams :: CurveParams f
+     , lagrangeComms :: Array (AffinePoint (F f))
+     , blindingH :: AffinePoint (F f)
+     | r
+     }
   -> a
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 publicInputCommit params input = do
