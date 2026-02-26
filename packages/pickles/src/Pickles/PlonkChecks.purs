@@ -15,8 +15,7 @@ module Pickles.PlonkChecks
   , PlonkChecksInput
   , PlonkChecksOutput
   , plonkChecksCircuit
-  , PlonkArithmeticCheckInput
-  , plonkArithmeticCheckCircuit
+  , module Pickles.PlonkChecks.Permutation
   ) where
 
 import Prelude
@@ -30,7 +29,7 @@ import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Verify.Types (ScalarChallenge)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, equals_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, assertEq)
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
@@ -195,49 +194,3 @@ absorbPointEval pe = do
   absorb pe.zeta
   absorb pe.omegaTimesZeta
 
--------------------------------------------------------------------------------
--- | Plonk Arithmetic Check
--------------------------------------------------------------------------------
-
--- | Input for plonk arithmetic check circuit.
--- |
--- | This check verifies that the claimed `perm` value matches the value
--- | computed from the challenges and evaluations. The `perm` scalar is
--- | the coefficient of z(x) in the linearization polynomial.
--- |
--- | Reference: plonk_checks.ml:450-476 `checked`
-type PlonkArithmeticCheckInput f sf =
-  { -- | Claimed permutation scalar (shifted)
-    claimedPerm :: sf
-  -- | Input for computing the actual perm scalar
-  , permInput :: PermutationInput f
-  }
-
--- | Check that the claimed perm value matches the computed value.
--- |
--- | This is the PureScript equivalent of `Plonk_checks.checked` in OCaml.
--- | Currently only checks `perm` (the only value checked in OCaml as of now).
--- |
--- | The check:
--- | 1. Computes the actual perm scalar from challenges and evaluations
--- | 2. Unshifts the claimed perm value via the provided `unshift` operation
--- | 3. Returns whether they're equal
--- |
--- | Reference: plonk_checks.ml:450-476
-plonkArithmeticCheckCircuit
-  :: forall f n t m sf r
-   . PrimeField f
-  => FieldSizeInBits f n
-  => CircuitM f (KimchiConstraint f) t m
-  => { unshift :: sf -> FVar f | r }
-  -> PlonkArithmeticCheckInput (FVar f) sf
-  -> Snarky (KimchiConstraint f) t m (BoolVar f)
-plonkArithmeticCheckCircuit ops input = do
-  -- Compute actual perm from challenges and evaluations
-  actualPerm <- permScalarCircuit input.permInput
-
-  -- Unshift the claimed perm value
-  let claimedPermUnshifted = ops.unshift input.claimedPerm
-
-  -- Compare: claimed (unshifted) == actual
-  equals_ claimedPermUnshifted actualPerm

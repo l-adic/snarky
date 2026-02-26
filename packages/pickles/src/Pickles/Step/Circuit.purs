@@ -104,7 +104,7 @@ finalizeOtherProof
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f | r }
+  => { unshift :: sf -> FVar f, shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f) | r }
   -> FinalizeOtherProofParams f
   -> FVar f
   -> UnfinalizedProof d (FVar f) sf (BoolVar f)

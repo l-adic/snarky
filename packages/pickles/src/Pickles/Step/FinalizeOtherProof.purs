@@ -32,7 +32,7 @@ import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (absorbAllEvals, plonkArithmeticCheckCircuit) as PlonkChecks
+import Pickles.PlonkChecks (absorbAllEvals, permScalarCircuit) as PlonkChecks
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
@@ -42,7 +42,7 @@ import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, const_, equals_, isEqual, mul_)
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
@@ -137,7 +137,7 @@ finalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f | r }
+  => { unshift :: sf -> FVar f, shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f) | r }
   -> FinalizeOtherProofParams f
   -> FinalizeOtherProofInput d (FVar f) sf (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
@@ -197,8 +197,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 
   -- 12. perm_correct
   let permInput = buildPermInput plonk witness params
-  permOk <- liftSnarky $ PlonkChecks.plonkArithmeticCheckCircuit ops
-    { claimedPerm: deferred.plonk.perm, permInput }
+  actualPerm <- liftSnarky $ PlonkChecks.permScalarCircuit permInput
+  permOk <- liftSnarky $ ops.shiftedEqual deferred.plonk.perm actualPerm
 
   -- 13. Combine all checks
   finalized <- liftSnarky do

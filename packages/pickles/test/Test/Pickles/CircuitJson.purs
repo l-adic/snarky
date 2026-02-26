@@ -29,10 +29,10 @@ import Pickles.IPA as IPA
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PlonkChecks (AllEvals, absorbAllEvals, plonkArithmeticCheckCircuit)
+import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
 import Pickles.PlonkChecks.CombinedInnerProduct (combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
-import Pickles.PlonkChecks.Permutation (PermutationInput)
+import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit)
 import Pickles.Types (StepField)
@@ -40,7 +40,7 @@ import Pickles.Verify.Types (expandPlonkMinimalCircuit)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky, and_, const_, equals_, isEqual, mul_)
-import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
+import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
@@ -225,6 +225,63 @@ bCorrectStandaloneCircuit inputs = do
     , evalscale: r
     , expectedB: fromShiftedType1Circuit (Type1 claimedB)
     }
+
+-------------------------------------------------------------------------------
+-- | Sub-circuit 4: plonk_checks_passed (Step 13)
+-- |
+-- | Verifies that the claimed perm scalar matches the computed value.
+-- | This isolates the Plonk_checks.checked / derive_plonk logic.
+-- |
+-- | OCaml reference: plonk_checks.ml:450-476
+-- |   derive_plonk: perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
+-- |   checked: Shifted_value.equal Field.equal (perm plonk) (perm actual)
+-- |
+-- | Input layout (18 fields):
+-- |   0:     alpha (expanded to full field)
+-- |   1:     beta
+-- |   2:     gamma
+-- |   3:     zkPolynomial
+-- |   4:     z_omega (z eval at omega*zeta)
+-- |   5-10:  sigma[0..5] (sigma evals at zeta)
+-- |   11-16: w[0..5] (witness evals at zeta)
+-- |   17:    claimed_perm (Shifted_value.Type1 inner)
+-------------------------------------------------------------------------------
+
+plonkChecksPassedCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 18 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+plonkChecksPassedCircuit inputs = do
+  let
+    -- Build PermutationInput from flat array.
+    -- permScalarCircuit only uses first 6 w values, z.omegaTimesZeta,
+    -- alpha, beta, gamma, sigma, and zkPolynomial.
+    -- Other fields get dummy constants (never accessed).
+    permInput :: PermutationInput (FVar StepField)
+    permInput =
+      { w: Vector.generate \j ->
+          let
+            i = getFinite j
+          in
+            if i < 6 then unsafeIdx inputs (11 + i) else const_ zero
+      , sigma: Vector.generate \j -> unsafeIdx inputs (5 + getFinite j)
+      , z: { zeta: const_ zero, omegaTimesZeta: unsafeIdx inputs 4 }
+      , shifts: Vector.generate \_ -> const_ zero
+      , alpha: unsafeIdx inputs 0
+      , beta: unsafeIdx inputs 1
+      , gamma: unsafeIdx inputs 2
+      , zkPolynomial: unsafeIdx inputs 3
+      , zetaToNMinus1: const_ zero
+      , omegaToMinusZkRows: const_ zero
+      , zeta: const_ zero
+      }
+
+  -- Compute actual perm scalar
+  actualPerm <- permScalarCircuit permInput
+
+  -- Compare using shiftedEqualType1 (matches OCaml's Shifted_value.equal)
+  void $ shiftedEqualType1 (Type1 $ unsafeIdx inputs 17) actualPerm
 
 -------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof wrapper circuit (for reference)
@@ -437,6 +494,7 @@ loadFixture name = liftEffect do
 -------------------------------------------------------------------------------
 
 type V4 = Vector 4 (F StepField)
+type V18 = Vector 18 (F StepField)
 type V20 = Vector 20 (F StepField)
 type V34 = Vector 34 (F StepField)
 type V151 = Vector 151 (F StepField)
@@ -457,6 +515,12 @@ compileBCorrect :: String
 compileBCorrect = circuitToJson @StepField $
   compilePure (Proxy @V20) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     bCorrectStandaloneCircuit
+    Kimchi.initialState
+
+compilePlonkChecksPassed :: String
+compilePlonkChecksPassed = circuitToJson @StepField $
+  compilePure (Proxy @V18) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    plonkChecksPassedCircuit
     Kimchi.initialState
 
 -- compileFopStep :: String
@@ -484,6 +548,10 @@ spec =
     it "Sub-circuit 3: b_correct (Step 12)" do
       ocaml <- loadFixture "b_correct_circuit"
       compareCircuit "b_correct" compileBCorrect ocaml
+
+    it "Sub-circuit 4: plonk_checks_passed (Step 13)" do
+      ocaml <- loadFixture "plonk_checks_passed_circuit"
+      compareCircuit "plonk_checks_passed" compilePlonkChecksPassed ocaml
 
 -- it "Full: Step (Tick/Fp) circuit structure comparison" do
 --   ocaml <- loadFixture "finalize_other_proof_circuit"
