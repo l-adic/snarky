@@ -38,10 +38,16 @@ jobs:
           packages/crypto-provider/target/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
     
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
     - name: Install dependencies
       run: npm install
 
-    - name: Copy SRS files from submodule
+    - name: Populate SRS cache
       run: make fetch-srs
     
     - name: Build and test

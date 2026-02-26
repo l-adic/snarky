@@ -1,26 +1,19 @@
 #!/bin/bash
 
-# Copy SRS files from the mina submodule to the srs-cache directory.
-# Using the submodule's files ensures version consistency with our
-# proof-systems dependency (avoids downloading from GitHub master
-# which may differ or fail due to rate limiting).
+# Download SRS files from proof-systems repo if not already present.
+# Skips files that already exist (e.g., from CI cache).
 
-SRS_SRC="mina/src/lib/crypto/proof-systems/srs"
-
-if [ ! -d "$SRS_SRC" ]; then
-  echo "Error: mina submodule not initialized. Run: git submodule update --init --recursive"
-  exit 1
-fi
+SRS_BASE_URL="https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs"
 
 mkdir -p srs-cache
 
 for f in test_pallas.srs test_vesta.srs pallas.srs vesta.srs; do
-  if [ ! -f "$SRS_SRC/$f" ]; then
-    echo "Warning: $SRS_SRC/$f not found, skipping"
+  if [ -f "srs-cache/$f" ]; then
+    echo "$f already exists, skipping"
     continue
   fi
-  echo "Copying $f from submodule..."
-  cp "$SRS_SRC/$f" "srs-cache/$f"
+  echo "Downloading $f..."
+  curl -fL -o "srs-cache/$f" "$SRS_BASE_URL/$f"
 done
 
-echo "SRS cache populated from submodule."
+echo "SRS cache ready."
