@@ -30,8 +30,9 @@ import Data.Traversable (for)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (absorbAllEvals, plonkArithmeticCheckCircuit, plonkChecksCircuit) as PlonkChecks
+import Pickles.PlonkChecks (absorbAllEvals, plonkArithmeticCheckCircuit) as PlonkChecks
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
@@ -64,6 +65,7 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
 type FinalizeOtherProofParams f =
   { domain :: { generator :: f, shifts :: Vector 7 f }
+  , domainLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , zkRows :: Int
   , linearizationPoly :: LinearizationPoly f
@@ -126,13 +128,14 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall _d d f f' t m sf r
+  :: forall _d d f f' g t m sf r
    . Add 1 _d d
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
   => Reflectable d Int
   => { unshift :: sf -> FVar f | r }
   -> FinalizeOtherProofParams f
@@ -172,7 +175,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   -- 9. CIP computation + check
   let cipInput = buildCipInput plonk witness params
   computedCIP <- liftSnarky $
-    combinedInnerProductCheckCircuit params.linearizationPoly
+    combinedInnerProductCheckCircuit params.linearizationPoly params.domainLog2 plonk.zeta
       { polyscale, evalscale }
       cipInput
   cipCorrect <- liftSnarky $

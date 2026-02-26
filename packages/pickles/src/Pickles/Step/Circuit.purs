@@ -29,6 +29,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.IPA (IpaScalarOps)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
@@ -94,13 +95,14 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
 -- | Each proof gets its own fresh sponge state.
 finalizeOtherProof
-  :: forall _d d f f' t m sf r
+  :: forall _d d f f' g t m sf r
    . Add 1 _d d
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
   => Reflectable d Int
   => { unshift :: sf -> FVar f | r }
   -> FinalizeOtherProofParams f

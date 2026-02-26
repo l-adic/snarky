@@ -679,6 +679,7 @@
             "effect",
             "either",
             "exceptions",
+            "foreign",
             "identity",
             "newtype",
             "node-buffer",
@@ -692,7 +693,8 @@
             "snarky-test-utils",
             "spec",
             "spec-node",
-            "transformers"
+            "transformers",
+            "unsafe-coerce"
           ],
           "build_plan": [
             "aff",

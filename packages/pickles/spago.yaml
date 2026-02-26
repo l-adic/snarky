@@ -35,6 +35,7 @@ package:
       - effect
       - either
       - exceptions
+      - foreign
       - identity
       - newtype
       - node-buffer
@@ -49,3 +50,4 @@ package:
       - spec
       - spec-node
       - transformers
+      - unsafe-coerce

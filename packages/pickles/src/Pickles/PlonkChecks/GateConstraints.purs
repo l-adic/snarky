@@ -15,7 +15,6 @@ module Pickles.PlonkChecks.GateConstraints
   ( GateConstraintInput
   , checkGateConstraints
   , evaluateGateConstraints
-  , evaluateGateConstraintsM
   -- Re-exported helpers for building environments
   , buildEvalPoint
   , buildChallenges
@@ -30,9 +29,9 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
-import Pickles.Linearization.Env (Challenges, EnvM, EvalPoint, buildCircuitEnvM, circuitEnv, precomputeAlphaPowers)
+import Pickles.Linearization.Env (EnvM, EvalPoint, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
-import Pickles.Linearization.Interpreter (evaluate, evaluateM)
+import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_)
@@ -138,7 +137,13 @@ buildChallenges
      , lagrangeTrue1 :: a
      | r
      }
-  -> Challenges a
+  -> { alpha :: a
+     , beta :: a
+     , gamma :: a
+     , jointCombiner :: a
+     , vanishesOnZeroKnowledgeAndPreviousRows :: a
+     , unnormalizedLagrangeBasis :: { zkRows :: Boolean, offset :: Int } -> a
+     }
 buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 } =
   { alpha
   , beta
@@ -161,48 +166,16 @@ parseHex hex = case fromBigInt <$> BigInt.fromString hex of
 -- | Core Circuit Functions
 -------------------------------------------------------------------------------
 
--- | Evaluate the gate constraint polynomial in-circuit.
+-- | Evaluate the gate constraint polynomial in-circuit using precomputed alpha powers.
 -- | Returns the computed value as a circuit variable.
+-- |
+-- | This matches OCaml's scalars_env (plonk_checks.ml:234-240) which precomputes
+-- | alpha^0..alpha^70 and uses array lookups instead of computing pow(alpha, n)
+-- | each time.
 -- |
 -- | This computes the linearization polynomial but does NOT assert it equals zero.
 -- | Use `checkGateConstraints` for the full constraint check.
 evaluateGateConstraints
-  :: forall f f' c t m
-   . PrimeField f
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f c t m
-  => LinearizationPoly f
-  -> GateConstraintInput (FVar f)
-  -> Snarky c t m (FVar f)
-evaluateGateConstraints linPoly input =
-  let
-    evalPoint = buildEvalPoint
-      { witnessEvals: input.witnessEvals
-      , coeffEvals: input.coeffEvals
-      , indexEvals: input.indexEvals
-      , defaultVal: const_ zero
-      }
-
-    challenges = buildChallenges
-      { alpha: input.alpha
-      , beta: input.beta
-      , gamma: input.gamma
-      , jointCombiner: input.jointCombiner
-      , vanishesOnZk: input.vanishesOnZk
-      , lagrangeFalse0: input.lagrangeFalse0
-      , lagrangeTrue1: input.lagrangeTrue1
-      }
-
-    env = circuitEnv evalPoint challenges parseHex
-  in
-    evaluate (runLinearizationPoly linPoly) env
-
--- | Monadic version of evaluateGateConstraints using precomputed alpha powers.
--- | This matches OCaml's scalars_env (plonk_checks.ml:234-240) which precomputes
--- | alpha^0..alpha^70 and uses array lookups instead of computing pow(alpha, n)
--- | each time. Produces ~2100 fewer GenericPlonkGate constraints.
-evaluateGateConstraintsM
   :: forall f f' g c t m
    . PrimeField f
   => PoseidonField f
@@ -214,7 +187,7 @@ evaluateGateConstraintsM
   -> FVar f -- ^ zeta (expanded, for computing lagrange basis)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m (FVar f)
-evaluateGateConstraintsM linPoly domLog2 zeta input = do
+evaluateGateConstraints linPoly domLog2 zeta input = do
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -268,14 +241,17 @@ evaluateGateConstraintsM linPoly domLog2 zeta input = do
 -- |
 -- | A valid proof will satisfy this constraint; an invalid proof will not.
 checkGateConstraints
-  :: forall f f' c t m
+  :: forall f f' g c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
+  => LinearizationFFI f g
   => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m Unit
-checkGateConstraints linPoly input = do
-  result <- evaluateGateConstraints linPoly input
+checkGateConstraints linPoly domLog2 zeta input = do
+  result <- evaluateGateConstraints linPoly domLog2 zeta input
   assertEqual_ result (const_ zero)
