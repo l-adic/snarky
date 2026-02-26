@@ -10,6 +10,8 @@ module Snarky.Types.Shifted
   , forbiddenType2Values
   , forbiddenType2SameFieldValues
   , fromShiftedType1Circuit
+  , ofFieldType1Circuit
+  , shiftedEqualType1
   , fromShiftedType2Circuit
   ) where
 
@@ -27,7 +29,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, Bool(..), BoolVar, F(..), FVar, add_, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_, sub_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -323,6 +325,7 @@ instance Shifted (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean) whe
 --------------------------------------------------------------------------------
 
 -- | Unshift a Type1 circuit variable: s = 2*t + 2^n + 1
+-- | This is OCaml's `to_field`: s = t + t + c
 fromShiftedType1Circuit
   :: forall f n
    . PrimeField f
@@ -335,6 +338,36 @@ fromShiftedType1Circuit (Type1 t) =
     two = fromBigInt (fromInt 2)
   in
     add_ (scale_ two t) (const_ c)
+
+-- | Apply Type1 of_field to a raw circuit variable: t = (s - c) * scale
+-- | This is OCaml's `Shifted_value.Type1.of_field`.
+-- | Used for comparison matching OCaml's `Shifted_value.equal`:
+-- |   equals_ claimedInner (ofFieldType1Circuit rawComputed)
+ofFieldType1Circuit
+  :: forall f n
+   . PrimeField f
+  => FieldSizeInBits f n
+  => FVar f
+  -> FVar f
+ofFieldType1Circuit raw =
+  let
+    { c, scale } = shift1 (Proxy @f)
+  in
+    scale_ scale (sub_ raw (const_ c))
+
+-- | Compare a claimed Type1 shifted value against a raw computed value.
+-- | Matches OCaml's `Shifted_value.Type1.equal Field.equal`:
+-- |   equal claimed_inner (of_field raw_computed)
+shiftedEqualType1
+  :: forall f n c t m
+   . PrimeField f
+  => FieldSizeInBits f n
+  => CircuitM f c t m
+  => Type1 (FVar f)
+  -> FVar f
+  -> Snarky c t m (BoolVar f)
+shiftedEqualType1 (Type1 claimedInner) rawComputed =
+  equals_ claimedInner (ofFieldType1Circuit rawComputed)
 
 -- | Unshift a Type2 circuit variable: s = 2*sDiv2 + sOdd + 2^n
 fromShiftedType2Circuit

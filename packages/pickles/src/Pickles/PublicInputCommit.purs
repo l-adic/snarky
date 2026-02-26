@@ -186,20 +186,22 @@ instance
 -- |
 -- | where MSM = sum([s_i] * B_i) after shift correction.
 publicInputCommit
-  :: forall a f t m
+  :: forall a f t m r
    . PublicInputCommit a f
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
-  => CurveParams f
+  => { curveParams :: CurveParams f
+     , lagrangeComms :: Array (AffinePoint (F f))
+     , blindingH :: AffinePoint (F f)
+     | r
+     }
   -> a
-  -> Array (AffinePoint (F f))
-  -> AffinePoint (F f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-publicInputCommit params input lagrangeComms blindingH = do
-  { results } <- scalarMuls params input lagrangeComms
+publicInputCommit params input = do
+  { results } <- scalarMuls params.curveParams input params.lagrangeComms
   case NEA.fromArray results of
     -- No scalar multiplications (e.g., Unit input): x_hat = h
-    Nothing -> pure (constPt blindingH)
+    Nothing -> pure (constPt params.blindingH)
     Just results' -> unsafePartial do
       let { head, tail } = NEA.uncons results'
 
@@ -209,7 +211,7 @@ publicInputCommit params input lagrangeComms blindingH = do
       -- 2. Sum pure corrections: sum([2^n] * B_i)
       let
         totalCorrection = foldl
-          (\acc r -> addPurePts params acc r.correction)
+          (\acc r -> addPurePts params.curveParams acc r.correction)
           head.correction
           tail
 
@@ -219,7 +221,7 @@ publicInputCommit params input lagrangeComms blindingH = do
 
       -- 4. Negate MSM and add blinding generator
       negMsm <- Curves.negate msm
-      _.p <$> addComplete negMsm (constPt blindingH)
+      _.p <$> addComplete negMsm (constPt params.blindingH)
 
 -------------------------------------------------------------------------------
 -- | Helpers

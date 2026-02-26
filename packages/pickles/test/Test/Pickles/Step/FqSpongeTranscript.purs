@@ -25,7 +25,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, FqSpongeOutput, spongeTranscriptCircuit, spongeTranscriptPure)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), SizedF, Snarky, coerceViaBits, toField)
+import Snarky.Circuit.DSL (class CircuitM, F(..), SizedF, Snarky, coerceViaBits, const_, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (toBigInt)
@@ -33,7 +33,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, wrapEndo)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -109,7 +109,7 @@ spec cfg =
         ctx = buildFqSpongeTestContext step0
 
         circuit :: forall t. CircuitM SpongeField (KimchiConstraint SpongeField) t Identity => _ -> Snarky (KimchiConstraint SpongeField) t Identity _
-        circuit = \input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit input)
+        circuit = \input -> evalSpongeM initialSpongeCircuit (spongeTranscriptCircuit { endo: const_ wrapEndo } input)
       void $ circuitTest' @SpongeField
         cfg
         (NEA.singleton { testFunction: satisfied spongeTranscriptF, input: Exact (NEA.singleton ctx.circuitInput) })

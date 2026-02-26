@@ -15,8 +15,7 @@ module Pickles.PlonkChecks
   , PlonkChecksInput
   , PlonkChecksOutput
   , plonkChecksCircuit
-  , PlonkArithmeticCheckInput
-  , plonkArithmeticCheckCircuit
+  , module Pickles.PlonkChecks.Permutation
   ) where
 
 import Prelude
@@ -30,7 +29,7 @@ import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
 import Pickles.Verify.Types (ScalarChallenge)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, equals_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, assertEq)
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
@@ -142,44 +141,43 @@ type PlonkChecksOutput f =
 -- | Reference: step_verifier.ml - xi_correct and r comparisons happen on raw
 -- | 128-bit scalar challenges, NOT on endo-converted full field elements.
 plonkChecksCircuit
-  :: forall f f' g t m
+  :: forall f f' g t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> PlonkChecksInput (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (PlonkChecksOutput (FVar f))
-plonkChecksCircuit linPoly domainLog2 input = do
+plonkChecksCircuit params input = do
   -- 1. Absorb all polynomial evaluations in Kimchi's order
   absorbAllEvals input.allEvals
 
   -- 2. Squeeze scalar challenge (128-bit) for xi
-  rawXi <- squeezeScalarChallenge
+  rawXi <- squeezeScalarChallenge input
 
   -- 3. Assert raw xi matches claimed value (128-bit comparison)
   -- This is xi_correct from OCaml - compares raw scalar challenges
   liftSnarky $ assertEq rawXi input.claimedXi
 
   -- 4. Convert to full field via endo for CIP computation
-  polyscale <- liftSnarky $ toField rawXi input.endo
+  polyscale <- liftSnarky $ toField @8 rawXi input.endo
 
   -- 5. Squeeze scalar challenge (128-bit) for evalscale (r)
-  rawR <- squeezeScalarChallenge
+  rawR <- squeezeScalarChallenge input
 
   -- 6. Assert raw r matches claimed value (128-bit comparison)
   liftSnarky $ assertEq rawR input.claimedR
 
   -- 7. Convert to full field via endo for CIP computation
-  evalscale <- liftSnarky $ toField rawR input.endo
+  evalscale <- liftSnarky $ toField @8 rawR input.endo
 
   -- 8. Compute combined inner product using derived values
   -- zeta comes from the permutation input (it's the evaluation point)
   combinedInnerProduct <- liftSnarky $
-    combinedInnerProductCheckCircuit linPoly domainLog2 input.cipInput.permInput.zeta
+    combinedInnerProductCheckCircuit params input.cipInput.permInput.zeta
       { polyscale, evalscale }
       input.cipInput
 
@@ -195,49 +193,3 @@ absorbPointEval pe = do
   absorb pe.zeta
   absorb pe.omegaTimesZeta
 
--------------------------------------------------------------------------------
--- | Plonk Arithmetic Check
--------------------------------------------------------------------------------
-
--- | Input for plonk arithmetic check circuit.
--- |
--- | This check verifies that the claimed `perm` value matches the value
--- | computed from the challenges and evaluations. The `perm` scalar is
--- | the coefficient of z(x) in the linearization polynomial.
--- |
--- | Reference: plonk_checks.ml:450-476 `checked`
-type PlonkArithmeticCheckInput f sf =
-  { -- | Claimed permutation scalar (shifted)
-    claimedPerm :: sf
-  -- | Input for computing the actual perm scalar
-  , permInput :: PermutationInput f
-  }
-
--- | Check that the claimed perm value matches the computed value.
--- |
--- | This is the PureScript equivalent of `Plonk_checks.checked` in OCaml.
--- | Currently only checks `perm` (the only value checked in OCaml as of now).
--- |
--- | The check:
--- | 1. Computes the actual perm scalar from challenges and evaluations
--- | 2. Unshifts the claimed perm value via the provided `unshift` operation
--- | 3. Returns whether they're equal
--- |
--- | Reference: plonk_checks.ml:450-476
-plonkArithmeticCheckCircuit
-  :: forall f n t m sf r
-   . PrimeField f
-  => FieldSizeInBits f n
-  => CircuitM f (KimchiConstraint f) t m
-  => { unshift :: sf -> FVar f | r }
-  -> PlonkArithmeticCheckInput (FVar f) sf
-  -> Snarky (KimchiConstraint f) t m (BoolVar f)
-plonkArithmeticCheckCircuit ops input = do
-  -- Compute actual perm from challenges and evaluations
-  actualPerm <- permScalarCircuit input.permInput
-
-  -- Unshift the claimed perm value
-  let claimedPermUnshifted = ops.unshift input.claimedPerm
-
-  -- Compare: claimed (unshifted) == actual
-  equals_ claimedPermUnshifted actualPerm

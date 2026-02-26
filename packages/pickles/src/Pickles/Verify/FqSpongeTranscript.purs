@@ -74,24 +74,25 @@ type FqSpongeOutput f =
 -- |
 -- | Reference: step_verifier.ml:515-560
 spongeTranscriptCircuit
-  :: forall f sgOldN chunks t m
+  :: forall f sgOldN chunks t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => FqSpongeInput sgOldN chunks (FVar f)
+  => { endo :: FVar f | r }
+  -> FqSpongeInput sgOldN chunks (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
-spongeTranscriptCircuit input = do
+spongeTranscriptCircuit params input = do
   Sponge.absorb input.indexDigest
   for_ input.sgOld Sponge.absorbPoint
   Sponge.absorbPoint input.publicComm
   for_ input.wComm Sponge.absorbPoint
-  beta <- squeezeScalarChallenge
-  gamma <- squeezeScalarChallenge
+  beta <- squeezeScalarChallenge params
+  gamma <- squeezeScalarChallenge params
   Sponge.absorbPoint input.zComm
-  alphaChal <- squeezeScalarChallenge
+  alphaChal <- squeezeScalarChallenge params
   for_ input.tComm Sponge.absorbPoint
-  zetaChal <- squeezeScalarChallenge
+  zetaChal <- squeezeScalarChallenge params
   -- Copy sponge before squeezing digest (step_verifier.ml:559)
   spongeBeforeEvals <- getSponge
   digest <- Sponge.squeeze

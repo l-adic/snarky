@@ -154,8 +154,8 @@ expandPlonkMinimalCircuit
   -> PlonkMinimal (FVar f)
   -> Snarky (KimchiConstraint f) t m (PlonkExpanded (FVar f))
 expandPlonkMinimalCircuit endo plonk = do
-  alpha <- toField plonk.alpha endo
-  zeta <- toField plonk.zeta endo
+  alpha <- toField @8 plonk.alpha endo
+  zeta <- toField @8 plonk.zeta endo
   pure
     { alpha
     , beta: SizedF.toField plonk.beta

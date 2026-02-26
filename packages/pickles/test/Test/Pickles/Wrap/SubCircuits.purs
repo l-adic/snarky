@@ -37,7 +37,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapIPARounds, buildWrapCircuitParams, coerceStepPlonkChallenges, extractStepRawBpChallenges, mkStepIpaContext, toVectorOrThrow, wrapEndo, zkRows)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Type.Proxy (Proxy(..))
@@ -59,7 +59,7 @@ extractChallengesCircuitTest cfg ctx = do
     circuit pairs =
       Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
         _ <- Pickles.Sponge.squeeze -- Squeeze for u first
-        IPA.extractScalarChallenges pairs
+        IPA.extractScalarChallenges { endo: const_ wrapEndo } pairs
 
     testFn :: Vector StepIPARounds (IPA.LrPair (F Pallas.ScalarField)) -> Vector StepIPARounds (SizedF 128 (F Pallas.ScalarField))
     testFn pairs =
@@ -99,7 +99,7 @@ bulletReduceCircuitTest cfg ctx = do
     circuit pairs =
       Pickles.Sponge.evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) do
         _ <- Pickles.Sponge.squeeze
-        challenges <- IPA.extractScalarChallenges pairs
+        challenges <- IPA.extractScalarChallenges { endo: const_ wrapEndo } pairs
         { p } <- liftSnarky $ IPA.bulletReduceCircuit @Pallas.ScalarField @Vesta.G { pairs, challenges }
         pure p
 
@@ -159,7 +159,7 @@ ipaFinalCheckCircuitTest cfg ctx = do
       { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
         IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
           IPA.type1ScalarOps
-          (groupMapParams $ Proxy @Vesta.G)
+          { endo: const_ wrapEndo, groupMapParams: groupMapParams $ Proxy @Vesta.G }
           input
       assert_ success
 
@@ -313,11 +313,12 @@ checkBulletproofTest cfg ctx = do
       => CheckBulletproofInput StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (Vector StepIPARounds (SizedF 128 (FVar Pallas.ScalarField)))
     circuit input = do
+      let endoParams = { endo: const_ wrapEndo, groupMapParams: groupMapParams $ Proxy @Vesta.G }
       { success, challenges } <- evalSpongeM initialSpongeCircuit do
-        _ <- FqSpongeTranscript.spongeTranscriptCircuit spongeInputCircuit
+        _ <- FqSpongeTranscript.spongeTranscriptCircuit endoParams spongeInputCircuit
         IPA.checkBulletproof @Pallas.ScalarField @Vesta.G
           IPA.type1ScalarOps
-          (groupMapParams $ Proxy @Vesta.G)
+          endoParams
           allBases
           input
       assert_ success
@@ -385,7 +386,7 @@ buildStepPublicInput ctx = fieldsToValue @Pallas.ScalarField
 incrementallyVerifyProofTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
 incrementallyVerifyProofTest cfg ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams ctx
+    params = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -477,7 +478,6 @@ incrementallyVerifyProofTest cfg ctx = do
       { success } <- evalSpongeM initialSpongeCircuit $
         incrementallyVerifyProof @Vesta.G
           IPA.type1ScalarOps
-          (groupMapParams $ Proxy @Vesta.G)
           params
           input
       assert_ success
@@ -496,7 +496,7 @@ incrementallyVerifyProofTest cfg ctx = do
 verifyTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
 verifyTest cfg ctx = do
   let
-    { ivpParams: params } = buildWrapCircuitParams ctx
+    params = buildWrapCircuitParams ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -592,7 +592,6 @@ verifyTest cfg ctx = do
       success <- evalSpongeM initialSpongeCircuit $
         verify @Vesta.G
           IPA.type1ScalarOps
-          (groupMapParams $ Proxy @Vesta.G)
           params
           input
           false_ -- isBaseCase (real proof, not base case)

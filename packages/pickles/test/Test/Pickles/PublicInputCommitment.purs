@@ -177,7 +177,7 @@ spec cfg =
         => Vector nPublic (FVar StepCircuitField)
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit (curveParams (Proxy @Vesta.G)) inputs ctx.lagrangeComms ctx.blindingH
+        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
 
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
@@ -212,7 +212,7 @@ spec cfg =
         => StepFullXhatVar
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit (curveParams (Proxy @Vesta.G)) inputs ctx.lagrangeComms ctx.blindingH
+        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
 
       rustFn :: StepFullXhat -> AffinePoint (F StepCircuitField)
       rustFn tup = unsafePartial $
@@ -266,7 +266,7 @@ spec cfg =
         => Vector nPublic (FVar WrapCircuitField)
         -> Snarky (KimchiConstraint WrapCircuitField) t Identity (AffinePoint (FVar WrapCircuitField))
       circuit inputs =
-        publicInputCommit (curveParams (Proxy @Pallas.G)) inputs ctx.lagrangeComms ctx.blindingH
+        publicInputCommit { curveParams: curveParams (Proxy @Pallas.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
 
       gen = Vector.generator (Proxy @nPublic) (arbitrary :: Gen (F WrapCircuitField))
 

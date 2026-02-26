@@ -16,6 +16,8 @@ module Pickles.Sponge
   , absorbMany
   , squeezeScalarChallenge
   , squeezeScalarChallengePure
+  , lowest128Bits
+  , lowest128BitsPure
   -- In-circuit sponge monad
   , SpongeM(..)
   , runSpongeM
@@ -40,18 +42,23 @@ import Prelude
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
 import Data.Foldable (class Foldable)
 import Data.Identity (Identity(..))
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import JS.BigInt as BigInt
+import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, const_, lowestNBits, lowestNBitsPure)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, const_, exists, fromField, read, scale_)
+import Snarky.Circuit.DSL as SizedF
+import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 --------------------------------------------------------------------------------
@@ -160,16 +167,22 @@ instance
 
 -- | Squeeze a scalar challenge (128 bits) from the sponge.
 -- | This is the in-circuit version that returns a SizedF 128.
+-- | Uses EndoScalar.toField as a 128-bit range check (matching OCaml's
+-- | squeeze_challenge which calls lowest_128_bits with constrain_low_bits:true).
+-- |
+-- | Takes any record containing `endo :: FVar f` (the EndoScalar constant for
+-- | challenge expansion, i.e. Wrap_inner_curve.scalar for Step, Step_inner_curve.scalar for Wrap).
 squeezeScalarChallenge
-  :: forall f t m
+  :: forall f t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
-squeezeScalarChallenge = do
+  => { endo :: FVar f | r }
+  -> SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+squeezeScalarChallenge params = do
   x <- squeeze
-  liftSnarky $ lowestNBits @128 x
+  liftSnarky $ lowest128Bits params.endo x
 
 --------------------------------------------------------------------------------
 -- | Pure Sponge Monad: PureSpongeM
@@ -234,7 +247,78 @@ squeezeScalarChallengePure
   => PureSpongeM f (SizedF 128 f)
 squeezeScalarChallengePure = do
   x <- squeeze
-  pure $ lowestNBitsPure @128 x
+  pure $ lowest128BitsPure x
+
+--------------------------------------------------------------------------------
+-- | lowest128Bits (circuit and pure)
+--------------------------------------------------------------------------------
+
+-- | Extract the lowest 128 bits of a field element, with range checking
+-- | via EndoScalar gate decomposition.
+-- |
+-- | Matches OCaml's `lowest_128_bits ~constrain_low_bits:true`:
+-- | 1. Witness lo, hi such that x = lo + hi * 2^128
+-- | 2. Range-check hi via EndoScalar.toField (discarding result)
+-- | 3. Range-check lo via EndoScalar.toField (discarding result)
+-- | 4. Assert x = lo + hi * 2^128
+-- | 5. Return lo
+-- |
+-- | The endo parameter is a raw FVar f (the EndoScalar constant for the circuit field).
+lowest128Bits
+  :: forall f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => FVar f -- ^ endo constant
+  -> FVar f -- ^ x (sponge squeeze output)
+  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
+lowest128Bits endo x = do
+  -- Witness lo (first) and hi (second), matching OCaml's Typ.(field * field)
+  UnChecked (Tuple lo hi) <- exists do
+    F xVal <- read x
+    let
+      xBig = toBigInt xVal
+
+      lo :: SizedF 128 (F f)
+      lo =
+        unsafePartial fromJust
+          $ SizedF.fromField @128
+          $ fromBigInt
+          $
+            mod xBig two128
+
+      hi :: SizedF 128 (F f)
+      hi =
+        unsafePartial fromJust
+          $ SizedF.fromField @128
+          $ fromBigInt
+          $
+            div xBig two128
+    pure $ UnChecked (Tuple lo hi)
+  -- Range check hi via EndoScalar (discard result) — hi first, matching OCaml
+  void $ EndoScalar.toField @8 hi endo
+  -- Range check lo via EndoScalar (discard result)
+  void $ EndoScalar.toField @8 lo endo
+  -- Assert x = lo + hi * 2^128
+  assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
+  pure lo
+  where
+  two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+
+-- | Pure version: extract lowest 128 bits of a field element.
+lowest128BitsPure
+  :: forall f
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => f
+  -> SizedF 128 f
+lowest128BitsPure x =
+  let
+    xBig = toBigInt x
+    two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+    lo = fromBigInt (mod xBig two128)
+  in
+    unsafePartial fromJust $ fromField @128 lo
 
 --------------------------------------------------------------------------------
 -- | Initial States

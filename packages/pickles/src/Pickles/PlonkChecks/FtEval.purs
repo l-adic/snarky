@@ -63,22 +63,21 @@ ftEval0 { permContribution: perm, publicEval, gateConstraints } =
 -- | Uses evaluateGateConstraints which matches OCaml's scalars_env approach
 -- | (precomputed alpha powers, array lookups instead of pow(alpha, n)).
 ftEval0Circuit
-  :: forall f f' g c t m
+  :: forall f f' g c t m r
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> FVar f -- ^ zeta (expanded)
   -> { permInput :: PermutationInput (FVar f)
      , gateInput :: GateConstraintInput (FVar f)
      , publicEval :: FVar f
      }
   -> Snarky c t m (FVar f)
-ftEval0Circuit linPoly domLog2 zeta { permInput, gateInput, publicEval } = do
+ftEval0Circuit params zeta { permInput, gateInput, publicEval } = do
   perm <- permContributionCircuit permInput
-  gate <- evaluateGateConstraints linPoly domLog2 zeta gateInput
+  gate <- evaluateGateConstraints params zeta gateInput
   let permPlusPublic = add_ perm publicEval
   pure $ sub_ permPlusPublic gate

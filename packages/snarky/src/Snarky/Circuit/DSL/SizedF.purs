@@ -12,30 +12,26 @@ module Snarky.Circuit.DSL.SizedF
   , fromBits
   , toBits
   , coerceViaBits
-  , lowestNBits
-  , lowestNBitsPure
   ) where
 
 import Prelude
 
 import Data.Array as Array
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (all, for_)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL.Assert (class AssertEqual, assertEq, assert_, isEqual)
-import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_)
+import Snarky.Circuit.DSL.Bits (packPure, unpackPure, unpack_)
 import Snarky.Circuit.DSL.Boolean (class IfThenElse, if_)
-import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM, Snarky, not_)
+import Snarky.Circuit.DSL.Monad (class CheckedType, not_)
 import Snarky.Circuit.Types (class CircuitType, F(..), FVar, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Constraint.Basic (class BasicSystem)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, pow)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Type.Proxy (Proxy(..))
 
@@ -153,47 +149,3 @@ coerceViaBits
   => SizedF n f
   -> SizedF n f'
 coerceViaBits x = fromBits $ toBits x
-
---------------------------------------------------------------------------------
-
-lowestNBits
-  :: forall f c t m @n k
-   . PrimeField f
-  => FieldSizeInBits f k
-  => Reflectable n Int
-  => Compare n k LT
-  => CircuitM f c t m
-  => FVar f
-  -> Snarky c t m (SizedF n (FVar f))
-lowestNBits x = do
-  bits <- unpack_ x (Proxy @k)
-  let
-    n = reflectType $ Proxy @n
-    lowN =
-      unsafePartial fromJust
-        $ Vector.toVector @n
-        $ Array.take n
-        $
-          Vector.toUnfoldable bits
-  pure $ SizedF $ pack_ lowN
-
-lowestNBitsPure
-  :: forall f @n k
-   . PrimeField f
-  => FieldSizeInBits f k
-  => Reflectable n Int
-  => Compare n k LT
-  => f
-  -> SizedF n f
-lowestNBitsPure x =
-  let
-    n = reflectType $ Proxy @n
-    -- Unpack to bits (LSB first), take first 128
-    bits = Array.take n $ Vector.toUnfoldable $ unpackPure x (Proxy @k)
-    two = fromInt 2
-  in
-    -- Pack back to field element
-    SizedF $ foldlWithIndex
-      (\i acc b -> if b then acc + pow two (BigInt.fromInt i) else acc)
-      zero
-      bits

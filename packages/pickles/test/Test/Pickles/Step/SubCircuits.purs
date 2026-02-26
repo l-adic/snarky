@@ -40,7 +40,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, toVectorOrThrow, unsafeFqToFp, zkRows)
+import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, stepEndo, toVectorOrThrow, unsafeFqToFp, zkRows)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -110,7 +110,7 @@ ipaFinalCheckTest cfg ctx = do
           }
       void $ evalSpongeM initialSpongeState do
         let ops = type2ScalarOps
-        res <- ipaFinalCheckCircuit @Vesta.ScalarField @Pallas.G ops pallasGroupMapParams inVar
+        res <- ipaFinalCheckCircuit @Vesta.ScalarField @Pallas.G ops { endo: const_ stepEndo, groupMapParams: pallasGroupMapParams } inVar
         liftSnarky $ assert_ res.success
 
   void $ circuitTest' @Vesta.ScalarField
@@ -202,7 +202,7 @@ ftEval0CircuitTest cfg ctx = do
          }
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit input = do
-      result <- ftEval0Circuit Linearization.pallas ctx.domainLog2 input.permInput.zeta input
+      result <- ftEval0Circuit { linearizationPoly: Linearization.pallas, domainLog2: ctx.domainLog2 } input.permInput.zeta input
       assertEqual_ result (const_ (un F expected))
 
   void $ circuitTest' @Vesta.ScalarField
@@ -288,7 +288,7 @@ combinedInnerProductCorrectCircuitTest cfg ctx = do
       => Tuple (BatchingScalars (FVar Vesta.ScalarField)) (CombinedInnerProductCheckInput (FVar Vesta.ScalarField))
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit (Tuple s input) = do
-      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas ctx.domainLog2 input.permInput.zeta s input
+      cipResult <- combinedInnerProductCheckCircuit { linearizationPoly: Linearization.pallas, domainLog2: ctx.domainLog2 } input.permInput.zeta s input
       assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
 
   void $ circuitTest' @Vesta.ScalarField
@@ -481,7 +481,7 @@ plonkChecksCircuitTest cfg ctx = do
     circuit input = do
       -- Start with sponge that has fqDigest and prevChallengeDigest absorbed
       output <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeStateAfterDigests) $
-        plonkChecksCircuit Linearization.pallas ctx.domainLog2 input
+        plonkChecksCircuit { linearizationPoly: Linearization.pallas, domainLog2: ctx.domainLog2 } input
       -- Verify outputs match expected values
       assertEqual_ output.polyscale (const_ ctx.oracles.v)
       assertEqual_ output.evalscale (const_ ctx.oracles.u)
@@ -550,7 +550,6 @@ incrementallyVerifyProofTest cfg ctx =
         { success } <- evalSpongeM initialSpongeCircuit $
           incrementallyVerifyProof @Pallas.G
             IPA.type2ScalarOps
-            (groupMapParams $ Proxy @Pallas.G)
             params
             input
         assert_ success
@@ -589,7 +588,6 @@ verifyTest cfg ctx =
         success <- evalSpongeM initialSpongeCircuit $
           verify @Pallas.G
             IPA.type2ScalarOps
-            (groupMapParams $ Proxy @Pallas.G)
             params
             input
             false_ -- isBaseCase (real proof, not base case)

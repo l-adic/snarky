@@ -32,7 +32,7 @@ import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks (absorbAllEvals, plonkArithmeticCheckCircuit) as PlonkChecks
+import Pickles.PlonkChecks (absorbAllEvals, permScalarCircuit) as PlonkChecks
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
@@ -42,7 +42,7 @@ import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Verify.Types (BulletproofChallenges, PlonkExpanded, UnfinalizedProof, expandPlonkMinimalCircuit, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, and_, const_, equals_, isEqual, mul_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, and_, const_, equals_, isEqual, mul_)
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
@@ -63,12 +63,14 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | - `linearizationPoly`: The linearization polynomial for gate constraints
 -- |
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
-type FinalizeOtherProofParams f =
+type FinalizeOtherProofParams :: Type -> Row Type -> Type
+type FinalizeOtherProofParams f r =
   { domain :: { generator :: f, shifts :: Vector 7 f }
   , domainLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , zkRows :: Int
   , linearizationPoly :: LinearizationPoly f
+  | r
   }
 
 -- | Input for finalizing another proof.
@@ -128,7 +130,7 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1086
 finalizeOtherProofCircuit
-  :: forall _d d f f' g t m sf r
+  :: forall _d d f f' g t m sf r1 r2
    . Add 1 _d d
   => PrimeField f
   => FieldSizeInBits f 255
@@ -137,8 +139,11 @@ finalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f | r }
-  -> FinalizeOtherProofParams f
+  => { unshift :: sf -> FVar f
+     , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
+     | r1
+     }
+  -> FinalizeOtherProofParams f r2
   -> FinalizeOtherProofInput d (FVar f) sf (BoolVar f)
   -> SpongeM f (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest } = do
@@ -160,22 +165,22 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   PlonkChecks.absorbAllEvals witness.allEvals
 
   -- 5. Squeeze xi (128-bit scalar challenge)
-  rawXi <- squeezeScalarChallenge
+  rawXi <- squeezeScalarChallenge { endo: endoVar }
 
   -- 6. xi_correct: compare squeezed xi with claimed xi
   xiCorrect <- liftSnarky $ isEqual rawXi deferred.xi
 
   -- 7. Squeeze evalscale (r)
-  rawR <- squeezeScalarChallenge
+  rawR <- squeezeScalarChallenge { endo: endoVar }
 
   -- 8. Expand xi and r via endo -> polyscale/evalscale
-  polyscale <- liftSnarky $ toField rawXi endoVar
-  evalscale <- liftSnarky $ toField rawR endoVar
+  polyscale <- liftSnarky $ toField @8 rawXi endoVar
+  evalscale <- liftSnarky $ toField @8 rawR endoVar
 
   -- 9. CIP computation + check
-  let cipInput = buildCipInput plonk witness params
+  let cipInput = buildCipInput plonk witness params.domain
   computedCIP <- liftSnarky $
-    combinedInnerProductCheckCircuit params.linearizationPoly params.domainLog2 plonk.zeta
+    combinedInnerProductCheckCircuit params plonk.zeta
       { polyscale, evalscale }
       cipInput
   cipCorrect <- liftSnarky $
@@ -183,7 +188,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 
   -- 10. Expand bulletproof challenges (128-bit -> full field via endo)
   expandedChallenges <- liftSnarky $
-    for deferred.bulletproofChallenges \c -> toField c endoVar
+    for deferred.bulletproofChallenges \c -> toField @8 c endoVar
 
   -- 11. b_correct
   zetaOmega <- liftSnarky $ mul_ plonk.zeta (const_ params.domain.generator)
@@ -196,9 +201,9 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
     }
 
   -- 12. perm_correct
-  let permInput = buildPermInput plonk witness params
-  permOk <- liftSnarky $ PlonkChecks.plonkArithmeticCheckCircuit ops
-    { claimedPerm: deferred.plonk.perm, permInput }
+  let permInput = buildPermInput plonk witness params.domain
+  actualPerm <- liftSnarky $ PlonkChecks.permScalarCircuit permInput
+  permOk <- liftSnarky $ ops.shiftedEqual deferred.plonk.perm actualPerm
 
   -- 13. Combine all checks
   finalized <- liftSnarky do
@@ -217,11 +222,11 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 -- | Build the CombinedInnerProductCheckInput from expanded plonk values,
 -- | witness evaluations, and compile-time parameters.
 buildCipInput
-  :: forall f
+  :: forall f r
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f
+  -> { generator :: f, shifts :: Vector 7 f | r }
   -> CombinedInnerProductCheckInput (FVar f)
 buildCipInput plonk witness params =
   { permInput: buildPermInput plonk witness params
@@ -238,17 +243,17 @@ buildCipInput plonk witness params =
 
 -- | Build the PermutationInput for the perm_correct check.
 buildPermInput
-  :: forall f
+  :: forall f r
    . PrimeField f
   => PlonkExpanded (FVar f)
   -> ProofWitness (FVar f)
-  -> FinalizeOtherProofParams f
+  -> { generator :: f, shifts :: Vector 7 f | r }
   -> PermutationInput (FVar f)
 buildPermInput plonk witness params =
   { w: map _.zeta (Vector.take @7 witness.allEvals.witnessEvals)
   , sigma: map _.zeta witness.allEvals.sigmaEvals
   , z: witness.allEvals.zEvals
-  , shifts: map const_ params.domain.shifts
+  , shifts: map const_ params.shifts
   , alpha: plonk.alpha
   , beta: plonk.beta
   , gamma: plonk.gamma

@@ -42,7 +42,9 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 -------------------------------------------------------------------------------
 
 -- | Compile-time constants from verifier index / SRS.
-type IncrementallyVerifyProofParams f =
+-- | Row-polymorphic so callers can pass wider records (e.g., WrapParams).
+type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
+type IncrementallyVerifyProofParams f r =
   { curveParams :: CurveParams f
   , lagrangeComms :: Array (AffinePoint (F f))
   , blindingH :: AffinePoint (F f)
@@ -53,6 +55,9 @@ type IncrementallyVerifyProofParams f =
       , sigma :: Vector 6 (AffinePoint (F f))
       }
   , indexDigest :: f
+  , endo :: f -- ^ EndoScalar constant for challenge expansion
+  , groupMapParams :: GroupMapParams f
+  | r
   }
 
 -- | Circuit input. sgOldN is 0 or 2.
@@ -99,7 +104,7 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3
+  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -114,17 +119,14 @@ incrementallyVerifyProof
   => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
-  -> GroupMapParams f
-  -> IncrementallyVerifyProofParams f
+  -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
-incrementallyVerifyProof scalarOps groupMapParams_ params input = do
+incrementallyVerifyProof scalarOps params input = do
+  let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
+
   -- 1. Compute x_hat (public input commitment)
-  xHat <- liftSnarky $ publicInputCommit
-    params.curveParams
-    input.publicInput
-    params.lagrangeComms
-    params.blindingH
+  xHat <- liftSnarky $ publicInputCommit params input.publicInput
 
   -- 2. Run Fq-sponge transcript
   let
@@ -136,7 +138,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
       , zComm: input.zComm
       , tComm: input.tComm
       }
-  { beta, gamma, alphaChal, zetaChal, digest } <- spongeTranscriptCircuit spongeInput
+  { beta, gamma, alphaChal, zetaChal, digest } <- spongeTranscriptCircuit endoParams spongeInput
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky $
@@ -179,7 +181,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 
   { success, challenges } <- checkBulletproof @f @g
     scalarOps
-    groupMapParams_
+    endoParams
     allBases
     bpInput
 
@@ -200,7 +202,7 @@ incrementallyVerifyProof scalarOps groupMapParams_ params input = do
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
 verify
-  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3
+  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -215,15 +217,14 @@ verify
   => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
-  -> GroupMapParams f
-  -> IncrementallyVerifyProofParams f
+  -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
-verify scalarOps groupMapParams_ params input isBaseCase claimedDigest = do
+verify scalarOps params input isBaseCase claimedDigest = do
   -- 1. Call incrementallyVerifyProof
-  output <- incrementallyVerifyProof @g scalarOps groupMapParams_ params input
+  output <- incrementallyVerifyProof @g scalarOps params input
 
   -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
   liftSnarky do

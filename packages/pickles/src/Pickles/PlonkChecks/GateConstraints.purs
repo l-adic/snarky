@@ -176,18 +176,17 @@ parseHex hex = case fromBigInt <$> BigInt.fromString hex of
 -- | This computes the linearization polynomial but does NOT assert it equals zero.
 -- | Use `checkGateConstraints` for the full constraint check.
 evaluateGateConstraints
-  :: forall f f' g c t m
+  :: forall f f' g c t m r
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> FVar f -- ^ zeta (expanded, for computing lagrange basis)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m (FVar f)
-evaluateGateConstraints linPoly domLog2 zeta input = do
+evaluateGateConstraints params zeta input = do
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -196,7 +195,7 @@ evaluateGateConstraints linPoly domLog2 zeta input = do
       , defaultVal: const_ zero
       }
 
-    gen = domainGenerator @f domLog2
+    gen = domainGenerator @f params.domainLog2
 
     -- Omega power constants (no circuit vars)
     omegaToMinus1 = recip gen
@@ -222,7 +221,7 @@ evaluateGateConstraints linPoly domLog2 zeta input = do
     env = buildCircuitEnvM
       alphaPowers
       zeta
-      domLog2
+      params.domainLog2
       omegaForLagrange
       evalPoint
       input.vanishesOnZk
@@ -231,7 +230,7 @@ evaluateGateConstraints linPoly domLog2 zeta input = do
       input.jointCombiner
       parseHex
 
-  evaluateM (runLinearizationPoly linPoly) env
+  evaluateM (runLinearizationPoly params.linearizationPoly) env
 
 -- | Check that the gate constraints are satisfied.
 -- |
@@ -241,17 +240,16 @@ evaluateGateConstraints linPoly domLog2 zeta input = do
 -- |
 -- | A valid proof will satisfy this constraint; an invalid proof will not.
 checkGateConstraints
-  :: forall f f' g c t m
+  :: forall f f' g c t m r
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> FVar f -- ^ zeta (expanded)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m Unit
-checkGateConstraints linPoly domLog2 zeta input = do
-  result <- evaluateGateConstraints linPoly domLog2 zeta input
+checkGateConstraints params zeta input = do
+  result <- evaluateGateConstraints params zeta input
   assertEqual_ result (const_ zero)

@@ -38,7 +38,7 @@ circuit scalarValue =
     EndoScalar es = endoScalar @f' @f
     endoVar = const_ es
   in
-    toField scalarValue endoVar
+    toField @8 scalarValue endoVar
 
 spec'
   :: forall f f' g'

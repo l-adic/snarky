@@ -27,13 +27,15 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.IPA (IpaScalarOps)
+import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
-import Pickles.Verify (IncrementallyVerifyProofParams, verify)
+import Pickles.Verify (verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Prim.Int (class Add)
@@ -42,6 +44,7 @@ import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -- | Public input for the Wrap circuit (value level).
 -- |
@@ -83,12 +86,33 @@ type StepPublicInput n ds dw fv b =
 
 -- | Combined parameters for the Wrap circuit.
 -- |
--- | Contains IVP params (curve params, commitments) and
--- | finalize params (domain, endo, linearization).
+-- | Flat record containing all fields needed by both subcircuits:
+-- | - IVP: curveParams, lagrangeComms, blindingH, sigmaCommLast, columnComms, indexDigest, groupMapParams
+-- | - Finalize: domain, domainLog2, zkRows, linearizationPoly
+-- | - Shared: endo
+-- |
+-- | Row-polymorphic functions accept this as a superset of their required fields.
 type WrapParams :: Type -> Type
 type WrapParams f =
-  { ivpParams :: IncrementallyVerifyProofParams f
-  , finalizeParams :: FinalizeOtherProofParams f
+  { -- IVP params
+    curveParams :: CurveParams f
+  , lagrangeComms :: Array (AffinePoint (F f))
+  , blindingH :: AffinePoint (F f)
+  , sigmaCommLast :: AffinePoint (F f)
+  , columnComms ::
+      { index :: Vector 6 (AffinePoint (F f))
+      , coeff :: Vector 15 (AffinePoint (F f))
+      , sigma :: Vector 6 (AffinePoint (F f))
+      }
+  , indexDigest :: f
+  , groupMapParams :: GroupMapParams f
+  -- Finalize params
+  , domain :: { generator :: f, shifts :: Vector 7 f }
+  , domainLog2 :: Int
+  , zkRows :: Int
+  , linearizationPoly :: LinearizationPoly f
+  -- Shared
+  , endo :: f
   }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
@@ -124,11 +148,10 @@ wrapCircuit
   => Reflectable n Int
   => Add 1 _l3 ds
   => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
-  -> GroupMapParams Pallas.ScalarField
   -> WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
+wrapCircuit scalarOps params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
   publicInput <- exists $ lift $ do
@@ -145,7 +168,7 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized, expandedChallenges } <- evalSpongeM initialSpongeCircuit $
-    finalizeOtherProofCircuit scalarOps params.finalizeParams
+    finalizeOtherProofCircuit scalarOps params
       { unfinalized, witness, prevChallengeDigest }
 
   -- 3. Assert finalized || not shouldFinalize
@@ -164,7 +187,7 @@ wrapCircuit scalarOps groupMapParams_ params wrapStmt = do
       , opening: openingProof
       }
   success <- evalSpongeM initialSpongeCircuit $
-    verify @VestaG scalarOps groupMapParams_ params.ivpParams fullIvpInput false_
+    verify @VestaG scalarOps params fullIvpInput false_
       wrapStmt.proofState.spongeDigestBeforeEvaluations
   assert_ success
 

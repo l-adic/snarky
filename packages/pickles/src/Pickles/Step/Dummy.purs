@@ -113,7 +113,7 @@ dummyProofWitness =
   , publicEvalForFt: zero
   }
 
-dummyFinalizeOtherProofParams :: forall f. PrimeField f => FinalizeOtherProofParams f
+dummyFinalizeOtherProofParams :: forall f. PrimeField f => FinalizeOtherProofParams f ()
 dummyFinalizeOtherProofParams =
   { domain:
       { generator: zero

@@ -30,12 +30,12 @@ type EndoScalarRound f =
   , xs :: Vector 8 (FVar f)
   }
 
-type EndoScalar f = Vector 8 (EndoScalarRound f)
+type EndoScalar f = Array (EndoScalarRound f)
 
-newtype Rows f = Rows (Vector 8 (KimchiRow f))
+newtype Rows f = Rows (Array (KimchiRow f))
 
 instance ToKimchiRows f (Rows f) where
-  toKimchiRows (Rows as) = Vector.toUnfoldable as
+  toKimchiRows (Rows as) = as
 
 reduce
   :: forall f m

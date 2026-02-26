@@ -7,12 +7,13 @@ module Snarky.Circuit.Kimchi.EndoScalar
 import Prelude
 
 import Data.Fin (unsafeFinite)
+import Data.Reflectable (class Reflectable)
 import Data.Traversable (foldl)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, chunks, (!!))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
-import Prim.Int (class Compare)
+import Prim.Int (class Compare, class Mul)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (CVar(..))
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, mul_, read, scale_, toBits)
@@ -28,25 +29,30 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | the appropriate newtype (EndoBase or EndoScalar) depending on context.
 -- | This is used in conjunction with EndoMul.
 toField
-  :: forall f t m n
+  :: forall @rows f t m n nBits _l
    . FieldSizeInBits f n
+  => Mul 16 rows nBits
+  => Mul 2 _l nBits
+  => Mul 8 rows _l
+  => Reflectable rows Int
+  => Reflectable nBits Int
   => CircuitM f (KimchiConstraint f) t m
-  => Compare 128 n LT
-  => SizedF 128 (FVar f)
+  => Compare nBits n LT
+  => SizedF nBits (FVar f)
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
 toField scalar endo = do
   -- Create nybble variables directly (like OCaml's `exists Field.typ`).
   -- Bits only exist in the prover — the EndoMulScalar gate constrains the nybbles.
-  nibblesByRow :: Vector 8 (Vector 8 (FVar f)) <- exists do
-    vVal :: SizedF 128 (F f) <- read scalar
+  nibblesByRow :: Vector rows (Vector 8 (FVar f)) <- exists do
+    vVal :: SizedF nBits (F f) <- read scalar
     let
       msbBits = Vector.reverse $ toBits vVal
 
-      pairs :: Vector 64 (Vector 2 Boolean)
+      pairs :: Vector _l (Vector 2 Boolean)
       pairs = chunks @2 msbBits
 
-      nybbles :: Vector 64 (F f)
+      nybbles :: Vector _l (F f)
       nybbles = map
         ( \v ->
             let
@@ -79,7 +85,7 @@ toField scalar endo = do
     , n: const_ $ zero
     }
     nibblesByRow
-  addConstraint $ KimchiEndoScalar rowsRev
+  addConstraint $ KimchiEndoScalar $ Vector.toUnfoldable rowsRev
   assertEqual_ n (SizedF.toField scalar)
   case endo of
     Const e -> pure $ scale_ e a `add_` b

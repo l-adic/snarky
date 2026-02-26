@@ -79,21 +79,20 @@ type BatchingScalars f =
 -- | Uses precomputed alpha powers for gate constraint evaluation, matching
 -- | OCaml's scalars_env approach.
 combinedInnerProductCheckCircuit
-  :: forall f f' g c t m
+  :: forall f f' g c t m r
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
   => LinearizationFFI f g
-  => LinearizationPoly f
-  -> Int -- ^ domainLog2
+  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> FVar f -- ^ zeta (expanded)
   -> BatchingScalars (FVar f)
   -> CombinedInnerProductCheckInput (FVar f)
   -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit linPoly domLog2 zeta scalars input = do
+combinedInnerProductCheckCircuit params zeta scalars input = do
   -- 1. Compute ftEval0 using monadic gate constraint evaluation
-  ftEval0Computed <- ftEval0Circuit linPoly domLog2 zeta
+  ftEval0Computed <- ftEval0Circuit params zeta
     { permInput: input.permInput
     , gateInput: input.gateInput
     , publicEval: input.publicEvalForFt

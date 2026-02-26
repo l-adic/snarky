@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# Create srs-cache directory if it doesn't exist
+# Download SRS files from proof-systems repo if not already present.
+# Skips files that already exist (e.g., from CI cache).
+
+SRS_BASE_URL="https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs"
+
 mkdir -p srs-cache
 
-echo "Downloading test_pallas.srs..."
-curl -L -o srs-cache/test_pallas.srs https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs/test_pallas.srs
+for f in test_pallas.srs test_vesta.srs pallas.srs vesta.srs; do
+  if [ -f "srs-cache/$f" ]; then
+    echo "$f already exists, skipping"
+    continue
+  fi
+  echo "Downloading $f..."
+  curl -fL -o "srs-cache/$f" "$SRS_BASE_URL/$f"
+done
 
-echo "Downloading test_vesta.srs..."
-curl -L -o srs-cache/test_vesta.srs https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs/test_vesta.srs
-
-echo "Downloading pallas.srs..."
-curl -L -o srs-cache/pallas.srs https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs/pallas.srs
-
-echo "Downloading vesta.srs..."
-curl -L -o srs-cache/vesta.srs https://github.com/o1-labs/proof-systems/raw/refs/heads/master/srs/vesta.srs
-
-
-echo "Downloads completed!"
+echo "SRS cache ready."
