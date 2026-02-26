@@ -148,8 +148,8 @@ xiCorrectCircuit input = do
   rawR <- squeezeScalarChallenge input
 
   -- 8. Expand to full field via endo for CIP use
-  xi <- liftSnarky $ toField rawXi input.endo
-  evalscale <- liftSnarky $ toField rawR input.endo
+  xi <- liftSnarky $ toField @8 rawXi input.endo
+  evalscale <- liftSnarky $ toField @8 rawR input.endo
 
   pure { rawXi, xi, rawR, evalscale }
 

@@ -262,7 +262,7 @@ endoScalarCircuit scalar =
   let
     EndoScalar es = endoScalar @Vesta.BaseField @Fp
   in
-    toField (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
+    toField @8 (unsafeCoerce scalar :: SizedF 128 (FVar Fp)) (const_ es)
 
 varBaseMulCircuit
   :: forall t m

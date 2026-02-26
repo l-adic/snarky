@@ -296,9 +296,9 @@ lowest128Bits endo x = do
             div xBig two128
     pure $ UnChecked (Tuple lo hi)
   -- Range check hi via EndoScalar (discard result) — hi first, matching OCaml
-  void $ EndoScalar.toField hi endo
+  void $ EndoScalar.toField @8 hi endo
   -- Range check lo via EndoScalar (discard result)
-  void $ EndoScalar.toField lo endo
+  void $ EndoScalar.toField @8 lo endo
   -- Assert x = lo + hi * 2^128
   assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
   pure lo

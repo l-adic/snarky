@@ -163,7 +163,7 @@ plonkChecksCircuit params input = do
   liftSnarky $ assertEq rawXi input.claimedXi
 
   -- 4. Convert to full field via endo for CIP computation
-  polyscale <- liftSnarky $ toField rawXi input.endo
+  polyscale <- liftSnarky $ toField @8 rawXi input.endo
 
   -- 5. Squeeze scalar challenge (128-bit) for evalscale (r)
   rawR <- squeezeScalarChallenge input
@@ -172,7 +172,7 @@ plonkChecksCircuit params input = do
   liftSnarky $ assertEq rawR input.claimedR
 
   -- 7. Convert to full field via endo for CIP computation
-  evalscale <- liftSnarky $ toField rawR input.endo
+  evalscale <- liftSnarky $ toField @8 rawR input.endo
 
   -- 8. Compute combined inner product using derived values
   -- zeta comes from the permutation input (it's the evaluation point)

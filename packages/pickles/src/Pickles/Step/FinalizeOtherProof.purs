@@ -174,8 +174,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
   rawR <- squeezeScalarChallenge { endo: endoVar }
 
   -- 8. Expand xi and r via endo -> polyscale/evalscale
-  polyscale <- liftSnarky $ toField rawXi endoVar
-  evalscale <- liftSnarky $ toField rawR endoVar
+  polyscale <- liftSnarky $ toField @8 rawXi endoVar
+  evalscale <- liftSnarky $ toField @8 rawR endoVar
 
   -- 9. CIP computation + check
   let cipInput = buildCipInput plonk witness params.domain
@@ -188,7 +188,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, prevChallengeDigest
 
   -- 10. Expand bulletproof challenges (128-bit -> full field via endo)
   expandedChallenges <- liftSnarky $
-    for deferred.bulletproofChallenges \c -> toField c endoVar
+    for deferred.bulletproofChallenges \c -> toField @8 c endoVar
 
   -- 11. b_correct
   zetaOmega <- liftSnarky $ mul_ plonk.zeta (const_ params.domain.generator)

@@ -33,14 +33,13 @@ import Pickles.Linearization.FFI (PointEval)
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -63,10 +62,6 @@ domainLog2 = 16
 domainGenerator :: StepField
 domainGenerator = LinFFI.domainGenerator domainLog2
 
--- | Domain shifts (7 permutation shifts)
-domainShifts :: Vector 7 StepField
-domainShifts = LinFFI.domainShifts domainLog2
-
 -- | Endo coefficient for scalar challenge expansion (= Wrap_inner_curve.scalar)
 stepEndo :: StepField
 stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
@@ -83,20 +78,9 @@ unsafeIdx v i =
   in
     unsafePartial $ Array.unsafeIndex arr i
 
--- | Parse a PointEval from two consecutive array positions
-pointEval :: forall n f. Vector n f -> Int -> PointEval f
-pointEval inputs i =
-  { zeta: unsafeIdx inputs i
-  , omegaTimesZeta: unsafeIdx inputs (i + 1)
-  }
-
 -- | Treat a field variable as a 128-bit scalar challenge (for circuit compilation)
 asSizedF128 :: forall f. FVar f -> SizedF 128 (FVar f)
 asSizedF128 = unsafeCoerce
-
--- | Treat a field variable as a boolean (for circuit compilation)
-asBool :: forall f. FVar f -> BoolVar f
-asBool = unsafeCoerce
 
 -------------------------------------------------------------------------------
 -- | Sub-circuit 1: expand_plonk (Steps 2+4)
@@ -128,8 +112,8 @@ expandPlonkCircuit inputs = do
     rawZeta = asSizedF128 $ unsafeIdx inputs 3
 
   -- Step 2: scalar challenge expansion (only alpha and zeta go through endo)
-  _alpha <- toField rawAlpha endoVar
-  zeta <- toField rawZeta endoVar
+  _alpha <- toField @8 rawAlpha endoVar
+  zeta <- toField @8 rawZeta endoVar
 
   -- Step 4: zetaw = generator * zeta
   void $ mul_ (const_ domainGenerator) zeta
@@ -216,7 +200,7 @@ bCorrectStandaloneCircuit inputs = do
   -- :: evaluation), so toField constraints for challenge[15] are emitted first.
   -- We reverse before expanding, then reverse back, to match constraint order
   -- while preserving the correct mathematical ordering for bPoly.
-  expandedChallengesRev <- for (Vector.reverse rawChallenges) \c -> toField c endoVar
+  expandedChallengesRev <- for (Vector.reverse rawChallenges) \c -> toField @8 c endoVar
   let expandedChallenges = Vector.reverse expandedChallengesRev
 
   void $ IPA.bCorrectCircuit
@@ -468,18 +452,6 @@ ftEval0StandaloneCircuit inputs = do
 -------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof wrapper circuit (for reference)
 -------------------------------------------------------------------------------
-
--- | Parse the 151-field flat array into AllEvals.
-parseAllEvals :: forall n f. Vector n f -> AllEvals f
-parseAllEvals inputs =
-  { ftEval1: unsafeIdx inputs 117
-  , publicEvals: pointEval inputs 29
-  , zEvals: pointEval inputs 91
-  , indexEvals: Vector.generate \j -> pointEval inputs (105 + 2 * getFinite j)
-  , witnessEvals: Vector.generate \j -> pointEval inputs (31 + 2 * getFinite j)
-  , coeffEvals: Vector.generate \j -> pointEval inputs (61 + 2 * getFinite j)
-  , sigmaEvals: Vector.generate \j -> pointEval inputs (93 + 2 * getFinite j)
-  }
 
 -- finalizeOtherProofWrapperCircuit
 --   :: forall t m
