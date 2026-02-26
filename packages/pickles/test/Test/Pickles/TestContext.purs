@@ -762,6 +762,7 @@ buildFinalizeParams stepCtx =
       { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
       , shifts: map coerceFp (ProofFFI.proverIndexShifts stepCtx.proverIndex)
       }
+  , domainLog2: stepCtx.domainLog2
   , endo: wrapEndo
   , zkRows
   , linearizationPoly: Linearization.vesta
@@ -1312,6 +1313,7 @@ buildStepFinalizeParams wrapCtx =
       { generator: (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
       , shifts: map unsafeFqToFp (ProofFFI.proverIndexShifts wrapCtx.proverIndex)
       }
+  , domainLog2: wrapCtx.domainLog2
   , endo: stepEndo
   , zkRows
   , linearizationPoly: Linearization.pallas

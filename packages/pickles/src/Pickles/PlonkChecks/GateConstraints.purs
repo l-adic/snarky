@@ -29,9 +29,9 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
-import Pickles.Linearization.Env (Challenges, EvalPoint, circuitEnv)
-import Pickles.Linearization.FFI (PointEval)
-import Pickles.Linearization.Interpreter (evaluate)
+import Pickles.Linearization.Env (EnvM, EvalPoint, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
+import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_)
@@ -137,7 +137,13 @@ buildChallenges
      , lagrangeTrue1 :: a
      | r
      }
-  -> Challenges a
+  -> { alpha :: a
+     , beta :: a
+     , gamma :: a
+     , jointCombiner :: a
+     , vanishesOnZeroKnowledgeAndPreviousRows :: a
+     , unnormalizedLagrangeBasis :: { zkRows :: Boolean, offset :: Int } -> a
+     }
 buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse0, lagrangeTrue1 } =
   { alpha
   , beta
@@ -160,21 +166,28 @@ parseHex hex = case fromBigInt <$> BigInt.fromString hex of
 -- | Core Circuit Functions
 -------------------------------------------------------------------------------
 
--- | Evaluate the gate constraint polynomial in-circuit.
+-- | Evaluate the gate constraint polynomial in-circuit using precomputed alpha powers.
 -- | Returns the computed value as a circuit variable.
+-- |
+-- | This matches OCaml's scalars_env (plonk_checks.ml:234-240) which precomputes
+-- | alpha^0..alpha^70 and uses array lookups instead of computing pow(alpha, n)
+-- | each time.
 -- |
 -- | This computes the linearization polynomial but does NOT assert it equals zero.
 -- | Use `checkGateConstraints` for the full constraint check.
 evaluateGateConstraints
-  :: forall f f' c t m
+  :: forall f f' g c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
+  => LinearizationFFI f g
   => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded, for computing lagrange basis)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m (FVar f)
-evaluateGateConstraints linPoly input =
+evaluateGateConstraints linPoly domLog2 zeta input = do
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -183,19 +196,42 @@ evaluateGateConstraints linPoly input =
       , defaultVal: const_ zero
       }
 
-    challenges = buildChallenges
-      { alpha: input.alpha
-      , beta: input.beta
-      , gamma: input.gamma
-      , jointCombiner: input.jointCombiner
-      , vanishesOnZk: input.vanishesOnZk
-      , lagrangeFalse0: input.lagrangeFalse0
-      , lagrangeTrue1: input.lagrangeTrue1
-      }
+    gen = domainGenerator @f domLog2
 
-    env = circuitEnv evalPoint challenges parseHex
-  in
-    evaluate (runLinearizationPoly linPoly) env
+    -- Omega power constants (no circuit vars)
+    omegaToMinus1 = recip gen
+    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
+    omegaToMinus3 = omegaToMinus2 * omegaToMinus1
+    omegaToMinus4 = omegaToMinus3 * omegaToMinus1
+
+    -- Omega constant lookup for unnormalized lagrange basis
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then one
+      else if zk && offset == (-1) then omegaToMinus4
+      else if not zk && offset == 1 then gen
+      else if not zk && offset == (-1) then omegaToMinus1
+      else if not zk && offset == (-2) then omegaToMinus2
+      else if zk && offset == 0 then omegaToMinus3
+      else one
+
+  -- Precompute alpha^0..alpha^70 (69 R1CS constraints)
+  alphaPowers <- precomputeAlphaPowers 70 input.alpha
+
+  let
+    env :: EnvM f (Snarky c t m)
+    env = buildCircuitEnvM
+      alphaPowers
+      zeta
+      domLog2
+      omegaForLagrange
+      evalPoint
+      input.vanishesOnZk
+      input.beta
+      input.gamma
+      input.jointCombiner
+      parseHex
+
+  evaluateM (runLinearizationPoly linPoly) env
 
 -- | Check that the gate constraints are satisfied.
 -- |
@@ -205,14 +241,17 @@ evaluateGateConstraints linPoly input =
 -- |
 -- | A valid proof will satisfy this constraint; an invalid proof will not.
 checkGateConstraints
-  :: forall f f' c t m
+  :: forall f f' g c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
+  => LinearizationFFI f g
   => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m Unit
-checkGateConstraints linPoly input = do
-  result <- evaluateGateConstraints linPoly input
+checkGateConstraints linPoly domLog2 zeta input = do
+  result <- evaluateGateConstraints linPoly domLog2 zeta input
   assertEqual_ result (const_ zero)

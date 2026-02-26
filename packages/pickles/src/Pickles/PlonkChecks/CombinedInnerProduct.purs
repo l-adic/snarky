@@ -17,7 +17,7 @@ import Prelude
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Commitments (combinedInnerProductCircuit)
-import Pickles.Linearization.FFI (PointEval)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
@@ -76,31 +76,33 @@ type BatchingScalars f =
 -- | 3. Compute combined inner product in-circuit using derived batching scalars
 -- | 4. Return the result for comparison against expected value
 -- |
--- | The batching scalars (polyscale/evalscale) are passed separately because they
--- | are derived from the Fiat-Shamir sponge, not provided as witness data.
+-- | Uses precomputed alpha powers for gate constraint evaluation, matching
+-- | OCaml's scalars_env approach.
 combinedInnerProductCheckCircuit
-  :: forall f f' c t m
+  :: forall f f' g c t m
    . PrimeField f
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f c t m
+  => LinearizationFFI f g
   => LinearizationPoly f
+  -> Int -- ^ domainLog2
+  -> FVar f -- ^ zeta (expanded)
   -> BatchingScalars (FVar f)
   -> CombinedInnerProductCheckInput (FVar f)
   -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit linPoly scalars input = do
-  -- 1. Compute ftEval0 in-circuit
-  ftEval0Computed <- ftEval0Circuit linPoly
+combinedInnerProductCheckCircuit linPoly domLog2 zeta scalars input = do
+  -- 1. Compute ftEval0 using monadic gate constraint evaluation
+  ftEval0Computed <- ftEval0Circuit linPoly domLog2 zeta
     { permInput: input.permInput
     , gateInput: input.gateInput
     , publicEval: input.publicEvalForFt
     }
 
-  -- 2. Build ft PointEval with computed ftEval0 and witness ftEval1
+  -- 2. Build ft PointEval
   let ftPointEval = { zeta: ftEval0Computed, omegaTimesZeta: input.ftEval1 }
 
   -- 3. Build full 45-element evaluation vector
-  -- Order: public (1) + ft (1) + z (1) + index (6) + witness (15) + coeff (15) + sigma (6)
   let
     allEvals :: Vector 45 (PointEval (FVar f))
     allEvals =

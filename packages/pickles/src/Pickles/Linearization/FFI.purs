@@ -6,6 +6,7 @@ module Pickles.Linearization.FFI
   , unnormalizedLagrangeBasis
   , vanishesOnZkAndPreviousRows
   , domainGenerator
+  , domainShifts
   , proverIndexDomainLog2
   , evalWitnessPolys
   , evalCoefficientPolys
@@ -50,6 +51,7 @@ class LinearizationFFI f g | f -> g where
   unnormalizedLagrangeBasis :: { domainLog2 :: Int, zkRows :: Int, offset :: Int, pt :: f } -> f
   vanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
   domainGenerator :: Int -> f
+  domainShifts :: Int -> Vector 7 f
   proverIndexDomainLog2 :: ProverIndex g f -> Int
   evalWitnessPolys :: ProverIndex g f -> Vector 15 (Array f) -> f -> Vector 15 (PointEval f)
   evalCoefficientPolys :: ProverIndex g f -> f -> Vector 15 f
@@ -70,6 +72,9 @@ foreign import vestaVanishesOnZkAndPreviousRows :: { domainLog2 :: Int, zkRows :
 
 foreign import pallasDomainGenerator :: Int -> Pallas.BaseField
 foreign import vestaDomainGenerator :: Int -> Vesta.BaseField
+
+foreign import pallasDomainShifts :: Int -> Vector 7 Pallas.BaseField
+foreign import vestaDomainShifts :: Int -> Vector 7 Vesta.BaseField
 
 foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
 foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
@@ -92,6 +97,7 @@ instance LinearizationFFI Pallas.BaseField Vesta.G where
   unnormalizedLagrangeBasis = pallasUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = pallasVanishesOnZkAndPreviousRows
   domainGenerator = pallasDomainGenerator
+  domainShifts = pallasDomainShifts
   proverIndexDomainLog2 = pallasProverIndexDomainLog2
   evalWitnessPolys = pallasProverIndexWitnessEvaluations
   evalCoefficientPolys = pallasProverIndexCoefficientEvaluations
@@ -102,6 +108,7 @@ instance LinearizationFFI Vesta.BaseField Pallas.G where
   unnormalizedLagrangeBasis = vestaUnnormalizedLagrangeBasis
   vanishesOnZkAndPreviousRows = vestaVanishesOnZkAndPreviousRows
   domainGenerator = vestaDomainGenerator
+  domainShifts = vestaDomainShifts
   proverIndexDomainLog2 = vestaProverIndexDomainLog2
   evalWitnessPolys = vestaProverIndexWitnessEvaluations
   evalCoefficientPolys = vestaProverIndexCoefficientEvaluations

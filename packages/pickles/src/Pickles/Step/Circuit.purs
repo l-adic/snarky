@@ -29,6 +29,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.IPA (IpaScalarOps)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
@@ -36,6 +37,7 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherP
 import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
@@ -93,12 +95,14 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
 -- | Each proof gets its own fresh sponge state.
 finalizeOtherProof
-  :: forall d f f' t m sf r
-   . PrimeField f
+  :: forall _d d f f' g t m sf r
+   . Add 1 _d d
+  => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
   => Reflectable d Int
   => { unshift :: sf -> FVar f | r }
   -> FinalizeOtherProofParams f
@@ -169,8 +173,9 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n ds dw input prevInput output aux t m
-   . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
+  :: forall n ds _dw dw input prevInput output aux t m
+   . Add 1 _dw dw
+  => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int

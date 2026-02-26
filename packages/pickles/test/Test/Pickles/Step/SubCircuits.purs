@@ -202,7 +202,7 @@ ftEval0CircuitTest cfg ctx = do
          }
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit input = do
-      result <- ftEval0Circuit Linearization.pallas input
+      result <- ftEval0Circuit Linearization.pallas ctx.domainLog2 input.permInput.zeta input
       assertEqual_ result (const_ (un F expected))
 
   void $ circuitTest' @Vesta.ScalarField
@@ -288,7 +288,7 @@ combinedInnerProductCorrectCircuitTest cfg ctx = do
       => Tuple (BatchingScalars (FVar Vesta.ScalarField)) (CombinedInnerProductCheckInput (FVar Vesta.ScalarField))
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit (Tuple s input) = do
-      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas s input
+      cipResult <- combinedInnerProductCheckCircuit Linearization.pallas ctx.domainLog2 input.permInput.zeta s input
       assertEqual_ cipResult (const_ ctx.oracles.combinedInnerProduct)
 
   void $ circuitTest' @Vesta.ScalarField
@@ -481,7 +481,7 @@ plonkChecksCircuitTest cfg ctx = do
     circuit input = do
       -- Start with sponge that has fqDigest and prevChallengeDigest absorbed
       output <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeStateAfterDigests) $
-        plonkChecksCircuit Linearization.pallas input
+        plonkChecksCircuit Linearization.pallas ctx.domainLog2 input
       -- Verify outputs match expected values
       assertEqual_ output.polyscale (const_ ctx.oracles.v)
       assertEqual_ output.evalscale (const_ ctx.oracles.u)

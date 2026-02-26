@@ -55,7 +55,7 @@ import Data.Foldable (fold, foldM, for_, product)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
@@ -64,6 +64,7 @@ import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, fromShiftedType1Circuit, fromShiftedType2Circuit, groupMapCircuit, scaleFast1, scaleFast2)
+import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -128,36 +129,47 @@ bPoly chals x =
   in
     product terms
 
--- | Circuit version of bPoly using iterative squaring (O(k) multiplications).
+-- | Circuit version of bPoly using two-phase approach matching OCaml.
 -- |
--- | For recursive verification where each multiplication is a constraint.
--- | Computes in a single pass over reversed challenges - no intermediate arrays.
+-- | Phase 1: Build pow_two_pows = [pt, pt^2, pt^4, ..., pt^(2^(k-1))] via k-1 squarings
+-- | Phase 2: Compute product = ∏ (1 + chals[i] * powTwoPows[k-1-i]) with k-1 accumulations
+-- |
+-- | This matches OCaml's challenge_polynomial (wrap_verifier.ml:35-57) exactly,
+-- | producing the same constraint ordering.
 bPolyCircuit
-  :: forall d f c t m
-   . Reflectable d Int
+  :: forall _d d f c t m
+   . Add 1 _d d
+  => Reflectable d Int
   => PrimeField f
   => CircuitM f c t m
   => BPolyInput d (FVar f)
   -> Snarky c t m (FVar f)
-bPolyCircuit { challenges: chals, x } = do
-  -- Iterate over reversed challenges: [c_{k-1}, ..., c_1, c_0]
-  -- Powers naturally go x, x², x⁴, ... as we square each iteration
-  -- term_i = 1 + c_{k-1-i} * x^{2^i}
-  { product: prod } <- foldM
-    ( \{ product: p, currPower } c -> do
-        -- term = 1 + c * currPower
-        cp <- pure c * pure currPower
-        let term = add_ (const_ one) cp
-        -- product *= term
-        newProduct <- pure p * pure term
-        -- currPower = currPower²
-        newPower <- pure currPower * pure currPower
-        pure { product: newProduct, currPower: newPower }
+bPolyCircuit { challenges: chals, x: pt } = do
+  -- Phase 1: Build pow_two_pows via k-1 squarings
+  let { tail: chalsTail } = Vector.uncons chals
+  Tuple squaredPowers _ <- mapAccumM
+    ( \prev _ -> do
+        sq <- pure prev * pure prev
+        pure (Tuple sq sq)
     )
-    { product: const_ one, currPower: x }
-    (Vector.reverse chals)
+    pt
+    chalsTail
+  let powTwoPows = Vector.append (pt :< Vector.nil) squaredPowers
 
-  pure prod
+  -- Phase 2: Product = ∏_{i=0}^{k-1} (1 + chals[i] * powTwoPows[k-1-i])
+  let
+    paired = Vector.zipWith Tuple chals (Vector.reverse powTwoPows)
+    { head: Tuple c0 pw0, tail: rest } = Vector.uncons paired
+  cp0 <- pure c0 * pure pw0
+  let initProd = add_ (const_ one) cp0
+  foldM
+    ( \acc (Tuple c pw) -> do
+        cp <- pure c * pure pw
+        let term = add_ (const_ one) cp
+        pure term * pure acc
+    )
+    initProd
+    rest
 
 -------------------------------------------------------------------------------
 -- | Combined b evaluation
@@ -181,17 +193,23 @@ computeB chals { zeta, zetaOmega, evalscale } =
 -- | Circuit version of computeB.
 -- |
 -- | Combines bPolyCircuit evaluations: b(zeta) + evalscale * b(zeta*omega)
+-- |
+-- | Evaluation order matches OCaml's right-to-left argument evaluation:
+-- | bPoly(zetaOmega), then evalscale * result, then bPoly(zeta).
 computeBCircuit
-  :: forall d f c t m r
-   . Reflectable d Int
+  :: forall _d d f c t m r
+   . Add 1 _d d
+  => Reflectable d Int
   => PrimeField f
   => CircuitM f c t m
   => ComputeBInput d (FVar f) r
   -> Snarky c t m (FVar f)
 computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
-  bZeta <- bPolyCircuit { challenges, x: zeta }
+  -- OCaml evaluates: challenge_poly zeta + (r * challenge_poly zetaw)
+  -- Right-to-left: zetaw first, then r * result, then zeta
   bZetaOmega <- bPolyCircuit { challenges, x: zetaOmega }
   scaledB <- pure evalscale * pure bZetaOmega
+  bZeta <- bPolyCircuit { challenges, x: zeta }
   pure $ add_ bZeta scaledB
 
 -------------------------------------------------------------------------------
@@ -266,15 +284,16 @@ bCorrect input@{ expectedB } =
 -- |
 -- | This is the in-circuit version of the "b_correct" check.
 bCorrectCircuit
-  :: forall n f c t m
-   . Reflectable n Int
+  :: forall _n n f c t m
+   . Add 1 _n n
+  => Reflectable n Int
   => PrimeField f
   => CircuitM f c t m
   => BCorrectInput n (FVar f)
   -> Snarky c t m (BoolVar f)
 bCorrectCircuit input@{ expectedB } = do
   computedB <- computeBCircuit input
-  computedB `equals_` expectedB
+  expectedB `equals_` computedB
 
 -------------------------------------------------------------------------------
 -- | Bullet Reduce (lr_prod computation)

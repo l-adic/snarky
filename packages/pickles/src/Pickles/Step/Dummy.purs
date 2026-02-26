@@ -119,6 +119,7 @@ dummyFinalizeOtherProofParams =
       { generator: zero
       , shifts: Vector.generate \_ -> zero
       }
+  , domainLog2: 0
   , endo: zero
   , zkRows: 0
   , linearizationPoly: mkLinearizationPoly []

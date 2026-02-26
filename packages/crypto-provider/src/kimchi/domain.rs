@@ -5,6 +5,7 @@
 
 use ark_ff::FftField;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+use kimchi::circuits::polynomials::permutation::Shifts;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -185,4 +186,30 @@ pub fn vesta_domain_generator(domain_log2: u32) -> VestaBaseFieldExternal {
     let domain =
         Radix2EvaluationDomain::<VestaBaseField>::new(1 << domain_log2).expect("Invalid domain");
     External::new(domain.group_gen)
+}
+
+/// Compute the 7 permutation shift values for a Pallas domain.
+///
+/// These are deterministic given the domain size and are normally accessed
+/// via a prover index. This function computes them directly from domain_log2.
+#[napi]
+pub fn pallas_domain_shifts(domain_log2: u32) -> Vec<PallasBaseFieldExternal> {
+    use crate::pasta::types::PallasBaseField;
+    let domain =
+        Radix2EvaluationDomain::<PallasBaseField>::new(1 << domain_log2).expect("Invalid domain");
+    let shifts = Shifts::new(&domain);
+    shifts.shifts().iter().map(|s| External::new(*s)).collect()
+}
+
+/// Compute the 7 permutation shift values for a Vesta domain.
+///
+/// These are deterministic given the domain size and are normally accessed
+/// via a prover index. This function computes them directly from domain_log2.
+#[napi]
+pub fn vesta_domain_shifts(domain_log2: u32) -> Vec<VestaBaseFieldExternal> {
+    use crate::pasta::types::VestaBaseField;
+    let domain =
+        Radix2EvaluationDomain::<VestaBaseField>::new(1 << domain_log2).expect("Invalid domain");
+    let shifts = Shifts::new(&domain);
+    shifts.shifts().iter().map(|s| External::new(*s)).collect()
 }

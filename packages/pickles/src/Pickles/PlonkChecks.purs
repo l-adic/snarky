@@ -24,7 +24,7 @@ import Prelude
 import Data.Foldable (traverse_)
 import Data.Vector (Vector)
 import Pickles.Linearization (LinearizationPoly)
-import Pickles.Linearization.FFI (PointEval)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
@@ -142,16 +142,18 @@ type PlonkChecksOutput f =
 -- | Reference: step_verifier.ml - xi_correct and r comparisons happen on raw
 -- | 128-bit scalar challenges, NOT on endo-converted full field elements.
 plonkChecksCircuit
-  :: forall f f' t m
+  :: forall f f' g t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
   => LinearizationPoly f
+  -> Int -- ^ domainLog2
   -> PlonkChecksInput (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (PlonkChecksOutput (FVar f))
-plonkChecksCircuit linPoly input = do
+plonkChecksCircuit linPoly domainLog2 input = do
   -- 1. Absorb all polynomial evaluations in Kimchi's order
   absorbAllEvals input.allEvals
 
@@ -175,8 +177,9 @@ plonkChecksCircuit linPoly input = do
   evalscale <- liftSnarky $ toField rawR input.endo
 
   -- 8. Compute combined inner product using derived values
+  -- zeta comes from the permutation input (it's the evaluation point)
   combinedInnerProduct <- liftSnarky $
-    combinedInnerProductCheckCircuit linPoly
+    combinedInnerProductCheckCircuit linPoly domainLog2 input.cipInput.permInput.zeta
       { polyscale, evalscale }
       input.cipInput
 

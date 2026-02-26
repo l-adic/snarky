@@ -80,3 +80,10 @@ export const pallasDomainGenerator = (domainLog2) =>
 
 export const vestaDomainGenerator = (domainLog2) =>
   crypto.vestaDomainGenerator(domainLog2);
+
+// Domain shifts (7 permutation shifts, computed from domain_log2 alone)
+export const pallasDomainShifts = (domainLog2) =>
+  crypto.pallasDomainShifts(domainLog2);
+
+export const vestaDomainShifts = (domainLog2) =>
+  crypto.vestaDomainShifts(domainLog2);
