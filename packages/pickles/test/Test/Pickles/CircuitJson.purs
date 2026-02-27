@@ -34,13 +34,15 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.OptSponge as OptSponge
+import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
+import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
-import Snarky.Circuit.CVar (Variable(..), const_)
+import Snarky.Circuit.CVar (const_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -462,6 +464,112 @@ ftEval0StandaloneCircuit inputs = do
   pure $ sub_ permResult constantTerm
 
 -------------------------------------------------------------------------------
+-- | Sub-circuit 6: sponge_and_challenges (Steps 7+8)
+-- |
+-- | Reconstructs the Fiat-Shamir sponge state by absorbing all evaluation
+-- | data, then squeezes xi and r challenges and expands them via endo.
+-- |
+-- | OCaml reference: step_verifier.ml:920-999
+-- |   challenge_digest via opt_sponge
+-- |   absorb sponge_digest, challenge_digest, ft_eval1, public_input, all evals
+-- |   squeeze_challenge twice → xi, r
+-- |   scalar xi, scalar r → expand to full field
+-- |
+-- | Input layout (124 fields):
+-- |   0-1:     mask (2 booleans)
+-- |   2-17:    prev_challenges[0] (16 fields)
+-- |   18-33:   prev_challenges[1] (16 fields)
+-- |   34:      sponge_digest_before_evaluations
+-- |   35:      ft_eval1
+-- |   36-37:   public_input (zeta, zetaw)
+-- |   38-67:   w[0..14] pairs = 30 fields
+-- |   68-97:   coefficients[0..14] pairs = 30 fields
+-- |   98-99:   z pair = 2 fields
+-- |   100-111: s[0..5] pairs = 12 fields
+-- |   112-123: selectors[0..5] pairs = 12 fields
+-------------------------------------------------------------------------------
+
+spongeAndChallengesStandaloneCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 124 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+spongeAndChallengesStandaloneCircuit inputs = do
+  let
+    endoVar = const_ stepEndo
+
+    -- Inputs 0-1 are mask booleans (coerce FVar to BoolVar)
+    mask :: Vector 2 (BoolVar StepField)
+    mask = Vector.generate \j -> coerce $ unsafeIdx inputs (getFinite j)
+
+    -- Inputs 2-33 are prev_challenges (2 proofs × 16 challenges)
+    prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
+    prevChallenges = Vector.generate \j ->
+      Vector.generate \k ->
+        unsafeIdx inputs (2 + 16 * getFinite j + getFinite k)
+
+    -- Build pending absorptions: for each proof, for each challenge, (keep, chal)
+    pending :: Array (Tuple (BoolVar StepField) (FVar StepField))
+    pending = Array.concat $ Vector.toUnfoldable $
+      Vector.zipWith
+        ( \keep chals ->
+            map (Tuple keep) (Vector.toUnfoldable chals :: Array _)
+        )
+        mask
+        prevChallenges
+
+    spongeDigest = unsafeIdx inputs 34
+
+    -- Build AllEvals from flat input array
+    allEvals :: AllEvals (FVar StepField)
+    allEvals =
+      { ftEval1: unsafeIdx inputs 35
+      , publicEvals:
+          { zeta: unsafeIdx inputs 36
+          , omegaTimesZeta: unsafeIdx inputs 37
+          }
+      , zEvals:
+          { zeta: unsafeIdx inputs 98
+          , omegaTimesZeta: unsafeIdx inputs 99
+          }
+      , indexEvals: Vector.generate \j ->
+          { zeta: unsafeIdx inputs (112 + 2 * getFinite j)
+          , omegaTimesZeta: unsafeIdx inputs (112 + 2 * getFinite j + 1)
+          }
+      , witnessEvals: Vector.generate \j ->
+          { zeta: unsafeIdx inputs (38 + 2 * getFinite j)
+          , omegaTimesZeta: unsafeIdx inputs (38 + 2 * getFinite j + 1)
+          }
+      , coeffEvals: Vector.generate \j ->
+          { zeta: unsafeIdx inputs (68 + 2 * getFinite j)
+          , omegaTimesZeta: unsafeIdx inputs (68 + 2 * getFinite j + 1)
+          }
+      , sigmaEvals: Vector.generate \j ->
+          { zeta: unsafeIdx inputs (100 + 2 * getFinite j)
+          , omegaTimesZeta: unsafeIdx inputs (100 + 2 * getFinite j + 1)
+          }
+      }
+
+  -- 1. Challenge digest via OptSponge
+  challengeDigest <- OptSponge.squeeze (OptSponge.create :: OptSponge.OptSponge StepField) pending
+
+  -- 2-8. Main sponge: absorb, squeeze, expand
+  evalSpongeM initialSpongeCircuit do
+    -- Absorb sponge_digest (pre-initialization)
+    absorb spongeDigest
+    -- Absorb challenge_digest
+    absorb challengeDigest
+    -- Absorb ft_eval1, public_input, z, selectors, witness, coeff, sigma
+    absorbAllEvals allEvals
+    -- Squeeze xi and r (128-bit range-checked via EndoScalar)
+    xi <- squeezeScalarChallenge { endo: endoVar }
+    r <- squeezeScalarChallenge { endo: endoVar }
+    -- Expand xi and r to full field via endo
+    liftSnarky do
+      void $ toField @8 xi endoVar
+      void $ toField @8 r endoVar
+
+-------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof wrapper circuit (for reference)
 -------------------------------------------------------------------------------
 
@@ -664,6 +772,7 @@ type V18 = Vector 18 (F StepField)
 type V20 = Vector 20 (F StepField)
 type V34 = Vector 34 (F StepField)
 type V91 = Vector 91 (F StepField)
+type V124 = Vector 124 (F StepField)
 type V151 = Vector 151 (F StepField)
 
 compileExpandPlonk :: String
@@ -694,6 +803,12 @@ compileFtEval0 :: String
 compileFtEval0 = circuitToJson @StepField $
   compilePure (Proxy @V91) (Proxy @(F StepField)) (Proxy @(KimchiConstraint StepField))
     ftEval0StandaloneCircuit
+    Kimchi.initialState
+
+compileSpongeAndChallenges :: String
+compileSpongeAndChallenges = circuitToJson @StepField $
+  compilePure (Proxy @V124) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    spongeAndChallengesStandaloneCircuit
     Kimchi.initialState
 
 -- compileFopStep :: String
@@ -728,6 +843,10 @@ spec =
     it "Sub-circuit 5: ft_eval0 (Step 11a)" do
       ocaml <- loadFixture "ft_eval0_circuit"
       compareCircuit "ft_eval0" compileFtEval0 ocaml
+
+    it "Sub-circuit 6: sponge_and_challenges (Steps 7+8)" do
+      ocaml <- loadFixture "sponge_and_challenges_circuit"
+      compareCircuit "sponge_and_challenges" compileSpongeAndChallenges ocaml
 
 -- it "Full: Step (Tick/Fp) circuit structure comparison" do
 --   ocaml <- loadFixture "finalize_other_proof_circuit"
