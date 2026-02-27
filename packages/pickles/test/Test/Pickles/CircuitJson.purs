@@ -43,7 +43,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
 import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, div_, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, div_, equals_, if_, mul_, pow_, sub_)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -570,6 +570,158 @@ spongeAndChallengesStandaloneCircuit inputs = do
       void $ toField @8 r endoVar
 
 -------------------------------------------------------------------------------
+-- | Sub-circuit 7: combined_inner_product (Step 11)
+-- |
+-- | Computes the combined inner product used in bulletproof verification:
+-- |   CIP = sum_j xi^j f_j(zeta) + r * sum_j xi^j f_j(zetaw)
+-- | where f_j includes sg_evals (challenge polynomial evaluations), public input,
+-- | ft_eval, and all polynomial evaluations.
+-- |
+-- | The Horner scheme: flat list of evaluations is reversed, then fold_left
+-- | with mul_and_add: Just fx → fx + xi * acc, Maybe (b, fx) → if b then (fx + xi*acc) else acc.
+-- |
+-- | OCaml reference: step_verifier.ml:1060-1121
+-- |   let combine ~ft ~sg_evals x_hat e = Common.combined_evaluation ~xi v
+-- |   combine_zeta + r * combine_zetaw
+-- |
+-- | Input layout (129 fields):
+-- |   0-1:     mask (2 booleans)
+-- |   2-17:    prev_challenges[0] (16 fields)
+-- |   18-33:   prev_challenges[1] (16 fields)
+-- |   34:      zeta
+-- |   35:      zetaw
+-- |   36:      xi (already expanded to full field)
+-- |   37:      r (already expanded to full field)
+-- |   38:      ft_eval0 (precomputed from PlonK relation)
+-- |   39:      ft_eval1
+-- |   40:      public_input at zeta
+-- |   41:      public_input at zetaw
+-- |   42-84:   evals at zeta (43 fields: z, 6 selectors, 15 w, 15 coeff, 6 s)
+-- |   85-127:  evals at zetaw (43 fields: same structure)
+-- |   128:     claimed_cip (Type1 shifted value inner)
+-------------------------------------------------------------------------------
+
+-- | Evaluation in the Horner fold: either always present (Just) or masked (Maybe).
+data EvalOpt f
+  = EvalJust (FVar f)
+  | EvalMaybe (BoolVar f) (FVar f)
+
+-- | Horner fold matching OCaml's Pcs_batch.combine_split_evaluations.
+-- | Takes reversed flat evaluation list, initializes from head, folds with mul_and_add.
+hornerCombine
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f -> Array (EvalOpt f) -> Snarky c t m (FVar f)
+hornerCombine xi evals = do
+  let
+    reversed = Array.reverse evals
+    initVal = unsafePartial $ fromJust $ Array.head reversed
+    rest = unsafePartial $ fromJust $ Array.tail reversed
+    initResult = case initVal of
+      EvalJust x -> x
+      EvalMaybe _ _ -> unsafeCoerce unit -- unreachable: init is always Just in our case
+  foldM
+    ( \acc opt -> case opt of
+        EvalJust fx -> do
+          xiAcc <- pure xi * pure acc
+          pure (add_ fx xiAcc)
+        EvalMaybe b fx -> do
+          xiAcc <- pure xi * pure acc
+          let then_ = add_ fx xiAcc
+          if_ b then_ acc
+    )
+    initResult
+    rest
+
+-- | Build the flat evaluation list matching OCaml's combine function.
+-- | Order: sg_evals, public_input, ft_eval, z, 6 selectors, 15 w, 15 coeff, 6 s
+-- | This matches Evals.In_circuit.to_list order for always-present fields.
+buildEvalList
+  :: forall f
+   . Array (Tuple (BoolVar f) (FVar f)) -- sg_evals [(keep, eval)]
+  -> FVar f                              -- public_input
+  -> FVar f                              -- ft_eval
+  -> Array (FVar f)                      -- always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
+  -> Array (EvalOpt f)
+buildEvalList sgEvals pub ft evals =
+  map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
+    <> [ EvalJust pub, EvalJust ft ]
+    <> map EvalJust evals
+
+cipStandaloneCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 129 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+cipStandaloneCircuit inputs = do
+  let
+    -- Inputs 2-33 are prev_challenges (2 proofs × 16 challenges)
+    prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
+    prevChallenges = Vector.generate \j ->
+      Vector.generate \k ->
+        unsafeIdx inputs (2 + 16 * getFinite j + getFinite k)
+
+    zeta = unsafeIdx inputs 34
+    zetaw = unsafeIdx inputs 35
+    xi = unsafeIdx inputs 36
+    r = unsafeIdx inputs 37
+    ftEval0 = unsafeIdx inputs 38
+    ftEval1 = unsafeIdx inputs 39
+    pubZeta = unsafeIdx inputs 40
+    pubZetaw = unsafeIdx inputs 41
+    claimedCip = unsafeIdx inputs 128
+
+    -- Parse evals at a given base offset.
+    -- to_list order: z, gen_sel, pos_sel, comp_add_sel, mul_sel, emul_sel,
+    -- endo_scal_sel, w0..w14, coeff0..coeff14, s0..s5
+    evalsAt :: Int -> Array (FVar StepField)
+    evalsAt base = map (unsafeIdx inputs)
+      ( [ base ]                                             -- z
+          <> map (\j -> base + 1 + j) (Array.range 0 5)     -- 6 selectors
+          <> map (\j -> base + 7 + j) (Array.range 0 14)    -- 15 w
+          <> map (\j -> base + 22 + j) (Array.range 0 14)   -- 15 coeff
+          <> map (\j -> base + 37 + j) (Array.range 0 5)    -- 6 s
+      )
+
+    evalsZeta = evalsAt 42
+    evalsZetaw = evalsAt 85
+
+    -- Mask elements
+    mask0 :: BoolVar StepField
+    mask0 = coerce $ unsafeIdx inputs 0
+
+    mask1 :: BoolVar StepField
+    mask1 = coerce $ unsafeIdx inputs 1
+
+    prevChals0 = Vector.index prevChallenges (unsafeFinite 0)
+    prevChals1 = Vector.index prevChallenges (unsafeFinite 1)
+
+  -- Compute challenge polynomial evaluations.
+  -- OCaml right-to-left Vector.map2: index 1 evaluated before index 0.
+  sg1_z <- IPA.bPolyCircuit { challenges: prevChals1, x: zeta }
+  sg0_z <- IPA.bPolyCircuit { challenges: prevChals0, x: zeta }
+  sg1_w <- IPA.bPolyCircuit { challenges: prevChals1, x: zetaw }
+  sg0_w <- IPA.bPolyCircuit { challenges: prevChals0, x: zetaw }
+
+  -- Compute CIP: combine_zeta + r * combine_zetaw.
+  -- OCaml right-to-left for infix `+`: zetaw combine computed first.
+  combineZetaw <- hornerCombine xi $ buildEvalList
+    [ Tuple mask0 sg0_w, Tuple mask1 sg1_w ]
+    pubZetaw ftEval1 evalsZetaw
+
+  rTimesZetaw <- pure r * pure combineZetaw
+
+  combineZeta <- hornerCombine xi $ buildEvalList
+    [ Tuple mask0 sg0_z, Tuple mask1 sg1_z ]
+    pubZeta ftEval0 evalsZeta
+
+  let actualCip = add_ combineZeta rTimesZetaw
+
+  -- Compare with claimed CIP via Type1.to_field then equal
+  let expected = fromShiftedType1Circuit (Type1 claimedCip)
+  void $ equals_ expected actualCip
+
+-------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof wrapper circuit (for reference)
 -------------------------------------------------------------------------------
 
@@ -773,6 +925,7 @@ type V20 = Vector 20 (F StepField)
 type V34 = Vector 34 (F StepField)
 type V91 = Vector 91 (F StepField)
 type V124 = Vector 124 (F StepField)
+type V129 = Vector 129 (F StepField)
 type V151 = Vector 151 (F StepField)
 
 compileExpandPlonk :: String
@@ -811,6 +964,12 @@ compileSpongeAndChallenges = circuitToJson @StepField $
     spongeAndChallengesStandaloneCircuit
     Kimchi.initialState
 
+compileCip :: String
+compileCip = circuitToJson @StepField $
+  compilePure (Proxy @V129) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    cipStandaloneCircuit
+    Kimchi.initialState
+
 -- compileFopStep :: String
 -- compileFopStep = circuitToJson @StepField $
 --   compilePure (Proxy @V151) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
@@ -847,6 +1006,10 @@ spec =
     it "Sub-circuit 6: sponge_and_challenges (Steps 7+8)" do
       ocaml <- loadFixture "sponge_and_challenges_circuit"
       compareCircuit "sponge_and_challenges" compileSpongeAndChallenges ocaml
+
+    it "Sub-circuit 7: combined_inner_product (Step 11)" do
+      ocaml <- loadFixture "cip_circuit"
+      compareCircuit "cip" compileCip ocaml
 
 -- it "Full: Step (Tick/Fp) circuit structure comparison" do
 --   ocaml <- loadFixture "finalize_other_proof_circuit"
