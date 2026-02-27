@@ -611,7 +611,9 @@ data EvalOpt f
 hornerCombine
   :: forall f c t m
    . CircuitM f c t m
-  => FVar f -> Array (EvalOpt f) -> Snarky c t m (FVar f)
+  => FVar f
+  -> Array (EvalOpt f)
+  -> Snarky c t m (FVar f)
 hornerCombine xi evals = do
   let
     reversed = Array.reverse evals
@@ -639,9 +641,9 @@ hornerCombine xi evals = do
 buildEvalList
   :: forall f
    . Array (Tuple (BoolVar f) (FVar f)) -- sg_evals [(keep, eval)]
-  -> FVar f                              -- public_input
-  -> FVar f                              -- ft_eval
-  -> Array (FVar f)                      -- always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
+  -> FVar f -- public_input
+  -> FVar f -- ft_eval
+  -> Array (FVar f) -- always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
   -> Array (EvalOpt f)
 buildEvalList sgEvals pub ft evals =
   map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
@@ -676,11 +678,12 @@ cipStandaloneCircuit inputs = do
     -- endo_scal_sel, w0..w14, coeff0..coeff14, s0..s5
     evalsAt :: Int -> Array (FVar StepField)
     evalsAt base = map (unsafeIdx inputs)
-      ( [ base ]                                             -- z
-          <> map (\j -> base + 1 + j) (Array.range 0 5)     -- 6 selectors
-          <> map (\j -> base + 7 + j) (Array.range 0 14)    -- 15 w
-          <> map (\j -> base + 22 + j) (Array.range 0 14)   -- 15 coeff
-          <> map (\j -> base + 37 + j) (Array.range 0 5)    -- 6 s
+      ( [ base ] -- z
+
+          <> map (\j -> base + 1 + j) (Array.range 0 5) -- 6 selectors
+          <> map (\j -> base + 7 + j) (Array.range 0 14) -- 15 w
+          <> map (\j -> base + 22 + j) (Array.range 0 14) -- 15 coeff
+          <> map (\j -> base + 37 + j) (Array.range 0 5) -- 6 s
       )
 
     evalsZeta = evalsAt 42
@@ -707,13 +710,17 @@ cipStandaloneCircuit inputs = do
   -- OCaml right-to-left for infix `+`: zetaw combine computed first.
   combineZetaw <- hornerCombine xi $ buildEvalList
     [ Tuple mask0 sg0_w, Tuple mask1 sg1_w ]
-    pubZetaw ftEval1 evalsZetaw
+    pubZetaw
+    ftEval1
+    evalsZetaw
 
   rTimesZetaw <- pure r * pure combineZetaw
 
   combineZeta <- hornerCombine xi $ buildEvalList
     [ Tuple mask0 sg0_z, Tuple mask1 sg1_z ]
-    pubZeta ftEval0 evalsZeta
+    pubZeta
+    ftEval0
+    evalsZeta
 
   let actualCip = add_ combineZeta rTimesZetaw
 
