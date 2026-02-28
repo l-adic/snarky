@@ -42,12 +42,13 @@ import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
-import Snarky.Circuit.CVar (const_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, div_, equals_, if_, mul_, pow_, sub_)
+import Snarky.Circuit.CVar (const_, negate_, scale_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, all_, div_, equals_, if_, inv_, mul_, pow_, seal, square_, sub_)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromInt)
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -69,6 +70,52 @@ domainGenerator = LinFFI.domainGenerator domainLog2
 -- | Endo coefficient for scalar challenge expansion (= Wrap_inner_curve.scalar)
 stepEndo :: StepField
 stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
+
+-- | srs_length_log2 = Max_degree.step_log2 = Nat.to_int Tick.Rounds.n = 16
+srsLengthLog2 :: Int
+srsLengthLog2 = 16
+
+-------------------------------------------------------------------------------
+-- | Circuit helpers
+-------------------------------------------------------------------------------
+
+-- | Compute x^(2^n) using Square constraints.
+-- | Matches OCaml's step_verifier.ml pow2_pow (which uses Field.square).
+pow2PowSquare
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Int
+  -> Snarky c t m (FVar f)
+pow2PowSquare x n = go x n
+  where
+  go acc i
+    | i <= 0 = pure acc
+    | otherwise = do
+        sq <- square_ acc
+        go sq (i - 1)
+
+-- | Compute domain#vanishing_polynomial for a single known domain.
+-- | Matches OCaml's Pseudo.Domain.to_domain vanishing_polynomial:
+-- |   pow2_pows via Field.square, choose (mask), subtract one, seal.
+-- |
+-- | For a single-element unique_domains (like our [16] case):
+-- |   mask = (which_bit :> t) * pow2_pows.(log2_size)
+-- |   result = seal (mask_result - one)
+domainVanishingPoly
+  :: forall f c t m
+   . CircuitM f c t m
+  => BoolVar f
+  -> FVar f
+  -> Int -- ^ log2 domain size (16)
+  -> Snarky c t m (FVar f)
+domainVanishingPoly whichBit x log2Size = do
+  -- 1. Compute pow2_pows via Field.square (16 Square constraints)
+  zetaToN <- pow2PowSquare x log2Size
+  -- 2. mask: (which_bit :> t) * zetaToN (1 R1CS mul)
+  masked <- mul_ (coerce whichBit) zetaToN
+  -- 3. seal (masked - one): exists + assertEqual (1 R1CS equal)
+  seal (masked `sub_` const_ one)
 
 -------------------------------------------------------------------------------
 -- | Input parsing helpers
@@ -729,121 +776,355 @@ cipStandaloneCircuit inputs = do
   void $ equals_ expected actualCip
 
 -------------------------------------------------------------------------------
--- | Full FinalizeOtherProof wrapper circuit (for reference)
+-- | Full FinalizeOtherProof Step circuit
+-- |
+-- | Composes all 7 sub-circuits into the full 151-input, 2441-gate circuit.
+-- |
+-- | OCaml reference:
+-- |   dump_circuit_impl.ml:1090-1226 (input layout)
+-- |   step_verifier.ml:828-1165 (computation)
+-- |
+-- | Input layout (151 fields):
+-- |   0: alpha, 1: beta, 2: gamma, 3: zeta (scalar challenges)
+-- |   4: zeta_to_srs_length, 5: zeta_to_domain_size, 6: perm (Type1)
+-- |   7: combined_inner_product, 8: b (Type1)
+-- |   9: xi (scalar_challenge inner)
+-- |   10-25: bulletproof_challenges[0..15]
+-- |   26-27: proofs_verified_mask[0..1]
+-- |   28: domain_log2
+-- |   29-30: public_input (zeta, zetaw)
+-- |   31-60: w[0..14] pairs, 61-90: coeff[0..14] pairs
+-- |   91-92: z pair, 93-104: s[0..5] pairs, 105-116: selectors[0..5] pairs
+-- |   117: ft_eval1
+-- |   118-133: prev_challenges[0], 134-149: prev_challenges[1]
+-- |   150: sponge_digest_before_evaluations
 -------------------------------------------------------------------------------
 
--- finalizeOtherProofWrapperCircuit
---   :: forall t m
---    . CircuitM StepField (KimchiConstraint StepField) t m
---   => Vector 151 (FVar StepField)
---   -> Snarky (KimchiConstraint StepField) t m Unit
--- finalizeOtherProofWrapperCircuit inputs = do
---   let
---     endoVar = const_ stepEndo
---     rawAlpha = asSizedF128 $ unsafeIdx inputs 0
---     rawBeta = asSizedF128 $ unsafeIdx inputs 1
---     rawGamma = asSizedF128 $ unsafeIdx inputs 2
---     rawZeta = asSizedF128 $ unsafeIdx inputs 3
---     claimedPerm = Type1 $ unsafeIdx inputs 6
---     claimedCIP = Type1 $ unsafeIdx inputs 7
---     claimedB = Type1 $ unsafeIdx inputs 8
---     rawXi = asSizedF128 $ unsafeIdx inputs 9
---
---     bulletproofChallenges :: Vector 16 (SizedF 128 (FVar StepField))
---     bulletproofChallenges = Vector.generate \j ->
---       asSizedF128 $ unsafeIdx inputs (10 + getFinite j)
---
---     mask :: Vector 2 (BoolVar StepField)
---     mask = Vector.generate \j -> asBool $ unsafeIdx inputs (26 + getFinite j)
---
---     allEvals = parseAllEvals inputs
---
---     prevChallenges :: Vector 2 (Vector 16 (SizedF 128 (FVar StepField)))
---     prevChallenges = Vector.generate \j ->
---       Vector.generate \k ->
---         asSizedF128 $ unsafeIdx inputs (118 + 16 * getFinite j + getFinite k)
---
---     spongeDigest = unsafeIdx inputs 150
---
---   plonk <- expandPlonkMinimalCircuit endoVar
---     { alpha: rawAlpha, beta: rawBeta, gamma: rawGamma, zeta: rawZeta }
---
---   evalSpongeM initialSpongeCircuit do
---     absorb spongeDigest
---     challengeDigest <- challengeDigestCircuit { mask, oldChallenges: prevChallenges }
---     absorb challengeDigest
---     absorbAllEvals allEvals
---     squeezedXi <- squeezeScalarChallenge
---     xiCorrect <- liftSnarky $ isEqual squeezedXi rawXi
---     rawR <- squeezeScalarChallenge
---     polyscale <- liftSnarky $ toField squeezedXi endoVar
---     evalscale <- liftSnarky $ toField rawR endoVar
---     zetaOmega <- liftSnarky $ mul_ plonk.zeta (const_ domainGenerator)
---
---     let
---       permInput :: PermutationInput (FVar StepField)
---       permInput =
---         { w: map _.zeta (Vector.take @7 allEvals.witnessEvals)
---         , sigma: map _.zeta allEvals.sigmaEvals
---         , z: allEvals.zEvals
---         , shifts: map const_ domainShifts
---         , alpha: plonk.alpha
---         , beta: plonk.beta
---         , gamma: plonk.gamma
---         , zkPolynomial: const_ zero
---         , zetaToNMinus1: const_ zero
---         , omegaToMinusZkRows: const_ zero
---         , zeta: plonk.zeta
---         }
---
---       gateInput :: GateConstraintInput (FVar StepField)
---       gateInput =
---         { witnessEvals: allEvals.witnessEvals
---         , coeffEvals: map _.zeta allEvals.coeffEvals
---         , indexEvals: allEvals.indexEvals
---         , alpha: plonk.alpha
---         , beta: plonk.beta
---         , gamma: plonk.gamma
---         , jointCombiner: const_ zero
---         , vanishesOnZk: const_ zero
---         , lagrangeFalse0: const_ zero
---         , lagrangeTrue1: const_ zero
---         }
---
---     computedCIP <- liftSnarky $
---       combinedInnerProductCheckCircuit Linearization.pallas domainLog2 plonk.zeta
---         { polyscale, evalscale }
---         { permInput
---         , gateInput
---         , publicEvalForFt: const_ zero
---         , publicPointEval: allEvals.publicEvals
---         , ftEval1: allEvals.ftEval1
---         , zEvals: allEvals.zEvals
---         , indexEvals: allEvals.indexEvals
---         , witnessEvals: allEvals.witnessEvals
---         , coeffEvals: allEvals.coeffEvals
---         , sigmaEvals: allEvals.sigmaEvals
---         }
---     cipCorrect <- liftSnarky $
---       equals_ (fromShiftedType1Circuit claimedCIP) computedCIP
---
---     expandedChallenges <- liftSnarky $
---       for bulletproofChallenges \c -> toField c endoVar
---     bOk <- liftSnarky $ IPA.bCorrectCircuit
---       { challenges: expandedChallenges
---       , zeta: plonk.zeta
---       , zetaOmega
---       , evalscale
---       , expectedB: fromShiftedType1Circuit claimedB
---       }
---
---     permOk <- liftSnarky $ plonkArithmeticCheckCircuit { unshift: fromShiftedType1Circuit }
---       { claimedPerm, permInput }
---
---     liftSnarky do
---       a <- and_ xiCorrect cipCorrect
---       b <- and_ bOk permOk
---       void $ and_ a b
+finalizeOtherProofStepCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 151 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+finalizeOtherProofStepCircuit inputs = do
+  let
+    endoVar = const_ stepEndo
+    at i = unsafeIdx inputs i
+
+    -- Deferred values
+    rawAlpha = asSizedF128 $ at 0
+    beta = at 1
+    gamma = at 2
+    rawZeta = asSizedF128 $ at 3
+    -- 4: zeta_to_srs_length (unused), 5: zeta_to_domain_size (unused)
+    claimedPerm = at 6
+    claimedCip = at 7
+    claimedB = at 8
+    claimedXi = at 9
+
+    rawChallenges :: Vector 16 (SizedF 128 (FVar StepField))
+    rawChallenges = Vector.generate \j ->
+      asSizedF128 $ at (10 + getFinite j)
+
+    mask :: Vector 2 (BoolVar StepField)
+    mask = Vector.generate \j -> coerce $ at (26 + getFinite j)
+
+    domainLog2Var = at 28
+    spongeDigest = at 150
+
+    -- prev_challenges (2 proofs × 16 challenges)
+    prevChallenges :: Vector 2 (Vector 16 (FVar StepField))
+    prevChallenges = Vector.generate \j ->
+      Vector.generate \k ->
+        at (118 + 16 * getFinite j + getFinite k)
+
+    prevChals0 = Vector.index prevChallenges (unsafeFinite 0)
+    prevChals1 = Vector.index prevChallenges (unsafeFinite 1)
+
+    -- Build pending absorptions for OptSponge
+    pending :: Array (Tuple (BoolVar StepField) (FVar StepField))
+    pending = Array.concat $ Vector.toUnfoldable $
+      Vector.zipWith
+        ( \keep chals ->
+            map (Tuple keep) (Vector.toUnfoldable chals :: Array _)
+        )
+        mask
+        prevChallenges
+
+    -- AllEvals for sponge absorption
+    allEvals :: AllEvals (FVar StepField)
+    allEvals =
+      { ftEval1: at 117
+      , publicEvals: { zeta: at 29, omegaTimesZeta: at 30 }
+      , zEvals: { zeta: at 91, omegaTimesZeta: at 92 }
+      , indexEvals: Vector.generate \j ->
+          { zeta: at (105 + 2 * getFinite j)
+          , omegaTimesZeta: at (105 + 2 * getFinite j + 1)
+          }
+      , witnessEvals: Vector.generate \j ->
+          { zeta: at (31 + 2 * getFinite j)
+          , omegaTimesZeta: at (31 + 2 * getFinite j + 1)
+          }
+      , coeffEvals: Vector.generate \j ->
+          { zeta: at (61 + 2 * getFinite j)
+          , omegaTimesZeta: at (61 + 2 * getFinite j + 1)
+          }
+      , sigmaEvals: Vector.generate \j ->
+          { zeta: at (93 + 2 * getFinite j)
+          , omegaTimesZeta: at (93 + 2 * getFinite j + 1)
+          }
+      }
+
+    -- Mask elements for CIP
+    mask0 :: BoolVar StepField
+    mask0 = coerce $ at 26
+
+    mask1 :: BoolVar StepField
+    mask1 = coerce $ at 27
+
+  ---------------------------------------------------------------------------
+  -- Step 2: Expand alpha and zeta via endo
+  -- OCaml's map_challenges evaluates record fields right-to-left:
+  --   zeta = scalar t.zeta is computed before alpha = scalar t.alpha
+  ---------------------------------------------------------------------------
+  zeta <- toField @8 rawZeta endoVar
+  alpha <- toField @8 rawAlpha endoVar
+
+  domainWhich <- equals_ (const_ (fromInt @StepField domainLog2)) domainLog2Var
+
+  -- OCaml: gen = mask [which_bit] [gen_constant] = Scale(gen_const, which_bit)
+  -- Then: zetaw = mul gen zeta → R1CS because gen is non-constant
+  let maskedGen = scale_ domainGenerator (coerce domainWhich :: FVar StepField)
+  zetaw <- mul_ maskedGen zeta
+
+  sg1_zetaw <- IPA.bPolyCircuit { challenges: prevChals1, x: zetaw }
+  sg0_zetaw <- IPA.bPolyCircuit { challenges: prevChals0, x: zetaw }
+  sg1_zeta <- IPA.bPolyCircuit { challenges: prevChals1, x: zeta }
+  sg0_zeta <- IPA.bPolyCircuit { challenges: prevChals0, x: zeta }
+
+  { xi, r, xiCorrect } <- evalSpongeM initialSpongeCircuit do
+    absorb spongeDigest
+    challengeDigest <- liftSnarky $
+      OptSponge.squeeze (OptSponge.create :: OptSponge.OptSponge StepField) pending
+    absorb challengeDigest
+    absorbAllEvals allEvals
+    xiActual <- squeezeScalarChallenge { endo: endoVar }
+    rActual <- squeezeScalarChallenge { endo: endoVar }
+    liftSnarky do
+      xiCorr <- equals_ (SizedF.toField xiActual) claimedXi
+      xi' <- toField @8 (asSizedF128 claimedXi) endoVar
+      r' <- toField @8 rActual endoVar
+      pure { xi: xi', r: r', xiCorrect: xiCorr }
+
+  void $ pow2PowSquare zeta 16
+  void $ pow2PowSquare zetaw 16
+
+  ---------------------------------------------------------------------------
+  -- Steps 10+11a: PlonK env + ft_eval0
+  -- Inline from ftEval0StandaloneCircuit, using circuit variables.
+  ---------------------------------------------------------------------------
+  let
+    pEval0 = at 29
+
+    -- Eval point for constant_term evaluation
+    evalPoint = buildEvalPoint
+      { witnessEvals:
+          ( Vector.generate \j ->
+              { zeta: at (31 + 2 * getFinite j)
+              , omegaTimesZeta: at (31 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 15 _
+      , coeffEvals: (Vector.generate \j -> at (61 + 2 * getFinite j)) :: Vector 15 _
+      , indexEvals:
+          ( Vector.generate \j ->
+              { zeta: at (105 + 2 * getFinite j)
+              , omegaTimesZeta: at (105 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 6 _
+      , defaultVal: const_ zero
+      }
+
+    -- Domain constants
+    gen = LinFFI.domainGenerator @StepField domainLog2
+    omegaToMinus1 = recip gen
+    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
+    omegaToMinus3 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1
+    omegaToMinus4 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1 * omegaToMinus1
+
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then one
+      else if zk && offset == (-1) then omegaToMinus4
+      else if not zk && offset == 1 then gen
+      else if not zk && offset == (-1) then omegaToMinus1
+      else if not zk && offset == (-2) then omegaToMinus2
+      else if zk && offset == 0 then omegaToMinus3
+      else one
+
+    -- Witness evaluations at zeta
+    w0 :: Vector 15 (FVar StepField)
+    w0 = Vector.generate \j -> at (31 + 2 * getFinite j)
+
+    -- Sigma evaluations at zeta
+    s0 :: Vector 6 (FVar StepField)
+    s0 = Vector.generate \j -> at (93 + 2 * getFinite j)
+
+    zZeta = at 91
+    zOmegaTimesZeta = at 92
+
+    -- Domain shifts
+    shifts :: Vector 7 StepField
+    shifts = LinFFI.domainShifts domainLog2
+
+  -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
+  alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+
+  let
+    alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n
+    a21 = alphaPow 21
+    a22 = alphaPow 22
+    a23 = alphaPow 23
+
+  -- OCaml computes omega powers in-circuit because gen = mask result (non-constant).
+  -- gen = Scale(gen_const, which_bit), so one/gen → inv_ (non-const), etc.
+  -- zk_rows_by_default = 3, zk_rows = 3, so no intermediate loop.
+  -- omega_to_minus_1 = one / gen
+  -- omega_to_minus_2 = square omega_to_minus_1
+  -- omega_to_zk_plus_1 = omega_to_minus_2 (empty loop)
+  -- omega_to_zk = omega_to_zk_plus_1 * omega_to_minus_1
+  omegaM1Var <- inv_ maskedGen
+  omegaM2Var <- mul_ omegaM1Var omegaM1Var -- OCaml: square x = x * x (R1CS, not Square)
+  let omegaZkP1Var = omegaM2Var -- zk_rows == zk_rows_by_default → empty loop
+  omegaZkVar <- mul_ omegaZkP1Var omegaM1Var
+  zkPoly <- do
+    t1 <- mul_ (zeta `sub_` omegaM1Var) (zeta `sub_` omegaZkP1Var)
+    mul_ t1 (zeta `sub_` omegaZkVar)
+
+  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta domainLog2
+
+  let w6 = w0 !! unsafeFinite 6
+  term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+  let wSigma = zipWith Tuple (Vector.take @6 w0) s0
+  term1 <- foldM
+    ( \acc (Tuple wi si) -> do
+        betaSi <- mul_ beta si
+        mul_ (add_ (add_ betaSi wi) gamma) acc
+    )
+    term1Init
+    wSigma
+
+  let term1MinusP = sub_ term1 pEval0
+
+  term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
+  let wShifts = zipWith Tuple (Vector.take @7 w0) (map (const_ :: StepField -> FVar StepField) shifts)
+  term2 <- foldM
+    ( \acc (Tuple wi si) -> do
+        betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
+        mul_ acc (add_ (add_ gamma betaZetaSi) wi)
+    )
+    term2Init
+    wShifts
+
+  let
+    -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant)
+    zetaMinusOmegaZk = sub_ zeta omegaZkVar
+    zetaMinus1 = sub_ zeta (const_ one)
+
+  boundary <- do
+    term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
+    term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
+    let oneMinusZ = sub_ (const_ one) zZeta
+    nominator <- mul_ (add_ term22 term23) oneMinusZ
+    denominator <- mul_ zetaMinusOmegaZk zetaMinus1
+    div_ nominator denominator
+
+  let permResult = add_ (sub_ term1MinusP term2) boundary
+
+  let
+    vanishesOnZk = const_ one
+
+    baseEnv :: EnvM StepField (Snarky (KimchiConstraint StepField) t m)
+    baseEnv = buildCircuitEnvM
+      alphaPowers
+      zeta
+      domainLog2
+      omegaForLagrange
+      evalPoint
+      vanishesOnZk
+      beta
+      gamma
+      (const_ one)
+      parseHex
+    env = baseEnv { computeZetaToNMinus1 = pure zetaToNMinus1 }
+
+  constantTerm <- evaluateM PallasTokens.constantTermTokens env
+
+  let ftEval0 = sub_ permResult constantTerm
+
+  ---------------------------------------------------------------------------
+  -- Steps 11b-c: Combined inner product
+  -- OCaml right-to-left for `+`: zetaw combine computed first.
+  ---------------------------------------------------------------------------
+  let
+    -- Evals at zeta: z, 6 selectors, 15 w, 15 coeff, 6 s
+    evalsZeta = [ at 91 ]
+      <> map (\j -> at (105 + 2 * j)) (Array.range 0 5)
+      <> map (\j -> at (31 + 2 * j)) (Array.range 0 14)
+      <> map (\j -> at (61 + 2 * j)) (Array.range 0 14)
+      <> map (\j -> at (93 + 2 * j)) (Array.range 0 5)
+
+    -- Evals at zetaw
+    evalsZetaw = [ at 92 ]
+      <> map (\j -> at (106 + 2 * j)) (Array.range 0 5)
+      <> map (\j -> at (32 + 2 * j)) (Array.range 0 14)
+      <> map (\j -> at (62 + 2 * j)) (Array.range 0 14)
+      <> map (\j -> at (94 + 2 * j)) (Array.range 0 5)
+
+  combineZetaw <- hornerCombine xi $ buildEvalList
+    [ Tuple mask0 sg0_zetaw, Tuple mask1 sg1_zetaw ]
+    (at 30)
+    (at 117)
+    evalsZetaw
+
+  rTimesZetaw <- mul_ r combineZetaw
+
+  combineZeta <- hornerCombine xi $ buildEvalList
+    [ Tuple mask0 sg0_zeta, Tuple mask1 sg1_zeta ]
+    (at 29)
+    ftEval0
+    evalsZeta
+
+  let actualCip = add_ combineZeta rTimesZetaw
+  let expectedCip = fromShiftedType1Circuit (Type1 claimedCip)
+  cipCorrect <- equals_ expectedCip actualCip
+
+  expandedRev <- for (Vector.reverse rawChallenges) \c -> toField @8 c endoVar
+  let expandedChallenges = Vector.reverse expandedRev
+
+  bCorrect <- IPA.bCorrectCircuit
+    { challenges: expandedChallenges
+    , zeta
+    , zetaOmega: zetaw
+    , evalscale: r
+    , expectedB: fromShiftedType1Circuit (Type1 claimedB)
+    }
+
+  actualPerm <- do
+    init' <- mul_ zOmegaTimesZeta beta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+    let wSigmaPerm = zipWith Tuple (Vector.take @6 w0) s0
+    result <- foldM
+      ( \acc (Tuple wi si) -> do
+          betaSigma <- mul_ beta si
+          let term = add_ (add_ gamma betaSigma) wi
+          mul_ acc term
+      )
+      init'
+      wSigmaPerm
+    pure (negate_ result)
+
+  void $ pow_ zeta (Int.pow 2 srsLengthLog2)
+
+  plonkOk <- shiftedEqualType1 (Type1 claimedPerm) actualPerm
+
+  void $ all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
 
 -------------------------------------------------------------------------------
 -- | Test infrastructure
@@ -926,6 +1207,7 @@ loadFixture name = liftEffect do
 -- | Compiled circuits
 -------------------------------------------------------------------------------
 
+type V1 = Vector 1 (F StepField)
 type V4 = Vector 4 (F StepField)
 type V18 = Vector 18 (F StepField)
 type V20 = Vector 20 (F StepField)
@@ -977,11 +1259,25 @@ compileCip = circuitToJson @StepField $
     cipStandaloneCircuit
     Kimchi.initialState
 
--- compileFopStep :: String
--- compileFopStep = circuitToJson @StepField $
---   compilePure (Proxy @V151) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
---     finalizeOtherProofWrapperCircuit
---     Kimchi.initialState
+pow2PowStandaloneCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Vector 1 (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m Unit
+pow2PowStandaloneCircuit inputs =
+  void $ pow2PowSquare (unsafeIdx inputs 0) 16
+
+compilePow2Pow :: String
+compilePow2Pow = circuitToJson @StepField $
+  compilePure (Proxy @V1) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    pow2PowStandaloneCircuit
+    Kimchi.initialState
+
+compileFopStep :: String
+compileFopStep = circuitToJson @StepField $
+  compilePure (Proxy @V151) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+    finalizeOtherProofStepCircuit
+    Kimchi.initialState
 
 -------------------------------------------------------------------------------
 -- | Spec
@@ -1018,6 +1314,10 @@ spec =
       ocaml <- loadFixture "cip_circuit"
       compareCircuit "cip" compileCip ocaml
 
--- it "Full: Step (Tick/Fp) circuit structure comparison" do
---   ocaml <- loadFixture "finalize_other_proof_circuit"
---   compareCircuit "full_fop" compileFopStep ocaml
+    it "Sub-circuit: pow2_pow (Step 9)" do
+      ocaml <- loadFixture "pow2_pow_circuit"
+      compareCircuit "pow2_pow" compilePow2Pow ocaml
+
+    it "Full: finalize_other_proof Step circuit" do
+      ocaml <- loadFixture "finalize_other_proof_circuit"
+      compareCircuit "full_fop" compileFopStep ocaml

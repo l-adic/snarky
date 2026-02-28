@@ -23,7 +23,7 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, readCVar, xor_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, xor_)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -77,15 +77,15 @@ addIn state pos x = do
   let
     iEquals0 = not_ pos
     iEquals1 = pos
-    s0 = Vector.index state (unsafeFinite 0)
-    s1 = Vector.index state (unsafeFinite 1)
+    s0 = Vector.index state (unsafeFinite @3 0)
+    s1 = Vector.index state (unsafeFinite @3 1)
 
   -- Update position 0: s0' = s0 + (NOT pos) * x
   s0' <- exists do
     s0Val <- readCVar s0
-    flagVal <- readCVar (coerce iEquals0 :: FVar f)
+    flagVal <- read iEquals0
     xVal <- readCVar x
-    pure $ if flagVal /= zero then s0Val + xVal else s0Val
+    pure $ if flagVal then s0Val + xVal else s0Val
   addConstraint $ r1cs
     { left: x
     , right: coerce iEquals0
@@ -95,17 +95,17 @@ addIn state pos x = do
   -- Update position 1: s1' = s1 + pos * x
   s1' <- exists do
     s1Val <- readCVar s1
-    flagVal <- readCVar (coerce iEquals1 :: FVar f)
+    flagVal <- read iEquals1
     xVal <- readCVar x
-    pure $ if flagVal /= zero then s1Val + xVal else s1Val
+    pure $ if flagVal then s1Val + xVal else s1Val
   addConstraint $ r1cs
     { left: x
     , right: coerce iEquals1
     , output: s1' `sub_` s1
     }
 
-  pure $ Vector.modifyAt (unsafeFinite 0) (const s0')
-    $ Vector.modifyAt (unsafeFinite 1) (const s1') state
+  pure $ Vector.modifyAt (unsafeFinite @3 0) (const s0')
+    $ Vector.modifyAt (unsafeFinite @3 1) (const s1') state
 
 -- | Conditional poseidon permutation.
 -- | Runs the permutation, then selects between permuted and original state.
@@ -183,9 +183,9 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   let
     n = Array.length input
     numPairs = n / 2
-    remaining = n - 2 * numPairs
 
     -- Build pairs array matching OCaml's Array.init
+    -- TODO -- make more functional
     pairs = Array.mapWithIndex
       ( \i _ ->
           let
@@ -205,7 +205,8 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   emptyInput <- not $ any_ (map fst input)
 
   -- Handle remainder and compute should_permute
-  case remaining of
+  -- unsafePartial is safe because remainder is mod 2
+  unsafePartial $ case n `mod` 2 of
     0 -> do
       shouldPermute <-
         if needsFinalPermuteIfEmpty then or_ emptyInput pos
@@ -224,4 +225,3 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
         if needsFinalPermuteIfEmpty then any_ [ p, b, emptyInput ]
         else any_ [ p, b ]
       condPermute shouldPermute state'
-    _ -> pure state -- unreachable

@@ -55,6 +55,7 @@ module Snarky.Circuit.DSL.Monad
   , and_
   , inv_
   , mul_
+  , square_
   , div_
   --
   , class CheckedType
@@ -97,7 +98,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(..), EvaluationError(..), Variable, add_, const_, sub_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.Types (class CircuitType, Bool(..), BoolVar, F(..), FVar, UnChecked, fieldsToValue, varToFields)
-import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs)
+import Snarky.Constraint.Basic (class BasicSystem, boolean, r1cs, square)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
@@ -358,6 +359,22 @@ mul_ a b =
         pure $ aVal * bVal
       addConstraint $ r1cs { left: a, right: b, output: z }
       pure z
+
+-- | Square a field variable, using a Square constraint (as opposed to R1CS).
+-- | Matches OCaml's `Checked.square` / `Field.square`.
+square_
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Snarky c t m (FVar f)
+square_ a = case a of
+  Const f -> pure $ Const (f * f)
+  _ -> do
+    z <- exists do
+      aVal <- readCVar a
+      pure $ aVal * aVal
+    addConstraint $ square a z
+    pure z
 
 div_
   :: forall f c t m
