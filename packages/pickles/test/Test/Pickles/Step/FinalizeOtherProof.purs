@@ -9,7 +9,7 @@ module Test.Pickles.Step.FinalizeOtherProof
 -- | 1. Base case: dummy inputs with shouldFinalize = false (bootstrapping)
 -- | 2. Real data: Schnorr proof data with shouldFinalize = true (all checks)
 -- |
--- | STAGED: This test is set up to generate a real Wrap proof (Pallas) 
+-- | STAGED: This test is set up to generate a real Wrap proof (Pallas)
 -- | and verify it in the Step circuit (Vesta). The cross-field mappings
 -- | are currently placeholders for implementation by an expert.
 
@@ -17,10 +17,10 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
+import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
-import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepField, WrapField, WrapIPARounds)
@@ -38,11 +38,11 @@ import Test.Spec (Spec, SpecT, describe, it)
 
 -- | Value type for test input (Step-side finalize: verifying Wrap proof → d = WrapIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
+  FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  FinalizeOtherProofInput 0 WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -58,7 +58,9 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
       input =
         { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @WrapField @(Type2 (F StepField) Boolean)
         , witness: dummyProofWitness
-        , prevChallengeDigest: zero
+        , mask: Vector.nil
+        , prevChallenges: Vector.nil
+        , domainLog2Var: zero
         }
 
       dummyTestCircuit
@@ -71,7 +73,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
           ops :: IPA.IpaScalarOps StepField t Identity (Type2 (FVar StepField) (BoolVar StepField))
           ops = IPA.type2ScalarOps
         in
-          void $ evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x)
+          void $ finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x
 
     void $ circuitTest' @StepField
       cfg
@@ -88,7 +90,7 @@ realDataSpec cfg =
     it "all checks pass with real Wrap proof data" \{ wrap0 } -> do
       let
         params = buildStepFinalizeParams wrap0
-        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, wrapCtx: wrap0 }
+        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, sgPointEvals: [], wrapCtx: wrap0 }
       let
         circuit
           :: forall t
@@ -99,8 +101,8 @@ realDataSpec cfg =
           let
             ops :: IPA.IpaScalarOps StepField t Identity (Type2 (FVar StepField) (BoolVar StepField))
             ops = IPA.type2ScalarOps
-          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
-          assert_ finalized
+          r <- finalizeOtherProofCircuit ops params x
+          assert_ r.cipCorrect
 
       void $ circuitTest' @StepField
         cfg

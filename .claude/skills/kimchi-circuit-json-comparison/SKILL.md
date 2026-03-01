@@ -261,3 +261,85 @@ The JSON is produced by Rust's `serde_json` on the `Circuit` struct. No OCaml-sp
 Gate type names are Rust `GateType` enum variants: `"Zero"`, `"Generic"`, `"Poseidon"`, `"CompleteAdd"`, `"VarBaseMul"`, `"EndoMul"`, `"EndoMulScalar"`.
 
 Coefficient hex strings are little-endian field element serialization (arkworks `serialize_compressed` + hex encode).
+
+## Debugging with Variable Metadata
+
+When gate-level diffs are hard to trace back to source code, use the **variable metadata** technique to cross-reference gate wires with labeled code regions.
+
+### How it works
+
+1. **Label circuit steps** with `label` from `Snarky.Circuit.DSL`:
+```purescript
+zeta <- label "step2_zeta" $ toField @8 rawZeta endoVar
+alpha <- label "step2_alpha" $ toField @8 rawAlpha endoVar
+zkPoly <- label "step10_zkPoly" $ do
+  ...
+```
+
+2. **Export `varMetadata`** from `CircuitBuilderState` — maps each `Variable` to its label stack (recorded when `fresh` creates the variable).
+
+3. **Export `placeVariables`** from `Snarky.Backend.Kimchi` — maps each `Variable` to its `Array (Tuple row col)` gate cell positions.
+
+4. **Cross-reference in a Node script**: for each gate row, look up which variables appear in its wires, then look up those variables' labels to identify which code step generated the constraint.
+
+### Key exports needed
+
+```purescript
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Kimchi (makePublicInputRows, placeVariables)
+import Snarky.Constraint.Kimchi.Types (AuxState, KimchiRow, toKimchiRows)
+
+fopState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
+fopState = compilePure (Proxy @V151) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
+  myCircuit Kimchi.initialState
+
+-- Build variable → cell placement from constraint rows
+piRows = (makePublicInputRows fopState.publicInputs :: Array (KimchiRow StepField))
+rows = piRows <> concatMap toKimchiRows fopState.constraints
+placement = placeVariables rows  -- Map Variable (Array (Tuple Int Int))
+
+-- Combine with fopState.varMetadata :: Map Variable (Array String)
+-- to get: for each variable, its labels AND its gate cell positions
+```
+
+### Analysis script pattern
+
+```javascript
+// Build reverse map: gate row -> Set of labels
+const rowLabels = {};
+for (const [varId, info] of Object.entries(metadata)) {
+  for (const [row, col] of info.cells) {
+    if (!rowLabels[row]) rowLabels[row] = new Set();
+    for (const l of info.labels) rowLabels[row].add(l);
+  }
+}
+
+// For each differing gate, show which code step generated it
+for (const diffGate of diffs) {
+  const labels = [...(rowLabels[diffGate.index] || [])];
+  console.log(`Gate ${diffGate.index}: ${labels.join(', ')}`);
+}
+
+// Show runs of matching/differing gates with labels
+// to identify which step introduced the divergence
+```
+
+### What this reveals
+
+- **First diff location**: which labeled step generates the first diverging constraint
+- **Offset detection**: if PS is N gates behind/ahead of OCaml, the labels show where extra/missing constraints are
+- **Constant vs circuit variable**: if a step's variables don't appear in any gate row, the computation was folded into constants (no constraints generated)
+
+## Common Circuit Translation Pitfalls
+
+### `const_` suppresses constraints
+
+`mul_ (const_ c) x` returns `Scale c x` with NO constraint. If OCaml computes the same value as a non-constant (e.g. via `mask` which produces `Scale(c, which_bit)`), then `mul (Scale(c, var)) x` generates an R1CS constraint. The fix: use `scale_ c var` to create a non-constant CVar, then `mul_`.
+
+### `square_` vs `mul_ x x`
+
+PureScript's `square_` generates a Square constraint (different coefficient layout). OCaml's `let square x = x * x` in `scalars_env` uses `Field.mul`, which generates an R1CS constraint. Use `mul_ x x` when matching OCaml code that defines `square` as `x * x`.
+
+### In-circuit vs pure-constant omega powers
+
+OCaml's `scalars_env` computes omega powers in-circuit because `domain#generator` returns a non-constant `Scale(gen_const, which_bit)`. So `one / gen` generates `inv_` + R1CS constraints, and `zeta - omega_var` produces 2-term linear combinations that need materializing constraints. PureScript must not pre-compute these as pure field constants — it must mirror the in-circuit computation to match gate counts.

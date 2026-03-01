@@ -158,7 +158,7 @@ xor_
   -> BoolVar f
   -> Snarky c t m (BoolVar f)
 xor_ a b = case a, b of
-  Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then one else zero
+  Const aVal, Const bVal -> pure $ Const $ if (aVal == bVal) then zero else one
   Const aVal, _
     | aVal == zero -> pure b
     | aVal == one -> pure $ not_ b
