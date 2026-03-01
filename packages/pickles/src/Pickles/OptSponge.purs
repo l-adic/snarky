@@ -16,10 +16,12 @@ import Prelude
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.List (List)
+import Data.List as List
+import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
@@ -181,22 +183,19 @@ consume
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
 consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   let
-    n = Array.length input
-    numPairs = n / 2
-
     -- Build pairs array matching OCaml's Array.init
-    -- TODO -- make more functional
-    pairs = Array.mapWithIndex
-      ( \i _ ->
-          let
-            first = unsafePartial $ Array.unsafeIndex input (2 * i)
-            second = unsafePartial $ Array.unsafeIndex input (2 * i + 1)
-          in
-            Tuple
-              { b: fst first, x: snd first }
-              { b: fst second, x: snd second }
-      )
-      (Array.replicate numPairs unit)
+    { pairs, leftover } =
+      let
+        ps = mkPairs input
+      in
+        ps
+          { pairs =
+              map
+                ( \(Tuple (Tuple z1b z1x) (Tuple z2b z2x)) ->
+                    Tuple { b: z1b, x: z1x } { b: z2b, x: z2x }
+                )
+                ps.pairs
+          }
 
   -- Process all pairs
   { state, pos } <- foldM consumePair { state: initState, pos: startPos } pairs
@@ -206,22 +205,35 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
 
   -- Handle remainder and compute should_permute
   -- unsafePartial is safe because remainder is mod 2
-  unsafePartial $ case n `mod` 2 of
-    0 -> do
+  case leftover of
+    Nothing -> do
       shouldPermute <-
         if needsFinalPermuteIfEmpty then or_ emptyInput pos
         else pure pos
       condPermute shouldPermute state
-    1 -> do
-      let
-        lastElem = unsafePartial $ Array.unsafeIndex input (n - 1)
-        b = fst lastElem
-        x = snd lastElem
-        p = pos
-      _posAfter <- xor_ p b
+    Just (Tuple b x) -> do
+      _posAfter <- xor_ pos b
       xb <- mul_ x (coerce b)
-      state' <- addIn state p xb
+      state' <- addIn state pos xb
       shouldPermute <-
-        if needsFinalPermuteIfEmpty then any_ [ p, b, emptyInput ]
-        else any_ [ p, b ]
+        if needsFinalPermuteIfEmpty then any_ [ pos, b, emptyInput ]
+        else any_ [ pos, b ]
       condPermute shouldPermute state'
+  where
+  mkPairs
+    :: forall a
+     . Array a
+    -> { pairs :: Array (Tuple a a)
+       , leftover :: Maybe a
+       }
+  mkPairs as =
+    let
+      as' :: List a
+      as' = Array.toUnfoldable as
+    in
+      go { pairs: [], leftover: Nothing } as'
+    where
+    go acc List.Nil = acc
+    go acc (List.Cons a List.Nil) = acc { leftover = Just a }
+    go acc (List.Cons a (List.Cons b rest)) =
+      go (acc { pairs = acc.pairs `Array.snoc` Tuple a b }) rest

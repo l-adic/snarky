@@ -17,13 +17,12 @@ module Pickles.PlonkChecks.CombinedInnerProduct
 
 import Prelude
 
-import Data.Array as Array
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldM)
-import Data.Maybe (fromJust)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProductCircuit)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -150,13 +149,13 @@ hornerCombine
   :: forall f c t m
    . CircuitM f c t m
   => FVar f
-  -> Array (EvalOpt f)
+  -> NonEmptyArray (EvalOpt f)
   -> Snarky c t m (FVar f)
 hornerCombine xi evals = do
   let
-    reversed = Array.reverse evals
-    initVal = unsafePartial $ fromJust $ Array.head reversed
-    rest = unsafePartial $ fromJust $ Array.tail reversed
+    reversed = NEA.reverse evals
+    initVal = NEA.head reversed
+    rest = NEA.tail reversed
     initResult = case initVal of
       EvalJust x -> x
       EvalMaybe _ x -> x -- unreachable in practice: init is always Just
@@ -183,8 +182,8 @@ buildEvalList
   -> FVar f -- ^ public_input
   -> FVar f -- ^ ft_eval
   -> Array (FVar f) -- ^ always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
-  -> Array (EvalOpt f)
+  -> NonEmptyArray (EvalOpt f)
 buildEvalList sgEvals pub ft evals =
   map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
-    <> [ EvalJust pub, EvalJust ft ]
-    <> map EvalJust evals
+    `NEA.prependArray` (NEA.cons' (EvalJust pub) [ EvalJust ft ])
+    `NEA.appendArray` map EvalJust evals

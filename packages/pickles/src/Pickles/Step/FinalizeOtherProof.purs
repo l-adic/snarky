@@ -257,37 +257,18 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Step 9: pow2_pows via Field.square
   -- OCaml computes pow2_pows eagerly for zeta and zetaw (generates Square
   -- constraints even though the values may not all be used directly).
+  -- TODO -- even if this is a no-op, void is not the right answer here
   ---------------------------------------------------------------------------
   void $ pow2PowSquare zeta params.domainLog2
   void $ pow2PowSquare zetaw params.domainLog2
 
   ---------------------------------------------------------------------------
-  -- Step 10: Omega powers in-circuit
-  -- OCaml computes omega powers from maskedGen (non-constant), so each
-  -- produces R1CS constraints. zk_rows == zk_rows_by_default (3) → empty loop.
-  --   omega_to_minus_1 = one / gen
-  --   omega_to_minus_2 = square omega_to_minus_1
-  --   omega_to_zk_plus_1 = omega_to_minus_2 (empty loop for zk_rows=3)
-  --   omega_to_zk = omega_to_zk_plus_1 * omega_to_minus_1
-  ---------------------------------------------------------------------------
-  omegaM1 <- inv_ maskedGen
-  omegaM2 <- mul_ omegaM1 omegaM1 -- OCaml: square x = x * x (R1CS, not Square)
-  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
-  omegaZk <- mul_ omegaZkP1 omegaM1
-
-  -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
-  -- Note: omegaM1 = omega^-1, omegaZkP1 = omega^-2, omegaZk = omega^-3
-  zkPoly <- do
-    t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
-    mul_ t1 (zeta `sub_` omegaZk)
-
-  -- zetaToNMinus1 via domainVanishingPoly (mask * zeta^n - 1, sealed)
-  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
-
-  ---------------------------------------------------------------------------
   -- Steps 10+11a: PlonK env + ft_eval0
   -- Inlined permutation contribution + boundary quotient + constant_term.
   -- Uses shared alpha powers between ft_eval0 and perm_scalar.
+  --
+  -- OCaml constraint order: precomputeAlphaPowers first, then omega powers
+  -- in-circuit, then zkPoly, then zetaToNMinus1, then the actual terms.
   ---------------------------------------------------------------------------
   let
     pEval0 = allEvals.publicEvals.zeta
@@ -327,7 +308,31 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     shifts = domainShifts @f params.domainLog2
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
+  -- Must come before omega powers to match OCaml constraint order.
   alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+
+  ---------------------------------------------------------------------------
+  -- Step 10: Omega powers in-circuit
+  -- OCaml computes omega powers from maskedGen (non-constant), so each
+  -- produces R1CS constraints. zk_rows == zk_rows_by_default (3) → empty loop.
+  --   omega_to_minus_1 = one / gen
+  --   omega_to_minus_2 = square omega_to_minus_1
+  --   omega_to_zk_plus_1 = omega_to_minus_2 (empty loop for zk_rows=3)
+  --   omega_to_zk = omega_to_zk_plus_1 * omega_to_minus_1
+  ---------------------------------------------------------------------------
+  omegaM1 <- inv_ maskedGen
+  omegaM2 <- mul_ omegaM1 omegaM1 -- OCaml: square x = x * x (R1CS, not Square)
+  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
+  omegaZk <- mul_ omegaZkP1 omegaM1
+
+  -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
+  -- Note: omegaM1 = omega^-1, omegaZkP1 = omega^-2, omegaZk = omega^-3
+  zkPoly <- do
+    t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
+    mul_ t1 (zeta `sub_` omegaZk)
+
+  -- zetaToNMinus1 via domainVanishingPoly (mask * zeta^n - 1, sealed)
+  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
 
   let
     alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n
@@ -399,37 +404,40 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Steps 11b-c: Combined inner product
   -- OCaml right-to-left for `+`: zetaw combine computed first.
   ---------------------------------------------------------------------------
-  let
-    evalsZeta = [ zZeta ]
-      <> (Array.fromFoldable $ map _.zeta allEvals.indexEvals)
-      <> (Array.fromFoldable $ map _.zeta allEvals.witnessEvals)
-      <> (Array.fromFoldable $ map _.zeta allEvals.coeffEvals)
-      <> (Array.fromFoldable $ map _.zeta allEvals.sigmaEvals)
+  combineZetaw <- do
+    let
+      evalsZetaw = [ allEvals.zEvals.omegaTimesZeta ]
+        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.indexEvals)
+        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.witnessEvals)
+        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.coeffEvals)
+        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.sigmaEvals)
 
-    evalsZetaw = [ allEvals.zEvals.omegaTimesZeta ]
-      <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.indexEvals)
-      <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.witnessEvals)
-      <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.coeffEvals)
-      <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.sigmaEvals)
+      sgEvalsZetaw = Array.fromFoldable $
+        Vector.zipWith (\m s -> Tuple m s) mask sgZetaw
 
-    sgEvalsZetaw = Array.fromFoldable $
-      Vector.zipWith (\m s -> Tuple m s) mask sgZetaw
-    sgEvalsZeta = Array.fromFoldable $
-      Vector.zipWith (\m s -> Tuple m s) mask sgZeta
-
-  combineZetaw <- hornerCombine xi $ buildEvalList
-    sgEvalsZetaw
-    allEvals.publicEvals.omegaTimesZeta
-    allEvals.ftEval1
-    evalsZetaw
+    hornerCombine xi $ buildEvalList
+      sgEvalsZetaw
+      allEvals.publicEvals.omegaTimesZeta
+      allEvals.ftEval1
+      evalsZetaw
 
   rTimesZetaw <- mul_ r combineZetaw
 
-  combineZeta <- hornerCombine xi $ buildEvalList
-    sgEvalsZeta
-    allEvals.publicEvals.zeta
-    ftEval0
-    evalsZeta
+  combineZeta <- do
+    let
+      evalsZeta = [ zZeta ]
+        <> (Array.fromFoldable $ map _.zeta allEvals.indexEvals)
+        <> (Array.fromFoldable $ map _.zeta allEvals.witnessEvals)
+        <> (Array.fromFoldable $ map _.zeta allEvals.coeffEvals)
+        <> (Array.fromFoldable $ map _.zeta allEvals.sigmaEvals)
+
+      sgEvalsZeta = Array.fromFoldable $
+        Vector.zipWith (\m s -> Tuple m s) mask sgZeta
+    hornerCombine xi $ buildEvalList
+      sgEvalsZeta
+      allEvals.publicEvals.zeta
+      ftEval0
+      evalsZeta
 
   let actualCip = add_ combineZeta rTimesZetaw
   let expectedCip = ops.unshift deferred.combinedInnerProduct
