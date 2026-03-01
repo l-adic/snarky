@@ -36,12 +36,13 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getStepIOFields, getUnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, const_, equals_, exists, false_, fieldsToValue, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -109,7 +110,7 @@ type WrapParams f =
   -- Finalize params
   , domain :: { generator :: f, shifts :: Vector 7 f }
   , domainLog2 :: Int
-  , zkRows :: Int
+  , srsLengthLog2 :: Int
   , linearizationPoly :: LinearizationPoly f
   -- Shared
   , endo :: f
@@ -164,12 +165,18 @@ wrapCircuit scalarOps params wrapStmt = do
   -- Distinct from WrapStatement's Fp-origin deferred values used by IVP.
   -- OCaml: prev_proof_state.unfinalized_proofs
   unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
-  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @WrapIPARounds unit
+  -- TODO: wire real prevChallenges from advisory system
+  let
+    wrapShared =
+      { mask: Vector.nil
+      , prevChallenges: Vector.nil
+      , domainLog2Var: const_ (fromInt params.domainLog2)
+      }
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
-  { finalized, expandedChallenges } <- evalSpongeM initialSpongeCircuit $
+  { finalized, expandedChallenges } <-
     finalizeOtherProofCircuit scalarOps params
-      { unfinalized, witness, prevChallengeDigest }
+      { unfinalized, witness, mask: wrapShared.mask, prevChallenges: wrapShared.prevChallenges, domainLog2Var: wrapShared.domainLog2Var }
 
   -- 3. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)

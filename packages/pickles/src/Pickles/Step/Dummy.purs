@@ -23,7 +23,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (mkLinearizationPoly)
-import Pickles.ProofWitness (AllEvals, DomainValues, ProofWitness)
+import Pickles.ProofWitness (AllEvals, ProofWitness)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Snarky.Circuit.DSL as SizedF
@@ -96,31 +96,19 @@ dummyAllEvals =
   , sigmaEvals: Vector.generate \_ -> dummyPointEval
   }
 
-dummyDomainValues :: forall f. PrimeField f => DomainValues f
-dummyDomainValues =
-  { zkPolynomial: zero
-  , zetaToNMinus1: zero
-  , omegaToMinusZkRows: zero
-  , vanishesOnZk: zero
-  , lagrangeFalse0: zero
-  , lagrangeTrue1: zero
-  }
-
 dummyProofWitness :: forall f. PrimeField f => ProofWitness f
 dummyProofWitness =
   { allEvals: dummyAllEvals
-  , domainValues: dummyDomainValues
-  , publicEvalForFt: zero
   }
 
 dummyFinalizeOtherProofParams :: forall f. PrimeField f => FinalizeOtherProofParams f ()
 dummyFinalizeOtherProofParams =
   { domain:
-      { generator: zero
-      , shifts: Vector.generate \_ -> zero
+      { generator: one
+      , shifts: Vector.generate \_ -> one
       }
   , domainLog2: 0
+  , srsLengthLog2: 0
   , endo: zero
-  , zkRows: 0
   , linearizationPoly: mkLinearizationPoly []
   }

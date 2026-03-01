@@ -17,17 +17,16 @@ import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.IPA (type2ScalarOps)
-import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, false_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
@@ -121,9 +120,12 @@ realDataSpec cfg =
     it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ wrap0 } -> do
       schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
       let
+        challengeDigest = computeStepChallengeDigest wrap0
+        sgEvals = computeStepSgEvals wrap0
         params = buildStepFinalizeParams wrap0
         fopInput = buildStepFinalizeInput
-          { prevChallengeDigest: emptyPrevChallengeDigest
+          { prevChallengeDigest: challengeDigest
+          , sgPointEvals: sgEvals
           , wrapCtx: wrap0
           }
 
@@ -132,7 +134,7 @@ realDataSpec cfg =
           { appInput: schnorrInput
           , previousProofInputs: unit :< nil
           , unfinalizedProofs: fopInput.unfinalized :< nil
-          , prevChallengeDigests: fopInput.prevChallengeDigest :< nil
+          , prevChallengeDigests: F challengeDigest :< nil
           }
         witnessData = buildStepProverWitness wrap0
       let

@@ -35,15 +35,17 @@ import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
+import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
+import Pickles.Step.Domain (domainVanishingPoly, pow2PowSquare)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
 import Snarky.Circuit.CVar (const_, negate_, scale_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, all_, div_, equals_, if_, inv_, mul_, pow_, seal, square_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, all_, div_, equals_, inv_, mul_, pow_, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, shiftedEqualType1, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -74,48 +76,6 @@ stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 -- | srs_length_log2 = Max_degree.step_log2 = Nat.to_int Tick.Rounds.n = 16
 srsLengthLog2 :: Int
 srsLengthLog2 = 16
-
--------------------------------------------------------------------------------
--- | Circuit helpers
--------------------------------------------------------------------------------
-
--- | Compute x^(2^n) using Square constraints.
--- | Matches OCaml's step_verifier.ml pow2_pow (which uses Field.square).
-pow2PowSquare
-  :: forall f c t m
-   . CircuitM f c t m
-  => FVar f
-  -> Int
-  -> Snarky c t m (FVar f)
-pow2PowSquare x n = go x n
-  where
-  go acc i
-    | i <= 0 = pure acc
-    | otherwise = do
-        sq <- square_ acc
-        go sq (i - 1)
-
--- | Compute domain#vanishing_polynomial for a single known domain.
--- | Matches OCaml's Pseudo.Domain.to_domain vanishing_polynomial:
--- |   pow2_pows via Field.square, choose (mask), subtract one, seal.
--- |
--- | For a single-element unique_domains (like our [16] case):
--- |   mask = (which_bit :> t) * pow2_pows.(log2_size)
--- |   result = seal (mask_result - one)
-domainVanishingPoly
-  :: forall f c t m
-   . CircuitM f c t m
-  => BoolVar f
-  -> FVar f
-  -> Int -- ^ log2 domain size (16)
-  -> Snarky c t m (FVar f)
-domainVanishingPoly whichBit x log2Size = do
-  -- 1. Compute pow2_pows via Field.square (16 Square constraints)
-  zetaToN <- pow2PowSquare x log2Size
-  -- 2. mask: (which_bit :> t) * zetaToN (1 R1CS mul)
-  masked <- mul_ (coerce whichBit) zetaToN
-  -- 3. seal (masked - one): exists + assertEqual (1 R1CS equal)
-  seal (masked `sub_` const_ one)
 
 -------------------------------------------------------------------------------
 -- | Input parsing helpers
@@ -647,55 +607,6 @@ spongeAndChallengesStandaloneCircuit inputs = do
 -- |   85-127:  evals at zetaw (43 fields: same structure)
 -- |   128:     claimed_cip (Type1 shifted value inner)
 -------------------------------------------------------------------------------
-
--- | Evaluation in the Horner fold: either always present (Just) or masked (Maybe).
-data EvalOpt f
-  = EvalJust (FVar f)
-  | EvalMaybe (BoolVar f) (FVar f)
-
--- | Horner fold matching OCaml's Pcs_batch.combine_split_evaluations.
--- | Takes reversed flat evaluation list, initializes from head, folds with mul_and_add.
-hornerCombine
-  :: forall f c t m
-   . CircuitM f c t m
-  => FVar f
-  -> Array (EvalOpt f)
-  -> Snarky c t m (FVar f)
-hornerCombine xi evals = do
-  let
-    reversed = Array.reverse evals
-    initVal = unsafePartial $ fromJust $ Array.head reversed
-    rest = unsafePartial $ fromJust $ Array.tail reversed
-    initResult = case initVal of
-      EvalJust x -> x
-      EvalMaybe _ _ -> unsafeCoerce unit -- unreachable: init is always Just in our case
-  foldM
-    ( \acc opt -> case opt of
-        EvalJust fx -> do
-          xiAcc <- pure xi * pure acc
-          pure (add_ fx xiAcc)
-        EvalMaybe b fx -> do
-          xiAcc <- pure xi * pure acc
-          let then_ = add_ fx xiAcc
-          if_ b then_ acc
-    )
-    initResult
-    rest
-
--- | Build the flat evaluation list matching OCaml's combine function.
--- | Order: sg_evals, public_input, ft_eval, z, 6 selectors, 15 w, 15 coeff, 6 s
--- | This matches Evals.In_circuit.to_list order for always-present fields.
-buildEvalList
-  :: forall f
-   . Array (Tuple (BoolVar f) (FVar f)) -- sg_evals [(keep, eval)]
-  -> FVar f -- public_input
-  -> FVar f -- ft_eval
-  -> Array (FVar f) -- always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
-  -> Array (EvalOpt f)
-buildEvalList sgEvals pub ft evals =
-  map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
-    <> [ EvalJust pub, EvalJust ft ]
-    <> map EvalJust evals
 
 cipStandaloneCircuit
   :: forall t m

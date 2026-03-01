@@ -58,6 +58,7 @@ module Pickles.Step.Advice
   ( class StepWitnessM
   , getStepInputFields
   , getProofWitnesses
+  , getPrevChallenges
   , getMessages
   , getOpeningProof
   ) where
@@ -97,6 +98,11 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
 
+  -- | Expanded bulletproof challenges from each previous proof.
+  -- | Used for challenge_digest (OptSponge) and sg_eval (bPoly) computations.
+  -- | OCaml: prev_challenges from Req.Proof_with_datas
+  getPrevChallenges :: Unit -> m (Vector n (Vector dw (F f)))
+
   -- | Protocol commitments for IVP verification.
   -- | OCaml: Req.Messages (per previous Wrap proof)
   getMessages
@@ -132,5 +138,6 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
   getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
+  getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"

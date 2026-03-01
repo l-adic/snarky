@@ -10,12 +10,20 @@ module Pickles.PlonkChecks.CombinedInnerProduct
   ( CombinedInnerProductCheckInput
   , BatchingScalars
   , combinedInnerProductCheckCircuit
+  , EvalOpt(..)
+  , hornerCombine
+  , buildEvalList
   ) where
 
 import Prelude
 
+import Data.Array as Array
+import Data.Foldable (foldM)
+import Data.Maybe (fromJust)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProductCircuit)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -23,7 +31,7 @@ import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -117,3 +125,66 @@ combinedInnerProductCheckCircuit params zeta scalars input = do
     , evalscale: scalars.evalscale
     , evals: allEvals
     }
+
+-------------------------------------------------------------------------------
+-- | Horner-scheme CIP computation
+-------------------------------------------------------------------------------
+
+-- | Evaluation in the Horner fold: either always present (Just) or masked (Maybe).
+-- |
+-- | Matches OCaml's `Pcs_batch.combine_split_evaluations` which uses
+-- | `Shifted_value.of_cvar` for always-present and `if_` for masked evaluations.
+data EvalOpt f
+  = EvalJust (FVar f)
+  | EvalMaybe (BoolVar f) (FVar f)
+
+-- | Horner fold matching OCaml's `Pcs_batch.combine_split_evaluations`.
+-- |
+-- | Takes the polynomial batching scalar (xi) and a flat evaluation list.
+-- | Reverses the list, initializes from head, folds with mul_and_add:
+-- |   Just fx → fx + xi * acc
+-- |   Maybe (b, fx) → if b then (fx + xi * acc) else acc
+-- |
+-- | Reference: step_verifier.ml:1060-1121 (combine ~ft ~sg_evals)
+hornerCombine
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Array (EvalOpt f)
+  -> Snarky c t m (FVar f)
+hornerCombine xi evals = do
+  let
+    reversed = Array.reverse evals
+    initVal = unsafePartial $ fromJust $ Array.head reversed
+    rest = unsafePartial $ fromJust $ Array.tail reversed
+    initResult = case initVal of
+      EvalJust x -> x
+      EvalMaybe _ x -> x -- unreachable in practice: init is always Just
+  foldM
+    ( \acc opt -> case opt of
+        EvalJust fx -> do
+          xiAcc <- pure xi * pure acc
+          pure (add_ fx xiAcc)
+        EvalMaybe b fx -> do
+          xiAcc <- pure xi * pure acc
+          let then_ = add_ fx xiAcc
+          if_ b then_ acc
+    )
+    initResult
+    rest
+
+-- | Build the flat evaluation list matching OCaml's combine function.
+-- |
+-- | Order: sg_evals, public_input, ft_eval, z, 6 selectors, 15 w, 15 coeff, 6 s.
+-- | This matches `Evals.In_circuit.to_list` order for always-present fields.
+buildEvalList
+  :: forall f
+   . Array (Tuple (BoolVar f) (FVar f)) -- ^ sg_evals [(keep, eval)]
+  -> FVar f -- ^ public_input
+  -> FVar f -- ^ ft_eval
+  -> Array (FVar f) -- ^ always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
+  -> Array (EvalOpt f)
+buildEvalList sgEvals pub ft evals =
+  map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
+    <> [ EvalJust pub, EvalJust ft ]
+    <> map EvalJust evals
