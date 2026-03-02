@@ -56,7 +56,7 @@ squeeze
   -> Snarky (KimchiConstraint f) t m (FVar f)
 squeeze sponge pending = do
   finalState <- consume sponge pending
-  pure $ Vector.index finalState (unsafeFinite 0)
+  pure $ Vector.index finalState (unsafeFinite @3 0)
 
 -------------------------------------------------------------------------------
 -- Internal

@@ -113,7 +113,7 @@ permContribution input =
     -- Term 1: product with sigma evaluations
     -- init = (w[6] + gamma) * z(zeta*omega) * alpha^21 * zkp
     -- fold: ∏_{i=0}^{5}(beta*sigma_i + w_i + gamma) * init
-    w6 = input.w !! unsafeFinite 6
+    w6 = input.w !! unsafeFinite @7 6
     term1Init = (w6 + input.gamma) * input.z.omegaTimesZeta * alphaPow21 * input.zkPolynomial
     wSigma = zipWith Tuple (Vector.take @6 input.w) input.sigma
     term1 = foldl
@@ -206,7 +206,7 @@ permContributionCircuit input = do
 
   -- Term 1: product with sigma evaluations
   -- init = (w[6] + gamma) * z(zeta*omega) * alpha^21 * zkp
-  let w6 = input.w !! unsafeFinite 6
+  let w6 = input.w !! unsafeFinite @7 6
   term1Init <- (pure w6 + pure input.gamma)
     * pure input.z.omegaTimesZeta
     * pure alphaPow21

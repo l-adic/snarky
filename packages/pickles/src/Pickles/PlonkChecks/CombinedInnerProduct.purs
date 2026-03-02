@@ -30,6 +30,7 @@ import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Poseidon (class PoseidonField)
+import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
@@ -154,8 +155,7 @@ hornerCombine
 hornerCombine xi evals = do
   let
     reversed = NEA.reverse evals
-    initVal = NEA.head reversed
-    rest = NEA.tail reversed
+    { head: initVal, tail: rest } = NEA.uncons reversed
     initResult = case initVal of
       EvalJust x -> x
       EvalMaybe _ x -> x -- unreachable in practice: init is always Just
@@ -174,16 +174,21 @@ hornerCombine xi evals = do
 
 -- | Build the flat evaluation list matching OCaml's combine function.
 -- |
--- | Order: sg_evals, public_input, ft_eval, z, 6 selectors, 15 w, 15 coeff, 6 s.
+-- | Order: sg_evals(n), public_input, ft_eval, z+index+witness+coeff+sigma (43).
 -- | This matches `Evals.In_circuit.to_list` order for always-present fields.
 buildEvalList
-  :: forall f
-   . Array (Tuple (BoolVar f) (FVar f)) -- ^ sg_evals [(keep, eval)]
-  -> FVar f -- ^ public_input
-  -> FVar f -- ^ ft_eval
-  -> Array (FVar f) -- ^ always-present evals (43: z, 6 sel, 15 w, 15 coeff, 6 s)
+  :: forall n f _l
+   . Add 1 _l n
+  => { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
+     , publicInput :: FVar f
+     , ftEval :: FVar f
+     , evals :: Vector 43 (FVar f)
+     }
   -> NonEmptyArray (EvalOpt f)
-buildEvalList sgEvals pub ft evals =
-  map (\(Tuple keep eval) -> EvalMaybe keep eval) sgEvals
-    `NEA.prependArray` (NEA.cons' (EvalJust pub) [ EvalJust ft ])
-    `NEA.appendArray` map EvalJust evals
+buildEvalList x =
+  let
+    sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) (NEA.fromFoldable1 x.sgEvals)
+    others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
+    evals = map EvalJust $ NEA.fromFoldable1 x.evals
+  in
+    NEA.concat $ NEA.cons' sgEvals [ others, evals ]

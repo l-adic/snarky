@@ -44,8 +44,8 @@ import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domai
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
-import Pickles.PlonkChecks (absorbAllEvals)
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
+import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
 import Pickles.ProofWitness (ProofWitness)
@@ -169,8 +169,9 @@ maxAlphaPower = 70
 -- |
 -- | Reference: step_verifier.ml:823-1165
 finalizeOtherProofCircuit
-  :: forall _d d n f f' g t m sf r1 r2
+  :: forall _d d _n n f f' g t m sf r1 r2
    . Add 1 _d d
+  => Add 1 _n n
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -341,7 +342,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     a23 = alphaPow 23
 
   -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term
-  let w6 = w0 !! unsafeFinite 6
+  let w6 = w0 !! unsafeFinite @15 6
   term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
   let wSigma = zipWith Tuple (Vector.take @6 w0) s0
   term1 <- foldM
@@ -404,40 +405,21 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Steps 11b-c: Combined inner product
   -- OCaml right-to-left for `+`: zetaw combine computed first.
   ---------------------------------------------------------------------------
-  combineZetaw <- do
-    let
-      evalsZetaw = [ allEvals.zEvals.omegaTimesZeta ]
-        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.indexEvals)
-        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.witnessEvals)
-        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.coeffEvals)
-        <> (Array.fromFoldable $ map _.omegaTimesZeta allEvals.sigmaEvals)
-
-      sgEvalsZetaw = Array.fromFoldable $
-        Vector.zipWith (\m s -> Tuple m s) mask sgZetaw
-
-    hornerCombine xi $ buildEvalList
-      sgEvalsZetaw
-      allEvals.publicEvals.omegaTimesZeta
-      allEvals.ftEval1
-      evalsZetaw
+  combineZetaw <- hornerCombine xi $ buildEvalList
+    { sgEvals: Vector.zipWith Tuple mask sgZetaw
+    , publicInput: allEvals.publicEvals.omegaTimesZeta
+    , ftEval: allEvals.ftEval1
+    , evals: extractEvalFields _.omegaTimesZeta allEvals
+    }
 
   rTimesZetaw <- mul_ r combineZetaw
 
-  combineZeta <- do
-    let
-      evalsZeta = [ zZeta ]
-        <> (Array.fromFoldable $ map _.zeta allEvals.indexEvals)
-        <> (Array.fromFoldable $ map _.zeta allEvals.witnessEvals)
-        <> (Array.fromFoldable $ map _.zeta allEvals.coeffEvals)
-        <> (Array.fromFoldable $ map _.zeta allEvals.sigmaEvals)
-
-      sgEvalsZeta = Array.fromFoldable $
-        Vector.zipWith (\m s -> Tuple m s) mask sgZeta
-    hornerCombine xi $ buildEvalList
-      sgEvalsZeta
-      allEvals.publicEvals.zeta
-      ftEval0
-      evalsZeta
+  combineZeta <- hornerCombine xi $ buildEvalList
+    { sgEvals: Vector.zipWith Tuple mask sgZeta
+    , publicInput: allEvals.publicEvals.zeta
+    , ftEval: ftEval0
+    , evals: extractEvalFields _.zeta allEvals
+    }
 
   let actualCip = add_ combineZeta rTimesZetaw
   let expectedCip = ops.unshift deferred.combinedInnerProduct

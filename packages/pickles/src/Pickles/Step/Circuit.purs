@@ -94,8 +94,9 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | Wraps `finalizeOtherProofCircuit`. The sponge is handled internally
 -- | by `finalizeOtherProofCircuit` (challenge_digest + Fr-sponge).
 finalizeOtherProof
-  :: forall _d d n f f' g t m sf r r2
+  :: forall _d d _n n f f' g t m sf r r2
    . Add 1 _d d
+  => Add 1 _n n
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -182,8 +183,9 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n ds _dw dw input prevInput output aux t m r
+  :: forall _n n ds _dw dw input prevInput output aux t m r
    . Add 1 _dw dw
+  => Add 1 _n n
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
