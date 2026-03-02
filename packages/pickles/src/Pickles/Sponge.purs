@@ -15,6 +15,7 @@ module Pickles.Sponge
   , absorbPoint
   , absorbMany
   , squeezeScalarChallenge
+  , squeezeScalar
   , squeezeScalarChallengePure
   , lowest128Bits
   , lowest128BitsPure
@@ -184,6 +185,22 @@ squeezeScalarChallenge params = do
   x <- squeeze
   liftSnarky $ lowest128Bits params.endo x
 
+-- | Squeeze a scalar challenge with constrain_low_bits:false.
+-- |
+-- | Matches OCaml's `squeeze_scalar` which calls `lowest_128_bits ~constrain_low_bits:false`.
+-- | Only range-checks hi (not lo). Used in Wrap FOP for xi.
+squeezeScalar
+  :: forall f t m r
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => { endo :: FVar f | r }
+  -> SpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+squeezeScalar params = do
+  x <- squeeze
+  liftSnarky $ lowest128Bits' false params.endo x
+
 --------------------------------------------------------------------------------
 -- | Pure Sponge Monad: PureSpongeM
 --------------------------------------------------------------------------------
@@ -272,7 +289,22 @@ lowest128Bits
   => FVar f -- ^ endo constant
   -> FVar f -- ^ x (sponge squeeze output)
   -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
-lowest128Bits endo x = do
+lowest128Bits = lowest128Bits' true
+
+-- | Parameterized version: `constrainLowBits` controls whether lo is range-checked.
+-- |
+-- | - `true`: matches OCaml's `squeeze_challenge` (constrain_low_bits:true)
+-- | - `false`: matches OCaml's `squeeze_scalar` (constrain_low_bits:false, only hi checked)
+lowest128Bits'
+  :: forall f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => Boolean
+  -> FVar f -- ^ endo constant
+  -> FVar f -- ^ x (sponge squeeze output)
+  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
+lowest128Bits' constrainLowBits endo x = do
   -- Witness lo (first) and hi (second), matching OCaml's Typ.(field * field)
   UnChecked (Tuple lo hi) <- exists do
     F xVal <- read x
@@ -297,8 +329,8 @@ lowest128Bits endo x = do
     pure $ UnChecked (Tuple lo hi)
   -- Range check hi via EndoScalar (discard result) — hi first, matching OCaml
   void $ EndoScalar.toField @8 hi endo
-  -- Range check lo via EndoScalar (discard result)
-  void $ EndoScalar.toField @8 lo endo
+  -- Range check lo via EndoScalar (discard result) — only when constrain_low_bits:true
+  when constrainLowBits $ void $ EndoScalar.toField @8 lo endo
   -- Assert x = lo + hi * 2^128
   assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
   pure lo

@@ -13,6 +13,7 @@ module Pickles.PlonkChecks.CombinedInnerProduct
   , EvalOpt(..)
   , hornerCombine
   , buildEvalList
+  , buildEvalListUnmasked
   ) where
 
 import Prelude
@@ -188,6 +189,27 @@ buildEvalList
 buildEvalList x =
   let
     sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) (NEA.fromFoldable1 x.sgEvals)
+    others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
+    evals = map EvalJust $ NEA.fromFoldable1 x.evals
+  in
+    NEA.concat $ NEA.cons' sgEvals [ others, evals ]
+
+-- | Build evaluation list with all sg_evals unmasked (EvalJust).
+-- |
+-- | Used by the Wrap FOP where all previous proofs are always present
+-- | (no proofs-verified mask).
+buildEvalListUnmasked
+  :: forall n f _l
+   . Add 1 _l n
+  => { sgEvals :: Vector n (FVar f)
+     , publicInput :: FVar f
+     , ftEval :: FVar f
+     , evals :: Vector 43 (FVar f)
+     }
+  -> NonEmptyArray (EvalOpt f)
+buildEvalListUnmasked x =
+  let
+    sgEvals = map EvalJust $ NEA.fromFoldable1 x.sgEvals
     others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
     evals = map EvalJust $ NEA.fromFoldable1 x.evals
   in

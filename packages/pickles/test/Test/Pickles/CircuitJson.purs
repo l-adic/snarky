@@ -11,11 +11,15 @@ module Test.Pickles.CircuitJson (spec) where
 
 import Prelude
 
+import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (getFinite)
 import Data.Foldable (foldl, intercalate)
+import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Map as Map
+import Data.Maybe (fromMaybe)
+import Data.Set as Set
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
@@ -25,6 +29,7 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Foreign (MultipleErrors)
+import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -35,15 +40,21 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.ChallengeDigest as ChallengeDigest
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
-import Pickles.Types (StepField)
+import Pickles.Types (StepField, WrapField)
+import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Kimchi (makePublicInputRows, placeVariables)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, const_, equals_, seal)
 import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Constraint.Kimchi.Types (AuxState, KimchiRow, toKimchiRows)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, fromBigInt)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -65,6 +76,24 @@ stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 -- | srs_length_log2 = Max_degree.step_log2 = Nat.to_int Tick.Rounds.n = 16
 srsLengthLog2 :: Int
 srsLengthLog2 = 16
+
+-- | Domain log2 for the Wrap circuit (matches OCaml: Pow_2_roots_of_unity 15)
+wrapDomainLog2 :: Int
+wrapDomainLog2 = 15
+
+-- | Endo coefficient for Wrap challenge expansion (= Step_inner_curve.scalar = Pallas.endo_scalar)
+wrapEndo :: WrapField
+wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @WrapField in e
+
+-- | Wrap srs_length_log2 = Nat.to_int Tock.Rounds.n = 15
+wrapSrsLengthLog2 :: Int
+wrapSrsLengthLog2 = 15
+
+-- | Type2 shift constant: 2^(size_in_bits) = 2^255 for 255-bit fields.
+-- | Matches OCaml's Shifted_value.Type2.Shift.create which uses
+-- | two_to_the (module F) F.size_in_bits.
+twoTo255 :: WrapField
+twoTo255 = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
 
 -------------------------------------------------------------------------------
 -- | Input parsing helpers
@@ -208,6 +237,130 @@ finalizeOtherProofStepCircuit inputs = do
   void $ finalizeOtherProofCircuit type1ScalarOps params input
 
 -------------------------------------------------------------------------------
+-- | Full FinalizeOtherProof Wrap circuit
+-- |
+-- | Thin wrapper that unpacks a flat 148-input vector into the typed records
+-- | expected by the library's `wrapFinalizeOtherProofCircuit`, then calls it.
+-- |
+-- | Input layout (148 fields):
+-- |   0: alpha, 1: beta, 2: gamma, 3: zeta (scalar challenges)
+-- |   4: zeta_to_srs_length, 5: zeta_to_domain_size, 6: perm (Type2 shifted)
+-- |   7: combined_inner_product, 8: b (Type2 shifted)
+-- |   9: xi (scalar_challenge inner)
+-- |   10-25: bulletproof_challenges[0..15]
+-- |   26-27: public_input (zeta, zetaw)
+-- |   28-57: w[0..14] pairs, 58-87: coeff[0..14] pairs
+-- |   88-89: z pair, 90-101: s[0..5] pairs, 102-113: selectors[0..5] pairs
+-- |   114: ft_eval1
+-- |   115-146: prev_challenges (2×16)
+-- |   147: sponge_digest_before_evaluations
+-------------------------------------------------------------------------------
+
+finalizeOtherProofWrapCircuit
+  :: forall t m
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => Vector 148 (FVar WrapField)
+  -> Snarky (KimchiConstraint WrapField) t m Unit
+finalizeOtherProofWrapCircuit inputs = do
+  let
+    at i = unsafeIdx inputs i
+
+    -- PlonkInCircuit: scalar challenges + Type2 shifted values
+    plonk =
+      { alpha: asSizedF128 (at 0)
+      , beta: asSizedF128 (at 1)
+      , gamma: asSizedF128 (at 2)
+      , zeta: asSizedF128 (at 3)
+      , zetaToSrsLength: Type1 (at 4)
+      , zetaToDomainSize: Type1 (at 5)
+      , perm: Type1 (at 6)
+      }
+
+    -- DeferredValues (no mask, no domainLog2)
+    deferredValues =
+      { plonk
+      , combinedInnerProduct: Type1 (at 7)
+      , b: Type1 (at 8)
+      , xi: asSizedF128 (at 9)
+      , bulletproofChallenges:
+          (Vector.generate \j -> asSizedF128 (at (10 + getFinite j))) :: Vector 16 _
+      }
+
+    -- UnfinalizedProof
+    unfinalized =
+      { deferredValues
+      , shouldFinalize: coerce (const_ one :: FVar WrapField)
+      , spongeDigestBeforeEvaluations: at 147
+      }
+
+    -- AllEvals (same structure as Step, offset by 26 instead of 29)
+    allEvals =
+      { ftEval1: at 114
+      , publicEvals: { zeta: at 26, omegaTimesZeta: at 27 }
+      , witnessEvals:
+          ( Vector.generate \j ->
+              { zeta: at (28 + 2 * getFinite j)
+              , omegaTimesZeta: at (28 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 15 _
+      , coeffEvals:
+          ( Vector.generate \j ->
+              { zeta: at (58 + 2 * getFinite j)
+              , omegaTimesZeta: at (58 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 15 _
+      , zEvals: { zeta: at 88, omegaTimesZeta: at 89 }
+      , sigmaEvals:
+          ( Vector.generate \j ->
+              { zeta: at (90 + 2 * getFinite j)
+              , omegaTimesZeta: at (90 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 6 _
+      , indexEvals:
+          ( Vector.generate \j ->
+              { zeta: at (102 + 2 * getFinite j)
+              , omegaTimesZeta: at (102 + 2 * getFinite j + 1)
+              }
+          ) :: Vector 6 _
+      }
+
+    witness = { allEvals }
+
+    -- Previous challenges (2 proofs × 16 challenges)
+    prevChallenges :: Vector 2 (Vector 16 (FVar WrapField))
+    prevChallenges = Vector.generate \j ->
+      Vector.generate \k ->
+        at (115 + 16 * getFinite j + getFinite k)
+
+    -- Build input record (no mask, no domainLog2Var)
+    input =
+      { unfinalized
+      , witness
+      , prevChallenges
+      }
+
+    -- Type2 shift ops (carrier: Type1, shift: x + 2^254)
+    ops =
+      { unshift: \(Type1 x) -> add_ x (const_ twoTo255)
+      , shiftedEqual: \(Type1 claimed) raw -> equals_ (add_ claimed (const_ twoTo255)) raw
+      , sealInner: \(Type1 x) -> Type1 <$> seal x
+      }
+
+    -- Build compile-time params
+    params =
+      { domain:
+          { generator: LinFFI.domainGenerator @WrapField wrapDomainLog2
+          , shifts: LinFFI.domainShifts @WrapField wrapDomainLog2
+          }
+      , domainLog2: wrapDomainLog2
+      , srsLengthLog2: wrapSrsLengthLog2
+      , endo: wrapEndo
+      , linearizationPoly: Linearization.vesta
+      }
+
+  void $ wrapFinalizeOtherProofCircuit ops params input
+
+-------------------------------------------------------------------------------
 -- | pow2PowSquare sub-circuit
 -- |
 -- | 1 input → compute x^(2^16) via Square constraints.
@@ -297,13 +450,17 @@ gateTypeSummary gates =
 
 -- | Generic comparison test: compile PS circuit, load OCaml fixture, compare.
 compareCircuit
-  :: String -- fixture name (without .json)
+  :: forall f
+   . SerdeHex f
+  => Show f
+  => Eq f
+  => String -- fixture name (without .json)
   -> String -- compiled PS circuit JSON
-  -> Either MultipleErrors (CircuitData StepField)
+  -> Either MultipleErrors (CircuitData f)
   -> Aff Unit
 compareCircuit name psJson ocamlResult = do
   let
-    psCircuit :: Either MultipleErrors (CircuitData StepField)
+    psCircuit :: Either MultipleErrors (CircuitData f)
     psCircuit = readCircuitJson psJson
   case ocamlResult, psCircuit of
     Right ocaml, Right ps -> do
@@ -349,11 +506,11 @@ compareCircuit name psJson ocamlResult = do
     Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
     _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
 
-loadFixture :: String -> Aff (Either MultipleErrors (CircuitData StepField))
+loadFixture :: forall @f. SerdeHex f => String -> Aff (Either MultipleErrors (CircuitData f))
 loadFixture name = liftEffect do
   buf <- FS.readFile (fixtureDir <> name <> ".json")
   json <- Buffer.toString UTF8 buf
-  pure (readCircuitJson json :: Either _ (CircuitData StepField))
+  pure (readCircuitJson json)
 
 -------------------------------------------------------------------------------
 -- | Compiled circuit
@@ -388,6 +545,74 @@ compileFopStep = circuitToJson @StepField $
     finalizeOtherProofStepCircuit
     Kimchi.initialState
 
+type V148 = Vector 148 (F WrapField)
+
+compileFopWrap :: String
+compileFopWrap = circuitToJson @WrapField $
+  compilePure (Proxy @V148) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+    finalizeOtherProofWrapCircuit
+    Kimchi.initialState
+
+-------------------------------------------------------------------------------
+-- | Debug: row → labels mapping
+-------------------------------------------------------------------------------
+
+-- | Build a mapping from gate row index to the set of labels of variables
+-- | appearing in that row. Uses varMetadata (variable → birth labels) and
+-- | placeVariables (variable → cell positions) to cross-reference.
+buildRowLabels
+  :: forall f
+   . PrimeField f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> Array (Tuple Int (Array String))
+buildRowLabels s =
+  let
+    piRows :: Array (KimchiRow f)
+    piRows = makePublicInputRows s.publicInputs
+    rows = piRows <> concatMap toKimchiRows s.constraints
+    placement = placeVariables rows
+
+    -- Reverse map: for each variable, get its labels and its cell positions
+    -- Then build row → Set of labels
+    rowLabelMap :: Map.Map Int (Set.Set String)
+    rowLabelMap = foldlWithIndex
+      ( \var acc cells ->
+          let
+            labels = fromMaybe [] (Map.lookup var s.varMetadata)
+            labelStr = intercalate " > " labels
+          in
+            if Array.null labels then acc
+            else foldl
+              ( \m (Tuple row _col) ->
+                  Map.insertWith Set.union row (Set.singleton labelStr) m
+              )
+              acc
+              cells
+      )
+      Map.empty
+      (placement :: Map.Map Variable (Array (Tuple Int Int)))
+
+  in
+    map (\(Tuple row labels) -> Tuple row (Set.toUnfoldable labels :: Array String))
+      (Map.toUnfoldable rowLabelMap :: Array (Tuple Int (Set.Set String)))
+
+-- | Dump row-to-label mapping for the Wrap FOP circuit as a string.
+-- | Each line: "row_index: label1, label2, ..."
+dumpRowLabels :: String
+dumpRowLabels =
+  let
+    s :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
+    s = compilePure (Proxy @V148) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+      finalizeOtherProofWrapCircuit
+      Kimchi.initialState
+    rowLabels = buildRowLabels s
+  in
+    intercalate "\n" $ map
+      ( \(Tuple row labels) ->
+          show row <> ": " <> intercalate ", " labels
+      )
+      rowLabels
+
 -------------------------------------------------------------------------------
 -- | Spec
 -------------------------------------------------------------------------------
@@ -396,14 +621,17 @@ spec :: Spec Unit
 spec =
   describe "FinalizeOtherProof CircuitJson" do
     it "pow2PowSquare sub-circuit" do
-      ocaml <- loadFixture "pow2_pow_circuit"
+      ocaml <- loadFixture @StepField "pow2_pow_circuit"
       compareCircuit "pow2_pow" compilePow2Pow ocaml
     it "bCorrect sub-circuit" do
-      ocaml <- loadFixture "b_correct_circuit"
+      ocaml <- loadFixture @StepField "b_correct_circuit"
       compareCircuit "b_correct" compileBCorrect ocaml
     it "challengeDigest sub-circuit" do
-      ocaml <- loadFixture "challenge_digest_circuit"
+      ocaml <- loadFixture @StepField "challenge_digest_circuit"
       compareCircuit "challenge_digest" compileChallengeDigest ocaml
     it "Full: finalize_other_proof Step circuit" do
-      ocaml <- loadFixture "finalize_other_proof_circuit"
+      ocaml <- loadFixture @StepField "finalize_other_proof_circuit"
       compareCircuit "full_fop" compileFopStep ocaml
+    it "Full: finalize_other_proof Wrap circuit" do
+      ocaml <- loadFixture @WrapField "finalize_other_proof_wrap_circuit"
+      compareCircuit "full_fop_wrap" compileFopWrap ocaml
