@@ -175,10 +175,11 @@ scaleFast2
   => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
-  -> Type2 (FVar f) (BoolVar f)
+  -> Type2 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2 base (Type2 { sDiv2, sOdd }) = do
+scaleFast2 base (Type2 t) = do
+  { sDiv2, sOdd } <- splitFieldVar t
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
   let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
@@ -239,6 +240,4 @@ scaleFast2'
   -> FVar f
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2' base s = do
-  split <- splitFieldVar s
-  scaleFast2 @nChunks @sDiv2Bits base (Type2 split)
+scaleFast2' base s = scaleFast2 @nChunks @sDiv2Bits base (Type2 s)
