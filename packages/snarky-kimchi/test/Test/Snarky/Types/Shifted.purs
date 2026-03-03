@@ -6,7 +6,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import JS.BigInt as BigInt
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
@@ -44,12 +44,12 @@ type1ShiftRoundtrip s =
 type2ShiftRoundtrip
   :: forall @f @f' n
    . FieldSizeInBits f n
-  => Shifted (F f) (Type2 (F f'))
+  => Shifted (F f) (Type2 (F f') Boolean)
   => F f
   -> Result
 type2ShiftRoundtrip s =
   let
-    shifted :: Type2 (F f')
+    shifted :: Type2 (F f') Boolean
     shifted = toShifted s
     unshifted = fromShifted shifted
   in
@@ -107,7 +107,7 @@ type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 type2Circuit
   :: forall t
    . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
-  => Type2 (FVar Pallas.BaseField)
+  => Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)
   -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
 type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
 
@@ -131,14 +131,15 @@ type1SameFieldExpected (Type1 (F t)) =
   in
     F (two * t + twoToN + one)
 
--- | Pure computation for Type2: s = t + 2^n
-type2Expected :: Type2 (F Pallas.BaseField) -> F Pallas.BaseField
-type2Expected (Type2 (F t)) =
+-- | Pure computation for Type2: s = 2*sDiv2 + sOdd + 2^n
+type2Expected :: Type2 (F Pallas.BaseField) Boolean -> F Pallas.BaseField
+type2Expected (Type2 { sDiv2: F d, sOdd }) =
   let
     n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
+    two = fromBigInt (BigInt.fromInt 2)
     twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
   in
-    F (t + twoToN)
+    F (two * d + (if sOdd then one else zero) + twoToN)
 
 --------------------------------------------------------------------------------
 -- Forbidden value aware test functions
@@ -153,16 +154,16 @@ isForbiddenType1 :: Type1 (F Vesta.BaseField) -> Boolean
 isForbiddenType1 (Type1 t) = Array.any (\(F f) -> F f == t) forbiddenType1Values
 
 -- | Check if a Type2 input is a forbidden value for the Pallas.BaseField case.
-isForbiddenType2 :: Type2 (F Pallas.BaseField) -> Boolean
-isForbiddenType2 (Type2 t) =
-  Array.any (\fv -> fv == t) forbiddenType2Values
+isForbiddenType2 :: Type2 (F Pallas.BaseField) Boolean -> Boolean
+isForbiddenType2 (Type2 { sDiv2, sOdd }) =
+  Array.any (\fv -> fv.sDiv2 == sDiv2 && fv.sOdd == sOdd) forbiddenType2Values
 
 type1TestFn :: Type1 (F Vesta.BaseField) -> Expectation (F Vesta.BaseField)
 type1TestFn input
   | isForbiddenType1 input = Unsatisfied
   | otherwise = Satisfied (type1Expected input)
 
-type2TestFn :: Type2 (F Pallas.BaseField) -> Expectation (F Pallas.BaseField)
+type2TestFn :: Type2 (F Pallas.BaseField) Boolean -> Expectation (F Pallas.BaseField)
 type2TestFn input
   | isForbiddenType2 input = Unsatisfied
   | otherwise = Satisfied (type2Expected input)

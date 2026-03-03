@@ -13,22 +13,23 @@ module Snarky.Types.Shifted
   , ofFieldType1Circuit
   , shiftedEqualType1
   , fromShiftedType2Circuit
-  , shiftedEqualType2
   ) where
 
 import Prelude
 
 import Data.Array as Array
+import Data.Bifunctor (class Bifunctor)
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
-import Data.Traversable (traverse)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, BoolVar, F(..), FVar, Snarky, add_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_, sub_)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assert_, const_, equals_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_, sub_)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -88,45 +89,55 @@ shift1 _ =
     }
 
 --------------------------------------------------------------------------------
--- Type2: Single field element with shift 2^n (n = field size in bits)
+-- Type2: Split representation (sDiv2, sOdd) where s = 2 * sDiv2 + sOdd
 -- Used when scalar field > circuit field
--- Matches OCaml's Shifted_value.Type2.t = Shifted_value of 'f
 --------------------------------------------------------------------------------
 
-newtype Type2 f = Type2 f
+newtype Type2 f b = Type2 { sDiv2 :: f, sOdd :: b }
 
-derive instance Functor Type2
-derive instance Eq f => Eq (Type2 f)
-derive instance Generic (Type2 f) _
+derive instance (Eq f, Eq b) => Eq (Type2 f b)
+derive instance Generic (Type2 f b) _
 
-instance Show f => Show (Type2 f) where
+instance (Show f, Show b) => Show (Type2 f b) where
   show x = genericShow x
 
-instance CircuitType f (Type2 (F f)) (Type2 (FVar f)) where
+instance PrimeField f => CircuitType f (Type2 (F f) Boolean) (Type2 (FVar f) (BoolVar f)) where
   valueToFields = genericValueToFields
   fieldsToValue = genericFieldsToValue
   sizeInFields = genericSizeInFields
-  varToFields = genericVarToFields @(Type2 (F f))
-  fieldsToVar = genericFieldsToVar @(Type2 (F f))
+  varToFields = genericVarToFields @(Type2 (F f) Boolean)
+  fieldsToVar = genericFieldsToVar @(Type2 (F f) Boolean)
 
 -- | Check that a Type2 value is not one of the forbidden shifted values.
 -- | This is specialized for the Pallas cross-field case.
-instance CheckedType Pallas.BaseField c (Type2 (FVar Pallas.BaseField)) where
-  check (Type2 t) = do
-    let forbiddenConstants = map (\(F f) -> const_ f) forbiddenType2Values
-    matchesForbidden <- traverse (equals_ t) forbiddenConstants
+instance CheckedType Pallas.BaseField c (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)) where
+  check (Type2 { sDiv2, sOdd }) = do
+    -- First run the generic check (verifies sOdd is a boolean)
+    genericCheck (Type2 { sDiv2, sOdd } :: Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
+    -- For each forbidden (sDiv2, sOdd) pair, check if current matches
+    -- Then assert that NONE of them match
+    matchesForbidden <- for forbiddenType2Values \{ sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } -> do
+      sDiv2Matches <- equals_ sDiv2 (const_ forbiddenDiv2)
+      let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
+      sDiv2Matches `and_` sOddMatches
     anyMatch <- any_ matchesForbidden
     assert_ (not_ anyMatch)
 
 -- | Same-field CheckedType for Pallas.ScalarField (Fq circuit).
 -- | When shifting a field element within its own field, forbidden values still exist
--- | (where t + 2^n ≡ 0 mod field modulus).
-instance CheckedType Pallas.ScalarField c (Type2 (FVar Pallas.ScalarField)) where
-  check (Type2 t) = do
-    let forbiddenConstants = map (\(F f) -> const_ f) forbiddenType2SameFieldValues
-    matchesForbidden <- traverse (equals_ t) forbiddenConstants
+-- | (where 2*sDiv2 + sOdd + 2^n ≡ 0 mod field modulus).
+instance CheckedType Pallas.ScalarField c (Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) where
+  check (Type2 { sDiv2, sOdd }) = do
+    genericCheck (Type2 { sDiv2, sOdd } :: Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))
+    matchesForbidden <- for forbiddenType2SameFieldValues \{ sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } -> do
+      sDiv2Matches <- equals_ sDiv2 (const_ forbiddenDiv2)
+      let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
+      sDiv2Matches `and_` sOddMatches
     anyMatch <- any_ matchesForbidden
     assert_ (not_ anyMatch)
+
+instance Bifunctor Type2 where
+  bimap f g (Type2 x) = Type2 { sDiv2: f x.sDiv2, sOdd: g x.sOdd }
 
 --------------------------------------------------------------------------------
 -- SplitField: Parity decomposition s = 2 * sDiv2 + sOdd (NO shift)
@@ -227,62 +238,83 @@ instance Shifted (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField)) where
       F (two * t + c)
 
 -- Type2 instances
--- Type2 shift formula: s = t + 2^n, so t = s - 2^n
 
 -- Cross-field Type2: scalar field → Type2 in circuit field (via BigInt)
-instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.BaseField)) where
+instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.BaseField) Boolean) where
   toShifted (F s) =
     let
       n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
-      twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
-      -- t = s - 2^n, computed in scalar field then coerced to circuit field via BigInt
-      tBigInt = toBigInt (s - fromBigInt twoToN)
+
+      shift :: Pallas.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
+      sOdd = BigInt.odd sBigInt
+
+      sDiv2 :: Pallas.BaseField
+      sDiv2 = fromBigInt $ (sBigInt - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
     in
-      Type2 (F (fromBigInt tBigInt :: Pallas.BaseField))
-  fromShifted (Type2 (F t)) =
+      Type2 { sDiv2: F sDiv2, sOdd }
+  fromShifted (Type2 { sDiv2: F d, sOdd }) =
     let
       n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
-      tBigInt = toBigInt t
+      dBigInt = toBigInt d
+      sBigInt = BigInt.fromInt 2 * dBigInt + (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)
       twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
     in
-      F $ fromBigInt (tBigInt + twoToN)
+      F $ fromBigInt (sBigInt + twoToN)
 
 -- Same-field Type2: shift a field element within its own field
-instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField)) where
+instance Shifted (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) where
   toShifted (F s) =
     let
       n = fieldSizeBits (Proxy :: Proxy Pallas.ScalarField)
 
-      twoToN :: Pallas.ScalarField
-      twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+      shift :: Pallas.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
+      sOdd = BigInt.odd sBigInt
+
+      sDiv2 :: Pallas.ScalarField
+      sDiv2 = fromBigInt $ (sBigInt - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
     in
-      Type2 (F (s - twoToN))
-  fromShifted (Type2 (F t)) =
+      Type2 { sDiv2: F sDiv2, sOdd }
+  fromShifted (Type2 { sDiv2: F d, sOdd }) =
     let
       n = fieldSizeBits (Proxy :: Proxy Pallas.ScalarField)
-
-      twoToN :: Pallas.ScalarField
-      twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+      dBigInt = toBigInt d
+      sBigInt = BigInt.fromInt 2 * dBigInt + (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)
+      twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
     in
-      F (t + twoToN)
+      F $ fromBigInt (sBigInt + twoToN)
 
-instance Shifted (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField)) where
+instance Shifted (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean) where
   toShifted (F s) =
     let
       n = fieldSizeBits (Proxy :: Proxy Vesta.ScalarField)
 
-      twoToN :: Vesta.ScalarField
-      twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+      shift :: Vesta.ScalarField
+      shift = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+
+      -- s' = s - 2^n (field subtraction, auto mod p)
+      sBigInt = toBigInt (s - shift)
+      sOdd = BigInt.odd sBigInt
+
+      sDiv2 :: Vesta.ScalarField
+      sDiv2 = fromBigInt $ (sBigInt - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
     in
-      Type2 (F (s - twoToN))
-  fromShifted (Type2 (F t)) =
+      Type2 { sDiv2: F sDiv2, sOdd }
+  fromShifted (Type2 { sDiv2: F d, sOdd }) =
     let
       n = fieldSizeBits (Proxy :: Proxy Vesta.ScalarField)
-
-      twoToN :: Vesta.ScalarField
-      twoToN = fromBigInt $ BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
+      dBigInt = toBigInt d
+      sBigInt = BigInt.fromInt 2 * dBigInt + (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)
+      twoToN = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n)
     in
-      F (t + twoToN)
+      F $ fromBigInt (sBigInt + twoToN)
 
 --------------------------------------------------------------------------------
 -- Circuit-level unshifting
@@ -337,38 +369,20 @@ shiftedEqualType1
 shiftedEqualType1 (Type1 claimedInner) rawComputed =
   equals_ claimedInner (ofFieldType1Circuit rawComputed)
 
--- | Unshift a Type2 circuit variable: s = t + 2^n
+-- | Unshift a Type2 circuit variable: s = 2*sDiv2 + sOdd + 2^n
 fromShiftedType2Circuit
   :: forall f n
    . PrimeField f
   => FieldSizeInBits f n
-  => Type2 (FVar f)
+  => Type2 (FVar f) (BoolVar f)
   -> FVar f
-fromShiftedType2Circuit (Type2 t) =
+fromShiftedType2Circuit (Type2 { sDiv2, sOdd }) =
   let
     n = fieldSizeBits (Proxy @f)
+    two = fromBigInt (fromInt 2)
     twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
   in
-    add_ t (const_ twoToN)
-
--- | Compare a claimed Type2 shifted value against a raw computed value.
--- | Matches OCaml's `Shifted_value.Type2.equal Field.equal`:
--- |   equal claimed_inner (of_field raw_computed)
--- | where of_field raw = raw - 2^n
-shiftedEqualType2
-  :: forall f n c t m
-   . PrimeField f
-  => FieldSizeInBits f n
-  => CircuitM f c t m
-  => Type2 (FVar f)
-  -> FVar f
-  -> Snarky c t m (BoolVar f)
-shiftedEqualType2 (Type2 claimedInner) rawComputed =
-  let
-    n = fieldSizeBits (Proxy @f)
-    twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
-  in
-    equals_ claimedInner (sub_ rawComputed (const_ twoToN))
+    add_ (add_ (scale_ two sDiv2) (coerce sOdd :: FVar f)) (const_ twoToN)
 
 --------------------------------------------------------------------------------
 -- Utility functions
@@ -440,11 +454,10 @@ forbiddenType1Values =
     Array.mapMaybe toCircuitField rawValues
 
 -- | Forbidden values for Type2 representation.
--- | Returns field elements t where t + 2^n ≡ 0 (mod scalarModulus).
--- | These are the raw values in the Type2 wrapper that would produce 0 when unshifted.
+-- | Returns (sDiv2, sOdd) pairs where 2*sDiv2 + sOdd + 2^n ≡ 0 (mod scalarModulus).
 -- |
--- | For the Pallas.ScalarField → Type2 (Pallas.BaseField) instance.
-forbiddenType2Values :: Array (F Pallas.BaseField)
+-- | For the Pallas.ScalarField → Type2 (Pallas.BaseField) Boolean instance.
+forbiddenType2Values :: Array { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean }
 forbiddenType2Values =
   let
     scalarMod = modulus @Pallas.ScalarField
@@ -453,18 +466,24 @@ forbiddenType2Values =
 
     rawValues = forbiddenShiftedValues { modulus: scalarMod, sizeInBits }
 
-    toCircuitField :: BigInt -> Maybe (F Pallas.BaseField)
-    toCircuitField x =
-      if x < circuitMod then Just (F (fromBigInt x))
-      else Nothing
+    -- Convert raw x to (sDiv2, sOdd) where x = 2*sDiv2 + sOdd
+    toType2 :: BigInt -> Maybe { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean }
+    toType2 x =
+      let
+        sOdd = BigInt.odd x
+        sDiv2BigInt = (x - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
+      in
+        -- sDiv2 must fit in the circuit field
+        if sDiv2BigInt < circuitMod then Just { sDiv2: F (fromBigInt sDiv2BigInt), sOdd }
+        else Nothing
   in
-    Array.mapMaybe toCircuitField rawValues
+    Array.mapMaybe toType2 rawValues
 
 -- | Forbidden values for same-field Type2 representation.
--- | Returns field elements t where t + 2^n ≡ 0 (mod fieldModulus).
+-- | Returns (sDiv2, sOdd) pairs where 2*sDiv2 + sOdd + 2^n ≡ 0 (mod fieldModulus).
 -- |
--- | For the Pallas.ScalarField → Type2 (Pallas.ScalarField) instance.
-forbiddenType2SameFieldValues :: Array (F Pallas.ScalarField)
+-- | For the Pallas.ScalarField → Type2 (Pallas.ScalarField) Boolean instance.
+forbiddenType2SameFieldValues :: Array { sDiv2 :: F Pallas.ScalarField, sOdd :: Boolean }
 forbiddenType2SameFieldValues =
   let
     fMod = modulus @Pallas.ScalarField
@@ -472,9 +491,15 @@ forbiddenType2SameFieldValues =
 
     rawValues = forbiddenShiftedValues { modulus: fMod, sizeInBits }
 
-    toField :: BigInt -> Maybe (F Pallas.ScalarField)
-    toField x =
-      if x < fMod then Just (F (fromBigInt x))
-      else Nothing
+    -- Convert raw x to (sDiv2, sOdd) where x = 2*sDiv2 + sOdd
+    toType2 :: BigInt -> Maybe { sDiv2 :: F Pallas.ScalarField, sOdd :: Boolean }
+    toType2 x =
+      let
+        sOdd = BigInt.odd x
+        sDiv2BigInt = (x - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
+      in
+        -- sDiv2 must fit in the field
+        if sDiv2BigInt < fMod then Just { sDiv2: F (fromBigInt sDiv2BigInt), sOdd }
+        else Nothing
   in
-    Array.mapMaybe toField rawValues
+    Array.mapMaybe toType2 rawValues

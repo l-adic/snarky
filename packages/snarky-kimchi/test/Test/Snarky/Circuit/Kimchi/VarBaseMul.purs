@@ -13,7 +13,7 @@ import Effect.Class (liftEffect)
 import Effect.Exception (message)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi.Utils (verifyCircuit)
 import Snarky.Circuit.Kimchi.VarBaseMul (joinField, scaleFast1, scaleFast2, scaleFast2', splitField)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
@@ -114,7 +114,7 @@ spec cfg = do
   describe "VarBaseMul Type2 (Pallas circuit)" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial do
       let
-        f :: Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField)) -> AffinePoint (F Pallas.BaseField)
+        f :: Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean) -> AffinePoint (F Pallas.BaseField)
         f (Tuple { x: F x, y: F y } scalar_) =
           let
             base = fromAffine @Pallas.BaseField @Pallas.G { x, y }
@@ -129,11 +129,11 @@ spec cfg = do
         circuit2
           :: forall t
            . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
-          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField))
+          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
 
-        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField)))
+        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean))
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
           circuitVal <- arbitrary @(F Pallas.ScalarField)
@@ -156,16 +156,16 @@ spec cfg = do
         circuit2M
           :: forall t m
            . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t m
-          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField))
+          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
           -> Snarky (KimchiConstraint Pallas.BaseField) t m (AffinePoint (FVar Pallas.BaseField))
         circuit2M = uncurry \p t -> scaleFast2 @51 @254 p t
 
         -- Generator that picks from forbidden values
-        genForbidden :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField)))
+        genForbidden :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean))
         genForbidden = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
-          forbiddenVal <- elements (fromJust $ NEA.fromArray forbiddenType2Values)
-          pure $ Tuple p (Type2 forbiddenVal)
+          { sDiv2, sOdd } <- elements (fromJust $ NEA.fromArray forbiddenType2Values)
+          pure $ Tuple p (Type2 { sDiv2, sOdd })
 
       -- Run in Effect to catch JS FFI exception as test failure
       try
