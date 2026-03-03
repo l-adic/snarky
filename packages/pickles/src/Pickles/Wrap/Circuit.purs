@@ -29,20 +29,21 @@ import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import JS.BigInt as BigInt
 import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, const_, equals_, exists, false_, fieldsToValue, not_, or_)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, add_, assert_, const_, equals_, exists, false_, fieldsToValue, not_, or_, seal)
+import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (fromInt)
+import Snarky.Curves.Class (fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -167,16 +168,19 @@ wrapCircuit scalarOps params wrapStmt = do
   unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
   -- TODO: wire real prevChallenges from advisory system
   let
-    wrapShared =
-      { mask: Vector.nil
-      , prevChallenges: Vector.nil
-      , domainLog2Var: const_ (fromInt params.domainLog2)
+    -- Type2 shift ops for Wrap FOP (distinct from IVP's Type1 ops).
+    -- Wrap FOP uses t + 2^n shift, while IVP uses 2t + 2^n + 1.
+    twoTo255 = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
+    fopOps =
+      { unshift: \(Type1 x) -> add_ x (const_ twoTo255)
+      , shiftedEqual: \(Type1 claimed) raw -> equals_ (add_ claimed (const_ twoTo255)) raw
+      , sealInner: \(Type1 x) -> Type1 <$> seal x
       }
 
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized, expandedChallenges } <-
-    finalizeOtherProofCircuit scalarOps params
-      { unfinalized, witness, mask: wrapShared.mask, prevChallenges: wrapShared.prevChallenges, domainLog2Var: wrapShared.domainLog2Var }
+    wrapFinalizeOtherProofCircuit fopOps params
+      { unfinalized, witness, prevChallenges: Vector.nil }
 
   -- 3. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)

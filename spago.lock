@@ -578,6 +578,7 @@
             "identity",
             "integers",
             "js-bigints",
+            "lists",
             "maybe",
             "newtype",
             "partial",
