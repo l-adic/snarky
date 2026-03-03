@@ -17,10 +17,10 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Effect.Aff (Aff)
-import Pickles.IPA (type1ScalarOps)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Circuit (WrapInputVar, wrapCircuit)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -47,7 +47,7 @@ wrapCircuitSatisfiableTest cfg ctx = do
       => WrapWitnessM StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-    circuit = wrapCircuit @1 @StepIPARounds type1ScalarOps params
+    circuit = wrapCircuit @1 @StepIPARounds WrapOtherField.ipaScalarOps params
 
   let
     circuit'

@@ -73,7 +73,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (SplitField, Type2)
 
 -- | Advisory monad for the Step circuit.
 -- |
@@ -128,8 +128,8 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
              { delta :: AffinePoint (F f)
              , sg :: AffinePoint (F f)
              , lr :: Vector dw { l :: AffinePoint (F f), r :: AffinePoint (F f) }
-             , z1 :: Type2 (F f) Boolean
-             , z2 :: Type2 (F f) Boolean
+             , z1 :: Type2 (SplitField (F f) Boolean)
+             , z2 :: Type2 (SplitField (F f) Boolean)
              }
          )
 

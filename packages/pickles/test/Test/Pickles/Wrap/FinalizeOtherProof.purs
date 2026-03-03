@@ -19,6 +19,7 @@ import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -59,7 +60,7 @@ realDataSpec cfg =
         circuit x = do
           let
             ops :: IPA.IpaScalarOps WrapField t Identity (Type1 (FVar WrapField))
-            ops = IPA.type1ScalarOps
+            ops = WrapOtherField.ipaScalarOps
           { finalized } <- finalizeOtherProofCircuit ops params x
           assert_ finalized
 

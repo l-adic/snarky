@@ -34,7 +34,7 @@ import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
-import Pickles.IPA (bCorrectCircuit, type1ScalarOps)
+import Pickles.IPA (bCorrectCircuit)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.ChallengeDigest as ChallengeDigest
@@ -42,6 +42,7 @@ import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepField, WrapField)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure)
@@ -234,7 +235,7 @@ finalizeOtherProofStepCircuit inputs = do
       , linearizationPoly: Linearization.pallas
       }
 
-  void $ finalizeOtherProofCircuit type1ScalarOps params input
+  void $ finalizeOtherProofCircuit WrapOtherField.ipaScalarOps params input
 
 -------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof Wrap circuit

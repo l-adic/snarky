@@ -16,13 +16,13 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
+import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, false_)
-import Snarky.Circuit.Kimchi (Type2)
+import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
@@ -38,11 +38,11 @@ import Type.Proxy (Proxy(..))
 
 -- | Value type for test input
 type StepTestInput =
-  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (F StepField) (Type2 (F StepField) Boolean) Boolean
+  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean
 
 -- | Variable type for circuit
 type StepTestInputVar =
-  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit
@@ -72,7 +72,7 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
-  let ops = type2ScalarOps
+  let ops = StepOtherField.ipaScalarOps
   _ <- stepCircuit ops dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
@@ -112,7 +112,7 @@ spec cfg = describe "Pickles.Step.Circuit" do
 -- | Real data test (Step → Wrap → Step cycle)
 -------------------------------------------------------------------------------
 type StepSchnorrInputVar =
-  StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (FVar StepField) (BoolVar StepField)) (BoolVar StepField)
+  StepInput 1 SchnorrInputVar Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
 
 realDataSpec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> SpecT Aff InductiveTestContext Aff Unit
 realDataSpec cfg =
@@ -145,7 +145,7 @@ realDataSpec cfg =
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do
-          _ <- stepCircuit type2ScalarOps params (stepSchnorrAppCircuit true) i
+          _ <- stepCircuit StepOtherField.ipaScalarOps params (stepSchnorrAppCircuit true) i
           pure unit
 
       let

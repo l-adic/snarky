@@ -46,7 +46,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Types.Shifted (Type1(..), Type2(..))
+import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
 -- | Intermediate result from walking the structure.
@@ -95,15 +95,19 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (BoolVar f) 
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
   scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 @254 params fv bases
 
--- | Shifted scalar (Type2): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (boolean → 1 chunk).
+-- | Shifted scalar (SplitField): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (boolean → 1 chunk).
 -- | sDiv2 = (s - sOdd) / 2 can be up to 254 bits for full-width shifted scalars
 -- | (combinedInnerProduct, b, perm, zetaToSrsLength, zetaToDomainSize).
 -- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
-instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (FVar f) (BoolVar f)) f where
-  scalarMuls params (Type2 { sDiv2, sOdd }) bases = do
+instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField (FVar f) (BoolVar f)) f where
+  scalarMuls params (SplitField { sDiv2, sOdd }) bases = do
     { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
     { results: r2, rest: rest2 } <- scalarMulLeaf @1 @0 params (coerce sOdd :: FVar f) rest1
     pure { results: r1 <> r2, rest: rest2 }
+
+-- | Type2-wrapped SplitField: delegates to bare SplitField instance.
+instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (SplitField (FVar f) (BoolVar f))) f where
+  scalarMuls params (Type2 sf) bases = scalarMuls params sf bases
 
 -------------------------------------------------------------------------------
 -- | Structural instances

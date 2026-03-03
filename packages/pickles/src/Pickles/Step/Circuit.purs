@@ -41,7 +41,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, asse
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (SplitField, Type2)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -190,11 +190,11 @@ stepCircuit
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int
-  => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+  => IpaScalarOps Vesta.ScalarField t m (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
   -> FinalizeOtherProofParams Vesta.ScalarField r
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
+  -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField))
 stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }

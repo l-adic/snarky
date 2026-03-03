@@ -20,10 +20,10 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
-import Pickles.IPA (type2ScalarOps)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
+import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -47,7 +47,7 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit type2ScalarOps dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  _ <- stepCircuit StepOtherField.ipaScalarOps dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------

@@ -29,7 +29,6 @@ import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import JS.BigInt as BigInt
 import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.IPA (IpaScalarOps)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -39,11 +38,11 @@ import Pickles.Verify (verify)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getStepIOFields, getUnfinalizedProof)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, add_, assert_, const_, equals_, exists, false_, fieldsToValue, not_, or_, seal)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
+import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -84,7 +83,7 @@ type WrapInputVar ds = WrapStatement ds (FVar Pallas.ScalarField) (Type1 (FVar P
 -- | value level (F f, Boolean) and variable level (FVar f, BoolVar f).
 type StepPublicInput :: Int -> Int -> Int -> Type -> Type -> Type
 type StepPublicInput n ds dw fv b =
-  StepStatement n ds dw fv (Type2 fv b) b
+  StepStatement n ds dw fv (Type2 (SplitField fv b)) b
 
 -- | Combined parameters for the Wrap circuit.
 -- |
@@ -167,19 +166,9 @@ wrapCircuit scalarOps params wrapStmt = do
   -- OCaml: prev_proof_state.unfinalized_proofs
   unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
   -- TODO: wire real prevChallenges from advisory system
-  let
-    -- Type2 shift ops for Wrap FOP (distinct from IVP's Type1 ops).
-    -- Wrap FOP uses t + 2^n shift, while IVP uses 2t + 2^n + 1.
-    twoTo255 = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
-    fopOps =
-      { unshift: \(Type1 x) -> add_ x (const_ twoTo255)
-      , shiftedEqual: \(Type1 claimed) raw -> equals_ (add_ claimed (const_ twoTo255)) raw
-      , sealInner: \(Type1 x) -> Type1 <$> seal x
-      }
-
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized, expandedChallenges } <-
-    wrapFinalizeOtherProofCircuit fopOps params
+    wrapFinalizeOtherProofCircuit WrapOtherField.fopShiftOps params
       { unfinalized, witness, prevChallenges: Vector.nil }
 
   -- 3. Assert finalized || not shouldFinalize

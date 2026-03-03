@@ -27,7 +27,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type1(..), Type2(..))
+import Snarky.Types.Shifted (Type1(..))
 import Type.Proxy (Proxy(..))
 
 varBaseMul
@@ -175,10 +175,10 @@ scaleFast2
   => Reflectable sDiv2Bits Int
   => CircuitM f (KimchiConstraint f) t m
   => AffinePoint (FVar f)
-  -> Type2 (FVar f) (BoolVar f)
+  -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2 base (Type2 { sDiv2, sOdd }) = do
+scaleFast2 base { sDiv2, sOdd } = do
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
   let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
@@ -241,4 +241,4 @@ scaleFast2'
        (AffinePoint (FVar f))
 scaleFast2' base s = do
   split <- splitFieldVar s
-  scaleFast2 @nChunks @sDiv2Bits base (Type2 split)
+  scaleFast2 @nChunks @sDiv2Bits base split
