@@ -88,10 +88,10 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
 realDataSpec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> SpecT Aff InductiveTestContext Aff Unit
 realDataSpec cfg =
   describe "Pickles.Step.FinalizeOtherProof (real data)" do
-    it "all checks pass with real Wrap proof data" \{ wrap0 } -> do
+    it "all checks pass with real Wrap proof data" \{ step0, wrap0 } -> do
       let
-        params = buildStepFinalizeParams wrap0
-        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, sgPointEvals: [], wrapCtx: wrap0 }
+        params = buildStepFinalizeParams step0
+        input = buildStepFinalizeInput { prevChallengeDigest: emptyPrevChallengeDigest, sgPointEvals: [], stepCtx: step0, wrapCtx: wrap0 }
       let
         circuit
           :: forall t

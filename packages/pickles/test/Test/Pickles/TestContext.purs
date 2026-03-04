@@ -43,6 +43,7 @@ module Test.Pickles.TestContext
   , extractStepRawBpChallenges
   , unsafeFqToFp
   , coerceWrapPlonkChallenges
+  , stepPlonkChallenges
   , extractWrapRawBpChallenges
   , buildFinalizeParams
   , buildFinalizeInput
@@ -392,7 +393,7 @@ existsSchnorrStepInput = exists $ lift $
 -- | Which case of the Step recursion to run.
 data StepCase
   = BaseCase
-  | InductiveCase WrapProofContext
+  | InductiveCase StepProofContext WrapProofContext
 
 -------------------------------------------------------------------------------
 -- | Test setup types
@@ -498,9 +499,9 @@ createStepProofContext stepCase = do
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
       pure $ Tuple false dummyFinalizeOtherProofParams
-    InductiveCase wrapCtx -> do
+    InductiveCase stepCtx _ -> do
       Console.info "creating Step proof for Inductive Step"
-      pure $ Tuple true (buildStepFinalizeParams wrapCtx)
+      pure $ Tuple true (buildStepFinalizeParams stepCtx)
 
   let
     -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.
@@ -546,19 +547,20 @@ createStepProofContext stepCase = do
         , unfinalizedProofs: unfinalizedProof :< Vector.nil
         , prevChallengeDigests: zero :< Vector.nil
         }
-    InductiveCase wrapCtx ->
+    InductiveCase stepCtx wrapCtx ->
       let
         challengeDigest = computeStepChallengeDigest wrapCtx
-        sgEvals = computeStepSgEvals wrapCtx
+        sgEvals = computeStepSgEvals stepCtx wrapCtx
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
           , sgPointEvals: sgEvals
+          , stepCtx
           , wrapCtx
           }
         -- Convert Type1 unfinalized proof to Type2(SplitField) for public input
         publicUnfinalized = type1ToType2SF fopInput.unfinalized
       in
-        pure $ Tuple (buildStepProverWitness wrapCtx)
+        pure $ Tuple (buildStepProverWitness stepCtx wrapCtx)
           { appInput: schnorrInput
           -- TODO: why unit here ?
           , previousProofInputs: unit :< Vector.nil
@@ -1302,15 +1304,15 @@ mkWrapIpaContext ctx =
 -- | Step-side cross-field coercion helpers (Fq → Fp)
 -------------------------------------------------------------------------------
 
--- | Unsafe coercion of an Fq value to Fp via BigInt roundtrip.
--- | Since Fq > Fp, values >= Fp will be silently reduced mod Fp.
--- | In practice P(random Fq >= Fp) ≈ 2^{-177}, but callers should be aware.
+-- | WARNING: Cross-field coercion (Fq → Fp) via integer reinterpretation.
+-- | This mirrors OCaml's Digest.Constant machinery (digest.ml / limb_vector/constant.ml):
+-- |   Fq → of_tock_field → Digest.Constant.t (4×Int64 limbs) → Digest.typ → Fp
+-- | The limb packing is a prover-side storage optimization; it has no effect on the
+-- | circuit. Both paths preserve the integer value, which is safe because Fp and Fq
+-- | are ~2^255 primes and these values (hashes, packed challenges) are random 255-bit
+-- | numbers. P(random Fq >= Fp) ≈ 2^{-177}.
 unsafeFqToFp :: WrapField -> StepField
 unsafeFqToFp fq = fromBigInt (toBigInt fq)
-
--- | Coerce a PointEval from Fq to Fp.
-unsafePointEvalFqToFp :: PointEval WrapField -> PointEval StepField
-unsafePointEvalFqToFp pe = { zeta: unsafeFqToFp pe.zeta, omegaTimesZeta: unsafeFqToFp pe.omegaTimesZeta }
 
 -- | Endo scalar coefficient for challenge expansion (Vesta.endo_scalar ∈ Fp).
 -- | This is `Wrap_inner_curve.scalar` in OCaml endo.ml.
@@ -1324,6 +1326,16 @@ coerceWrapPlonkChallenges ctx =
   , beta: wrapF (coerceViaBits ctx.oracles.beta :: SizedF 128 StepField)
   , gamma: wrapF (coerceViaBits ctx.oracles.gamma :: SizedF 128 StepField)
   , zeta: wrapF (coerceViaBits ctx.oracles.zetaChal :: SizedF 128 StepField)
+  }
+
+-- | Step proof plonk challenges (native Fp, no cross-field coercion needed).
+-- | The Step proof's oracles are already in Fp = Vesta.ScalarField = StepField.
+stepPlonkChallenges :: StepProofContext -> PlonkMinimal (F StepField)
+stepPlonkChallenges ctx =
+  { alpha: wrapF ctx.oracles.alphaChal
+  , beta: wrapF ctx.oracles.beta
+  , gamma: wrapF ctx.oracles.gamma
+  , zeta: wrapF ctx.oracles.zetaChal
   }
 
 -- | Extract raw 128-bit bulletproof challenges from a Wrap proof.
@@ -1345,16 +1357,16 @@ extractWrapRawBpChallenges ctx =
 -------------------------------------------------------------------------------
 
 -- | Build compile-time parameters for the Step FinalizeOtherProof circuit.
--- | Takes a WrapProofContext (Fq data) and produces Fp parameters.
-buildStepFinalizeParams :: WrapProofContext -> FinalizeOtherProofParams StepField ()
-buildStepFinalizeParams wrapCtx =
+-- | Takes a StepProofContext (native Fp data) for the inner Step proof's domain.
+buildStepFinalizeParams :: StepProofContext -> FinalizeOtherProofParams StepField ()
+buildStepFinalizeParams stepCtx =
   { domain:
-      { generator: (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
-      , shifts: (domainShifts wrapCtx.domainLog2 :: Vector 7 StepField)
+      { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
+      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
       }
-  , domainLog2: wrapCtx.domainLog2
+  , domainLog2: stepCtx.domainLog2
   , endo: stepEndo
-  , srsLengthLog2: wrapCtx.domainLog2
+  , srsLengthLog2: stepCtx.domainLog2
   , linearizationPoly: Linearization.pallas
   }
 
@@ -1362,45 +1374,46 @@ buildStepFinalizeParams wrapCtx =
 -- | Build Step-side FinalizeOtherProofInput from a WrapProofContext
 -------------------------------------------------------------------------------
 
--- | Build FinalizeOtherProof circuit test input from a WrapProofContext.
--- | Coerces Wrap proof data (Fq) to Step circuit field (Fp).
-buildStepFinalizeInput :: { prevChallengeDigest :: StepField, sgPointEvals :: Array (PointEval StepField), wrapCtx :: WrapProofContext } -> FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean
-buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals, wrapCtx } =
+-- | Build FinalizeOtherProof circuit test input.
+-- | Uses StepProofContext for polynomial evaluations (native Fp) and
+-- | WrapProofContext for bulletproof challenges (from Wrap proof's IPA).
+buildStepFinalizeInput :: { prevChallengeDigest :: StepField, sgPointEvals :: Array (PointEval StepField), stepCtx :: StepProofContext, wrapCtx :: WrapProofContext } -> FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean
+buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals, stepCtx, wrapCtx } =
   let
-    -- Coerce sponge digest
-    spongeDigest = unsafeFqToFp wrapCtx.oracles.fqDigest
+    -- Sponge digest (native Fp, no coercion)
+    spongeDigest = stepCtx.oracles.fqDigest
 
-    -- Coerce PlonkMinimal challenges (128-bit cross-field)
-    plonk = coerceWrapPlonkChallenges wrapCtx
+    -- PlonkMinimal challenges (native Fp)
+    plonk = stepPlonkChallenges stepCtx
 
     -- Expand plonk and compute domain values
     plonkExpanded = expandPlonkMinimal stepEndo plonk
-    omega = (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
-    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapCtx.domainLog2)
+    omega = (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt stepCtx.domainLog2)
     zetaToNMinus1 = pow plonkExpanded.zeta n - one
     zkPoly = ProofFFI.permutationVanishingPolynomial
-      { domainLog2: wrapCtx.domainLog2, zkRows, pt: plonkExpanded.zeta }
+      { domainLog2: stepCtx.domainLog2, zkRows, pt: plonkExpanded.zeta }
     omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows)
     vanishesOnZk = vanishesOnZkAndPreviousRows
-      { domainLog2: wrapCtx.domainLog2, zkRows, pt: plonkExpanded.zeta }
+      { domainLog2: stepCtx.domainLog2, zkRows, pt: plonkExpanded.zeta }
     lagrangeFalse0 = unnormalizedLagrangeBasis
-      { domainLog2: wrapCtx.domainLog2, zkRows: 0, offset: 0, pt: plonkExpanded.zeta }
+      { domainLog2: stepCtx.domainLog2, zkRows: 0, offset: 0, pt: plonkExpanded.zeta }
     lagrangeTrue1 = unnormalizedLagrangeBasis
-      { domainLog2: wrapCtx.domainLog2, zkRows, offset: -1, pt: plonkExpanded.zeta }
+      { domainLog2: stepCtx.domainLog2, zkRows, offset: -1, pt: plonkExpanded.zeta }
 
-    -- Coerce polynomial evaluations (Fq → Fp)
-    witnessEvals = map unsafePointEvalFqToFp (ProofFFI.proofWitnessEvals wrapCtx.proof)
-    zEvals = unsafePointEvalFqToFp (ProofFFI.proofZEvals wrapCtx.proof)
-    sigmaEvals = map unsafePointEvalFqToFp (ProofFFI.proofSigmaEvals wrapCtx.proof)
-    coeffEvals = map unsafePointEvalFqToFp (ProofFFI.proofCoefficientEvals wrapCtx.proof)
-    indexEvals = map unsafePointEvalFqToFp (evalSelectorPolys wrapCtx.proverIndex wrapCtx.oracles.zeta)
+    -- Polynomial evaluations (native Fp, no coercion)
+    witnessEvals = ProofFFI.proofWitnessEvals stepCtx.proof
+    zEvals = ProofFFI.proofZEvals stepCtx.proof
+    sigmaEvals = ProofFFI.proofSigmaEvals stepCtx.proof
+    coeffEvals = ProofFFI.proofCoefficientEvals stepCtx.proof
+    indexEvals = evalSelectorPolys stepCtx.proverIndex stepCtx.oracles.zeta
 
     publicEvals :: PointEval StepField
     publicEvals =
-      { zeta: unsafeFqToFp wrapCtx.oracles.publicEvalZeta
-      , omegaTimesZeta: unsafeFqToFp wrapCtx.oracles.publicEvalZetaOmega
+      { zeta: stepCtx.oracles.publicEvalZeta
+      , omegaTimesZeta: stepCtx.oracles.publicEvalZetaOmega
       }
-    ftEval1 = unsafeFqToFp wrapCtx.oracles.ftEval1
+    ftEval1 = stepCtx.oracles.ftEval1
 
     -- Run Fp Fr-sponge → xi, r, polyscale, evalscale
     frInput :: FrSpongeInput StepField
@@ -1423,7 +1436,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
       { w: map _.zeta (Vector.take @7 witnessEvals)
       , sigma: map _.zeta sigmaEvals
       , z: zEvals
-      , shifts: (domainShifts wrapCtx.domainLog2 :: Vector 7 StepField)
+      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
       , alpha: plonkExpanded.alpha
       , beta: plonkExpanded.beta
       , gamma: plonkExpanded.gamma
@@ -1481,7 +1494,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
         { result: result + scale * term, scale: scale * frResult.xi }
     cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
 
-    -- Extract bulletproof challenges
+    -- Extract bulletproof challenges (from Wrap proof's IPA — KEEP from wrapCtx)
     rawBpChallenges = extractWrapRawBpChallenges wrapCtx
 
     bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (F StepField))
@@ -1502,7 +1515,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
     perm = permScalar permInput
 
     -- Compute zetaToSrsLength, zetaToDomainSize
-    maxPolySize = ProofFFI.vestaVerifierIndexMaxPolySize wrapCtx.verifierIndex
+    maxPolySize = ProofFFI.pallasVerifierIndexMaxPolySize stepCtx.verifierIndex
     zetaToSrsLength = pow plonkExpanded.zeta (BigInt.fromInt maxPolySize)
     zetaToDomainSize = pow plonkExpanded.zeta n
 
@@ -1539,7 +1552,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
         }
     , mask: Vector.nil
     , prevChallenges: Vector.nil
-    , domainLog2Var: F (fromInt wrapCtx.domainLog2 :: StepField)
+    , domainLog2Var: F (fromInt stepCtx.domainLog2 :: StepField)
     }
 
 -- | Compute the challenge digest for Step-side verification of a Wrap proof.
@@ -1559,14 +1572,16 @@ computeStepChallengeDigest wrapCtx =
 -- | Compute the sg (challenge polynomial) evaluations for Step-side CIP.
 -- | These are bPoly(expandedChals, zeta) and bPoly(expandedChals, zetaw),
 -- | which the circuit includes in the combined inner product Horner fold.
-computeStepSgEvals :: WrapProofContext -> Array (PointEval StepField)
-computeStepSgEvals wrapCtx =
+-- | stepCtx provides zeta and omega (inner Step proof's domain).
+-- | wrapCtx provides bulletproof challenges (from Wrap proof's IPA).
+computeStepSgEvals :: StepProofContext -> WrapProofContext -> Array (PointEval StepField)
+computeStepSgEvals stepCtx wrapCtx =
   let
     rawBpChallenges = extractWrapRawBpChallenges wrapCtx
     expandedChals = map (\c -> toFieldPure c stepEndo) rawBpChallenges
-    plonk = coerceWrapPlonkChallenges wrapCtx
+    plonk = stepPlonkChallenges stepCtx
     plonkExpanded = expandPlonkMinimal stepEndo plonk
-    omega = (ProofFFI.domainGenerator wrapCtx.domainLog2 :: StepField)
+    omega = (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
   in
     [ { zeta: bPoly expandedChals plonkExpanded.zeta
       , omegaTimesZeta: bPoly expandedChals (plonkExpanded.zeta * omega)
@@ -1690,20 +1705,21 @@ dummyStepAdvice = do
       , spongeDigestBeforeEvaluations: F spongeDigest
       }
 
--- | Extract the private witness data for StepProverM from a WrapProofContext.
--- | Includes polynomial evaluations (for finalize), protocol commitments, and
--- | opening proof (for IVP) for one previous Wrap proof.
+-- | Extract the private witness data for StepProverM from proof contexts.
+-- | stepCtx provides polynomial evaluations (native Fp) for the inner Step proof.
+-- | wrapCtx provides commitments, opening proof, and bp challenges from the Wrap proof.
 -- | The FOP proof states use the correct challengeDigest and sgPointEvals so that
 -- | the FOP circuit's computed CIP/b match the claimed values.
-buildStepProverWitness :: WrapProofContext -> StepAdvice 1 WrapIPARounds StepField
-buildStepProverWitness wrapCtx =
+buildStepProverWitness :: StepProofContext -> WrapProofContext -> StepAdvice 1 WrapIPARounds StepField
+buildStepProverWitness stepCtx wrapCtx =
   let
     -- Compute correct challengeDigest and sgEvals for the FOP proof state
     challengeDigest = computeStepChallengeDigest wrapCtx
-    sgEvals = computeStepSgEvals wrapCtx
+    sgEvals = computeStepSgEvals stepCtx wrapCtx
     fopInput = buildStepFinalizeInput
       { prevChallengeDigest: challengeDigest
       , sgPointEvals: sgEvals
+      , stepCtx
       , wrapCtx
       }
     commitments = ProofFFI.vestaProofCommitments wrapCtx.proof
