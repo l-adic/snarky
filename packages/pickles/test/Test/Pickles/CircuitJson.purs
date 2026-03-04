@@ -39,9 +39,9 @@ import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.ChallengeDigest as ChallengeDigest
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
+import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, WrapField)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
-import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure)
@@ -228,7 +228,7 @@ finalizeOtherProofStepCircuit inputs = do
       , linearizationPoly: Linearization.pallas
       }
 
-  void $ finalizeOtherProofCircuit WrapOtherField.ipaScalarOps params input
+  void $ finalizeOtherProofCircuit StepOtherField.fopShiftOps params input
 
 -------------------------------------------------------------------------------
 -- | Full FinalizeOtherProof Wrap circuit

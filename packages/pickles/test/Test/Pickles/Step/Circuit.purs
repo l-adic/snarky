@@ -19,14 +19,13 @@ import Effect.Class (liftEffect)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
-import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, false_)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
@@ -72,8 +71,7 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
-  let ops = StepOtherField.ipaScalarOps
-  _ <- stepCircuit ops dummyFinalizeOtherProofParams trivialAppCircuit input
+  _ <- stepCircuit dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -133,7 +131,7 @@ realDataSpec cfg =
         input =
           { appInput: schnorrInput
           , previousProofInputs: unit :< nil
-          , unfinalizedProofs: fopInput.unfinalized :< nil
+          , unfinalizedProofs: type1ToType2SF fopInput.unfinalized :< nil
           , prevChallengeDigests: F challengeDigest :< nil
           }
         witnessData = buildStepProverWitness wrap0
@@ -145,7 +143,7 @@ realDataSpec cfg =
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do
-          _ <- stepCircuit StepOtherField.ipaScalarOps params (stepSchnorrAppCircuit true) i
+          _ <- stepCircuit params (stepSchnorrAppCircuit true) i
           pure unit
 
       let

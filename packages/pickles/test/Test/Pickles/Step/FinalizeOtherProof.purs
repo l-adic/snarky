@@ -20,13 +20,13 @@ import Data.Identity (Identity)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
-import Pickles.ShiftOps as ShiftOps
+import Pickles.ShiftOps (FopShiftOps)
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField, WrapField, WrapIPARounds)
+import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
-import Snarky.Circuit.Kimchi (SplitField, Type2)
+import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildStepFinalizeInput, buildStepFinalizeParams)
@@ -39,11 +39,11 @@ import Test.Spec (Spec, SpecT, describe, it)
 
 -- | Value type for test input (Step-side finalize: verifying Wrap proof → d = WrapIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean
+  FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput 0 WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  FinalizeOtherProofInput 0 WrapIPARounds (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -57,7 +57,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @WrapField @(Type2 (SplitField (F StepField) Boolean))
+        { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @StepField @(Type1 (F StepField))
         , witness: dummyProofWitness
         , mask: Vector.nil
         , prevChallenges: Vector.nil
@@ -71,8 +71,8 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
         -> Snarky (KimchiConstraint StepField) t Identity Unit
       dummyTestCircuit x =
         let
-          ops :: ShiftOps.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-          ops = StepOtherField.ipaScalarOps
+          ops :: FopShiftOps StepField t Identity (Type1 (FVar StepField))
+          ops = StepOtherField.fopShiftOps
         in
           void $ finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x
 
@@ -100,8 +100,8 @@ realDataSpec cfg =
           -> Snarky (KimchiConstraint StepField) t Identity Unit
         circuit x = do
           let
-            ops :: ShiftOps.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-            ops = StepOtherField.ipaScalarOps
+            ops :: FopShiftOps StepField t Identity (Type1 (FVar StepField))
+            ops = StepOtherField.fopShiftOps
           r <- finalizeOtherProofCircuit ops params x
           assert_ r.cipCorrect
 

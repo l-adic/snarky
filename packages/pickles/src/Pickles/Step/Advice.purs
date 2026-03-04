@@ -61,6 +61,7 @@ module Pickles.Step.Advice
   , getPrevChallenges
   , getMessages
   , getOpeningProof
+  , getFopProofStates
   ) where
 
 import Prelude
@@ -70,10 +71,11 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (SplitField, Type2)
+import Snarky.Types.Shifted (SplitField, Type1, Type2)
 
 -- | Advisory monad for the Step circuit.
 -- |
@@ -133,6 +135,12 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
              }
          )
 
+  -- | FOP proof states (Type1 shifted values) for finalizeOtherProof.
+  -- | These come from Per_proof_witness.proof_state (private witness),
+  -- | distinct from the public input's Type2(SplitField) unfinalized proofs.
+  -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
+  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
@@ -141,3 +149,4 @@ instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
+  getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"
