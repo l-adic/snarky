@@ -98,8 +98,7 @@ buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal } =
     , coefficient: \col -> coeffEvals !! col
     , index: \row gt ->
         let
-          idx :: Int -> Finite 6
-          idx = unsafeFinite
+          idx = unsafeFinite @6
           -- Gate order matches Kimchi verifier's column ordering:
           -- Generic, Poseidon, CompleteAdd, VarBaseMul, EndoMul, EndoMulScalar
           -- See kimchi/src/verifier.rs lines 485-490

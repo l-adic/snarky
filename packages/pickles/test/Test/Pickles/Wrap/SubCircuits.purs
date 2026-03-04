@@ -27,9 +27,10 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Types (StepIPARounds, StepStatement)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import Pickles.Verify.FqSpongeTranscript as FqSpongeTranscript
+import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, fieldsToValue, toField)
-import Snarky.Circuit.Kimchi (Type1(..), Type2, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
@@ -158,7 +159,7 @@ ipaFinalCheckCircuitTest cfg ctx = do
     circuit input = do
       { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
         IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
-          IPA.type1ScalarOps
+          WrapOtherField.ipaScalarOps
           { endo: const_ wrapEndo, groupMapParams: groupMapParams $ Proxy @Vesta.G }
           input
       assert_ success
@@ -200,7 +201,7 @@ debugVerifyTest cfg ctx = do
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
       => Tuple (AffinePoint (FVar Pallas.ScalarField)) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m (AffinePoint (FVar Pallas.ScalarField))
-    circuit (Tuple p t) = IPA.type1ScalarOps.scaleByShifted p t
+    circuit (Tuple p t) = WrapOtherField.ipaScalarOps.scaleByShifted p t
 
     testFn
       :: Tuple (AffinePoint (F Pallas.ScalarField)) (Type1 (F Pallas.ScalarField))
@@ -317,7 +318,7 @@ checkBulletproofTest cfg ctx = do
       { success, challenges } <- evalSpongeM initialSpongeCircuit do
         _ <- FqSpongeTranscript.spongeTranscriptCircuit endoParams spongeInputCircuit
         IPA.checkBulletproof @Pallas.ScalarField @Vesta.G
-          IPA.type1ScalarOps
+          WrapOtherField.ipaScalarOps
           endoParams
           allBases
           input
@@ -368,12 +369,12 @@ checkBulletproofTest cfg ctx = do
 -- | Structural public input type for the Step circuit (value level, in Fq).
 -- | Now just StepStatement (the Step circuit's public input no longer includes StepInput).
 type StepPublicInput =
-  StepStatement 1 StepIPARounds WrapIPARounds (F Pallas.ScalarField) (Type2 (F Pallas.ScalarField) Boolean) Boolean
+  StepStatement 1 StepIPARounds WrapIPARounds (F Pallas.ScalarField) (Type2 (SplitField (F Pallas.ScalarField) Boolean)) Boolean
 
 -- | Structural public input type for the Step circuit (variable level, in Fq).
--- | CircuitType maps: F f → FVar f, Boolean → BoolVar f, Type2 (F f) Boolean → Type2 (FVar f) (BoolVar f)
+-- | CircuitType maps: F f → FVar f, Boolean → BoolVar f, SplitField (F f) Boolean → SplitField (FVar f) (BoolVar f)
 type StepPublicInputVar =
-  StepStatement 1 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type2 (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
+  StepStatement 1 StepIPARounds WrapIPARounds (FVar Pallas.ScalarField) (Type2 (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField))) (BoolVar Pallas.ScalarField)
 
 -- | Build the structural public input from a StepProofContext's flat field array.
 buildStepPublicInput :: StepProofContext -> StepPublicInput
@@ -477,7 +478,7 @@ incrementallyVerifyProofTest cfg ctx = do
     circuit input = do
       { success } <- evalSpongeM initialSpongeCircuit $
         incrementallyVerifyProof @Vesta.G
-          IPA.type1ScalarOps
+          WrapOtherField.ipaScalarOps
           params
           input
       assert_ success
@@ -591,7 +592,7 @@ verifyTest cfg ctx = do
     circuit input = do
       success <- evalSpongeM initialSpongeCircuit $
         verify @Vesta.G
-          IPA.type1ScalarOps
+          WrapOtherField.ipaScalarOps
           params
           input
           false_ -- isBaseCase (real proof, not base case)

@@ -58,8 +58,10 @@ module Pickles.Step.Advice
   ( class StepWitnessM
   , getStepInputFields
   , getProofWitnesses
+  , getPrevChallenges
   , getMessages
   , getOpeningProof
+  , getFopProofStates
   ) where
 
 import Prelude
@@ -69,10 +71,11 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (SplitField, Type1, Type2)
 
 -- | Advisory monad for the Step circuit.
 -- |
@@ -96,6 +99,11 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
+
+  -- | Expanded bulletproof challenges from each previous proof.
+  -- | Used for challenge_digest (OptSponge) and sg_eval (bPoly) computations.
+  -- | OCaml: prev_challenges from Req.Proof_with_datas
+  getPrevChallenges :: Unit -> m (Vector n (Vector dw (F f)))
 
   -- | Protocol commitments for IVP verification.
   -- | OCaml: Req.Messages (per previous Wrap proof)
@@ -122,15 +130,23 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
              { delta :: AffinePoint (F f)
              , sg :: AffinePoint (F f)
              , lr :: Vector dw { l :: AffinePoint (F f), r :: AffinePoint (F f) }
-             , z1 :: Type2 (F f) Boolean
-             , z2 :: Type2 (F f) Boolean
+             , z1 :: Type2 (SplitField (F f) Boolean)
+             , z2 :: Type2 (SplitField (F f) Boolean)
              }
          )
+
+  -- | FOP proof states (Type1 shifted values) for finalizeOtherProof.
+  -- | These come from Per_proof_witness.proof_state (private witness),
+  -- | distinct from the public input's Type2(SplitField) unfinalized proofs.
+  -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
+  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
 
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
   getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
+  getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
+  getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"

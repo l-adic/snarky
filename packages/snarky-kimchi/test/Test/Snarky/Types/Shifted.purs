@@ -2,20 +2,19 @@ module Test.Snarky.Types.Shifted where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import JS.BigInt as BigInt
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, forbiddenType1Values, forbiddenType2Values, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, toShifted)
+import Snarky.Types.Shifted (class Shifted, Type1(..), Type2(..), fieldSizeBits, fromShifted, fromShiftedType1Circuit, fromShiftedType2Circuit, toShifted)
 import Test.QuickCheck (Result, (===))
 import Test.QuickCheck.Gen (Gen, chooseInt, oneOf)
-import Test.Snarky.Circuit.Utils (Expectation(..), TestConfig, TestInput(..), circuitTest', satisfied)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
@@ -42,18 +41,17 @@ type1ShiftRoundtrip s =
 --------------------------------------------------------------------------------
 
 type2ShiftRoundtrip
-  :: forall @f @f' n
+  :: forall @f n
    . FieldSizeInBits f n
-  => Shifted (F f) (Type2 (F f') Boolean)
+  => Shifted (F f) (Type2 (F f))
   => F f
   -> Result
 type2ShiftRoundtrip s =
   let
-    shifted :: Type2 (F f') Boolean
+    shifted :: Type2 (F f)
     shifted = toShifted s
-    unshifted = fromShifted shifted
   in
-    unshifted === s
+    fromShifted shifted === s
 
 --------------------------------------------------------------------------------
 -- Danger zone generators
@@ -105,10 +103,12 @@ type1SameFieldCircuit shifted = pure $ fromShiftedType1Circuit shifted
 
 -- | Circuit that computes fromShiftedType2Circuit.
 type2Circuit
-  :: forall t
-   . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
-  => Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField)
-  -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (FVar Pallas.BaseField)
+  :: forall @f t n
+   . CircuitM f (KimchiConstraint f) t Identity
+  => PrimeField f
+  => FieldSizeInBits f n
+  => Type2 (FVar f)
+  -> Snarky (KimchiConstraint f) t Identity (FVar f)
 type2Circuit shifted = pure $ fromShiftedType2Circuit shifted
 
 -- | Pure computation for Type1 (cross-field): s = 2*t + 2^n + 1
@@ -131,42 +131,14 @@ type1SameFieldExpected (Type1 (F t)) =
   in
     F (two * t + twoToN + one)
 
--- | Pure computation for Type2: s = 2*sDiv2 + sOdd + 2^n
-type2Expected :: Type2 (F Pallas.BaseField) Boolean -> F Pallas.BaseField
-type2Expected (Type2 { sDiv2: F d, sOdd }) =
+-- | Pure computation for Type2: s = t + 2^n
+type2Expected :: forall @f n. FieldSizeInBits f n => Type2 (F f) -> F f
+type2Expected (Type2 (F t)) =
   let
-    n = fieldSizeBits (Proxy :: Proxy Pallas.BaseField)
-    two = fromBigInt (BigInt.fromInt 2)
+    n = fieldSizeBits (Proxy :: Proxy f)
     twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
   in
-    F (two * d + (if sOdd then one else zero) + twoToN)
-
---------------------------------------------------------------------------------
--- Forbidden value aware test functions
---
--- The circuit's CheckedType instance rejects forbidden shifted values
--- (those that reconstruct to 0 mod scalar_modulus). The test function must
--- expect Unsatisfied for forbidden inputs, Satisfied otherwise.
---------------------------------------------------------------------------------
-
--- | Check if a Type1 input is a forbidden value for the cross-field Vesta.BaseField case.
-isForbiddenType1 :: Type1 (F Vesta.BaseField) -> Boolean
-isForbiddenType1 (Type1 t) = Array.any (\(F f) -> F f == t) forbiddenType1Values
-
--- | Check if a Type2 input is a forbidden value for the Pallas.BaseField case.
-isForbiddenType2 :: Type2 (F Pallas.BaseField) Boolean -> Boolean
-isForbiddenType2 (Type2 { sDiv2, sOdd }) =
-  Array.any (\fv -> fv.sDiv2 == sDiv2 && fv.sOdd == sOdd) forbiddenType2Values
-
-type1TestFn :: Type1 (F Vesta.BaseField) -> Expectation (F Vesta.BaseField)
-type1TestFn input
-  | isForbiddenType1 input = Unsatisfied
-  | otherwise = Satisfied (type1Expected input)
-
-type2TestFn :: Type2 (F Pallas.BaseField) Boolean -> Expectation (F Pallas.BaseField)
-type2TestFn input
-  | isForbiddenType2 input = Unsatisfied
-  | otherwise = Satisfied (type2Expected input)
+    F (t + twoToN)
 
 --------------------------------------------------------------------------------
 -- Spec
@@ -187,11 +159,17 @@ spec cfg = do
       it "fromShifted (toShifted s) == s (danger zone)" $
         quickCheck (type1ShiftRoundtrip @Vesta.ScalarField @Vesta.ScalarField <$> genDangerZone)
 
-    describe "Type2 Shifted (crossField)" do
+    describe "Type2 Shifted (Pallas.ScalarField)" do
       it "fromShifted (toShifted s) == s" $
-        quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField)
+        quickCheck (type2ShiftRoundtrip @Pallas.ScalarField)
       it "fromShifted (toShifted s) == s (danger zone)" $
-        quickCheck (type2ShiftRoundtrip @Vesta.BaseField @Vesta.ScalarField <$> genDangerZone)
+        quickCheck (type2ShiftRoundtrip @Pallas.ScalarField <$> genDangerZone)
+
+    describe "Type2 Shifted (Vesta.ScalarField)" do
+      it "fromShifted (toShifted s) == s" $
+        quickCheck (type2ShiftRoundtrip @Vesta.ScalarField)
+      it "fromShifted (toShifted s) == s (danger zone)" $
+        quickCheck (type2ShiftRoundtrip @Vesta.ScalarField <$> genDangerZone)
 
     describe "fromShiftedType1Circuit" do
       it "circuit matches pure implementation" do
@@ -199,7 +177,7 @@ spec cfg = do
           gen = toShifted <$> genDangerZone @Vesta.ScalarField
         void $ circuitTest' @Vesta.BaseField
           cfg
-          (NEA.singleton { testFunction: type1TestFn, input: QuickCheck 100 gen })
+          (NEA.singleton { testFunction: satisfied type1Expected, input: QuickCheck 100 gen })
           type1Circuit
 
     describe "fromShiftedType1Circuit (sameField)" do
@@ -215,7 +193,7 @@ spec cfg = do
       it "circuit matches pure implementation" do
         let
           gen = toShifted <$> genDangerZone @Pallas.ScalarField
-        void $ circuitTest' @Pallas.BaseField
+        void $ circuitTest' @Pallas.ScalarField
           cfg
-          (NEA.singleton { testFunction: type2TestFn, input: QuickCheck 100 gen })
-          type2Circuit
+          (NEA.singleton { testFunction: satisfied (type2Expected @Pallas.ScalarField), input: QuickCheck 100 gen })
+          (type2Circuit @Pallas.ScalarField)

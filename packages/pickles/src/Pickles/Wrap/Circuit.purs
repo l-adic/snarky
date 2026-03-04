@@ -30,17 +30,17 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyWrapChallengesExpanded)
-import Pickles.IPA (IpaScalarOps)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.FinalizeOtherProof (finalizeOtherProofCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getPrevChallengeDigest, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1, Type2)
+import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
@@ -82,7 +82,7 @@ type WrapInputVar ds = WrapStatement ds (FVar Pallas.ScalarField) (Type1 (FVar P
 -- | value level (F f, Boolean) and variable level (FVar f, BoolVar f).
 type StepPublicInput :: Int -> Int -> Int -> Type -> Type -> Type
 type StepPublicInput n ds dw fv b =
-  StepStatement n ds dw fv (Type2 fv b) b
+  StepStatement n ds dw fv (Type2 (SplitField fv b)) b
 
 -- | Combined parameters for the Wrap circuit.
 -- |
@@ -109,7 +109,7 @@ type WrapParams f =
   -- Finalize params
   , domain :: { generator :: f, shifts :: Vector 7 f }
   , domainLog2 :: Int
-  , zkRows :: Int
+  , srsLengthLog2 :: Int
   , linearizationPoly :: LinearizationPoly f
   -- Shared
   , endo :: f
@@ -147,11 +147,10 @@ wrapCircuit
   => Reflectable ds Int
   => Reflectable n Int
   => Add 1 _l3 ds
-  => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
-  -> WrapParams Pallas.ScalarField
+  => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit scalarOps params wrapStmt = do
+wrapCircuit params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
   publicInput <- exists $ lift $ do
@@ -164,12 +163,11 @@ wrapCircuit scalarOps params wrapStmt = do
   -- Distinct from WrapStatement's Fp-origin deferred values used by IVP.
   -- OCaml: prev_proof_state.unfinalized_proofs
   unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
-  prevChallengeDigest <- exists $ lift $ getPrevChallengeDigest @ds @WrapIPARounds unit
-
+  -- TODO: wire real prevChallenges from advisory system
   -- 2. Finalize deferred values (uses private unfinalized proof)
-  { finalized, expandedChallenges } <- evalSpongeM initialSpongeCircuit $
-    finalizeOtherProofCircuit scalarOps params
-      { unfinalized, witness, prevChallengeDigest }
+  { finalized, expandedChallenges } <-
+    wrapFinalizeOtherProofCircuit params
+      { unfinalized, witness, prevChallenges: Vector.nil }
 
   -- 3. Assert finalized || not shouldFinalize
   finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
@@ -187,7 +185,7 @@ wrapCircuit scalarOps params wrapStmt = do
       , opening: openingProof
       }
   success <- evalSpongeM initialSpongeCircuit $
-    verify @VestaG scalarOps params fullIvpInput false_
+    verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
       wrapStmt.proofState.spongeDigestBeforeEvaluations
   assert_ success
 

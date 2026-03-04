@@ -67,11 +67,13 @@ reduceAffineExpression (AffineExpression { constant, terms }) = case fromFoldabl
   Just (NonEmptyList (NonEmpty head tail)) -> case tail of
     Nil -> case constant of
       Nothing -> pure $ lmap Just head
-      Just c -> do
-        vo <- createInternalVariable $ AffineExpression { constant, terms: [ head ] }
-        let Tuple vl cl = head
-        addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, vo: Just vo, co: -one, m: zero, c }
-        pure $ Tuple (Just vo) one
+      Just c
+        | c == zero -> pure $ lmap Just head
+        | otherwise -> do
+            vo <- createInternalVariable $ AffineExpression { constant, terms: [ head ] }
+            let Tuple vl cl = head
+            addGenericPlonkConstraint { vl: Just vl, cl, vr: Nothing, cr: zero, vo: Just vo, co: -one, m: zero, c }
+            pure $ Tuple (Just vo) one
     Cons first rest -> do
       -- 2+ terms: head saved for final gate, tail right-recursively reduced.
       -- Matches OCaml's reduce_lincom + completely_reduce.

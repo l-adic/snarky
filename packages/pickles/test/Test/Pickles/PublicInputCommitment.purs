@@ -25,7 +25,7 @@ import Snarky.Curves.Class (curveParams, fromBigInt, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (SplitField, Type2)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext)
 import Test.Pickles.TestContext as E2E
@@ -55,14 +55,14 @@ type StepTestContext =
 type StepFullXhat =
   StepStatement 1 StepIPARounds WrapIPARounds
     (F StepCircuitField)
-    (Type2 (F StepCircuitField) Boolean)
+    (Type2 (SplitField (F StepCircuitField) Boolean))
     Boolean
 
 -- | Step public input type for x_hat circuit (variable level).
 type StepFullXhatVar =
   StepStatement 1 StepIPARounds WrapIPARounds
     (FVar StepCircuitField)
-    (Type2 (FVar StepCircuitField) (BoolVar StepCircuitField))
+    (Type2 (SplitField (FVar StepCircuitField) (BoolVar StepCircuitField)))
     (BoolVar StepCircuitField)
 
 -- | Generate Fp-range values embedded as Fq.
@@ -190,7 +190,7 @@ spec cfg =
 
   -- | Test that PublicInputCommit on the Step public input type (StepStatement)
   -- | matches the Rust ground truth.
-  -- | This exercises leaf instances: FVar, SizedF 128, BoolVar, Type2,
+  -- | This exercises leaf instances: FVar, SizedF 128, BoolVar, SplitField,
   -- | plus Record/Vector walking.
   -- |
   -- | Uses real values from the Step → Wrap → Step test context chain,

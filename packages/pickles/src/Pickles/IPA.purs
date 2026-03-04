@@ -20,7 +20,6 @@ module Pickles.IPA
   , BulletReduceInput
   , IpaFinalCheckInput
   , IpaFinalCheckResult
-  , IpaScalarOps
   , CheckBulletproofInput
   -- Challenge polynomial
   , bPoly
@@ -43,9 +42,6 @@ module Pickles.IPA
   , ipaFinalCheckCircuit
   -- Full bulletproof check
   , checkBulletproof
-  -- Scalar ops helpers
-  , type1ScalarOps
-  , type2ScalarOps
   ) where
 
 import Prelude
@@ -58,12 +54,12 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
+import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
-import Snarky.Circuit.Kimchi (GroupMapParams, Type1(..), Type2(..), addComplete, endo, endoInv, expandToEndoScalar, fromShiftedType1Circuit, fromShiftedType2Circuit, groupMapCircuit, scaleFast1, scaleFast2, shiftedEqualType1)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
+import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
@@ -383,44 +379,6 @@ bulletReduceCircuit { pairs, challenges } = do
 -- | IPA Final Check Circuit
 -------------------------------------------------------------------------------
 
--- | Operations for working with shifted scalar values in the IPA circuit.
--- |
--- | This record bundles operations that depend on the specific shifted type
--- | (Type1 for Vesta scalars in Pallas circuits, Type2 for Pallas scalars in Vesta circuits).
--- |
--- | Parameters:
--- | - `f`: base field type (Pallas.BaseField or Vesta.BaseField)
--- | - `t`: tag type
--- | - `m`: underlying monad
--- | - `sf`: shifted scalar type (Type1 (FVar f) or Type2 (FVar f) (BoolVar f))
-type IpaScalarOps f t m sf =
-  { -- | Scale a curve point by a shifted scalar value.
-    -- | This corresponds to `scale_fast` in wrap_verifier.ml.
-    scaleByShifted ::
-      AffinePoint (FVar f)
-      -> sf
-      -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-  , -- | Get the field elements to absorb for a shifted scalar.
-    -- | For Type1: returns [t] (single field element)
-    -- | For Type2: returns [sDiv2, if sOdd then 1 else 0] (two elements)
-    shiftedToAbsorbFields ::
-      sf
-      -> Array (FVar f)
-  , -- | Recover the original field element from a shifted representation.
-    -- | For Type1: s = 2*t + 2^n + 1
-    -- | For Type2: s = 2*sDiv2 + sOdd + 2^n
-    unshift ::
-      sf
-      -> FVar f
-  , -- | Compare a claimed shifted value against a raw computed value.
-    -- | Uses the of_field convention (shift the raw value, compare inners)
-    -- | to match OCaml's Shifted_value.equal.
-    shiftedEqual ::
-      sf
-      -> FVar f
-      -> Snarky (KimchiConstraint f) t m (BoolVar f)
-  }
-
 -- | Input for IPA final verification.
 -- |
 -- | The verification equation is: c*Q + delta = z1*(sg + b*u) + z2*H
@@ -539,28 +497,6 @@ ipaFinalCheckCircuit scalarOps params input = do
   pure { success, challenges: scalarChallenges }
 
 -------------------------------------------------------------------------------
--- | Scalar Ops Implementations
--------------------------------------------------------------------------------
-
--- | Type1 scalar ops for circuits where scalar field < circuit field.
--- |
--- | Used for Pallas circuits (Fp) with Vesta commitment curve.
--- | Vesta scalar field = Fq < Fp, so scalars fit in Type1.
--- |
--- | For a 255-bit field, nChunks = 51 (since 5 * 51 = 255).
-type1ScalarOps
-  :: forall f t m
-   . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (Type1 (FVar f))
-type1ScalarOps =
-  { scaleByShifted: \p t -> scaleFast1 @51 p t
-  , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
-  , unshift: fromShiftedType1Circuit
-  , shiftedEqual: shiftedEqualType1
-  }
-
--------------------------------------------------------------------------------
 -- | Combined Polynomial Commitment
 -------------------------------------------------------------------------------
 
@@ -665,21 +601,3 @@ checkBulletproof scalarOps params commitmentBases input = do
     , blindingGenerator: input.blindingGenerator
     }
 
--- | Type2 scalar ops for circuits where scalar field > circuit field.
--- |
--- | Used for Vesta circuits (Fq) with Pallas commitment curve.
--- | Pallas scalar field = Fp > Fq, so scalars need Type2 split representation.
--- |
--- | For a 255-bit field, nChunks = 51 (since 5 * 51 = 255).
-type2ScalarOps
-  :: forall f t m
-   . FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (Type2 (FVar f) (BoolVar f))
-type2ScalarOps =
-  { scaleByShifted: \p t -> scaleFast2 @51 @254 p t
-  , shiftedToAbsorbFields: \(Type2 { sDiv2, sOdd }) -> [ sDiv2, coerce sOdd ]
-  , unshift: fromShiftedType2Circuit
-  -- Type2 has no scaling factor, so unshift + equals_ gives the same R1CS as of_field + compare inners
-  , shiftedEqual: \t raw -> equals_ (fromShiftedType2Circuit t) raw
-  }

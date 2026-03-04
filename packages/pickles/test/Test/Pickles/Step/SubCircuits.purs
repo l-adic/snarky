@@ -16,7 +16,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
-import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, ipaFinalCheckCircuit, type2ScalarOps)
+import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, ipaFinalCheckCircuit)
 import Pickles.IPA as IPA
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (evalCoefficientPolys, evalSelectorPolys, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
@@ -28,12 +28,13 @@ import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, XiCorrectInput, emptyPrevChallengeDigest, frSpongeChallengesPure, xiCorrectCircuit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, liftSnarky)
 import Pickles.Sponge as Pickles.Sponge
+import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, incrementallyVerifyProof, verify)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, false_, toField)
-import Snarky.Circuit.Kimchi (Type2, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi (SplitField, Type2, groupMapParams, toShifted)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
@@ -61,7 +62,7 @@ ipaFinalCheckTest cfg ctx = do
       }
     cip = ctx.oracles.combinedInnerProduct
 
-    -- Convert Fq scalars to Type2 (Fp circuit representation)
+    -- Convert Fq scalars to SplitField (Fp circuit representation)
     z1Shifted = toShifted (F z1)
     z2Shifted = toShifted (F z2)
     bShifted = toShifted (F b)
@@ -83,7 +84,7 @@ ipaFinalCheckTest cfg ctx = do
     ipaCtx = mkWrapIpaContext ctx
 
     -- Circuit input
-    input :: IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (F Vesta.ScalarField) Boolean)
+    input :: IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (SplitField (F Vesta.ScalarField) Boolean))
     input =
       { delta: coerce delta
       , sg: coerce sg
@@ -99,7 +100,7 @@ ipaFinalCheckTest cfg ctx = do
     circuit
       :: forall t m
        . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-      => IpaFinalCheckInput 16 (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+      => IpaFinalCheckInput 16 (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit inVar = do
       let
@@ -109,7 +110,7 @@ ipaFinalCheckTest cfg ctx = do
           , spongeState: ipaCtx.spongeState.spongeState
           }
       void $ evalSpongeM initialSpongeState do
-        let ops = type2ScalarOps
+        let ops = StepOtherField.ipaScalarOps
         res <- ipaFinalCheckCircuit @Vesta.ScalarField @Pallas.G ops { endo: const_ stepEndo, groupMapParams: pallasGroupMapParams } inVar
         liftSnarky $ assert_ res.success
 
@@ -544,12 +545,12 @@ incrementallyVerifyProofTest cfg ctx =
       circuit
         :: forall t
          . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
         -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
       circuit input = do
         { success } <- evalSpongeM initialSpongeCircuit $
           incrementallyVerifyProof @Pallas.G
-            IPA.type2ScalarOps
+            StepOtherField.ipaScalarOps
             params
             input
         assert_ success
@@ -582,12 +583,12 @@ verifyTest cfg ctx =
       circuit
         :: forall t
          . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t Identity
-        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
+        => IncrementallyVerifyProofInput (Vector.Vector nPublic (FVar Vesta.ScalarField)) 0 WrapIPARounds (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
         -> Snarky (KimchiConstraint Vesta.ScalarField) t Identity Unit
       circuit input = do
         success <- evalSpongeM initialSpongeCircuit $
           verify @Pallas.G
-            IPA.type2ScalarOps
+            StepOtherField.ipaScalarOps
             params
             input
             false_ -- isBaseCase (real proof, not base case)

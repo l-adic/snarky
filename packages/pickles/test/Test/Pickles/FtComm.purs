@@ -11,7 +11,7 @@ import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
-import Pickles.IPA as IPA
+import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, assertEq, const_)
 import Snarky.Circuit.Kimchi (Type1, toShifted)
@@ -88,7 +88,7 @@ ftCommTest cfg ctx = do
       -> Snarky (KimchiConstraint CircuitField) t Identity Unit
     circuit { perm, zetaToSrsLength, zetaToDomainSize } = do
       res <- ftComm
-        IPA.type1ScalarOps
+        WrapOtherField.ipaScalarOps
         { sigmaLast: constPt sigmaLast
         , tComm: map constPt tCommChunks
         , perm

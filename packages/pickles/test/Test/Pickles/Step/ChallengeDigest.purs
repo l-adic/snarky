@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (nil, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.Sponge (evalPureSpongeM, evalSpongeM, initialSponge, initialSpongeCircuit)
+import Pickles.Sponge (evalPureSpongeM, initialSponge)
 import Pickles.Sponge as Sponge
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit)
 import Pickles.Types (WrapIPARounds)
@@ -83,8 +83,7 @@ testCircuit1
    . CircuitM StepField (KimchiConstraint StepField) t Identity
   => ChallengeDigestTestInputVar1
   -> Snarky (KimchiConstraint StepField) t Identity (FVar StepField)
-testCircuit1 input =
-  evalSpongeM initialSpongeCircuit (challengeDigestCircuit input)
+testCircuit1 input = challengeDigestCircuit input
 
 -------------------------------------------------------------------------------
 -- | Test Inputs

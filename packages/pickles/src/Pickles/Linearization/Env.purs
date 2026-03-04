@@ -250,13 +250,13 @@ lookupMds p row col =
   let
     matrix = getMdsMatrix p
   in
-    Vector.index (Vector.index matrix (unsafeFinite row)) (unsafeFinite col)
+    Vector.index (Vector.index matrix (unsafeFinite @3 row)) (unsafeFinite @3 col)
 
 -- | Look up a cell value from the evaluation point
 lookupCell :: forall a. EvalPoint a -> Column -> CurrOrNext -> a
 lookupCell ep col row = case col of
-  Witness i -> ep.witness row (unsafeFinite i)
-  Coefficient i -> ep.coefficient (unsafeFinite i)
+  Witness i -> ep.witness row (unsafeFinite @15 i)
+  Coefficient i -> ep.coefficient (unsafeFinite @15 i)
   Index g -> ep.index row g -- Pass row to handle Curr/Next evaluation
   LookupAggreg -> ep.lookupAggreg row
   LookupSorted i -> ep.lookupSorted row i

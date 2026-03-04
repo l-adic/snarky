@@ -28,21 +28,20 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.IPA (IpaScalarOps)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
-import Pickles.Step.Advice (class StepWitnessM, getProofWitnesses)
+import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getPrevChallenges, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (Type2)
+import Snarky.Types.Shifted (SplitField, Type1, Type2)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -92,11 +91,12 @@ type AppCircuit n input prevInput output aux f c t m =
 
 -- | Finalize another proof's deferred values.
 -- |
--- | Wraps `finalizeOtherProofCircuit` with sponge initialization.
--- | Each proof gets its own fresh sponge state.
+-- | Wraps `finalizeOtherProofCircuit`. The sponge is handled internally
+-- | by `finalizeOtherProofCircuit` (challenge_digest + Fr-sponge).
 finalizeOtherProof
-  :: forall _d d f f' g t m sf r r2
+  :: forall _d d _n n f f' g t m r2
    . Add 1 _d d
+  => Add 1 _n n
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -104,19 +104,22 @@ finalizeOtherProof
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f
-     , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
-     | r
+  => FinalizeOtherProofParams f r2
+  -> { mask :: Vector n (BoolVar f)
+     , prevChallenges :: Vector n (Vector d (FVar f))
+     , domainLog2Var :: FVar f
      }
-  -> FinalizeOtherProofParams f r2
-  -> FVar f
-  -> UnfinalizedProof d (FVar f) sf (BoolVar f)
+  -> UnfinalizedProof d (FVar f) (Type1 (FVar f)) (BoolVar f)
   -> ProofWitness (FVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-finalizeOtherProof ops params prevChallengeDigest unfinalized witness =
-  evalSpongeM initialSpongeCircuit $
-    finalizeOtherProofCircuit ops params
-      { unfinalized, witness, prevChallengeDigest }
+finalizeOtherProof params shared unfinalized witness =
+  finalizeOtherProofCircuit StepOtherField.fopShiftOps params
+    { unfinalized
+    , witness
+    , mask: shared.mask
+    , prevChallenges: shared.prevChallenges
+    , domainLog2Var: shared.domainLog2Var
+    }
 
 -------------------------------------------------------------------------------
 -- | Stub Implementations (to be replaced)
@@ -176,37 +179,48 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n ds _dw dw input prevInput output aux t m r
+  :: forall _n n ds _dw dw input prevInput output aux t m r
    . Add 1 _dw dw
+  => Add 1 _n n
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int
-  => IpaScalarOps Vesta.ScalarField t m (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))
-  -> FinalizeOtherProofParams Vesta.ScalarField r
+  => FinalizeOtherProofParams Vesta.ScalarField r
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField)
-  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)) (BoolVar Vesta.ScalarField))
-stepCircuit ops params appCircuit { appInput, previousProofInputs, unfinalizedProofs, prevChallengeDigests } = do
+  -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField)
+  -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField))
+stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs } = do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
   proofWitnesses <- exists $ lift $ getProofWitnesses @_ @dw unit
+  prevChallenges <- exists $ lift $ getPrevChallenges @_ @dw unit
+  -- FOP proof states (Type1, private witness matching Per_proof_witness.proof_state)
+  fopProofStates <- exists $ lift $ getFopProofStates @_ @dw unit
 
   -- 3. For each previous proof, verify and collect challenges
+  -- prevChallenges and mask are shared across all proofs (each finalize_other_proof
+  -- computes the same challenge_digest from all previous challenges).
   let
-    proofsWithData = Vector.zip (Vector.zip (Vector.zip unfinalizedProofs proofWitnesses) prevChallengeDigests) mustVerify
+    shared =
+      { mask: mustVerify
+      , prevChallenges
+      , domainLog2Var: const_ (fromInt params.domainLog2)
+      }
+    proofsWithData = Vector.zip (Vector.zip unfinalizedProofs (Vector.zip fopProofStates proofWitnesses)) mustVerify
 
-  challengesAndDigests <- for proofsWithData \(Tuple (Tuple (Tuple unfinalized witness) prevChallengeDigest) mustVerifyFlag) -> do
+  challengesAndDigests <- for proofsWithData \(Tuple (Tuple unfinalized (Tuple fopState witness)) mustVerifyFlag) -> do
     let
+      -- shouldFinalize comes from public input (Type2), matching OCaml line 28
       shouldFinalize = unfinalized.shouldFinalize
 
     -- 3a. Assert shouldFinalize == mustVerify (step_main.ml:34)
     assertEq shouldFinalize mustVerifyFlag
 
-    -- 3b. Finalize the proof
-    { finalized, challenges } <- finalizeOtherProof ops params prevChallengeDigest unfinalized witness
+    -- 3b. Finalize the proof using FOP private witness (Type1)
+    { finalized, challenges } <- finalizeOtherProof params shared fopState witness
 
     -- 3c. Key assertion: finalized || not shouldFinalize (wrap_main.ml:431)
     -- This is how bootstrapping works: dummies have shouldFinalize = false,

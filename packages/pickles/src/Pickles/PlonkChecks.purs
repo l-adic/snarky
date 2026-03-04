@@ -10,6 +10,7 @@
 module Pickles.PlonkChecks
   ( -- * Evaluation Types
     AllEvals
+  , extractEvalFields
   , absorbAllEvals
   -- * PlonkChecks Circuit
   , PlonkChecksInput
@@ -21,7 +22,8 @@ module Pickles.PlonkChecks
 import Prelude
 
 import Data.Foldable (traverse_)
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import Pickles.Linearization (LinearizationPoly)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
@@ -58,6 +60,16 @@ type AllEvals f =
   , coeffEvals :: Vector 15 (PointEval f)
   , sigmaEvals :: Vector 6 (PointEval f)
   }
+
+-- | Extract the 43 always-present evaluation fields in CIP order:
+-- | z(1), index(6), witness(15), coeff(15), sigma(6).
+extractEvalFields :: forall f. (PointEval f -> f) -> AllEvals f -> Vector 43 f
+extractEvalFields proj evals =
+  proj evals.zEvals :<
+    map proj evals.indexEvals
+      `Vector.append` map proj evals.witnessEvals
+      `Vector.append` map proj evals.coeffEvals
+      `Vector.append` map proj evals.sigmaEvals
 
 -- | Absorb all polynomial evaluations into the sponge.
 -- |

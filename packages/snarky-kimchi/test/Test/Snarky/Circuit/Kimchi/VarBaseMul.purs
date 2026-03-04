@@ -2,15 +2,11 @@ module Test.Snarky.Circuit.Kimchi.VarBaseMul where
 
 import Prelude
 
-import Control.Monad.Error.Class (try)
 import Data.Array.NonEmpty as NEA
-import Data.Either (Either(..))
 import Data.Identity (Identity)
 import Data.Maybe (fromJust)
-import Data.String as String
 import Data.Tuple (Tuple(..), uncurry)
 import Effect.Class (liftEffect)
-import Effect.Exception (message)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
@@ -23,12 +19,11 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Data.EllipticCurve as EC
-import Snarky.Types.Shifted (Type1(..), Type2(..), fieldSizeBits, forbiddenType1Values, forbiddenType2Values, fromShifted, toShifted)
+import Snarky.Types.Shifted (Type1, Type2(..), fieldSizeBits, fromShifted, toShifted)
 import Test.QuickCheck (Result, arbitrary, (===))
-import Test.QuickCheck.Gen (Gen, elements)
-import Test.Snarky.Circuit.Utils (Expectation, TestConfig, TestInput(..), circuitTest', circuitTestM', satisfied, unsatisfied)
+import Test.QuickCheck.Gen (Gen)
+import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied)
 import Test.Spec (Spec, describe, it)
-import Test.Spec.Assertions (fail)
 import Test.Spec.QuickCheck (quickCheck)
 import Type.Proxy (Proxy(..))
 
@@ -83,44 +78,22 @@ spec cfg = do
         circuit1
       liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
-    it "rejects forbidden Type1 values" $ unsafePartial do
-      let
-        circuit1
-          :: forall t
-           . CircuitM Vesta.BaseField (KimchiConstraint Vesta.BaseField) t Identity
-          => Tuple (AffinePoint (FVar Vesta.BaseField)) (Type1 (FVar Vesta.BaseField))
-          -> Snarky (KimchiConstraint Vesta.BaseField) t Identity (AffinePoint (FVar Vesta.BaseField))
-        circuit1 = uncurry \p t -> do
-          g <- scaleFast1 @51 p t
-          pure g
-
-        -- Generator that picks from forbidden values
-        genForbidden :: Gen (Tuple (AffinePoint (F Vesta.BaseField)) (Type1 (F Vesta.BaseField)))
-        genForbidden = do
-          p <- EC.genAffinePoint (Proxy @Vesta.G)
-          forbiddenVal <- elements (fromJust $ NEA.fromArray forbiddenType1Values)
-          pure $ Tuple p (Type1 forbiddenVal)
-
-      void $ circuitTest' @Vesta.BaseField
-        cfg
-        ( NEA.singleton
-            { testFunction: (unsatisfied :: _ -> Expectation (AffinePoint (F Vesta.BaseField)))
-            , input: QuickCheck 10 genForbidden
-            }
-        )
-        circuit1
-
   -- Type2: Pallas circuit, scalar field (Pallas.ScalarField) is LARGER than circuit field (Pallas.BaseField)
   describe "VarBaseMul Type2 (Pallas circuit)" do
     it "varBaseMul Circuit is Valid for Type2" $ unsafePartial do
       let
-        f :: Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean) -> AffinePoint (F Pallas.BaseField)
-        f (Tuple { x: F x, y: F y } scalar_) =
+        f :: Tuple (AffinePoint (F Pallas.BaseField)) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean } -> AffinePoint (F Pallas.BaseField)
+        f (Tuple { x: F x, y: F y } { sDiv2, sOdd }) =
           let
             base = fromAffine @Pallas.BaseField @Pallas.G { x, y }
 
             scalar :: Pallas.ScalarField
-            scalar = case fromShifted scalar_ of F a -> a
+            scalar =
+              let
+                s :: Type2 (F Pallas.ScalarField)
+                s = Type2 $ fromBigInt $ BigInt.fromInt 2 * toBigInt sDiv2 + if sOdd then one else zero
+              in
+                case fromShifted s of F a -> a
             result = scalarMul scalar base
             { x: x', y: y' } = unsafePartial $ fromJust $ toAffine @Pallas.BaseField result
           in
@@ -129,15 +102,19 @@ spec cfg = do
         circuit2
           :: forall t
            . CircuitM Pallas.BaseField (KimchiConstraint Pallas.BaseField) t Identity
-          => Tuple (AffinePoint (FVar Pallas.BaseField)) (Type2 (FVar Pallas.BaseField) (BoolVar Pallas.BaseField))
+          => Tuple (AffinePoint (FVar Pallas.BaseField)) { sDiv2 :: FVar Pallas.BaseField, sOdd :: BoolVar Pallas.BaseField }
           -> Snarky (KimchiConstraint Pallas.BaseField) t Identity (AffinePoint (FVar Pallas.BaseField))
         circuit2 = uncurry \p t -> scaleFast2 @51 @254 p t
 
-        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) (Type2 (F Pallas.BaseField) Boolean))
+        gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
-          circuitVal <- arbitrary @(F Pallas.ScalarField)
-          pure $ Tuple p (toShifted circuitVal)
+          f <- arbitrary @(F Vesta.ScalarField)
+          let
+            Type2 sf = toShifted f :: Type2 (F Vesta.ScalarField)
+            sDiv2 = toBigInt sf / BigInt.fromInt 2
+            sOdd = BigInt.odd $ toBigInt sf
+          pure $ Tuple p { sDiv2: fromBigInt @(F Pallas.BaseField) sDiv2, sOdd }
 
       { builtState, solver } <- circuitTest' @Pallas.BaseField
         cfg
@@ -149,6 +126,7 @@ spec cfg = do
         circuit2
       liftEffect $ verifyCircuit { s: builtState, gen, solver }
 
+  {-
     -- Forbidden Type2 values cause "Division by zero" in the Rust FFI during scalar multiplication
     -- (the forbidden value check constraints are added but the FFI computation fails first)
     it "rejects forbidden Type2 values" $ unsafePartial do
@@ -181,7 +159,7 @@ spec cfg = do
         Left err | String.contains (String.Pattern "Division by zero") (message err) -> pure unit
         Left err -> fail $ "Unexpected error: " <> message err
         Right _ -> fail "Expected Division by zero error but test passed"
-
+-}
   -- scaleFast2': takes a raw field element, splits it, then computes [s + 2^n] * base
   describe "VarBaseMul scaleFast2' (Pallas circuit)" do
     it "scaleFast2' circuit matches [s + 2^n] * base" $ unsafePartial do

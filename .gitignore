@@ -57,3 +57,6 @@ packages/pickles-codegen/rust/output/
 deps.svg
 deps.dot
 deps.json
+
+# Presentation
+presentation/

@@ -15,13 +15,12 @@ import Prelude
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Effect.Aff (Aff)
-import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
-import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
-import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Circuit.Kimchi (Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.TestContext (InductiveTestContext, buildFinalizeInput, buildFinalizeParams)
@@ -34,11 +33,11 @@ import Test.Spec (SpecT, describe, it)
 
 -- | Value type for test input (Wrap-side finalize: verifying Step proof → d = StepIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput StepIPARounds (F WrapField) (Type1 (F WrapField)) Boolean
+  FinalizeOtherProofInput 0 StepIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput StepIPARounds (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
+  FinalizeOtherProofInput 0 StepIPARounds (FVar WrapField) (Type2 (FVar WrapField)) (BoolVar WrapField)
 
 -------------------------------------------------------------------------------
 -- | Real data test (All-checks with Step proof)
@@ -58,10 +57,7 @@ realDataSpec cfg =
           => FinalizeOtherProofTestInputVar
           -> Snarky (KimchiConstraint WrapField) t Identity Unit
         circuit x = do
-          let
-            ops :: IPA.IpaScalarOps WrapField t Identity (Type1 (FVar WrapField))
-            ops = IPA.type1ScalarOps
-          { finalized } <- evalSpongeM initialSpongeCircuit (finalizeOtherProofCircuit ops params x)
+          { finalized } <- finalizeOtherProofCircuit WrapOtherField.fopShiftOps params x
           assert_ finalized
 
       void $ circuitTest' @WrapField

@@ -1,7 +1,9 @@
 module Snarky.Backend.Kimchi
   ( makeConstraintSystem
   , makeGateData
+  , makePublicInputRows
   , makeWitness
+  , placeVariables
   ) where
 
 import Prelude

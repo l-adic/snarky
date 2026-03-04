@@ -10,10 +10,18 @@ module Pickles.PlonkChecks.CombinedInnerProduct
   ( CombinedInnerProductCheckInput
   , BatchingScalars
   , combinedInnerProductCheckCircuit
+  , EvalOpt(..)
+  , hornerCombine
+  , buildEvalList
+  , buildEvalListUnmasked
   ) where
 
 import Prelude
 
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
+import Data.Foldable (foldM)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Commitments (combinedInnerProductCircuit)
@@ -23,7 +31,8 @@ import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Prim.Int (class Add)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -117,3 +126,91 @@ combinedInnerProductCheckCircuit params zeta scalars input = do
     , evalscale: scalars.evalscale
     , evals: allEvals
     }
+
+-------------------------------------------------------------------------------
+-- | Horner-scheme CIP computation
+-------------------------------------------------------------------------------
+
+-- | Evaluation in the Horner fold: either always present (Just) or masked (Maybe).
+-- |
+-- | Matches OCaml's `Pcs_batch.combine_split_evaluations` which uses
+-- | `Shifted_value.of_cvar` for always-present and `if_` for masked evaluations.
+data EvalOpt f
+  = EvalJust (FVar f)
+  | EvalMaybe (BoolVar f) (FVar f)
+
+-- | Horner fold matching OCaml's `Pcs_batch.combine_split_evaluations`.
+-- |
+-- | Takes the polynomial batching scalar (xi) and a flat evaluation list.
+-- | Reverses the list, initializes from head, folds with mul_and_add:
+-- |   Just fx → fx + xi * acc
+-- |   Maybe (b, fx) → if b then (fx + xi * acc) else acc
+-- |
+-- | Reference: step_verifier.ml:1060-1121 (combine ~ft ~sg_evals)
+hornerCombine
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> NonEmptyArray (EvalOpt f)
+  -> Snarky c t m (FVar f)
+hornerCombine xi evals = do
+  let
+    reversed = NEA.reverse evals
+    { head: initVal, tail: rest } = NEA.uncons reversed
+    initResult = case initVal of
+      EvalJust x -> x
+      EvalMaybe _ x -> x -- unreachable in practice: init is always Just
+  foldM
+    ( \acc opt -> case opt of
+        EvalJust fx -> do
+          xiAcc <- pure xi * pure acc
+          pure (add_ fx xiAcc)
+        EvalMaybe b fx -> do
+          xiAcc <- pure xi * pure acc
+          let then_ = add_ fx xiAcc
+          if_ b then_ acc
+    )
+    initResult
+    rest
+
+-- | Build the flat evaluation list matching OCaml's combine function.
+-- |
+-- | Order: sg_evals(n), public_input, ft_eval, z+index+witness+coeff+sigma (43).
+-- | This matches `Evals.In_circuit.to_list` order for always-present fields.
+buildEvalList
+  :: forall n f _l
+   . Add 1 _l n
+  => { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
+     , publicInput :: FVar f
+     , ftEval :: FVar f
+     , evals :: Vector 43 (FVar f)
+     }
+  -> NonEmptyArray (EvalOpt f)
+buildEvalList x =
+  let
+    sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) (NEA.fromFoldable1 x.sgEvals)
+    others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
+    evals = map EvalJust $ NEA.fromFoldable1 x.evals
+  in
+    NEA.concat $ NEA.cons' sgEvals [ others, evals ]
+
+-- | Build evaluation list with all sg_evals unmasked (EvalJust).
+-- |
+-- | Used by the Wrap FOP where all previous proofs are always present
+-- | (no proofs-verified mask).
+buildEvalListUnmasked
+  :: forall n f _l
+   . Add 1 _l n
+  => { sgEvals :: Vector n (FVar f)
+     , publicInput :: FVar f
+     , ftEval :: FVar f
+     , evals :: Vector 43 (FVar f)
+     }
+  -> NonEmptyArray (EvalOpt f)
+buildEvalListUnmasked x =
+  let
+    sgEvals = map EvalJust $ NEA.fromFoldable1 x.sgEvals
+    others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
+    evals = map EvalJust $ NEA.fromFoldable1 x.evals
+  in
+    NEA.concat $ NEA.cons' sgEvals [ others, evals ]
