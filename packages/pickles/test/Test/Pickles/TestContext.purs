@@ -122,7 +122,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsSize, verifyProverIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, toField, true_, valueToFields, wrapF)
@@ -1237,7 +1237,7 @@ createWrapProofContext stepCtx = do
     KimchiConstraint.initialState
 
   Console.debug "Creating CRS for Wrap circuit"
-  crs <- liftEffect $ createCRS @WrapField
+  let crs = crsCreate @WrapField (pow2 15)
   Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Wrap circuit"
   createTestContext'
     { builtState

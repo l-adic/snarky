@@ -71,7 +71,7 @@ ipaFinalCheckTest cfg ctx = do
     -- Commitment curve for our Fp circuit is Pallas (base Fp).
     delta = ProofFFI.vestaProofOpeningDelta ctx.proof
     sg = ProofFFI.vestaProofOpeningSg ctx.proof
-    lr = toVectorOrThrow @16 "ipaFinalCheckTest vestaProofOpeningLr" $
+    lr = toVectorOrThrow @WrapIPARounds "ipaFinalCheckTest vestaProofOpeningLr" $
       ProofFFI.vestaProofOpeningLr ctx.proof
     blindingGenerator = ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     combinedPolynomial = ProofFFI.vestaCombinedPolynomialCommitment ctx.verifierIndex
@@ -84,7 +84,7 @@ ipaFinalCheckTest cfg ctx = do
     ipaCtx = mkWrapIpaContext ctx
 
     -- Circuit input
-    input :: IpaFinalCheckInput 16 (F Vesta.ScalarField) (Type2 (SplitField (F Vesta.ScalarField) Boolean))
+    input :: IpaFinalCheckInput WrapIPARounds (F Vesta.ScalarField) (Type2 (SplitField (F Vesta.ScalarField) Boolean))
     input =
       { delta: coerce delta
       , sg: coerce sg
@@ -100,7 +100,7 @@ ipaFinalCheckTest cfg ctx = do
     circuit
       :: forall t m
        . CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-      => IpaFinalCheckInput 16 (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
+      => IpaFinalCheckInput WrapIPARounds (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField)))
       -> Snarky (KimchiConstraint Vesta.ScalarField) t m Unit
     circuit inVar = do
       let
