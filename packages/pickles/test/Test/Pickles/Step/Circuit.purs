@@ -115,15 +115,16 @@ type StepSchnorrInputVar =
 realDataSpec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> SpecT Aff InductiveTestContext Aff Unit
 realDataSpec cfg =
   describe "Pickles.Step.Circuit (real data)" do
-    it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ wrap0 } -> do
+    it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ step0, wrap0 } -> do
       schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
       let
         challengeDigest = computeStepChallengeDigest wrap0
-        sgEvals = computeStepSgEvals wrap0
-        params = buildStepFinalizeParams wrap0
+        sgEvals = computeStepSgEvals step0 wrap0
+        params = buildStepFinalizeParams step0
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
           , sgPointEvals: sgEvals
+          , stepCtx: step0
           , wrapCtx: wrap0
           }
 
@@ -134,7 +135,7 @@ realDataSpec cfg =
           , unfinalizedProofs: type1ToType2SF fopInput.unfinalized :< nil
           , prevChallengeDigests: F challengeDigest :< nil
           }
-        witnessData = buildStepProverWitness wrap0
+        witnessData = buildStepProverWitness step0 wrap0
       let
         realCircuit
           :: forall t m

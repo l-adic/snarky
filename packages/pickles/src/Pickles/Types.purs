@@ -30,9 +30,8 @@ type WrapField = Pallas.ScalarField
 -- | IPA rounds in a Step proof (= log2 of Vesta SRS size = Rounds.Step = 16).
 type StepIPARounds = 16
 
--- | IPA rounds in a Step proof (= log2 of Vesta SRS size = Rounds.Step = 16).
--- NOTE: This should be 15, but the circuit is unoptimized
-type WrapIPARounds = 16
+-- | IPA rounds in a Wrap proof (= log2 of Pallas SRS size = Rounds.Wrap = 15).
+type WrapIPARounds = 15
 
 -- | Step proofs commit on Vesta (scalar field = Fp = StepField).
 type StepCommitmentCurve = Vesta.G

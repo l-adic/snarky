@@ -39,7 +39,7 @@ spec = describe "Dummy values" do
       chals :: BulletproofChallenges WrapIPARounds (F StepField)
       chals = dummyBulletproofChallenges @WrapIPARounds
       arr = Vector.toUnfoldable chals :: Array _
-    Array.length arr `shouldEqual` 16
+    Array.length arr `shouldEqual` 15
     -- Check first challenge is zero
     let (F first) = SizedF.toField $ unsafePartial fromJust $ Array.head arr
     first `shouldEqual` zero
