@@ -9,6 +9,7 @@ module Snarky.Circuit.DSL.Field
   , neq_
   , sum_
   , pow_
+  , square_
   ) where
 
 import Prelude
@@ -20,7 +21,7 @@ import Snarky.Circuit.CVar (CVar(..), const_)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, exists, readCVar)
 import Snarky.Circuit.Types (Bool(..), BoolVar, F, FVar)
-import Snarky.Constraint.Basic (r1cs)
+import Snarky.Constraint.Basic (r1cs, square)
 import Snarky.Curves.Class (class PrimeField)
 
 equals
@@ -80,3 +81,19 @@ pow_ x n
       y <- pow_ sq (n / 2)
       if n `mod` 2 == 0 then pure y
       else pure x * pure y
+
+-- | Square a field variable, using a Square constraint (as opposed to R1CS).
+-- | Matches OCaml's `Checked.square` / `Field.square`.
+square_
+  :: forall f c t m
+   . CircuitM f c t m
+  => FVar f
+  -> Snarky c t m (FVar f)
+square_ a = case a of
+  Const f -> pure $ Const (f * f)
+  _ -> do
+    z <- exists do
+      aVal <- readCVar a
+      pure $ aVal * aVal
+    addConstraint $ square a z
+    pure z
