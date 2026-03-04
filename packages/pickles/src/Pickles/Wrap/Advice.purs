@@ -49,7 +49,7 @@ import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
-import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Circuit.Kimchi (Type1, Type2)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -107,7 +107,7 @@ class Monad m <= WrapWitnessM (ds :: Int) (dw :: Int) m f where
   -- | values are Fq-recomputed (same-field), distinct from the WrapStatement's
   -- | Fp-origin deferred values used by IVP.
   -- | OCaml: derived from Req.Proof_state (unfinalized_proofs)
-  getUnfinalizedProof :: Unit -> m (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
+  getUnfinalizedProof :: Unit -> m (UnfinalizedProof dw (F f) (Type2 (F f)) Boolean)
 
   -- | Previous challenge digest for finalizeOtherProof.
   getPrevChallengeDigest :: Unit -> m (F f)

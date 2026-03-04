@@ -42,13 +42,14 @@ import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, sq
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
+import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.CVar (negate_, scale_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (toField)
+import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
 
@@ -63,10 +64,10 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | - No `domainLog2Var`: domain is fixed at compile time
 -- |
 -- | Reference: wrap_verifier.ml:1511-1520
-type WrapFinalizeOtherProofInput n d f sf b =
-  { unfinalized :: UnfinalizedProof d f sf b
-  , witness :: ProofWitness f
-  , prevChallenges :: Vector n (Vector d f)
+type WrapFinalizeOtherProofInput n d fv b =
+  { unfinalized :: UnfinalizedProof d fv (Type2 fv) b
+  , witness :: ProofWitness fv
+  , prevChallenges :: Vector n (Vector d fv)
   }
 
 -------------------------------------------------------------------------------
@@ -81,7 +82,7 @@ maxAlphaPower = 70
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783
 wrapFinalizeOtherProofCircuit
-  :: forall _d d _n n f f' g t m sf r1 r2
+  :: forall _d d _n n f f' g t m r2
    . Add 1 _d d
   => Add 1 _n n
   => PrimeField f
@@ -91,16 +92,12 @@ wrapFinalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => { unshift :: sf -> FVar f
-     , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
-     , sealInner :: sf -> Snarky (KimchiConstraint f) t m sf
-     | r1
-     }
-  -> FinalizeOtherProofParams f r2
-  -> WrapFinalizeOtherProofInput n d (FVar f) sf (BoolVar f)
+  => FinalizeOtherProofParams f r2
+  -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-wrapFinalizeOtherProofCircuit ops params { unfinalized, witness, prevChallenges } = do
+wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = do
   let
+    ops = WrapOtherField.fopShiftOps @f @m
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
     allEvals = witness.allEvals

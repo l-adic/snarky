@@ -13,6 +13,7 @@ module Snarky.Types.Shifted
   , ofFieldType1Circuit
   , shiftedEqualType1
   , fromShiftedType2Circuit
+  , shiftedEqualType2
   , fromShiftedSplitFieldCircuit
   ) where
 
@@ -469,6 +470,20 @@ fromShiftedType2Circuit (Type2 sf) =
     twoToN = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt n))
   in
     add_ sf (const_ twoToN)
+
+-- | Compare a claimed Type2 shifted value against a raw computed value.
+-- | Matches OCaml's `Shifted_value.Type2.equal`:
+-- |   equal (claimed + 2^n) raw_computed
+shiftedEqualType2
+  :: forall f n c t m
+   . PrimeField f
+  => FieldSizeInBits f n
+  => CircuitM f c t m
+  => Type2 (FVar f)
+  -> FVar f
+  -> Snarky c t m (BoolVar f)
+shiftedEqualType2 shifted rawComputed =
+  equals_ (fromShiftedType2Circuit shifted) rawComputed
 
 -- | Unshift a SplitField circuit variable: s = 2*sDiv2 + sOdd + 2^n
 -- | This is the cross-field shifted representation used by the Step circuit.

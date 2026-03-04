@@ -11,28 +11,23 @@
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_main.ml (Other_field = Wrap.Other_field)
 module Pickles.Wrap.OtherField
-  ( WrapOtherFieldVar
-  , WrapOtherFieldVal
+  ( WrapOtherField
   , ipaScalarOps
   , fopShiftOps
   ) where
 
 import Prelude
 
-import JS.BigInt as BigInt
-import Pickles.IPA (IpaScalarOps)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, add_, const_, equals_, seal)
-import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, scaleFast1, shiftedEqualType1)
+import Pickles.ShiftOps (IpaScalarOps)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, seal)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, fromShiftedType2Circuit, scaleFast1, shiftedEqualType1, shiftedEqualType2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, fromBigInt)
+import Snarky.Curves.Class (class FieldSizeInBits)
 
--- | Wrap circuit's cross-field variable type.
+-- | Wrap circuit's cross-field variable type for IPA.
 -- | Represents Fp values (from the other curve) as a single field element
 -- | with Type1 shift: s = 2*t + 2^n + 1.
-type WrapOtherFieldVar f = Type1 (FVar f)
-
--- | Wrap circuit's cross-field value type (for witness generation).
-type WrapOtherFieldVal f = Type1 (F f)
+type WrapOtherField f = Type1 f
 
 -- | IPA scalar ops for the Wrap circuit.
 -- |
@@ -45,7 +40,7 @@ ipaScalarOps
   :: forall f t m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (WrapOtherFieldVar f)
+  => IpaScalarOps f t m (WrapOtherField (FVar f))
 ipaScalarOps =
   { scaleByShifted: \p t -> scaleFast1 @51 p t
   , shiftedToAbsorbFields: \(Type1 t) -> [ t ]
@@ -55,24 +50,20 @@ ipaScalarOps =
 
 -- | FOP shift ops for the Wrap circuit's finalizeOtherProof.
 -- |
--- | The Wrap FOP uses Type2 shift semantics (x + 2^n) for deferred values,
--- | NOT Type1 shift (2*x + 2^n + 1). This is because OCaml's Wrap.Other_field
--- | uses Shifted_value.Type2.
+-- | The Wrap FOP uses Type2 shift (x + 2^n) for deferred values,
+-- | matching OCaml's Shifted_value.Type2.
 -- |
 -- | The sealInner operation is needed for map_plonk_to_field in Wrap FOP.
 fopShiftOps
-  :: forall f t m
+  :: forall @f t @m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => { unshift :: WrapOtherFieldVar f -> FVar f
-     , shiftedEqual :: WrapOtherFieldVar f -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
-     , sealInner :: WrapOtherFieldVar f -> Snarky (KimchiConstraint f) t m (WrapOtherFieldVar f)
+  => { unshift :: Type2 (FVar f) -> FVar f
+     , shiftedEqual :: Type2 (FVar f) -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
+     , sealInner :: Type2 (FVar f) -> Snarky (KimchiConstraint f) t m (Type2 (FVar f))
      }
 fopShiftOps =
-  let
-    twoTo255 = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
-  in
-    { unshift: \(Type1 x) -> add_ x (const_ twoTo255)
-    , shiftedEqual: \(Type1 claimed) raw -> equals_ (add_ claimed (const_ twoTo255)) raw
-    , sealInner: \(Type1 x) -> Type1 <$> seal x
-    }
+  { unshift: fromShiftedType2Circuit
+  , shiftedEqual: shiftedEqualType2
+  , sealInner: \(Type2 x) -> Type2 <$> seal x
+  }

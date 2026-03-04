@@ -29,7 +29,6 @@ import Effect.Class (liftEffect)
 import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Foreign (MultipleErrors)
-import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -49,12 +48,12 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi (makePublicInputRows, placeVariables)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, formatGate, readCircuitJson)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, add_, const_, equals_, seal)
-import Snarky.Circuit.Kimchi (Type1(..), fromShiftedType1Circuit, toField)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState, KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar, fromBigInt)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Test.Spec (Spec, describe, it)
@@ -89,12 +88,6 @@ wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @WrapField in e
 -- | Wrap srs_length_log2 = Nat.to_int Tock.Rounds.n = 15
 wrapSrsLengthLog2 :: Int
 wrapSrsLengthLog2 = 15
-
--- | Type2 shift constant: 2^(size_in_bits) = 2^255 for 255-bit fields.
--- | Matches OCaml's Shifted_value.Type2.Shift.create which uses
--- | two_to_the (module F) F.size_in_bits.
-twoTo255 :: WrapField
-twoTo255 = fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
 
 -------------------------------------------------------------------------------
 -- | Input parsing helpers
@@ -272,16 +265,16 @@ finalizeOtherProofWrapCircuit inputs = do
       , beta: asSizedF128 (at 1)
       , gamma: asSizedF128 (at 2)
       , zeta: asSizedF128 (at 3)
-      , zetaToSrsLength: Type1 (at 4)
-      , zetaToDomainSize: Type1 (at 5)
-      , perm: Type1 (at 6)
+      , zetaToSrsLength: Type2 (at 4)
+      , zetaToDomainSize: Type2 (at 5)
+      , perm: Type2 (at 6)
       }
 
     -- DeferredValues (no mask, no domainLog2)
     deferredValues =
       { plonk
-      , combinedInnerProduct: Type1 (at 7)
-      , b: Type1 (at 8)
+      , combinedInnerProduct: Type2 (at 7)
+      , b: Type2 (at 8)
       , xi: asSizedF128 (at 9)
       , bulletproofChallenges:
           (Vector.generate \j -> asSizedF128 (at (10 + getFinite j))) :: Vector 16 _
@@ -340,13 +333,6 @@ finalizeOtherProofWrapCircuit inputs = do
       , prevChallenges
       }
 
-    -- Type2 shift ops (carrier: Type1, shift: x + 2^254)
-    ops =
-      { unshift: \(Type1 x) -> add_ x (const_ twoTo255)
-      , shiftedEqual: \(Type1 claimed) raw -> equals_ (add_ claimed (const_ twoTo255)) raw
-      , sealInner: \(Type1 x) -> Type1 <$> seal x
-      }
-
     -- Build compile-time params
     params =
       { domain:
@@ -359,7 +345,7 @@ finalizeOtherProofWrapCircuit inputs = do
       , linearizationPoly: Linearization.vesta
       }
 
-  void $ wrapFinalizeOtherProofCircuit ops params input
+  void $ wrapFinalizeOtherProofCircuit params input
 
 -------------------------------------------------------------------------------
 -- | pow2PowSquare sub-circuit

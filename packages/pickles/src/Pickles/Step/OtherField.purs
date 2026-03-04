@@ -12,15 +12,14 @@
 -- |
 -- | Reference: mina/src/lib/pickles/step_main.ml (Other_field = Step.Other_field)
 module Pickles.Step.OtherField
-  ( StepOtherFieldVar
-  , StepOtherFieldVal
-  , ipaScalarOps
+  ( StepOtherField
   , fopShiftOps
+  , ipaScalarOps
   ) where
 
-import Pickles.IPA (IpaScalarOps)
+import Pickles.ShiftOps (FopShiftOps, IpaScalarOps)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, equals_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, equals_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..), fromShiftedSplitFieldCircuit, scaleFast2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
@@ -29,10 +28,7 @@ import Snarky.Curves.Class (class FieldSizeInBits)
 -- | Represents Fq values (from the other curve) split as (sDiv2, sOdd)
 -- | with a 2^n shift, wrapped in Type2 for explicit shift semantics
 -- | and forbidden value checks via CheckedType.
-type StepOtherFieldVar f = Type2 (SplitField (FVar f) (BoolVar f))
-
--- | Step circuit's cross-field value type (for witness generation).
-type StepOtherFieldVal f = Type2 (SplitField (F f) Boolean)
+type StepOtherField f b = Type2 (SplitField f b)
 
 -- | IPA scalar ops for the Step circuit.
 -- |
@@ -45,7 +41,7 @@ ipaScalarOps
   :: forall f t m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => IpaScalarOps f t m (StepOtherFieldVar f)
+  => IpaScalarOps f t m (StepOtherField (FVar f) (BoolVar f))
 ipaScalarOps =
   { scaleByShifted: \p (Type2 (SplitField t)) -> scaleFast2 @51 @254 p t
   , shiftedToAbsorbFields: \(Type2 (SplitField { sDiv2, sOdd })) -> [ sDiv2, coerce sOdd ]
@@ -61,9 +57,7 @@ fopShiftOps
   :: forall f t m
    . FieldSizeInBits f 255
   => CircuitM f (KimchiConstraint f) t m
-  => { unshift :: StepOtherFieldVar f -> FVar f
-     , shiftedEqual :: StepOtherFieldVar f -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
-     }
+  => FopShiftOps f t m (StepOtherField (FVar f) (BoolVar f))
 fopShiftOps =
   { unshift: \(Type2 sf) -> fromShiftedSplitFieldCircuit sf
   , shiftedEqual: \(Type2 sf) raw -> equals_ (fromShiftedSplitFieldCircuit sf) raw

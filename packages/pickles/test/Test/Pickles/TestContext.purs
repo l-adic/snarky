@@ -115,7 +115,6 @@ import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
 import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
-import Pickles.Wrap.OtherField as WrapOtherField
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
@@ -242,7 +241,7 @@ type WrapAdvice (ds :: Int) (dw :: Int) f =
       , z1 :: Type1 (F f)
       , z2 :: Type1 (F f)
       }
-  , unfinalized :: UnfinalizedProof dw (F f) (Type1 (F f)) Boolean
+  , unfinalized :: UnfinalizedProof dw (F f) (Type2 (F f)) Boolean
   , prevChallengeDigest :: F f
   , stepIOFields :: Array (F f)
   }
@@ -1078,18 +1077,18 @@ buildWrapCircuitInput ctx =
     , messagesForNextStepProof: zero -- stub
     }
 
--- | Convert an UnfinalizedProof from Type2 (SplitField) to Type1 shifted representation.
+-- | Convert an UnfinalizedProof from Type2 (SplitField) to Type2 (single field) representation.
 -- | Used to provide the Step proof's forwarded unfinalized proof (Type2 SplitField) to
--- | the Wrap circuit's finalize (which uses Type1 scalar ops).
+-- | the Wrap circuit's finalize (which uses Type2 shift ops).
 -- | The conversion is out-of-circuit: fromShifted recovers the raw value,
--- | toShifted re-encodes it as Type1.
+-- | toShifted re-encodes it as Type2 (single field).
 convertUnfinalized
   :: forall d
    . UnfinalizedProof d (F WrapField) (Type2 (SplitField (F WrapField) Boolean)) Boolean
-  -> UnfinalizedProof d (F WrapField) (Type1 (F WrapField)) Boolean
+  -> UnfinalizedProof d (F WrapField) (Type2 (F WrapField)) Boolean
 convertUnfinalized u =
   let
-    conv :: Type2 (SplitField (F WrapField) Boolean) -> Type1 (F WrapField)
+    conv :: Type2 (SplitField (F WrapField) Boolean) -> Type2 (F WrapField)
     conv (Type2 t2) = toShifted (fromShifted t2 :: F WrapField)
     d = u.deferredValues
   in
@@ -1126,8 +1125,8 @@ buildWrapProverWitness ctx =
       (map (\fp -> fromBigInt (toBigInt fp) :: WrapField) ctx.publicInputs)
     stepUnfinalized = Vector.head stepOutput.proofState.unfinalizedProofs
 
-    -- Convert SplitField→Type1 shifted values (out-of-circuit, pure PureScript).
-    -- The finalize circuit uses WrapOtherField.ipaScalarOps, so we provide Type1 values.
+    -- Convert SplitField→Type2 shifted values (out-of-circuit, pure PureScript).
+    -- The finalize circuit uses Type2 shift ops, so we provide Type2 (single field) values.
     unfinalized = convertUnfinalized stepUnfinalized
 
     -- Polynomial evaluations for finalize (still from buildFinalizeInput)
@@ -1176,7 +1175,6 @@ createWrapProofContext stepCtx = do
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit =
       wrapCircuit @1 @StepIPARounds
-        WrapOtherField.ipaScalarOps
         params
 
     solverCircuit

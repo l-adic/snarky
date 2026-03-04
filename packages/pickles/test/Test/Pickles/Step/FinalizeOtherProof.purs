@@ -19,8 +19,8 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
-import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
+import Pickles.ShiftOps as ShiftOps
 import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
@@ -71,7 +71,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
         -> Snarky (KimchiConstraint StepField) t Identity Unit
       dummyTestCircuit x =
         let
-          ops :: IPA.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+          ops :: ShiftOps.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
           ops = StepOtherField.ipaScalarOps
         in
           void $ finalizeOtherProofCircuit ops dummyFinalizeOtherProofParams x
@@ -100,7 +100,7 @@ realDataSpec cfg =
           -> Snarky (KimchiConstraint StepField) t Identity Unit
         circuit x = do
           let
-            ops :: IPA.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+            ops :: ShiftOps.IpaScalarOps StepField t Identity (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
             ops = StepOtherField.ipaScalarOps
           r <- finalizeOtherProofCircuit ops params x
           assert_ r.cipCorrect

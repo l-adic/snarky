@@ -30,7 +30,6 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (dummyWrapChallengesExpanded)
-import Pickles.IPA (IpaScalarOps)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
@@ -148,11 +147,10 @@ wrapCircuit
   => Reflectable ds Int
   => Reflectable n Int
   => Add 1 _l3 ds
-  => IpaScalarOps Pallas.ScalarField t m (Type1 (FVar Pallas.ScalarField))
-  -> WrapParams Pallas.ScalarField
+  => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit scalarOps params wrapStmt = do
+wrapCircuit params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
   -- Step statement obtained privately (OCaml: pack_statement prev_statement)
   publicInput <- exists $ lift $ do
@@ -168,7 +166,7 @@ wrapCircuit scalarOps params wrapStmt = do
   -- TODO: wire real prevChallenges from advisory system
   -- 2. Finalize deferred values (uses private unfinalized proof)
   { finalized, expandedChallenges } <-
-    wrapFinalizeOtherProofCircuit WrapOtherField.fopShiftOps params
+    wrapFinalizeOtherProofCircuit params
       { unfinalized, witness, prevChallenges: Vector.nil }
 
   -- 3. Assert finalized || not shouldFinalize
@@ -187,7 +185,7 @@ wrapCircuit scalarOps params wrapStmt = do
       , opening: openingProof
       }
   success <- evalSpongeM initialSpongeCircuit $
-    verify @VestaG scalarOps params fullIvpInput false_
+    verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
       wrapStmt.proofState.spongeDigestBeforeEvaluations
   assert_ success
 

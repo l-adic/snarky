@@ -15,8 +15,8 @@ import Prelude
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Effect.Aff (Aff)
-import Pickles.IPA as IPA
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
+import Pickles.ShiftOps as ShiftOps
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Types (StepIPARounds, WrapField)
 import Pickles.Wrap.OtherField as WrapOtherField
@@ -59,7 +59,7 @@ realDataSpec cfg =
           -> Snarky (KimchiConstraint WrapField) t Identity Unit
         circuit x = do
           let
-            ops :: IPA.IpaScalarOps WrapField t Identity (Type1 (FVar WrapField))
+            ops :: ShiftOps.IpaScalarOps WrapField t Identity (Type1 (FVar WrapField))
             ops = WrapOtherField.ipaScalarOps
           { finalized } <- finalizeOtherProofCircuit ops params x
           assert_ finalized
