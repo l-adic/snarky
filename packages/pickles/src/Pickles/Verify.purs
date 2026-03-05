@@ -27,8 +27,9 @@ import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (SpongeM, liftSnarky)
-import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit, spongeTranscriptOptCircuit)
+import Pickles.Sponge (SpongeM, initialSpongeCircuit, liftSnarky)
+import Pickles.Sponge as Sponge
+import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -36,6 +37,7 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
+import RandomOracle.Sponge (Sponge)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -------------------------------------------------------------------------------
@@ -126,13 +128,31 @@ incrementallyVerifyProof
 incrementallyVerifyProof scalarOps params input = do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
-  -- 1. Compute x_hat (public input commitment)
+  -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
+  indexDigest <- liftSnarky $ label "ivp_index_digest" $
+    Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
+      -- Absorption order matches OCaml's index_to_field_elements:
+      -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
+      let absorbConstPt { x: F x', y: F y' } = do
+            Sponge.absorb (const_ x')
+            Sponge.absorb (const_ y')
+      -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
+      for_ params.columnComms.sigma absorbConstPt
+      absorbConstPt params.sigmaCommLast
+      -- coefficients_comm: 15
+      for_ params.columnComms.coeff absorbConstPt
+      -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
+      for_ params.columnComms.index absorbConstPt
+      -- Squeeze digest
+      Sponge.squeeze
+
+  -- 2. Compute x_hat (public input commitment)
   xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
 
-  -- 2. Run Fq-sponge transcript
+  -- 3. Run Fq-sponge transcript
   let
     spongeInput =
-      { indexDigest: const_ params.indexDigest
+      { indexDigest
       , sgOld: input.sgOld
       , publicComm: xHat
       , wComm: input.wComm
@@ -142,11 +162,11 @@ incrementallyVerifyProof scalarOps params input = do
   { beta, gamma, alphaChal, zetaChal, digest } <-
     spongeTranscriptOptCircuit endoParams spongeInput
 
-  -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
+  -- 4. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky $ label "ivp_assert_plonk" $
     assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
 
-  -- 4. Compute ft_comm
+  -- 5. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
     { sigmaLast: constPt params.sigmaCommLast

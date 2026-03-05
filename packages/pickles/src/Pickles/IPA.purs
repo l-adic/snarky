@@ -55,7 +55,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
@@ -232,10 +232,8 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
   -- Absorb L and R points into the sponge
   absorbPoint l
   absorbPoint r
-  -- The result is a 128-bit scalar challenge, NOT a full field element.
-  -- In pickles, the endo mapping to full field happens separately when needed.
-  -- This matches the OCaml `squeeze_scalar` + `Bulletproof_challenge.unpack`.
-  squeezeScalarChallenge params
+  -- squeeze_scalar with constrain_low_bits:false (matches OCaml's squeeze_scalar)
+  squeezeScalar params
 
 -- | Pure version of extractScalarChallenges for testing.
 -- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
@@ -462,8 +460,8 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- 3. Absorb delta point
   absorbPoint input.delta
 
-  -- 4. Derive c via squeeze (as 128-bit scalar challenge)
-  c <- squeezeScalarChallenge params
+  -- 4. Derive c via squeeze_scalar (constrain_low_bits:false, matches OCaml)
+  c <- squeezeScalar params
 
   success <- liftSnarky $ do
     -- 5. Compute lr_prod from L/R pairs and challenges
