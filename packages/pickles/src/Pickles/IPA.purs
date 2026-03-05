@@ -55,10 +55,10 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -455,7 +455,8 @@ ipaFinalCheckCircuit scalarOps params input = do
     liftSnarky $ groupMapCircuit params.groupMapParams t
 
   -- 2. Extract 128-bit scalar challenges from L/R pairs
-  scalarChallenges <- extractScalarChallenges params input.lr
+  scalarChallenges <- labelM "ipa_extract_challenges" $
+    extractScalarChallenges params input.lr
 
   -- 3. Absorb delta point
   absorbPoint input.delta
@@ -463,9 +464,9 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- 4. Derive c via squeeze_scalar (constrain_low_bits:false, matches OCaml)
   c <- squeezeScalar params
 
-  success <- liftSnarky $ do
+  success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 5. Compute lr_prod from L/R pairs and challenges
-    { p: lrProd } <- bulletReduceCircuit @f @g
+    { p: lrProd } <- label "ipa_bullet_reduce" $ bulletReduceCircuit @f @g
       { pairs: input.lr
       , challenges: scalarChallenges
       }
@@ -583,11 +584,11 @@ checkBulletproof scalarOps params commitmentBases input = do
   for_ cipFields absorb
 
   -- 2. Compute combined polynomial via Horner
-  combinedPolynomial <- liftSnarky $
+  combinedPolynomial <- labelM "bp_combine_poly" $ liftSnarky $
     combinePolynomials commitmentBases input.xi
 
   -- 3. Delegate to ipaFinalCheckCircuit
-  ipaFinalCheckCircuit @f @g scalarOps params
+  labelM "bp_ipa_check" $ ipaFinalCheckCircuit @f @g scalarOps params
     { delta: input.delta
     , sg: input.sg
     , lr: input.lr

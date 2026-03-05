@@ -16,6 +16,7 @@
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
+  , MsmTerm(..)
   , ScalarMulResult
   , scalarMuls
   , rScalarMuls
@@ -39,7 +40,8 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_)
+import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
@@ -50,9 +52,15 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
+-- | A single term from walking the public input structure.
+-- | Matches OCaml's `Add_with_correction` and `Cond_add` variants.
+data MsmTerm f
+  = AddWithCorrection { point :: AffinePoint (FVar f), correction :: AffinePoint (F f) }
+  | CondAdd (BoolVar f) (AffinePoint (F f))
+
 -- | Intermediate result from walking the structure.
 type ScalarMulResult f =
-  { results :: Array { point :: AffinePoint (FVar f), correction :: AffinePoint (F f) }
+  { results :: Array (MsmTerm f)
   , rest :: Array (AffinePoint (F f))
   }
 
@@ -88,23 +96,26 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (FVar f) f where
 instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f where
   scalarMuls params sized bases = scalarMulLeaf @26 @127 params (toField sized) bases
 
--- | Boolean: 5 bits → 1 chunk, sDiv2Bits = 0
-instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (BoolVar f) f where
-  scalarMuls params bool bases = scalarMulLeaf @1 @0 params (coerce bool :: FVar f) bases
+-- | Boolean: Cond_add — conditionally add Lagrange point.
+-- | Matches OCaml's `Cond_add(b, lagrange(i))` for 1-bit values.
+instance PublicInputCommit (BoolVar f) f where
+  scalarMuls _ bool bases =
+    let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
+    in pure { results: [ CondAdd bool head ], rest: tail }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
   scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 @254 params fv bases
 
--- | Shifted scalar (SplitField): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (boolean → 1 chunk).
+-- | Shifted scalar (SplitField): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (Cond_add).
 -- | sDiv2 = (s - sOdd) / 2 can be up to 254 bits for full-width shifted scalars
 -- | (combinedInnerProduct, b, perm, zetaToSrsLength, zetaToDomainSize).
 -- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField (FVar f) (BoolVar f)) f where
   scalarMuls params (SplitField { sDiv2, sOdd }) bases = do
     { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
-    { results: r2, rest: rest2 } <- scalarMulLeaf @1 @0 params (coerce sOdd :: FVar f) rest1
-    pure { results: r1 <> r2, rest: rest2 }
+    let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
+    pure { results: r1 <> [ CondAdd sOdd oddBase ], rest: rest2 }
 
 -- | Type2-wrapped SplitField: delegates to bare SplitField instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (SplitField (FVar f) (BoolVar f))) f where
@@ -205,28 +216,43 @@ publicInputCommit
 publicInputCommit params input = do
   { results } <- scalarMuls params.curveParams input params.lagrangeComms
   case NEA.fromArray results of
-    -- No scalar multiplications (e.g., Unit input): x_hat = h
     Nothing -> pure (constPt params.blindingH)
     Just results' -> unsafePartial do
-      let { head, tail } = NEA.uncons results'
-
-      -- 1. Sum circuit results: sum([s_i + 2^n] * B_i)
-      accumulated <- foldM (\acc r -> _.p <$> addComplete acc r.point) head.point tail
-
-      -- 2. Sum pure corrections: sum([2^n] * B_i)
+      -- Separate scalar mul terms (with corrections) from cond_add terms
       let
-        totalCorrection = foldl
-          (\acc r -> addPurePts params.curveParams acc r.correction)
-          head.correction
-          tail
+        correctionPts = Array.mapMaybe
+          ( case _ of
+              AddWithCorrection r -> Just (constPt r.correction)
+              CondAdd _ _ -> Nothing
+          )
+          (NEA.toArray results')
 
-      -- 3. Subtract corrections → MSM = sum([s_i] * B_i)
-      let negCorr = wrapPt $ EC.negate_ $ unwrapPt totalCorrection
-      msm <- _.p <$> addComplete accumulated (constPt negCorr)
+      -- 1. Sum corrections in-circuit: init accumulator = sum([2^n] * B_i)
+      --    Matches OCaml: correction = reduce corrections ~f:add_fast
+      --    NOTE: These are all constant points so this could be done as pure math,
+      --    but OCaml generates CompleteAdd gates here and we match for equivalence.
+      let { head: corrHead, tail: corrTail } = fromJust $ Array.uncons correctionPts
+      init <- foldM (\acc c -> _.p <$> addComplete acc c) corrHead corrTail
 
-      -- 4. Negate MSM and add blinding generator
-      negMsm <- Curves.negate msm
-      _.p <$> addComplete negMsm (constPt params.blindingH)
+      -- 2. Fold over all terms, matching OCaml's fold order:
+      --    - AddWithCorrection: acc = add_fast(acc, scale_fast2'(...))
+      --    - CondAdd: acc = if_ b then add_fast(lagrange, acc) else acc
+      acc <- foldM
+        ( \acc term -> case term of
+            AddWithCorrection { point } -> _.p <$> addComplete acc point
+            CondAdd b lagrangePt -> do
+              addConstraint (Basic.boolean (coerce b :: FVar f))
+              added <- _.p <$> addComplete (constPt lagrangePt) acc
+              x' <- if_ b added.x acc.x
+              y' <- if_ b added.y acc.y
+              pure { x: x', y: y' }
+        )
+        init
+        (NEA.toArray results')
+
+      -- 3. Negate and add blinding generator
+      negAcc <- Curves.negate acc
+      _.p <$> addComplete negAcc (constPt params.blindingH)
 
 -------------------------------------------------------------------------------
 -- | Helpers
@@ -256,8 +282,11 @@ scalarMulLeaf params scalar bases = do
   let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
   point <- scaleFast2' @nChunks @sDiv2Bits (constPt head) scalar
   let actualShift = reflectType (Proxy @bitsUsed)
+  -- Correction is negated to match OCaml: correction = negate([2^shift] * base)
+  -- so that init = Σ(correction_i) + Σ(scaleFast2'(g_i, s_i)) = Σ([s_i] * g_i)
+  let correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head actualShift
   pure
-    { results: [ { point, correction: pow2pow params head actualShift } ]
+    { results: [ AddWithCorrection { point, correction } ]
     , rest: tail
     }
 

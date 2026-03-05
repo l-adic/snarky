@@ -27,7 +27,7 @@ import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (SpongeM, initialSpongeCircuit, liftSnarky)
+import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
@@ -159,7 +159,7 @@ incrementallyVerifyProof scalarOps params input = do
       , zComm: input.zComm
       , tComm: input.tComm
       }
-  { beta, gamma, alphaChal, zetaChal, digest } <-
+  { beta, gamma, alphaChal, zetaChal, digest } <- labelM "ivp_opt_sponge" $
     spongeTranscriptOptCircuit endoParams spongeInput
 
   -- 4. Assert deferred values match sponge output (all 128-bit scalar challenges)
@@ -201,7 +201,7 @@ incrementallyVerifyProof scalarOps params input = do
       , blindingGenerator: constPt params.blindingH
       }
 
-  { success, challenges } <- checkBulletproof @f @g
+  { success, challenges } <- labelM "ivp_bulletproof" $ checkBulletproof @f @g
     scalarOps
     endoParams
     allBases
@@ -249,12 +249,12 @@ verify scalarOps params input isBaseCase claimedDigest = do
   output <- incrementallyVerifyProof @g scalarOps params input
 
   -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
-  liftSnarky $ label "ivp_assert_digest" do
+  labelM "ivp_assert_digest" $ liftSnarky do
     digest' <- if_ isBaseCase claimedDigest output.spongeDigestBeforeEvaluations
     assertEq digest' claimedDigest
 
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
-  liftSnarky $ label "ivp_assert_bp_challenges" $
+  labelM "ivp_assert_bp_challenges" $ liftSnarky $
     for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
     \(Tuple c1 c2) -> do
       c2' <- if_ isBaseCase c1 c2

@@ -24,6 +24,7 @@ module Pickles.Sponge
   , runSpongeM
   , evalSpongeM
   , liftSnarky
+  , labelM
   , getSponge
   , putSponge
   -- Pure sponge monad
@@ -54,7 +55,7 @@ import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, const_, exists, fromField, read, scale_)
+import Snarky.Circuit.DSL (class CircuitM, class WithLabel, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, assertEqual_, const_, exists, fromField, label, read, scale_)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as CircuitSponge
@@ -129,6 +130,16 @@ liftSnarky
   => Snarky c t m a
   -> SpongeM f c t m a
 liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
+
+-- | Label a SpongeM computation (lifts Snarky label through StateT)
+labelM
+  :: forall f c t m a
+   . WithLabel t
+  => Monad m
+  => String
+  -> SpongeM f c t m a
+  -> SpongeM f c t m a
+labelM s m = wrap $ StateT \state -> label s (runStateT (unwrap m) state)
 
 -- | Get the current sponge state (for checkpointing)
 getSponge

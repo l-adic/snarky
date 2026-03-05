@@ -7,7 +7,7 @@
 -- |
 -- | OCaml reference: dump_circuit_impl.ml:1090-1226 (input layout),
 -- |                  step_verifier.ml:828-1165 (computation)
-module Test.Pickles.CircuitJson (spec) where
+module Test.Pickles.CircuitJson (spec, compileIvpWrap) where
 
 import Prelude
 
@@ -841,17 +841,28 @@ spec =
           ivpWrapCircuit
           Kimchi.initialState
         rowLabels = buildRowLabels s
-        -- Summarize: for each label, find min and max row
-        labelRanges = foldl
+        -- Build row → gate type mapping from compiled gates
+        piRows :: Array (KimchiRow WrapField)
+        piRows = makePublicInputRows s.publicInputs
+        allRows = piRows <> concatMap toKimchiRows s.constraints
+        gateTypeAt row =
+          fromMaybe "?" $ map (\g -> show g.kind) (Array.index allRows row)
+        -- For each label, count gate types of rows associated with that label
+        labelGateCounts :: Map.Map String (Map.Map String Int)
+        labelGateCounts = foldl
           ( \m (Tuple row labels) ->
-              foldl (\m' lbl -> Map.insertWith
-                (\(Tuple lo hi) (Tuple lo2 hi2) -> Tuple (min lo lo2) (max hi hi2))
-                lbl (Tuple row row) m') m labels
+              let gType = gateTypeAt row
+              in foldl (\m' lbl ->
+                Map.insertWith (Map.unionWith (+)) lbl
+                  (Map.singleton gType 1) m') m labels
           )
           Map.empty
           rowLabels
-        rangeLines = map
-          (\(Tuple lbl (Tuple lo hi)) ->
-            lbl <> ": rows " <> show lo <> "-" <> show hi <> " (" <> show (hi - lo + 1) <> " rows)")
-          (Map.toUnfoldable labelRanges :: Array (Tuple String (Tuple Int Int)))
-      log $ "IVP label ranges:\n" <> intercalate "\n" rangeLines
+        formatCounts counts =
+          intercalate ", " $ map (\(Tuple k v) -> k <> "=" <> show v)
+            (Map.toUnfoldable counts :: Array (Tuple String Int))
+      log $ "IVP per-label gate type counts:"
+      log $ intercalate "\n" $ map
+        (\(Tuple lbl counts) ->
+          "  " <> lbl <> ": " <> formatCounts counts)
+        (Map.toUnfoldable labelGateCounts :: Array (Tuple String (Map.Map String Int)))
