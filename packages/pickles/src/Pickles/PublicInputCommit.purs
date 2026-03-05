@@ -16,6 +16,7 @@
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
+  , ScalarMulResult
   , scalarMuls
   , rScalarMuls
   , publicInputCommit

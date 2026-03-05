@@ -9,27 +9,47 @@ module Pickles.OptSponge
   ( OptSponge
   , create
   , squeeze
+  -- Stateful monad (matching OCaml's mutable Opt_sponge.t)
+  , OptSpongePhase(..)
+  , OptSpongeState
+  , OptSpongeM(..)
+  , runOptSpongeM
+  , liftSnarky
+  , optAbsorb
+  , optAbsorbPoint
+  , optSqueeze
+  , optChallenge
+  , optScalarChallenge
+  , toRegularSponge
   ) where
 
 import Prelude
 
+import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.List (List)
 import Data.List as List
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
+import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, addConstraint, all_, and_, any_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, xor_)
+import JS.BigInt as BigInt
+import Partial.Unsafe (unsafePartial)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, addConstraint, all_, and_, any_, assertEqual_, const_, exists, false_, fromField, if_, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
+import Snarky.Circuit.DSL as SizedF
+import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Constraint.Basic (r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class PrimeField)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import RandomOracle.Sponge as RegSponge
 
 type OptSponge f =
   { state :: Vector 3 (FVar f)
@@ -237,3 +257,178 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
     go acc (List.Cons a List.Nil) = acc { leftover = Just a }
     go acc (List.Cons a (List.Cons b rest)) =
       go (acc { pairs = acc.pairs `Array.snoc` Tuple a b }) rest
+
+-------------------------------------------------------------------------------
+-- | Stateful OptSponge monad (matches OCaml's mutable Opt_sponge.t)
+-------------------------------------------------------------------------------
+
+-- | Sponge phase: either accumulating absorptions or in squeezed state.
+data OptSpongePhase f
+  = Absorbing { nextIndex :: BoolVar f, xs :: List (Tuple (BoolVar f) (FVar f)) }
+  | OptSqueezed Int
+
+-- | Full mutable-like state for the Opt sponge.
+type OptSpongeState f =
+  { state :: Vector 3 (FVar f)
+  , phase :: OptSpongePhase f
+  , needsFinalPermuteIfEmpty :: Boolean
+  }
+
+-- | Stateful Opt sponge monad wrapping Snarky.
+newtype OptSpongeM f c t m a = OptSpongeM (StateT (OptSpongeState f) (Snarky c t m) a)
+
+derive instance Newtype (OptSpongeM f c t m a) _
+derive newtype instance Functor (Snarky c t m) => Functor (OptSpongeM f c t m)
+derive newtype instance (Monad (Snarky c t m)) => Apply (OptSpongeM f c t m)
+derive newtype instance (Monad (Snarky c t m)) => Applicative (OptSpongeM f c t m)
+derive newtype instance (Monad (Snarky c t m)) => Bind (OptSpongeM f c t m)
+derive newtype instance (Monad (Snarky c t m)) => Monad (OptSpongeM f c t m)
+
+-- | Run an OptSpongeM computation, returning both result and final state.
+runOptSpongeM
+  :: forall f t m a
+   . PrimeField f
+  => CircuitM f (KimchiConstraint f) t m
+  => OptSpongeM f (KimchiConstraint f) t m a
+  -> Snarky (KimchiConstraint f) t m (Tuple a (OptSpongeState f))
+runOptSpongeM computation =
+  runStateT (unwrap computation) initialOptState
+  where
+  initialOptState :: OptSpongeState f
+  initialOptState =
+    { state: Vector.replicate (const_ zero)
+    , phase: Absorbing { nextIndex: false_, xs: List.Nil }
+    , needsFinalPermuteIfEmpty: true
+    }
+
+-- | Lift a Snarky computation into OptSpongeM.
+liftSnarky
+  :: forall f t m a
+   . CircuitM f (KimchiConstraint f) t m
+  => Snarky (KimchiConstraint f) t m a
+  -> OptSpongeM f (KimchiConstraint f) t m a
+liftSnarky ma = wrap $ StateT \s -> ma <#> \a -> Tuple a s
+
+-- | Absorb a (flag, value) pair. Just accumulates; processing happens at squeeze.
+optAbsorb
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => Tuple (BoolVar f) (FVar f)
+  -> OptSpongeM f (KimchiConstraint f) t m Unit
+optAbsorb pair = wrap $ StateT \s -> pure $ Tuple unit case s.phase of
+  Absorbing { nextIndex, xs } ->
+    s { phase = Absorbing { nextIndex, xs: pair List.: xs } }
+  OptSqueezed _ ->
+    s { phase = Absorbing { nextIndex: false_, xs: List.singleton pair } }
+
+-- | Absorb a curve point with Boolean.true_ flag (unconditional).
+optAbsorbPoint
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => AffinePoint (FVar f)
+  -> OptSpongeM f (KimchiConstraint f) t m Unit
+optAbsorbPoint { x, y } = do
+  optAbsorb (Tuple true_ x)
+  optAbsorb (Tuple true_ y)
+
+-- | Squeeze a field element from the Opt sponge.
+-- | Matches OCaml's Opt_sponge.squeeze exactly:
+-- | - If Absorbing: consume all pending, return state[0], switch to Squeezed 1
+-- | - If Squeezed n < rate: return state[n], switch to Squeezed (n+1)
+-- | - If Squeezed n = rate: permute, return state[0], switch to Squeezed 1
+optSqueeze
+  :: forall f t m
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => OptSpongeM f (KimchiConstraint f) t m (FVar f)
+optSqueeze = wrap $ StateT \s -> case s.phase of
+  OptSqueezed n ->
+    if n >= 2 {- rate -} then do
+      newState <- poseidon s.state
+      pure $ Tuple (Vector.index newState (unsafeFinite @3 0))
+        (s { state = newState, phase = OptSqueezed 1 })
+    else
+      pure $ Tuple (Vector.index s.state (unsafeFinite @3 n))
+        (s { phase = OptSqueezed (n + 1) })
+  Absorbing { nextIndex, xs } -> do
+    let input = Array.fromFoldable (List.reverse xs)
+    newState <- consume
+      { state: s.state
+      , pos: nextIndex
+      , needsFinalPermuteIfEmpty: s.needsFinalPermuteIfEmpty
+      }
+      input
+    pure $ Tuple (Vector.index newState (unsafeFinite @3 0))
+      (s { state = newState, phase = OptSqueezed 1, needsFinalPermuteIfEmpty = true })
+
+-- | Squeeze a challenge (lowest 128 bits, constrain_low_bits:true).
+-- | Matches OCaml's Opt.challenge.
+optChallenge
+  :: forall f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => FVar f -- ^ endo constant
+  -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+optChallenge endo = do
+  x <- optSqueeze
+  liftSnarky $ lowest128BitsInternal true endo x
+
+-- | Squeeze a scalar challenge (lowest 128 bits, constrain_low_bits:false).
+-- | Matches OCaml's Opt.scalar_challenge.
+optScalarChallenge
+  :: forall f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => FVar f -- ^ endo constant
+  -> OptSpongeM f (KimchiConstraint f) t m (SizedF 128 (FVar f))
+optScalarChallenge endo = do
+  x <- optSqueeze
+  liftSnarky $ lowest128BitsInternal false endo x
+
+-- | Convert OptSponge state to a regular Sponge for continuation (e.g., bulletproof check).
+-- | Only valid when the OptSponge is in Squeezed state.
+toRegularSponge
+  :: forall f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => OptSpongeM f (KimchiConstraint f) t m (RegSponge.Sponge (FVar f))
+toRegularSponge = wrap $ StateT \s -> case s.phase of
+  OptSqueezed n ->
+    pure $ Tuple
+      { state: s.state, spongeState: RegSponge.Squeezed (unsafeFinite @3 n) }
+      s
+  Absorbing _ ->
+    pure $ Tuple
+      { state: s.state, spongeState: RegSponge.Absorbed (unsafeFinite @3 0) }
+      s
+
+-- Internal: lowest128Bits for use within OptSponge.
+-- Inlined from Sponge.lowest128Bits' to avoid circular dependency.
+lowest128BitsInternal
+  :: forall f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => CircuitM f (KimchiConstraint f) t m
+  => Boolean
+  -> FVar f -- ^ endo constant
+  -> FVar f -- ^ x
+  -> Snarky (KimchiConstraint f) t m (SizedF 128 (FVar f))
+lowest128BitsInternal constrainLowBits endo x = do
+  UnChecked (Tuple lo hi) <- exists do
+    F xVal <- read x
+    let
+      xBig = toBigInt xVal
+      lo :: SizedF 128 (F f)
+      lo = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ mod xBig two128
+      hi :: SizedF 128 (F f)
+      hi = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ div xBig two128
+    pure $ UnChecked (Tuple lo hi)
+  void $ EndoScalar.toField @8 hi endo
+  when constrainLowBits $ void $ EndoScalar.toField @8 lo endo
+  assertEqual_ x (add_ (SizedF.toField lo) (scale_ (fromBigInt two128) $ SizedF.toField hi))
+  pure lo
+  where
+  two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
