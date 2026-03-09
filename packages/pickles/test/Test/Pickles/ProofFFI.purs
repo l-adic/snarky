@@ -43,6 +43,8 @@ module Test.Pickles.ProofFFI
   , vestaPublicComm
   , pallasLagrangeCommitments
   , vestaLagrangeCommitments
+  , pallasSrsLagrangeCommitments
+  , pallasSrsBlindingGenerator
   , pallasProofCommitments
   , vestaProofCommitments
   , pallasFtComm
@@ -65,7 +67,7 @@ module Test.Pickles.ProofFFI
 
 import Data.Unit (Unit)
 import Data.Vector (Vector)
-import Snarky.Backend.Kimchi.Types (ProverIndex, VerifierIndex)
+import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -233,6 +235,12 @@ foreign import vestaPublicComm :: VerifierIndex Pallas.G Vesta.BaseField -> Arra
 -- Lagrange commitment points from SRS (constant bases for public input MSM)
 foreign import pallasLagrangeCommitments :: VerifierIndex Vesta.G Pallas.BaseField -> Int -> Array (AffinePoint Pallas.ScalarField)
 foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseField -> Int -> Array (AffinePoint Vesta.ScalarField)
+
+-- Lagrange commitments directly from SRS (no verifier index needed)
+foreign import pallasSrsLagrangeCommitments :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
+
+-- Blinding generator H directly from SRS
+foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.ScalarField
 
 -- ft_comm: the chunked commitment of the linearized constraint polynomial (in Fq)
 foreign import pallasFtComm :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField

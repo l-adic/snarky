@@ -35,11 +35,13 @@ import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, assertEqual_, assert_, const_, false_, toField)
 import Snarky.Circuit.Kimchi (SplitField, Type2, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi.GroupMap (groupMap)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, stepEndo, toVectorOrThrow, unsafeFqToFp, zkRows)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
@@ -83,6 +85,13 @@ ipaFinalCheckTest cfg ctx = do
     -- Use mkWrapIpaContext to get correct sponge state
     ipaCtx = mkWrapIpaContext ctx
 
+    -- Compute u = group_map(squeeze(sponge)) from the IPA sponge state
+    uField :: Vesta.ScalarField
+    uField = Pickles.Sponge.evalPureSpongeM ipaCtx.spongeState Pickles.Sponge.squeeze
+
+    uPoint :: AffinePoint (F Vesta.ScalarField)
+    uPoint = let { x, y } = groupMap pallasGroupMapParams uField in { x: F x, y: F y }
+
     -- Circuit input
     input :: IpaFinalCheckInput WrapIPARounds (F Vesta.ScalarField) (Type2 (SplitField (F Vesta.ScalarField) Boolean))
     input =
@@ -91,6 +100,7 @@ ipaFinalCheckTest cfg ctx = do
       , lr: coerce lr
       , z1: z1Shifted
       , z2: z2Shifted
+      , u: uPoint
       , combinedInnerProduct: cipShifted
       , b: bShifted
       , blindingGenerator: coerce blindingGenerator

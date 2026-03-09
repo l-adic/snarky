@@ -19,6 +19,10 @@ module Snarky.Backend.Builder
   , class Finalizer
   , finalize
   , class CompileCircuit
+  , Labeled
+  , labeled
+  , unlabel
+  , context
   ) where
 
 import Prelude
@@ -41,9 +45,23 @@ import Snarky.Constraint.Basic (class BasicSystem, Basic)
 import Snarky.Curves.Class (class PrimeField)
 import Type.Proxy (Proxy(..))
 
+type Labeled c =
+  { constraint :: c
+  , context :: Array String
+  }
+
+labeled :: forall c. Array String -> c -> Labeled c
+labeled ctx c = { constraint: c, context: ctx }
+
+unlabel :: forall c. Labeled c -> c
+unlabel = _.constraint
+
+context :: forall c. Labeled c -> Array String
+context = _.context
+
 type CircuitBuilderState c r =
   { nextVar :: Variable
-  , constraints :: Array c
+  , constraints :: Array (Labeled c)
   , publicInputs :: Array Variable
   , aux :: r
   , labelStack :: Array String
@@ -158,7 +176,7 @@ appendConstraint
   => c
   -> CircuitBuilderT c r m Unit
 appendConstraint c = CircuitBuilderT $ modify_ \s ->
-  s { constraints = s.constraints `snoc` c }
+  s { constraints = s.constraints `snoc` { constraint: c, context: s.labelStack } }
 
 getState
   :: forall m c r

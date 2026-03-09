@@ -161,7 +161,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
 
       checks = foldM (\acc c -> conj acc <$> checker lookup c) true
       satisfiedRes = do
-        constraintsResult <- checks builtState.constraints
+        constraintsResult <- checks (map _.constraint builtState.constraints)
         postConditionResult <- postCondition lookup builtState
         pure { constraintsResult, postConditionResult }
     in

@@ -63,11 +63,13 @@ reduce c = Rows <$> do
   p1 <- reduceAffinePoint c.p1
   p2 <- reduceAffinePoint c.p2
   p3 <- reduceAffinePoint c.p3
-  inf <- reduceToVariable c.inf
-  sameX <- reduceToVariable c.sameX
-  s <- reduceToVariable c.s
-  infZ <- reduceToVariable c.infZ
+  -- OCaml evaluates the vars array literal right-to-left:
+  -- x21_inv, inf_z, slope, same_x, inf
   x21Inv <- reduceToVariable c.x21Inv
+  infZ <- reduceToVariable c.infZ
+  s <- reduceToVariable c.s
+  sameX <- reduceToVariable c.sameX
+  inf <- reduceToVariable c.inf
   let
     variables :: Vector 15 (Maybe Variable)
     variables =
@@ -82,9 +84,13 @@ reduce c = Rows <$> do
   pure { kind: AddCompleteGate, coeffs: mempty, variables }
 
   where
+  -- OCaml's reduce_curve_point (x, y) = (reduce_to_v x, reduce_to_v y)
+  -- evaluates right-to-left: y first, then x. Combined with generic gate
+  -- batching (new gate → first half, pending → second half), this produces
+  -- [x | y] in the gate layout.
   reduceAffinePoint p = do
-    x <- reduceToVariable p.x
     y <- reduceToVariable p.y
+    x <- reduceToVariable p.x
     pure { x, y }
 
 foreign import verifyPallasCompleteAddGadget

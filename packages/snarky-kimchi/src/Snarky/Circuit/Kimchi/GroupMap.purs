@@ -16,7 +16,8 @@ import Prelude
 import Control.Alt ((<|>))
 import Data.Maybe (fromMaybe')
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, add_, any_, assertSquare_, assert_, const_, div_, exists, if_, mul_, readCVar, scale_, sub_)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, assertNonZero_, assertSquare_, const_, div_, exists, if_, label, mul_, not_, readCVar, scale_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasBW19, class HasSqrt, class PrimeField, bw19Params, curveParams, fromInt, isSquare, sqrt)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -116,22 +117,18 @@ sqrtFlagged
   -> FVar f
   -> Snarky (KimchiConstraint f) t m { sqrtVal :: FVar f, isQR :: BoolVar f }
 sqrtFlagged nonResidue x = do
-  -- Witness: is x a quadratic residue?
-  -- exists with Boolean return type automatically gives BoolVar
-  isQRBool :: BoolVar f <- exists do
+  isQRBool :: BoolVar f <- label "sf_exists_bool" $ exists do
     F xVal <- readCVar x
     pure $ isSquare xVal
 
-  -- Witness: sqrt of x (if QR) or sqrt of m*x (if not)
-  sqrtVal <- exists do
-    F xVal <- readCVar x
-    let candidate = if isSquare xVal then xVal else nonResidue * xVal
-    pure $ F $ fromMaybe' (\_ -> unsafeThrow "sqrtFlagged: neither x nor m*x is a quadratic residue") $ sqrt candidate
-
-  -- Constraint: sqrtVal² = if isQR then x else m*x
   let mX = scale_ nonResidue x
-  xOrMx <- if_ isQRBool x mX
-  assertSquare_ sqrtVal xOrMx
+  xOrMx <- label "sf_if" $ if_ isQRBool x mX
+
+  sqrtVal <- label "sf_exists_sqrt" $ exists do
+    F xOrMxVal <- readCVar xOrMx
+    pure $ F $ fromMaybe' (\_ -> unsafeThrow "sqrtFlagged: neither x nor m*x is a quadratic residue") $ sqrt xOrMxVal
+
+  label "sf_assertSq" $ assertSquare_ sqrtVal xOrMx
 
   pure { sqrtVal, isQR: isQRBool }
 
@@ -145,59 +142,50 @@ groupMapCircuit
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 groupMapCircuit params t = do
-  -- Compute potential x-coordinates
-  -- t² requires mul_ (monadic)
-  t2 <- mul_ t t
-
-  -- alphaInv = (t² + f(u)) * t²
+  t2 <- label "t2" $ mul_ t t
   let t2PlusFu = add_ t2 (const_ params.fu)
-  alphaInv <- mul_ t2PlusFu t2
-
-  -- alpha = 1 / alphaInv
-  alpha <- div_ (const_ one) alphaInv
-
-  -- t⁴ = t² * t²
-  t4 <- mul_ t2 t2
-
-  -- x1 = sqrtNeg3U2MinusUOver2 - t⁴ * alpha * sqrtNeg3U2
-  t4Alpha <- mul_ t4 alpha
-  temp1 <- mul_ t4Alpha (const_ params.sqrtNeg3U2)
+  alphaInv <- label "alphaInv" $ mul_ t2PlusFu t2
+  alpha <- label "alpha" $ div_ (const_ one) alphaInv
+  t4 <- label "t4" $ mul_ t2 t2
+  t4Alpha <- label "t4Alpha" $ mul_ t4 alpha
+  temp1 <- label "temp1" $ mul_ t4Alpha (const_ params.sqrtNeg3U2)
   let x1 = sub_ (const_ params.sqrtNeg3U2MinusUOver2) temp1
-
-  -- x2 = -u - x1
   let x2 = sub_ (const_ (negate params.u)) x1
-
-  -- x3 = u - (t² + f(u))² * (1/t²) * (1/(3u²))
-  -- Note: t2Inv = alpha * (t² + fu) = 1/t² (since alpha = 1/((t²+fu)*t²))
-  t2Inv <- mul_ alpha t2PlusFu
-  t2PlusFuSq <- mul_ t2PlusFu t2PlusFu
-  temp2a <- mul_ t2PlusFuSq t2Inv
-  temp2 <- mul_ temp2a (const_ params.inv3U2)
+  t2Inv <- label "t2Inv" $ mul_ alpha t2PlusFu
+  t2PlusFuSq <- label "t2PlusFuSq" $ mul_ t2PlusFu t2PlusFu
+  temp2a <- label "temp2a" $ mul_ t2PlusFuSq t2Inv
+  temp2 <- label "temp2" $ mul_ temp2a (const_ params.inv3U2)
   let x3 = sub_ (const_ params.u) temp2
 
-  -- y² for each candidate x: y² = x³ + b
   let
-    ySquared x = do
-      xSq <- mul_ x x
-      xCu <- mul_ xSq x
+    ySquared lbl x = label lbl do
+      xSq <- label "xSq" $ mul_ x x
+      xCu <- label "xCu" $ mul_ xSq x
       pure $ add_ xCu (const_ params.b)
 
-  -- Try sqrt for each candidate
-  y1Sq <- ySquared x1
-  y2Sq <- ySquared x2
-  y3Sq <- ySquared x3
-  { sqrtVal: y1, isQR: b1 } <- sqrtFlagged params.nonResidue y1Sq
-  { sqrtVal: y2, isQR: b2 } <- sqrtFlagged params.nonResidue y2Sq
-  { sqrtVal: y3, isQR: b3 } <- sqrtFlagged params.nonResidue y3Sq
+  y1Sq <- ySquared "ySq1" x1
+  { sqrtVal: y1, isQR: b1 } <- label "sf1" $ sqrtFlagged params.nonResidue y1Sq
+  y2Sq <- ySquared "ySq2" x2
+  { sqrtVal: y2, isQR: b2 } <- label "sf2" $ sqrtFlagged params.nonResidue y2Sq
+  y3Sq <- ySquared "ySq3" x3
+  { sqrtVal: y3, isQR: b3 } <- label "sf3" $ sqrtFlagged params.nonResidue y3Sq
 
-  -- Assert at least one is a valid point
-  assert_ =<< any_ [ b1, b2, b3 ]
+  label "assertAny" $ assertNonZero_ (coerce b1 `add_` coerce b2 `add_` (coerce b3 :: FVar f))
 
-  -- Select the first valid point: if b1 then (x1,y1) else if b2 then (x2,y2) else (x3,y3)
-  xInner <- if_ b2 x2 x3
-  xResult <- if_ b1 x1 xInner
+  let nb1 = not_ b1
+  x2_is_first <- label "x2first" $ nb1 `and_` b2
+  -- OCaml's && is right-associative: (not b1) && ((not b2) && b3)
+  nb2_and_b3 <- label "nb2b3" $ (not_ b2) `and_` b3
+  x3_is_first <- label "x3first" $ nb1 `and_` nb2_and_b3
 
-  yInner <- if_ b2 y2 y3
-  yResult <- if_ b1 y1 yInner
+  t3y <- label "t3y" $ mul_ (coerce x3_is_first) y3
+  t2y <- label "t2y" $ mul_ (coerce x2_is_first) y2
+  t1y <- label "t1y" $ mul_ (coerce b1) y1
+  let yResult = add_ (add_ t1y t2y) t3y
+
+  t3x <- label "t3x" $ mul_ (coerce x3_is_first) x3
+  t2x <- label "t2x" $ mul_ (coerce x2_is_first) x2
+  t1x <- label "t1x" $ mul_ (coerce b1) x1
+  let xResult = add_ (add_ t1x t2x) t3x
 
   pure { x: xResult, y: yResult }

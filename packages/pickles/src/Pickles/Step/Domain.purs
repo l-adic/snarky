@@ -13,7 +13,7 @@ module Pickles.Step.Domain
 import Prelude
 
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, mul_, seal, square_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, label, mul_, seal, square_, sub_)
 
 -- | Compute x^(2^n) using Square constraints.
 -- |
@@ -56,4 +56,4 @@ domainVanishingPoly whichBit x log2Size = do
   -- 2. mask: (which_bit :> t) * zetaToN (1 R1CS mul)
   masked <- mul_ (coerce whichBit) zetaToN
   -- 3. seal (masked - one): exists + assertEqual (1 R1CS equal)
-  seal (masked `sub_` const_ one)
+  label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)

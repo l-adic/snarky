@@ -32,14 +32,13 @@ module Pickles.Verify.FqSpongeTranscript
 import Prelude
 
 import Data.Foldable (for_)
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Sponge as Sponge
 import Poseidon (class PoseidonField)
-import RandomOracle.Sponge as RegSponge
-import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, const_, true_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)

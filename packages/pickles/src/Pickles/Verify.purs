@@ -33,11 +33,11 @@ import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
+import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
-import RandomOracle.Sponge (Sponge)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -------------------------------------------------------------------------------
@@ -107,7 +107,7 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3 r
+  :: forall publicInput sgOldN d f f' @g sf t m _l3 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -119,7 +119,6 @@ incrementallyVerifyProof
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
-  => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
@@ -133,9 +132,10 @@ incrementallyVerifyProof scalarOps params input = do
     Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
       -- Absorption order matches OCaml's index_to_field_elements:
       -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
-      let absorbConstPt { x: F x', y: F y' } = do
-            Sponge.absorb (const_ x')
-            Sponge.absorb (const_ y')
+      let
+        absorbConstPt { x: F x', y: F y' } = do
+          Sponge.absorb (const_ x')
+          Sponge.absorb (const_ y')
       -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
       for_ params.columnComms.sigma absorbConstPt
       absorbConstPt params.sigmaCommLast
@@ -256,9 +256,9 @@ verify scalarOps params input isBaseCase claimedDigest = do
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
   labelM "ivp_assert_bp_challenges" $ liftSnarky $
     for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
-    \(Tuple c1 c2) -> do
-      c2' <- if_ isBaseCase c1 c2
-      assertEq c1 c2'
+      \(Tuple c1 c2) -> do
+        c2' <- if_ isBaseCase c1 c2
+        assertEq c1 c2'
 
   -- 4. Return bulletproof success
   pure output.success

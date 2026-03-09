@@ -16,6 +16,7 @@
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
+  , DeferredScaleMul(..)
   , MsmTerm(..)
   , ScalarMulResult
   , scalarMuls
@@ -27,7 +28,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldM)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
@@ -41,10 +42,10 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_)
-import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
+import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -52,10 +53,20 @@ import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
+-- | A deferred scalar multiplication that captures type-level parameters.
+-- | This lets scalarMulLeaf store the computation without executing it,
+-- | so publicInputCommit can interleave scale_fast2' and add_fast inline
+-- | during the fold (matching OCaml's step_verifier.ml:468-475).
+newtype DeferredScaleMul f = DeferredScaleMul
+  ( forall t m
+     . CircuitM f (KimchiConstraint f) t m
+    => Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  )
+
 -- | A single term from walking the public input structure.
 -- | Matches OCaml's `Add_with_correction` and `Cond_add` variants.
 data MsmTerm f
-  = AddWithCorrection { point :: AffinePoint (FVar f), correction :: AffinePoint (F f) }
+  = AddWithCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (F f) }
   | CondAdd (BoolVar f) (AffinePoint (F f))
 
 -- | Intermediate result from walking the structure.
@@ -98,10 +109,14 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f wh
 
 -- | Boolean: Cond_add — conditionally add Lagrange point.
 -- | Matches OCaml's `Cond_add(b, lagrange(i))` for 1-bit values.
+-- | The boolean constraint is generated here (during scalarMuls walk),
+-- | matching OCaml which calls assert_(Constraint.boolean b) during
+-- | List.map terms construction, BEFORE correction sum and fold.
 instance PublicInputCommit (BoolVar f) f where
-  scalarMuls _ bool bases =
+  scalarMuls _ bool bases = do
+    addConstraint (Basic.boolean (coerce bool :: FVar f))
     let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-    in pure { results: [ CondAdd bool head ], rest: tail }
+    pure { results: [ CondAdd bool head ], rest: tail }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -114,6 +129,9 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField (FVar f) (BoolVar f)) f where
   scalarMuls params (SplitField { sDiv2, sOdd }) bases = do
     { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
+    -- Generate boolean constraint for sOdd during walk, matching OCaml's
+    -- assert_(Constraint.boolean b) in terms construction
+    addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
     pure { results: r1 <> [ CondAdd sOdd oddBase ], rest: rest2 }
 
@@ -236,15 +254,20 @@ publicInputCommit params input = do
 
       -- 2. Fold over all terms, matching OCaml's fold order:
       --    - AddWithCorrection: acc = add_fast(acc, scale_fast2'(...))
+      --      OCaml calls scale_fast2' INLINE during the fold (step_verifier.ml:474),
+      --      so VarBaseMul gates precede CompleteAdd for each term.
       --    - CondAdd: acc = if_ b then add_fast(lagrange, acc) else acc
       acc <- foldM
         ( \acc term -> case term of
-            AddWithCorrection { point } -> _.p <$> addComplete acc point
+            AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
+              point <- doScaleMul
+              _.p <$> addComplete acc point
             CondAdd b lagrangePt -> do
-              addConstraint (Basic.boolean (coerce b :: FVar f))
               added <- _.p <$> addComplete (constPt lagrangePt) acc
-              x' <- if_ b added.x acc.x
+              -- OCaml's Inner_curve.if_ uses tuple (F.if_ x, F.if_ y),
+              -- right-to-left evaluation means y is processed before x
               y' <- if_ b added.y acc.y
+              x' <- if_ b added.x acc.x
               pure { x: x', y: y' }
         )
         init
@@ -278,17 +301,21 @@ scalarMulLeaf
   -> FVar f
   -> Array (AffinePoint (F f))
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-scalarMulLeaf params scalar bases = do
-  let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-  point <- scaleFast2' @nChunks @sDiv2Bits (constPt head) scalar
-  let actualShift = reflectType (Proxy @bitsUsed)
-  -- Correction is negated to match OCaml: correction = negate([2^shift] * base)
-  -- so that init = Σ(correction_i) + Σ(scaleFast2'(g_i, s_i)) = Σ([s_i] * g_i)
-  let correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head actualShift
-  pure
-    { results: [ AddWithCorrection { point, correction } ]
-    , rest: tail
-    }
+scalarMulLeaf params scalar bases =
+  let
+    { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
+    actualShift = reflectType (Proxy @bitsUsed)
+    -- Correction is negated to match OCaml: correction = negate([2^shift] * base)
+    -- so that init = Σ(correction_i) + Σ(scaleFast2'(g_i, s_i)) = Σ([s_i] * g_i)
+    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head actualShift
+    -- Defer the scalar multiplication so it can be interleaved with add_fast
+    -- during the fold in publicInputCommit (matching OCaml's inline scale_fast2')
+    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits (constPt head) scalar)
+  in
+    pure
+      { results: [ AddWithCorrection { scaleMul, correction } ]
+      , rest: tail
+      }
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)
 constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
@@ -298,16 +325,6 @@ unwrapPt { x: F x', y: F y' } = { x: x', y: y' }
 
 wrapPt :: forall f. AffinePoint f -> AffinePoint (F f)
 wrapPt { x, y } = { x: F x, y: F y }
-
--- | Pure affine addition of AffinePoint (F f) values.
-addPurePts :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> AffinePoint (F f) -> AffinePoint (F f)
-addPurePts params p1 p2
-  | unwrapPt p1 == unwrapPt p2 = EC.double params p1
-  | otherwise =
-      let
-        { x, y } = unsafePartial $ fromJust $ EC.toAffine $ EC.addAffine (unwrapPt p1) (unwrapPt p2)
-      in
-        { x: F x, y: F y }
 
 -- | Compute [2^k] * p by iterating pure doubling.
 pow2pow :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> Int -> AffinePoint (F f)

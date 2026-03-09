@@ -307,6 +307,22 @@ export const vestaLagrangeCommitments = (verifierIndex) => (count) => {
   return result;
 };
 
+// Lagrange commitments directly from SRS (no verifier index needed)
+export const pallasSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => {
+  const flat = crypto.pallasSrsLagrangeCommitments(srs, domainLog2, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
+// Blinding generator H directly from SRS
+export const pallasSrsBlindingGenerator = (srs) => {
+  const flat = crypto.pallasSrsBlindingGenerator(srs);
+  return { x: flat[0], y: flat[1] };
+};
+
 export const vestaPublicComm = (verifierIndex) => (publicInput) => {
   const flat = crypto.vestaPublicComm(verifierIndex, publicInput);
   const result = [];

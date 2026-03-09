@@ -20,7 +20,7 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
@@ -78,9 +78,10 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
   finalize s =
     let
       mRow = finalizeGateQueue (un AuxState s.aux)
+      lbl = s.labelStack
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk r) mRow
+        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` { constraint: KimchiGatePlonk r, context: lbl }) mRow
         , aux = over AuxState
             ( \st ->
                 st
@@ -119,9 +120,13 @@ instance
           , aux: s.aux
           }
           (reducer c)
+        lbl = s.labelStack
+
+        labelGate :: forall g. g -> Labeled g
+        labelGate g = { constraint: g, context: lbl }
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (wrap rows)
+        , constraints = s.constraints <> map (labelGate <<< KimchiGatePlonk) res.constraints `Array.snoc` labelGate (wrap rows)
         , aux = res.aux
         }
 

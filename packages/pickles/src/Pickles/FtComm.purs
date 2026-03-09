@@ -60,9 +60,20 @@ ftComm
      }
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = do
-  -- Horner reduction of t_comm chunks: c[0] + scale(c[1] + ... + scale(c[n-1], z), z)
+  -- OCaml order (common.ml:195-214):
+  --   1. f_comm = scale sigma_comm_last perm
+  --   2. chunked_t_comm = reduce_chunks t_comm (Horner)
+  --   3. Expression: f_comm + chunked_t_comm + negate(scale chunked_t_comm zeta_to_domain)
+  --      Due to right-to-left evaluation:
+  --        a. negate(scale chunked_t_comm zeta_to_domain)  [right arg of outer +]
+  --        b. f_comm + chunked_t_comm                      [left arg of outer +]
+  --        c. result + negated                              [outer +]
+
+  -- Step 1: scale(σ_last, perm)
+  fComm <- scaleByShifted sigmaLast perm
+  -- Step 2: Horner reduction of t_comm chunks
   let { last, init } = Vector.unsnoc tComm
-  reducedT <- foldM
+  chunkedTComm <- foldM
     ( \acc chunk -> do
         scaled <- scaleByShifted acc zetaToSrsLength
         { p } <- addComplete chunk scaled
@@ -70,12 +81,11 @@ ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomai
     )
     last
     (Vector.reverse init)
-  -- scale(σ_last, perm)
-  permTerm <- scaleByShifted sigmaLast perm
-  -- negate(scale(reduced_t, zeta_to_domain))
-  zetaDomTerm <- scaleByShifted reducedT zetaToDomainSize
+  -- Step 3a: negate(scale(chunked_t_comm, zeta_to_domain)) [right-to-left: evaluated first]
+  zetaDomTerm <- scaleByShifted chunkedTComm zetaToDomainSize
   negZetaDomTerm <- Curves.negate zetaDomTerm
-  -- ft_comm = permTerm + reducedT + negZetaDomTerm
-  { p: r1 } <- addComplete permTerm reducedT
+  -- Step 3b: f_comm + chunked_t_comm [evaluated second]
+  { p: r1 } <- addComplete fComm chunkedTComm
+  -- Step 3c: result + negated
   { p: result } <- addComplete r1 negZetaDomTerm
   pure result

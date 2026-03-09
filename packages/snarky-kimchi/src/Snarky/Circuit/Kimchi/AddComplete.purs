@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Apply (lift2)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, read, readCVar, seal)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, UnChecked(..), addConstraint, exists, false_, label, read, readCVar, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (fromInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -15,9 +15,9 @@ sealPoint
    . CircuitM f c t m
   => AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
-sealPoint p = do
-  x <- seal p.x
-  y <- seal p.y
+sealPoint p = label "seal_point" do
+  x <- label "seal_x" $ seal p.x
+  y <- label "seal_y" $ seal p.y
   pure { x, y }
 
 -- | Complete addition. When checkFinite is true, inf is set to the constant zero
@@ -32,7 +32,7 @@ addComplete
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addComplete = addComplete' false
+addComplete = addComplete' true
 
 addComplete'
   :: forall f t m

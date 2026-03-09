@@ -55,10 +55,10 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -355,23 +355,21 @@ bulletReduceCircuit
   -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
 bulletReduceCircuit { pairs, challenges } = do
   -- Process each (L, R, u) triple to compute endoInv(L, u) + endo(R, u)
+  -- OCaml let-binding order: endo_inv(L) first, then endo(R), then add_fast
   terms <- for (Vector.zip pairs challenges) \(Tuple { l, r } u) -> do
-    -- endoInv(L, u) = L * (1 / toField(u, endo))
     lScaled <- endoInv @f @f' @g l u
-    -- endo(R, u) = R * toField(u, endo)
     rScaled <- endo r u
-    -- Sum: endoInv(L, u) + endo(R, u)
     addComplete lScaled rScaled
   let
     { head, tail } = Vector.uncons terms
-  -- Sum all terms using addComplete
-  foldM
-    ( \p q -> do
-        elseBranch <- if_ q.isInfinity p =<< addComplete p.p q.p
-        if_ p.isInfinity q elseBranch
-    )
-    head
+  -- Sum all terms using add_fast without infinity check, matching OCaml's
+  -- Array.reduce_exn ~f:(Ops.add_fast ?check_finite:None)
+  -- (default check_finite=true means inf=Field.zero, a constant)
+  result <- foldM
+    (\acc q -> _.p <$> addComplete acc q.p)
+    head.p
     tail
+  pure { p: result, isInfinity: head.isInfinity }
 
 -------------------------------------------------------------------------------
 -- | IPA Final Check Circuit
@@ -399,6 +397,8 @@ type IpaFinalCheckInput n f sf =
   -- Scalars from opening proof (shifted representation)
   , z1 :: sf
   , z2 :: sf
+  -- u = group_map(squeeze(sponge)) — derived by caller before combine_poly
+  , u :: AffinePoint f
   -- Combined polynomial commitment (from verifier index + xi)
   , combinedPolynomial :: AffinePoint f
   -- Combined inner product (shifted representation)
@@ -448,34 +448,44 @@ ipaFinalCheckCircuit
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
-  -- 1. Derive u via group_map
-  -- NOTE: combined_inner_product should already be absorbed by caller
-  u <- do
-    t <- squeeze
-    liftSnarky $ groupMapCircuit params.groupMapParams t
+  let u = input.u
 
-  -- 2. Extract 128-bit scalar challenges from L/R pairs
+  -- 1. Extract 128-bit scalar challenges from L/R pairs
+  -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
     extractScalarChallenges params input.lr
 
-  -- 3. Absorb delta point
-  absorbPoint input.delta
-
-  -- 4. Derive c via squeeze_scalar (constrain_low_bits:false, matches OCaml)
-  c <- squeezeScalar params
-
-  success <- liftSnarky $ label "ipa_final_eq" $ do
-    -- 5. Compute lr_prod from L/R pairs and challenges
-    { p: lrProd } <- label "ipa_bullet_reduce" $ bulletReduceCircuit @f @g
+  -- 2. Compute lr_prod from L/R pairs and challenges
+  -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions
+  lrProd <- liftSnarky $ label "ipa_bullet_reduce" $ do
+    { p } <- bulletReduceCircuit @f @g
       { pairs: input.lr
       , challenges: scalarChallenges
       }
+    pure p
 
-    -- 6. Compute Q = combinedPolynomial + combinedInnerProduct*u + lr_prod
+  -- 3. Build p_prime = combinedPolynomial + scale(u, CIP)
+  -- OCaml: let uc = scale_fast u advice.combined_inner_product in
+  --        combined_polynomial + uc
+  -- Right-to-left: uc first, then add
+  pPrime <- liftSnarky do
     cipU <- scalarOps.scaleByShifted u input.combinedInnerProduct
-    { p: pPrime } <- addComplete input.combinedPolynomial cipU
-    { p: q } <- addComplete pPrime lrProd
+    { p } <- addComplete input.combinedPolynomial cipU
+    pure p
 
+  -- 4. Build q = p_prime + lr_prod
+  q <- liftSnarky do
+    { p } <- addComplete pPrime lrProd
+    pure p
+
+  -- 5. Absorb delta point + squeeze c
+  -- OCaml: absorb sponge PC delta ; let c = squeeze_scalar sponge
+  -- This happens AFTER bullet_reduce and q computation in OCaml
+  c <- labelM "ipa_squeeze_c" $ do
+    absorbPoint input.delta
+    squeezeScalar params
+
+  success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
     cQ <- endo q c
     { p: lhs } <- addComplete cQ input.delta
@@ -580,20 +590,30 @@ checkBulletproof
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases input = do
   -- 1. Absorb shift_scalar(CIP) into sponge
-  let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
-  for_ cipFields absorb
+  -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
+  labelM "bp_absorb_cip" $ do
+    let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
+    for_ cipFields absorb
 
-  -- 2. Compute combined polynomial via Horner
+  -- 2. Derive u via group_map (squeeze BEFORE combine_poly, matching OCaml)
+  -- OCaml: let u = let t = Sponge.squeeze_field sponge in group_map t
+  u <- labelM "ipa_group_map" $ do
+    t <- squeeze
+    liftSnarky $ groupMapCircuit params.groupMapParams t
+
+  -- 3. Compute combined polynomial via Horner (AFTER u, matching OCaml)
+  -- OCaml: let combined_polynomial = Split_commitments.combine ...
   combinedPolynomial <- labelM "bp_combine_poly" $ liftSnarky $
     combinePolynomials commitmentBases input.xi
 
-  -- 3. Delegate to ipaFinalCheckCircuit
+  -- 4. Delegate to ipaFinalCheckCircuit (u already computed)
   labelM "bp_ipa_check" $ ipaFinalCheckCircuit @f @g scalarOps params
     { delta: input.delta
     , sg: input.sg
     , lr: input.lr
     , z1: input.z1
     , z2: input.z2
+    , u
     , combinedPolynomial
     , combinedInnerProduct: input.combinedInnerProduct
     , b: input.b

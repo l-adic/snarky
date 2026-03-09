@@ -53,12 +53,16 @@ newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInpu
 -------------------------------------------------------------------------------
 
 type PerProofTuple dw fv b =
-  Tuple (Vector 5 (Type2 (SplitField fv b)))    -- [cip, b, ztSrs, ztDs, perm]
-    (Tuple fv                                    -- sponge_digest
-      (Tuple (Vector 2 (SizedF 128 fv))          -- [beta, gamma]
-        (Tuple (Vector 3 (SizedF 128 fv))         -- [alpha, zeta, xi]
-          (Tuple (Vector dw (SizedF 128 fv))       -- bp_challenges
-            b))))                                  -- should_finalize
+  Tuple (Vector 5 (Type2 (SplitField fv b))) -- [cip, b, ztSrs, ztDs, perm]
+    ( Tuple fv -- sponge_digest
+        ( Tuple (Vector 2 (SizedF 128 fv)) -- [beta, gamma]
+            ( Tuple (Vector 3 (SizedF 128 fv)) -- [alpha, zeta, xi]
+                ( Tuple (Vector dw (SizedF 128 fv)) -- bp_challenges
+                    b
+                )
+            )
+        )
+    ) -- should_finalize
 
 type StmtTuple n dw fv b =
   Tuple (Vector n (PerProofTuple dw fv b))
@@ -80,10 +84,13 @@ toPackedTuple (PackedStepPublicInput s) =
       p = dv.plonk
     in
       Tuple (dv.combinedInnerProduct :< dv.b :< p.zetaToSrsLength :< p.zetaToDomainSize :< p.perm :< Vector.nil)
-        (Tuple up.spongeDigestBeforeEvaluations
-          (Tuple (p.beta :< p.gamma :< Vector.nil)
-            (Tuple (p.alpha :< p.zeta :< dv.xi :< Vector.nil)
-              (Tuple dv.bulletproofChallenges up.shouldFinalize))))
+        ( Tuple up.spongeDigestBeforeEvaluations
+            ( Tuple (p.beta :< p.gamma :< Vector.nil)
+                ( Tuple (p.alpha :< p.zeta :< dv.xi :< Vector.nil)
+                    (Tuple dv.bulletproofChallenges up.shouldFinalize)
+                )
+            )
+        )
 
 fromPackedTuple :: forall n dw fv b. StmtTuple n dw fv b -> PackedStepPublicInput n dw fv b
 fromPackedTuple (Tuple proofs (Tuple mfnsp mfnwp)) =

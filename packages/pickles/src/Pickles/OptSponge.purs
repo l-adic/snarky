@@ -36,12 +36,13 @@ import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Poseidon (class PoseidonField)
-import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (sub_)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), add_, addConstraint, all_, and_, any_, assertEqual_, const_, exists, false_, fromField, if_, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
+import Poseidon (class PoseidonField)
+import RandomOracle.Sponge as RegSponge
+import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar (sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), addConstraint, add_, all_, and_, any_, assertEqual_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
@@ -49,7 +50,6 @@ import Snarky.Constraint.Basic (r1cs)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import RandomOracle.Sponge as RegSponge
 
 type OptSponge f =
   { state :: Vector 3 (FVar f)
@@ -421,8 +421,10 @@ lowest128BitsInternal constrainLowBits endo x = do
     F xVal <- read x
     let
       xBig = toBigInt xVal
+
       lo :: SizedF 128 (F f)
       lo = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ mod xBig two128
+
       hi :: SizedF 128 (F f)
       hi = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ div xBig two128
     pure $ UnChecked (Tuple lo hi)
