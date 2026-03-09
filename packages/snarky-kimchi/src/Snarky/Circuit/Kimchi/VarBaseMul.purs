@@ -19,9 +19,9 @@ import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, seal, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
-import Snarky.Circuit.Kimchi.AddComplete (addComplete')
+import Snarky.Circuit.Kimchi.AddComplete (addComplete', sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
@@ -43,7 +43,11 @@ varBaseMul
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
-varBaseMul base (Type1 t) = do
+varBaseMul base' (Type1 t) = do
+  -- Seal the base point once, matching OCaml's `let base = seal base in` at the top
+  -- of scale_fast_unpack. This converts complex CVar expressions to simple variables,
+  -- preventing redundant constraints when base is reduced in each VarBaseMul round.
+  base <- sealPoint base'
   -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
   -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
   lsbBits <- exists do

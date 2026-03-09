@@ -16,8 +16,10 @@ sealPoint
   => AffinePoint (FVar f)
   -> Snarky c t m (AffinePoint (FVar f))
 sealPoint p = label "seal_point" do
-  x <- label "seal_x" $ seal p.x
+  -- OCaml's seal = Tuple_lib.Double.map ~f:Utils.seal evaluates y before x
+  -- (right-to-left tuple construction), so we must seal y first to match.
   y <- label "seal_y" $ seal p.y
+  x <- label "seal_x" $ seal p.x
   pure { x, y }
 
 -- | Complete addition. When checkFinite is true, inf is set to the constant zero

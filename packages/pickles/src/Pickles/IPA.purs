@@ -468,13 +468,13 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- OCaml: let uc = scale_fast u advice.combined_inner_product in
   --        combined_polynomial + uc
   -- Right-to-left: uc first, then add
-  pPrime <- liftSnarky do
-    cipU <- scalarOps.scaleByShifted u input.combinedInnerProduct
-    { p } <- addComplete input.combinedPolynomial cipU
+  pPrime <- liftSnarky $ label "ipa_scale_cip" do
+    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted u input.combinedInnerProduct
+    { p } <- label "ipa_scale_cip_add" $ addComplete input.combinedPolynomial cipU
     pure p
 
   -- 4. Build q = p_prime + lr_prod
-  q <- liftSnarky do
+  q <- liftSnarky $ label "ipa_q" do
     { p } <- addComplete pPrime lrProd
     pure p
 
@@ -487,16 +487,16 @@ ipaFinalCheckCircuit scalarOps params input = do
 
   success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
-    cQ <- endo q c
-    { p: lhs } <- addComplete cQ input.delta
+    cQ <- label "ipa_endo_q" $ endo q c
+    { p: lhs } <- label "ipa_lhs_add" $ addComplete cQ input.delta
 
     -- 8. Compute RHS: z1*(sg + b*u) + z2*H
     -- Note: b is provided as input and verified separately via bCorrectCircuit
-    bU <- scalarOps.scaleByShifted u input.b
-    { p: sgPlusBU } <- addComplete input.sg bU
-    z1Term <- scalarOps.scaleByShifted sgPlusBU input.z1
-    z2Term <- scalarOps.scaleByShifted input.blindingGenerator input.z2
-    { p: rhs } <- addComplete z1Term z2Term
+    bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted u input.b
+    { p: sgPlusBU } <- label "ipa_sg_add" $ addComplete input.sg bU
+    z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.z1
+    z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.z2
+    { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
 
     -- 9. Check LHS == RHS
     xEqual <- equals_ lhs.x rhs.x
