@@ -85,6 +85,12 @@ decorateError builtState = go
     | Array.null labels = ""
     | otherwise = " (" <> intercalate " > " labels <> ")"
 
+isFailedAssertion :: EvaluationError -> Boolean
+isFailedAssertion = case _ of
+  FailedAssertion _ -> true
+  WithContext _ inner -> isFailedAssertion inner
+  _ -> false
+
 -- | Backend-specific configuration for circuit tests.
 -- | Define one value per constraint family to avoid repeating these three fields everywhere.
 type TestConfig f c r =
@@ -151,6 +157,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
   Left e ->
     case testFunction inputs of
       ProverError f -> withHelp (f e) ("Prover exited with error " <> decorateError builtState e)
+      Unsatisfied | isFailedAssertion e -> Success
       _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> decorateError builtState e)
   Right (Tuple b assignments) ->
     let
