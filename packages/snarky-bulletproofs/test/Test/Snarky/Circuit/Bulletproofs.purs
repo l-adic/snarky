@@ -94,7 +94,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         factorsCircuit
         initialState
     let
-      constraints = sortR1CS cs
+      constraints = sortR1CS (map _.constraint cs)
       gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit
@@ -205,7 +205,7 @@ dlogSpec (_ :: Proxy curve) (_ :: Proxy f) pg pc name = describe (name <> " DLog
         (dlog16Circuit cp)
         initialState
     let
-      constraints = sortR1CS cs
+      constraints = sortR1CS (map _.constraint cs)
       gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) (ReaderT (Env f) Effect) (AffinePoint (F f)) Unit

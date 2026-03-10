@@ -82,7 +82,8 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
         factorsCircuit
         initialState
     let
-      gates = makeGates { publicInputs, constraints: cs }
+      constraints = map _.constraint cs
+      gates = makeGates { publicInputs, constraints }
 
       solver :: SolverT f (R1CS f) Gen (F f) Unit
       solver = makeSolver (Proxy @(R1CS f)) factorsCircuit
@@ -91,7 +92,7 @@ factorsSpec (_ :: Proxy g) (_ :: Proxy f) pc name = describe (name <> " Factors 
       gen = arbitrary `suchThat` \a -> a /= zero && a /= one
       solve n = do
         Tuple _ assignments <- solver n
-        makeGatesWitness { assignments, constraints: cs, publicInputs }
+        makeGatesWitness { assignments, constraints, publicInputs }
 
     k <- randomSampleOne gen
     runExceptT (mapExceptT randomSampleOne $ solve k) >>= case _ of
