@@ -9,6 +9,7 @@ module Pickles.Types
   , WrapField
   , StepIPARounds
   , WrapIPARounds
+  , MaxProofsVerified
   , StepCommitmentCurve
   , WrapCommitmentCurve
   , StepInput
@@ -32,6 +33,10 @@ type StepIPARounds = 16
 
 -- | IPA rounds in a Wrap proof (= log2 of Pallas SRS size = Rounds.Wrap = 15).
 type WrapIPARounds = 15
+
+-- | Maximum number of previous proofs verified per step (always 2 in Pickles).
+-- | Reference: mina/src/lib/pickles/common/nat.ml (N2)
+type MaxProofsVerified = 2
 
 -- | Step proofs commit on Vesta (scalar field = Fp = StepField).
 type StepCommitmentCurve = Vesta.G

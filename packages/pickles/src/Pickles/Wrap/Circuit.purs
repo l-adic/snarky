@@ -1,19 +1,14 @@
 -- | Wrap circuit: verifies a Step proof via IPA and finalizes deferred values.
 -- |
--- | This circuit runs two independent verification steps:
--- | 1. `finalizeOtherProof` — checks deferred values (xi, CIP, b, perm)
+-- | This circuit runs two verification steps:
+-- | 1. For each of `mpv` previous proofs: `finalizeOtherProof` + assert finalized
 -- | 2. `verify` (incrementallyVerifyProof) — checks the IPA opening proof
 -- |
 -- | The finalize and IVP subcircuits operate on SEPARATE inputs:
 -- | - IVP uses the current Step proof's deferred values (cross-field Fp→Fq)
 -- | - Finalize uses its own consistently-computed deferred values (same-field Fq)
 -- |
--- | The `shouldFinalize` flag enables bootstrapping: dummy proofs use `false`.
--- |
--- | Private witness data (polynomial evaluations for finalize) is obtained
--- | via the WrapWitnessM advisory monad, not passed as public input.
--- |
--- | Reference: mina/src/lib/pickles/wrap_main.ml:422-512
+-- | Reference: mina/src/lib/pickles/wrap_main.ml
 module Pickles.Wrap.Circuit
   ( WrapInput
   , WrapInputVar
@@ -27,19 +22,22 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector)
+import Data.Traversable (for)
+import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOpeningProof, getStepIOFields, getUnfinalizedProof)
+import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Pickles.Wrap.OtherField as WrapOtherField
-import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assert_, equals_, exists, false_, fieldsToValue, not_, or_)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, UnChecked(..), assert_, equals_, exists, false_, fieldsToValue, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -47,51 +45,19 @@ import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -- | Public input for the Wrap circuit (value level).
--- |
--- | In OCaml Pickles, the Wrap circuit receives ~29 fields as public input:
--- | deferred values, sponge digest, and message digests. The next Step circuit
--- | verifies these when checking the Wrap proof.
--- |
--- | Parameterized by `ds` (Step IPA rounds) which determines the size of
--- | bulletproof challenges in the deferred values.
--- |
--- | Use with `Proxy @(WrapInput ds)` in `compile`. The circuit function
--- | receives `WrapInputVar ds` (variable-level version) via `CircuitType`.
 type WrapInput :: Int -> Type
 type WrapInput ds = WrapStatement ds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
 
 -- | Public input for the Wrap circuit (variable level).
--- |
--- | This is what the circuit function actually receives after `compile`
--- | maps the value-level `WrapInput ds` through `CircuitType`.
 type WrapInputVar :: Int -> Type
 type WrapInputVar ds = WrapStatement ds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
 
 -- | The Step proof's public input type as seen by the Wrap verifier for x_hat.
--- |
--- | In OCaml, the Step circuit's public input is Step.Statement (not the full
--- | Step I/O). The Step circuit obtains its input (app_state, unfinalized_proofs)
--- | as private witness via Req.App_state, and the public input contains only
--- | the StepStatement (unfinalized proofs, message digests).
--- |
--- | This type is the StepStatement parameterized with Type2 shifted scalars
--- | (cross-field Fp→Fq representation), matching how the Step proof's deferred
--- | values are encoded in the public input.
--- |
--- | Parameterized by `fv` and `b` so the same alias works at both
--- | value level (F f, Boolean) and variable level (FVar f, BoolVar f).
 type StepPublicInput :: Int -> Int -> Int -> Type -> Type -> Type
 type StepPublicInput n ds dw fv b =
   StepStatement n ds dw fv (Type2 (SplitField fv b)) b
 
 -- | Combined parameters for the Wrap circuit.
--- |
--- | Flat record containing all fields needed by both subcircuits:
--- | - IVP: curveParams, lagrangeComms, blindingH, sigmaCommLast, columnComms, indexDigest, groupMapParams
--- | - Finalize: domain, domainLog2, zkRows, linearizationPoly
--- | - Shared: endo
--- |
--- | Row-polymorphic functions accept this as a superset of their required fields.
 type WrapParams :: Type -> Type
 type WrapParams f =
   { -- IVP params
@@ -117,66 +83,55 @@ type WrapParams f =
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.
 -- |
--- | Steps:
--- | 1. Obtain private witness data via advisory monad
--- | 2. Run `finalizeOtherProofCircuit` on the public input's deferred values
--- | 3. Assert `finalized || not shouldFinalize`
--- | 4. Run `verify` (incrementallyVerifyProof) on the IVP input's opening proof
--- |
--- | For Wrap, isBaseCase is always false (Wrap always verifies a real Step proof).
--- | The claimedDigest comes from the WrapStatement public input.
--- |
--- | The WrapStatement public input provides Fp-origin deferred values for IVP.
--- | The finalize subcircuit uses separate Fq-recomputed deferred values from
--- | the private witness (getUnfinalizedProof). These are about different proofs:
--- | IVP verifies the current Step proof, finalize checks previous Wrap proofs.
--- |
--- | The `existsStepStatement` parameter is an allocation action that creates
--- | circuit variables for the Step proof's public input (StepStatement).
--- | It's constructed at the call site (where concrete types are known) using
--- | `exists` with the advisory monad.
--- |
--- | In OCaml, the Wrap circuit's x_hat (publicInputCommit) is computed over
--- | the packed Step.Statement, NOT the full Step I/O. By passing only
--- | StepStatement to `verify`, we match OCaml's approach and avoid the
--- | expensive MSM over the full ~77 field Step I/O.
+-- | Type parameters:
+-- | - `mpv`: max_proofs_verified (always 2 in Pickles)
+-- | - `n`: number of Step proof branches (currently 1)
+-- | - `ds`: Step IPA rounds
 wrapCircuit
-  :: forall @n @ds _l3 t m
+  :: forall @mpv @n @ds _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-  => WrapWitnessM ds WrapIPARounds m Pallas.ScalarField
+  => WrapWitnessM mpv ds WrapIPARounds m Pallas.ScalarField
+  => Reflectable mpv Int
   => Reflectable ds Int
   => Reflectable n Int
   => Add 1 _l3 ds
+  => Compare 0 mpv LT
   => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
 wrapCircuit params wrapStmt = do
   -- 1. Obtain private witness data via advisory monad
-  -- Step statement obtained privately (OCaml: pack_statement prev_statement)
-  publicInput <- exists $ lift $ do
-    fs <- getStepIOFields @ds @WrapIPARounds @m @Pallas.ScalarField unit
-    pure $ fieldsToValue @_ @(StepPublicInput n ds WrapIPARounds (F Pallas.ScalarField) Boolean) (map unwrap fs)
-  witness <- exists $ lift $ getEvals @ds @WrapIPARounds unit
-  messages <- exists $ lift $ getMessages @ds @WrapIPARounds unit
-  openingProof <- exists $ lift $ getOpeningProof @ds @WrapIPARounds unit
-  -- Unfinalized proof for finalize (private witness, Fq-recomputed deferred values).
-  -- Distinct from WrapStatement's Fp-origin deferred values used by IVP.
-  -- OCaml: prev_proof_state.unfinalized_proofs
-  unfinalized <- exists $ lift $ getUnfinalizedProof @ds @WrapIPARounds @_ @Pallas.ScalarField unit
-  -- TODO: wire real prevChallenges from advisory system
-  -- 2. Finalize deferred values (uses private unfinalized proof)
-  { finalized, expandedChallenges } <-
-    wrapFinalizeOtherProofCircuit params
-      { unfinalized, witness, prevChallenges: Vector.nil }
+  UnChecked publicInput <- exists $ lift $ do
+    fs <- getStepIOFields @mpv @ds @WrapIPARounds @m @Pallas.ScalarField unit
+    pure $ UnChecked $ fieldsToValue @_ @(StepPublicInput n ds WrapIPARounds (F Pallas.ScalarField) Boolean) (map unwrap fs)
+  evalsAll <- exists $ lift $ getEvals @mpv @ds @WrapIPARounds unit
+  messages <- exists $ lift $ getMessages @mpv @ds @WrapIPARounds unit
+  openingProof <- exists $ lift $ getOpeningProof @mpv @ds @WrapIPARounds unit
+  -- UnChecked: OCaml's exists allocates raw fields without bit-range checks.
+  -- The SizedF 128 scalar challenges inside UnfinalizedProof and oldBpChallenges
+  -- would otherwise generate ~382 constraints each (unpack + assert high bits zero).
+  -- The actual range checking happens later in the FOP via squeezeScalar.
+  UnChecked unfinalizedProofs <- exists $ lift $ UnChecked <$> getUnfinalizedProofs @mpv @ds @WrapIPARounds @_ @Pallas.ScalarField unit
+  _sgOld <- exists $ lift $ getStepAccs @mpv @ds @WrapIPARounds unit
+  UnChecked oldBpChallenges <- exists $ lift $ UnChecked <$> getOldBpChallenges @mpv @ds @WrapIPARounds unit
 
-  -- 3. Assert finalized || not shouldFinalize
-  finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
-  assert_ finalizedOrNotRequired
+  -- 2. Finalize each of mpv previous proofs
+  -- OCaml: Vector.mapn [unfinalized_proofs; old_bp_chals; evals; wrap_domains]
+  --        ~f:(fun [...] -> finalize_other_proof ...)
+  expandedChallengesAll <- for (Vector.zip unfinalizedProofs (Vector.zip evalsAll oldBpChallenges)) \(Tuple unfinalized (Tuple witness prevChallenges)) -> do
+    { finalized, expandedChallenges } <-
+      wrapFinalizeOtherProofCircuit params
+        { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
+    -- Assert finalized || not shouldFinalize
+    finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
+    assert_ finalizedOrNotRequired
+    pure expandedChallenges
 
-  -- 4. Verify the Step proof's IPA opening (uses public input deferred values)
+  -- 3. Verify the Step proof's IPA opening (uses public input deferred values)
   let
     fullIvpInput =
       { publicInput
+      -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
       , deferredValues: wrapStmt.proofState.deferredValues
       , wComm: messages.wComm
@@ -189,7 +144,9 @@ wrapCircuit params wrapStmt = do
       wrapStmt.proofState.spongeDigestBeforeEvaluations
   assert_ success
 
-  -- 5. Compute and assert messagesForNextWrapProof hash
+  -- 4. Compute and assert messagesForNextWrapProof hash
+  -- TODO: use expandedChallengesAll (all mpv sets) instead of single + dummies
+  let expandedChallenges = Vector.head expandedChallengesAll
   computedDigest <- evalSpongeM initialSpongeCircuit $
     hashMessagesForNextWrapProofCircuit
       { sg: openingProof.sg
