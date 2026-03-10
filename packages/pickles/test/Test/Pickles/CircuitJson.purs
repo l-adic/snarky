@@ -11,23 +11,21 @@ module Test.Pickles.CircuitJson (spec, CompiledCircuit, compileIvpWrap, compileB
 
 import Prelude
 
-import Data.Array (concatMap)
+import Data.Array (concatMap, filter)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (getFinite)
 import Data.Foldable (foldl, for_, intercalate)
-import Data.FoldableWithIndex (foldlWithIndex)
 import Data.Int (pow)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, fromMaybe)
 import Data.Set as Set
 import Data.Traversable (for)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), snd)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Class.Console (log)
 import Effect.Exception (throw)
 import Foreign (MultipleErrors)
 import Node.Buffer as Buffer
@@ -52,18 +50,14 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Backend.Kimchi (makePublicInputRows, placeVariables)
-import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, circuitToJson, diffCircuits, extractCachedConstants, formatGate, readCachedConstantsJson, readCircuitJson, rowContexts)
+import Snarky.Backend.Kimchi.CircuitJson (CircuitData, CircuitGateData, GateDiff, circuitToJson, diffCircuits, extractCachedConstants, formatGate, readCachedConstantsJson, readCircuitJson)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
-import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), fromShiftedType1Circuit, groupMapCircuit, groupMapParams, toField)
-import Snarky.Circuit.Kimchi (addComplete, endo, endoInv)
+import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), addComplete, endo, endoInv, fromShiftedType1Circuit, groupMapCircuit, groupMapParams, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Constraint.Kimchi.Types (GateKind(GenericPlonkGate))
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), curveParams, endoScalar, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
@@ -655,6 +649,8 @@ gateTypeSummary gates =
     intercalate "\n" lines
 
 -- | Generic comparison test: compile PS circuit, load OCaml fixture, compare.
+-- | Quiet on success. On failure, writes detailed diagnostics to /tmp/circuit_diff_<name>.txt
+-- | and throws a concise error message.
 compareCircuit
   :: forall f
    . SerdeHex f
@@ -668,205 +664,146 @@ compareCircuit
   -> Aff Unit
 compareCircuit name fixtureName compiled ocamlResult = do
   let
-    psJson = compiled.json
     psConsts = extractCachedConstants compiled.state
 
     psCircuit :: Either MultipleErrors (CircuitData f)
-    psCircuit = readCircuitJson psJson
+    psCircuit = readCircuitJson compiled.json
   case ocamlResult, psCircuit of
     Right ocaml, Right ps -> do
       let
         ocamlLen = Array.length ocaml.gates
         psLen = Array.length ps.gates
-      log $ name <> " OCaml: pi=" <> show ocaml.publicInputSize <> ", gates=" <> show ocamlLen
-      log $ name <> " PS:    pi=" <> show ps.publicInputSize <> ", gates=" <> show psLen
-      log $ "OCaml gate types:\n" <> gateTypeSummary ocaml.gates
-      log $ "PS gate types:\n" <> gateTypeSummary ps.gates
       ps.publicInputSize `shouldEqual` ocaml.publicInputSize
-      -- Compare cached constants first (root cause of many gate diffs)
       ocamlConsts <- loadCachedConstants @f fixtureName
       compareCachedConstants name ocamlConsts psConsts
-      -- Check gate count match first — don't silently drop gates
-      if ocamlLen /= psLen then
-        log $ "Gate count mismatch: OCaml=" <> show ocamlLen <> " PS=" <> show psLen
-      else pure unit
-      -- Compare gates that exist in both, report first divergence
       let diffs = diffCircuits ocaml ps
-      -- Check if coefficients match even when wires differ
-      -- Compare half-row coefficients (unbatch gates)
-      let
-        unbatch gates = concatMap
-          ( \g ->
-              if Array.length g.coeffs <= 5 then [ g.coeffs ]
-              else [ Array.take 5 g.coeffs, Array.drop 5 g.coeffs ]
-          )
-          gates
-        ocHalfRows = unbatch ocaml.gates
-        psHalfRows = unbatch ps.gates
-        hrDiffs = Array.catMaybes $ Array.mapWithIndex
-          ( \i ocHR ->
-              if i < Array.length psHalfRows then
-                let
-                  psHR = unsafePartial $ Array.unsafeIndex psHalfRows i
-                in
-                  if ocHR /= psHR then Just i else Nothing
-              else Just i
-          )
-          ocHalfRows
-      log $ "Half-row diffs: " <> show (Array.length hrDiffs) <> "/" <> show (Array.length ocHalfRows) <> " at: " <> intercalate ", " (map show (Array.take 30 hrDiffs))
-      -- Show exact values at differing half-rows
-      for_ hrDiffs \i -> do
-        let
-          ocHR = unsafePartial $ Array.unsafeIndex ocHalfRows i
-          psHR = unsafePartial $ Array.unsafeIndex psHalfRows i
-          -- Show which coefficient positions differ
-          positionDiffs = Array.catMaybes $ Array.mapWithIndex
-            ( \j oc ->
-                if j < Array.length psHR then
-                  let
-                    ps_ = unsafePartial $ Array.unsafeIndex psHR j
-                  in
-                    if oc /= ps_ then Just (show j <> ":" <> show oc <> " vs " <> show ps_) else Nothing
-                else Nothing
-            )
-            ocHR
-        log $ "  HR" <> show i <> " diffs: " <> intercalate "; " positionDiffs
-      -- Dump full half-row coefficients around first diff for both sides
-      let
-        firstDiffHR = fromMaybe 0 (Array.head hrDiffs)
-        windowStart = max 0 (firstDiffHR - 20)
-        windowEnd = min (Array.length ocHalfRows) (firstDiffHR + 8)
-        showCoeffs coeffs = intercalate "," $ map
-          ( \c ->
-              if c == zero then "0"
-              else if c == one then "1"
-              else if c == (-one) then "-1"
-              else show c
-          )
-          coeffs
-      log $ "Half-row dump (gate-order) around first diff HR " <> show firstDiffHR <> ":"
-      log $ "  HR#  | gate | half | OCaml coeffs        | PS coeffs           | match?"
-      for_ (Array.range windowStart (windowEnd - 1)) \i -> do
-        let
-          ocHR = unsafePartial $ Array.unsafeIndex ocHalfRows i
-          psHR =
-            if i < Array.length psHalfRows then unsafePartial $ Array.unsafeIndex psHalfRows i
-            else []
-          gateIdx = i / 2
-          halfStr = if i `mod` 2 == 0 then "1st/NEW" else "2nd/OLD"
-          matchStr = if ocHR == psHR then "  OK" else "<<DIFF>>"
-        log $ "  " <> show i <> " | g" <> show gateIdx <> " | " <> halfStr <> " | [" <> showCoeffs ocHR <> "] | [" <> showCoeffs psHR <> "] | " <> matchStr
-      -- Also dump in EMISSION order (OLD arrived first, NEW arrived second)
-      let
-        unbatchEmitOrder gates = concatMap
-          ( \g ->
-              if Array.length g.coeffs <= 5 then [ g.coeffs ]
-              else [ Array.drop 5 g.coeffs, Array.take 5 g.coeffs ]
-          )
-          gates
-        ocEmit = unbatchEmitOrder ocaml.gates
-        psEmit = unbatchEmitOrder ps.gates
-        -- Find first emission-order diff
-        emitDiffs = Array.catMaybes $ Array.mapWithIndex
-          ( \i oc ->
-              if i < Array.length psEmit then
-                let
-                  ps_ = unsafePartial $ Array.unsafeIndex psEmit i
-                in
-                  if oc /= ps_ then Just i else Nothing
-              else Just i
-          )
-          ocEmit
-        firstEmitDiff = fromMaybe 0 (Array.head emitDiffs)
-        emitStart = max 0 (firstEmitDiff - 8)
-        emitEnd = min (Array.length ocEmit) (firstEmitDiff + 8)
-      log $ "Emission-order diffs at: " <> intercalate ", " (map show (Array.take 30 emitDiffs))
-      log $ "Emission-order dump around first diff E" <> show firstEmitDiff <> ":"
-      log $ "  E#   | gate | emit | OCaml coeffs        | PS coeffs           | match?"
-      for_ (Array.range emitStart (emitEnd - 1)) \i -> do
-        let
-          ocE = unsafePartial $ Array.unsafeIndex ocEmit i
-          psE =
-            if i < Array.length psEmit then unsafePartial $ Array.unsafeIndex psEmit i
-            else []
-          gateIdx = i / 2
-          emitStr = if i `mod` 2 == 0 then "1st(OLD)" else "2nd(NEW)"
-          matchStr = if ocE == psE then "  OK" else "<<DIFF>>"
-        log $ "  " <> show i <> " | g" <> show gateIdx <> " | " <> emitStr <> " | [" <> showCoeffs ocE <> "] | [" <> showCoeffs psE <> "] | " <> matchStr
-      log $ "Differing gate indices: " <> intercalate ", "
-        (map (\d -> show d.index <> "(" <> show d.ocaml.kind <> ")") diffs)
-      if Array.length diffs > 0 then do
+      if Array.length diffs > 0 || ocamlLen /= psLen then do
+        -- Write detailed diagnostics to file
+        let diagFile = "/tmp/circuit_diff_" <> name <> ".txt"
+        liftEffect $ FS.writeTextFile UTF8 diagFile (buildDiagnostics ocaml.gates ps.gates diffs)
+        -- Throw concise error
         let
           first = unsafePartial $ Array.unsafeIndex diffs 0
-          -- Find where gate kind sequences diverge (accounting for insertions/deletions)
-          ocamlKinds = map _.kind ocaml.gates
-          psKinds = map _.kind ps.gates
-          kindDivergences = Array.catMaybes $ Array.mapWithIndex
-            ( \i ok ->
-                if i < Array.length psKinds then
-                  let
-                    pk = unsafePartial $ Array.unsafeIndex psKinds i
-                  in
-                    if ok /= pk then Just (show i <> ": OCaml=" <> show ok <> " PS=" <> show pk) else Nothing
-                else Just (show i <> ": OCaml=" <> show ok <> " PS=<missing>")
-            )
-            ocamlKinds
-          -- Find first gate kind divergence
-          firstKindDiv = fromMaybe (min ocamlLen psLen) $
-            Array.findIndex
-              ( \i ->
-                  let
-                    ok = unsafePartial $ Array.unsafeIndex ocamlKinds i
-                    pk = unsafePartial $ Array.unsafeIndex psKinds i
-                  in
-                    ok /= pk
-              )
-              (Array.range 0 (min ocamlLen psLen - 1))
-          ocamlGenBefore = Array.length $ Array.filter (\g -> g.kind == GenericPlonkGate) (Array.take firstKindDiv ocaml.gates)
-          psGenBefore = Array.length $ Array.filter (\g -> g.kind == GenericPlonkGate) (Array.take firstKindDiv ps.gates)
-          -- Show 30 gates around the kind divergence for both
-          ocamlContext = Array.mapWithIndex (\i g -> show (firstKindDiv - 10 + i) <> ":" <> show g.kind)
-            (Array.slice (max 0 (firstKindDiv - 10)) (firstKindDiv + 20) ocaml.gates)
-          psContext = Array.mapWithIndex (\i g -> show (firstKindDiv - 10 + i) <> ":" <> show g.kind)
-            (Array.slice (max 0 (firstKindDiv - 10)) (firstKindDiv + 20) ps.gates)
-          msg = "First divergence at gate " <> show first.index <> ":\n"
-            <> "  OCaml: "
-            <> formatGate first.index first.ocaml
-            <> "\n"
-            <> "  PS:    "
-            <> formatGate first.index first.ps
-            <> "\n"
-            <> "First kind divergence at gate "
-            <> show firstKindDiv
-            <> " (OCaml GenericPlonk before: "
-            <> show ocamlGenBefore
-            <> ", PS GenericPlonk before: "
-            <> show psGenBefore
-            <> ")\n"
-            <> "OCaml context: "
-            <> intercalate ", " ocamlContext
-            <> "\n"
-            <> "PS context: "
-            <> intercalate ", " psContext
-            <> "\n"
-            <> "Gate kind mismatches (first 20): "
-            <> intercalate ", " (Array.take 20 kindDivergences)
-            <> "\n"
-            <> "Total differences: "
+          msg = "Circuit mismatch (OCaml=" <> show ocamlLen <> " PS=" <> show psLen <> " gates, "
             <> show (Array.length diffs)
-            <> " / "
-            <> show (max ocamlLen psLen)
+            <> " diffs). "
+            <> "First at gate "
+            <> show first.index
+            <> " ("
+            <> show first.ocaml.kind
+            <> "). "
+            <> "Details: "
+            <> diagFile
         liftEffect $ throw msg
-      else pure unit
-      -- If all zipped gates match but lengths differ, that's still a failure
-      if ocamlLen /= psLen then
-        liftEffect $ throw $ "Gate count mismatch: OCaml=" <> show ocamlLen <> " PS=" <> show psLen
-          <> ". All "
-          <> show (min ocamlLen psLen)
-          <> " shared gates match."
       else pure unit
     Left e, _ -> liftEffect $ throw $ "Failed to parse OCaml JSON: " <> show e
     _, Left e -> liftEffect $ throw $ "Failed to parse PureScript JSON: " <> show e
+
+-- | Build detailed diagnostic text for a circuit mismatch (written to file, not console).
+buildDiagnostics
+  :: forall f
+   . Show f
+  => Eq f
+  => Semiring f
+  => Ring f
+  => Array (CircuitGateData f)
+  -> Array (CircuitGateData f)
+  -> Array (GateDiff f)
+  -> String
+buildDiagnostics ocaml ps diffs =
+  let
+    ocamlLen = Array.length ocaml
+    psLen = Array.length ps
+    showCoeffs coeffs = intercalate "," $ map
+      ( \c ->
+          if c == zero then "0"
+          else if c == one then "1"
+          else if c == (-one) then "-1"
+          else show c
+      )
+      coeffs
+
+    unbatch gates = concatMap
+      ( \g ->
+          if Array.length g.coeffs <= 5 then [ g.coeffs ]
+          else [ Array.take 5 g.coeffs, Array.drop 5 g.coeffs ]
+      )
+      gates
+    ocHalfRows = unbatch ocaml
+    psHalfRows = unbatch ps
+    hrDiffs = Array.catMaybes $ Array.mapWithIndex
+      ( \i ocHR ->
+          if i < Array.length psHalfRows then
+            let
+              psHR = unsafePartial $ Array.unsafeIndex psHalfRows i
+            in
+              if ocHR /= psHR then Just i else Nothing
+          else Just i
+      )
+      ocHalfRows
+
+    ocamlKinds = map _.kind ocaml
+    psKinds = map _.kind ps
+    kindDivergences = Array.catMaybes $ Array.mapWithIndex
+      ( \i ok ->
+          if i < Array.length psKinds then
+            let
+              pk = unsafePartial $ Array.unsafeIndex psKinds i
+            in
+              if ok /= pk then Just (show i <> ": OCaml=" <> show ok <> " PS=" <> show pk) else Nothing
+          else Just (show i <> ": OCaml=" <> show ok <> " PS=<missing>")
+      )
+      ocamlKinds
+
+    lines = Array.concat
+      [ [ "Circuit comparison: OCaml=" <> show ocamlLen <> " PS=" <> show psLen <> " gates"
+        , "OCaml gate types:\n" <> gateTypeSummary ocaml
+        , "PS gate types:\n" <> gateTypeSummary ps
+        , ""
+        , "Differing gate indices: " <> intercalate ", "
+            (map (\d -> show d.index <> "(" <> show d.ocaml.kind <> ")") diffs)
+        , "Gate kind mismatches: " <> intercalate ", " (Array.take 20 kindDivergences)
+        , "Half-row coeff diffs: " <> show (Array.length hrDiffs) <> "/" <> show (Array.length ocHalfRows)
+        , ""
+        ]
+      , diffs <#> \d ->
+          "[" <> show d.index <> "] " <> show d.ocaml.kind <> "\n"
+            <> "  OCaml: "
+            <> formatGate d.index d.ocaml
+            <> "\n"
+            <> "  PS:    "
+            <> formatGate d.index d.ps
+      , [ "" ]
+      , if Array.length hrDiffs > 0 then
+          let
+            firstDiffHR = fromMaybe 0 (Array.head hrDiffs)
+            windowStart = max 0 (firstDiffHR - 5)
+            windowEnd = min (Array.length ocHalfRows) (firstDiffHR + 10)
+          in
+            [ "Half-row dump around first diff HR " <> show firstDiffHR <> ":"
+            , "  HR#  | gate | half | OCaml coeffs | PS coeffs | match?"
+            ] <> map
+              ( \i ->
+                  let
+                    ocHR = unsafePartial $ Array.unsafeIndex ocHalfRows i
+                    psHR = if i < Array.length psHalfRows then unsafePartial $ Array.unsafeIndex psHalfRows i else []
+                    gateIdx = i / 2
+                    halfStr = if i `mod` 2 == 0 then "1st" else "2nd"
+                    matchStr = if ocHR == psHR then "OK" else "DIFF"
+                  in
+                    "  " <> show i <> " | g" <> show gateIdx <> " | " <> halfStr
+                      <> " | ["
+                      <> showCoeffs ocHR
+                      <> "] | ["
+                      <> showCoeffs psHR
+                      <> "] | "
+                      <> matchStr
+              )
+              (Array.range windowStart (windowEnd - 1))
+        else []
+      ]
+  in
+    intercalate "\n" lines
 
 loadFixture :: forall @f. SerdeHex f => String -> Aff (Either MultipleErrors (CircuitData f))
 loadFixture name = liftEffect do
@@ -874,7 +811,7 @@ loadFixture name = liftEffect do
   json <- Buffer.toString UTF8 buf
   pure (readCircuitJson json)
 
-loadCachedConstants :: forall @f. Ord f => PrimeField f => String -> Aff (Set.Set f)
+loadCachedConstants :: forall @f. Ord f => PrimeField f => String -> Aff (Array (Tuple String f))
 loadCachedConstants name = liftEffect do
   buf <- FS.readFile (fixtureDir <> name <> "_cached_constants.json")
   json <- Buffer.toString UTF8 buf
@@ -887,27 +824,34 @@ compareCachedConstants
    . Ord f
   => Show f
   => String
-  -> Set.Set f -- OCaml cached constants
-  -> Set.Set f -- PS cached constants
+  -> Array (Tuple String f) -- OCaml cached constants
+  -> Array (Tuple String f) -- PS cached constants
   -> Aff Unit
 compareCachedConstants name ocamlConsts psConsts = do
   let
-    ocamlOnly = Set.difference ocamlConsts psConsts
-    psOnly = Set.difference psConsts ocamlConsts
-  log $ name <> " cached constants: OCaml=" <> show (Set.size ocamlConsts)
-    <> " PS="
-    <> show (Set.size psConsts)
-  if not (Set.isEmpty ocamlOnly) then do
-    log $ "  Only in OCaml (" <> show (Set.size ocamlOnly) <> "):"
-    void $ for (Array.fromFoldable ocamlOnly) \v ->
-      log $ "    " <> show v
-  else pure unit
-  if not (Set.isEmpty psOnly) then do
-    log $ "  Only in PS (" <> show (Set.size psOnly) <> "):"
-    void $ for (Array.fromFoldable psOnly) \v ->
-      log $ "    " <> show v
-  else pure unit
-  psConsts `shouldEqual` ocamlConsts
+    ocamlSet = Set.fromFoldable $ snd <$> ocamlConsts
+    psSet = Set.fromFoldable $ snd <$> psConsts
+    ocamlOnly = filter (\(Tuple _ y) -> not $ Set.member y psSet) ocamlConsts
+    psOnly = filter (\(Tuple _ y) -> not $ Set.member y ocamlSet) psConsts
+  when (ocamlSet /= psSet) do
+    let
+      diagFile = "/tmp/circuit_diff_" <> name <> "_cached_constants.txt"
+      lines = Array.concat
+        [ [ "Cached constants mismatch: OCaml=" <> show (Set.size ocamlSet) <> " PS=" <> show (Set.size psSet) ]
+        , if not (Array.null ocamlOnly) then [ "Only in OCaml (" <> show (Array.length ocamlOnly) <> "):" ]
+            <> map (\(Tuple var value) -> "  " <> show { var, value }) ocamlOnly
+          else []
+        , if not (Array.null psOnly) then [ "Only in PS (" <> show (Array.length psOnly) <> "):" ]
+            <> map (\(Tuple var value) -> "  " <> show { var, value }) psOnly
+          else []
+        ]
+    liftEffect $ FS.writeTextFile UTF8 diagFile (intercalate "\n" lines)
+    liftEffect $ throw $ "Cached constants mismatch (" <> name <> "): OCaml="
+      <> show (Set.size ocamlSet)
+      <> " PS="
+      <> show (Set.size psSet)
+      <> ". Details: "
+      <> diagFile
 
 -------------------------------------------------------------------------------
 -- | Compiled circuit
@@ -1283,47 +1227,9 @@ compileGroupMap = compiledCircuit @WrapField $
 -- | Debug: row → labels mapping
 -------------------------------------------------------------------------------
 
--- | Build a mapping from gate row index to the set of labels of variables
--- | appearing in that row. Uses varMetadata (variable → birth labels) and
--- | placeVariables (variable → cell positions) to cross-reference.
-buildRowLabels
-  :: forall f
-   . PrimeField f
-  => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> Array (Tuple Int (Array String))
-buildRowLabels s =
-  let
-    piRows :: Array (KimchiRow f)
-    piRows = makePublicInputRows s.publicInputs
-    rows = piRows <> concatMap (toKimchiRows <<< _.constraint) s.constraints
-    placement = placeVariables rows
-
-    -- Reverse map: for each variable, get its labels and its cell positions
-    -- Then build row → Set of labels
-    rowLabelMap :: Map.Map Int (Set.Set String)
-    rowLabelMap = foldlWithIndex
-      ( \var acc cells ->
-          let
-            labels = fromMaybe [] (Map.lookup var s.varMetadata)
-            labelStr = intercalate " > " labels
-          in
-            if Array.null labels then acc
-            else foldl
-              ( \m (Tuple row _col) ->
-                  Map.insertWith Set.union row (Set.singleton labelStr) m
-              )
-              acc
-              cells
-      )
-      Map.empty
-      (placement :: Map.Map Variable (Array (Tuple Int Int)))
-
-  in
-    map (\(Tuple row labels) -> Tuple row (Set.toUnfoldable labels :: Array String))
-      (Map.toUnfoldable rowLabelMap :: Array (Tuple Int (Set.Set String)))
-
 -- | Dump row-to-label mapping for the Wrap FOP circuit as a string.
 -- | Each line: "row_index: label1, label2, ..."
+{-
 dumpRowLabels :: String
 dumpRowLabels =
   let
@@ -1338,7 +1244,7 @@ dumpRowLabels =
           show row <> ": " <> intercalate ", " labels
       )
       rowLabels
-
+-}
 -------------------------------------------------------------------------------
 -- | Spec
 -------------------------------------------------------------------------------
@@ -1369,82 +1275,8 @@ spec =
           , blindingH: coerce $ pallasSrsBlindingGenerator srs
           }
         compiled = compileIvpWrap srsData
-      liftEffect $ FS.writeTextFile UTF8 "/tmp/ps_ivp_wrap.json" compiled.json
       ocaml <- loadFixture @WrapField "ivp_wrap_circuit"
       compareCircuit "ivp_wrap" "ivp_wrap_circuit" compiled ocaml
-    it "IVP Wrap labels" do
-      let
-        srs = vestaCrsCreate (pow 2 16)
-        srsData =
-          { lagrangeComms: coerce $ pallasSrsLagrangeCommitments srs 16 177
-          , blindingH: coerce $ pallasSrsBlindingGenerator srs
-          }
-        s = (compileIvpWrap srsData).state
-        contexts = rowContexts s
-
-        piRows :: Array (KimchiRow WrapField)
-        piRows = makePublicInputRows s.publicInputs
-        allRows = piRows <> concatMap (toKimchiRows <<< _.constraint) s.constraints
-        gateTypeAt row =
-          fromMaybe "?" $ map (\g -> show g.kind) (Array.index allRows row)
-
-        -- Summary: context path → gate type → count
-        labelGateCounts :: Map.Map String (Map.Map String Int)
-        labelGateCounts = Array.foldl
-          ( \m (Tuple row ctx) ->
-              let
-                gType = gateTypeAt row
-                ctxStr = if Array.null ctx then "<no-label>" else intercalate " > " ctx
-              in
-                Map.insertWith (Map.unionWith (+)) ctxStr (Map.singleton gType 1) m
-          )
-          Map.empty
-          (Array.mapWithIndex Tuple contexts)
-        formatCounts counts =
-          intercalate ", " $ map (\(Tuple k v) -> k <> "=" <> show v)
-            (Map.toUnfoldable counts :: Array (Tuple String Int))
-      log $ "IVP per-context gate type counts:"
-      void $ for (Map.toUnfoldable labelGateCounts :: Array (Tuple String (Map.Map String Int)))
-        \(Tuple lbl counts) ->
-          log $ "  " <> lbl <> ": " <> formatCounts counts
-      -- Dump all rows with gate type, coeffs, variables + context to JSONL file
-      let
-        allRowLines = Array.mapWithIndex
-          ( \row ctx ->
-              let
-                gType = gateTypeAt row
-                mRow = Array.index allRows row
-                coeffsStr = case mRow of
-                  Nothing -> "[]"
-                  Just r -> "[" <> intercalate "," (map show r.coeffs) <> "]"
-                varsStr = case mRow of
-                  Nothing -> "[]"
-                  Just r -> "["
-                    <> intercalate ","
-                      ( map
-                          ( case _ of
-                              Nothing -> "null"
-                              Just v -> show (show v)
-                          )
-                          ((Vector.toUnfoldable r.variables :: Array _))
-                      )
-                    <> "]"
-              in
-                "{\"row\":" <> show row
-                  <> ",\"gate\":\""
-                  <> gType
-                  <> "\""
-                  <> ",\"coeffs\":"
-                  <> coeffsStr
-                  <> ",\"vars\":"
-                  <> varsStr
-                  <> ",\"context\":"
-                  <> showContext ctx
-                  <> "}"
-          )
-          contexts
-        showContext ctx = "[" <> intercalate "," (map (\s -> "\"" <> s <> "\"") ctx) <> "]"
-      liftEffect $ FS.writeTextFile UTF8 "/tmp/ps_ivp_wrap_labels.jsonl" (intercalate "\n" allRowLines)
     it "xhat sub-circuit" do
       let
         srs = vestaCrsCreate (pow 2 16)
@@ -1467,15 +1299,5 @@ spec =
       ocaml <- loadFixture @WrapField "bullet_reduce_circuit"
       compareCircuit "bullet_reduce" "bullet_reduce_circuit" compileBulletReduce ocaml
     it "group_map sub-circuit" do
-      -- Dump row labels for debugging
-      let
-        s :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
-        s = compilePure (Proxy @V1W) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-          groupMapTestCircuit
-          Kimchi.initialState
-        rowLabels = buildRowLabels s
-      log "Row labels:"
-      for_ rowLabels \(Tuple row labels) ->
-        log $ "  row " <> show row <> ": " <> intercalate ", " labels
       ocaml <- loadFixture @WrapField "group_map_circuit"
       compareCircuit "group_map" "group_map_circuit" compileGroupMap ocaml

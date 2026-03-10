@@ -21,9 +21,8 @@ import Data.Either (Either, note)
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
-import Data.Set as Set
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Simple.JSON (readJSON)
@@ -116,26 +115,35 @@ type CachedConstantRaw =
 
 -- | Parse OCaml cached constants fixture JSON.
 -- | Returns the set of constant values (ignoring variable IDs).
-readCachedConstantsJson :: forall f. Ord f => PrimeField f => String -> Either MultipleErrors (Set.Set f)
+readCachedConstantsJson
+  :: forall f
+   . Ord f
+  => PrimeField f
+  => String
+  -> Either MultipleErrors (Array (Tuple String f))
 readCachedConstantsJson json = do
   raw :: Array CachedConstantRaw <- readJSON json
   let
     values = Array.mapMaybe
-      (\r -> map fromBigInt (BigInt.fromString r.value))
+      ( \{ var, value } -> do
+          f <- fromBigInt <$> BigInt.fromString value
+          pure $ Tuple var f
+      )
       raw
-  pure (Set.fromFoldable values)
+  pure $ Array.sortWith fst values
 
 -- | Extract the set of cached constant values from a compiled PS circuit.
 extractCachedConstants
   :: forall f
    . Ord f
   => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> Set.Set f
+  -> Array (Tuple String f)
 extractCachedConstants s =
   let
     AuxState aux = s.aux
+    cs = (\(Tuple x y) -> Tuple (show y) x) <$> Map.toUnfoldableUnordered aux.wireState.cachedConstants
   in
-    Set.fromFoldable (Map.keys aux.wireState.cachedConstants)
+    Array.sortWith fst cs
 
 --------------------------------------------------------------------------------
 -- | Comparison utilities

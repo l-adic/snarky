@@ -22,11 +22,10 @@ module Pickles.PackedStatement
 
 import Prelude
 
-import Data.Array as Array
+import Data.Fin (unsafeFinite)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.PublicInputCommit (class PublicInputCommit, ScalarMulResult, scalarMuls)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (class CircuitM, class CircuitType, BoolVar, F, FVar, SizedF, Snarky, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
@@ -47,6 +46,45 @@ newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInpu
       }
   , messagesForNextWrapProof :: Vector n fv
   }
+
+-------------------------------------------------------------------------------
+-- | CircuitType instance
+-------------------------------------------------------------------------------
+
+type StmtTupleVal n dw f = StmtTuple n dw (F f) Boolean
+
+instance
+  ( PrimeField f
+  , CircuitType f (StmtTupleVal n dw f) (StmtTuple n dw (FVar f) (BoolVar f))
+  ) =>
+  CircuitType f
+    (PackedStepPublicInput n dw (F f) Boolean)
+    (PackedStepPublicInput n dw (FVar f) (BoolVar f)) where
+  valueToFields x = valueToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
+  fieldsToValue fs = fromPackedTuple (fieldsToValue @f @(StmtTupleVal n dw f) fs)
+  sizeInFields _ _ = sizeInFields (Proxy @f) (Proxy @(StmtTupleVal n dw f))
+  varToFields x = varToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
+  fieldsToVar fs = fromPackedTuple (fieldsToVar @f @(StmtTupleVal n dw f) fs)
+
+-------------------------------------------------------------------------------
+-- | PublicInputCommit instance
+-------------------------------------------------------------------------------
+
+instance
+  ( PublicInputCommit (StmtTuple n dw (FVar f) (BoolVar f)) f
+  ) =>
+  PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
+  scalarMuls
+    :: forall t m
+     . CircuitM f (KimchiConstraint f) t m
+    => CurveParams f
+    -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
+    -> Array (AffinePoint (F f))
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+  scalarMuls params x bases =
+    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) bases
+
+-- Boilerplate
 
 -------------------------------------------------------------------------------
 -- | Tuple types matching OCaml layout
@@ -104,64 +142,21 @@ fromPackedTuple (Tuple proofs (Tuple mfnsp mfnwp)) =
   where
   ppFromTuple :: PerProofTuple dw fv b -> UnfinalizedProof dw fv (Type2 (SplitField fv b)) b
   ppFromTuple (Tuple fq (Tuple digest (Tuple ch (Tuple sc (Tuple bpc bool))))) =
-    let
-      fqA = Vector.toUnfoldable fq :: Array _
-      chA = Vector.toUnfoldable ch :: Array _
-      scA = Vector.toUnfoldable sc :: Array _
-    in
-      unsafePartial
-        { deferredValues:
-            { plonk:
-                { alpha: Array.unsafeIndex scA 0
-                , beta: Array.unsafeIndex chA 0
-                , gamma: Array.unsafeIndex chA 1
-                , zeta: Array.unsafeIndex scA 1
-                , perm: Array.unsafeIndex fqA 4
-                , zetaToSrsLength: Array.unsafeIndex fqA 2
-                , zetaToDomainSize: Array.unsafeIndex fqA 3
-                }
-            , combinedInnerProduct: Array.unsafeIndex fqA 0
-            , b: Array.unsafeIndex fqA 1
-            , xi: Array.unsafeIndex scA 2
-            , bulletproofChallenges: bpc
+    { deferredValues:
+        { plonk:
+            { alpha: sc !! unsafeFinite @3 0
+            , beta: ch !! unsafeFinite @2 0
+            , gamma: ch !! unsafeFinite @2 1
+            , zeta: sc !! unsafeFinite @3 1
+            , perm: fq !! unsafeFinite @5 4
+            , zetaToSrsLength: fq !! unsafeFinite @5 2
+            , zetaToDomainSize: fq !! unsafeFinite @5 3
             }
-        , shouldFinalize: bool
-        , spongeDigestBeforeEvaluations: digest
+        , combinedInnerProduct: fq !! unsafeFinite @5 0
+        , b: fq !! unsafeFinite @5 1
+        , xi: sc !! unsafeFinite @3 2
+        , bulletproofChallenges: bpc
         }
-
--------------------------------------------------------------------------------
--- | CircuitType instance
--------------------------------------------------------------------------------
-
-type StmtTupleVal n dw f = StmtTuple n dw (F f) Boolean
-
-instance
-  ( PrimeField f
-  , CircuitType f (StmtTupleVal n dw f) (StmtTuple n dw (FVar f) (BoolVar f))
-  ) =>
-  CircuitType f
-    (PackedStepPublicInput n dw (F f) Boolean)
-    (PackedStepPublicInput n dw (FVar f) (BoolVar f)) where
-  valueToFields x = valueToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
-  fieldsToValue fs = fromPackedTuple (fieldsToValue @f @(StmtTupleVal n dw f) fs)
-  sizeInFields _ _ = sizeInFields (Proxy @f) (Proxy @(StmtTupleVal n dw f))
-  varToFields x = varToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
-  fieldsToVar fs = fromPackedTuple (fieldsToVar @f @(StmtTupleVal n dw f) fs)
-
--------------------------------------------------------------------------------
--- | PublicInputCommit instance
--------------------------------------------------------------------------------
-
-instance
-  ( PublicInputCommit (StmtTuple n dw (FVar f) (BoolVar f)) f
-  ) =>
-  PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
-  scalarMuls
-    :: forall t m
-     . CircuitM f (KimchiConstraint f) t m
-    => CurveParams f
-    -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
-    -> Array (AffinePoint (F f))
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-  scalarMuls params x bases =
-    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) bases
+    , shouldFinalize: bool
+    , spongeDigestBeforeEvaluations: digest
+    }
