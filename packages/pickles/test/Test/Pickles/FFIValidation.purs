@@ -19,7 +19,7 @@ import Pickles.Linearization.FFI (PointEval, evalCoefficientPolys, evalLineariza
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks.FtEval (ftEval0)
-import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.Types (StepIPARounds)
@@ -73,7 +73,7 @@ gateConstraintTest ctx = do
       , lagrangeTrue1
       }
 
-    env = fieldEnv evalPoint challenges parseHex
+    env = fieldEnv evalPoint challenges
 
     -- Evaluate using PureScript interpreter
     psResult :: Vesta.ScalarField
@@ -156,7 +156,7 @@ permutationTest ctx = do
       , lagrangeFalse0
       , lagrangeTrue1
       }
-    env = fieldEnv evalPoint challenges parseHex
+    env = fieldEnv evalPoint challenges
     gateResult = evaluate PallasTokens.constantTermTokens env
 
     -- Compute public input polynomial evaluation
@@ -229,7 +229,7 @@ ftEval0Test ctx = do
       , lagrangeFalse0
       , lagrangeTrue1
       }
-    env = fieldEnv evalPoint challenges parseHex
+    env = fieldEnv evalPoint challenges
     gateResult = evaluate PallasTokens.constantTermTokens env
 
     -- Compute public input polynomial evaluation (same as permutationTest)

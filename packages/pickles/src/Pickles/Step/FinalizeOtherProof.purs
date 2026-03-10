@@ -47,7 +47,7 @@ import Pickles.OptSponge as OptSponge
 import Pickles.PlonkChecks (absorbAllEvals) as PlonkChecks
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
-import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit) as ChallengeDigest
@@ -394,7 +394,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       beta
       gamma
       (const_ one) -- jointCombiner (None → 1)
-      parseHex
     env = baseEnv { computeZetaToNMinus1 = pure zetaToNMinus1 }
 
   constantTerm <- evaluateM (runLinearizationPoly params.linearizationPoly) env

@@ -47,7 +47,7 @@ import Pickles.Linearization.Interpreter (evaluate, evaluateM)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.Linearization.Types (PolishToken)
 import Pickles.Linearization.Vesta as VestaTokens
-import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -178,7 +178,7 @@ linearizationCircuit tokens input =
       , lagrangeTrue1: input.lagrangeTrue1
       }
 
-    env = circuitEnv evalPoint challenges parseHex
+    env = circuitEnv evalPoint challenges
   in
     evaluate tokens env
 
@@ -213,7 +213,7 @@ linearizationReference tokens input' =
       , lagrangeTrue1: input.lagrangeTrue1
       }
 
-    env = fieldEnv evalPoint challenges parseHex
+    env = fieldEnv evalPoint challenges
   in
     coerce $ evaluate tokens env
 
@@ -295,7 +295,7 @@ linearizationTests cfg _ tokens = do
 
       let evalPoint = buildEvalPoint { witnessEvals, coeffEvals, indexEvals, defaultVal: zero }
       let challenges = buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk: vanishesOnZk', lagrangeFalse0, lagrangeTrue1 }
-      let env = fieldEnv evalPoint challenges parseHex
+      let env = fieldEnv evalPoint challenges
       let
         psResult = (evaluate :: Array PolishToken -> Env f -> f)
           tokens
@@ -476,7 +476,6 @@ linearizationCircuitM domLog2 tokens inputs = do
       beta
       gamma
       (const_ one) -- jointCombiner (None → 1)
-      parseHex
 
   -- 6. Evaluate tokens using monadic interpreter
   evaluateM tokens env

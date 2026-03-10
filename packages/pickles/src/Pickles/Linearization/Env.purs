@@ -24,6 +24,7 @@ import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
+import Pickles.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
@@ -89,9 +90,8 @@ fieldEnv
   => HasEndo f f'
   => EvalPoint f
   -> Challenges f
-  -> (String -> f) -- field literal parser
   -> Env f
-fieldEnv evalPoint challenges parseField =
+fieldEnv evalPoint challenges =
   { add: (+)
   , sub: (-)
   , mul: (*)
@@ -105,7 +105,7 @@ fieldEnv evalPoint challenges parseField =
         EndoBase eb = endoBase @f @f'
       in
         eb
-  , field: parseField
+  , field: unsafePartial parseHex
   , vanishesOnZeroKnowledgeAndPreviousRows: challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: challenges.unnormalizedLagrangeBasis
   , jointCombiner: challenges.jointCombiner
@@ -125,9 +125,8 @@ circuitEnv
   => HasEndo f f'
   => EvalPoint (FVar f)
   -> Challenges (FVar f)
-  -> (String -> f) -- field literal parser
   -> Env (Snarky c t m (FVar f))
-circuitEnv evalPoint challenges parseField =
+circuitEnv evalPoint challenges =
   { add: \x y -> add_ <$> x <*> y
   , sub: \x y -> sub_ <$> x <*> y
   , mul: \x y -> join (Circuit.mul_ <$> x <*> y)
@@ -141,7 +140,7 @@ circuitEnv evalPoint challenges parseField =
         EndoBase eb = endoBase @f @f'
       in
         pure $ const_ eb
-  , field: \hex -> pure $ const_ $ parseField hex
+  , field: \hex -> pure $ const_ $ unsafePartial parseHex hex
   , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
   , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args
   , jointCombiner: pure challenges.jointCombiner
@@ -215,9 +214,8 @@ buildCircuitEnvM
   -> FVar f -- ^ beta
   -> FVar f -- ^ gamma
   -> FVar f -- ^ jointCombiner
-  -> (String -> f) -- ^ field literal parser
   -> EnvM f (Snarky c t m)
-buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishesOnZk beta gamma jointCombiner parseField =
+buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishesOnZk beta gamma jointCombiner =
   { add: add_
   , sub: sub_
   , mul: Circuit.mul_
@@ -231,7 +229,7 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
         EndoBase eb = endoBase @f @f'
       in
         const_ eb
-  , field: \hex -> const_ $ parseField hex
+  , field: \hex -> const_ $ unsafePartial parseHex hex
   , vanishesOnZeroKnowledgeAndPreviousRows: vanishesOnZk
   , computeZetaToNMinus1: do
       zetaToN <- pow_ zeta (Int.pow 2 domainLog2)

@@ -36,7 +36,7 @@ import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCombine)
-import Pickles.PlonkChecks.GateConstraints (buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Step.Domain (pow2PowSquare)
@@ -301,7 +301,6 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
       beta
       gamma
       (const_ one) -- jointCombiner (None → 1)
-      parseHex
     env = baseEnv { computeZetaToNMinus1 = pure zetaToNMinus1 }
 
   constantTerm <- label "step7_ft_constantTerm" $ evaluateM (runLinearizationPoly params.linearizationPoly) env

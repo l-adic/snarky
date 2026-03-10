@@ -18,24 +18,21 @@ module Pickles.PlonkChecks.GateConstraints
   -- Re-exported helpers for building environments
   , buildEvalPoint
   , buildChallenges
-  , parseHex
   ) where
 
 import Prelude
 
 import Data.Fin (Finite, unsafeFinite)
-import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Effect.Exception.Unsafe (unsafeThrow)
-import JS.BigInt as BigInt
 import Pickles.Linearization.Env (EnvM, EvalPoint, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_)
-import Snarky.Curves.Class (class HasEndo, class PrimeField, fromBigInt)
+import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
 -- | Input Types
@@ -155,12 +152,6 @@ buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse
       else lagrangeFalse0
   }
 
--- | Parse hex string to field element.
-parseHex :: forall f. PrimeField f => String -> f
-parseHex hex = case fromBigInt <$> BigInt.fromString hex of
-  Nothing -> unsafeThrow $ "Failed to parse Hex to BigInt: " <> hex
-  Just a -> a
-
 -------------------------------------------------------------------------------
 -- | Core Circuit Functions
 -------------------------------------------------------------------------------
@@ -227,7 +218,6 @@ evaluateGateConstraints params zeta input = do
       input.beta
       input.gamma
       input.jointCombiner
-      parseHex
 
   evaluateM (runLinearizationPoly params.linearizationPoly) env
 

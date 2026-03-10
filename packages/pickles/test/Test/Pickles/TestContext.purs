@@ -99,7 +99,7 @@ import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.Linearization.Vesta as VestaTokens
 import Pickles.PlonkChecks.FtEval (ftEval0)
-import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint, parseHex)
+import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
@@ -887,7 +887,7 @@ buildFinalizeInput { prevChallengeDigest: prevChallengeDigest_, stepCtx } =
       , lagrangeFalse0
       , lagrangeTrue1
       }
-    env = fieldEnv evalPoint challenges parseHex
+    env = fieldEnv evalPoint challenges
     gateConstraints = evaluate VestaTokens.constantTermTokens env
 
     ftEval0Value = ftEval0
@@ -1462,7 +1462,7 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
       , lagrangeFalse0
       , lagrangeTrue1
       }
-    env = fieldEnv evalPoint challenges_ parseHex
+    env = fieldEnv evalPoint challenges_
     gateConstraints = evaluate PallasTokens.constantTermTokens env
 
     ftEval0Value = ftEval0
