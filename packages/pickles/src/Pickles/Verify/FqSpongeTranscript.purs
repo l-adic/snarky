@@ -128,7 +128,7 @@ spongeTranscriptOptCircuit
 spongeTranscriptOptCircuit params input = do
   -- Run the Opt sponge transcript in Snarky (not SpongeM)
   result <- Sponge.liftSnarky do
-    Tuple r _finalState <- OptSponge.runOptSpongeM do
+    Tuple r _ <- OptSponge.runOptSpongeM do
       -- 1. Absorb index digest
       OptSponge.optAbsorb (Tuple true_ input.indexDigest)
       -- 2. Absorb sg_old points

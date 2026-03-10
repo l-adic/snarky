@@ -4,7 +4,6 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (fromJust)
-import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
@@ -14,7 +13,7 @@ import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, read, readCVar, scale_, seal)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi.AddComplete (addComplete')
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -53,10 +52,10 @@ endo g scalar = do
     -- Seal the endo-scaled x coordinate BEFORE addComplete, matching OCaml's
     -- seal(Field.scale xt Endo.base) which happens outside add_fast.
     phix <- label "seal_endo_x" $ seal (scale_ eb g.x)
-    -- Use addComplete' true (check_finite=true) matching OCaml's add_fast default.
+    -- Use addFast CheckFinite matching OCaml's add_fast default (check_finite=true).
     -- This makes inf = Const 0, whose reduce_to_v pairs with the queued seal constraint.
-    { p } <- addComplete' true g (g { x = phix })
-    _.p <$> addComplete' true p p
+    { p } <- addFast CheckFinite g (g { x = phix })
+    _.p <$> addFast CheckFinite p p
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
         -- OCaml uses !acc and !n_acc directly (not mk/exists) for xp, yp, n_acc_prev.
@@ -130,7 +129,7 @@ endoInv g scalar = do
   -- Witness the result: g * (1 / effective_scalar)
   -- Uses WeierstrassAffinePoint so exists triggers assert_on_curve check,
   -- matching OCaml's G.typ which has check = assert_on_curve.
-  WeierstrassAffinePoint result <- (exists :: _ -> _ (WeierstrassAffinePoint g (FVar f))) $ do
+  WeierstrassAffinePoint result :: WeierstrassAffinePoint g _ <- exists do
     -- Read the input point
     { x: F gx, y: F gy } <- read @(AffinePoint _) g
     -- Read the scalar challenge

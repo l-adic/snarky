@@ -19,9 +19,9 @@ import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, seal, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
-import Snarky.Circuit.Kimchi.AddComplete (addComplete', sealPoint)
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast, sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
@@ -56,10 +56,10 @@ varBaseMul base' (Type1 t) = do
       $ map (\b -> if b then one else zero :: F f)
       $
         unpackPure vVal (Proxy @n)
-  -- Use addComplete' true to match OCaml's add_fast (default check_finite=true),
+  -- Use addFast CheckFinite to match OCaml's add_fast (default check_finite=true),
   -- where inf = Field.zero (constant). This ensures inf shares the cached constant
   -- variable with nPrev = const_ zero, matching OCaml's permutation wiring.
-  { p } <- addComplete' true base base
+  { p } <- addFast CheckFinite base base
   let
     -- Take bottom bitsUsed LSB bits, then reverse to MSB-first within range.
     -- Matches OCaml's: List.take num_bits |> Array.of_list_rev_map
@@ -188,7 +188,7 @@ scaleFast2 base { sDiv2, sOdd } = do
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
   if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
-    { p } <- addComplete' true g negBase
+    { p } <- addFast CheckFinite g negBase
     pure p
 
 -- | Split a field element into parity decomposition and constrain it.

@@ -15,7 +15,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.CircuitJson (CircuitData, circuitToJson, readCircuitJson)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
-import Snarky.Circuit.Kimchi.AddComplete (addComplete')
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
@@ -251,7 +251,7 @@ addCompleteCircuit
   => Tuple (AffinePoint (FVar Fp)) (AffinePoint (FVar Fp))
   -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
 addCompleteCircuit (Tuple p1 p2) =
-  _.p <$> addComplete' false p1 p2
+  _.p <$> addFast DontCheckFinite p1 p2
 
 endoScalarCircuit
   :: forall t m

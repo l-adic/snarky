@@ -448,8 +448,6 @@ ipaFinalCheckCircuit
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
-  let u = input.u
-
   -- 1. Extract 128-bit scalar challenges from L/R pairs
   -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
@@ -469,7 +467,7 @@ ipaFinalCheckCircuit scalarOps params input = do
   --        combined_polynomial + uc
   -- Right-to-left: uc first, then add
   pPrime <- liftSnarky $ label "ipa_scale_cip" do
-    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted u input.combinedInnerProduct
+    cipU <- label "ipa_scale_cip_scale" $ scalarOps.scaleByShifted input.u input.combinedInnerProduct
     { p } <- label "ipa_scale_cip_add" $ addComplete input.combinedPolynomial cipU
     pure p
 
@@ -492,7 +490,7 @@ ipaFinalCheckCircuit scalarOps params input = do
 
     -- 8. Compute RHS: z1*(sg + b*u) + z2*H
     -- Note: b is provided as input and verified separately via bCorrectCircuit
-    bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted u input.b
+    bU <- label "ipa_scale_b" $ scalarOps.scaleByShifted input.u input.b
     { p: sgPlusBU } <- label "ipa_sg_add" $ addComplete input.sg bU
     z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.z1
     z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.z2

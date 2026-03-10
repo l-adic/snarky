@@ -22,9 +22,13 @@ sealPoint p = label "seal_point" do
   x <- label "seal_x" $ seal p.x
   pure { x, y }
 
--- | Complete addition. When checkFinite is true, inf is set to the constant zero
--- | (matching OCaml's add_fast ~check_finite:true where inf = Field.zero).
--- | When false, inf is a fresh witness variable (matching ~check_finite:false).
+-- | OCaml: add_fast ?(check_finite = true/false)
+-- |   CheckFinite (= true):  inf is constant zero, no witness needed
+-- |   DontCheckFinite (= false): inf is a fresh witness variable
+data Finiteness = CheckFinite | DontCheckFinite
+
+-- | Complete addition assuming finite inputs.
+-- | OCaml: add_fast (uses default check_finite=true)
 addComplete
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m
@@ -34,26 +38,28 @@ addComplete
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addComplete = addComplete' true
+addComplete = addFast CheckFinite
 
-addComplete'
+-- | Complete addition with explicit finiteness control.
+-- | OCaml: add_fast ~check_finite:true/false
+addFast
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m
-  => Boolean
+  => Finiteness
   -> AffinePoint (FVar f)
   -> AffinePoint (FVar f)
   -> Snarky (KimchiConstraint f) t m
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addComplete' checkFinite p1' p2' = do
+addFast finiteness p1' p2' = do
   p1 <- sealPoint p1'
   p2 <- sealPoint p2'
   UnChecked sameX <- exists $ UnChecked <$>
     lift2 eq (readCVar p1.x) (readCVar p2.x)
-  inf <-
-    if checkFinite then pure false_
-    else do
+  inf <- case finiteness of
+    CheckFinite -> pure false_
+    DontCheckFinite -> do
       UnChecked r <- exists $ UnChecked <$> do
         let sameY = lift2 eq (readCVar p1.y) (readCVar p2.y)
         read sameX && not sameY

@@ -9,7 +9,7 @@ module Snarky.Circuit.Kimchi
   , module Snarky.Types.Shifted
   ) where
 
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addComplete, addFast)
 import Snarky.Circuit.Kimchi.EndoMul (endo, endoInv)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar, toField, toFieldPure)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams, groupMap, groupMapCircuit, groupMapParams, potentialXs)
