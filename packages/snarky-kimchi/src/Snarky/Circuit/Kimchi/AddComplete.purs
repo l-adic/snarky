@@ -52,7 +52,7 @@ addFast
        { p :: AffinePoint (FVar f)
        , isInfinity :: BoolVar f
        }
-addFast finiteness p1' p2' = do
+addFast finiteness p1' p2' = label "add_fast" do
   p1 <- sealPoint p1'
   p2 <- sealPoint p2'
   UnChecked sameX <- exists $ UnChecked <$>

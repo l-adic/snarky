@@ -6,7 +6,7 @@ import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
-import Data.Foldable (foldM, intercalate, traverse_)
+import Data.Foldable (intercalate, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
@@ -19,8 +19,8 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
-import Snarky.Backend.Prover (class SolveCircuit)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (Result(..), quickCheck', withHelp)
@@ -159,19 +159,41 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
         Nothing -> throwError $ MissingVariable v
         Just res -> pure res
 
-      checks = foldM (\acc c -> conj acc <$> checker lookup c) true
+      constraints = builtState.constraints
+      -- Find first failing constraint index
+      findFirstFailure idx = case Array.index constraints idx of
+        Nothing -> pure Nothing
+        Just labeled -> do
+          ok <- checker lookup labeled.constraint
+          if ok then findFirstFailure (idx + 1)
+          else pure (Just idx)
+
       satisfiedRes = do
-        constraintsResult <- checks (map _.constraint builtState.constraints)
+        firstFailure <- findFirstFailure 0
         postConditionResult <- postCondition lookup builtState
-        pure { constraintsResult, postConditionResult }
+        pure { firstFailure, postConditionResult }
     in
       case runExcept satisfiedRes of
         Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> decorateError builtState e)
-        Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
-          Satisfied expected | constraintsResult && postConditionResult ->
+        Right { firstFailure: Nothing, postConditionResult } -> case testFunction inputs of
+          Satisfied expected | postConditionResult ->
             withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
-          Unsatisfied | not (constraintsResult && postConditionResult) -> Success
-          res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
+          Unsatisfied | not postConditionResult -> Success
+          res -> withHelp false ("Constraints all passed, postCondition=" <> show postConditionResult <> ", checker exited with " <> show res)
+        Right { firstFailure: Just idx } -> case testFunction inputs of
+          Unsatisfied -> Success
+          res ->
+            let
+              ctx = maybe "" (\c -> " [" <> intercalate " > " c.context <> "]")
+                (Array.index constraints idx)
+            in
+              withHelp false
+                ( "Constraint #" <> show idx <> "/" <> show (Array.length constraints)
+                    <> " failed"
+                    <> ctx
+                    <> ", checker exited with "
+                    <> show res
+                )
 
 -- | Compile a circuit and run tests against it.
 -- |
@@ -195,7 +217,7 @@ circuitTest'
 circuitTest' { checker, postCondition, initState } scenarios circuit = do
   let
     builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
-    solver = makeSolver (Proxy @c') circuit
+    solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
@@ -220,7 +242,7 @@ circuitTestM'
   -> Aff { builtState :: CircuitBuilderState c r, solver :: SolverT f c' m a b }
 circuitTestM' nat { checker, postCondition, initState } scenarios circuit = do
   builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
-  let solver = makeSolver (Proxy @c') circuit
+  let solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenarioM idx nat (runTestM { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }

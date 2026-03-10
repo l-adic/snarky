@@ -42,7 +42,7 @@ instance ToKimchiRows f (Rows f) where
   toKimchiRows (Rows as) = Array.singleton as
 
 eval
-  :: forall f m
+  :: forall @f m
    . PrimeField f
   => AddCompleteVerifiable f
   => Applicative m
