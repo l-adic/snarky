@@ -997,6 +997,35 @@ mod generic {
         result
     }
 
+    /// Get lagrange commitment points directly from an SRS (no verifier index needed).
+    /// Returns [x0, y0, x1, y1, ...] for the first `count` lagrange commitments
+    /// for the given domain size (2^domain_log2).
+    pub fn srs_lagrange_commitments<G: KimchiCurve>(
+        srs: &SRS<G>,
+        domain_log2: u32,
+        count: usize,
+    ) -> Vec<G::BaseField>
+    where
+        G::BaseField: PrimeField,
+    {
+        use ark_poly::Radix2EvaluationDomain as D;
+        let domain = D::<G::ScalarField>::new(1 << domain_log2).unwrap();
+        let lgr_comm = srs.get_lagrange_basis(domain);
+        let mut result = Vec::with_capacity(count * 2);
+        for comm in lgr_comm.iter().take(count) {
+            if let Some(pt) = comm.chunks.first() {
+                if let Some((x, y)) = pt.to_coordinates() {
+                    result.push(x);
+                    result.push(y);
+                    continue;
+                }
+            }
+            result.push(G::BaseField::zero());
+            result.push(G::BaseField::zero());
+        }
+        result
+    }
+
     /// Compute the public input polynomial commitment as flat affine coordinates.
     /// Returns [x0, y0, x1, y1, ...] for all chunks in G::BaseField.
     pub fn public_comm<G>(
@@ -2280,6 +2309,58 @@ pub fn vesta_lagrange_commitments(
         .into_iter()
         .map(External::new)
         .collect()
+}
+
+/// Get lagrange commitment points directly from the SRS for Pallas (Step) proofs.
+/// No verifier index needed — just the Vesta SRS and domain size.
+/// Returns flat [x0, y0, x1, y1, ...] in Fq (= VestaGroup::BaseField = PallasScalarField).
+#[napi]
+pub fn pallas_srs_lagrange_commitments(
+    srs: &VestaCRSExternal,
+    domain_log2: u32,
+    count: u32,
+) -> Vec<PallasFieldExternal> {
+    generic::srs_lagrange_commitments::<VestaGroup>(&**srs, domain_log2, count as usize)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Get lagrange commitment points directly from the SRS for Vesta (Wrap) proofs.
+/// No verifier index needed — just the Pallas SRS and domain size.
+/// Returns flat [x0, y0, x1, y1, ...] in Fp (= PallasGroup::BaseField = VestaScalarField).
+#[napi]
+pub fn vesta_srs_lagrange_commitments(
+    srs: &PallasCRSExternal,
+    domain_log2: u32,
+    count: u32,
+) -> Vec<VestaFieldExternal> {
+    generic::srs_lagrange_commitments::<PallasGroup>(&**srs, domain_log2, count as usize)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+// ============================================================================
+// SRS blinding generator
+// ============================================================================
+
+/// Get the blinding generator H directly from the Vesta SRS (for Pallas/Step proofs).
+/// Returns [x, y] coordinates in Fq (= VestaGroup::BaseField = PallasScalarField).
+#[napi]
+pub fn pallas_srs_blinding_generator(srs: &VestaCRSExternal) -> Vec<PallasFieldExternal> {
+    let h = srs.blinding_commitment();
+    let (x, y) = h.to_coordinates().expect("SRS H is not at infinity");
+    vec![External::new(x), External::new(y)]
+}
+
+/// Get the blinding generator H directly from the Pallas SRS (for Vesta/Wrap proofs).
+/// Returns [x, y] coordinates in Fp (= PallasGroup::BaseField = VestaScalarField).
+#[napi]
+pub fn vesta_srs_blinding_generator(srs: &PallasCRSExternal) -> Vec<VestaFieldExternal> {
+    let h = srs.blinding_commitment();
+    let (x, y) = h.to_coordinates().expect("SRS H is not at infinity");
+    vec![External::new(x), External::new(y)]
 }
 
 // ============================================================================

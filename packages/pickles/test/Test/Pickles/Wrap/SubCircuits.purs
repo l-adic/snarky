@@ -31,6 +31,7 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, false_, fieldsToValue, toField)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2, expandToEndoScalar, fromShifted, groupMapParams, toShifted)
+import Snarky.Circuit.Kimchi.GroupMap (groupMap)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (fromAffine, fromBigInt, generator, pow, scalarMul, toAffine, toBigInt)
@@ -133,6 +134,15 @@ ipaFinalCheckCircuitTest cfg ctx = do
   let
     { challenges, spongeState, combinedPolynomial, omega } = mkStepIpaContext ctx
 
+    -- Compute u = group_map(squeeze(sponge)) from the IPA sponge state
+    vestaGmParams = groupMapParams (Proxy @Vesta.G)
+
+    uField :: Pallas.ScalarField
+    uField = Pickles.Sponge.evalPureSpongeM spongeState Pickles.Sponge.squeeze
+
+    uPoint :: AffinePoint (F Pallas.ScalarField)
+    uPoint = let { x, y } = groupMap vestaGmParams uField in { x: F x, y: F y }
+
     circuitInput :: IpaFinalCheckInput StepIPARounds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
     circuitInput =
       { delta: coerce $ ProofFFI.pallasProofOpeningDelta ctx.proof
@@ -140,6 +150,7 @@ ipaFinalCheckCircuitTest cfg ctx = do
       , lr: coerce $ toVectorOrThrow @StepIPARounds "pallasProofOpeningLr" $ ProofFFI.pallasProofOpeningLr ctx.proof
       , z1: toShifted $ F $ ProofFFI.pallasProofOpeningZ1 ctx.proof
       , z2: toShifted $ F $ ProofFFI.pallasProofOpeningZ2 ctx.proof
+      , u: uPoint
       , combinedPolynomial: coerce combinedPolynomial
       , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
       , b: toShifted $ F $ ProofFFI.computeB0
@@ -157,7 +168,9 @@ ipaFinalCheckCircuitTest cfg ctx = do
       => IpaFinalCheckInput StepIPARounds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit input = do
-      { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $
+      { success } <- evalSpongeM (Pickles.Sponge.spongeFromConstants spongeState) $ do
+        -- Advance sponge past u squeeze (u is now passed as input, not squeezed internally)
+        _ <- Pickles.Sponge.squeeze
         IPA.ipaFinalCheckCircuit @Pallas.ScalarField @Vesta.G
           WrapOtherField.ipaScalarOps
           { endo: const_ wrapEndo, groupMapParams: groupMapParams $ Proxy @Vesta.G }

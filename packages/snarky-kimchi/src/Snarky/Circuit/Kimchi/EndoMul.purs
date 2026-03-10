@@ -11,14 +11,14 @@ import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, read, readCVar, scale_, seal)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, read, readCVar, scale_, seal)
 import Snarky.Circuit.DSL as SizedF
-import Snarky.Circuit.Kimchi.AddComplete (addComplete')
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
 import Snarky.Circuit.Kimchi.EndoScalar (expandToEndoScalar)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class WeierstrassCurve, EndoBase(..), endoBase, fromAffine, scalarMul, toAffine)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 
 {-
 endo satisfies the equation
@@ -51,11 +51,11 @@ endo g scalar = do
   accInit <- do
     -- Seal the endo-scaled x coordinate BEFORE addComplete, matching OCaml's
     -- seal(Field.scale xt Endo.base) which happens outside add_fast.
-    phix <- seal (scale_ eb g.x)
-    -- Use addComplete' true (check_finite=true) matching OCaml's add_fast default.
+    phix <- label "seal_endo_x" $ seal (scale_ eb g.x)
+    -- Use addFast CheckFinite matching OCaml's add_fast default (check_finite=true).
     -- This makes inf = Const 0, whose reduce_to_v pairs with the queued seal constraint.
-    { p } <- addComplete' true g (g { x = phix })
-    _.p <$> addComplete' true p p
+    { p } <- addFast CheckFinite g (g { x = phix })
+    _.p <$> addFast CheckFinite p p
   Tuple rounds { nAcc, acc } <- mapAccumM
     ( \st bs -> do
         -- OCaml uses !acc and !n_acc directly (not mk/exists) for xp, yp, n_acc_prev.
@@ -127,7 +127,9 @@ endoInv
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 endoInv g scalar = do
   -- Witness the result: g * (1 / effective_scalar)
-  result <- exists $ do
+  -- Uses WeierstrassAffinePoint so exists triggers assert_on_curve check,
+  -- matching OCaml's G.typ which has check = assert_on_curve.
+  WeierstrassAffinePoint result :: WeierstrassAffinePoint g _ <- exists do
     -- Read the input point
     { x: F gx, y: F gy } <- read @(AffinePoint _) g
     -- Read the scalar challenge
@@ -153,7 +155,7 @@ endoInv g scalar = do
 
     -- Convert result back to AffinePoint
     let { x: rx, y: ry } = unsafePartial $ fromJust $ toAffine @f @g resultPoint
-    pure { x: F rx, y: F ry }
+    pure $ WeierstrassAffinePoint { x: F rx, y: F ry }
 
   -- Verify: endo(result, scalar) == g
   computed <- endo result scalar

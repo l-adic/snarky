@@ -22,7 +22,7 @@ import Test.Spec.QuickCheck (quickCheck')
 import Type.Proxy (Proxy)
 
 runM :: forall f a. Snarky (Basic f) (CircuitBuilderT (Basic f) Unit) Identity a -> Array (Basic f)
-runM (Snarky m) = _.constraints <<< snd $ runCircuitBuilder m initialState
+runM (Snarky m) = map _.constraint <<< _.constraints <<< snd $ runCircuitBuilder m initialState
 
 newtype ValidBVar f = ValidBVar (BoolVar f)
 

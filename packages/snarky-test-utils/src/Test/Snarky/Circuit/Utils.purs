@@ -19,8 +19,8 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Builder (class CompileCircuit, CircuitBuilderState)
-import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
-import Snarky.Backend.Prover (class SolveCircuit)
+import Snarky.Backend.Compile (Checker, Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Prover (class SolveCircuit, emptyProverState)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, EvaluationError(..), Snarky, Variable)
 import Snarky.Curves.Class (class PrimeField)
 import Test.QuickCheck (Result(..), quickCheck', withHelp)
@@ -84,6 +84,12 @@ decorateError builtState = go
   formatContext labels
     | Array.null labels = ""
     | otherwise = " (" <> intercalate " > " labels <> ")"
+
+isFailedAssertion :: EvaluationError -> Boolean
+isFailedAssertion = case _ of
+  FailedAssertion _ -> true
+  WithContext _ inner -> isFailedAssertion inner
+  _ -> false
 
 -- | Backend-specific configuration for circuit tests.
 -- | Define one value per constraint family to avoid repeating these three fields everywhere.
@@ -151,6 +157,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
   Left e ->
     case testFunction inputs of
       ProverError f -> withHelp (f e) ("Prover exited with error " <> decorateError builtState e)
+      Unsatisfied | isFailedAssertion e -> Success
       _ -> withHelp false ("Encountered unexpected error when proving circuit: " <> decorateError builtState e)
   Right (Tuple b assignments) ->
     let
@@ -159,7 +166,7 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
         Nothing -> throwError $ MissingVariable v
         Just res -> pure res
 
-      checks = foldM (\acc c -> conj acc <$> checker lookup c) true
+      checks = foldM (\acc c -> conj acc <$> checker lookup c.constraint) true
       satisfiedRes = do
         constraintsResult <- checks builtState.constraints
         postConditionResult <- postCondition lookup builtState
@@ -195,7 +202,7 @@ circuitTest'
 circuitTest' { checker, postCondition, initState } scenarios circuit = do
   let
     builtState = compilePure (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
-    solver = makeSolver (Proxy @c') circuit
+    solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenario idx (runTest { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }
@@ -220,7 +227,7 @@ circuitTestM'
   -> Aff { builtState :: CircuitBuilderState c r, solver :: SolverT f c' m a b }
 circuitTestM' nat { checker, postCondition, initState } scenarios circuit = do
   builtState <- liftEffect $ nat $ compile (Proxy @a) (Proxy @b) (Proxy @c') circuit initState
-  let solver = makeSolver (Proxy @c') circuit
+  let solver = makeSolver' (emptyProverState { debug = true }) (Proxy @c') circuit
   forWithIndex_ scenarios \idx { testFunction, input } ->
     runScenarioM idx nat (runTestM { builtState, solver, checker, postCondition } testFunction) input
   pure { builtState, solver }

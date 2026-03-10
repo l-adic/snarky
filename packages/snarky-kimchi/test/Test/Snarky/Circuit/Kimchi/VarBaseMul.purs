@@ -109,9 +109,9 @@ spec cfg = do
         gen :: Gen (Tuple (AffinePoint (F Pallas.BaseField)) { sDiv2 :: F Pallas.BaseField, sOdd :: Boolean })
         gen = do
           p <- EC.genAffinePoint (Proxy @Pallas.G)
-          f <- arbitrary @(F Vesta.ScalarField)
+          f_ <- arbitrary @(F Vesta.ScalarField)
           let
-            Type2 sf = toShifted f :: Type2 (F Vesta.ScalarField)
+            Type2 sf = toShifted f_ :: Type2 (F Vesta.ScalarField)
             sDiv2 = toBigInt sf / BigInt.fromInt 2
             sOdd = BigInt.odd $ toBigInt sf
           pure $ Tuple p { sDiv2: fromBigInt @(F Pallas.BaseField) sDiv2, sOdd }

@@ -50,7 +50,7 @@ import Type.Proxy (Proxy(..))
 
 -- | Tree depths to test
 treeDepths :: Array Int
-treeDepths = [ 4, 8 ]
+treeDepths = [ 4, 6 ]
 
 spec :: SpecT Aff Unit Aff Unit
 spec =

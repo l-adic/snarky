@@ -10,6 +10,7 @@ module Snarky.Data.EllipticCurve
   , toAffine
   , double
   , negate_
+  , WeierstrassAffinePoint(..)
   ) where
 
 import Prelude
@@ -17,12 +18,12 @@ import Prelude
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..), fromJust, isJust)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitType, F(..), FVar, add_, assertSquare_, const_, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, mul_, scale_, square_)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve, curveParams)
 import Snarky.Curves.Class as Snarky.Curves.Class
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (Gen, suchThat)
-import Type.Proxy (Proxy)
+import Type.Proxy (Proxy(..))
 
 type CurveParams f = { a :: f, b :: f }
 
@@ -145,3 +146,28 @@ addAffine p1 p2
           y3 = lambda * (x1 - x3) - y1
         in
           { x: x3, y: y3 }
+
+newtype WeierstrassAffinePoint :: Type -> Type -> Type
+newtype WeierstrassAffinePoint g f = WeierstrassAffinePoint { x :: f, y :: f }
+
+derive instance Generic (WeierstrassAffinePoint g f) _
+
+instance CircuitType f (WeierstrassAffinePoint g (F f)) (WeierstrassAffinePoint g (FVar f)) where
+  valueToFields = genericValueToFields
+  fieldsToValue = genericFieldsToValue
+  sizeInFields = genericSizeInFields
+  varToFields = genericVarToFields @(WeierstrassAffinePoint g (F f))
+  fieldsToVar = genericFieldsToVar @(WeierstrassAffinePoint g (F f))
+
+instance (PrimeField f, WeierstrassCurve f g) => CheckedType f c (WeierstrassAffinePoint g (FVar f)) where
+  -- | assert_on_curve: y² = x³ + ax + b
+  -- | Matches OCaml's snarky_curve.ml assert_on_curve exactly:
+  -- |   x2 = square x; x3 = x2 * x; assert_square y (x3 + ax + b)
+  -- | Uses square_ (not mul_ x x) to match OCaml's Square constraint (cm=1, co=-1).
+  -- | x2*x is built as a compound CVar via mul_ (witnessing x3),
+  -- | then assert_square embeds the rhs expression into a single constraint.
+  check (WeierstrassAffinePoint { x, y }) = do
+    let { a, b } = curveParams (Proxy @g)
+    x2 <- square_ x
+    x3 <- mul_ x2 x
+    assertSquare_ y (x3 `add_` scale_ a x `add_` const_ b)

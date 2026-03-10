@@ -21,7 +21,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
-import Snarky.Circuit.Kimchi.AddComplete (addComplete')
+import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast, sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
 import Snarky.Constraint.Kimchi.VarBaseMul (ScaleRound)
@@ -43,7 +43,11 @@ varBaseMul
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
-varBaseMul base (Type1 t) = do
+varBaseMul base' (Type1 t) = do
+  -- Seal the base point once, matching OCaml's `let base = seal base in` at the top
+  -- of scale_fast_unpack. This converts complex CVar expressions to simple variables,
+  -- preventing redundant constraints when base is reduced in each VarBaseMul round.
+  base <- sealPoint base'
   -- Use F f (field) witnesses, not Boolean — matching OCaml's Field.typ + Boolean.Unsafe.of_cvar.
   -- The VarBaseMul gate itself constrains bits to be boolean, so explicit checks are redundant.
   lsbBits <- exists do
@@ -52,10 +56,10 @@ varBaseMul base (Type1 t) = do
       $ map (\b -> if b then one else zero :: F f)
       $
         unpackPure vVal (Proxy @n)
-  -- Use addComplete' true to match OCaml's add_fast (default check_finite=true),
+  -- Use addFast CheckFinite to match OCaml's add_fast (default check_finite=true),
   -- where inf = Field.zero (constant). This ensures inf shares the cached constant
   -- variable with nPrev = const_ zero, matching OCaml's permutation wiring.
-  { p } <- addComplete' true base base
+  { p } <- addFast CheckFinite base base
   let
     -- Take bottom bitsUsed LSB bits, then reverse to MSB-first within range.
     -- Matches OCaml's: List.take num_bits |> Array.of_list_rev_map
@@ -184,7 +188,7 @@ scaleFast2 base { sDiv2, sOdd } = do
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
   if_ sOdd g =<< do
     negBase <- EllipticCurve.negate base
-    { p } <- addComplete' true g negBase
+    { p } <- addFast CheckFinite g negBase
     pure p
 
 -- | Split a field element into parity decomposition and constrain it.

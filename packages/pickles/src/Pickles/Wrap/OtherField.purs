@@ -19,7 +19,7 @@ module Pickles.Wrap.OtherField
 import Prelude
 
 import Pickles.ShiftOps (IpaScalarOps)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, seal)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label, seal)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShiftedType1Circuit, fromShiftedType2Circuit, scaleFast1, shiftedEqualType1, shiftedEqualType2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits)
@@ -65,5 +65,5 @@ fopShiftOps
 fopShiftOps =
   { unshift: fromShiftedType2Circuit
   , shiftedEqual: shiftedEqualType2
-  , sealInner: \(Type2 x) -> Type2 <$> seal x
+  , sealInner: \(Type2 x) -> Type2 <$> label "seal_shifted_inner" (seal x)
   }

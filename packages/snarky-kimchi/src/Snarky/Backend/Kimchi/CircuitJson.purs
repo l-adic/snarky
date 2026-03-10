@@ -2,31 +2,36 @@ module Snarky.Backend.Kimchi.CircuitJson
   ( CircuitData
   , CircuitGateData
   , readCircuitJson
+  , readCachedConstantsJson
   , circuitToJson
+  , extractCachedConstants
   , gateKindFromRust
   , GateDiff
   , diffCircuits
   , formatGate
   , formatCircuit
+  , rowContexts
   ) where
 
 import Prelude
 
-import Data.Array (concatMap, mapWithIndex)
+import Data.Array (concatMap, mapWithIndex, replicate)
 import Data.Array as Array
 import Data.Either (Either, note)
+import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Traversable (traverse)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Foreign (ForeignError(..), MultipleErrors)
+import JS.BigInt as BigInt
 import Simple.JSON (readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, gatesToJson)
 import Snarky.Constraint.Kimchi (KimchiGate)
-import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromHexLe)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe)
 
 -- | Typed circuit data with parsed field elements and gate kinds.
 type CircuitData f =
@@ -92,12 +97,53 @@ circuitToJson
 circuitToJson s =
   let
     { gates, publicInputSize } = makeGateData @f
-      { constraints: concatMap toKimchiRows s.constraints
+      { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
       , publicInputs: s.publicInputs
       , unionFind: (un AuxState s.aux).wireState.unionFind
       }
   in
     gatesToJson gates publicInputSize
+
+--------------------------------------------------------------------------------
+-- | Cached constants
+
+-- | Raw JSON shape for cached constants fixture
+type CachedConstantRaw =
+  { var :: String
+  , value :: String
+  }
+
+-- | Parse OCaml cached constants fixture JSON.
+-- | Returns the set of constant values (ignoring variable IDs).
+readCachedConstantsJson
+  :: forall f
+   . Ord f
+  => PrimeField f
+  => String
+  -> Either MultipleErrors (Array (Tuple String f))
+readCachedConstantsJson json = do
+  raw :: Array CachedConstantRaw <- readJSON json
+  let
+    values = Array.mapMaybe
+      ( \{ var, value } -> do
+          f <- fromBigInt <$> BigInt.fromString value
+          pure $ Tuple var f
+      )
+      raw
+  pure $ Array.sortWith fst values
+
+-- | Extract the set of cached constant values from a compiled PS circuit.
+extractCachedConstants
+  :: forall f
+   . Ord f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> Array (Tuple String f)
+extractCachedConstants s =
+  let
+    AuxState aux = s.aux
+    cs = (\(Tuple x y) -> Tuple (show y) x) <$> Map.toUnfoldableUnordered aux.wireState.cachedConstants
+  in
+    Array.sortWith fst cs
 
 --------------------------------------------------------------------------------
 -- | Comparison utilities
@@ -132,3 +178,19 @@ formatCircuit :: forall f. Show f => String -> CircuitData f -> Array String
 formatCircuit label c =
   [ label <> " (pi=" <> show c.publicInputSize <> ", gates=" <> show (Array.length c.gates) <> "):" ]
     <> mapWithIndex formatGate c.gates
+
+-- | Extract per-row context labels from a compiled circuit.
+-- | Returns one context per row, in gate order (public input rows get empty context).
+rowContexts
+  :: forall f
+   . PrimeField f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> Array (Array String)
+rowContexts s =
+  let
+    piContexts = replicate (Array.length s.publicInputs) []
+    gateContexts = concatMap
+      (\lc -> replicate (Array.length (toKimchiRows lc.constraint :: Array (KimchiRow f))) lc.context)
+      s.constraints
+  in
+    piContexts <> gateContexts

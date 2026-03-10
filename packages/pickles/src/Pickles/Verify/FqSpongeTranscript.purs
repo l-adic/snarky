@@ -25,17 +25,20 @@ module Pickles.Verify.FqSpongeTranscript
   ( FqSpongeInput
   , FqSpongeOutput
   , spongeTranscriptCircuit
+  , spongeTranscriptOptCircuit
   , spongeTranscriptPure
   ) where
 
 import Prelude
 
 import Data.Foldable (for_)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Sponge as Sponge
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF)
+import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -98,6 +101,65 @@ spongeTranscriptCircuit params input = do
   digest <- Sponge.squeeze
   putSponge spongeBeforeEvals
   pure { beta, gamma, alphaChal, zetaChal, digest }
+
+-------------------------------------------------------------------------------
+-- | OptSponge circuit version (matches OCaml's Opt_sponge exactly)
+-------------------------------------------------------------------------------
+
+-- | Sponge transcript using OptSponge (conditional absorption with boolean flags).
+-- |
+-- | Matches OCaml's wrap_verifier IVP which uses Opt_sponge for all absorptions.
+-- | Even for Features.none (all flags true_), this generates different constraints
+-- | than the regular sponge because OptSponge uses conditional addIn/condPermute.
+-- |
+-- | Returns the transcript output AND the sponge state (as a regular Sponge)
+-- | so the caller can continue into checkBulletproof.
+-- | Returns transcript output in SpongeM — the sponge is set to sponge_before_evaluations
+-- | state so the caller can continue into checkBulletproof.
+spongeTranscriptOptCircuit
+  :: forall f sgOldN chunks t m r
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => { endo :: FVar f | r }
+  -> FqSpongeInput sgOldN chunks (FVar f)
+  -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
+spongeTranscriptOptCircuit params input = do
+  -- Run the Opt sponge transcript in Snarky (not SpongeM)
+  result <- Sponge.liftSnarky do
+    Tuple r _ <- OptSponge.runOptSpongeM do
+      -- 1. Absorb index digest
+      OptSponge.optAbsorb (Tuple true_ input.indexDigest)
+      -- 2. Absorb sg_old points
+      for_ input.sgOld OptSponge.optAbsorbPoint
+      -- 3. Absorb public_comm point
+      OptSponge.optAbsorbPoint input.publicComm
+      -- 4. Absorb w_comm points
+      for_ input.wComm OptSponge.optAbsorbPoint
+      -- 5. Squeeze beta (challenge = lowest_128_bits ~constrain_low_bits:true)
+      beta <- OptSponge.optChallenge params.endo
+      -- 6. Squeeze gamma
+      gamma <- OptSponge.optChallenge params.endo
+      -- 7. Absorb z_comm
+      OptSponge.optAbsorbPoint input.zComm
+      -- 8. Squeeze alpha (scalar_challenge = lowest_128_bits ~constrain_low_bits:false)
+      alphaChal <- OptSponge.optScalarChallenge params.endo
+      -- 9. Absorb t_comm
+      for_ input.tComm OptSponge.optAbsorbPoint
+      -- 10. Squeeze zeta
+      zetaChal <- OptSponge.optScalarChallenge params.endo
+      -- 11. Convert to regular sponge for continuation
+      regularSponge <- OptSponge.toRegularSponge
+      pure { beta, gamma, alphaChal, zetaChal, regularSponge }
+    pure r
+  -- Set the SpongeM state to sponge_before_evaluations
+  putSponge result.regularSponge
+  -- Copy sponge before squeezing digest (step_verifier.ml:559)
+  spongeBeforeEvals <- getSponge
+  digest <- Sponge.squeeze
+  putSponge spongeBeforeEvals
+  pure { beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest }
 
 -------------------------------------------------------------------------------
 -- | Pure reference implementation

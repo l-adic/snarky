@@ -75,7 +75,7 @@ verifyCircuitM { gen, solver, s } = do
     Right (Tuple _ assignments) -> do
       let
         { constraintSystem, constraints } = makeConstraintSystem @f
-          { constraints: concatMap toKimchiRows s.constraints
+          { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
           , publicInputs: s.publicInputs
           , unionFind: (un AuxState s.aux).wireState.unionFind
           }

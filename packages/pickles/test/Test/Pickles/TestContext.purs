@@ -448,7 +448,7 @@ createTestContext' { builtState, solver, input, crs } = do
       Console.debug "Ran solver and calculated assignments"
       let
         nPublicInputRows = Array.length builtState.publicInputs
-        kimchiRows = concatMap toKimchiRows builtState.constraints
+        kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
         { constraintSystem, constraints } = makeConstraintSystem @f
           { constraints: kimchiRows
           , publicInputs: builtState.publicInputs

@@ -36,7 +36,7 @@ The workflow is:
 | `EndoMul` → `endo` | `EndoMul` | exact match |
 | `EndoScalar` → `toField` | `EndoMulScalar` | exact match |
 | `Poseidon` → `poseidon` | `Poseidon` | exact match |
-| `GroupMap` → `groupMapCircuit` | (generic gates only) | not yet compared |
+| `GroupMap` → `groupMapCircuit` | (generic gates only) | exact match |
 | All 16 DSL operations | `Generic` | exact match |
 
 ## Step 1: Add the Circuit to the OCaml Dump Program
@@ -51,6 +51,7 @@ module Add = Plonk_curve_ops.Make_add(Impl)
 
 let add_complete_circuit (p1, p2) () =
   Add.add_fast ~check_finite:false p1 p2
+  (* Note: default is check_finite:true; this fixture uses false explicitly *)
 ```
 
 Then register it in the `run` function with appropriate `input_typ` and `return_typ`:
@@ -160,6 +161,10 @@ UnChecked sameX <- exists $ UnChecked <$>
 
 OCaml may seal (reduce to single variable) inputs before passing to a gate. Check if the OCaml function calls `seal` or similar operations on its inputs. Our `sealPoint` helper handles this for affine points.
 
+**Critical**: `sealPoint` must seal **y before x** to match OCaml's `Tuple_lib.Double.map ~f:Utils.seal`, which evaluates right-to-left (y first). Getting this wrong causes wire differences even when gate types and coefficients match perfectly.
+
+**Seal at loop boundaries**: OCaml's `scale_fast_unpack` calls `seal base` once at the top, before the VarBaseMul loop. Without this, a complex CVar base point (e.g. from `groupMapCircuit`) gets re-reduced in every round, generating 2 extra GenericPlonk gates per round. PureScript's `varBaseMul` must `sealPoint base` before the loop.
+
 ### Different witness variable ordering
 
 If the gate structure matches but wires differ, the issue may be in the order variables are introduced via `exists`.
@@ -190,17 +195,9 @@ This affects:
 
 OCaml's `reduce_to_v` (in `plonk_constraint_system.ml` line 1555) uses a `cached_constants` hashtable: when reducing a `Const c` to a variable, it checks the cache first and reuses an existing variable if the same constant was already reduced. PureScript's `reduceToVariable` must route the constant case through `addEqualsConstraint` (which checks `cachedConstants`) rather than directly emitting `addGenericPlonkConstraint`. Without this, identical constants like `a=2` and `b=2` produce duplicate constraints and extra gates.
 
-### check_finite and addComplete' true
+### check_finite and addComplete
 
-OCaml's `add_fast` defaults to `check_finite=true`, which sets `inf = Field.zero` (a constant CVar). PureScript's `addComplete` used `exists` for `inf`. Use `addComplete' true` when matching OCaml's default `add_fast`:
-
-```purescript
--- Before: inf from exists (fresh variable)
-{ p } <- addComplete g1 g2
-
--- After: inf = false_ (constant zero), matching OCaml's check_finite=true
-{ p } <- addComplete' true g1 g2
-```
+OCaml's `add_fast` defaults to `check_finite=true`, which sets `inf = Field.zero` (a constant CVar). PureScript's `addComplete` now also defaults to `checkFinite=true` (calls `addComplete' true`). Use `addComplete' false` only when explicitly matching OCaml's `add_fast ~check_finite:false`.
 
 This matters for permutation wiring: the constant-zero inf variable gets deduplicated via `cachedConstants`, sharing a permutation cycle with other zero constants (like `nPrev` in VarBaseMul or `nAcc` initial value in EndoMul).
 

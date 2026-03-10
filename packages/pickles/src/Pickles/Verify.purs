@@ -27,12 +27,14 @@ import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (SpongeM, liftSnarky)
-import Pickles.Verify.FqSpongeTranscript (spongeTranscriptCircuit)
+import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
+import Pickles.Sponge as Sponge
+import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_)
+import RandomOracle.Sponge (Sponge)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -105,7 +107,7 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3 r
+  :: forall publicInput sgOldN d f f' @g sf t m _l3 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -117,7 +119,6 @@ incrementallyVerifyProof
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
-  => Add 1 _l2 7
   => Add 1 _l3 d
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
@@ -126,27 +127,47 @@ incrementallyVerifyProof
 incrementallyVerifyProof scalarOps params input = do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
-  -- 1. Compute x_hat (public input commitment)
-  xHat <- liftSnarky $ publicInputCommit params input.publicInput
+  -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
+  indexDigest <- liftSnarky $ label "ivp_index_digest" $
+    Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
+      -- Absorption order matches OCaml's index_to_field_elements:
+      -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
+      let
+        absorbConstPt { x: F x', y: F y' } = do
+          Sponge.absorb (const_ x')
+          Sponge.absorb (const_ y')
+      -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
+      for_ params.columnComms.sigma absorbConstPt
+      absorbConstPt params.sigmaCommLast
+      -- coefficients_comm: 15
+      for_ params.columnComms.coeff absorbConstPt
+      -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
+      for_ params.columnComms.index absorbConstPt
+      -- Squeeze digest
+      Sponge.squeeze
 
-  -- 2. Run Fq-sponge transcript
+  -- 2. Compute x_hat (public input commitment)
+  xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+
+  -- 3. Run Fq-sponge transcript
   let
     spongeInput =
-      { indexDigest: const_ params.indexDigest
+      { indexDigest
       , sgOld: input.sgOld
       , publicComm: xHat
       , wComm: input.wComm
       , zComm: input.zComm
       , tComm: input.tComm
       }
-  { beta, gamma, alphaChal, zetaChal, digest } <- spongeTranscriptCircuit endoParams spongeInput
+  { beta, gamma, alphaChal, zetaChal, digest } <- labelM "ivp_opt_sponge" $
+    spongeTranscriptOptCircuit endoParams spongeInput
 
-  -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
-  liftSnarky $
+  -- 4. Assert deferred values match sponge output (all 128-bit scalar challenges)
+  liftSnarky $ label "ivp_assert_plonk" $
     assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
 
-  -- 4. Compute ft_comm
-  ftCommResult <- liftSnarky $ ftComm
+  -- 5. Compute ft_comm
+  ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
     { sigmaLast: constPt params.sigmaCommLast
     , tComm: input.tComm
@@ -180,7 +201,7 @@ incrementallyVerifyProof scalarOps params input = do
       , blindingGenerator: constPt params.blindingH
       }
 
-  { success, challenges } <- checkBulletproof @f @g
+  { success, challenges } <- labelM "ivp_bulletproof" $ checkBulletproof @f @g
     scalarOps
     endoParams
     allBases
@@ -228,15 +249,16 @@ verify scalarOps params input isBaseCase claimedDigest = do
   output <- incrementallyVerifyProof @g scalarOps params input
 
   -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
-  liftSnarky do
+  labelM "ivp_assert_digest" $ liftSnarky do
     digest' <- if_ isBaseCase claimedDigest output.spongeDigestBeforeEvaluations
     assertEq digest' claimedDigest
 
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
-  liftSnarky $ for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
-    \(Tuple c1 c2) -> do
-      c2' <- if_ isBaseCase c1 c2
-      assertEq c1 c2'
+  labelM "ivp_assert_bp_challenges" $ liftSnarky $
+    for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
+      \(Tuple c1 c2) -> do
+        c2' <- if_ isBaseCase c1 c2
+        assertEq c1 c2'
 
   -- 4. Return bulletproof success
   pure output.success

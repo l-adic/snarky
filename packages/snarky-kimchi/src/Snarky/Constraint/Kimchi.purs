@@ -9,6 +9,7 @@ module Snarky.Constraint.Kimchi
 
 import Prelude
 
+import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array (all)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -20,12 +21,12 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.UnionFind (equivalenceClasses)
 import Poseidon (class PoseidonField)
-import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT)
+import Snarky.Backend.Builder (class CompileCircuit, class Finalizer, CircuitBuilderState, CircuitBuilderT, Labeled)
 import Snarky.Backend.Builder as CircuitBuilder
 import Snarky.Backend.Prover (class SolveCircuit, ProverT, throwProverError)
 import Snarky.Backend.Prover as Prover
 import Snarky.Circuit.CVar (Variable, v0)
-import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), FVar)
+import Snarky.Circuit.DSL (class BasicSystem, class ConstraintM, Basic(..), EvaluationError(..), FVar)
 import Snarky.Constraint.Basic as Basic
 import Snarky.Constraint.Kimchi.AddComplete (class AddCompleteVerifiable, AddComplete)
 import Snarky.Constraint.Kimchi.AddComplete as AddComplete
@@ -39,7 +40,7 @@ import Snarky.Constraint.Kimchi.Poseidon (class PoseidonVerifiable, PoseidonCons
 import Snarky.Constraint.Kimchi.Poseidon as Poseidon
 import Snarky.Constraint.Kimchi.Reduction (class PlonkReductionM, finalizeGateQueue, reduceAsBuilder, reduceAsProver)
 import Snarky.Constraint.Kimchi.Reduction as Reduction
-import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), initialAuxState, toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), KimchiRow, initialAuxState, toKimchiRows)
 import Snarky.Constraint.Kimchi.VarBaseMul (class VarBaseMulVerifiable, VarBaseMul)
 import Snarky.Constraint.Kimchi.VarBaseMul as VarBaseMul
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
@@ -78,9 +79,10 @@ instance PrimeField f => Finalizer (KimchiGate f) (AuxState f) where
   finalize s =
     let
       mRow = finalizeGateQueue (un AuxState s.aux)
+      lbl = s.labelStack
     in
       s
-        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` KimchiGatePlonk r) mRow
+        { constraints = maybe s.constraints (\r -> s.constraints `Array.snoc` { constraint: KimchiGatePlonk r, context: lbl }) mRow
         , aux = over AuxState
             ( \st ->
                 st
@@ -119,39 +121,68 @@ instance
           , aux: s.aux
           }
           (reducer c)
+        lbl = s.labelStack
+
+        labelGate :: forall g. g -> Labeled g
+        labelGate g = { constraint: g, context: lbl }
       CircuitBuilder.putState s
         { nextVar = res.nextVariable
-        , constraints = s.constraints <> (KimchiGatePlonk <$> res.constraints) `Array.snoc` (wrap rows)
+        , constraints = s.constraints <> map (labelGate <<< KimchiGatePlonk) res.constraints `Array.snoc` labelGate (wrap rows)
         , aux = res.aux
         }
 
-instance PoseidonField f => SolveCircuit f (KimchiConstraint f)
+instance (KimchiVerify f f') => SolveCircuit f (KimchiConstraint f)
 
-instance (PoseidonField f) => ConstraintM (ProverT f) (KimchiConstraint f) where
+instance (KimchiVerify f f') => ConstraintM (ProverT f) (KimchiConstraint f) where
   addConstraint' = case _ of
-    KimchiAddComplete c -> go AddComplete.reduce c
-    KimchiPoseidon c -> go Poseidon.reduce c
+    KimchiAddComplete c -> goDebug AddComplete.reduce AddComplete.eval c
+    KimchiPoseidon c -> goDebug Poseidon.reduce Poseidon.eval c
     KimchiBasic c -> goBasic c
-    KimchiVarBaseMul c -> go VarBaseMul.reduce c
-    KimchiEndoScalar c -> go EndoScalar.reduce c
-    KimchiEndoMul c -> go EndoMul.reduce c
+    KimchiVarBaseMul c -> goDebug VarBaseMul.reduce VarBaseMul.eval c
+    KimchiEndoScalar c -> goDebug EndoScalar.reduce EndoScalar.eval c
+    KimchiEndoMul c -> goDebug EndoMul.reduce (EndoMul.eval @f @f') c
     where
-    go :: forall a c m. Monad m => (forall n. PlonkReductionM n f => c -> n a) -> c -> ProverT f m Unit
-    go reducer c = do
+    -- Reduce and optionally debug-check the gate equation
+    goDebug
+      :: forall c g m
+       . Monad m
+      => ToKimchiRows f g
+      => (forall n. PlonkReductionM n f => c -> n g)
+      -> ((Variable -> Except EvaluationError f) -> g -> Except EvaluationError Boolean)
+      -> c
+      -> ProverT f m Unit
+    goDebug reducer evalGate c = do
       s <- Prover.getState
       case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (reducer c) of
         Left e -> throwProverError e
-        Right (Tuple _ res) -> Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+        Right (Tuple rows res) -> do
+          Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+          when s.debug do
+            let lookupVar v = maybe (throwError $ MissingVariable v) pure (Map.lookup v res.assignments)
+            case runExcept (evalGate lookupVar rows) of
+              Left e -> throwProverError e
+              Right false ->
+                let
+                  kimchiRows = toKimchiRows rows :: Array (KimchiRow f)
+                  gateKind = maybe "Unknown" (show <<< _.kind) (Array.head kimchiRows)
+                  nRows = Array.length kimchiRows
+                in
+                  throwProverError $ FailedAssertion
+                    $ gateKind <> " gate check failed (" <> show nRows <> " rows)"
+              Right true -> pure unit
 
-    -- Basic constraints: reduce (to compute internal variables), then eagerly evaluate in debug mode
+    -- Basic constraints use debugCheck for richer error messages (e.g. "R1CS failed: 42 * 7 != 293")
     goBasic :: forall m. Monad m => Basic f -> ProverT f m Unit
     goBasic c = do
-      go GenericPlonk.reduce c
       s <- Prover.getState
-      when s.debug do
-        case Basic.debugCheck (flip Map.lookup s.assignments) c of
-          Nothing -> pure unit
-          Just e -> throwProverError e
+      case reduceAsProver { assignments: s.assignments, nextVariable: s.nextVar } (GenericPlonk.reduce c) of
+        Left e -> throwProverError e
+        Right (Tuple _ res) -> do
+          Prover.putState $ s { assignments = res.assignments, nextVar = res.nextVariable }
+          when s.debug do
+            case Basic.debugCheck (flip Map.lookup res.assignments) c of
+              Nothing -> pure unit
+              Just e -> throwProverError e
 
 initialState :: forall f. CircuitBuilderState (KimchiGate f) (AuxState f)
 initialState =
