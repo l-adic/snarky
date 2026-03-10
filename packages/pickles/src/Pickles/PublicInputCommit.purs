@@ -114,6 +114,7 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f wh
 -- | List.map terms construction, BEFORE correction sum and fold.
 instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool bases = do
+    -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
     pure { results: [ CondAdd bool head ], rest: tail }
@@ -131,6 +132,7 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
     -- Generate boolean constraint for sOdd during walk, matching OCaml's
     -- assert_(Constraint.boolean b) in terms construction
+    -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
     pure { results: r1 <> [ CondAdd sOdd oddBase ], rest: rest2 }
