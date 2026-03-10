@@ -6,7 +6,7 @@ import Control.Monad.Except (Except, runExcept, throwError)
 import Data.Array as Array
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Either (Either(..))
-import Data.Foldable (intercalate, traverse_)
+import Data.Foldable (foldM, intercalate, traverse_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
@@ -166,41 +166,19 @@ checkResult builtState checker postCondition testFunction inputs = case _ of
         Nothing -> throwError $ MissingVariable v
         Just res -> pure res
 
-      constraints = builtState.constraints
-      -- Find first failing constraint index
-      findFirstFailure idx = case Array.index constraints idx of
-        Nothing -> pure Nothing
-        Just labeled -> do
-          ok <- checker lookup labeled.constraint
-          if ok then findFirstFailure (idx + 1)
-          else pure (Just idx)
-
+      checks = foldM (\acc c -> conj acc <$> checker lookup c.constraint) true
       satisfiedRes = do
-        firstFailure <- findFirstFailure 0
+        constraintsResult <- checks builtState.constraints
         postConditionResult <- postCondition lookup builtState
-        pure { firstFailure, postConditionResult }
+        pure { constraintsResult, postConditionResult }
     in
       case runExcept satisfiedRes of
         Left e -> withHelp false ("Encountered unexpected error when checking circuit: " <> decorateError builtState e)
-        Right { firstFailure: Nothing, postConditionResult } -> case testFunction inputs of
-          Satisfied expected | postConditionResult ->
+        Right s@{ constraintsResult, postConditionResult } -> case testFunction inputs of
+          Satisfied expected | constraintsResult && postConditionResult ->
             withHelp (expected == b) ("Circuit disagrees with test function, circuit got " <> show b <> " expected " <> show expected <> " from test function")
-          Unsatisfied | not postConditionResult -> Success
-          res -> withHelp false ("Constraints all passed, postCondition=" <> show postConditionResult <> ", checker exited with " <> show res)
-        Right { firstFailure: Just idx } -> case testFunction inputs of
-          Unsatisfied -> Success
-          res ->
-            let
-              ctx = maybe "" (\c -> " [" <> intercalate " > " c.context <> "]")
-                (Array.index constraints idx)
-            in
-              withHelp false
-                ( "Constraint #" <> show idx <> "/" <> show (Array.length constraints)
-                    <> " failed"
-                    <> ctx
-                    <> ", checker exited with "
-                    <> show res
-                )
+          Unsatisfied | not (constraintsResult && postConditionResult) -> Success
+          res -> withHelp false ("Circuit satisfiability: " <> show s <> ", checker exited with " <> show res)
 
 -- | Compile a circuit and run tests against it.
 -- |
