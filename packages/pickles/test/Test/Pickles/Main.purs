@@ -9,7 +9,6 @@ import Effect.Aff (Aff)
 import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Test.Pickles.CircuitJson as CircuitJson
 import Test.Pickles.CombinedPolyComm as CombinedPolyComm
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.FFIValidation as FFIValidation
@@ -56,7 +55,6 @@ main = runSpecAndExitProcess'
       FqSpongeTranscript.spec kimchiTestConfig
       PublicInputCommitment.spec kimchiTestConfig
     mapSpec nat do
-      CircuitJson.spec
       MultiscaleKnown.spec kimchiTestConfig
       Commitments.spec kimchiTestConfig
       IPA.spec kimchiTestConfig
