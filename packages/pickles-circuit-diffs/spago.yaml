@@ -1,0 +1,13 @@
+package:
+  name: pickles-circuit-diffs
+  dependencies:
+    - arrays
+    - effect
+    - prelude
+    - snarky-kimchi
+    - pickles
+  test:
+    main: Test.Pickles.CircuitDiffs.Main
+    dependencies:
+      - console
+      - effect
