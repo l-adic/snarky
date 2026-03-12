@@ -13,7 +13,7 @@ import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..))
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
@@ -174,7 +174,7 @@ ivpWrapCircuit { lagrangeComms, blindingH } input = do
     assertEq c1 c2
 
 compileIvpWrap :: IvpWrapParams -> CompiledCircuit WrapField
-compileIvpWrap srsData = compiledCircuit @WrapField $
+compileIvpWrap srsData =
   compilePure (Proxy @(Vector 177 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> ivpWrapCircuit srsData (parseIvpWrapInput inputs))
     Kimchi.initialState

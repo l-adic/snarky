@@ -8,7 +8,7 @@ module Pickles.CircuitDiffs.PureScript.BulletReduceOne
 import Prelude
 
 import Data.Vector (Vector)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Types (WrapField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
@@ -47,7 +47,7 @@ bulletReduceOneCircuit input = do
   addComplete lScaled rScaled
 
 compileBulletReduceOne :: CompiledCircuit WrapField
-compileBulletReduceOne = compiledCircuit @WrapField $
+compileBulletReduceOne =
   compilePure (Proxy @(Vector 5 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceOneCircuit (parseBulletReduceOneInput inputs))
     Kimchi.initialState

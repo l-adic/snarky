@@ -10,7 +10,7 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput)
@@ -125,7 +125,7 @@ fopWrapCircuit input =
       }
 
 compileFopWrap :: CompiledCircuit WrapField
-compileFopWrap = compiledCircuit @WrapField $
+compileFopWrap =
   compilePure (Proxy @(Vector 148 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ fopWrapCircuit (parseFopWrapInput inputs))
     Kimchi.initialState

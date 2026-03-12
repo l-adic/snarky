@@ -8,7 +8,7 @@ import Prelude
 
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, compiledCircuit)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky)
@@ -30,7 +30,7 @@ groupMapStepCircuit
 groupMapStepCircuit = Kimchi.groupMapCircuit (Kimchi.groupMapParams (Proxy @PallasG))
 
 compileGroupMapStep :: CompiledCircuit StepField
-compileGroupMapStep = compiledCircuit @StepField $
+compileGroupMapStep =
   compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ groupMapStepCircuit (parseGroupMapStepInput inputs))
     Kimchi.initialState

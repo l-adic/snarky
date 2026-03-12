@@ -12,7 +12,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Types (WrapField)
 import Pickles.Wrap.OtherField as WrapOtherField
@@ -64,7 +64,7 @@ ftcommWrapCircuit input =
       }
 
 compileFtcomm :: CompiledCircuit WrapField
-compileFtcomm = compiledCircuit @WrapField $
+compileFtcomm =
   compilePure (Proxy @(Vector 17 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ ftcommWrapCircuit (parseFtcommInput inputs))
     Kimchi.initialState

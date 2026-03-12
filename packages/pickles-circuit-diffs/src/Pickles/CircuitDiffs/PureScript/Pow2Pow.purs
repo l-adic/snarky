@@ -8,7 +8,7 @@ import Prelude
 
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, compiledCircuit)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
@@ -28,7 +28,7 @@ pow2PowCircuit
 pow2PowCircuit x = pow2PowSquare x 16
 
 compilePow2Pow :: CompiledCircuit StepField
-compilePow2Pow = compiledCircuit @StepField $
+compilePow2Pow =
   compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ pow2PowCircuit (parsePow2PowInput inputs))
     Kimchi.initialState

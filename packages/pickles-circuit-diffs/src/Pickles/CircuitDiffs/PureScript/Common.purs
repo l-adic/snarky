@@ -1,6 +1,5 @@
 module Pickles.CircuitDiffs.PureScript.Common
   ( CompiledCircuit
-  , compiledCircuit
   , unsafeIdx
   , asSizedF128
   , asSizedF10
@@ -25,12 +24,10 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Types (StepField, WrapField)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Kimchi.CircuitJson (circuitToJson)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -41,18 +38,7 @@ import Unsafe.Coerce (unsafeCoerce)
 -- | Compiled circuit type
 -------------------------------------------------------------------------------
 
-type CompiledCircuit f =
-  { state :: CircuitBuilderState (KimchiGate f) (AuxState f)
-  , json :: String
-  }
-
-compiledCircuit
-  :: forall @f g
-   . CircuitGateConstructor f g
-  => PrimeField f
-  => CircuitBuilderState (KimchiGate f) (AuxState f)
-  -> CompiledCircuit f
-compiledCircuit s = { state: s, json: circuitToJson @f s }
+type CompiledCircuit f = CircuitBuilderState (KimchiGate f) (AuxState f)
 
 -------------------------------------------------------------------------------
 -- | Input parsing helpers

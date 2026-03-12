@@ -8,7 +8,7 @@ module Pickles.CircuitDiffs.PureScript.BulletReduceOneStep
 import Prelude
 
 import Data.Vector (Vector)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, SizedF, Snarky)
@@ -47,7 +47,7 @@ bulletReduceOneStepCircuit input = do
   addComplete lScaled rScaled
 
 compileBulletReduceOneStep :: CompiledCircuit StepField
-compileBulletReduceOneStep = compiledCircuit @StepField $
+compileBulletReduceOneStep =
   compilePure (Proxy @(Vector 5 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ bulletReduceOneStepCircuit (parseBulletReduceOneStepInput inputs))
     Kimchi.initialState

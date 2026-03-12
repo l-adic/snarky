@@ -10,7 +10,7 @@ import Prelude
 import Data.Fin (Finite, getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, finalizeOtherProofCircuit)
@@ -131,7 +131,7 @@ fopStepCircuit input =
       }
 
 compileFopStep :: CompiledCircuit StepField
-compileFopStep = compiledCircuit @StepField $
+compileFopStep =
   compilePure (Proxy @(Vector 151 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ fopStepCircuit (parseFopStepInput inputs))
     Kimchi.initialState

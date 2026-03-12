@@ -12,7 +12,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, unsafeIdx)
 import Pickles.FtComm (ftComm) as FtComm
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
@@ -66,7 +66,7 @@ ftcommStepCircuit input =
       }
 
 compileFtcommStep :: CompiledCircuit StepField
-compileFtcommStep = compiledCircuit @StepField $
+compileFtcommStep =
   compilePure (Proxy @(Vector 20 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ ftcommStepCircuit (parseFtcommStepInput inputs))
     Kimchi.initialState

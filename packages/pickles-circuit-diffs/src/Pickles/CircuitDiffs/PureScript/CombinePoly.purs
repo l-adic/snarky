@@ -12,7 +12,7 @@ import Data.Maybe (fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.IPA (combinePolynomials)
 import Pickles.Types (WrapField)
 import Snarky.Backend.Compile (compilePure)
@@ -77,7 +77,7 @@ combinePolyCircuit input =
     combinePolynomials allBases input.xi
 
 compileCombinePoly :: CompiledCircuit WrapField
-compileCombinePoly = compiledCircuit @WrapField $
+compileCombinePoly =
   compilePure (Proxy @(Vector 37 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ combinePolyCircuit (parseCombinePolyInput inputs))
     Kimchi.initialState

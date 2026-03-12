@@ -10,7 +10,7 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.IPA (bulletReduceCircuit)
 import Pickles.Types (WrapField)
 import Snarky.Backend.Compile (compilePure)
@@ -45,7 +45,7 @@ bulletReduceWrapCircuit
 bulletReduceWrapCircuit = bulletReduceCircuit @WrapField @VestaG
 
 compileBulletReduce :: CompiledCircuit WrapField
-compileBulletReduce = compiledCircuit @WrapField $
+compileBulletReduce =
   compilePure (Proxy @(Vector 80 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ bulletReduceWrapCircuit (parseBulletReduceInput inputs))
     Kimchi.initialState

@@ -10,7 +10,7 @@ import Prelude
 import Data.Fin (getFinite)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.Step.ChallengeDigest (challengeDigestCircuit) as ChallengeDigest
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
@@ -43,7 +43,7 @@ challengeDigestStepCircuit
 challengeDigestStepCircuit = ChallengeDigest.challengeDigestCircuit
 
 compileChallengeDigest :: CompiledCircuit StepField
-compileChallengeDigest = compiledCircuit @StepField $
+compileChallengeDigest =
   compilePure (Proxy @(Vector 34 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
     (\inputs -> void $ challengeDigestStepCircuit (parseChallengeDigestInput inputs))
     Kimchi.initialState

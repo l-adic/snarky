@@ -10,7 +10,7 @@ import Data.Fin (getFinite)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, compiledCircuit, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), publicInputCommit)
 import Pickles.Types (WrapField)
@@ -82,7 +82,7 @@ xhatCircuit { lagrangeComms, blindingH } publicInput =
     publicInput
 
 compileXhat :: XhatParams WrapField -> CompiledCircuit WrapField
-compileXhat srsData = compiledCircuit @WrapField $
+compileXhat srsData =
   compilePure (Proxy @(Vector 34 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> void $ xhatCircuit srsData (parseXhatInput inputs))
     Kimchi.initialState
