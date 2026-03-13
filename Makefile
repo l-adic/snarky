@@ -67,9 +67,9 @@ test-pickles-circuit-diffs: build-crypto gen-linearization ## Test pickles circu
 	cd packages/pickles-circuit-diffs && npx spago test
 
 test-all: ## Test all packages with proper crypto provider
-	$(MAKE) build-ps
 	@echo "=== Generating Linearization Code ==="
 	$(MAKE) gen-linearization
+	$(MAKE) build-ps
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
