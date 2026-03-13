@@ -4,6 +4,7 @@ import Prelude
 
 import Data.Either (Either(..))
 import Data.Int as Int
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Effect (Effect)
@@ -325,9 +326,9 @@ loadOcamlCircuit name = do
     Left e, _ -> throw $ "Failed to parse circuit JSON: " <> show e
     _, Left e -> throw $ "Failed to parse cached constants: " <> show e
 
--- | Strip context from gates for equality comparison (context is metadata, not part of the circuit)
-dropContext :: ComparableCircuit -> ComparableCircuit
-dropContext c = c { gates = map (_ { context = [] }) c.gates }
+-- | Strip metadata fields for equality comparison (context and variables are not part of the constraint system)
+stripMetadata :: ComparableCircuit -> ComparableCircuit
+stripMetadata c = c { gates = map (_ { context = [], variables = Nothing }) c.gates }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
 exactMatch name ps =
@@ -335,8 +336,8 @@ exactMatch name ps =
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
     let psCircuit = comparable ps
     let ocamlCircuit = comparable ocaml
-    let psNoCtx = dropContext psCircuit
-    let ocamlNoCtx = dropContext ocamlCircuit
+    let psNoCtx = stripMetadata psCircuit
+    let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
     let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit }
     liftEffect $ writeComparison (resultsDir <> name <> ".json") comparison
@@ -399,8 +400,7 @@ spec =
             { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        pending "xhat_step_circuit"
-      -- exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
+        exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
       describe "Pickles Wrap sub-circuits" do
         exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
         exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)

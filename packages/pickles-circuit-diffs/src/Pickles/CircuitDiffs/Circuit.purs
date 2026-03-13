@@ -38,7 +38,7 @@ import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
 import Snarky.Circuit.CVar (getVariable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, toHexLe)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, modulus, toBigInt, toHexLe)
 
 gateKindToString :: GateKind -> String
 gateKindToString = case _ of
@@ -50,10 +50,44 @@ gateKindToString = case _ of
   EndoMul -> "EndoMul"
   EndoScalar -> "EndoMulScalar"
 
-comparable :: forall f. Ord f => SerdeHex f => Circuit f -> ComparableCircuit
+-- | Convert a field element to a signed decimal string.
+-- | Values > p/2 are shown as negative (e.g. p-1 becomes "-1").
+toSignedDecimal :: forall f. PrimeField f => f -> String
+toSignedDecimal x =
+  let
+    n = toBigInt x
+    p = modulus @f
+    half = p / BigInt.fromInt 2
+  in
+    if n > half then "-" <> BigInt.toString (p - n)
+    else BigInt.toString n
+
+-- | Convert variable vector to Maybe array.
+-- | Returns Nothing if all variables are unset (e.g. OCaml-parsed gates).
+varsToMaybe :: Vector 15 (Maybe Int) -> Maybe (Array Int)
+varsToMaybe v =
+  let
+    arr = Vector.toUnfoldable v :: Array (Maybe Int)
+    toInt = case _ of
+      Nothing -> -1
+      Just x -> x
+  in
+    if Array.all (_ == Nothing) arr then Nothing
+    else Just (map toInt arr)
+
+comparable :: forall f. Ord f => PrimeField f => SerdeHex f => Circuit f -> ComparableCircuit
 comparable c =
   { publicInputSize: c.publicInputSize
-  , gates: map (\g -> { kind: gateKindToString g.kind, wires: g.wires, coeffs: map toHexLe g.coeffs, context: g.context }) c.gates
+  , gates: map
+      ( \g ->
+          { kind: gateKindToString g.kind
+          , wires: g.wires
+          , variables: varsToMaybe g.variables
+          , coeffs: map toSignedDecimal g.coeffs
+          , context: g.context
+          }
+      )
+      c.gates
   , cachedConstants: Array.sort $ map (toHexLe <<< _.value) c.cachedConstants
   }
 

@@ -8,7 +8,11 @@ workspace:
 package:
   name: pickles-circuit-diffs-visualizer
   dependencies:
+    - aff
+    - affjax
+    - affjax-web
     - effect
+    - either
     - maybe
     - prelude
     - pickles-circuit-diffs-types

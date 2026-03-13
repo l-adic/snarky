@@ -4,9 +4,12 @@ module Pickles.CircuitDiffs.Types
   , CircuitComparison
   ) where
 
+import Data.Maybe (Maybe)
+
 type ComparableGate =
   { kind :: String
   , wires :: Array { row :: Int, col :: Int }
+  , variables :: Maybe (Array Int)
   , coeffs :: Array String
   , context :: Array String
   }

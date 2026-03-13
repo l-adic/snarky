@@ -8,6 +8,8 @@
     "clean": "rm -rf dist .parcel-cache output"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.22",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
