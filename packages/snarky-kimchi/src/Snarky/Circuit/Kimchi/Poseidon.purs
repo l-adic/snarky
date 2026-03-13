@@ -10,7 +10,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Poseidon (class PoseidonField, fullRound)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, exists, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, addConstraint, exists, label, readCVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint(KimchiPoseidon))
 
 poseidon
@@ -19,7 +19,7 @@ poseidon
   => CircuitM f (KimchiConstraint f) t m
   => Vector 3 (FVar f)
   -> Snarky (KimchiConstraint f) t m (Vector 3 (FVar f))
-poseidon initialState = do
+poseidon initialState = label "poseidon" do
   -- Witness only the 55 round outputs (not the initial state).
   -- OCaml's block_cipher does t.(0) <- init after witnessing, overwriting row 0
   -- with the actual input CVars. We achieve the same by prepending the original

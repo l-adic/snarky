@@ -21,7 +21,7 @@ import Prelude
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Sponge (SpongeM, absorb, squeeze)
+import Pickles.Sponge (SpongeM, absorb, labelM, squeeze)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (class CircuitM, FVar, const_)
@@ -68,7 +68,7 @@ hashMessagesForNextWrapProofCircuit
      , dummyChallenges :: Vector d f -- compile-time constants
      }
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
-hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } = do
+hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } = labelM "hash-messages-for-next-wrap-proof" do
   -- Absorb dummy challenges (constants, lifted to circuit variables)
   Pickles.Sponge.absorbMany (map const_ dummyChallenges)
   -- Absorb real expanded challenges

@@ -37,7 +37,7 @@ import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
@@ -190,7 +190,7 @@ stepCircuit
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField)
   -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField))
-stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs } = do
+stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs } = label "step-circuit" do
   -- 1. Run application circuit
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 

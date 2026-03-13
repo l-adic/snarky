@@ -28,7 +28,7 @@ import Pickles.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
 import Poseidon (class PoseidonField, getMdsMatrix)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, div_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase, pow)
 import Type.Proxy (Proxy(..))
@@ -185,7 +185,7 @@ precomputeAlphaPowers
   => Int -- ^ max power (inclusive)
   -> FVar f -- ^ alpha
   -> Snarky c t m (Array (FVar f))
-precomputeAlphaPowers maxPow alpha = go 2 [ const_ one, alpha ]
+precomputeAlphaPowers maxPow alpha = label "precompute-alpha-powers" $ go 2 [ const_ one, alpha ]
   where
   go i acc
     | i > maxPow = pure acc

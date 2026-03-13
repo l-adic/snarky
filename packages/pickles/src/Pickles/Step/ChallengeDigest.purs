@@ -23,7 +23,7 @@ import Data.Vector as Vector
 import Pickles.OptSponge as OptSponge
 import Pickles.Verify.Types (BulletproofChallenges)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -62,12 +62,11 @@ challengeDigestCircuit
   => CircuitM f (KimchiConstraint f) t m
   => ChallengeDigestInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
-challengeDigestCircuit { mask, oldChallenges } =
+challengeDigestCircuit { mask, oldChallenges } = label "challenge-digest" do
   let
     pending = Array.fromFoldable $ foldMap
       ( \(Tuple keep chals) ->
           map (Tuple keep <<< SizedF.toField) (Array.fromFoldable chals)
       )
       (Vector.zip mask oldChallenges)
-  in
-    OptSponge.squeeze OptSponge.create pending
+  OptSponge.squeeze OptSponge.create pending

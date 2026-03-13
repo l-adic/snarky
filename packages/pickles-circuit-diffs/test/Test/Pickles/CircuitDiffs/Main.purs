@@ -15,7 +15,7 @@ import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
-import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseCachedConstants, parseCircuitJson)
+import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseOcamlFixtures)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
@@ -318,13 +318,12 @@ poseidonCircuit = poseidon
 
 loadOcamlCircuit :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Effect (Circuit f)
 loadOcamlCircuit name = do
-  circuitJson <- readFixture (fixtureDir <> name <> ".json")
-  cachedJson <- readFixture (fixtureDir <> name <> "_cached_constants.json")
-  case parseCircuitJson circuitJson, parseCachedConstants cachedJson of
-    Right { publicInputSize, gates }, Right cachedConstants ->
-      pure { publicInputSize, gates, cachedConstants }
-    Left e, _ -> throw $ "Failed to parse circuit JSON: " <> show e
-    _, Left e -> throw $ "Failed to parse cached constants: " <> show e
+  circuit <- readFixture (fixtureDir <> name <> ".json")
+  cachedConstants <- readFixture (fixtureDir <> name <> "_cached_constants.json")
+  gateLabels <- readFixture (fixtureDir <> name <> "_gate_labels.jsonl")
+  case parseOcamlFixtures { circuit, cachedConstants, gateLabels } of
+    Right c -> pure c
+    Left e -> throw $ "Failed to parse OCaml fixtures: " <> show e
 
 -- | Strip metadata fields for equality comparison (context and variables are not part of the constraint system)
 stripMetadata :: ComparableCircuit -> ComparableCircuit

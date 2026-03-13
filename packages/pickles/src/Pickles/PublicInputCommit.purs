@@ -42,7 +42,7 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
@@ -243,7 +243,7 @@ publicInputCommit
      }
   -> a
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-publicInputCommit params input = do
+publicInputCommit params input = label "public-input-commit" do
   { results } <- scalarMuls params.curveParams input params.lagrangeComms
   case NEA.fromArray results of
     Nothing -> pure (constPt params.blindingH)

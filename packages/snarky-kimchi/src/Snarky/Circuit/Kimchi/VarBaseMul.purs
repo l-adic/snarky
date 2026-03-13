@@ -19,7 +19,7 @@ import JS.BigInt as BigInt
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as EllipticCurve
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, read, readCVar, throwAsProver, unpackPure)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, EvaluationError(..), F(..), FVar, Snarky, addConstraint, assertEqual_, const_, exists, if_, label, read, readCVar, throwAsProver, unpackPure)
 import Snarky.Circuit.DSL as Bits
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast, sealPoint)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -43,7 +43,7 @@ varBaseMul
        { g :: AffinePoint (FVar f)
        , lsbBits :: Vector n (FVar f)
        }
-varBaseMul base' (Type1 t) = do
+varBaseMul base' (Type1 t) = label "var-base-mul" do
   -- Seal the base point once, matching OCaml's `let base = seal base in` at the top
   -- of scale_fast_unpack. This converts complex CVar expressions to simple variables,
   -- preventing redundant constraints when base is reduced in each VarBaseMul round.
@@ -158,7 +158,7 @@ scaleFast1
   -> Type1 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast1 p t = do
+scaleFast1 p t = label "scale-fast-1" do
   { g } <- varBaseMul @nChunks @bitsUsed p t
   pure g
 
@@ -182,7 +182,7 @@ scaleFast2
   -> { sDiv2 :: FVar f, sOdd :: BoolVar f }
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2 base { sDiv2, sOdd } = do
+scaleFast2 base { sDiv2, sOdd } = label "scale-fast-2" do
   { g, lsbBits } <- varBaseMul @nChunks @bitsUsed base (Type1 sDiv2)
   let { after } = Vector.splitAt @sDiv2Bits lsbBits
   traverse_ (\x -> assertEqual_ x (const_ zero)) after
@@ -198,7 +198,7 @@ splitFieldVar
    . CircuitM f c t m
   => FVar f
   -> Snarky c t m ({ sDiv2 :: (FVar f), sOdd :: (BoolVar f) })
-splitFieldVar s = do
+splitFieldVar s = label "split-field-var" do
   res@{ sDiv2, sOdd } <- exists do
     F sVal <- readCVar s
     pure $ splitField (F sVal)
@@ -243,6 +243,6 @@ scaleFast2'
   -> FVar f
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-scaleFast2' base s = do
+scaleFast2' base s = label "scale-fast-2-prime" do
   split <- splitFieldVar s
   scaleFast2 @nChunks @sDiv2Bits base split

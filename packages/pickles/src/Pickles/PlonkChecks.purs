@@ -28,7 +28,7 @@ import Pickles.Linearization (LinearizationPoly)
 import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
 import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
-import Pickles.Sponge (class MonadSponge, SpongeM, absorb, liftSnarky, squeezeScalarChallenge)
+import Pickles.Sponge (class MonadSponge, SpongeM, absorb, labelM, liftSnarky, squeezeScalarChallenge)
 import Pickles.Verify.Types (ScalarChallenge)
 import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, assertEq)
@@ -163,7 +163,7 @@ plonkChecksCircuit
   => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
   -> PlonkChecksInput (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (PlonkChecksOutput (FVar f))
-plonkChecksCircuit params input = do
+plonkChecksCircuit params input = labelM "plonk-checks" do
   -- 1. Absorb all polynomial evaluations in Kimchi's order
   absorbAllEvals input.allEvals
 

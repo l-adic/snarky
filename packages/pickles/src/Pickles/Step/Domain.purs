@@ -50,7 +50,7 @@ domainVanishingPoly
   -> FVar f
   -> Int -- ^ log2 domain size (e.g. 16)
   -> Snarky c t m (FVar f)
-domainVanishingPoly whichBit x log2Size = do
+domainVanishingPoly whichBit x log2Size = label "domain-vanishing-poly" do
   -- 1. Compute pow2_pows via Field.square (log2Size Square constraints)
   zetaToN <- pow2PowSquare x log2Size
   -- 2. mask: (which_bit :> t) * zetaToN (1 R1CS mul)

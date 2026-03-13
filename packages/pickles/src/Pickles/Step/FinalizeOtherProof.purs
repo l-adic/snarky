@@ -57,7 +57,7 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (negate_, scale_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -186,7 +186,7 @@ finalizeOtherProofCircuit
   -> FinalizeOtherProofParams f r2
   -> FinalizeOtherProofInput n d (FVar f) sf (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = do
+finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
   let
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo

@@ -37,7 +37,7 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, UnChecked(..), assert_, equals_, exists, false_, fieldsToValue, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, UnChecked(..), assert_, equals_, exists, false_, fieldsToValue, label, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -99,7 +99,7 @@ wrapCircuit
   => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit params wrapStmt = do
+wrapCircuit params wrapStmt = label "wrap-circuit" do
   -- 1. Obtain private witness data via advisory monad
   UnChecked publicInput <- exists $ lift $ do
     fs <- getStepIOFields @mpv @ds @WrapIPARounds @m @Pallas.ScalarField unit

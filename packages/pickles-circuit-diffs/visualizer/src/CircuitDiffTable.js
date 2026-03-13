@@ -166,10 +166,10 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
                   left: 0,
                   width: "100%",
                   transform: `translateY(${virtualRow.start}px)`,
-                  backgroundColor: isPublicInput
-                    ? "#e8f0fe"
-                    : isDiff
-                      ? DIFF_COLOR
+                  backgroundColor: isPublicInput ? "#e8f0fe" : isDiff ? DIFF_COLOR : undefined,
+                  backgroundImage:
+                    isPublicInput && isDiff
+                      ? "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(220,53,69,0.25) 4px, rgba(220,53,69,0.25) 8px)"
                       : undefined,
                   borderBottom: "1px solid #eee",
                   cursor: hasContext ? "pointer" : "default",
@@ -288,9 +288,10 @@ function CircuitDiffTable({ comparison }) {
       },
       React.createElement("span", null, `Gates: ${summary.total}`),
       ...[
-        { label: "Public inputs", color: "#e8f0fe", count: comparison.purescript.publicInputSize },
-        { label: "Diffs", color: DIFF_COLOR, count: summary.diffs },
-      ].map(({ label, color, count }) =>
+        { label: "Public inputs", bg: "#e8f0fe", bgImage: undefined, count: comparison.purescript.publicInputSize },
+        { label: "Diffs", bg: DIFF_COLOR, bgImage: undefined, count: summary.diffs },
+        { label: "PI diff", bg: "#e8f0fe", bgImage: "repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(220,53,69,0.25) 2px, rgba(220,53,69,0.25) 4px)", count: null },
+      ].map(({ label, bg, bgImage, count }) =>
         React.createElement(
           "span",
           {
@@ -306,11 +307,12 @@ function CircuitDiffTable({ comparison }) {
               display: "inline-block",
               width: 12,
               height: 12,
-              backgroundColor: color,
+              backgroundColor: bg,
+              backgroundImage: bgImage,
               border: "1px solid #aaa",
             },
           }),
-          `${label}: ${count}`
+          count !== null ? `${label}: ${count}` : label
         )
       )
     ),
