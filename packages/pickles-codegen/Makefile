@@ -25,12 +25,16 @@ json:
 	@echo "==> JSON files generated in $(JSON_DIR)"
 
 # Step 2: Generate PureScript from JSON
+# Note: we use `spago build` + `node` instead of `spago run` because
+# `spago run` calls `purs graph` on the full workspace, which fails
+# when the generated Pallas/Vesta modules don't exist yet.
 purescript: json
 	@echo "==> Generating PureScript modules from JSON..."
 	@mkdir -p $(OUTPUT_DIR)
+	cd ../.. && npx spago build -p pickles-codegen
 	LINEARIZATION_JSON_DIR=$(CURDIR)/$(JSON_DIR) \
 	LINEARIZATION_OUTPUT_DIR=$(CURDIR)/$(OUTPUT_DIR) \
-	spago run -p pickles-codegen
+	node -e "import('./../../output/Pickles.Linearization.Main/index.js').then(m => m.main())"
 	@echo "==> PureScript modules generated in $(OUTPUT_DIR)"
 
 # Clean generated files
