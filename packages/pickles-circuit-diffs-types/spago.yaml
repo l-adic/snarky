@@ -1,0 +1,5 @@
+package:
+  name: pickles-circuit-diffs-types
+  dependencies:
+    - prelude
+    - simple-json

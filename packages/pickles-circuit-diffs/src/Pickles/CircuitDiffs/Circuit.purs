@@ -2,11 +2,13 @@ module Pickles.CircuitDiffs.Circuit
   ( Circuit
   , GateData
   , CachedConstant
+  , comparable
   , fromCompiledCircuit
   , parseOcamlFixtures
   , parseCircuitJson
   , parseCachedConstants
   , parseGateLabels
+  , module ReExports
   ) where
 
 import Prelude
@@ -26,6 +28,8 @@ import Data.Vector as Vector
 import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
+import Pickles.CircuitDiffs.Types (ComparableCircuit)
+import Pickles.CircuitDiffs.Types (ComparableCircuit, ComparableGate) as ReExports
 import Simple.JSON (class ReadForeign, readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeGateData)
@@ -34,7 +38,24 @@ import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
 import Snarky.Circuit.CVar (getVariable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, toHexLe)
+
+gateKindToString :: GateKind -> String
+gateKindToString = case _ of
+  Zero -> "Zero"
+  GenericPlonkGate -> "Generic"
+  PoseidonGate -> "Poseidon"
+  AddCompleteGate -> "CompleteAdd"
+  VarBaseMul -> "VarBaseMul"
+  EndoMul -> "EndoMul"
+  EndoScalar -> "EndoMulScalar"
+
+comparable :: forall f. Ord f => SerdeHex f => Circuit f -> ComparableCircuit
+comparable c =
+  { publicInputSize: c.publicInputSize
+  , gates: map (\g -> { kind: gateKindToString g.kind, wires: g.wires, coeffs: map toHexLe g.coeffs, context: g.context }) c.gates
+  , cachedConstants: Array.sort $ map (toHexLe <<< _.value) c.cachedConstants
+  }
 
 --------------------------------------------------------------------------------
 -- Types

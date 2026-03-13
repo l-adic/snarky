@@ -2,18 +2,19 @@ module Test.Pickles.CircuitDiffs.Main where
 
 import Prelude
 
-import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Int as Int
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Effect (Effect)
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
+import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
-import Pickles.CircuitDiffs.Circuit (Circuit, fromCompiledCircuit, parseCachedConstants, parseCircuitJson)
+import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseCachedConstants, parseCircuitJson)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
@@ -27,13 +28,17 @@ import Pickles.CircuitDiffs.PureScript.Ftcomm (compileFtcomm)
 import Pickles.CircuitDiffs.PureScript.FtcommStep (compileFtcommStep)
 import Pickles.CircuitDiffs.PureScript.GroupMap (compileGroupMap)
 import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
+import Pickles.CircuitDiffs.PureScript.IvpStep (compileIvpStep)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
 import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationStep)
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
+import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Safe.Coerce (coerce)
+import Simple.JSON (writeJSON)
 import Snarky.Backend.Compile (compilePure)
+import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
@@ -44,17 +49,17 @@ import Snarky.Circuit.Kimchi.EndoScalar (toField)
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1, scaleFast2')
 import Snarky.Constraint.Kimchi (KimchiConstraint, initialState)
-import Snarky.Constraint.Kimchi.Types (GateKind)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (VestaG)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..))
-import Test.Spec (Spec, describe, it, pending)
+import Test.Spec (SpecT, beforeAll_, describe, it, pending)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner.Node (runSpecAndExitProcess)
+import Test.Spec.Runner.Node (runSpecAndExitProcess')
+import Test.Spec.Runner.Node.Config as Cfg
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -74,28 +79,29 @@ readFixture path = do
 
 foreign import pallasSrsLagrangeCommitments :: CRS VestaG -> Int -> Int -> Array (AffinePoint Fq)
 foreign import pallasSrsBlindingGenerator :: CRS VestaG -> AffinePoint Fq
+foreign import vestaSrsLagrangeCommitments :: CRS PallasG -> Int -> Int -> Array (AffinePoint Fp)
+foreign import vestaSrsBlindingGenerator :: CRS PallasG -> AffinePoint Fp
 
 --------------------------------------------------------------------------------
--- Comparison
+-- Output directories for serialized comparable circuits
 
-type ComparableGate f =
-  { kind :: GateKind
-  , wires :: Array { row :: Int, col :: Int }
-  , coeffs :: Array f
-  }
+successDir :: String
+successDir = "packages/pickles-circuit-diffs/circuits/purescript/matched-success/"
 
-type ComparableCircuit f =
-  { publicInputSize :: Int
-  , gates :: Array (ComparableGate f)
-  , cachedConstants :: Array f
-  }
+failureDir :: String
+failureDir = "packages/pickles-circuit-diffs/circuits/purescript/matched-failure/"
 
-comparable :: forall f. Ord f => Circuit f -> ComparableCircuit f
-comparable c =
-  { publicInputSize: c.publicInputSize
-  , gates: map (\g -> { kind: g.kind, wires: g.wires, coeffs: g.coeffs }) c.gates
-  , cachedConstants: Array.sort $ map _.value c.cachedConstants
-  }
+writeComparable :: String -> ComparableCircuit -> Effect Unit
+writeComparable path c = FS.writeTextFile UTF8 path (writeJSON c)
+
+resetOutputDirs :: Effect Unit
+resetOutputDirs = do
+  let rmOpts = { force: true, maxRetries: 0, recursive: true, retryDelay: 0 }
+  let mkdirOpts = { recursive: true, mode: mkPerms all all all }
+  FS.rm' successDir rmOpts
+  FS.rm' failureDir rmOpts
+  FS.mkdir' successDir mkdirOpts
+  FS.mkdir' failureDir mkdirOpts
 
 --------------------------------------------------------------------------------
 -- Compile helpers (basic circuits, Fp only)
@@ -323,81 +329,112 @@ loadOcamlCircuit name = do
     Left e, _ -> throw $ "Failed to parse circuit JSON: " <> show e
     _, Left e -> throw $ "Failed to parse cached constants: " <> show e
 
-exactMatch :: forall f. Ord f => Show f => Eq f => SerdeHex f => PrimeField f => String -> Circuit f -> Spec Unit
+-- | Strip context from gates for equality comparison (context is metadata, not part of the circuit)
+dropContext :: ComparableCircuit -> ComparableCircuit
+dropContext c = c { gates = map (_ { context = [] }) c.gates }
+
+exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
 exactMatch name ps =
   it (name <> " matches OCaml") do
-    ocaml <- liftEffect $ loadOcamlCircuit name
-    comparable ps `shouldEqual` comparable ocaml
+    ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
+    let psCircuit = comparable ps
+    let ocamlCircuit = comparable ocaml
+    let psNoCtx = dropContext psCircuit
+    let ocamlNoCtx = dropContext ocamlCircuit
+    if psNoCtx == ocamlNoCtx then
+      liftEffect $ writeComparable (successDir <> name <> ".json") psCircuit
+    else do
+      liftEffect $ writeComparable (failureDir <> name <> ".json") psCircuit
+      psNoCtx `shouldEqual` ocamlNoCtx
 
 --------------------------------------------------------------------------------
 -- Test spec
 
 main :: Effect Unit
-main = runSpecAndExitProcess [ consoleReporter ] spec
+main =
+  runSpecAndExitProcess' { defaultConfig: Cfg.defaultConfig, parseCLIOptions: true }
+    [ consoleReporter ]
+    spec
 
-spec :: Spec Unit
+spec :: SpecT Aff Unit Aff Unit
 spec =
-  describe "Circuit comparison" do
-    describe "Field arithmetic" do
-      exactMatch "mul_step_circuit" (compileFF mulCircuit)
-      exactMatch "inv_step_circuit" (compileFF invCircuit)
-      exactMatch "div_step_circuit" (compileFF divCircuit)
-      exactMatch "if_step_circuit" (compileFF ifCircuit)
-      exactMatch "equals_step_circuit" (compileFB equalsCircuit)
-      exactMatch "pow7_step_circuit" (compileFF pow7Circuit)
-      exactMatch "pow8_step_circuit" (compileFF pow8Circuit)
-    describe "Assertions" do
-      exactMatch "assert_equal_step_circuit" (compileFU assertEqualCircuit)
-      exactMatch "assert_non_zero_step_circuit" (compileFU assertNonZeroCircuit)
-      exactMatch "assert_not_equal_step_circuit" (compileFU assertNotEqualCircuit)
-      exactMatch "assert_square_step_circuit" (compileFU assertSquareCircuit)
-      exactMatch "unpack_step_circuit" (compileFU unpackCircuit)
-    describe "Boolean" do
-      exactMatch "bool_and_step_circuit" (compileBB boolAndCircuit)
-      exactMatch "bool_or_step_circuit" (compileBB boolOrCircuit)
-      exactMatch "bool_xor_step_circuit" (compileBB boolXorCircuit)
-      exactMatch "bool_all_step_circuit" (compileBB boolAllCircuit)
-      exactMatch "bool_any_step_circuit" (compileBB boolAnyCircuit)
-      exactMatch "bool_assert_step_circuit" (compileBU boolAssertCircuit)
-    describe "Kimchi gates" do
-      exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
-      exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
-      exactMatch "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
-      exactMatch "endo_mul_step_circuit" (compilePF endoMulCircuit)
-      exactMatch "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
-      exactMatch "poseidon_step_circuit" (compileV3 poseidonCircuit)
-    describe "Pickles Step sub-circuits" do
-      exactMatch "pow2_pow_step_circuit" (fromCompiledCircuit compilePow2Pow)
-      exactMatch "b_correct_step_circuit" (fromCompiledCircuit compileBCorrect)
-      exactMatch "challenge_digest_step_circuit" (fromCompiledCircuit compileChallengeDigest)
-      exactMatch "finalize_other_proof_step_circuit" (fromCompiledCircuit compileFopStep)
-      exactMatch "group_map_step_circuit" (fromCompiledCircuit compileGroupMapStep)
-      exactMatch "bullet_reduce_one_step_circuit" (fromCompiledCircuit compileBulletReduceOneStep)
-      exactMatch "bullet_reduce_step_circuit" (fromCompiledCircuit compileBulletReduceStep)
-      exactMatch "ftcomm_step_circuit" (fromCompiledCircuit compileFtcommStep)
-      pending "xhat_step_circuit -- needs PureCorrections mode in publicInputCommit"
-    describe "Pickles Wrap sub-circuits" do
-      exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
-      exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)
-      exactMatch "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit compileBulletReduceOne)
-      exactMatch "bullet_reduce_wrap_circuit" (fromCompiledCircuit compileBulletReduce)
-      exactMatch "ftcomm_wrap_circuit" (fromCompiledCircuit compileFtcomm)
-      exactMatch "combine_poly_wrap_circuit" (fromCompiledCircuit compileCombinePoly)
-      let
-        srs = vestaCrsCreate (2 `Int.pow` 16)
-        wrapSrsData =
-          { lagrangeComms: coerce $ pallasSrsLagrangeCommitments srs 16 177
-          , blindingH: coerce $ pallasSrsBlindingGenerator srs
-          }
-      exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
-    describe "IVP" do
-      let
-        srs = vestaCrsCreate (2 `Int.pow` 16)
-        wrapSrsData =
-          { lagrangeComms: coerce $ pallasSrsLagrangeCommitments srs 16 177
-          , blindingH: coerce $ pallasSrsBlindingGenerator srs
-          }
-      exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
-    describe "Linearization" do
-      exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
-      exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
+  beforeAll_ (liftEffect resetOutputDirs) $
+    describe "Circuit comparison" do
+      describe "Field arithmetic" do
+        exactMatch "mul_step_circuit" (compileFF mulCircuit)
+        exactMatch "inv_step_circuit" (compileFF invCircuit)
+        exactMatch "div_step_circuit" (compileFF divCircuit)
+        exactMatch "if_step_circuit" (compileFF ifCircuit)
+        exactMatch "equals_step_circuit" (compileFB equalsCircuit)
+        exactMatch "pow7_step_circuit" (compileFF pow7Circuit)
+        exactMatch "pow8_step_circuit" (compileFF pow8Circuit)
+      describe "Assertions" do
+        exactMatch "assert_equal_step_circuit" (compileFU assertEqualCircuit)
+        exactMatch "assert_non_zero_step_circuit" (compileFU assertNonZeroCircuit)
+        exactMatch "assert_not_equal_step_circuit" (compileFU assertNotEqualCircuit)
+        exactMatch "assert_square_step_circuit" (compileFU assertSquareCircuit)
+        exactMatch "unpack_step_circuit" (compileFU unpackCircuit)
+      describe "Boolean" do
+        exactMatch "bool_and_step_circuit" (compileBB boolAndCircuit)
+        exactMatch "bool_or_step_circuit" (compileBB boolOrCircuit)
+        exactMatch "bool_xor_step_circuit" (compileBB boolXorCircuit)
+        exactMatch "bool_all_step_circuit" (compileBB boolAllCircuit)
+        exactMatch "bool_any_step_circuit" (compileBB boolAnyCircuit)
+        exactMatch "bool_assert_step_circuit" (compileBU boolAssertCircuit)
+      describe "Kimchi gates" do
+        exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
+        exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
+        exactMatch "var_base_mul_step_circuit" (compilePF varBaseMulCircuit)
+        exactMatch "endo_mul_step_circuit" (compilePF endoMulCircuit)
+        exactMatch "scale_fast2_128_step_circuit" (compilePF scaleFast2_128Circuit)
+        exactMatch "poseidon_step_circuit" (compileV3 poseidonCircuit)
+      describe "Pickles Step sub-circuits" do
+        exactMatch "pow2_pow_step_circuit" (fromCompiledCircuit compilePow2Pow)
+        exactMatch "b_correct_step_circuit" (fromCompiledCircuit compileBCorrect)
+        exactMatch "challenge_digest_step_circuit" (fromCompiledCircuit compileChallengeDigest)
+        exactMatch "finalize_other_proof_step_circuit" (fromCompiledCircuit compileFopStep)
+        exactMatch "group_map_step_circuit" (fromCompiledCircuit compileGroupMapStep)
+        exactMatch "bullet_reduce_one_step_circuit" (fromCompiledCircuit compileBulletReduceOneStep)
+        exactMatch "bullet_reduce_step_circuit" (fromCompiledCircuit compileBulletReduceStep)
+        exactMatch "ftcomm_step_circuit" (fromCompiledCircuit compileFtcommStep)
+        let
+          stepSrs = pallasCrsCreate (2 `Int.pow` 16)
+          stepSrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
+            }
+        pending "xhat_step_circuit"
+      -- exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
+      describe "Pickles Wrap sub-circuits" do
+        exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
+        exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)
+        exactMatch "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit compileBulletReduceOne)
+        exactMatch "bullet_reduce_wrap_circuit" (fromCompiledCircuit compileBulletReduce)
+        exactMatch "ftcomm_wrap_circuit" (fromCompiledCircuit compileFtcomm)
+        exactMatch "combine_poly_wrap_circuit" (fromCompiledCircuit compileCombinePoly)
+        let
+          srs = vestaCrsCreate (2 `Int.pow` 16)
+          wrapSrsData =
+            { lagrangeComms: coerce $ pallasSrsLagrangeCommitments srs 16 177
+            , blindingH: coerce $ pallasSrsBlindingGenerator srs
+            }
+        exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
+      describe "IVP" do
+        let
+          wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
+          wrapSrsData =
+            { lagrangeComms: coerce $ pallasSrsLagrangeCommitments wrapSrs 16 177
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+        exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
+        let
+          stepSrs = pallasCrsCreate (2 `Int.pow` 16)
+          stepSrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 175) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
+            }
+        pending "ivp_step_circuit"
+      -- exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
+      describe "Linearization" do
+        exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
+        exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
