@@ -93,6 +93,11 @@ resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 writeComparison :: String -> CircuitComparison -> Effect Unit
 writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
 
+appendManifest :: String -> String -> Effect Unit
+appendManifest name status =
+  FS.appendTextFile UTF8 (resultsDir <> "manifest.jsonl")
+    (writeJSON { name, status } <> "\n")
+
 resetOutputDirs :: Effect Unit
 resetOutputDirs = do
   let rmOpts = { force: true, maxRetries: 0, recursive: true, retryDelay: 0 }
@@ -339,7 +344,9 @@ exactMatch name ps =
     let ocamlNoCtx = stripMetadata ocamlCircuit
     let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
     let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit }
-    liftEffect $ writeComparison (resultsDir <> name <> ".json") comparison
+    liftEffect do
+      writeComparison (resultsDir <> name <> ".json") comparison
+      appendManifest name status
     unless (status == "match") $
       psNoCtx `shouldEqual` ocamlNoCtx
 
