@@ -1,0 +1,17 @@
+{
+  "name": "pickles-circuit-diffs-visualizer",
+  "private": true,
+  "scripts": {
+    "build:ps": "npx spago build",
+    "build": "npm run build:ps && npx parcel build index.html --dist-dir dist",
+    "dev": "npm run build:ps && npx parcel serve index.html --dist-dir dist --port 1234",
+    "clean": "rm -rf dist .parcel-cache output"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "parcel": "^2.13.0"
+  }
+}

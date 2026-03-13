@@ -1,1 +1,6 @@
 circuits/purescript/
+visualizer/dist/
+visualizer/.parcel-cache/
+visualizer/node_modules/
+visualizer/output/
+visualizer/.spago/
