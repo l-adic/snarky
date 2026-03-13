@@ -1,4 +1,4 @@
-.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph
+.PHONY: help all clean build-crypto test-curves test-snarky test-bulletproofs test-groth16 test-pickles-circuit-diffs test-all run-snarky cargo-check cargo-build cargo-test cargo-fmt cargo-clippy lint build-ps gen-linearization dep-graph
 
 .DEFAULT_GOAL := help
 
@@ -63,10 +63,13 @@ test-example: build-crypto ## Test example package
 test-pickles: build-crypto gen-linearization ## Test pickles package (requires codegen)
 	cd packages/pickles && npx spago test
 
+test-pickles-circuit-diffs: build-crypto gen-linearization ## Test pickles circuit diffs package (requires codegen)
+	cd packages/pickles-circuit-diffs && npx spago test
+
 test-all: ## Test all packages with proper crypto provider
-	$(MAKE) build-ps
 	@echo "=== Generating Linearization Code ==="
 	$(MAKE) gen-linearization
+	$(MAKE) build-ps
 	@echo "=== Testing Core Packages (curves + snarky) ====" 
 	$(MAKE) test-curves
 	$(MAKE) test-snarky
@@ -84,8 +87,10 @@ test-all: ## Test all packages with proper crypto provider
 	$(MAKE) test-bulletproofs  
 	@echo "=== Testing Groth16 Backend ==="
 	$(MAKE) test-groth16
-	@echo "=== Testing Pickles Linearization ==="
+	@echo "=== Testing Pickles ==="
 	$(MAKE) test-pickles
+	@echo "=== Testing Pickles Circuit Diffs ==="
+	$(MAKE) test-pickles-circuit-diffs
 	@echo "=== All tests completed successfully ==="
 
 test: test-all ## Test everything

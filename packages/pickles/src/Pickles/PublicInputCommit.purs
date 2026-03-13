@@ -16,6 +16,7 @@
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
+  , CorrectionMode(..)
   , DeferredScaleMul(..)
   , MsmTerm(..)
   , ScalarMulResult
@@ -52,6 +53,11 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
+
+-- | Controls how correction points are combined during public input commitment.
+-- | Currently unused (always InCircuitCorrections), but needed by
+-- | pickles-circuit-diffs to prepare for Step verifier's PureCorrections mode.
+data CorrectionMode = PureCorrections | InCircuitCorrections
 
 -- | A deferred scalar multiplication that captures type-level parameters.
 -- | This lets scalarMulLeaf store the computation without executing it,
@@ -106,6 +112,10 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (FVar f) f where
 -- | 128-bit challenge: 130 bits → 26 chunks, sDiv2Bits = 127
 instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f where
   scalarMuls params sized bases = scalarMulLeaf @26 @127 params (toField sized) bases
+
+-- | 10-bit branch data: 10 bits → 2 chunks, sDiv2Bits = 9
+instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 10 (FVar f)) f where
+  scalarMuls params sized bases = scalarMulLeaf @2 @9 params (toField sized) bases
 
 -- | Boolean: Cond_add — conditionally add Lagrange point.
 -- | Matches OCaml's `Cond_add(b, lagrange(i))` for 1-bit values.

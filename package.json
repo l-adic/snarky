@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "test": "make test",
-    "build:ps": "spago build -p snarky",
+    "build:ps": "spago install && spago build",
     "build:napi": "npm run build --workspaces",
     "build:crypto": "npm run build -w crypto-provider",
     "clean:napi": "npm run clean --workspaces --if-present"
@@ -32,6 +32,6 @@
     "@napi-rs/cli": "^3.4.1",
     "purescript": "^0.15.15",
     "purs-tidy": "^0.11.1",
-    "spago": "^0.93.42"
+    "spago": "1.0.3"
   }
 }

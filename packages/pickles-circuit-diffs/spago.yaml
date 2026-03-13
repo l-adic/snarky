@@ -1,0 +1,36 @@
+package:
+  name: pickles-circuit-diffs
+  dependencies:
+    - arrays
+    - curves
+    - either
+    - foldable-traversable
+    - foreign
+    - integers
+    - js-bigints
+    - maybe
+    - newtype
+    - ordered-collections
+    - partial
+    - pickles
+    - pickles-linearization-types
+    - poseidon
+    - prelude
+    - safe-coerce
+    - simple-json
+    - snarky
+    - snarky-curves
+    - snarky-kimchi
+    - strings
+    - tuples
+    - unsafe-coerce
+    - vector-sized
+  test:
+    main: Test.Pickles.CircuitDiffs.Main
+    dependencies:
+      - effect
+      - exceptions
+      - node-buffer
+      - node-fs
+      - spec
+      - spec-node

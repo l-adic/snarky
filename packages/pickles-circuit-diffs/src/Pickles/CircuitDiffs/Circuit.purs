@@ -1,0 +1,240 @@
+module Pickles.CircuitDiffs.Circuit
+  ( Circuit
+  , GateData
+  , CachedConstant
+  , fromCompiledCircuit
+  , parseOcamlFixtures
+  , parseCircuitJson
+  , parseCachedConstants
+  , parseGateLabels
+  ) where
+
+import Prelude
+
+import Data.Array (concatMap, replicate)
+import Data.Array as Array
+import Data.Either (Either, note)
+import Data.Int as Int
+import Data.Map as Map
+import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
+import Data.String as String
+import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
+import Data.Vector (Vector)
+import Data.Vector as Vector
+import Foreign (ForeignError(..), MultipleErrors)
+import JS.BigInt as BigInt
+import Partial.Unsafe (unsafeCrashWith)
+import Simple.JSON (class ReadForeign, readJSON)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Kimchi (makeGateData)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
+import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
+import Snarky.Circuit.CVar (getVariable)
+import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe)
+
+--------------------------------------------------------------------------------
+-- Types
+
+type GateData f =
+  { kind :: GateKind
+  , wires :: Array { row :: Int, col :: Int }
+  , variables :: Vector 15 (Maybe Int)
+  , coeffs :: Array f
+  , context :: Array String
+  }
+
+type CachedConstant f =
+  { variable :: Int
+  , value :: f
+  }
+
+type Circuit f =
+  { publicInputSize :: Int
+  , gates :: Array (GateData f)
+  , cachedConstants :: Array (CachedConstant f)
+  }
+
+--------------------------------------------------------------------------------
+-- From compiled PureScript circuit
+
+fromCompiledCircuit
+  :: forall f g
+   . CircuitGateConstructor f g
+  => PrimeField f
+  => Ord f
+  => CircuitBuilderState (KimchiGate f) (AuxState f)
+  -> Circuit f
+fromCompiledCircuit s =
+  let
+    gd = makeGateData @f
+      { constraints: concatMap (toKimchiRows <<< _.constraint) s.constraints
+      , publicInputs: s.publicInputs
+      , unionFind: (un AuxState s.aux).wireState.unionFind
+      }
+
+    contexts = piContexts <> gateContexts
+      where
+      piContexts = replicate (Array.length s.publicInputs) []
+      gateContexts = concatMap
+        (\lc -> replicate (Array.length (toKimchiRows lc.constraint :: Array (KimchiRow f))) lc.context)
+        s.constraints
+
+    gates = Array.mapWithIndex
+      ( \i row ->
+          let
+            gateWires = circuitGateGetWires (gd.gates `unsafeIdx` i)
+            wires = Array.mapWithIndex
+              ( \j _ ->
+                  let
+                    w = gateWiresGetWire gateWires j
+                  in
+                    { row: wireGetRow w, col: wireGetCol w }
+              )
+              (Array.replicate 7 unit)
+            variables = map (map getVariable) row.variables
+            context = case Array.index contexts i of
+              Just ctx -> ctx
+              Nothing -> []
+          in
+            { kind: row.kind
+            , wires
+            , variables
+            , coeffs: row.coeffs
+            , context
+            }
+      )
+      gd.constraints
+
+    AuxState aux = s.aux
+    cachedConstants =
+      Array.sortWith (_.variable)
+        $ map (\(Tuple fieldVal var) -> { variable: getVariable var, value: fieldVal })
+        $ (Map.toUnfoldable aux.wireState.cachedConstants :: Array _)
+  in
+    { publicInputSize: gd.publicInputSize
+    , gates
+    , cachedConstants
+    }
+  where
+  unsafeIdx :: forall a. Array a -> Int -> a
+  unsafeIdx arr i = case Array.index arr i of
+    Just x -> x
+    Nothing -> unsafeCrashWith ("fromCompiledCircuit: gate index out of bounds: " <> show i)
+
+--------------------------------------------------------------------------------
+-- From OCaml fixture files
+
+type CircuitJsonRaw =
+  { public_input_size :: Int
+  , gates :: Array GateRaw
+  }
+
+type GateRaw =
+  { typ :: String
+  , wires :: Array { row :: Int, col :: Int }
+  , coeffs :: Array String
+  }
+
+type CachedConstantRaw =
+  { var :: String
+  , value :: String
+  }
+
+type GateLabelRaw =
+  { row :: Int
+  , context :: Array String
+  }
+
+gateKindFromString :: String -> Maybe GateKind
+gateKindFromString = case _ of
+  "Zero" -> Just Zero
+  "Generic" -> Just GenericPlonkGate
+  "Poseidon" -> Just PoseidonGate
+  "CompleteAdd" -> Just AddCompleteGate
+  "VarBaseMul" -> Just VarBaseMul
+  "EndoMul" -> Just EndoMul
+  "EndoMulScalar" -> Just EndoScalar
+  _ -> Nothing
+
+parseVariable :: String -> Maybe Int
+parseVariable s = do
+  inner <- String.stripPrefix (String.Pattern "(") s >>= String.stripSuffix (String.Pattern ")")
+  let parts = String.split (String.Pattern " ") inner
+  numStr <- Array.last parts
+  Int.fromString numStr
+
+parseCircuitJson
+  :: forall f
+   . SerdeHex f
+  => String
+  -> Either MultipleErrors { publicInputSize :: Int, gates :: Array (GateData f) }
+parseCircuitJson json = do
+  raw :: CircuitJsonRaw <- readJSON json
+  gates <- traverse convertGate raw.gates
+  pure { publicInputSize: raw.public_input_size, gates }
+  where
+  convertGate :: GateRaw -> Either MultipleErrors (GateData f)
+  convertGate g = do
+    kind <- note (pure $ ForeignError $ "Unknown gate type: " <> g.typ) (gateKindFromString g.typ)
+    pure
+      { kind
+      , wires: g.wires
+      , variables: Vector.replicate Nothing
+      , coeffs: map fromHexLe g.coeffs
+      , context: []
+      }
+
+parseCachedConstants
+  :: forall f
+   . PrimeField f
+  => String
+  -> Either MultipleErrors (Array (CachedConstant f))
+parseCachedConstants json = do
+  raw :: Array CachedConstantRaw <- readJSON json
+  traverse convertConstant raw
+  where
+  convertConstant :: CachedConstantRaw -> Either MultipleErrors (CachedConstant f)
+  convertConstant { var, value } = do
+    variable <- note (pure $ ForeignError $ "Cannot parse variable: " <> var) (parseVariable var)
+    f <- note (pure $ ForeignError $ "Cannot parse decimal field value: " <> value)
+      (fromBigInt <$> BigInt.fromString value)
+    pure { variable, value: f }
+
+parseGateLabels :: String -> Either MultipleErrors (Array (Array String))
+parseGateLabels input = do
+  raw :: Array GateLabelRaw <- parseJsonl input
+  pure $ map _.context raw
+
+parseOcamlFixtures
+  :: forall f
+   . SerdeHex f
+  => PrimeField f
+  => { circuit :: String
+     , cachedConstants :: String
+     , gateLabels :: String
+     }
+  -> Either MultipleErrors (Circuit f)
+parseOcamlFixtures files = do
+  { publicInputSize, gates } <- parseCircuitJson files.circuit
+  cachedConstants <- parseCachedConstants files.cachedConstants
+  contexts <- parseGateLabels files.gateLabels
+  let
+    gatesWithContext = Array.zipWith
+      (\gate ctx -> gate { context = ctx })
+      gates
+      (contexts <> Array.replicate (Array.length gates) [])
+  pure { publicInputSize, gates: gatesWithContext, cachedConstants }
+
+--------------------------------------------------------------------------------
+-- JSONL helper
+
+parseJsonl :: forall a. ReadForeign a => String -> Either MultipleErrors (Array a)
+parseJsonl input =
+  let
+    lines = Array.filter (not <<< String.null) $ String.split (String.Pattern "\n") input
+  in
+    traverse readJSON lines
