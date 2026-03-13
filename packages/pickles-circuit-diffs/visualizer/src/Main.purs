@@ -14,7 +14,7 @@ import Pickles.CircuitDiffs.Types (CircuitComparison)
 import React.Basic (element)
 import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
-import React.Basic.Hooks (Component, component, useState, useEffect, (/\))
+import React.Basic.Hooks (Component, component, useEffect, useState, (/\))
 import React.Basic.Hooks as React
 import Simple.JSON (readJSON)
 import Web.DOM.NonElementParentNode (getElementById)
