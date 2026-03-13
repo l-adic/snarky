@@ -9,8 +9,12 @@ package:
     - integers
     - js-bigints
     - maybe
+    - newtype
+    - ordered-collections
     - partial
     - pickles
+    - pickles-linearization-types
+    - poseidon
     - prelude
     - safe-coerce
     - simple-json
@@ -24,7 +28,6 @@ package:
   test:
     main: Test.Pickles.CircuitDiffs.Main
     dependencies:
-      - aff
       - effect
       - exceptions
       - node-buffer

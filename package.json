@@ -32,6 +32,6 @@
     "@napi-rs/cli": "^3.4.1",
     "purescript": "^0.15.15",
     "purs-tidy": "^0.11.1",
-    "spago": "^0.93.42"
+    "spago": "1.0.3"
   }
 }
