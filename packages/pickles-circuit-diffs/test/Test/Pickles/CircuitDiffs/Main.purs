@@ -15,6 +15,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
 import Node.FS.Sync as FS
 import Pickles.CircuitDiffs.Circuit (Circuit, ComparableCircuit, comparable, fromCompiledCircuit, parseCachedConstants, parseCircuitJson)
+import Pickles.CircuitDiffs.Types (CircuitComparison)
 import Pickles.CircuitDiffs.PureScript.BCorrect (compileBCorrect)
 import Pickles.CircuitDiffs.PureScript.BulletReduce (compileBulletReduce)
 import Pickles.CircuitDiffs.PureScript.BulletReduceOne (compileBulletReduceOne)
@@ -85,23 +86,18 @@ foreign import vestaSrsBlindingGenerator :: CRS PallasG -> AffinePoint Fp
 --------------------------------------------------------------------------------
 -- Output directories for serialized comparable circuits
 
-successDir :: String
-successDir = "packages/pickles-circuit-diffs/circuits/purescript/matched-success/"
+resultsDir :: String
+resultsDir = "packages/pickles-circuit-diffs/circuits/results/"
 
-failureDir :: String
-failureDir = "packages/pickles-circuit-diffs/circuits/purescript/matched-failure/"
-
-writeComparable :: String -> ComparableCircuit -> Effect Unit
-writeComparable path c = FS.writeTextFile UTF8 path (writeJSON c)
+writeComparison :: String -> CircuitComparison -> Effect Unit
+writeComparison path c = FS.writeTextFile UTF8 path (writeJSON c)
 
 resetOutputDirs :: Effect Unit
 resetOutputDirs = do
   let rmOpts = { force: true, maxRetries: 0, recursive: true, retryDelay: 0 }
   let mkdirOpts = { recursive: true, mode: mkPerms all all all }
-  FS.rm' successDir rmOpts
-  FS.rm' failureDir rmOpts
-  FS.mkdir' successDir mkdirOpts
-  FS.mkdir' failureDir mkdirOpts
+  FS.rm' resultsDir rmOpts
+  FS.mkdir' resultsDir mkdirOpts
 
 --------------------------------------------------------------------------------
 -- Compile helpers (basic circuits, Fp only)
@@ -341,10 +337,10 @@ exactMatch name ps =
     let ocamlCircuit = comparable ocaml
     let psNoCtx = dropContext psCircuit
     let ocamlNoCtx = dropContext ocamlCircuit
-    if psNoCtx == ocamlNoCtx then
-      liftEffect $ writeComparable (successDir <> name <> ".json") psCircuit
-    else do
-      liftEffect $ writeComparable (failureDir <> name <> ".json") psCircuit
+    let status = if psNoCtx == ocamlNoCtx then "match" else "mismatch"
+    let comparison = { name, status, purescript: psCircuit, ocaml: ocamlCircuit }
+    liftEffect $ writeComparison (resultsDir <> name <> ".json") comparison
+    unless (status == "match") $
       psNoCtx `shouldEqual` ocamlNoCtx
 
 --------------------------------------------------------------------------------

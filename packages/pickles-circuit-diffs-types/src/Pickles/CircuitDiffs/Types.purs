@@ -1,6 +1,7 @@
 module Pickles.CircuitDiffs.Types
   ( ComparableGate
   , ComparableCircuit
+  , CircuitComparison
   ) where
 
 type ComparableGate =
@@ -14,4 +15,11 @@ type ComparableCircuit =
   { publicInputSize :: Int
   , gates :: Array ComparableGate
   , cachedConstants :: Array String
+  }
+
+type CircuitComparison =
+  { name :: String
+  , status :: String
+  , purescript :: ComparableCircuit
+  , ocaml :: ComparableCircuit
   }

@@ -29,7 +29,7 @@ import Foreign (ForeignError(..), MultipleErrors)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.Types (ComparableCircuit)
-import Pickles.CircuitDiffs.Types (ComparableCircuit, ComparableGate) as ReExports
+import Pickles.CircuitDiffs.Types (CircuitComparison, ComparableCircuit, ComparableGate) as ReExports
 import Simple.JSON (class ReadForeign, readJSON)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeGateData)

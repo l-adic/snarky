@@ -12,6 +12,11 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "parcel": "^2.13.0"
+    "parcel": "^2.13.0",
+    "parcel-reporter-static-files-copy": "^1.5.3"
+  },
+  "staticFiles": {
+    "staticPath": "../circuits/results",
+    "staticOutPath": "results"
   }
 }
