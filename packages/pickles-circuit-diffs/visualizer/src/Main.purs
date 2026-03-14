@@ -56,7 +56,7 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
     launchAff_ do
       result <- AX.get ResponseFormat.string "results/manifest.jsonl"
       liftEffect case result of
-        Left _ -> pure unit
+        Left err -> setError (const (Just ("Failed to load manifest: " <> AX.printError err)))
         Right response -> setManifest (const (parseManifest response.body))
     pure (pure unit)
 
@@ -71,11 +71,15 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
         result <- AX.get ResponseFormat.string ("results/" <> name <> ".json")
         liftEffect case result of
           Left err -> do
-            setError (const (Just (AX.printError err)))
+            let msg = AX.printError err
+            Console.error $ "Failed to load circuit: " <> msg
+            setError (const (Just msg))
             setLoading (const false)
           Right response -> case readJSON response.body of
             Left e -> do
-              setError (const (Just (show e)))
+              let msg = show e
+              Console.error $ "Failed to parse circuit JSON: " <> msg
+              setError (const (Just msg))
               setLoading (const false)
             Right (c :: CircuitComparison) -> do
               setComparison (const (Just c))
