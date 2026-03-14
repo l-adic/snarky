@@ -20,6 +20,7 @@ import Data.Int as Int
 import Data.Map as Map
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
+import Data.Set as Set
 import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -35,7 +36,7 @@ import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
 import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
-import Snarky.Circuit.CVar (getVariable)
+import Snarky.Circuit.CVar (Variable(..), getVariable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, modulus, toBigInt, toHexLe)
@@ -88,7 +89,7 @@ comparable c =
           }
       )
       c.gates
-  , cachedConstants: Array.sort $ map (toHexLe <<< _.value) c.cachedConstants
+  , cachedConstants: Array.sortWith _.variable $ map (\cc -> { variable: cc.variable, varType: cc.varType, value: toHexLe cc.value }) c.cachedConstants
   }
 
 --------------------------------------------------------------------------------
@@ -104,6 +105,7 @@ type GateData f =
 
 type CachedConstant f =
   { variable :: Int
+  , varType :: String
   , value :: f
   }
 
@@ -167,7 +169,13 @@ fromCompiledCircuit s =
     AuxState aux = s.aux
     cachedConstants =
       Array.sortWith (_.variable)
-        $ map (\(Tuple fieldVal var) -> { variable: getVariable var, value: fieldVal })
+        $ map
+            ( \(Tuple fieldVal var) ->
+                { variable: getVariable var
+                , varType: if Set.member var aux.wireState.internalVariables then "internal" else "external"
+                , value: fieldVal
+                }
+            )
         $ (Map.toUnfoldable aux.wireState.cachedConstants :: Array _)
   in
     { publicInputSize: gd.publicInputSize
@@ -215,12 +223,14 @@ gateKindFromString = case _ of
   "EndoMulScalar" -> Just EndoScalar
   _ -> Nothing
 
-parseVariable :: String -> Maybe Int
+parseVariable :: String -> Maybe { variable :: Int, varType :: String }
 parseVariable s = do
   inner <- String.stripPrefix (String.Pattern "(") s >>= String.stripSuffix (String.Pattern ")")
   let parts = String.split (String.Pattern " ") inner
+  varType <- Array.head parts
   numStr <- Array.last parts
-  Int.fromString numStr
+  variable <- Int.fromString numStr
+  pure { variable, varType: String.toLower varType }
 
 parseCircuitJson
   :: forall f
@@ -254,10 +264,10 @@ parseCachedConstants json = do
   where
   convertConstant :: CachedConstantRaw -> Either MultipleErrors (CachedConstant f)
   convertConstant { var, value } = do
-    variable <- note (pure $ ForeignError $ "Cannot parse variable: " <> var) (parseVariable var)
+    { variable, varType } <- note (pure $ ForeignError $ "Cannot parse variable: " <> var) (parseVariable var)
     f <- note (pure $ ForeignError $ "Cannot parse decimal field value: " <> value)
       (fromBigInt <$> BigInt.fromString value)
-    pure { variable, value: f }
+    pure { variable, varType, value: f }
 
 parseGateLabels :: String -> Either MultipleErrors (Array (Array String))
 parseGateLabels input = do

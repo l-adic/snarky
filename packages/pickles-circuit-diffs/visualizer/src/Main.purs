@@ -4,7 +4,7 @@ import Prelude
 
 import Affjax.ResponseFormat as ResponseFormat
 import Affjax.Web as AX
-import CircuitDiffTable (_mkCircuitDiffTable)
+import CircuitDiffTable (mkCircuitDiffTable)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
@@ -13,17 +13,21 @@ import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
-import React.Basic (JSX, element)
+import React.Basic (JSX)
 import React.Basic.DOM as R
 import React.Basic.DOM.Client (createRoot, renderRoot)
 import React.Basic.Events (handler_)
 import React.Basic.Hooks (Component, component, useEffect, useState, (/\))
 import React.Basic.Hooks as React
 import Simple.JSON (readJSON)
+import Styles (appStyles_)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toNonElementParentNode)
 import Web.HTML.Window (document)
+
+css :: _
+css = appStyles_
 
 type ManifestEntry = { name :: String, status :: String }
 
@@ -39,8 +43,8 @@ parseManifest input =
   in
     Array.mapMaybe parseLine lines
 
-mkApp :: Component Unit
-mkApp = component "App" \_ -> React.do
+mkApp :: ({ comparison :: CircuitComparison } -> JSX) -> Component Unit
+mkApp circuitDiffTable = component "App" \_ -> React.do
   manifest /\ setManifest <- useState ([] :: Array ManifestEntry)
   selected /\ setSelected <- useState (Nothing :: Maybe String)
   comparison /\ setComparison <- useState (Nothing :: Maybe CircuitComparison)
@@ -85,32 +89,13 @@ mkApp = component "App" \_ -> React.do
     statusDot :: String -> JSX
     statusDot status =
       R.span
-        { style: R.css
-            { display: "inline-block"
-            , width: "8px"
-            , height: "8px"
-            , borderRadius: "50%"
-            , backgroundColor: if status == "match" then "#28a745" else "#dc3545"
-            , flexShrink: 0
-            }
+        { className: css.statusDot <> " " <> if status == "match" then css.statusMatch else css.statusMismatch
         }
 
     navItem :: ManifestEntry -> JSX
     navItem entry =
       R.div
-        { style: R.css
-            { padding: "4px 12px"
-            , cursor: "pointer"
-            , backgroundColor: if selected == Just entry.name then "#dee2e6" else "transparent"
-            , fontSize: "12px"
-            , fontFamily: "monospace"
-            , whiteSpace: "nowrap"
-            , overflow: "hidden"
-            , textOverflow: "ellipsis"
-            , display: "flex"
-            , alignItems: "center"
-            , gap: "6px"
-            }
+        { className: css.navItem <> if selected == Just entry.name then " " <> css.navItemSelected else ""
         , onClick: handler_ (setSelected (const (Just entry.name)))
         , children:
             [ statusDot entry.status
@@ -122,17 +107,7 @@ mkApp = component "App" \_ -> React.do
     navSection title entries =
       R.div_
         [ R.div
-            { style: R.css
-                { padding: "10px 12px 6px"
-                , fontWeight: "700"
-                , fontSize: "13px"
-                , textTransform: "uppercase"
-                , letterSpacing: "0.5px"
-                , color: "#333"
-                , fontFamily: "sans-serif"
-                , borderBottom: "1px solid #eee"
-                , marginBottom: "4px"
-                }
+            { className: css.navSectionHeader
             , children:
                 [ R.text (title <> " (" <> show (Array.length entries) <> ")") ]
             }
@@ -142,21 +117,10 @@ mkApp = component "App" \_ -> React.do
     sidebar :: JSX
     sidebar =
       R.div
-        { style: R.css
-            { width: "220px"
-            , flexShrink: 0
-            , borderRight: "1px solid #dee2e6"
-            , overflowY: "auto"
-            , height: "100vh"
-            }
+        { className: css.sidebar
         , children:
             [ R.div
-                { style: R.css
-                    { padding: "12px"
-                    , fontFamily: "sans-serif"
-                    , fontWeight: "bold"
-                    , borderBottom: "1px solid #dee2e6"
-                    }
+                { className: css.sidebarTitle
                 , children: [ R.text "Circuit Diffs" ]
                 }
             , if Array.length mismatches > 0 then navSection "Mismatches" mismatches
@@ -169,25 +133,25 @@ mkApp = component "App" \_ -> React.do
     content = case error of
       Just e -> R.div_ [ R.p_ [ R.text ("Error: " <> e) ] ]
       Nothing
-        | loading -> R.div { style: R.css { padding: "20px" }, children: [ R.text "Loading..." ] }
+        | loading -> R.div { className: css.loading, children: [ R.text "Loading..." ] }
         | otherwise -> case comparison of
             Nothing -> R.div
-              { style: R.css { padding: "20px", color: "#888", fontFamily: "sans-serif" }
+              { className: css.placeholder
               , children: [ R.text "Select a circuit from the sidebar" ]
               }
             Just c -> R.div
-              { style: R.css { flex: 1, minWidth: 0, padding: "8px 16px" }
+              { className: css.content
               , children:
                   [ R.h2
-                      { style: R.css { margin: "0 0 4px 0", fontFamily: "sans-serif" }
+                      { className: css.contentTitle
                       , children: [ R.text c.name ]
                       }
-                  , element _mkCircuitDiffTable { comparison: c }
+                  , circuitDiffTable { comparison: c }
                   ]
               }
 
   pure $ R.div
-    { style: R.css { display: "flex", height: "100vh", overflow: "hidden" }
+    { className: css.root
     , children: [ sidebar, content ]
     }
 
@@ -199,5 +163,6 @@ main = do
     Nothing -> pure unit
     Just container -> do
       reactRoot <- createRoot container
-      app <- mkApp
+      circuitDiffTable <- mkCircuitDiffTable
+      app <- mkApp circuitDiffTable
       renderRoot reactRoot (app unit)

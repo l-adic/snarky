@@ -5,15 +5,7 @@ import {
   flexRender,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-
-function gatesEqual(ps, ocaml) {
-  if (!ps || !ocaml) return false;
-  return (
-    ps.kind === ocaml.kind &&
-    JSON.stringify(ps.wires) === JSON.stringify(ocaml.wires) &&
-    JSON.stringify(ps.coeffs) === JSON.stringify(ocaml.coeffs)
-  );
-}
+import * as styles from "../../src/styles/gate-table.module.css";
 
 function formatWires(wires) {
   if (!wires) return "";
@@ -23,13 +15,6 @@ function formatWires(wires) {
 function formatCoeffs(coeffs) {
   if (!coeffs || coeffs.length === 0) return "";
   return coeffs.join(", ");
-}
-
-const DIFF_COLOR = "#f8d7da";
-
-function formatVars(variables) {
-  if (!variables || !Array.isArray(variables)) return "";
-  return variables.map((v) => (v === -1 ? "_" : String(v))).join(", ");
 }
 
 const columns = [
@@ -52,9 +37,12 @@ const columns = [
   },
 ];
 
-function GateTable({ title, gates, diffMap, publicInputSize }) {
+// Props: { title, gates, diffIndices, publicInputSize }
+function GateTable({ title, gates, diffIndices, publicInputSize }) {
   const parentRef = useRef(null);
   const [expanded, setExpanded] = useState({});
+
+  const diffSet = useMemo(() => new Set(diffIndices), [diffIndices]);
 
   const toggle = useCallback((idx) => {
     setExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }));
@@ -70,7 +58,10 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
     count: gates.length,
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(
-      (idx) => (expanded[idx] ? 28 + 16 * Math.max((gates[idx]?.context?.length || 0), 1) + 8 : 28),
+      (idx) =>
+        expanded[idx]
+          ? 28 + 16 * Math.max(gates[idx]?.context?.length || 0, 1) + 8
+          : 28,
       [expanded, gates]
     ),
     overscan: 20,
@@ -85,47 +76,21 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
 
   return React.createElement(
     "div",
-    { style: { flex: 1, minWidth: 0 } },
-    React.createElement(
-      "h3",
-      { style: { margin: "0 0 8px 0", fontFamily: "sans-serif" } },
-      title
-    ),
+    { className: styles.sidePanel },
+    React.createElement("h3", { className: styles.title }, title),
     React.createElement(
       "div",
-      {
-        ref: parentRef,
-        style: {
-          height: "calc(100vh - 180px)",
-          overflow: "auto",
-          border: "1px solid #dee2e6",
-        },
-      },
+      { ref: parentRef, className: styles.scrollContainer },
       React.createElement(
         "div",
-        {
-          style: {
-            fontFamily: "monospace",
-            fontSize: "12px",
-          },
-        },
+        { className: styles.tableBody },
         // Header
         React.createElement(
           "div",
-          {
-            style: {
-              display: "flex",
-              position: "sticky",
-              top: 0,
-              background: "#f8f9fa",
-              zIndex: 1,
-              borderBottom: "2px solid #dee2e6",
-              padding: "6px 0",
-            },
-          },
+          { className: styles.header },
           React.createElement(
             "div",
-            { style: { width: 50, flexShrink: 0, padding: "0 8px", textAlign: "right", fontWeight: "bold" } },
+            { className: styles.headerRowNum },
             "Row"
           ),
           ...columns.map((col) =>
@@ -133,7 +98,8 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
               "div",
               {
                 key: col.id || col.accessorKey,
-                style: { flex: col.flex, minWidth: 0, padding: "0 8px", fontWeight: "bold" },
+                className: styles.headerCell,
+                style: { flex: col.flex },
               },
               col.header
             )
@@ -150,61 +116,47 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
           },
           ...virtualRows.map((virtualRow) => {
             const row = tableRows[virtualRow.index];
-            const isDiff = diffMap[virtualRow.index];
+            const isDiff = diffSet.has(virtualRow.index);
             const isPublicInput = virtualRow.index < publicInputSize;
             const isExpanded = !!expanded[virtualRow.index];
             const gate = gates[virtualRow.index];
             const hasContext = gate?.context && gate.context.length > 0;
 
+            const rowClass = [
+              styles.virtualRow,
+              isPublicInput && isDiff
+                ? styles.virtualRowPiDiff
+                : isPublicInput
+                  ? styles.virtualRowPublicInput
+                  : isDiff
+                    ? styles.virtualRowDiff
+                    : "",
+              hasContext ? styles.virtualRowClickable : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
             return React.createElement(
               "div",
               {
                 key: row.id,
-                style: {
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
-                  backgroundColor: isPublicInput ? "#e8f0fe" : isDiff ? DIFF_COLOR : undefined,
-                  backgroundImage:
-                    isPublicInput && isDiff
-                      ? "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(220,53,69,0.25) 4px, rgba(220,53,69,0.25) 8px)"
-                      : undefined,
-                  borderBottom: "1px solid #eee",
-                  cursor: hasContext ? "pointer" : "default",
-                },
-                onClick: hasContext ? () => toggle(virtualRow.index) : undefined,
+                className: rowClass,
+                style: { transform: `translateY(${virtualRow.start}px)` },
+                onClick: hasContext
+                  ? () => toggle(virtualRow.index)
+                  : undefined,
               },
               // Main row
               React.createElement(
                 "div",
-                {
-                  style: {
-                    display: "flex",
-                    height: 28,
-                    alignItems: "center",
-                  },
-                },
+                { className: styles.rowContent },
                 React.createElement(
                   "div",
-                  {
-                    style: {
-                      width: 50,
-                      flexShrink: 0,
-                      padding: "0 8px",
-                      textAlign: "right",
-                      color: "#888",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "flex-end",
-                      gap: "2px",
-                    },
-                  },
+                  { className: styles.rowNum },
                   hasContext
                     ? React.createElement(
                         "span",
-                        { style: { fontSize: "9px", color: "#5a9" } },
+                        { className: styles.contextIndicator },
                         isExpanded ? "\u25BC" : "\u25B6"
                       )
                     : null,
@@ -215,14 +167,8 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
                     "div",
                     {
                       key: cell.id,
-                      style: {
-                        flex: cell.column.columnDef.flex,
-                        minWidth: 0,
-                        padding: "0 8px",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      },
+                      className: styles.dataCell,
+                      style: { flex: cell.column.columnDef.flex },
                     },
                     flexRender(cell.column.columnDef.cell, cell.getContext())
                   )
@@ -232,14 +178,7 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
               isExpanded && hasContext
                 ? React.createElement(
                     "div",
-                    {
-                      style: {
-                        padding: "2px 8px 6px 58px",
-                        color: "#555",
-                        fontSize: "11px",
-                        lineHeight: "16px",
-                      },
-                    },
+                    { className: styles.contextExpanded },
                     ...gate.context.map((line, i) =>
                       React.createElement("div", { key: i }, line)
                     )
@@ -253,92 +192,4 @@ function GateTable({ title, gates, diffMap, publicInputSize }) {
   );
 }
 
-function CircuitDiffTable({ comparison }) {
-  const { diffMap, summary } = useMemo(() => {
-    const psGates = comparison.purescript.gates;
-    const ocamlGates = comparison.ocaml.gates;
-    const maxLen = Math.max(psGates.length, ocamlGates.length);
-
-    const diffMap = {};
-    let diffs = 0;
-
-    for (let i = 0; i < maxLen; i++) {
-      const eq = gatesEqual(psGates[i], ocamlGates[i]);
-      diffMap[i] = !eq;
-      if (!eq) diffs++;
-    }
-
-    return { diffMap, summary: { total: maxLen, diffs } };
-  }, [comparison]);
-
-  return React.createElement(
-    "div",
-    null,
-    // Summary bar
-    React.createElement(
-      "div",
-      {
-        style: {
-          display: "flex",
-          gap: "16px",
-          padding: "8px 0",
-          fontFamily: "monospace",
-          fontSize: "14px",
-        },
-      },
-      React.createElement("span", null, `Gates: ${summary.total}`),
-      ...[
-        { label: "Public inputs", bg: "#e8f0fe", bgImage: undefined, count: comparison.purescript.publicInputSize },
-        { label: "Diffs", bg: DIFF_COLOR, bgImage: undefined, count: summary.diffs },
-        { label: "PI diff", bg: "#e8f0fe", bgImage: "repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(220,53,69,0.25) 2px, rgba(220,53,69,0.25) 4px)", count: null },
-      ].map(({ label, bg, bgImage, count }) =>
-        React.createElement(
-          "span",
-          {
-            key: label,
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-            },
-          },
-          React.createElement("span", {
-            style: {
-              display: "inline-block",
-              width: 12,
-              height: 12,
-              backgroundColor: bg,
-              backgroundImage: bgImage,
-              border: "1px solid #aaa",
-            },
-          }),
-          count !== null ? `${label}: ${count}` : label
-        )
-      )
-    ),
-    // Side-by-side tables
-    React.createElement(
-      "div",
-      {
-        style: {
-          display: "flex",
-          gap: "16px",
-        },
-      },
-      React.createElement(GateTable, {
-        title: "PureScript",
-        gates: comparison.purescript.gates,
-        diffMap,
-        publicInputSize: comparison.purescript.publicInputSize,
-      }),
-      React.createElement(GateTable, {
-        title: "OCaml",
-        gates: comparison.ocaml.gates,
-        diffMap,
-        publicInputSize: comparison.ocaml.publicInputSize,
-      })
-    )
-  );
-}
-
-export const _mkCircuitDiffTable = CircuitDiffTable;
+export const _mkGateTable = GateTable;

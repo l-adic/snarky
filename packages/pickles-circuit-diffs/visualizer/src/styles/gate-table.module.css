@@ -1,0 +1,118 @@
+/* Gate table (used by JS virtualizer component) */
+
+.sidePanel {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0 0 8px 0;
+  font-family: sans-serif;
+}
+
+.scrollContainer {
+  height: calc(100vh - 180px);
+  overflow: auto;
+  border: 1px solid #dee2e6;
+}
+
+.tableBody {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Sticky header */
+.header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  background: #f8f9fa;
+  z-index: 1;
+  border-bottom: 2px solid #dee2e6;
+  padding: 6px 0;
+}
+
+.headerCell {
+  min-width: 0;
+  padding: 0 8px;
+  font-weight: bold;
+}
+
+.headerRowNum {
+  composes: headerCell;
+  width: 50px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* Virtual row positioning */
+.virtualRow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  border-bottom: 1px solid #eee;
+}
+
+.virtualRowPublicInput {
+  background-color: #e8f0fe;
+}
+
+.virtualRowDiff {
+  background-color: #f8d7da;
+}
+
+.virtualRowPiDiff {
+  background-color: #e8f0fe;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(220, 53, 69, 0.25) 4px,
+    rgba(220, 53, 69, 0.25) 8px
+  );
+}
+
+.virtualRowClickable {
+  cursor: pointer;
+}
+
+/* Row content */
+.rowContent {
+  display: flex;
+  height: 28px;
+  align-items: center;
+}
+
+.rowNum {
+  width: 50px;
+  flex-shrink: 0;
+  padding: 0 8px;
+  text-align: right;
+  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.contextIndicator {
+  font-size: 9px;
+  color: #5a9;
+}
+
+.dataCell {
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Expanded context */
+.contextExpanded {
+  padding: 2px 8px 6px 58px;
+  color: #555;
+  font-size: 11px;
+  line-height: 16px;
+}

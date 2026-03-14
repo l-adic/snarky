@@ -55,6 +55,20 @@ jobs:
       env:
         NODE_OPTIONS: "--max-old-space-size=8192"
 
+    - name: Build circuit diff visualizer
+      run: |
+        cd packages/pickles-circuit-diffs/visualizer
+        npm install
+        npm run build
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
+    - name: Verify visualizer build output
+      run: |
+        test -f packages/pickles-circuit-diffs/visualizer/dist/index.html
+        test -f packages/pickles-circuit-diffs/visualizer/dist/results/manifest.jsonl
+        echo "Visualizer build verified: $(ls packages/pickles-circuit-diffs/visualizer/dist/*.js | wc -l) JS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/*.css | wc -l) CSS bundle(s), $(ls packages/pickles-circuit-diffs/visualizer/dist/results/*.json | wc -l) circuit result(s)"
+
   format-check:
     runs-on: ubuntu-latest
 

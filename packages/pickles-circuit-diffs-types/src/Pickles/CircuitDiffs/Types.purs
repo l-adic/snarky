@@ -17,7 +17,7 @@ type ComparableGate =
 type ComparableCircuit =
   { publicInputSize :: Int
   , gates :: Array ComparableGate
-  , cachedConstants :: Array String
+  , cachedConstants :: Array { variable :: Int, varType :: String, value :: String }
   }
 
 type CircuitComparison =

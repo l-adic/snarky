@@ -2,6 +2,7 @@ module Test.Pickles.CircuitDiffs.Main where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
@@ -332,7 +333,10 @@ loadOcamlCircuit name = do
 
 -- | Strip metadata fields for equality comparison (context and variables are not part of the constraint system)
 stripMetadata :: ComparableCircuit -> ComparableCircuit
-stripMetadata c = c { gates = map (_ { context = [], variables = Nothing }) c.gates }
+stripMetadata c = c
+  { gates = map (_ { context = [], variables = Nothing }) c.gates
+  , cachedConstants = Array.sort $ map (\cc -> cc { variable = 0 }) c.cachedConstants
+  }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
 exactMatch name ps =
