@@ -89,7 +89,7 @@ comparable c =
           }
       )
       c.gates
-  , cachedConstants: Array.sortWith _.variable $ map (\cc -> { variable: cc.variable, varType: cc.varType, value: toHexLe cc.value }) c.cachedConstants
+  , cachedConstants: Array.sortWith _.variable $ map (\cc -> { variable: cc.variable, varType: cc.varType, value: toSignedDecimal cc.value }) c.cachedConstants
   }
 
 --------------------------------------------------------------------------------
