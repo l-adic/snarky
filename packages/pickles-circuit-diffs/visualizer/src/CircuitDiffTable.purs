@@ -11,7 +11,7 @@ import React.Basic.DOM as R
 import React.Basic.Events (handler_)
 import React.Basic.Hooks (Component, component, useState, (/\))
 import React.Basic.Hooks as React
-import Styles (circuitDiffStyles_)
+import Styles (CircuitDiffStyles, circuitDiffStyles_)
 
 -- | FFI: virtualized gate table (needs useVirtualizer + useReactTable hooks)
 foreign import _mkGateTable :: ReactComponent GateTableProps
@@ -23,7 +23,7 @@ type GateTableProps =
   , publicInputSize :: Int
   }
 
-s :: _
+s :: CircuitDiffStyles
 s = circuitDiffStyles_
 
 --------------------------------------------------------------------------------

@@ -20,13 +20,13 @@ import React.Basic.Events (handler_)
 import React.Basic.Hooks (Component, component, useEffect, useState, (/\))
 import React.Basic.Hooks as React
 import Simple.JSON (readJSON)
-import Styles (appStyles_)
+import Styles (AppStyles, appStyles_)
 import Web.DOM.NonElementParentNode (getElementById)
 import Web.HTML (window)
 import Web.HTML.HTMLDocument (toNonElementParentNode)
 import Web.HTML.Window (document)
 
-css :: _
+css :: AppStyles
 css = appStyles_
 
 type ManifestEntry = { name :: String, status :: String }
@@ -71,15 +71,11 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
         result <- AX.get ResponseFormat.string ("results/" <> name <> ".json")
         liftEffect case result of
           Left err -> do
-            let msg = AX.printError err
-            Console.error $ "Failed to load circuit: " <> msg
-            setError (const (Just msg))
+            setError (const (Just (AX.printError err)))
             setLoading (const false)
           Right response -> case readJSON response.body of
             Left e -> do
-              let msg = show e
-              Console.error $ "Failed to parse circuit JSON: " <> msg
-              setError (const (Just msg))
+              setError (const (Just (show e)))
               setLoading (const false)
             Right (c :: CircuitComparison) -> do
               setComparison (const (Just c))
