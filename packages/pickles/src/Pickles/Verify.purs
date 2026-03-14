@@ -25,7 +25,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
-import Pickles.PublicInputCommit (class PublicInputCommit, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
@@ -60,6 +60,7 @@ type IncrementallyVerifyProofParams f r =
   , indexDigest :: f
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
+  , correctionMode :: CorrectionMode
   | r
   }
 

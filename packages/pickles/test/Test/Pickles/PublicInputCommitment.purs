@@ -12,7 +12,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Pickles.PublicInputCommit (publicInputCommit)
+import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
 import Pickles.PublicInputCommitment (publicInputCommitment)
 import Pickles.Step.Circuit (StepStatement)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -177,7 +177,7 @@ spec cfg =
         => Vector nPublic (FVar StepCircuitField)
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
+        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
 
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
@@ -212,7 +212,7 @@ spec cfg =
         => StepFullXhatVar
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
+        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
 
       rustFn :: StepFullXhat -> AffinePoint (F StepCircuitField)
       rustFn tup = unsafePartial $
@@ -266,7 +266,7 @@ spec cfg =
         => Vector nPublic (FVar WrapCircuitField)
         -> Snarky (KimchiConstraint WrapCircuitField) t Identity (AffinePoint (FVar WrapCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Pallas.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH } inputs
+        publicInputCommit { curveParams: curveParams (Proxy @Pallas.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
 
       gen = Vector.generator (Proxy @nPublic) (arbitrary :: Gen (F WrapCircuitField))
 

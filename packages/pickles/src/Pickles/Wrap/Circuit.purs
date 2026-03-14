@@ -28,6 +28,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyWrapChallengesExpanded)
 import Pickles.Linearization.Types (LinearizationPoly)
+import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
@@ -79,6 +80,7 @@ type WrapParams f =
   , linearizationPoly :: LinearizationPoly f
   -- Shared
   , endo :: f
+  , correctionMode :: CorrectionMode
   }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.

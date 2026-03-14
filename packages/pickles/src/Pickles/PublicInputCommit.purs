@@ -29,10 +29,12 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Foldable (foldM)
+import Data.Either (Either(..), fromLeft)
+import Data.Foldable (foldM, foldl)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Partial.Unsafe (unsafePartial)
@@ -55,8 +57,8 @@ import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
 
 -- | Controls how correction points are combined during public input commitment.
--- | Currently unused (always InCircuitCorrections), but needed by
--- | pickles-circuit-diffs to prepare for Step verifier's PureCorrections mode.
+-- | PureCorrections: sum as pure field arithmetic (no circuit cost) — for Step verifier.
+-- | InCircuitCorrections: sum via in-circuit addComplete gates — for Wrap verifier.
 data CorrectionMode = PureCorrections | InCircuitCorrections
 
 -- | A deferred scalar multiplication that captures type-level parameters.
@@ -239,6 +241,7 @@ publicInputCommit
   => { curveParams :: CurveParams f
      , lagrangeComms :: Array (AffinePoint (F f))
      , blindingH :: AffinePoint (F f)
+     , correctionMode :: CorrectionMode
      | r
      }
   -> a
@@ -248,46 +251,81 @@ publicInputCommit params input = label "public-input-commit" do
   case NEA.fromArray results of
     Nothing -> pure (constPt params.blindingH)
     Just results' -> unsafePartial do
-      -- Separate scalar mul terms (with corrections) from cond_add terms
+      -- Separate correction points from terms
       let
-        correctionPts = Array.mapMaybe
+        rawCorrectionPts = Array.mapMaybe
           ( case _ of
-              AddWithCorrection r -> Just (constPt r.correction)
+              AddWithCorrection r -> Just r.correction
               CondAdd _ _ -> Nothing
           )
           (NEA.toArray results')
 
-      -- 1. Sum corrections in-circuit: init accumulator = sum([2^n] * B_i)
-      --    Matches OCaml: correction = reduce corrections ~f:add_fast
-      --    NOTE: These are all constant points so this could be done as pure math,
-      --    but OCaml generates CompleteAdd gates here and we match for equivalence.
-      let { head: corrHead, tail: corrTail } = fromJust $ Array.uncons correctionPts
-      init <- foldM (\acc c -> _.p <$> addComplete acc c) corrHead corrTail
+      let { head: corrHead, tail: corrTail } = fromJust $ Array.uncons rawCorrectionPts
+      let allTerms = NEA.toArray results'
 
-      -- 2. Fold over all terms, matching OCaml's fold order:
-      --    - AddWithCorrection: acc = add_fast(acc, scale_fast2'(...))
-      --      OCaml calls scale_fast2' INLINE during the fold (step_verifier.ml:474),
-      --      so VarBaseMul gates precede CompleteAdd for each term.
-      --    - CondAdd: acc = if_ b then add_fast(lagrange, acc) else acc
-      acc <- foldM
-        ( \acc term -> case term of
-            AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
-              point <- doScaleMul
-              _.p <$> addComplete acc point
-            CondAdd b lagrangePt -> do
-              added <- _.p <$> addComplete (constPt lagrangePt) acc
-              -- OCaml's Inner_curve.if_ uses tuple (F.if_ x, F.if_ y),
-              -- right-to-left evaluation means y is processed before x
-              y' <- if_ b added.y acc.y
-              x' <- if_ b added.x acc.x
-              pure { x: x', y: y' }
-        )
-        init
-        (NEA.toArray results')
+      case params.correctionMode of
+        PureCorrections -> do
+          -- OCaml's step verifier: corrections are constant, add_fast on constants
+          -- generates no seal gates, and all fold CompleteAdd are deferred to the end.
+          -- Phase 1: Execute all scaleFast2' calls, collecting results.
+          --   This generates VarBaseMul + internal CompleteAdd gates.
+          evaluated <- for allTerms \term -> case term of
+            AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } ->
+              Left <$> doScaleMul
+            CondAdd b lagrangePt ->
+              pure (Right { b, lagrangePt })
 
-      -- 3. Negate and add blinding generator
-      negAcc <- Curves.negate acc
-      _.p <$> addComplete negAcc (constPt params.blindingH)
+          -- Phase 2: Reduce results pairwise with addComplete.
+          --   Matches OCaml's List.reduce_exn ~f:(fun (_,b1) (_,b2) -> (_, add_fast b1 b2)).
+          --   Corrections are summed as pure constants in parallel.
+          let { head: first, tail: rest } = fromJust $ Array.uncons evaluated
+          acc <- foldM
+            ( \acc result -> case result of
+                Left point -> _.p <$> addComplete acc point
+                Right { b, lagrangePt } -> do
+                  added <- _.p <$> addComplete (constPt lagrangePt) acc
+                  y' <- if_ b added.y acc.y
+                  x' <- if_ b added.x acc.x
+                  pure { x: x', y: y' }
+            )
+            (fromLeft (constPt corrHead) first)
+            rest
+
+          -- Phase 3: Add total correction (constant) to accumulator.
+          --   Matches OCaml's: acc + constant(negate correction |> add_opt constant_part)
+          --   Raw corrections are already negated (negate(pow2pow(base, shift))),
+          --   so their sum IS the negated total correction.
+          --   The constPt triggers reduceToVariable constant caching → 1 Generic gate,
+          --   which double-packs with the queued R1CS from Phase 1's last if_.
+          let correctionPt = constPt $ foldl (addPurePt params.curveParams) corrHead corrTail
+          accWithCorr <- _.p <$> addComplete acc correctionPt
+
+          -- Negate and add blinding generator
+          negAcc <- Curves.negate accWithCorr
+          _.p <$> addComplete negAcc (constPt params.blindingH)
+
+        InCircuitCorrections -> do
+          -- Wrap verifier: corrections summed in-circuit, fold interleaved.
+          let corrPts = map constPt rawCorrectionPts
+          let { head: ch, tail: ct } = fromJust $ Array.uncons corrPts
+          init <- foldM (\acc c -> _.p <$> addComplete acc c) ch ct
+
+          acc <- foldM
+            ( \acc term -> case term of
+                AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
+                  point <- doScaleMul
+                  _.p <$> addComplete acc point
+                CondAdd b lagrangePt -> do
+                  added <- _.p <$> addComplete (constPt lagrangePt) acc
+                  y' <- if_ b added.y acc.y
+                  x' <- if_ b added.x acc.x
+                  pure { x: x', y: y' }
+            )
+            init
+            allTerms
+
+          negAcc <- Curves.negate acc
+          _.p <$> addComplete negAcc (constPt params.blindingH)
 
 -------------------------------------------------------------------------------
 -- | Helpers
@@ -337,6 +375,13 @@ unwrapPt { x: F x', y: F y' } = { x: x', y: y' }
 
 wrapPt :: forall f. AffinePoint f -> AffinePoint (F f)
 wrapPt { x, y } = { x: F x, y: F y }
+
+-- | Pure affine addition for summing constant correction points.
+-- | Handles the doubling case (same point) via EC.double.
+addPurePt :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> AffinePoint (F f) -> AffinePoint (F f)
+addPurePt params p1 p2
+  | unwrapPt p1 == unwrapPt p2 = EC.double params p1
+  | otherwise = wrapPt $ unsafePartial $ fromJust $ EC.toAffine $ EC.addAffine (unwrapPt p1) (unwrapPt p2)
 
 -- | Compute [2^k] * p by iterating pure doubling.
 pow2pow :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> Int -> AffinePoint (F f)
