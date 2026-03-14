@@ -78,8 +78,11 @@ computeCachedConstantRows ps ocaml =
           let
             p = Array.index psConsts i
             o = Array.index ocamlConsts i
+            -- Compare by positional index and value only.
+            -- Variable numbers differ between PS (scattered) and OCaml (sequential)
+            -- because of different internal variable allocation strategies.
             m = case p, o of
-              Just a, Just b -> a.variable == b.variable && a.varType == b.varType && a.value == b.value
+              Just a, Just b -> a.value == b.value
               _, _ -> false
           in
             { ps: p, ocaml: o, match: m }

@@ -5,6 +5,7 @@ package:
     - blake2
     - curves
     - effect
+    - either
     - exceptions
     - foldable-traversable
     - identity
