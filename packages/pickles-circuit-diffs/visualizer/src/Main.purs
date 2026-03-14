@@ -54,7 +54,7 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
   -- Load manifest on mount
   useEffect unit do
     launchAff_ do
-      result <- AX.get ResponseFormat.string "/results/manifest.jsonl"
+      result <- AX.get ResponseFormat.string "results/manifest.jsonl"
       liftEffect case result of
         Left _ -> pure unit
         Right response -> setManifest (const (parseManifest response.body))
@@ -68,7 +68,7 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
         liftEffect do
           setLoading (const true)
           setError (const Nothing)
-        result <- AX.get ResponseFormat.string ("/results/" <> name <> ".json")
+        result <- AX.get ResponseFormat.string ("results/" <> name <> ".json")
         liftEffect case result of
           Left err -> do
             setError (const (Just (AX.printError err)))

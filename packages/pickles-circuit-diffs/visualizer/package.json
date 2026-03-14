@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "build:ps": "npx spago build",
-    "build": "npm run build:ps && npx parcel build index.html --dist-dir dist",
+    "build": "npm run build:ps && npx parcel build index.html --dist-dir dist --public-url ${PUBLIC_URL:-/}",
     "dev": "npm run build:ps && npx parcel serve index.html --dist-dir dist --port 1234",
     "clean": "rm -rf dist .parcel-cache output"
   },
