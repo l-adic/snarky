@@ -13,6 +13,7 @@ package:
     - ordered-collections
     - partial
     - pickles
+    - pickles-circuit-diffs-types
     - pickles-linearization-types
     - poseidon
     - prelude

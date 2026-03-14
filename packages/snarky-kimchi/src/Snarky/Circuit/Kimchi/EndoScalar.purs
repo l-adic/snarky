@@ -16,7 +16,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import Prim.Int (class Compare, class Mul)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (CVar(..))
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, mul_, read, scale_, toBits)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, add_, assertEqual_, coerceViaBits, const_, exists, label, mul_, read, scale_, toBits)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint(..))
@@ -41,7 +41,7 @@ toField
   => SizedF nBits (FVar f)
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
-toField scalar endo = do
+toField scalar endo = label "endo-scalar-to-field" do
   -- Create nybble variables directly (like OCaml's `exists Field.typ`).
   -- Bits only exist in the prover — the EndoMulScalar gate constrains the nybbles.
   nibblesByRow :: Vector rows (Vector 8 (FVar f)) <- exists do

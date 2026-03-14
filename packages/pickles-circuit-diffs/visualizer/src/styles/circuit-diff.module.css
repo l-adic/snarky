@@ -1,0 +1,172 @@
+/* Tabs */
+.tabBar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 8px;
+}
+
+.tab {
+  padding: 6px 16px;
+  cursor: pointer;
+  font-family: sans-serif;
+  font-size: 13px;
+  border-top: 1px solid #dee2e6;
+  border-right: 1px solid #dee2e6;
+  border-left: 1px solid #dee2e6;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: #f8f9fa;
+  color: #555;
+}
+
+.tabActive {
+  composes: tab;
+  background: #fff;
+  color: #000;
+  font-weight: bold;
+  border-bottom: 1px solid #fff;
+  margin-bottom: -1px;
+  z-index: 1;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px 0;
+  font-family: monospace;
+  font-size: 14px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legendSwatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #aaa;
+}
+
+.swatchPublicInput {
+  composes: legendSwatch;
+  background-color: #e8f0fe;
+}
+
+.swatchDiff {
+  composes: legendSwatch;
+  background-color: #f8d7da;
+}
+
+.swatchPiDiff {
+  composes: legendSwatch;
+  background-color: #e8f0fe;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 2px,
+    rgba(220, 53, 69, 0.25) 2px,
+    rgba(220, 53, 69, 0.25) 4px
+  );
+}
+
+/* Side-by-side layout */
+.sideBySide {
+  display: flex;
+  gap: 16px;
+}
+
+.sidePanel {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidePanelTitle {
+  margin: 0 0 8px 0;
+  font-family: sans-serif;
+}
+
+/* Scrollable table container */
+.tableContainer {
+  height: calc(100vh - 180px);
+  overflow: auto;
+  border: 1px solid #dee2e6;
+}
+
+.tableBody {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+/* Sticky header row */
+.tableHeader {
+  display: flex;
+  position: sticky;
+  top: 0;
+  background: #f8f9fa;
+  z-index: 1;
+  border-bottom: 2px solid #dee2e6;
+  padding: 6px 0;
+}
+
+.headerCell {
+  padding: 0 8px;
+  font-weight: bold;
+}
+
+.headerCellVar {
+  composes: headerCell;
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.headerCellType {
+  composes: headerCell;
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.headerCellValue {
+  composes: headerCell;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Cached constants rows */
+.constRow {
+  display: flex;
+  border-bottom: 1px solid #eee;
+  align-items: center;
+  height: 24px;
+}
+
+.constRowDiff {
+  composes: constRow;
+  background-color: #f8d7da;
+}
+
+.cell {
+  padding: 4px 8px;
+  font-family: monospace;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cellValue {
+  composes: cell;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Summary text */
+.summary {
+  padding: 8px 0;
+  font-family: monospace;
+  font-size: 14px;
+}

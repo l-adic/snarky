@@ -124,7 +124,7 @@ incrementallyVerifyProof
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
-incrementallyVerifyProof scalarOps params input = do
+incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-proof" do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
   -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
@@ -244,7 +244,7 @@ verify
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
-verify scalarOps params input isBaseCase claimedDigest = do
+verify scalarOps params input isBaseCase claimedDigest = labelM "verify" do
   -- 1. Call incrementallyVerifyProof
   output <- incrementallyVerifyProof @g scalarOps params input
 

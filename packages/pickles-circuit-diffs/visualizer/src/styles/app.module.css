@@ -1,0 +1,89 @@
+/* Layout */
+.root {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #dee2e6;
+  overflow-y: auto;
+  height: 100vh;
+}
+
+.sidebarTitle {
+  padding: 12px;
+  font-family: sans-serif;
+  font-weight: bold;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.navSectionHeader {
+  padding: 10px 12px 6px;
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #333;
+  font-family: sans-serif;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.navItem {
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.navItemSelected {
+  background-color: #dee2e6;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusMatch {
+  background-color: #28a745;
+}
+
+.statusMismatch {
+  background-color: #dc3545;
+}
+
+/* Content area */
+.content {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 16px;
+}
+
+.contentTitle {
+  margin: 0 0 4px 0;
+  font-family: sans-serif;
+}
+
+.loading {
+  padding: 20px;
+}
+
+.placeholder {
+  padding: 20px;
+  color: #888;
+  font-family: sans-serif;
+}

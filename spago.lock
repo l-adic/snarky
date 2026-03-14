@@ -190,6 +190,7 @@
             "ordered-collections",
             "partial",
             "pickles",
+            "pickles-circuit-diffs-types",
             "pickles-linearization-types",
             "poseidon",
             "prelude",
@@ -213,6 +214,19 @@
             "spec",
             "spec-node"
           ]
+        }
+      },
+      "pickles-circuit-diffs-types": {
+        "path": "packages/pickles-circuit-diffs-types",
+        "core": {
+          "dependencies": [
+            "maybe",
+            "prelude",
+            "simple-json"
+          ]
+        },
+        "test": {
+          "dependencies": []
         }
       },
       "pickles-codegen": {

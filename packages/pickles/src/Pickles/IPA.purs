@@ -140,7 +140,7 @@ bPolyCircuit
   => CircuitM f c t m
   => BPolyInput d (FVar f)
   -> Snarky c t m (FVar f)
-bPolyCircuit { challenges: chals, x: pt } = do
+bPolyCircuit { challenges: chals, x: pt } = label "b-poly" do
   -- Phase 1: Build pow_two_pows via k-1 squarings
   let { tail: chalsTail } = Vector.uncons chals
   Tuple squaredPowers _ <- mapAccumM
@@ -200,7 +200,7 @@ computeBCircuit
   => CircuitM f c t m
   => ComputeBInput d (FVar f) r
   -> Snarky c t m (FVar f)
-computeBCircuit { challenges, zeta, zetaOmega, evalscale } = do
+computeBCircuit { challenges, zeta, zetaOmega, evalscale } = label "compute-b" do
   -- OCaml evaluates: challenge_poly zeta + (r * challenge_poly zetaw)
   -- Right-to-left: zetaw first, then r * result, then zeta
   bZetaOmega <- bPolyCircuit { challenges, x: zetaOmega }
@@ -286,7 +286,7 @@ bCorrectCircuit
   => CircuitM f c t m
   => BCorrectInput n (FVar f)
   -> Snarky c t m (BoolVar f)
-bCorrectCircuit input@{ expectedB } = do
+bCorrectCircuit input@{ expectedB } = label "b-correct" do
   computedB <- computeBCircuit input
   expectedB `equals_` computedB
 
@@ -353,7 +353,7 @@ bulletReduceCircuit
   => CircuitM f (KimchiConstraint f) t m
   => BulletReduceInput n (FVar f)
   -> Snarky (KimchiConstraint f) t m { p :: AffinePoint (FVar f), isInfinity :: BoolVar f }
-bulletReduceCircuit { pairs, challenges } = do
+bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
   -- Process each (L, R, u) triple to compute endoInv(L, u) + endo(R, u)
   -- OCaml let-binding order: endo_inv(L) first, then endo(R), then add_fast
   terms <- for (Vector.zip pairs challenges) \(Tuple { l, r } u) -> do
@@ -524,7 +524,7 @@ combinePolynomials
   => Vector n (AffinePoint (FVar f))
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-combinePolynomials bases xi = do
+combinePolynomials bases xi = label "combine-polynomials" do
   let
     reversed = Vector.reverse bases
     { head: h, tail: t } = Vector.uncons reversed

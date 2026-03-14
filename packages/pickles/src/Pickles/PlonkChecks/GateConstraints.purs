@@ -31,7 +31,7 @@ import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGener
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_, label)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -176,7 +176,7 @@ evaluateGateConstraints
   -> FVar f -- ^ zeta (expanded, for computing lagrange basis)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m (FVar f)
-evaluateGateConstraints params zeta input = do
+evaluateGateConstraints params zeta input = label "evaluate-gate-constraints" do
   let
     evalPoint = buildEvalPoint
       { witnessEvals: input.witnessEvals
@@ -239,6 +239,6 @@ checkGateConstraints
   -> FVar f -- ^ zeta (expanded)
   -> GateConstraintInput (FVar f)
   -> Snarky c t m Unit
-checkGateConstraints params zeta input = do
+checkGateConstraints params zeta input = label "check-gate-constraints" do
   result <- evaluateGateConstraints params zeta input
   assertEqual_ result (const_ zero)

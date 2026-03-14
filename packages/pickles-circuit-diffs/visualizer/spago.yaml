@@ -1,0 +1,22 @@
+workspace:
+  packageSet:
+    registry: 71.0.0
+  extraPackages:
+    pickles-circuit-diffs-types:
+      path: ../../pickles-circuit-diffs-types
+
+package:
+  name: pickles-circuit-diffs-visualizer
+  dependencies:
+    - aff
+    - affjax
+    - affjax-web
+    - effect
+    - either
+    - maybe
+    - prelude
+    - pickles-circuit-diffs-types
+    - react-basic
+    - react-basic-dom
+    - react-basic-hooks
+    - simple-json

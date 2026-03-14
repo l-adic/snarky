@@ -32,7 +32,7 @@ import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_, label)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -99,7 +99,7 @@ combinedInnerProductCheckCircuit
   -> BatchingScalars (FVar f)
   -> CombinedInnerProductCheckInput (FVar f)
   -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit params zeta scalars input = do
+combinedInnerProductCheckCircuit params zeta scalars input = label "combined-inner-product" do
   -- 1. Compute ftEval0 using monadic gate constraint evaluation
   ftEval0Computed <- ftEval0Circuit params zeta
     { permInput: input.permInput
@@ -153,7 +153,7 @@ hornerCombine
   => FVar f
   -> NonEmptyArray (EvalOpt f)
   -> Snarky c t m (FVar f)
-hornerCombine xi evals = do
+hornerCombine xi evals = label "horner-combine" do
   let
     reversed = NEA.reverse evals
     { head: initVal, tail: rest } = NEA.uncons reversed

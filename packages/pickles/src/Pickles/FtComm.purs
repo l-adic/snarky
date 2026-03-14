@@ -16,7 +16,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Prim.Int (class Add)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, label)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -59,7 +59,7 @@ ftComm
      , zetaToDomainSize :: sf
      }
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = do
+ftComm { scaleByShifted } { sigmaLast, tComm, perm, zetaToSrsLength, zetaToDomainSize } = label "ft-comm" do
   -- OCaml order (common.ml:195-214):
   --   1. f_comm = scale sigma_comm_last perm
   --   2. chunked_t_comm = reduce_chunks t_comm (Horner)

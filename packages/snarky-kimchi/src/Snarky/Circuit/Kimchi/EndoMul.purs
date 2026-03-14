@@ -38,7 +38,7 @@ endo
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
-endo g scalar = do
+endo g scalar = label "endo" do
   msbBits <- exists do
     vVal :: SizedF 128 (F f) <- read scalar
     let lsbBits = SizedF.toBits vVal
@@ -125,7 +125,7 @@ endoInv
   => AffinePoint (FVar f)
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-endoInv g scalar = do
+endoInv g scalar = label "endo-inv" do
   -- Witness the result: g * (1 / effective_scalar)
   -- Uses WeierstrassAffinePoint so exists triggers assert_on_curve check,
   -- matching OCaml's G.typ which has check = assert_on_curve.

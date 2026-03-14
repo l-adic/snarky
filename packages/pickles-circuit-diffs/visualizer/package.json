@@ -1,0 +1,24 @@
+{
+  "name": "pickles-circuit-diffs-visualizer",
+  "private": true,
+  "scripts": {
+    "build:ps": "npx spago build",
+    "build": "npm run build:ps && npx parcel build index.html --dist-dir dist --public-url ${PUBLIC_URL:-/}",
+    "dev": "npm run build:ps && npx parcel serve index.html --dist-dir dist --port 1234",
+    "clean": "rm -rf dist .parcel-cache output"
+  },
+  "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.22",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "parcel": "^2.13.0",
+    "parcel-reporter-static-files-copy": "^1.5.3"
+  },
+  "staticFiles": {
+    "staticPath": "../circuits/results",
+    "staticOutPath": "results"
+  }
+}

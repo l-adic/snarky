@@ -32,7 +32,7 @@ import Prelude
 import Data.Foldable (traverse_)
 import Data.Vector (Vector)
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, initialSponge, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (class MonadSponge, PureSpongeM, SpongeM, absorb, evalPureSpongeM, initialSponge, labelM, liftSnarky, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, Snarky, assertEq, coerceViaBits)
@@ -122,7 +122,7 @@ xiCorrectCircuit
   => CircuitM f (KimchiConstraint f) t m
   => XiCorrectInput (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FrSpongeChallenges (FVar f))
-xiCorrectCircuit input = do
+xiCorrectCircuit input = labelM "xi-correct" do
   -- 1. Absorb fq_digest and prev_challenge_digest
   absorb input.fqDigest
   absorb input.prevChallengeDigest

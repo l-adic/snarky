@@ -95,7 +95,7 @@ wrapFinalizeOtherProofCircuit
   => FinalizeOtherProofParams f r2
   -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = do
+wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
   let
     ops = WrapOtherField.fopShiftOps @f @m
     deferred = unfinalized.deferredValues

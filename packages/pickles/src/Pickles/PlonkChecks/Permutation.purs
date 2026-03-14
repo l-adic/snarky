@@ -27,7 +27,7 @@ import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Pickles.Linearization.FFI (PointEval)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, negate_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, label, negate_, pow_, sub_)
 import Snarky.Curves.Class (class PrimeField, pow)
 
 -------------------------------------------------------------------------------
@@ -162,7 +162,7 @@ permScalarCircuit
   => CircuitM f c t m
   => PermutationInput (FVar f)
   -> Snarky c t m (FVar f)
-permScalarCircuit input = do
+permScalarCircuit input = label "perm-scalar" do
   -- alpha^21
   alphaPow21 <- pow_ input.alpha permAlpha0
 
@@ -198,7 +198,7 @@ permContributionCircuit
   => CircuitM f c t m
   => PermutationInput (FVar f)
   -> Snarky c t m (FVar f)
-permContributionCircuit input = do
+permContributionCircuit input = label "perm-contribution" do
   -- Compute alpha powers
   alphaPow21 <- pow_ input.alpha permAlpha0
   alphaPow22 <- pure alphaPow21 * pure input.alpha

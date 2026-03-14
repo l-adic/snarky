@@ -1,0 +1,84 @@
+name: Deploy Visualizer
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '23'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+          packages/crypto-provider/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+
+    - name: Cache SRS files
+      uses: actions/cache@v3
+      with:
+        path: srs-cache/
+        key: ${{ runner.os }}-srs-${{ hashFiles('mina/src/lib/crypto/proof-systems/srs/*.srs') }}
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Populate SRS cache
+      run: make fetch-srs
+
+    - name: Run circuit diff tests
+      run: make test-pickles-circuit-diffs
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+
+    - name: Build visualizer
+      run: |
+        cd packages/pickles-circuit-diffs/visualizer
+        npm install
+        npm run build
+      env:
+        NODE_OPTIONS: "--max-old-space-size=8192"
+        PUBLIC_URL: /snarky/
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: packages/pickles-circuit-diffs/visualizer/dist
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
