@@ -29,6 +29,7 @@ package:
   test:
     main: Test.Pickles.CircuitDiffs.Main
     dependencies:
+      - aff
       - effect
       - exceptions
       - node-buffer

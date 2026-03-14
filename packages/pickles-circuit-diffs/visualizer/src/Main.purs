@@ -83,8 +83,8 @@ mkApp circuitDiffTable = component "App" \_ -> React.do
     pure (pure unit)
 
   let
-    matches = Array.filter (\e -> e.status == "match") manifest
-    mismatches = Array.filter (\e -> e.status /= "match") manifest
+    matches = Array.sortWith _.name $ Array.filter (\e -> e.status == "match") manifest
+    mismatches = Array.sortWith _.name $ Array.filter (\e -> e.status /= "match") manifest
 
     statusDot :: String -> JSX
     statusDot status =

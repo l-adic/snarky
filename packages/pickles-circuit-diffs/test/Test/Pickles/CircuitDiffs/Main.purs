@@ -410,8 +410,8 @@ spec =
             { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        pending "xhat_step_circuit"
-      -- exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
+        -- pending "xhat_step_circuit"
+        exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
       describe "Pickles Wrap sub-circuits" do
         exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
         exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)

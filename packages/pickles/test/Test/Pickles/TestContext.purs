@@ -103,6 +103,7 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
@@ -749,6 +750,7 @@ buildWrapCircuitParams ctx =
     , srsLengthLog2: ctx.domainLog2
     , linearizationPoly: Linearization.vesta
     , groupMapParams: Kimchi.groupMapParams (Proxy @Vesta.G)
+    , correctionMode: InCircuitCorrections
     }
 
 -------------------------------------------------------------------------------
@@ -1797,6 +1799,7 @@ buildStepIVPParams ctx =
     , indexDigest: ProofFFI.vestaVerifierIndexDigest ctx.verifierIndex
     , endo: stepEndo
     , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+    , correctionMode: PureCorrections
     }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.

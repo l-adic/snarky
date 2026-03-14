@@ -129,6 +129,7 @@
             "blake2",
             "curves",
             "effect",
+            "either",
             "exceptions",
             "foldable-traversable",
             "identity",
@@ -207,6 +208,7 @@
         },
         "test": {
           "dependencies": [
+            "aff",
             "effect",
             "exceptions",
             "node-buffer",
@@ -220,9 +222,7 @@
         "path": "packages/pickles-circuit-diffs-types",
         "core": {
           "dependencies": [
-            "maybe",
-            "prelude",
-            "simple-json"
+            "maybe"
           ]
         },
         "test": {
@@ -512,7 +512,6 @@
             "either",
             "exceptions",
             "foldable-traversable",
-            "foreign",
             "functions",
             "identity",
             "js-bigints",
@@ -528,7 +527,6 @@
             "quickcheck",
             "record",
             "safe-coerce",
-            "simple-json",
             "snarky",
             "snarky-curves",
             "snarky-test-utils",
@@ -542,20 +540,16 @@
         },
         "test": {
           "dependencies": [
-            "aff",
             "effect",
             "gen",
             "identity",
-            "node-buffer",
-            "node-fs",
             "partial",
             "quickcheck",
             "snarky-test-utils",
             "spec",
             "spec-node",
             "spec-quickcheck",
-            "strings",
-            "unsafe-coerce"
+            "strings"
           ]
         }
       },
