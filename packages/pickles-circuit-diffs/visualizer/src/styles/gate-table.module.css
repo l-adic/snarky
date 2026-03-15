@@ -115,4 +115,10 @@
   color: #555;
   font-size: 11px;
   line-height: 16px;
+  word-break: break-all;
+}
+
+/* Expanded rows need higher z-index so context isn't hidden behind the next row */
+.virtualRowExpanded {
+  z-index: 1;
 }
