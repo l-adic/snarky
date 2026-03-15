@@ -81,6 +81,7 @@ type WrapParams f =
   -- Shared
   , endo :: f
   , correctionMode :: CorrectionMode
+  , useOptSponge :: Boolean
   }
 
 -- | The Wrap circuit: finalizes deferred values and verifies IPA opening.

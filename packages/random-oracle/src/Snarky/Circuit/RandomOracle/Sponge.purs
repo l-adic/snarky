@@ -27,7 +27,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, SpongeState(..), create, rate, state) as ReExports
 import RandomOracle.Sponge (Sponge, SpongeState(..), rate)
 import RandomOracle.Sponge as Sponge
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, seal)
 import Snarky.Circuit.Kimchi (poseidon)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
@@ -54,21 +54,24 @@ absorb x sponge = case sponge.spongeState of
     if n == rate then do
       -- Rate limit reached, permute first then absorb
       newState <- poseidon sponge.state
-      let newState' = Vector.modifyAt p0 (add_ x) newState
+      -- OCaml: add_assign ~state i x = state.(i) <- Utils.seal Field.(state.(i) + x)
+      sealed <- seal (add_ x (Vector.index newState p0))
+      let newState' = Vector.updateAt p0 sealed newState
       pure { state: newState', spongeState: Absorbed p1 }
-    else
+    else do
       -- Add to current position (no permutation needed)
+      -- OCaml: add_assign ~state i x = state.(i) <- Utils.seal Field.(state.(i) + x)
+      sealed <- seal (add_ x (Vector.index sponge.state n))
       let
-        newState = Vector.modifyAt n (add_ x) sponge.state
+        newState = Vector.updateAt n sealed sponge.state
         pNext = unsafePartial fromJust $ succ n
-      in
-        pure { state: newState, spongeState: Absorbed pNext }
-  Squeezed _ ->
+      pure { state: newState, spongeState: Absorbed pNext }
+  Squeezed _ -> do
     -- Coming from squeezed state, add at position 0
-    let
-      newState = Vector.modifyAt p0 (add_ x) sponge.state
-    in
-      pure { state: newState, spongeState: Absorbed p1 }
+    -- OCaml: add_assign ~state i x = state.(i) <- Utils.seal Field.(state.(i) + x)
+    sealed <- seal (add_ x (Vector.index sponge.state p0))
+    let newState = Vector.updateAt p0 sealed sponge.state
+    pure { state: newState, spongeState: Absorbed p1 }
   where
   p0 :: Finite 3
   p0 = unsafeFinite 0

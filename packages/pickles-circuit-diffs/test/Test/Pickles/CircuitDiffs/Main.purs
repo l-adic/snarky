@@ -58,7 +58,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..))
-import Test.Spec (SpecT, beforeAll_, describe, it, pending)
+import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -410,7 +410,6 @@ spec =
             { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        -- pending "xhat_step_circuit"
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
       describe "Pickles Wrap sub-circuits" do
         exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
@@ -435,13 +434,13 @@ spec =
             }
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
         let
-          stepSrs = pallasCrsCreate (2 `Int.pow` 16)
+          -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
+          stepSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepSrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 175) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 15 175) :: Array (AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
-        pending "ivp_step_circuit"
-      -- exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
+        exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
