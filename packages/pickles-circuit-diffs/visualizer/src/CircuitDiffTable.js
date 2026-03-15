@@ -58,10 +58,13 @@ function GateTable({ title, gates, diffIndices, publicInputSize }) {
     count: gates.length,
     getScrollElement: () => parentRef.current,
     estimateSize: useCallback(
-      (idx) =>
-        expanded[idx]
-          ? 28 + 16 * Math.max(gates[idx]?.context?.length || 0, 1) + 8
-          : 28,
+      (idx) => {
+        if (!expanded[idx]) return 28;
+        const ctx = gates[idx]?.context || [];
+        // Estimate height: each context line may wrap (long OCaml paths ~120 chars,
+        // visible width ~60 chars at 11px monospace), so allow ~32px per line
+        return 28 + 32 * Math.max(ctx.length, 1) + 8;
+      },
       [expanded, gates]
     ),
     overscan: 20,
@@ -132,6 +135,7 @@ function GateTable({ title, gates, diffIndices, publicInputSize }) {
                     ? styles.virtualRowDiff
                     : "",
               hasContext ? styles.virtualRowClickable : "",
+              isExpanded ? styles.virtualRowExpanded : "",
             ]
               .filter(Boolean)
               .join(" ");

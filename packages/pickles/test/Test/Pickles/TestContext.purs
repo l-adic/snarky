@@ -751,6 +751,7 @@ buildWrapCircuitParams ctx =
     , linearizationPoly: Linearization.vesta
     , groupMapParams: Kimchi.groupMapParams (Proxy @Vesta.G)
     , correctionMode: InCircuitCorrections
+    , useOptSponge: true
     }
 
 -------------------------------------------------------------------------------
@@ -1800,6 +1801,7 @@ buildStepIVPParams ctx =
     , endo: stepEndo
     , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
     , correctionMode: PureCorrections
+    , useOptSponge: false
     }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.
