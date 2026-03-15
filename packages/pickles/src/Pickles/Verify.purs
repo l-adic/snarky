@@ -61,6 +61,7 @@ type IncrementallyVerifyProofParams f r =
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
   , correctionMode :: CorrectionMode
+  , useOptSponge :: Boolean -- ^ true for Wrap (Opt_sponge), false for Step (regular sponge)
   | r
   }
 
@@ -108,7 +109,7 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
 incrementallyVerifyProof
-  :: forall publicInput sgOldN d f f' @g sf t m _l3 r
+  :: forall publicInput sgOldN totalBases d f f' @g sf t m _l3 _l4 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -121,6 +122,8 @@ incrementallyVerifyProof
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Add 1 _l3 d
+  => Add sgOldN 45 totalBases
+  => Add 1 _l4 totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
@@ -147,27 +150,50 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
       -- Squeeze digest
       Sponge.squeeze
 
-  -- 2. Compute x_hat (public input commitment)
-  xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+  -- 2. Sponge transcript + x_hat
+  -- Step (regular sponge): absorb index_digest + sg_old BEFORE x_hat, matching
+  --   OCaml step_verifier.ml ordering. Uses regular sponge (not Opt_sponge).
+  -- Wrap (OptSponge): compute x_hat first, then run spongeTranscriptOptCircuit.
+  { xHat, beta, gamma, alphaChal, zetaChal, digest } <-
+    if params.useOptSponge then do
+      -- Wrap path: compute x_hat first, then OptSponge for all absorptions
+      xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      let spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
+      result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams spongeInput
+      pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
+    else do
+      -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
+      -- Matches step_verifier.ml:528-530
+      Sponge.absorb indexDigest
+      for_ input.sgOld Sponge.absorbPoint
+      -- Compute x_hat
+      xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
+      -- step_verifier.ml:551-568
+      Sponge.absorbPoint xHat
+      for_ input.wComm Sponge.absorbPoint
+      -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
+      beta <- Sponge.squeezeScalarChallenge endoParams
+      gamma <- Sponge.squeezeScalarChallenge endoParams
+      -- z_comm: receive
+      Sponge.absorbPoint input.zComm
+      -- alpha: squeeze_scalar (constrain_low_bits:false)
+      alphaChal <- Sponge.squeezeScalar endoParams
+      -- t_comm: receive
+      for_ input.tComm Sponge.absorbPoint
+      -- zeta: squeeze_scalar (constrain_low_bits:false)
+      zetaChal <- Sponge.squeezeScalar endoParams
+      -- Copy sponge before squeezing digest (step_verifier.ml:559)
+      spongeBeforeEvals <- Sponge.getSponge
+      digest <- Sponge.squeeze
+      Sponge.putSponge spongeBeforeEvals
+      pure { xHat, beta, gamma, alphaChal, zetaChal, digest }
 
-  -- 3. Run Fq-sponge transcript
-  let
-    spongeInput =
-      { indexDigest
-      , sgOld: input.sgOld
-      , publicComm: xHat
-      , wComm: input.wComm
-      , zComm: input.zComm
-      , tComm: input.tComm
-      }
-  { beta, gamma, alphaChal, zetaChal, digest } <- labelM "ivp_opt_sponge" $
-    spongeTranscriptOptCircuit endoParams spongeInput
-
-  -- 4. Assert deferred values match sponge output (all 128-bit scalar challenges)
+  -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky $ label "ivp_assert_plonk" $
     assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
 
-  -- 5. Compute ft_comm
+  -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
     { sigmaLast: constPt params.sigmaCommLast
@@ -177,15 +203,18 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
     , zetaToDomainSize: input.deferredValues.plonk.zetaToDomainSize
     }
 
-  -- 5. Assemble 45 commitment bases in to_batch order
+  -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
+  -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
   let
-    allBases :: Vector 45 (AffinePoint (FVar f))
+    allBases :: Vector totalBases (AffinePoint (FVar f))
     allBases =
-      (xHat :< ftCommResult :< input.zComm :< Vector.nil)
-        `Vector.append` map constPt params.columnComms.index
-        `Vector.append` input.wComm
-        `Vector.append` map constPt params.columnComms.coeff
-        `Vector.append` map constPt params.columnComms.sigma
+      input.sgOld `Vector.append`
+        ( (xHat :< ftCommResult :< input.zComm :< Vector.nil)
+            `Vector.append` map constPt params.columnComms.index
+            `Vector.append` input.wComm
+            `Vector.append` map constPt params.columnComms.coeff
+            `Vector.append` map constPt params.columnComms.sigma
+        )
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let
@@ -225,7 +254,7 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
 -- |
 -- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
 verify
-  :: forall publicInput sgOldN d f f' @g sf t m _l2 _l3 r
+  :: forall publicInput sgOldN totalBases d f f' @g sf t m _l2 _l3 _l4 r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -239,6 +268,8 @@ verify
   => Reflectable d Int
   => Add 1 _l2 7
   => Add 1 _l3 d
+  => Add sgOldN 45 totalBases
+  => Add 1 _l4 totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf

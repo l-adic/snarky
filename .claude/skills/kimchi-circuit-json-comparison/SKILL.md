@@ -142,6 +142,28 @@ describe "Kimchi gate matches" do
 npx spago test -p snarky-kimchi -- --example "CircuitJson"
 ```
 
+## Analysis Tools
+
+Two scripts in `tools/` help analyze circuit comparison results:
+
+### circuit-diff-summary.mjs
+Quick structural overview: gate counts, type breakdown, cached constants, first difference, section breakdown.
+
+```bash
+node tools/circuit-diff-summary.mjs packages/pickles-circuit-diffs/circuits/results/ivp_step_circuit.json
+```
+
+Use this FIRST to understand the shape of the diff (gate count mismatch? type mismatch? coefficient-only?).
+
+### circuit-r1cs-diff.mjs
+Unpacks Generic gates into individual R1CS constraints in generation order (right half = queued/first, left half = new/second) and finds the first divergence. Essential for diagnosing R1CS double-packing alignment issues where gate types match but coefficients differ.
+
+```bash
+node tools/circuit-r1cs-diff.mjs packages/pickles-circuit-diffs/circuits/results/ivp_step_circuit.json
+```
+
+The output shows the R1CS sequence side-by-side with decoded constraints, highlighting the first divergence. The divergent R1CS's constant coefficient often identifies which operation (seal, constant materialization, boolean check) is misplaced.
+
 ## Step 5: Iterate on Differences
 
 ### Extra boolean check constraints
@@ -164,6 +186,18 @@ OCaml may seal (reduce to single variable) inputs before passing to a gate. Chec
 **Critical**: `sealPoint` must seal **y before x** to match OCaml's `Tuple_lib.Double.map ~f:Utils.seal`, which evaluates right-to-left (y first). Getting this wrong causes wire differences even when gate types and coefficients match perfectly.
 
 **Seal at loop boundaries**: OCaml's `scale_fast_unpack` calls `seal base` once at the top, before the VarBaseMul loop. Without this, a complex CVar base point (e.g. from `groupMapCircuit`) gets re-reduced in every round, generating 2 extra GenericPlonk gates per round. PureScript's `varBaseMul` must `sealPoint base` before the loop.
+
+**Seal in sponge add_assign**: OCaml's sponge `add_assign` calls `Utils.seal` after every `state[i] += x`. PureScript's circuit sponge (`Snarky.Circuit.RandomOracle.Sponge.absorb`) must do the same. Without seal, complex CVars like `Add(Const 0, Var v)` accumulate in the sponge state and are only reduced during the Poseidon gate's `reduceToVariable` call. This changes the TIMING of R1CS generation: seal produces R1CS during absorption (as standalone `KimchiBasic` constraints), while deferred reduction produces R1CS inside the Poseidon `reduce`. The different timing shifts the R1CS double-packing alignment, causing every subsequent Generic gate's coefficient layout to differ from OCaml even though the same total R1CS exist. This is invisible in standalone sub-circuit tests (which start with an empty packing queue) and only manifests when composing sub-circuits (like the IVP).
+
+### R1CS double-packing alignment
+
+The Kimchi constraint system pairs consecutive R1CS constraints into a single Generic gate (2 R1CS per gate). The pending queue persists across ALL constraint types — non-Generic gates (Poseidon, CompleteAdd, VarBaseMul, etc.) do NOT flush the queue.
+
+This means: if any operation before a composed circuit boundary generates an ODD number of R1CS, all subsequent Generic gate coefficient layouts shift by one position. The circuits have the same gate kinds, same gate counts, same cached constants — but different coefficient pairings within Generic gates.
+
+**Diagnosis**: Extract R1CS in generation order by unpacking Generic gates (right half = first/queued, left half = second/new). Compare the two R1CS sequences to find the first divergence index. The diverging R1CS's constant coefficient often identifies which operation (seal, constant materialization, boolean check) is at the wrong position.
+
+**Prevention**: When translating OCaml code that modifies state with side effects (like sponge `add_assign`), check whether OCaml calls `seal` or `reduce_to_v` at that point. Missing a seal changes the R1CS generation timing.
 
 ### Different witness variable ordering
 
