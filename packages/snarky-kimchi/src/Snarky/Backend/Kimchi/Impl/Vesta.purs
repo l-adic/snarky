@@ -24,6 +24,10 @@ foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> Stri
 foreign import vestaCrsLoadFromCache :: Effect (CRS Vesta.G)
 foreign import vestaCrsCreate :: Int -> CRS Vesta.G
 foreign import vestaCrsSize :: CRS Vesta.G -> Int
+-- | Compute challenge polynomial commitment from Vesta SRS.
+-- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).
+-- | OCaml: SRS.Fp.b_poly_commitment (Dummy.Ipa.Step.compute_sg)
+foreign import vestaSrsBPolyCommitment :: CRS Vesta.G -> Array Vesta.ScalarField -> Array Vesta.BaseField
 
 foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 

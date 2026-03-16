@@ -24,6 +24,10 @@ foreign import pallasGatesToJson :: Array (Gate Pallas.ScalarField) -> Int -> St
 foreign import pallasCrsLoadFromCache :: Effect (CRS Pallas.G)
 foreign import pallasCrsCreate :: Int -> CRS Pallas.G
 foreign import pallasCrsSize :: CRS Pallas.G -> Int
+-- | Compute challenge polynomial commitment from Pallas SRS.
+-- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).
+-- | OCaml: SRS.Fq.b_poly_commitment (Dummy.Ipa.Wrap.compute_sg)
+foreign import pallasSrsBPolyCommitment :: CRS Pallas.G -> Array Pallas.ScalarField -> Array Pallas.BaseField
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 

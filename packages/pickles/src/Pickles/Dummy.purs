@@ -1,133 +1,252 @@
--- | Deterministic dummy IPA challenges.
+-- | Deterministic dummy values for Pickles recursion bootstrapping.
 -- |
--- | Mirrors OCaml's `mina/src/lib/pickles/dummy.ml`. Dummy challenges are
--- | deterministic constants derived from a BLAKE2s-based random oracle
--- | (OCaml's `ro.ml`). They're used as padding when a circuit expects multiple
--- | previous proofs but fewer actually exist.
+-- | Mirrors OCaml's `mina/src/lib/pickles/dummy.ml`, `ro.ml`, `unfinalized.ml`.
 -- |
--- | The random oracle works as follows (matching `ro.ml`):
--- | 1. `BLAKE2s-256(string)` → raw bytes → each byte to 8 bits LSB-first
--- | 2. Counter starts at 0, each call increments then hashes `"chal_" <> show counter`
--- | 3. Take first 128 bits → pack into a field element via `fromBits`
--- |
--- | Counter ordering follows OCaml module initialization:
--- | - Wrap challenges use counters 1..WrapIPARounds (eagerly evaluated first)
--- | - Step challenges use counters (WrapIPARounds+1)..(WrapIPARounds+StepIPARounds)
--- |
--- | Expanded challenges are the raw 128-bit scalar challenges expanded to full
--- | field elements via `toFieldPure` with the circuit's endo scalar.
--- |
--- | Reference: mina/src/lib/pickles/dummy.ml, mina/src/lib/pickles/ro.ml
+-- | Reference: mina/src/lib/pickles/dummy.ml, mina/src/lib/pickles/ro.ml,
+-- |            mina/src/lib/pickles/unfinalized.ml
+-- | Fixture: packages/pickles/test/fixtures/dummy_values.txt
+-- | Generator: mina/src/lib/crypto/pickles/dump_dummy/dump_dummy.ml
 module Pickles.Dummy
-  ( dummyWrapChallengesExpanded
+  ( DummyValues
+  , computeDummyValues
+  , dummyWrapChallengesExpanded
   , dummyWrapChallengesRaw
   , dummyStepChallengesExpanded
   , dummyStepChallengesRaw
+  , Ro
+  , mkRo
+  , tick
   ) where
 
 import Prelude
 
+import Control.Monad.State (State, get, put, evalState)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Traversable (sequence)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
+import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (SizedF, fromBits)
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
--- | Raw 128-bit Wrap dummy challenges (counters 1..WrapIPARounds).
-dummyWrapChallengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
-dummyWrapChallengesRaw = wrapRaw.challenges
-
--- | Expanded Wrap dummy challenges (full Fq field elements).
--- |
--- | These are the values needed for `messagesForNextWrapProof` hash padding.
-dummyWrapChallengesExpanded :: Vector WrapIPARounds WrapField
-dummyWrapChallengesExpanded = map (\c -> toFieldPure c wrapEndo) dummyWrapChallengesRaw
-
--- | Raw 128-bit Step dummy challenges (counters WrapIPARounds+1..WrapIPARounds+StepIPARounds).
-dummyStepChallengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
-dummyStepChallengesRaw = stepRaw.challenges
-
--- | Expanded Step dummy challenges (full Fp field elements).
-dummyStepChallengesExpanded :: Vector StepIPARounds StepField
-dummyStepChallengesExpanded = map (\c -> toFieldPure c stepEndo) dummyStepChallengesRaw
-
 -------------------------------------------------------------------------------
--- Random oracle (ro.ml)
+-- | Ro state and monad
 -------------------------------------------------------------------------------
 
--- | `bits_random_oracle ~length s` — BLAKE2s-256 of a string, truncated to `length` bits.
--- |
--- | Bit ordering: LSB-first per byte, matching OCaml's
--- | `Char.to_int c |> List.init 8 ~f:(fun i -> (c lsr i) land 1 = 1)`.
+type Ro =
+  { tockCounter :: Int
+  , tickCounter :: Int
+  , chalCounter :: Int
+  }
+
+mkRo :: Ro
+mkRo = { tockCounter: 0, tickCounter: 0, chalCounter: 0 }
+
+type RoM = State Ro
+
+bitsToBigInt :: Array Boolean -> BigInt.BigInt
+bitsToBigInt = Array.foldr
+  (\bit acc -> acc * BigInt.fromInt 2 + (if bit then BigInt.fromInt 1 else BigInt.fromInt 0))
+  (BigInt.fromInt 0)
+
 bitsRandomOracle :: Int -> String -> Array Boolean
 bitsRandomOracle length s = Array.take length (blake2s256Bits s)
 
--- | One step of the "chal" random oracle: increment counter, produce a
--- | scalar challenge from `BLAKE2s("chal_" <> show counter)`.
-scalarChal
-  :: forall @n @m @f
-   . FieldSizeInBits f m
-  => Reflectable n Int
-  => Compare n m LT
-  => PrimeField f
-  => Int
-  -> { counter :: Int, challenge :: SizedF n f }
-scalarChal counter =
-  let
-    next = counter + 1
-    n = reflectType (Proxy @n)
-    bits = bitsRandomOracle n ("chal_" <> show next)
-    challenge = fromBits $ unsafePartial fromJust $ Vector.toVector @n bits
-  in
-    { counter: next, challenge }
+tock :: RoM WrapField
+tock = do
+  ro <- get
+  let next = ro.tockCounter + 1
+  put $ ro { tockCounter = next }
+  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle 255 ("fq_" <> show next)))
 
--- | Generate `n` raw scalar challenges starting from the given counter.
-generateChallenges
+tick :: RoM StepField
+tick = do
+  ro <- get
+  let next = ro.tickCounter + 1
+  put $ ro { tickCounter = next }
+  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle 255 ("fp_" <> show next)))
+
+chal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
+chal = do
+  ro <- get
+  let next = ro.chalCounter + 1
+  put $ ro { chalCounter = next }
+  pure $ fromBits $ unsafePartial fromJust $ Vector.toVector @128 $ bitsRandomOracle 128 ("chal_" <> show next)
+
+scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
+scalarChal = chal
+
+-- | Generate n challenges, reversed to match OCaml's right-to-left Vector.init evaluation.
+-- | OCaml: `Vector.init n ~f:(fun _ -> Ro.scalar_chal ())` evaluates the side effect
+-- | for index n-1 first (chal counter 1), then n-2 (counter 2), ..., index 0 (counter n).
+replicateChal
   :: forall @n f
    . Compare 128 255 LT
-  => FieldSizeInBits f 255
-  => PrimeField f
+  => Curves.FieldSizeInBits f 255
+  => Curves.PrimeField f
   => Reflectable n Int
-  => Int
-  -> { counter :: Int, challenges :: Vector n (SizedF 128 f) }
-generateChallenges startCounter =
+  => RoM (Vector n (SizedF 128 f))
+replicateChal = do
+  let n = reflectType (Proxy @n)
+  arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
+  pure $ unsafePartial fromJust $ Vector.toVector @n (Array.reverse arr)
+
+-------------------------------------------------------------------------------
+-- | DummyValues
+-------------------------------------------------------------------------------
+
+type DummyValues =
+  { ipa ::
+      { wrap ::
+          { challengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
+          , challengesExpanded :: Vector WrapIPARounds WrapField
+          , sg :: AffinePoint StepField -- Fp coords (Pallas point)
+          }
+      , step ::
+          { challengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
+          , challengesExpanded :: Vector StepIPARounds StepField
+          , sg :: AffinePoint WrapField -- Fq coords (Vesta point)
+          }
+      }
+  , unfinalized ::
+      { plonk ::
+          { perm :: WrapField
+          , zetaToSrsLength :: WrapField
+          , zetaToDomainSize :: WrapField
+          }
+      , combinedInnerProduct :: WrapField
+      , b :: WrapField
+      , spongeDigest :: WrapField
+      }
+  }
+
+-- | Compute all dummy values. Takes the two SRS as arguments (for sg computation).
+-- |
+-- | OCaml evaluation order:
+-- | 1. Dummy.Ipa.Wrap.challenges (eager, chal 1..15)
+-- | 2. Dummy.Ipa.Step.challenges (eager, chal 16..31)
+-- | 3. Unfinalized.Constant.dummy (lazy, forces Dummy.evals → tock 1..87, then tock 88..89)
+computeDummyValues :: CRS Pallas.G -> CRS Vesta.G -> DummyValues
+computeDummyValues pallasSrs vestaSrs =
   let
-    n = reflectType (Proxy @n)
-    go { counter, acc } _idx =
-      let
-        { counter: next, challenge } = scalarChal @128 @255 counter
-      in
-        { counter: next, acc: acc <> [ challenge ] }
-    result = Array.foldl go { counter: startCounter, acc: [] }
-      (Array.range 0 (n - 1))
+    roResult = flip evalState mkRo do
+      -- Phase 1: Eager IPA challenges (dummy.ml module init)
+      wrapChalRaw <- replicateChal @WrapIPARounds :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
+      stepChalRaw <- replicateChal @StepIPARounds :: RoM (Vector StepIPARounds (SizedF 128 StepField))
+
+      -- Phase 2: Unfinalized.Constant.dummy (unfinalized.ml:25-104)
+      _alpha <- scalarChal :: RoM (SizedF 128 WrapField) -- chal 32
+      _beta <- chal :: RoM (SizedF 128 WrapField)        -- chal 33
+      _gamma <- chal :: RoM (SizedF 128 WrapField)       -- chal 34
+      _zeta <- scalarChal :: RoM (SizedF 128 WrapField)  -- chal 35
+
+      -- Forces Dummy.evals_combined → Dummy.evals
+      -- Ro trace shows fq_1 through fq_89 for evals, then fq_90 and fq_91
+      -- Total: 89 tock calls for evals, then 2 more for CIP/b
+      _evals <- sequence (Array.replicate 89 tock)
+
+      -- fq_90 = b, fq_91 = CIP (verified against fixture)
+      bRaw <- tock   -- fq_90
+      cipRaw <- tock -- fq_91
+
+      pure { wrapChalRaw, stepChalRaw, cipRaw, bRaw }
+
+    -- Expand challenges
+    wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) roResult.wrapChalRaw
+    stepChalExpanded = map (\c -> toFieldPure c stepEndo) roResult.stepChalRaw
+
+    -- Compute sg from SRS (OCaml: Ipa.Wrap.compute_sg / Ipa.Step.compute_sg)
+    wrapSgCoords = PallasImpl.pallasSrsBPolyCommitment pallasSrs
+      (Vector.toUnfoldable wrapChalExpanded)
+    wrapSg = { x: unsafeIdx wrapSgCoords 0, y: unsafeIdx wrapSgCoords 1 }
+
+    stepSgCoords = VestaImpl.vestaSrsBPolyCommitment vestaSrs
+      (Vector.toUnfoldable stepChalExpanded)
+    stepSg = { x: unsafeIdx stepSgCoords 0, y: unsafeIdx stepSgCoords 1 }
+
+    -- Unfinalized plonk values from derive_plonk (hardcoded from OCaml fixture
+    -- until we implement Plonk_checks.derive_plonk in PureScript).
+    -- Generated by: mina/src/lib/crypto/pickles/dump_dummy/dump_dummy.ml
+    fromStr s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
   in
-    { counter: result.counter
-    , challenges: unsafePartial fromJust $ Vector.toVector @n result.acc
+    { ipa:
+        { wrap:
+            { challengesRaw: roResult.wrapChalRaw
+            , challengesExpanded: wrapChalExpanded
+            , sg: wrapSg
+            }
+        , step:
+            { challengesRaw: roResult.stepChalRaw
+            , challengesExpanded: stepChalExpanded
+            , sg: stepSg
+            }
+        }
+    , unfinalized:
+        { plonk:
+            { perm: fromStr "23440605441886153126678695377597650431034969920935116593970373719018050817987"
+            , zetaToSrsLength: fromStr "15652644783914055060033111610913539832973880787986945288311229297183530634989"
+            , zetaToDomainSize: fromStr "15652644783914055060033111610913539832973880787986945288311229297183530634989"
+            }
+        , combinedInnerProduct: roResult.cipRaw
+        , b: roResult.bRaw
+        , spongeDigest: fromStr "6277101735386680764176071790128604879584176795969512275969"
+        }
     }
 
+unsafeIdx :: forall a. Array a -> Int -> a
+unsafeIdx arr i = unsafePartial fromJust (Array.index arr i)
+
 -------------------------------------------------------------------------------
--- Internal constants
+-- | Convenience re-exports (use default SRS — caller provides)
 -------------------------------------------------------------------------------
 
-wrapRaw :: { counter :: Int, challenges :: Vector WrapIPARounds (SizedF 128 WrapField) }
-wrapRaw = generateChallenges @WrapIPARounds 0
+dummyWrapChallengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
+dummyWrapChallengesRaw = defaultChallenges.wrapRaw
 
-stepRaw :: { counter :: Int, challenges :: Vector StepIPARounds (SizedF 128 StepField) }
-stepRaw = generateChallenges @StepIPARounds wrapRaw.counter
+dummyWrapChallengesExpanded :: Vector WrapIPARounds WrapField
+dummyWrapChallengesExpanded = defaultChallenges.wrapExpanded
+
+dummyStepChallengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
+dummyStepChallengesRaw = defaultChallenges.stepRaw
+
+dummyStepChallengesExpanded :: Vector StepIPARounds StepField
+dummyStepChallengesExpanded = defaultChallenges.stepExpanded
+
+-- | Challenge values only (no SRS needed, computed purely from Ro).
+defaultChallenges
+  :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
+     , wrapExpanded :: Vector WrapIPARounds WrapField
+     , stepRaw :: Vector StepIPARounds (SizedF 128 StepField)
+     , stepExpanded :: Vector StepIPARounds StepField
+     }
+defaultChallenges = flip evalState mkRo do
+  wrapRaw <- replicateChal @WrapIPARounds :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
+  stepRaw <- replicateChal @StepIPARounds :: RoM (Vector StepIPARounds (SizedF 128 StepField))
+  let wrapExpanded = map (\c -> toFieldPure c wrapEndo) wrapRaw
+  let stepExpanded = map (\c -> toFieldPure c stepEndo) stepRaw
+  pure { wrapRaw, wrapExpanded, stepRaw, stepExpanded }
+
+-------------------------------------------------------------------------------
+-- | Internal
+-------------------------------------------------------------------------------
 
 wrapEndo :: WrapField
-wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Pallas.ScalarField in e
+wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @Pallas.ScalarField in e
 
 stepEndo :: StepField
-stepEndo = let EndoScalar e = endoScalar @Vesta.BaseField @Vesta.ScalarField in e
+stepEndo = let Curves.EndoScalar e = Curves.endoScalar @Vesta.BaseField @Vesta.ScalarField in e
