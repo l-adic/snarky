@@ -20,6 +20,8 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Pickles.Dummy (computeDummyValues)
 import Pickles.Types (StepField, WrapField)
+import Snarky.Circuit.DSL (F(..))
+import Snarky.Types.Shifted (Type2(..))
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Curves.Class (toBigInt)
@@ -81,10 +83,15 @@ spec = describe "Pickles.Dummy fixture comparison" do
     assertField "step_sg_x" (showFq dv.ipa.step.sg.x) entries
     assertField "step_sg_y" (showFq dv.ipa.step.sg.y) entries
 
+    -- Unfinalized intermediate values
+    assertField "unfinalized.zeta_expanded" (showFq dv.unfinalized.zetaExpanded) entries
+    assertField "unfinalized.alpha_expanded" (showFq dv.unfinalized.alphaExpanded) entries
+
     -- Unfinalized plonk derived values
-    assertField "unfinalized.plonk.perm" (showFq dv.unfinalized.plonk.perm) entries
-    assertField "unfinalized.plonk.zeta_to_srs_length" (showFq dv.unfinalized.plonk.zetaToSrsLength) entries
-    assertField "unfinalized.plonk.zeta_to_domain_size" (showFq dv.unfinalized.plonk.zetaToDomainSize) entries
+    let unwrapType2 (Type2 (F x)) = x
+    assertField "unfinalized.plonk.perm" (showFq (unwrapType2 dv.unfinalized.plonk.perm)) entries
+    assertField "unfinalized.plonk.zeta_to_srs_length" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToSrsLength)) entries
+    assertField "unfinalized.plonk.zeta_to_domain_size" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToDomainSize)) entries
 
     -- Unfinalized other values
     assertField "unfinalized.combined_inner_product" (showFq dv.unfinalized.combinedInnerProduct) entries

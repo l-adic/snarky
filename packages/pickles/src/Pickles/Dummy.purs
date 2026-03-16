@@ -39,9 +39,10 @@ import Pickles.Linearization.FFI (domainGenerator)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (SizedF, fromBits)
+import Snarky.Circuit.DSL (F(..), SizedF, fromBits)
 import Snarky.Circuit.DSL.SizedF (toField) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
+import Snarky.Types.Shifted (Type2, toShifted)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -134,10 +135,12 @@ type DummyValues =
           }
       }
   , unfinalized ::
-      { plonk ::
-          { perm :: WrapField
-          , zetaToSrsLength :: WrapField
-          , zetaToDomainSize :: WrapField
+      { zetaExpanded :: WrapField
+      , alphaExpanded :: WrapField
+      , plonk ::
+          { perm :: Type2 (F WrapField)
+          , zetaToSrsLength :: Type2 (F WrapField)
+          , zetaToDomainSize :: Type2 (F WrapField)
           }
       , combinedInnerProduct :: WrapField
       , b :: WrapField
@@ -214,17 +217,17 @@ computeDummyValues pallasSrs vestaSrs =
     -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
     -- srs_length_log2 = 15 (= Tock.Rounds.n)
     domainLog2 = 15
-    n = BigInt.fromInt (pow2 domainLog2)
+    _n = BigInt.fromInt (pow2 domainLog2)
 
-    -- zeta_to_srs_length = zeta^(2^15), then shifted
-    zetaPow2_15 = Curves.pow zetaFq n
+    -- zeta_to_srs_length = zeta^(2^15), computed by repeated squaring
+    -- OCaml: pow2pow zeta srs_length_log2 = 15 squarings of zeta
+    zetaPow2_15 = pow2pow zetaFq domainLog2
     -- zeta_to_domain_size = zeta^n = same as zeta_to_srs_length when domain = srs
     -- env.zeta_to_n_minus_1 + 1 = (zeta^n - 1) + 1 = zeta^n
     zetaToN = zetaPow2_15
 
-    -- Type2 shift = 2^255 (shifted_value.ml)
-    shift = Curves.fromBigInt (BigInt.fromInt 2 `BigInt.pow` BigInt.fromInt 255)
-    shiftedValue x = x + shift
+    shifted :: WrapField -> Type2 (F WrapField)
+    shifted x = toShifted (F x)
 
     -- perm (plonk_checks.ml:422-428)
     -- perm = negate(foldi e.s ~init:(e1_z * beta * alpha^21 * zkp) ~f:(...))
@@ -265,10 +268,12 @@ computeDummyValues pallasSrs vestaSrs =
             }
         }
     , unfinalized:
-        { plonk:
-            { perm: Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString "23440605441886153126678695377597650431034969920935116593970373719018050817987")) -- TODO: compute from derive_plonk
-            , zetaToSrsLength: shiftedValue zetaPow2_15
-            , zetaToDomainSize: shiftedValue zetaToN
+        { zetaExpanded: zetaFq
+        , alphaExpanded: alphaFq
+        , plonk:
+            { perm: shifted _perm
+            , zetaToSrsLength: shifted zetaPow2_15
+            , zetaToDomainSize: shifted zetaToN
             }
         , combinedInnerProduct: roResult.cipRaw
         , b: roResult.bRaw
@@ -282,6 +287,11 @@ unsafeIdx arr i = unsafePartial fromJust (Array.index arr i)
 pow2 :: Int -> Int
 pow2 0 = 1
 pow2 n' = 2 * pow2 (n' - 1)
+
+-- | Compute x^(2^k) by k repeated squarings. Matches OCaml's pow2pow.
+pow2pow :: forall f. Semiring f => f -> Int -> f
+pow2pow x 0 = x
+pow2pow x k = pow2pow (x * x) (k - 1)
 
 -------------------------------------------------------------------------------
 -- | Convenience re-exports
