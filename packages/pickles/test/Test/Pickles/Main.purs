@@ -10,7 +10,6 @@ import Snarky.Constraint.Kimchi (class KimchiVerify, KimchiGate, eval)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Test.Pickles.CombinedPolyComm as CombinedPolyComm
-import Test.Pickles.DummyFixture as DummyFixture
 import Test.Pickles.Commitments as Commitments
 import Test.Pickles.FFIValidation as FFIValidation
 import Test.Pickles.FtComm as FtComm
@@ -63,7 +62,6 @@ main = runSpecAndExitProcess'
       Permutation.spec kimchiTestConfig
       Step.spec kimchiTestConfig
       StepE2E.spec kimchiTestConfig
-      DummyFixture.spec
   where
   nat :: Identity ~> Aff
   nat x = pure $ un Identity x

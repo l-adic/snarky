@@ -1,7 +1,7 @@
-module Test.Pickles.DummyFixture (spec) where
+module Test.DummyFixture (spec) where
 
 -- | Compare PureScript dummy values against OCaml fixture.
--- | Fixture: packages/pickles/test/fixtures/dummy_values.txt
+-- | Fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
 -- | Generator: mina/src/lib/crypto/pickles/dump_dummy/dump_dummy.ml
 
 import Prelude
@@ -13,6 +13,7 @@ import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
+import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
@@ -20,12 +21,12 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Pickles.Dummy (computeDummyValues)
 import Pickles.Types (StepField, WrapField)
-import Snarky.Circuit.DSL (F(..))
-import Snarky.Types.Shifted (Type2(..))
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
+import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Class (toBigInt)
-import Test.Spec (Spec, describe, it)
+import Snarky.Types.Shifted (Type2(..))
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 -- | Parse the fixture file into (key, value) pairs
@@ -37,11 +38,12 @@ parseFixture content =
     case String.indexOf (String.Pattern ": ") line of
       Nothing -> Nothing
       Just idx ->
-        let key = String.take idx line
-            val = String.drop (idx + 2) line
-        in if String.take 1 key == "#" || String.null key
-           then Nothing
-           else Just (Tuple key (String.trim val))
+        let
+          key = String.take idx line
+          val = String.drop (idx + 2) line
+        in
+          if String.take 1 key == "#" || String.null key then Nothing
+          else Just (Tuple key (String.trim val))
 
 lookupFixture :: String -> Array (Tuple String String) -> Maybe String
 lookupFixture key entries = do
@@ -54,10 +56,10 @@ assertField label expected entries =
     Nothing -> liftEffect $ pure unit -- skip missing keys
     Just val -> expected `shouldEqual` val
 
-spec :: Spec Unit
+spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Dummy fixture comparison" do
   it "all dummy values match OCaml dump_dummy fixture" do
-    buf <- liftEffect $ FS.readFile "packages/pickles/test/fixtures/dummy_values.txt"
+    buf <- liftEffect $ FS.readFile "packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt"
     content <- liftEffect $ Buffer.toString UTF8 buf
     let entries = parseFixture content
 

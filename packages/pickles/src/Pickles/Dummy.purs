@@ -20,10 +20,9 @@ module Pickles.Dummy
 
 import Prelude
 
-import Control.Monad.State (State, get, put, evalState)
+import Control.Monad.State (State, evalState, get, put)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
-
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
@@ -40,11 +39,11 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), SizedF, fromBits)
 import Snarky.Circuit.DSL.SizedF (toField) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Types.Shifted (Type2(..), toShifted)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -123,7 +122,7 @@ replicateChal = do
 tockEvalPair :: RoM { zeta :: WrapField, zetaOmega :: WrapField }
 tockEvalPair = do
   zetaOmega <- tock -- OCaml: right element of tuple, evaluated first → snd
-  zeta <- tock      -- OCaml: left element of tuple, evaluated second → fst
+  zeta <- tock -- OCaml: left element of tuple, evaluated second → fst
   pure { zeta, zetaOmega }
 
 -------------------------------------------------------------------------------
@@ -204,7 +203,7 @@ computeDummyValues pallasSrs vestaSrs =
       -- ...; b = Shifted_value (tock()) }` has implementation-defined field evaluation
       -- order. The Ro trace shows fq_90 then fq_91, and fixture comparison confirms
       -- b = fq_90, CIP = fq_91 (b is evaluated before CIP in OCaml's native compiler).
-      bRaw <- tock   -- fq_90
+      bRaw <- tock -- fq_90
       cipRaw <- tock -- fq_91
 
       pure { wrapChalRaw, stepChalRaw, alpha, beta, gamma, zeta, w, z, s, cipRaw, bRaw }
@@ -253,10 +252,11 @@ computeDummyValues pallasSrs vestaSrs =
 
     -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
-      (BigInt.fromInt 1
-        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
-        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
-        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192))
+      ( BigInt.fromInt 1
+          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
+          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192)
+      )
   in
     { ipa:
         { wrap:
