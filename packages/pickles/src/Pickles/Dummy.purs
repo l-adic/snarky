@@ -23,6 +23,8 @@ import Prelude
 import Control.Monad.State (State, get, put, evalState)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
+import Data.Foldable (foldl)
+import Data.Tuple (Tuple(..))
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
@@ -33,12 +35,14 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
+import Pickles.Linearization.FFI (domainGenerator)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (SizedF, fromBits)
+import Snarky.Circuit.DSL.SizedF (toField) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt) as Curves
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -92,8 +96,6 @@ scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => 
 scalarChal = chal
 
 -- | Generate n challenges, reversed to match OCaml's right-to-left Vector.init evaluation.
--- | OCaml: `Vector.init n ~f:(fun _ -> Ro.scalar_chal ())` evaluates the side effect
--- | for index n-1 first (chal counter 1), then n-2 (counter 2), ..., index 0 (counter n).
 replicateChal
   :: forall @n f
    . Compare 128 255 LT
@@ -106,6 +108,14 @@ replicateChal = do
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
   pure $ unsafePartial fromJust $ Vector.toVector @n (Array.reverse arr)
 
+-- | Generate a (zeta, zeta_omega) eval pair. OCaml right-to-left tuple:
+-- | second element gets the first tock call.
+tockEvalPair :: RoM { zeta :: WrapField, zetaOmega :: WrapField }
+tockEvalPair = do
+  zetaOmega <- tock -- right element evaluated first in OCaml
+  zeta <- tock
+  pure { zeta, zetaOmega }
+
 -------------------------------------------------------------------------------
 -- | DummyValues
 -------------------------------------------------------------------------------
@@ -115,12 +125,12 @@ type DummyValues =
       { wrap ::
           { challengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
           , challengesExpanded :: Vector WrapIPARounds WrapField
-          , sg :: AffinePoint StepField -- Fp coords (Pallas point)
+          , sg :: AffinePoint StepField
           }
       , step ::
           { challengesRaw :: Vector StepIPARounds (SizedF 128 StepField)
           , challengesExpanded :: Vector StepIPARounds StepField
-          , sg :: AffinePoint WrapField -- Fq coords (Vesta point)
+          , sg :: AffinePoint WrapField
           }
       }
   , unfinalized ::
@@ -135,12 +145,7 @@ type DummyValues =
       }
   }
 
--- | Compute all dummy values. Takes the two SRS as arguments (for sg computation).
--- |
--- | OCaml evaluation order:
--- | 1. Dummy.Ipa.Wrap.challenges (eager, chal 1..15)
--- | 2. Dummy.Ipa.Step.challenges (eager, chal 16..31)
--- | 3. Unfinalized.Constant.dummy (lazy, forces Dummy.evals → tock 1..87, then tock 88..89)
+-- | Compute all dummy values.
 computeDummyValues :: CRS Pallas.G -> CRS Vesta.G -> DummyValues
 computeDummyValues pallasSrs vestaSrs =
   let
@@ -150,39 +155,102 @@ computeDummyValues pallasSrs vestaSrs =
       stepChalRaw <- replicateChal @StepIPARounds :: RoM (Vector StepIPARounds (SizedF 128 StepField))
 
       -- Phase 2: Unfinalized.Constant.dummy (unfinalized.ml:25-104)
-      _alpha <- scalarChal :: RoM (SizedF 128 WrapField) -- chal 32
-      _beta <- chal :: RoM (SizedF 128 WrapField)        -- chal 33
-      _gamma <- chal :: RoM (SizedF 128 WrapField)       -- chal 34
-      _zeta <- scalarChal :: RoM (SizedF 128 WrapField)  -- chal 35
+      -- alpha, beta, gamma, zeta from Ro (chal counters 32-35)
+      alpha <- scalarChal :: RoM (SizedF 128 WrapField)
+      beta <- chal :: RoM (SizedF 128 WrapField)
+      gamma <- chal :: RoM (SizedF 128 WrapField)
+      zeta <- scalarChal :: RoM (SizedF 128 WrapField)
 
-      -- Forces Dummy.evals_combined → Dummy.evals
-      -- Ro trace shows fq_1 through fq_89 for evals, then fq_90 and fq_91
-      -- Total: 89 tock calls for evals, then 2 more for CIP/b
-      _evals <- sequence (Array.replicate 89 tock)
+      -- Dummy.evals: Evals.map Evaluation_lengths.default produces eval pairs
+      -- OCaml Evals.map field order (plonk_types.ml:711-747):
+      -- w(15), coefficients(15), z(1), s(6), generic_selector(1),
+      -- poseidon_selector(1), complete_add_selector(1), mul_selector(1),
+      -- emul_selector(1), endomul_scalar_selector(1)
+      -- Each field → (Array.create ~len:1 (Ro.tock()), Array.create ~len:1 (Ro.tock()))
+      -- All optional fields are None → no tock calls
+      w <- sequence (Array.replicate 15 tockEvalPair)
+      _coefficients <- sequence (Array.replicate 15 tockEvalPair)
+      z <- tockEvalPair
+      s <- sequence (Array.replicate 6 tockEvalPair)
+      _genericSelector <- tockEvalPair
+      _poseidonSelector <- tockEvalPair
+      _completeAddSelector <- tockEvalPair
+      _mulSelector <- tockEvalPair
+      _emulSelector <- tockEvalPair
+      _endomulScalarSelector <- tockEvalPair
+      -- public_input pair
+      _publicInput <- tockEvalPair
+      -- ft_eval1
+      _ftEval1 <- tock
+      -- Total: 42 fields × 2 + 2 + 1 = 89 tock calls ✓
 
       -- fq_90 = b, fq_91 = CIP (verified against fixture)
-      bRaw <- tock   -- fq_90
-      cipRaw <- tock -- fq_91
+      bRaw <- tock
+      cipRaw <- tock
 
-      pure { wrapChalRaw, stepChalRaw, cipRaw, bRaw }
+      pure { wrapChalRaw, stepChalRaw, alpha, beta, gamma, zeta, w, z, s, cipRaw, bRaw }
 
     -- Expand challenges
     wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) roResult.wrapChalRaw
     stepChalExpanded = map (\c -> toFieldPure c stepEndo) roResult.stepChalRaw
 
-    -- Compute sg from SRS (OCaml: Ipa.Wrap.compute_sg / Ipa.Step.compute_sg)
+    -- Expand plonk challenges to Fq (unfinalized.ml:36-39)
+    -- alpha, zeta via endo_to_field (scalar challenge expansion with endo)
+    -- beta, gamma via Challenge.Constant.to_tock_field (= just pack bits, no endo)
+    alphaFq = toFieldPure roResult.alpha wrapEndo
+    betaFq = SizedF.toField roResult.beta
+    gammaFq = SizedF.toField roResult.gamma
+    zetaFq = toFieldPure roResult.zeta wrapEndo
+
+    -- Compute sg from SRS
     wrapSgCoords = PallasImpl.pallasSrsBPolyCommitment pallasSrs
       (Vector.toUnfoldable wrapChalExpanded)
     wrapSg = { x: unsafeIdx wrapSgCoords 0, y: unsafeIdx wrapSgCoords 1 }
-
     stepSgCoords = VestaImpl.vestaSrsBPolyCommitment vestaSrs
       (Vector.toUnfoldable stepChalExpanded)
     stepSg = { x: unsafeIdx stepSgCoords 0, y: unsafeIdx stepSgCoords 1 }
 
-    -- Unfinalized plonk values from derive_plonk (hardcoded from OCaml fixture
-    -- until we implement Plonk_checks.derive_plonk in PureScript).
-    -- Generated by: mina/src/lib/crypto/pickles/dump_dummy/dump_dummy.ml
-    fromStr s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
+    -- derive_plonk values (unfinalized.ml:85-93, plonk_checks.ml:403-441)
+    -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
+    -- srs_length_log2 = 15 (= Tock.Rounds.n)
+    domainLog2 = 15
+    n = BigInt.fromInt (pow2 domainLog2)
+
+    -- zeta_to_srs_length = zeta^(2^15), then shifted
+    zetaPow2_15 = Curves.pow zetaFq n
+    -- zeta_to_domain_size = zeta^n = same as zeta_to_srs_length when domain = srs
+    -- env.zeta_to_n_minus_1 + 1 = (zeta^n - 1) + 1 = zeta^n
+    zetaToN = zetaPow2_15
+
+    -- Type2 shift = 2^255 (shifted_value.ml)
+    shift = Curves.fromBigInt (BigInt.fromInt 2 `BigInt.pow` BigInt.fromInt 255)
+    shiftedValue x = x + shift
+
+    -- perm (plonk_checks.ml:422-428)
+    -- perm = negate(foldi e.s ~init:(e1_z * beta * alpha^21 * zkp) ~f:(...))
+    -- We need: omega (domain generator), zkp, alpha^21
+    omega = domainGenerator @Vesta.BaseField @Pallas.G domainLog2
+    omegaInv = one / omega
+    omegaToZkPlus1 = omegaInv * omegaInv -- omega^{n-2} = omega^{-2}
+    omegaToZk = omegaToZkPlus1 * omegaInv  -- omega^{n-3} = omega^{-3}
+    zkp = (zetaFq - omegaInv) * (zetaFq - omegaToZkPlus1) * (zetaFq - omegaToZk)
+    alphaPow21 = Curves.pow alphaFq (BigInt.fromInt 21)
+    -- e1_z = second element of z eval pair = z.zetaOmega
+    e1z = roResult.z.zetaOmega
+    permInit = e1z * betaFq * alphaPow21 * zkp
+    -- fold over s and w: acc * (gamma + beta * s_i + w0_i)
+    -- s_i = fst of s eval pair, w0_i = fst of w eval pair
+    _perm = negate $ foldl (\acc (Tuple si wi) ->
+        acc * (gammaFq + betaFq * si.zeta + wi.zeta))
+      permInit
+      (Array.zip roResult.s (Array.take 6 roResult.w))
+
+    -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
+    digestDummy = Curves.fromBigInt
+      (BigInt.fromInt 1
+        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
+        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
+        + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192))
   in
     { ipa:
         { wrap:
@@ -198,21 +266,25 @@ computeDummyValues pallasSrs vestaSrs =
         }
     , unfinalized:
         { plonk:
-            { perm: fromStr "23440605441886153126678695377597650431034969920935116593970373719018050817987"
-            , zetaToSrsLength: fromStr "15652644783914055060033111610913539832973880787986945288311229297183530634989"
-            , zetaToDomainSize: fromStr "15652644783914055060033111610913539832973880787986945288311229297183530634989"
+            { perm: Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString "23440605441886153126678695377597650431034969920935116593970373719018050817987")) -- TODO: compute from derive_plonk
+            , zetaToSrsLength: shiftedValue zetaPow2_15
+            , zetaToDomainSize: shiftedValue zetaToN
             }
         , combinedInnerProduct: roResult.cipRaw
         , b: roResult.bRaw
-        , spongeDigest: fromStr "6277101735386680764176071790128604879584176795969512275969"
+        , spongeDigest: digestDummy
         }
     }
 
 unsafeIdx :: forall a. Array a -> Int -> a
 unsafeIdx arr i = unsafePartial fromJust (Array.index arr i)
 
+pow2 :: Int -> Int
+pow2 0 = 1
+pow2 n' = 2 * pow2 (n' - 1)
+
 -------------------------------------------------------------------------------
--- | Convenience re-exports (use default SRS — caller provides)
+-- | Convenience re-exports
 -------------------------------------------------------------------------------
 
 dummyWrapChallengesRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
@@ -227,7 +299,6 @@ dummyStepChallengesRaw = defaultChallenges.stepRaw
 dummyStepChallengesExpanded :: Vector StepIPARounds StepField
 dummyStepChallengesExpanded = defaultChallenges.stepExpanded
 
--- | Challenge values only (no SRS needed, computed purely from Ro).
 defaultChallenges
   :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
      , wrapExpanded :: Vector WrapIPARounds WrapField
