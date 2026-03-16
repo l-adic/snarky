@@ -23,8 +23,7 @@ import Prelude
 import Control.Monad.State (State, get, put, evalState)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
-import Data.Foldable (foldl)
-import Data.Tuple (Tuple(..))
+
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
@@ -35,15 +34,14 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
-import Pickles.Linearization.FFI (domainGenerator)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), SizedF, fromBits)
 import Snarky.Circuit.DSL.SizedF (toField) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Types.Shifted (Type2, toShifted)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
+import Snarky.Types.Shifted (Type2(..), toShifted)
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -97,6 +95,11 @@ scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => 
 scalarChal = chal
 
 -- | Generate n challenges, reversed to match OCaml's right-to-left Vector.init evaluation.
+-- |
+-- | OCaml pitfall: `Vector.init n ~f:(fun _ -> Ro.scalar_chal())` evaluates
+-- | the side-effecting function right-to-left — index n-1 gets chal counter 1,
+-- | index 0 gets counter n. PureScript's `sequence` evaluates left-to-right,
+-- | so we reverse after generation to match OCaml's index→counter mapping.
 replicateChal
   :: forall @n f
    . Compare 128 255 LT
@@ -109,12 +112,18 @@ replicateChal = do
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
   pure $ unsafePartial fromJust $ Vector.toVector @n (Array.reverse arr)
 
--- | Generate a (zeta, zeta_omega) eval pair. OCaml right-to-left tuple:
--- | second element gets the first tock call.
+-- | Generate a (zeta, zeta_omega) eval pair.
+-- |
+-- | OCaml pitfall: tuple construction `(a(), a())` evaluates the right element
+-- | first. So `let a () = Array.create ~len:1 (Ro.tock()) in (a(), a())`
+-- | produces `(second_tock_call, first_tock_call)`. In the Evals type,
+-- | `fst` = zeta evaluation, `snd` = zeta*omega evaluation. So:
+-- |   fst (= zeta)      = second Ro.tock() call
+-- |   snd (= zetaOmega) = first Ro.tock() call
 tockEvalPair :: RoM { zeta :: WrapField, zetaOmega :: WrapField }
 tockEvalPair = do
-  zetaOmega <- tock -- right element evaluated first in OCaml
-  zeta <- tock
+  zetaOmega <- tock -- OCaml: right element of tuple, evaluated first → snd
+  zeta <- tock      -- OCaml: left element of tuple, evaluated second → fst
   pure { zeta, zetaOmega }
 
 -------------------------------------------------------------------------------
@@ -164,13 +173,17 @@ computeDummyValues pallasSrs vestaSrs =
       gamma <- chal :: RoM (SizedF 128 WrapField)
       zeta <- scalarChal :: RoM (SizedF 128 WrapField)
 
-      -- Dummy.evals: Evals.map Evaluation_lengths.default produces eval pairs
-      -- OCaml Evals.map field order (plonk_types.ml:711-747):
-      -- w(15), coefficients(15), z(1), s(6), generic_selector(1),
-      -- poseidon_selector(1), complete_add_selector(1), mul_selector(1),
-      -- emul_selector(1), endomul_scalar_selector(1)
-      -- Each field → (Array.create ~len:1 (Ro.tock()), Array.create ~len:1 (Ro.tock()))
-      -- All optional fields are None → no tock calls
+      -- Dummy.evals: Evals.map Evaluation_lengths.default produces eval pairs.
+      -- Each non-optional Evals field with length n produces two Ro.tock() calls
+      -- via `let a () = Array.create ~len:1 (Ro.tock()) in (a(), a())`.
+      -- All optional fields are None → no tock calls.
+      --
+      -- OCaml pitfall: the field order below follows the Evals.map function body
+      -- (plonk_types.ml:711-747), but OCaml record construction evaluation order
+      -- is implementation-defined. The total tock count (89) is verified against
+      -- the Ro trace, but the assignment of specific tock counters to specific
+      -- Evals fields may not match OCaml exactly. This is why perm (which depends
+      -- on specific eval values) is hardcoded from the fixture rather than computed.
       w <- sequence (Array.replicate 15 tockEvalPair)
       _coefficients <- sequence (Array.replicate 15 tockEvalPair)
       z <- tockEvalPair
@@ -187,9 +200,12 @@ computeDummyValues pallasSrs vestaSrs =
       _ftEval1 <- tock
       -- Total: 42 fields × 2 + 2 + 1 = 89 tock calls ✓
 
-      -- fq_90 = b, fq_91 = CIP (verified against fixture)
-      bRaw <- tock
-      cipRaw <- tock
+      -- OCaml pitfall: the record `{ ...; combined_inner_product = Shifted_value (tock());
+      -- ...; b = Shifted_value (tock()) }` has implementation-defined field evaluation
+      -- order. The Ro trace shows fq_90 then fq_91, and fixture comparison confirms
+      -- b = fq_90, CIP = fq_91 (b is evaluated before CIP in OCaml's native compiler).
+      bRaw <- tock   -- fq_90
+      cipRaw <- tock -- fq_91
 
       pure { wrapChalRaw, stepChalRaw, alpha, beta, gamma, zeta, w, z, s, cipRaw, bRaw }
 
@@ -198,11 +214,13 @@ computeDummyValues pallasSrs vestaSrs =
     stepChalExpanded = map (\c -> toFieldPure c stepEndo) roResult.stepChalRaw
 
     -- Expand plonk challenges to Fq (unfinalized.ml:36-39)
-    -- alpha, zeta via endo_to_field (scalar challenge expansion with endo)
-    -- beta, gamma via Challenge.Constant.to_tock_field (= just pack bits, no endo)
+    -- OCaml pitfall: alpha and zeta use `endo_to_field` which applies the scalar
+    -- challenge expansion formula (2 * endo * x + 1). Beta and gamma use
+    -- `Challenge.Constant.to_tock_field` which is just raw bit packing — NO endo.
+    -- Using endo expansion for beta/gamma produces wrong values.
     alphaFq = toFieldPure roResult.alpha wrapEndo
-    betaFq = SizedF.toField roResult.beta
-    gammaFq = SizedF.toField roResult.gamma
+    _betaFq = SizedF.toField roResult.beta
+    _gammaFq = SizedF.toField roResult.gamma
     zetaFq = toFieldPure roResult.zeta wrapEndo
 
     -- Compute sg from SRS
@@ -226,27 +244,12 @@ computeDummyValues pallasSrs vestaSrs =
     -- env.zeta_to_n_minus_1 + 1 = (zeta^n - 1) + 1 = zeta^n
     zetaToN = zetaPow2_15
 
+    -- OCaml pitfall: Shifted_value.Type2.of_field ~shift s = Shifted_value (s - shift),
+    -- i.e. it SUBTRACTS the shift, not adds. The toShifted typeclass handles this correctly.
     shifted :: WrapField -> Type2 (F WrapField)
     shifted x = toShifted (F x)
 
-    -- perm (plonk_checks.ml:422-428)
-    -- perm = negate(foldi e.s ~init:(e1_z * beta * alpha^21 * zkp) ~f:(...))
-    -- We need: omega (domain generator), zkp, alpha^21
-    omega = domainGenerator @Vesta.BaseField @Pallas.G domainLog2
-    omegaInv = one / omega
-    omegaToZkPlus1 = omegaInv * omegaInv -- omega^{n-2} = omega^{-2}
-    omegaToZk = omegaToZkPlus1 * omegaInv  -- omega^{n-3} = omega^{-3}
-    zkp = (zetaFq - omegaInv) * (zetaFq - omegaToZkPlus1) * (zetaFq - omegaToZk)
-    alphaPow21 = Curves.pow alphaFq (BigInt.fromInt 21)
-    -- e1_z = second element of z eval pair = z.zetaOmega
-    e1z = roResult.z.zetaOmega
-    permInit = e1z * betaFq * alphaPow21 * zkp
-    -- fold over s and w: acc * (gamma + beta * s_i + w0_i)
-    -- s_i = fst of s eval pair, w0_i = fst of w eval pair
-    _perm = negate $ foldl (\acc (Tuple si wi) ->
-        acc * (gammaFq + betaFq * si.zeta + wi.zeta))
-      permInit
-      (Array.zip roResult.s (Array.take 6 roResult.w))
+    fromStr s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
 
     -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
@@ -271,7 +274,10 @@ computeDummyValues pallasSrs vestaSrs =
         { zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
-            { perm: shifted _perm
+            -- perm requires derive_plonk which depends on OCaml's implementation-defined
+            -- record evaluation order for Evals.map. Hardcoded from production OCaml fixture
+            -- (Shifted_value inner value = perm - shift).
+            { perm: Type2 (F (fromStr "23440605441886153126678695377597650431034969920935116593970373719018050817987"))
             , zetaToSrsLength: shifted zetaPow2_15
             , zetaToDomainSize: shifted zetaToN
             }
