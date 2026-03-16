@@ -55,6 +55,7 @@ module Test.Pickles.TestContext
   , genDummyUnfinalizedProof
   , buildStepProverWitness
   , buildStepIVPParams
+  , buildStepIVPVkInput
   , buildStepIVPInput
   , stepEndo
   , wrapEndo
@@ -1773,35 +1774,54 @@ buildStepProverWitness stepCtx wrapCtx =
 -------------------------------------------------------------------------------
 
 -- | Build compile-time parameters for the Step IVP circuit (Fp circuit verifying Pallas proof).
+-- | Build SRS-derived compile-time parameters for the Step IVP circuit.
+-- | Only contains true environment data (SRS lagrange commitments, blinding generator).
+-- | VK data (columnComms, sigmaCommLast) is NOT here — it goes in the input
+-- | as circuit variables, matching OCaml's exists ~request:(Req.Wrap_index).
 buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField ()
 buildStepIVPParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
-    columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
-
-    indexComms :: Vector 6 (AffinePoint Vesta.ScalarField)
-    indexComms = toVectorOrThrow @6 "buildStepIVPParams indexComms" $ Array.take 6 columnCommsRaw
-
-    coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
-    coeffComms = toVectorOrThrow @15 "buildStepIVPParams coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
-
-    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
-    sigmaComms = toVectorOrThrow @6 "buildStepIVPParams sigmaComms" $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Pallas.G)
     , lagrangeComms: coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
-    , sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
+    , endo: stepEndo
+    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+    , correctionMode: PureCorrections
+    , useOptSponge: false
+    }
+
+-- | Extract Wrap VK data for the Step IVP input (circuit variables, not constants).
+-- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
+buildStepIVPVkInput
+  :: WrapProofContext
+  -> { sigmaCommLast :: AffinePoint (F StepField)
+     , columnComms ::
+         { index :: Vector 6 (AffinePoint (F StepField))
+         , coeff :: Vector 15 (AffinePoint (F StepField))
+         , sigma :: Vector 6 (AffinePoint (F StepField))
+         }
+     }
+buildStepIVPVkInput ctx =
+  let
+    columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
+
+    indexComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    indexComms = toVectorOrThrow @6 "buildStepIVPVkInput indexComms" $ Array.take 6 columnCommsRaw
+
+    coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
+    coeffComms = toVectorOrThrow @15 "buildStepIVPVkInput coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
+
+    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    sigmaComms = toVectorOrThrow @6 "buildStepIVPVkInput sigmaComms" $ Array.drop 21 columnCommsRaw
+  in
+    { sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
     , columnComms:
         { index: coerce indexComms
         , coeff: coerce coeffComms
         , sigma: coerce sigmaComms
         }
-    , indexDigest: ProofFFI.vestaVerifierIndexDigest ctx.verifierIndex
-    , endo: stepEndo
-    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
-    , correctionMode: PureCorrections
-    , useOptSponge: false
     }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.
@@ -1860,36 +1880,42 @@ buildStepIVPInput ctx =
     tComm :: Vector 7 (AffinePoint (F StepField))
     tComm = toVectorOrThrow @7 "buildStepIVPInput tComm" $ coerce commitments.tComm
   in
-    { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
-        map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
-    , sgOld: Vector.nil
-    , deferredValues:
-        let
-          wrapPlonk = coerceWrapPlonkChallenges ctx
-        in
-          { plonk:
-              { alpha: wrapPlonk.alpha
-              , beta: wrapPlonk.beta
-              , gamma: wrapPlonk.gamma
-              , zeta: wrapPlonk.zeta
-              , perm: toShifted $ F perm
-              , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
-              , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
-              }
-          , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
-          , xi: xiChalFp
-          , bulletproofChallenges
-          , b: toShifted $ F bValue
+    let
+      vk = buildStepIVPVkInput ctx
+    in
+      { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
+          map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
+      , sgOld: Vector.nil
+      -- VK data (circuit variables in OCaml, F f here for test input)
+      , sigmaCommLast: vk.sigmaCommLast
+      , columnComms: vk.columnComms
+      , deferredValues:
+          let
+            wrapPlonk = coerceWrapPlonkChallenges ctx
+          in
+            { plonk:
+                { alpha: wrapPlonk.alpha
+                , beta: wrapPlonk.beta
+                , gamma: wrapPlonk.gamma
+                , zeta: wrapPlonk.zeta
+                , perm: toShifted $ F perm
+                , zetaToSrsLength: toShifted $ F (pow ctx.oracles.zeta (BigInt.fromInt maxPolySize))
+                , zetaToDomainSize: toShifted $ F (pow ctx.oracles.zeta n)
+                }
+            , combinedInnerProduct: toShifted $ F ctx.oracles.combinedInnerProduct
+            , xi: xiChalFp
+            , bulletproofChallenges
+            , b: toShifted $ F bValue
+            }
+      , wComm: coerce commitments.wComm
+      , zComm: coerce commitments.zComm
+      , tComm
+      , opening:
+          { delta: coerce $ ProofFFI.vestaProofOpeningDelta ctx.proof
+          , sg: coerce $ ProofFFI.vestaProofOpeningSg ctx.proof
+          , lr: coerce $ toVectorOrThrow @WrapIPARounds "buildStepIVPInput vestaProofOpeningLr" $
+              ProofFFI.vestaProofOpeningLr ctx.proof
+          , z1: toShifted $ F $ ProofFFI.vestaProofOpeningZ1 ctx.proof
+          , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 ctx.proof
           }
-    , wComm: coerce commitments.wComm
-    , zComm: coerce commitments.zComm
-    , tComm
-    , opening:
-        { delta: coerce $ ProofFFI.vestaProofOpeningDelta ctx.proof
-        , sg: coerce $ ProofFFI.vestaProofOpeningSg ctx.proof
-        , lr: coerce $ toVectorOrThrow @WrapIPARounds "buildStepIVPInput vestaProofOpeningLr" $
-            ProofFFI.vestaProofOpeningLr ctx.proof
-        , z1: toShifted $ F $ ProofFFI.vestaProofOpeningZ1 ctx.proof
-        , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 ctx.proof
-        }
-    }
+      }

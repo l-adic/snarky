@@ -21,7 +21,7 @@ import Pickles.Types (StepField)
 import Pickles.Verify (incrementallyVerifyProof)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -144,18 +144,13 @@ ivpStepCircuit { lagrangeComms, blindingH } input = do
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
 
+    constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
       , lagrangeComms
       , blindingH
       , correctionMode: PureCorrections
-      , sigmaCommLast: dummyPallasPt
-      , columnComms:
-          { index: (Vector.replicate dummyPallasPt) :: Vector 6 _
-          , coeff: (Vector.replicate dummyPallasPt) :: Vector 15 _
-          , sigma: (Vector.replicate dummyPallasPt) :: Vector 6 _
-          }
-      , indexDigest: zero
       , endo: stepEndo
       , groupMapParams: groupMapParams (Proxy @PallasG)
       , useOptSponge: false
@@ -163,6 +158,13 @@ ivpStepCircuit { lagrangeComms, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: constDummySg :< constDummySg :< Vector.nil
+      -- VK data as circuit variables (dummy constants for circuit-diff test)
+      , sigmaCommLast: constDummyPt
+      , columnComms:
+          { index: (Vector.replicate constDummyPt) :: Vector 6 _
+          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
+          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          }
       , deferredValues: input.deferredValues
       , wComm: input.wComm
       , zComm: input.zComm

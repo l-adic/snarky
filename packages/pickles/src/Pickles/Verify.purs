@@ -44,20 +44,17 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 -- | Types
 -------------------------------------------------------------------------------
 
--- | Compile-time constants from verifier index / SRS.
+-- | SRS-derived constants (true environment, known outside the circuit).
 -- | Row-polymorphic so callers can pass wider records (e.g., WrapParams).
+-- |
+-- | The verifier index data (columnComms, sigmaCommLast) is NOT here — in OCaml
+-- | it enters the Step circuit via `exists ~request:(fun () -> Req.Wrap_index)`
+-- | as circuit variables (step_main.ml:345-348). It lives in the input instead.
 type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
 type IncrementallyVerifyProofParams f r =
   { curveParams :: CurveParams f
   , lagrangeComms :: Array (AffinePoint (F f))
   , blindingH :: AffinePoint (F f)
-  , sigmaCommLast :: AffinePoint (F f)
-  , columnComms ::
-      { index :: Vector 6 (AffinePoint (F f))
-      , coeff :: Vector 15 (AffinePoint (F f))
-      , sigma :: Vector 6 (AffinePoint (F f))
-      }
-  , indexDigest :: f
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
   , correctionMode :: CorrectionMode
@@ -69,10 +66,24 @@ type IncrementallyVerifyProofParams f r =
 -- | `publicInput` is the structured public input type (e.g., Vector n (FVar f) for Wrap,
 -- | or a protocol-defined record for Step). Must have a PublicInputCommit instance.
 -- | `d` is the number of IPA rounds
+-- |
+-- | The verifier index fields (columnComms, sigmaCommLast) are circuit variables,
+-- | not constants. In OCaml they enter the Step circuit via
+-- | `exists ~request:(fun () -> Req.Wrap_index)` (step_main.ml:345-348).
+-- | In the Wrap circuit they are constants (wrap_main.ml:209 Inner_curve.constant).
+-- | Either way, by the time they reach this function they are `fv` (FVar f).
 type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
   , deferredValues :: DeferredValues d fv sf
+  -- Verifier index (VK) data — circuit variables in Step, constants in Wrap
+  , sigmaCommLast :: AffinePoint fv
+  , columnComms ::
+      { index :: Vector 6 (AffinePoint fv)
+      , coeff :: Vector 15 (AffinePoint fv)
+      , sigma :: Vector 6 (AffinePoint fv)
+      }
+  -- Protocol messages and opening proof
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
   , tComm :: Vector 7 (AffinePoint fv)
@@ -132,21 +143,23 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
   -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
+  -- In OCaml, the VK enters the Step circuit as circuit variables via exists (step_main.ml:345).
+  -- The sponge_after_index is computed in-circuit from those variables (step_verifier.ml:1167-1176).
   indexDigest <- liftSnarky $ label "ivp_index_digest" $
     Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
       -- Absorption order matches OCaml's index_to_field_elements:
       -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
       let
-        absorbConstPt { x: F x', y: F y' } = do
-          Sponge.absorb (const_ x')
-          Sponge.absorb (const_ y')
+        absorbPt { x, y } = do
+          Sponge.absorb x
+          Sponge.absorb y
       -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
-      for_ params.columnComms.sigma absorbConstPt
-      absorbConstPt params.sigmaCommLast
+      for_ input.columnComms.sigma absorbPt
+      absorbPt input.sigmaCommLast
       -- coefficients_comm: 15
-      for_ params.columnComms.coeff absorbConstPt
+      for_ input.columnComms.coeff absorbPt
       -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
-      for_ params.columnComms.index absorbConstPt
+      for_ input.columnComms.index absorbPt
       -- Squeeze digest
       Sponge.squeeze
 
@@ -196,7 +209,7 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
     scalarOps
-    { sigmaLast: constPt params.sigmaCommLast
+    { sigmaLast: input.sigmaCommLast
     , tComm: input.tComm
     , perm: input.deferredValues.plonk.perm
     , zetaToSrsLength: input.deferredValues.plonk.zetaToSrsLength
@@ -210,10 +223,10 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
     allBases =
       input.sgOld `Vector.append`
         ( (xHat :< ftCommResult :< input.zComm :< Vector.nil)
-            `Vector.append` map constPt params.columnComms.index
+            `Vector.append` input.columnComms.index
             `Vector.append` input.wComm
-            `Vector.append` map constPt params.columnComms.coeff
-            `Vector.append` map constPt params.columnComms.sigma
+            `Vector.append` input.columnComms.coeff
+            `Vector.append` input.columnComms.sigma
         )
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
