@@ -51,7 +51,6 @@ module Test.Pickles.TestContext
   , buildStepFinalizeInput
   , computeStepChallengeDigest
   , computeStepSgEvals
-  , dummyStepAdvice
   , buildStepProverWitness
   , buildStepIVPParams
   , buildStepIVPVkInput
@@ -90,8 +89,8 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, stepDummyUnfinalizedProof)
-import Pickles.Dummy (wrapDummyUnfinalizedProof) as Dummy
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -542,8 +541,7 @@ createStepProofContext stepCase = do
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
-      advice <- randomSampleOne dummyStepAdvice
-      pure $ Tuple advice
+      pure $ Tuple Dummy.dummyStepAdvice
         { appInput: schnorrInput
         , previousProofInputs: unit :< Vector.nil
         , unfinalizedProofs: stepDummyUnfinalizedProof :< Vector.nil
@@ -1606,82 +1604,6 @@ computeStepSgEvals stepCtx wrapCtx =
 -------------------------------------------------------------------------------
 -- | Build Step-side private witness data from a WrapProofContext
 -------------------------------------------------------------------------------
-
--- | Random dummy private data for the Step circuit base case (no real Wrap proofs).
--- | Uses random Pallas curve points and random shifted scalars to avoid
--- | degenerate cases (division-by-zero) in VarBaseMul during witness generation.
--- | OCaml Pickles also uses random values for dummy proof data.
-dummyStepAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
-dummyStepAdvice = do
-  messages <- genDummyMessages
-  openingProof <- genDummyOpening
-  fopProof <- genDummyFopProof
-  pure
-    { stepInputFields: []
-    , evals: dummyProofWitness :< Vector.nil
-    , prevChallenges: (Vector.generate \_ -> F zero) :< Vector.nil
-    , messages: messages :< Vector.nil
-    , openingProofs: openingProof :< Vector.nil
-    , fopProofStates: fopProof :< Vector.nil
-    }
-  where
-  genPoint :: Gen (AffinePoint (F StepField))
-  genPoint = do
-    p <- arbitrary @Pallas.G
-    pure $ coerce (unsafePartial fromJust $ toAffine p :: AffinePoint StepField)
-
-  genShifted :: Gen (Type2 (SplitField (F StepField) Boolean))
-  genShifted = do
-    x <- arbitrary @StepField
-    pure $ toShifted (F x)
-
-  genShiftedType1 :: Gen (Type1 (F StepField))
-  genShiftedType1 = do
-    x <- arbitrary @StepField
-    pure $ toShifted (F x)
-
-  genDummyMessages = do
-    wComm <- Vector.generator (Proxy @15) genPoint
-    zComm <- genPoint
-    tComm <- Vector.generator (Proxy @7) genPoint
-    pure { wComm, zComm, tComm }
-
-  genDummyOpening = do
-    delta <- genPoint
-    sg <- genPoint
-    lr <- Vector.generator (Proxy @WrapIPARounds) do
-      l <- genPoint
-      r <- genPoint
-      pure { l, r }
-    z1 <- genShifted
-    z2 <- genShifted
-    pure { delta, sg, lr, z1, z2 }
-
-  genDummyFopProof = do
-    combinedInnerProduct <- genShiftedType1
-    b <- genShiftedType1
-    perm <- genShiftedType1
-    zetaToSrsLength <- genShiftedType1
-    zetaToDomainSize <- genShiftedType1
-    let genScalarChallenge = map (wrapF :: SizedF 128 StepField -> SizedF 128 (F StepField)) arbitrary
-    xi <- genScalarChallenge
-    alpha <- genScalarChallenge
-    beta <- genScalarChallenge
-    gamma <- genScalarChallenge
-    zeta <- genScalarChallenge
-    bulletproofChallenges <- Vector.generator (Proxy @WrapIPARounds) genScalarChallenge
-    spongeDigest <- arbitrary @StepField
-    pure
-      { deferredValues:
-          { plonk: { alpha, beta, gamma, zeta, perm, zetaToSrsLength, zetaToDomainSize }
-          , combinedInnerProduct
-          , xi
-          , bulletproofChallenges
-          , b
-          }
-      , shouldFinalize: false
-      , spongeDigestBeforeEvaluations: F spongeDigest
-      }
 
 -- | Extract the private witness data for StepProverM from proof contexts.
 -- | stepCtx provides polynomial evaluations (native Fp) for the inner Step proof.

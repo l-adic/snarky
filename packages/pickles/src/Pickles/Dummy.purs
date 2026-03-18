@@ -13,6 +13,7 @@ module Pickles.Dummy
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
   , dummyProofWitness
+  , dummyStepAdvice
   , dummyFinalizeOtherProofParams
   , Ro
   , mkRo
@@ -57,11 +58,12 @@ import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, fromBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Safe.Coerce (coerce)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (class Shifted, Type2(..), toShifted)
+import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -162,6 +164,9 @@ type RoComputeResult =
   , zeta :: SizedF 128 WrapField
   , cipRaw :: WrapField
   , bRaw :: WrapField
+  -- z1/z2 from proof.ml:dummy openings (tock 92-93, after Dummy.evals tock 1-91)
+  , proofZ1 :: WrapField
+  , proofZ2 :: WrapField
   -- Step dummy plonk challenges from proof.ml:dummy.
   -- OCaml right-to-left evaluation: zeta first, then gamma, beta, alpha.
   , stepDummyZeta :: SizedF 128 StepField
@@ -221,6 +226,10 @@ roComputeResult = flip evalState mkRo do
   -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
   bRaw <- tock -- tock 90
   cipRaw <- tock -- tock 91
+
+  -- Phase 4b: proof.ml:dummy openings z1/z2 (right-to-left: z2 first)
+  proofZ2 <- tock -- tock 92
+  proofZ1 <- tock -- tock 93
 
   -- Phase 5: Step dummy plonk challenges from proof.ml:dummy.
   -- OCaml evaluates record fields right-to-left, so within
@@ -287,6 +296,8 @@ roComputeResult = flip evalState mkRo do
     , zeta
     , cipRaw
     , bRaw
+    , proofZ1
+    , proofZ2
     , stepDummyZeta
     , stepDummyGamma
     , stepDummyBeta
@@ -677,6 +688,55 @@ stepDummyUnfinalizedProof =
         }
     , shouldFinalize: false
     , spongeDigestBeforeEvaluations: F (zero :: StepField)
+    }
+
+-- | Dummy Step advice for base case (n=1 previous proof slot, all dummy).
+-- |
+-- | Uses deterministic values from OCaml's proof.ml:dummy:
+-- | - Messages: all Pallas generator (Tock.Curve.one)
+-- | - Opening proof: generator for delta/sg/lr, Ro.tock() for z1/z2
+-- | - FOP proof state: stepDummyUnfinalizedProof (from expand_deferred)
+-- | - Evals: dummyProofWitness (all zeros)
+-- | - Prev challenges: all zeros (base case)
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/proof.ml:dummy
+dummyStepAdvice
+  :: { stepInputFields :: Array (F StepField)
+     , evals :: Vector 1 (ProofWitness (F StepField))
+     , prevChallenges :: Vector 1 (Vector WrapIPARounds (F StepField))
+     , messages :: Vector 1 { wComm :: Vector 15 (AffinePoint (F StepField)), zComm :: AffinePoint (F StepField), tComm :: Vector 7 (AffinePoint (F StepField)) }
+     , openingProofs :: Vector 1 { delta :: AffinePoint (F StepField), sg :: AffinePoint (F StepField), lr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }, z1 :: Type2 (SplitField (F StepField) Boolean), z2 :: Type2 (SplitField (F StepField) Boolean) }
+     , fopProofStates :: Vector 1 (UnfinalizedProof WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean)
+     }
+dummyStepAdvice =
+  let
+    -- Pallas generator point (= OCaml's Tock.Curve.one)
+    g0 :: AffinePoint (F StepField)
+    g0 = coerce (unsafePartial fromJust $ Curves.toAffine (Curves.generator :: Pallas.G) :: AffinePoint StepField)
+
+    -- z1/z2 from proof.ml:dummy openings (Ro.tock values wrapped as Type2 SplitField)
+    r = roComputeResult
+    z1 :: Type2 (SplitField (F StepField) Boolean)
+    z1 = toShifted (F r.proofZ1)
+    z2 :: Type2 (SplitField (F StepField) Boolean)
+    z2 = toShifted (F r.proofZ2)
+  in
+    { stepInputFields: []
+    , evals: dummyProofWitness :< Vector.nil
+    , prevChallenges: (Vector.generate \_ -> F zero) :< Vector.nil
+    , messages:
+        { wComm: Vector.generate \_ -> g0
+        , zComm: g0
+        , tComm: Vector.generate \_ -> g0
+        } :< Vector.nil
+    , openingProofs:
+        { delta: g0
+        , sg: g0
+        , lr: Vector.generate \_ -> { l: g0, r: g0 }
+        , z1
+        , z2
+        } :< Vector.nil
+    , fopProofStates: stepDummyUnfinalizedProof :< Vector.nil
     }
 
 -- | Zero-valued proof witness for use in base case bootstrapping.
