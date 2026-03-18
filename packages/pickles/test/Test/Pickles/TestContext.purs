@@ -90,7 +90,6 @@ import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, stepDummyUnfinalizedProof)
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -140,8 +139,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, randomSampleOne)
+import Test.QuickCheck.Gen (randomSampleOne)
 import Type.Proxy (Proxy(..))
 
 -- | Standard Kimchi constants
@@ -500,7 +498,7 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
-      pure $ Tuple false dummyFinalizeOtherProofParams
+      pure $ Tuple false Dummy.dummyFinalizeOtherProofParams
     InductiveCase stepCtx _ -> do
       Console.info "creating Step proof for Inductive Step"
       pure $ Tuple true (buildStepFinalizeParams stepCtx)
@@ -544,7 +542,7 @@ createStepProofContext stepCase = do
       pure $ Tuple Dummy.dummyStepAdvice
         { appInput: schnorrInput
         , previousProofInputs: unit :< Vector.nil
-        , unfinalizedProofs: stepDummyUnfinalizedProof :< Vector.nil
+        , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
         , prevChallengeDigests: zero :< Vector.nil
         }
     InductiveCase stepCtx wrapCtx ->
@@ -1064,7 +1062,7 @@ buildWrapCircuitInput ctx =
 
     -- Hash: [dummyChallenges..., expandedChallenges..., sg.x, sg.y]
     messageHash = hashMessagesForNextWrapProof
-      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges: dummyIpaChallenges.wrapExpanded }
+      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges: Dummy.dummyIpaChallenges.wrapExpanded }
   in
     { proofState:
         { deferredValues:
@@ -1192,7 +1190,7 @@ buildWrapProverWitness ctx =
     dummyBpChals :: Vector WrapIPARounds (F WrapField)
     dummyBpChals = Vector.generate \_ -> zero
   in
-    { evals: fullFinalizeInput.witness :< dummyProofWitness :< Vector.nil
+    { evals: fullFinalizeInput.witness :< Dummy.dummyProofWitness :< Vector.nil
     , messages:
         { wComm: coerce commitments.wComm
         , zComm: coerce commitments.zComm

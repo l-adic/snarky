@@ -21,7 +21,6 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
-import Pickles.Dummy (dummyFinalizeOtherProofParams, stepDummyUnfinalizedProof)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
 import Pickles.Types (StepField, WrapIPARounds)
@@ -47,7 +46,7 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  _ <- stepCircuit Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -60,7 +59,7 @@ genStepSchnorrInput = do
   pure
     { appInput: schnorrInput
     , previousProofInputs: unit :< Vector.nil
-    , unfinalizedProofs: stepDummyUnfinalizedProof :< Vector.nil
+    , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
     , prevChallengeDigests: zero :< Vector.nil
     }
 
