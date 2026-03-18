@@ -121,7 +121,8 @@ import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
+import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver', runSolverT)
+import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
@@ -319,7 +320,7 @@ schnorrBuiltState = compilePure
 
 -- | Solver for the Schnorr circuit.
 schnorrSolver :: Solver Vesta.ScalarField (KimchiGate Vesta.ScalarField) (VerifyInput 4 (F Vesta.ScalarField)) Boolean
-schnorrSolver = makeSolver (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorrCircuit
+schnorrSolver = makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint Vesta.ScalarField)) schnorrCircuit
 
 -------------------------------------------------------------------------------
 -- | Step combinator circuit setup
@@ -548,7 +549,7 @@ createStepProofContext stepCase = do
     solverCircuit = circuit
 
     rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) Unit StepSchnorrOutput
-    rawSolver = makeSolver (Proxy @(KimchiConstraint StepField)) solverCircuit
+    rawSolver = makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint StepField)) solverCircuit
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
@@ -1251,7 +1252,7 @@ createWrapProofContext stepCtx = do
     solverCircuit = circuit
 
     rawSolver :: SolverT Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) (WrapProverM MaxProofsVerified StepIPARounds WrapIPARounds Pallas.ScalarField) (WrapInput StepIPARounds) Unit
-    rawSolver = makeSolver (Proxy @(KimchiConstraint Pallas.ScalarField)) solverCircuit
+    rawSolver = makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint Pallas.ScalarField)) solverCircuit
 
   builtState <- liftEffect $ compile
     (Proxy @(WrapInput StepIPARounds))
@@ -1399,7 +1400,8 @@ buildStepFinalizeParams stepCtx =
 -- | None of these are checked in the base case.
 dummyStepParams :: StepParams StepField
 dummyStepParams =
-  let fop = Dummy.dummyFinalizeOtherProofParams :: FinalizeOtherProofParams StepField ()
+  let
+    fop = Dummy.dummyFinalizeOtherProofParams :: FinalizeOtherProofParams StepField ()
   in
     { domain: fop.domain
     , domainLog2: fop.domainLog2

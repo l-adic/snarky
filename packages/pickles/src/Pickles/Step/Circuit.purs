@@ -70,9 +70,15 @@ type StepParams f =
 
 finalizeOtherProof
   :: forall _d d _n n f f' g t m r2
-   . Add 1 _d d => Add 1 _n n => PrimeField f => FieldSizeInBits f 255
-  => PoseidonField f => HasEndo f f' => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g => Reflectable d Int
+   . Add 1 _d d
+  => Add 1 _n n
+  => PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => HasEndo f f'
+  => CircuitM f (KimchiConstraint f) t m
+  => LinearizationFFI f g
+  => Reflectable d Int
   => FinalizeOtherProofParams f r2
   -> { mask :: Vector n (BoolVar f), prevChallenges :: Vector n (Vector d (FVar f)), domainLog2Var :: FVar f }
   -> UnfinalizedProof d (FVar f) (Type1 (FVar f)) (BoolVar f)
@@ -83,13 +89,19 @@ finalizeOtherProof params shared unfinalized witness =
     { unfinalized, witness, mask: shared.mask, prevChallenges: shared.prevChallenges, domainLog2Var: shared.domainLog2Var }
 
 hashMessagesForNextStepProofStub
-  :: forall n d f c t m. PrimeField f => CircuitM f c t m
-  => Vector n (BulletproofChallenges d (FVar f)) -> Snarky c t m (FVar f)
+  :: forall n d f c t m
+   . PrimeField f
+  => CircuitM f c t m
+  => Vector n (BulletproofChallenges d (FVar f))
+  -> Snarky c t m (FVar f)
 hashMessagesForNextStepProofStub _ = pure $ const_ zero
 
 computeMessageForNextWrapProofStub
-  :: forall d f c t m. PrimeField f => CircuitM f c t m
-  => BulletproofChallenges d (FVar f) -> Snarky c t m (FVar f)
+  :: forall d f c t m
+   . PrimeField f
+  => CircuitM f c t m
+  => BulletproofChallenges d (FVar f)
+  -> Snarky c t m (FVar f)
 computeMessageForNextWrapProofStub _ = pure $ const_ zero
 
 -- | The Step circuit combinator.
@@ -135,11 +147,15 @@ stepCircuit _ _ params appCircuit { appInput, previousProofInputs, unfinalizedPr
       , domainLog2Var: const_ (fromInt params.domainLog2)
       }
     proofsWithData = Vector.zip unfinalizedProofs
-      (Vector.zip fopProofStates
-        (Vector.zip proofWitnesses
-          (Vector.zip messages
-            (Vector.zip openingProofs
-              (Vector.zip wrapPublicInputs mustVerify)))))
+      ( Vector.zip fopProofStates
+          ( Vector.zip proofWitnesses
+              ( Vector.zip messages
+                  ( Vector.zip openingProofs
+                      (Vector.zip wrapPublicInputs mustVerify)
+                  )
+              )
+          )
+      )
 
   challengesAndDigests <- for proofsWithData \(Tuple unfinalized (Tuple fopState (Tuple witness (Tuple msgs (Tuple opening (Tuple wrapPI mustVerifyFlag)))))) -> do
     let shouldFinalize = unfinalized.shouldFinalize
