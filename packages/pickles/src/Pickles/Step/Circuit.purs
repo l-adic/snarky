@@ -30,7 +30,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getPrevChallenges, getProofWitnesses)
+import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessagesForNextWrapProof, getPrevChallenges, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepInput, StepStatement)
@@ -94,9 +94,8 @@ type AppCircuit n input prevInput output aux f c t m =
 -- | Wraps `finalizeOtherProofCircuit`. The sponge is handled internally
 -- | by `finalizeOtherProofCircuit` (challenge_digest + Fr-sponge).
 finalizeOtherProof
-  :: forall _d d _n n f f' g t m r2
+  :: forall _d d n f f' g t m r2
    . Add 1 _d d
-  => Add 1 _n n
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -141,18 +140,6 @@ hashMessagesForNextStepProofStub _challenges = do
   -- Stub: return zero digest
   pure $ const_ zero
 
--- | Stub: Compute message digest for next Wrap proof.
--- |
--- | Reference: step_main.ml:478-482
-computeMessageForNextWrapProofStub
-  :: forall d f c t m
-   . PrimeField f
-  => CircuitM f c t m
-  => BulletproofChallenges d (FVar f)
-  -> Snarky c t m (FVar f)
-computeMessageForNextWrapProofStub _challenges = do
-  -- Stub: return zero digest
-  pure $ const_ zero
 
 -------------------------------------------------------------------------------
 -- | Step Circuit Combinator
@@ -179,9 +166,8 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall _n n ds _dw dw input prevInput output aux t m r
+  :: forall n ds _dw dw input prevInput output aux t m r
    . Add 1 _dw dw
-  => Add 1 _n n
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
@@ -199,10 +185,9 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   prevChallenges <- exists $ lift $ getPrevChallenges @_ @dw unit
   -- FOP proof states (Type1, private witness matching Per_proof_witness.proof_state)
   fopProofStates <- exists $ lift $ getFopProofStates @_ @dw unit
+  -- Wrap proof message digests (loaded from prover, NOT computed in-circuit)
+  messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @dw unit
 
-  -- 3. For each previous proof, verify and collect challenges
-  -- prevChallenges and mask are shared across all proofs (each finalize_other_proof
-  -- computes the same challenge_digest from all previous challenges).
   let
     shared =
       { mask: mustVerify
@@ -211,41 +196,17 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
       }
     proofsWithData = Vector.zip (Vector.zip unfinalizedProofs (Vector.zip fopProofStates proofWitnesses)) mustVerify
 
-  challengesAndDigests <- for proofsWithData \(Tuple (Tuple unfinalized (Tuple fopState witness)) mustVerifyFlag) -> do
-    let
-      -- shouldFinalize comes from public input (Type2), matching OCaml line 28
-      shouldFinalize = unfinalized.shouldFinalize
-
-    -- 3a. Assert shouldFinalize == mustVerify (step_main.ml:34)
+  allChallenges <- for proofsWithData \(Tuple (Tuple unfinalized (Tuple fopState witness)) mustVerifyFlag) -> do
+    let shouldFinalize = unfinalized.shouldFinalize
     assertEq shouldFinalize mustVerifyFlag
-
-    -- 3b. Finalize the proof using FOP private witness (Type1)
     { finalized, challenges } <- finalizeOtherProof params shared fopState witness
-
-    -- 3c. Key assertion: finalized || not shouldFinalize (wrap_main.ml:431)
-    -- This is how bootstrapping works: dummies have shouldFinalize = false,
-    -- so `not shouldFinalize = true`, and the assertion passes.
     finalizedOrNotRequired <- or_ finalized (not_ shouldFinalize)
     assert_ finalizedOrNotRequired
+    pure challenges
 
-    -- 3d. Compute message for next Wrap proof
-    messageForWrap <- computeMessageForNextWrapProofStub challenges
-
-    pure { challenges, messageForWrap }
-
-  -- 4. Extract challenges and messages
-  let
-    allChallenges = map _.challenges challengesAndDigests
-    messagesForNextWrapProof = map _.messageForWrap challengesAndDigests
-
-  -- 5. Hash messages for next Step proof
   messagesForNextStepProof <- hashMessagesForNextStepProofStub allChallenges
 
-  -- 6. Return StepStatement
   pure
-    { proofState:
-        { unfinalizedProofs
-        , messagesForNextStepProof
-        }
+    { proofState: { unfinalizedProofs, messagesForNextStepProof }
     , messagesForNextWrapProof
     }

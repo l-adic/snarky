@@ -199,6 +199,7 @@ type StepAdvice (n :: Int) (dw :: Int) f =
   -- | These provide the private witness for finalizeOtherProof, distinct
   -- | from the public input's Type2(SplitField) unfinalized proofs.
   , fopProofStates :: Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
+  , messagesForNextWrapProof :: Vector n (F f)
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -221,6 +222,7 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
   getMessages _ = StepProverM $ map _.messages ask
   getOpeningProof _ = StepProverM $ map _.openingProofs ask
   getFopProofStates _ = StepProverM $ map _.fopProofStates ask
+  getMessagesForNextWrapProof _ = StepProverM $ map _.messagesForNextWrapProof ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -1648,6 +1650,8 @@ buildStepProverWitness stepCtx wrapCtx =
         , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 wrapCtx.proof
         } :< Vector.nil
     , fopProofStates: fopInput.unfinalized :< Vector.nil
+    -- TODO: compute real wrap proof message digest
+    , messagesForNextWrapProof: F zero :< Vector.nil
     }
 
 -------------------------------------------------------------------------------

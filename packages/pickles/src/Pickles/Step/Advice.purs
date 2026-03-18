@@ -62,6 +62,7 @@ module Pickles.Step.Advice
   , getMessages
   , getOpeningProof
   , getFopProofStates
+  , getMessagesForNextWrapProof
   ) where
 
 import Prelude
@@ -141,6 +142,12 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
   getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
 
+  -- | Digests for the next Wrap proof (one per previous proof).
+  -- | In OCaml this is loaded via exists from Req.Messages_for_next_wrap_proof
+  -- | (step_main.ml:362-364), NOT computed in-circuit.
+  -- | Each digest is a hash of (sg, expanded bp_challenges) for that proof.
+  getMessagesForNextWrapProof :: Unit -> m (Vector n (F f))
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
@@ -150,3 +157,4 @@ instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"
+  getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"

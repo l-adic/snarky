@@ -16,11 +16,11 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof)
+import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, false_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -35,73 +35,68 @@ import Type.Proxy (Proxy(..))
 -- | Types
 -------------------------------------------------------------------------------
 
--- | Value type for test input
+-- | Value type for test input (n=0: base case, no previous proofs)
 type StepTestInput =
-  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean
+  StepInput 0 Unit Unit StepIPARounds WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean
 
 -- | Variable type for circuit
 type StepTestInputVar =
-  StepInput 1 Unit Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  StepInput 0 Unit Unit StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
 
--------------------------------------------------------------------------------
--- | Application Circuit
--------------------------------------------------------------------------------
-
--- | Trivial app circuit for base case: returns mustVerify=false
+-- | Trivial app circuit for base case: returns empty mustVerify
 trivialAppCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => AppCircuitInput 1 Unit Unit
-  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
+  => AppCircuitInput 0 Unit Unit
+  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 0 Unit Unit StepField)
 trivialAppCircuit _ = pure
-  { mustVerify: false_ :< nil
+  { mustVerify: nil
   , publicOutput: unit
   , auxiliaryOutput: unit
   }
-
--------------------------------------------------------------------------------
--- | Test Circuit
--------------------------------------------------------------------------------
 
 -- | The circuit under test: runs stepCircuit and discards output
 testCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 WrapIPARounds m StepField
+  => StepWitnessM 0 WrapIPARounds m StepField
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
   _ <- stepCircuit dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
--------------------------------------------------------------------------------
--- | Tests
--------------------------------------------------------------------------------
-
 spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec Unit
 spec cfg = describe "Pickles.Step.Circuit" do
-  it "Step circuit is satisfiable with dummy proofs (base case)" do
-    let unfinalizedProof = stepDummyUnfinalizedProof
-    let advice = dummyStepAdvice
-
+  it "Step circuit is satisfiable with dummy proofs (base case, n=0)" do
     let
+      -- n=0 advice: all vectors empty
+      emptyAdvice =
+        { stepInputFields: []
+        , evals: nil
+        , prevChallenges: nil
+        , messages: nil
+        , openingProofs: nil
+        , fopProofStates: nil
+        , messagesForNextWrapProof: nil
+        }
       input :: StepTestInput
       input =
         { appInput: unit
-        , previousProofInputs: unit :< nil
-        , unfinalizedProofs: unfinalizedProof :< nil
-        , prevChallengeDigests: zero :< nil
+        , previousProofInputs: nil
+        , unfinalizedProofs: nil
+        , prevChallengeDigests: nil
         }
 
     let
       testCircuit'
         :: forall t
-         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 0 WrapIPARounds StepField)
         => StepTestInputVar
-        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 0 WrapIPARounds StepField) Unit
       testCircuit' = testCircuit
     void $ circuitTestM' @StepField
-      (runStepProverM advice)
+      (runStepProverM emptyAdvice)
       cfg
       (NEA.singleton { testFunction: satisfied_, input: Exact (NEA.singleton input) })
       testCircuit'
