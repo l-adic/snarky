@@ -2691,7 +2691,11 @@ pub fn pallas_srs_b_poly_commitment(
     if coeffs.len() > srs.g.len() {
         return Err(Error::new(
             Status::GenericFailure,
-            format!("SRS too small: need {} generators, have {}", coeffs.len(), srs.g.len()),
+            format!(
+                "SRS too small: need {} generators, have {}",
+                coeffs.len(),
+                srs.g.len()
+            ),
         ));
     }
     let g = &srs.g[..coeffs.len()];
@@ -2718,7 +2722,11 @@ pub fn vesta_srs_b_poly_commitment(
     if coeffs.len() > srs.g.len() {
         return Err(Error::new(
             Status::GenericFailure,
-            format!("SRS too small: need {} generators, have {}", coeffs.len(), srs.g.len()),
+            format!(
+                "SRS too small: need {} generators, have {}",
+                coeffs.len(),
+                srs.g.len()
+            ),
         ));
     }
     let g = &srs.g[..coeffs.len()];
