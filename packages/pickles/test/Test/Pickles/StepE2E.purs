@@ -20,15 +20,15 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, stepDummyUnfinalizedProof)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
@@ -56,11 +56,10 @@ stepSchnorrCircuit input = do
 genStepSchnorrInput :: Gen StepSchnorrInput
 genStepSchnorrInput = do
   schnorrInput <- genValidSignature (Proxy @PallasG) (Proxy @4)
-  unfinalizedProof <- genDummyUnfinalizedProof
   pure
     { appInput: schnorrInput
     , previousProofInputs: unit :< Vector.nil
-    , unfinalizedProofs: unfinalizedProof :< Vector.nil
+    , unfinalizedProofs: stepDummyUnfinalizedProof :< Vector.nil
     , prevChallengeDigests: zero :< Vector.nil
     }
 

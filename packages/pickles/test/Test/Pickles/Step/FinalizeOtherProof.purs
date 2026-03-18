@@ -19,9 +19,9 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, stepDummyUnfinalizedProof)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.ShiftOps (FopShiftOps)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, WrapIPARounds)
@@ -57,7 +57,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: dummyUnfinalizedProof @WrapIPARounds @StepField @StepField @(Type1 (F StepField))
+        { unfinalized: stepDummyUnfinalizedProof
         , witness: dummyProofWitness
         , mask: Vector.nil
         , prevChallenges: Vector.nil
