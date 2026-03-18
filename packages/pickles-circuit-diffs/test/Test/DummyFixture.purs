@@ -9,12 +9,15 @@ import Prelude
 import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
+import Data.Set as Set
 import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
@@ -55,18 +58,33 @@ lookupFixture key entries = do
   Tuple _ v <- Array.find (\(Tuple k _) -> k == key) entries
   pure v
 
-assertField :: String -> String -> Array (Tuple String String) -> Aff Unit
-assertField label expected entries =
+-- | Assert a fixture value matches and record the key as checked.
+assertField :: Ref (Set.Set String) -> String -> String -> Array (Tuple String String) -> Aff Unit
+assertField checkedRef label expected entries = do
+  liftEffect $ Ref.modify_ (Set.insert label) checkedRef
   case lookupFixture label entries of
     Nothing -> liftEffect $ throw ("Missing fixture key: " <> label)
     Just val -> expected `shouldEqual` val
 
+-- | Load fixture and create a checked-keys ref. Returns (entries, checkedRef).
+loadFixture :: Aff { entries :: Array (Tuple String String), checked :: Ref (Set.Set String) }
+loadFixture = do
+  buf <- liftEffect $ FS.readFile "packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt"
+  content <- liftEffect $ Buffer.toString UTF8 buf
+  checked <- liftEffect $ Ref.new Set.empty
+  pure { entries: parseFixture content, checked }
+
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Dummy fixture comparison" do
+  -- Shared ref tracks which fixture keys have been asserted across all tests
+  checkedRef <- liftEffect $ Ref.new Set.empty
+
+  let
+    assert entries = assertField checkedRef
+
   it "all dummy values match OCaml dump_dummy fixture" do
-    buf <- liftEffect $ FS.readFile "packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt"
-    content <- liftEffect $ Buffer.toString UTF8 buf
-    let entries = parseFixture content
+    { entries } <- loadFixture
+    let a = assert entries
 
     -- Create SRS for sg computation
     let pallasSrs = PallasImpl.pallasCrsCreate (2 `pow` 15) -- Tock/Wrap SRS
@@ -76,39 +94,38 @@ spec = describe "Pickles.Dummy fixture comparison" do
 
     -- Wrap IPA challenges expanded
     for_ (Array.zip (Array.range 0 14) (Vector.toUnfoldable dv.ipa.wrap.challengesExpanded)) \(Tuple i v) ->
-      assertField ("wrap_challenge_expanded_" <> show i) (showFq v) entries
+      a ("wrap_challenge_expanded_" <> show i) (showFq v) entries
 
     -- Step IPA challenges expanded
     for_ (Array.zip (Array.range 0 15) (Vector.toUnfoldable dv.ipa.step.challengesExpanded)) \(Tuple i v) ->
-      assertField ("step_challenge_expanded_" <> show i) (showFp v) entries
+      a ("step_challenge_expanded_" <> show i) (showFp v) entries
 
     -- Wrap sg
-    assertField "wrap_sg_x" (showFp dv.ipa.wrap.sg.x) entries
-    assertField "wrap_sg_y" (showFp dv.ipa.wrap.sg.y) entries
+    a "wrap_sg_x" (showFp dv.ipa.wrap.sg.x) entries
+    a "wrap_sg_y" (showFp dv.ipa.wrap.sg.y) entries
 
     -- Step sg
-    assertField "step_sg_x" (showFq dv.ipa.step.sg.x) entries
-    assertField "step_sg_y" (showFq dv.ipa.step.sg.y) entries
+    a "step_sg_x" (showFq dv.ipa.step.sg.x) entries
+    a "step_sg_y" (showFq dv.ipa.step.sg.y) entries
 
     -- Unfinalized intermediate values
-    assertField "unfinalized.zeta_expanded" (showFq dv.unfinalized.zetaExpanded) entries
-    assertField "unfinalized.alpha_expanded" (showFq dv.unfinalized.alphaExpanded) entries
+    a "unfinalized.zeta_expanded" (showFq dv.unfinalized.zetaExpanded) entries
+    a "unfinalized.alpha_expanded" (showFq dv.unfinalized.alphaExpanded) entries
 
     -- Unfinalized plonk derived values
     let unwrapType2 (Type2 (F x)) = x
-    assertField "unfinalized.plonk.perm" (showFq (unwrapType2 dv.unfinalized.plonk.perm)) entries
-    assertField "unfinalized.plonk.zeta_to_srs_length" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToSrsLength)) entries
-    assertField "unfinalized.plonk.zeta_to_domain_size" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToDomainSize)) entries
+    a "unfinalized.plonk.perm" (showFq (unwrapType2 dv.unfinalized.plonk.perm)) entries
+    a "unfinalized.plonk.zeta_to_srs_length" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToSrsLength)) entries
+    a "unfinalized.plonk.zeta_to_domain_size" (showFq (unwrapType2 dv.unfinalized.plonk.zetaToDomainSize)) entries
 
     -- Unfinalized other values
-    assertField "unfinalized.combined_inner_product" (showFq dv.unfinalized.combinedInnerProduct) entries
-    assertField "unfinalized.b" (showFq dv.unfinalized.b) entries
-    assertField "unfinalized.sponge_digest" (showFq dv.unfinalized.spongeDigest) entries
+    a "unfinalized.combined_inner_product" (showFq dv.unfinalized.combinedInnerProduct) entries
+    a "unfinalized.b" (showFq dv.unfinalized.b) entries
+    a "unfinalized.sponge_digest" (showFq dv.unfinalized.spongeDigest) entries
 
   it "wrapDummyUnfinalizedProof matches OCaml Unfinalized.Constant.dummy" do
-    buf <- liftEffect $ FS.readFile "packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt"
-    content <- liftEffect $ Buffer.toString UTF8 buf
-    let entries = parseFixture content
+    { entries } <- loadFixture
+    let a = assert entries
 
     let
       du = wrapDummyUnfinalizedProof
@@ -119,29 +136,28 @@ spec = describe "Pickles.Dummy fixture comparison" do
 
     -- Bulletproof challenges must equal the wrap IPA challenges (expanded)
     for_ (Array.zip (Array.range 0 14) (Vector.toUnfoldable df.bulletproofChallenges)) \(Tuple i c) ->
-      assertField ("wrap_challenge_expanded_" <> show i) (showFq (expandChal c)) entries
+      a ("wrap_challenge_expanded_" <> show i) (showFq (expandChal c)) entries
 
     -- Plonk scalar challenges (expanded) must match fixture
-    assertField "unfinalized.zeta_expanded" (showFq (expandChal df.plonk.zeta)) entries
-    assertField "unfinalized.alpha_expanded" (showFq (expandChal df.plonk.alpha)) entries
+    a "unfinalized.zeta_expanded" (showFq (expandChal df.plonk.zeta)) entries
+    a "unfinalized.alpha_expanded" (showFq (expandChal df.plonk.alpha)) entries
 
     -- Plonk shifted scalars
-    assertField "unfinalized.plonk.perm" (showFq (unwrapType2 df.plonk.perm)) entries
-    assertField "unfinalized.plonk.zeta_to_srs_length" (showFq (unwrapType2 df.plonk.zetaToSrsLength)) entries
-    assertField "unfinalized.plonk.zeta_to_domain_size" (showFq (unwrapType2 df.plonk.zetaToDomainSize)) entries
+    a "unfinalized.plonk.perm" (showFq (unwrapType2 df.plonk.perm)) entries
+    a "unfinalized.plonk.zeta_to_srs_length" (showFq (unwrapType2 df.plonk.zetaToSrsLength)) entries
+    a "unfinalized.plonk.zeta_to_domain_size" (showFq (unwrapType2 df.plonk.zetaToDomainSize)) entries
 
     -- CIP and b
-    assertField "unfinalized.combined_inner_product" (showFq (unwrapType2 df.combinedInnerProduct)) entries
-    assertField "unfinalized.b" (showFq (unwrapType2 df.b)) entries
+    a "unfinalized.combined_inner_product" (showFq (unwrapType2 df.combinedInnerProduct)) entries
+    a "unfinalized.b" (showFq (unwrapType2 df.b)) entries
 
     -- Sponge digest
     let F spongeDigest = du.spongeDigestBeforeEvaluations
-    assertField "unfinalized.sponge_digest" (showFq spongeDigest) entries
+    a "unfinalized.sponge_digest" (showFq spongeDigest) entries
 
   it "stepDummyUnfinalizedProof matches OCaml expand_deferred fixture" do
-    buf <- liftEffect $ FS.readFile "packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt"
-    content <- liftEffect $ Buffer.toString UTF8 buf
-    let entries = parseFixture content
+    { entries } <- loadFixture
+    let a = assert entries
 
     let
       du :: UnfinalizedProof _ (F StepField) (Type1 (F StepField)) Boolean
@@ -152,21 +168,37 @@ spec = describe "Pickles.Dummy fixture comparison" do
       expandChal c = toFieldPure (SizedF.unwrapF c) stepEndo
 
     -- Plonk shifted scalars (Type1)
-    assertField "step_deferred.plonk.perm" (showFp (unwrapType1 df.plonk.perm)) entries
-    assertField "step_deferred.plonk.zeta_to_srs_length" (showFp (unwrapType1 df.plonk.zetaToSrsLength)) entries
-    assertField "step_deferred.plonk.zeta_to_domain_size" (showFp (unwrapType1 df.plonk.zetaToDomainSize)) entries
+    a "step_deferred.plonk.perm" (showFp (unwrapType1 df.plonk.perm)) entries
+    a "step_deferred.plonk.zeta_to_srs_length" (showFp (unwrapType1 df.plonk.zetaToSrsLength)) entries
+    a "step_deferred.plonk.zeta_to_domain_size" (showFp (unwrapType1 df.plonk.zetaToDomainSize)) entries
 
     -- CIP and b (Type1)
-    assertField "step_deferred.combined_inner_product" (showFp (unwrapType1 df.combinedInnerProduct)) entries
-    assertField "step_deferred.b" (showFp (unwrapType1 df.b)) entries
+    a "step_deferred.combined_inner_product" (showFp (unwrapType1 df.combinedInnerProduct)) entries
+    a "step_deferred.b" (showFp (unwrapType1 df.b)) entries
 
     -- xi
-    assertField "step_deferred.xi_packed" (showFp (SizedF.toField (SizedF.unwrapF df.xi))) entries
-    assertField "step_deferred.xi_expanded" (showFp (expandChal df.xi)) entries
+    a "step_deferred.xi_packed" (showFp (SizedF.toField (SizedF.unwrapF df.xi))) entries
+    a "step_deferred.xi_expanded" (showFp (expandChal df.xi)) entries
 
     -- Sponge digest
     let F spongeDigest = du.spongeDigestBeforeEvaluations
-    assertField "step_deferred.sponge_digest" (showFp spongeDigest) entries
+    a "step_deferred.sponge_digest" (showFp spongeDigest) entries
+
+  it "every fixture output key is checked" do
+    { entries } <- loadFixture
+    checked <- liftEffect $ Ref.read checkedRef
+    -- Input keys (prev_evals.*, step_input.*, step_deferred.ft_eval0) are intermediate
+    -- values used by stepDummyUnfinalizedProof internally. They're verified indirectly
+    -- through the final output values that depend on them.
+    let
+      isInputKey k =
+        String.take 11 k == "prev_evals."
+          || String.take 11 k == "step_input."
+          || k == "step_deferred.ft_eval0"
+    let outputKeys = Set.fromFoldable $ Array.filter (not <<< isInputKey) $ map (\(Tuple k _) -> k) entries
+    let unchecked = Set.difference outputKeys checked
+    when (not $ Set.isEmpty unchecked) do
+      liftEffect $ throw $ "Unchecked fixture keys: " <> show (Set.toUnfoldable unchecked :: Array String)
 
   where
   showFp :: StepField -> String
