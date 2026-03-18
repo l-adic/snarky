@@ -48,6 +48,8 @@ module Test.Pickles.TestContext
   , buildFinalizeParams
   , buildFinalizeInput
   , buildStepFinalizeParams
+  , buildStepParams
+  , dummyStepParams
   , buildStepFinalizeInput
   , computeStepChallengeDigest
   , computeStepSgEvals
@@ -106,7 +108,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepParams, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -199,6 +201,15 @@ type StepAdvice (n :: Int) (dw :: Int) f =
   -- | These provide the private witness for finalizeOtherProof, distinct
   -- | from the public input's Type2(SplitField) unfinalized proofs.
   , fopProofStates :: Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
+  , wrapVerifierIndex ::
+      { sigmaCommLast :: AffinePoint (F f)
+      , columnComms ::
+          { index :: Vector 6 (AffinePoint (F f))
+          , coeff :: Vector 15 (AffinePoint (F f))
+          , sigma :: Vector 6 (AffinePoint (F f))
+          }
+      }
+  , wrapPublicInputFields :: Vector n (Array (F f))
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -221,6 +232,8 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
   getMessages _ = StepProverM $ map _.messages ask
   getOpeningProof _ = StepProverM $ map _.openingProofs ask
   getFopProofStates _ = StepProverM $ map _.fopProofStates ask
+  getWrapVerifierIndex _ = StepProverM $ map _.wrapVerifierIndex ask
+  getWrapPublicInputFields _ = StepProverM $ map _.wrapPublicInputFields ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -498,10 +511,10 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
-      pure $ Tuple false Dummy.dummyFinalizeOtherProofParams
-    InductiveCase stepCtx _ -> do
+      pure $ Tuple false dummyStepParams
+    InductiveCase stepCtx wrapCtx -> do
       Console.info "creating Step proof for Inductive Step"
-      pure $ Tuple true (buildStepFinalizeParams stepCtx)
+      pure $ Tuple true (buildStepParams stepCtx wrapCtx)
 
   let
     -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.
@@ -1381,6 +1394,46 @@ buildStepFinalizeParams stepCtx =
   , linearizationPoly: Linearization.pallas
   }
 
+-- | Dummy StepParams for base case (shouldFinalize=false, IVP gated by isBaseCase).
+-- | FOP fields are dummy (generator=1, domain=0). IVP fields are dummy (empty lagrange comms).
+-- | None of these are checked in the base case.
+dummyStepParams :: StepParams StepField
+dummyStepParams =
+  let fop = Dummy.dummyFinalizeOtherProofParams :: FinalizeOtherProofParams StepField ()
+  in
+    { domain: fop.domain
+    , domainLog2: fop.domainLog2
+    , srsLengthLog2: fop.srsLengthLog2
+    , linearizationPoly: fop.linearizationPoly
+    , endo: fop.endo
+    , curveParams: curveParams (Proxy @Pallas.G)
+    , lagrangeComms: []
+    , blindingH: coerce (unsafePartial fromJust $ toAffine (generator :: Pallas.G) :: AffinePoint StepField)
+    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+    , correctionMode: PureCorrections
+    , useOptSponge: false
+    }
+
+-- | Build full StepParams from proof contexts (FOP from stepCtx + IVP from wrapCtx).
+buildStepParams :: StepProofContext -> WrapProofContext -> StepParams StepField
+buildStepParams stepCtx wrapCtx =
+  let
+    fop = buildStepFinalizeParams stepCtx
+    ivp = buildStepIVPParams wrapCtx
+  in
+    { domain: fop.domain
+    , domainLog2: fop.domainLog2
+    , srsLengthLog2: fop.srsLengthLog2
+    , linearizationPoly: fop.linearizationPoly
+    , endo: fop.endo
+    , curveParams: ivp.curveParams
+    , lagrangeComms: ivp.lagrangeComms
+    , blindingH: ivp.blindingH
+    , groupMapParams: ivp.groupMapParams
+    , correctionMode: ivp.correctionMode
+    , useOptSponge: ivp.useOptSponge
+    }
+
 -------------------------------------------------------------------------------
 -- | Build Step-side FinalizeOtherProofInput from a WrapProofContext
 -------------------------------------------------------------------------------
@@ -1648,6 +1701,8 @@ buildStepProverWitness stepCtx wrapCtx =
         , z2: toShifted $ F $ ProofFFI.vestaProofOpeningZ2 wrapCtx.proof
         } :< Vector.nil
     , fopProofStates: fopInput.unfinalized :< Vector.nil
+    , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
+    , wrapPublicInputFields: (map (F <<< unsafeFqToFp) wrapCtx.publicInputs) :< Vector.nil
     }
 
 -------------------------------------------------------------------------------

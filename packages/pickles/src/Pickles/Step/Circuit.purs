@@ -16,6 +16,8 @@ module Pickles.Step.Circuit
   , AppCircuitOutput
   -- * Step Circuit Types (re-exported from Pickles.Types)
   , module Pickles.Types
+  -- * Step Circuit Parameters
+  , StepParams
   -- * Step Circuit Combinator
   , stepCircuit
   ) where
@@ -29,19 +31,50 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
+import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getPrevChallenges, getProofWitnesses)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Types.Shifted (SplitField, Type1, Type2)
+
+-------------------------------------------------------------------------------
+-- | Step Circuit Parameters
+-------------------------------------------------------------------------------
+
+-- | Combined parameters for the Step circuit.
+-- |
+-- | Merges FinalizeOtherProofParams (FOP) with IncrementallyVerifyProofParams (IVP).
+-- | Both are row-polymorphic, so StepParams satisfies both via structural subtyping.
+-- | The `endo` field is shared (same EndoScalar value for both FOP and IVP).
+-- |
+-- | FOP fields: domain, domainLog2, srsLengthLog2, linearizationPoly, endo
+-- | IVP fields: curveParams, lagrangeComms, blindingH, groupMapParams, correctionMode, useOptSponge, endo
+type StepParams :: Type -> Type
+type StepParams f =
+  { domain :: { generator :: f, shifts :: Vector 7 f }
+  , domainLog2 :: Int
+  , srsLengthLog2 :: Int
+  , linearizationPoly :: LinearizationPoly f
+  , endo :: f
+  , curveParams :: CurveParams f
+  , lagrangeComms :: Array (AffinePoint (F f))
+  , blindingH :: AffinePoint (F f)
+  , groupMapParams :: GroupMapParams f
+  , correctionMode :: CorrectionMode
+  , useOptSponge :: Boolean
+  }
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -179,14 +212,14 @@ computeMessageForNextWrapProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall _n n ds _dw dw input prevInput output aux t m r
+  :: forall _n n ds _dw dw input prevInput output aux t m
    . Add 1 _dw dw
   => Add 1 _n n
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   => StepWitnessM n dw m Vesta.ScalarField
   => Reflectable n Int
   => Reflectable dw Int
-  => FinalizeOtherProofParams Vesta.ScalarField r
+  => StepParams Vesta.ScalarField
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField)
   -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField))

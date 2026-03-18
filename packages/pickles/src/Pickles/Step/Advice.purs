@@ -62,6 +62,8 @@ module Pickles.Step.Advice
   , getMessages
   , getOpeningProof
   , getFopProofStates
+  , getWrapVerifierIndex
+  , getWrapPublicInputFields
   ) where
 
 import Prelude
@@ -141,6 +143,24 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
   getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
 
+  -- | Wrap circuit verifier index (VK column commitments).
+  -- | In OCaml this enters via Req.Wrap_index (step_main.ml:345-348)
+  -- | as circuit variables via `exists`. NOT a compile-time constant.
+  getWrapVerifierIndex
+    :: Unit
+    -> m
+         { sigmaCommLast :: AffinePoint (F f)
+         , columnComms ::
+             { index :: Vector 6 (AffinePoint (F f))
+             , coeff :: Vector 15 (AffinePoint (F f))
+             , sigma :: Vector 6 (AffinePoint (F f))
+             }
+         }
+
+  -- | Wrap proof public input fields (coerced Fq→Fp) for IVP x_hat.
+  -- | OCaml: step_main.ml packs the Wrap statement via Spec.pack
+  getWrapPublicInputFields :: Unit -> m (Vector n (Array (F f)))
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
@@ -150,3 +170,5 @@ instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n
   getMessages _ = throw "impossible! getMessages called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"
+  getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
+  getWrapPublicInputFields _ = throw "impossible! getWrapPublicInputFields called during compilation"
