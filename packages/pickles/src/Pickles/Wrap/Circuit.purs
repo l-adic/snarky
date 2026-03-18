@@ -26,7 +26,7 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.Dummy (dummyWrapChallengesExpanded)
+import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
@@ -38,7 +38,7 @@ import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, UnChecked(..), assert_, equals_, exists, false_, fieldsToValue, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), assert_, const_, equals_, exists, false_, fieldsToValue, label, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -131,12 +131,22 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
     pure expandedChallenges
 
   -- 3. Verify the Step proof's IPA opening (uses public input deferred values)
+  -- In the Wrap circuit, the Step VK is a compile-time constant (wrap_main.ml:209
+  -- Inner_curve.constant). We wrap with constPt to match the FVar leaf type.
   let
+    constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
     fullIvpInput =
       { publicInput
       -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
       , deferredValues: wrapStmt.proofState.deferredValues
+      -- Step VK data (constant in Wrap circuit)
+      , sigmaCommLast: constPt params.sigmaCommLast
+      , columnComms:
+          { index: map constPt params.columnComms.index
+          , coeff: map constPt params.columnComms.coeff
+          , sigma: map constPt params.columnComms.sigma
+          }
       , wComm: messages.wComm
       , zComm: messages.zComm
       , tComm: messages.tComm
@@ -154,6 +164,6 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
     hashMessagesForNextWrapProofCircuit
       { sg: openingProof.sg
       , expandedChallenges
-      , dummyChallenges: dummyWrapChallengesExpanded
+      , dummyChallenges: dummyIpaChallenges.wrapExpanded
       }
   assert_ =<< equals_ computedDigest wrapStmt.proofState.messagesForNextWrapProof

@@ -453,6 +453,8 @@ incrementallyVerifyProofTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sigmaCommLast: params.sigmaCommLast
+      , columnComms: params.columnComms
       , deferredValues:
           let
             stepPlonk = coerceStepPlonkChallenges ctx
@@ -563,6 +565,8 @@ verifyTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sigmaCommLast: params.sigmaCommLast
+      , columnComms: params.columnComms
       , deferredValues:
           let
             stepPlonk = coerceStepPlonkChallenges ctx

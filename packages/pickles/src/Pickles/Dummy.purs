@@ -52,6 +52,7 @@ import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge as PureSponge
+import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -61,7 +62,6 @@ import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
-import Safe.Coerce (coerce)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
@@ -716,8 +716,10 @@ dummyStepAdvice =
 
     -- z1/z2 from proof.ml:dummy openings (Ro.tock values wrapped as Type2 SplitField)
     r = roComputeResult
+
     z1 :: Type2 (SplitField (F StepField) Boolean)
     z1 = toShifted (F r.proofZ1)
+
     z2 :: Type2 (SplitField (F StepField) Boolean)
     z2 = toShifted (F r.proofZ2)
   in
