@@ -2677,3 +2677,65 @@ pub fn vesta_challenge_poly_commitment(
     generic::challenge_poly_commitment::<PallasGroup>(&**verifier_index, &chals)
         .map(|coords| coords.into_iter().map(External::new).collect())
 }
+
+/// Compute challenge polynomial commitment from Pallas SRS directly.
+/// Pallas curve: scalar field = Fq. Challenges are Fq, result point has Fp coords.
+/// OCaml: `SRS.Fq.b_poly_commitment srs challenges` (Dummy.Ipa.Wrap.compute_sg)
+#[napi]
+pub fn pallas_srs_b_poly_commitment(
+    srs: &PallasCRSExternal,
+    challenges: Vec<&PallasFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let chals: Vec<PallasScalarField> = challenges.iter().map(|f| ***f).collect();
+    let coeffs = poly_commitment::commitment::b_poly_coefficients(&chals);
+    if coeffs.len() > srs.g.len() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "SRS too small: need {} generators, have {}",
+                coeffs.len(),
+                srs.g.len()
+            ),
+        ));
+    }
+    let g = &srs.g[..coeffs.len()];
+    use super::super::pasta::types::ProjectivePallas;
+    let result: ProjectivePallas = ::ark_ec::VariableBaseMSM::msm_unchecked(g, &coeffs);
+    let affine: PallasGroup = result.into();
+    if let Some((x, y)) = affine.to_coordinates() {
+        Ok(vec![External::new(x), External::new(y)])
+    } else {
+        Err(Error::new(Status::GenericFailure, "point at infinity"))
+    }
+}
+
+/// Compute challenge polynomial commitment from Vesta SRS directly.
+/// Vesta curve: scalar field = Fp. Challenges are Fp, result point has Fq coords.
+/// OCaml: `SRS.Fp.b_poly_commitment srs challenges` (Dummy.Ipa.Step.compute_sg)
+#[napi]
+pub fn vesta_srs_b_poly_commitment(
+    srs: &VestaCRSExternal,
+    challenges: Vec<&VestaFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let chals: Vec<VestaScalarField> = challenges.iter().map(|f| ***f).collect();
+    let coeffs = poly_commitment::commitment::b_poly_coefficients(&chals);
+    if coeffs.len() > srs.g.len() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "SRS too small: need {} generators, have {}",
+                coeffs.len(),
+                srs.g.len()
+            ),
+        ));
+    }
+    let g = &srs.g[..coeffs.len()];
+    use super::super::pasta::types::ProjectiveVesta;
+    let result: ProjectiveVesta = ::ark_ec::VariableBaseMSM::msm_unchecked(g, &coeffs);
+    let affine: VestaGroup = result.into();
+    if let Some((x, y)) = affine.to_coordinates() {
+        Ok(vec![External::new(x), External::new(y)])
+    } else {
+        Err(Error::new(Status::GenericFailure, "point at infinity"))
+    }
+}

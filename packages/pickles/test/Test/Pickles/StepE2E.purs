@@ -20,15 +20,15 @@ import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Types (StepField, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, dummyStepAdvice, genDummyUnfinalizedProof, runStepProverM, stepSchnorrAppCircuit)
+import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, describe, it)
@@ -46,7 +46,7 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  _ <- stepCircuit Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -56,18 +56,16 @@ stepSchnorrCircuit input = do
 genStepSchnorrInput :: Gen StepSchnorrInput
 genStepSchnorrInput = do
   schnorrInput <- genValidSignature (Proxy @PallasG) (Proxy @4)
-  unfinalizedProof <- genDummyUnfinalizedProof
   pure
     { appInput: schnorrInput
     , previousProofInputs: unit :< Vector.nil
-    , unfinalizedProofs: unfinalizedProof :< Vector.nil
+    , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
     , prevChallengeDigests: zero :< Vector.nil
     }
 
--- | Generate random advice paired with the solver wrapper.
--- | Each test input needs its own random advice to avoid VarBaseMul collisions.
+-- | Dummy advice using production library values (from Pickles.Dummy).
 genStepSchnorrAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
-genStepSchnorrAdvice = dummyStepAdvice
+genStepSchnorrAdvice = pure Dummy.dummyStepAdvice
 
 spec
   :: TestConfig StepField (KimchiGate StepField) (AuxState StepField)

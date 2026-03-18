@@ -51,10 +51,9 @@ module Test.Pickles.TestContext
   , buildStepFinalizeInput
   , computeStepChallengeDigest
   , computeStepSgEvals
-  , dummyStepAdvice
-  , genDummyUnfinalizedProof
   , buildStepProverWitness
   , buildStepIVPParams
+  , buildStepIVPVkInput
   , buildStepIVPInput
   , stepEndo
   , wrapEndo
@@ -90,7 +89,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.Dummy (dummyWrapChallengesExpanded)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -108,7 +107,6 @@ import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, stepCircuit)
-import Pickles.Step.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, dummyUnfinalizedProof)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -141,8 +139,7 @@ import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
-import Test.QuickCheck (arbitrary)
-import Test.QuickCheck.Gen (Gen, randomSampleOne)
+import Test.QuickCheck.Gen (randomSampleOne)
 import Type.Proxy (Proxy(..))
 
 -- | Standard Kimchi constants
@@ -501,7 +498,7 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
-      pure $ Tuple false dummyFinalizeOtherProofParams
+      pure $ Tuple false Dummy.dummyFinalizeOtherProofParams
     InductiveCase stepCtx _ -> do
       Console.info "creating Step proof for Inductive Step"
       pure $ Tuple true (buildStepFinalizeParams stepCtx)
@@ -542,12 +539,10 @@ createStepProofContext stepCase = do
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
-      advice <- randomSampleOne dummyStepAdvice
-      unfinalizedProof <- randomSampleOne genDummyUnfinalizedProof
-      pure $ Tuple advice
+      pure $ Tuple Dummy.dummyStepAdvice
         { appInput: schnorrInput
         , previousProofInputs: unit :< Vector.nil
-        , unfinalizedProofs: unfinalizedProof :< Vector.nil
+        , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
         , prevChallengeDigests: zero :< Vector.nil
         }
     InductiveCase stepCtx wrapCtx ->
@@ -1067,7 +1062,7 @@ buildWrapCircuitInput ctx =
 
     -- Hash: [dummyChallenges..., expandedChallenges..., sg.x, sg.y]
     messageHash = hashMessagesForNextWrapProof
-      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges: dummyWrapChallengesExpanded }
+      { sg, expandedChallenges: expandedChallengesForHash, dummyChallenges: Dummy.dummyIpaChallenges.wrapExpanded }
   in
     { proofState:
         { deferredValues:
@@ -1175,7 +1170,7 @@ buildWrapProverWitness ctx =
     -- Convert the real unfinalized proof and pad to MaxProofsVerified with a dummy.
     -- The Step output has Vector 1 (n=1 branch), but the Wrap circuit expects Vector 2.
     realUnfinalized = convertUnfinalized (Vector.head stepOutput.proofState.unfinalizedProofs)
-    dummyUnfinalized = dummyUnfinalizedProof @WrapIPARounds @WrapField @WrapField @(Type2 (F WrapField))
+    dummyUnfinalized = Dummy.wrapDummyUnfinalizedProof
     unfinalizedProofs = realUnfinalized :< dummyUnfinalized :< Vector.nil
 
     -- Polynomial evaluations for finalize: real evals for slot 0, dummy for slot 1
@@ -1195,7 +1190,7 @@ buildWrapProverWitness ctx =
     dummyBpChals :: Vector WrapIPARounds (F WrapField)
     dummyBpChals = Vector.generate \_ -> zero
   in
-    { evals: fullFinalizeInput.witness :< dummyProofWitness :< Vector.nil
+    { evals: fullFinalizeInput.witness :< Dummy.dummyProofWitness :< Vector.nil
     , messages:
         { wComm: coerce commitments.wComm
         , zComm: coerce commitments.zComm
@@ -1608,119 +1603,6 @@ computeStepSgEvals stepCtx wrapCtx =
 -- | Build Step-side private witness data from a WrapProofContext
 -------------------------------------------------------------------------------
 
--- | Random dummy unfinalized proof for base case. Uses random shifted scalars
--- | for deferred values to avoid VarBaseMul/EndoMul degenerate cases.
--- | shouldFinalize = false so the soft-gating assertion passes trivially.
-genDummyUnfinalizedProof :: Gen (UnfinalizedProof WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean)
-genDummyUnfinalizedProof = do
-  let
-    genShifted :: Gen (Type2 (SplitField (F StepField) Boolean))
-    genShifted = do
-      x <- arbitrary @StepField
-      pure $ toShifted (F x)
-
-    genScalarChallenge :: Gen (SizedF 128 (F StepField))
-    genScalarChallenge = map (wrapF :: SizedF 128 StepField -> SizedF 128 (F StepField)) arbitrary
-  combinedInnerProduct <- genShifted
-  b <- genShifted
-  perm <- genShifted
-  zetaToSrsLength <- genShifted
-  zetaToDomainSize <- genShifted
-  xi <- genScalarChallenge
-  alpha <- genScalarChallenge
-  beta <- genScalarChallenge
-  gamma <- genScalarChallenge
-  zeta <- genScalarChallenge
-  bulletproofChallenges <- Vector.generator (Proxy @WrapIPARounds) genScalarChallenge
-  spongeDigest <- arbitrary @StepField
-  pure
-    { deferredValues:
-        { plonk: { alpha, beta, gamma, zeta, perm, zetaToSrsLength, zetaToDomainSize }
-        , combinedInnerProduct
-        , xi
-        , bulletproofChallenges
-        , b
-        }
-    , shouldFinalize: false
-    , spongeDigestBeforeEvaluations: F spongeDigest
-    }
-
--- | Random dummy private data for the Step circuit base case (no real Wrap proofs).
--- | Uses random Pallas curve points and random shifted scalars to avoid
--- | degenerate cases (division-by-zero) in VarBaseMul during witness generation.
--- | OCaml Pickles also uses random values for dummy proof data.
-dummyStepAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
-dummyStepAdvice = do
-  messages <- genDummyMessages
-  openingProof <- genDummyOpening
-  fopProof <- genDummyFopProof
-  pure
-    { stepInputFields: []
-    , evals: dummyProofWitness :< Vector.nil
-    , prevChallenges: (Vector.generate \_ -> F zero) :< Vector.nil
-    , messages: messages :< Vector.nil
-    , openingProofs: openingProof :< Vector.nil
-    , fopProofStates: fopProof :< Vector.nil
-    }
-  where
-  genPoint :: Gen (AffinePoint (F StepField))
-  genPoint = do
-    p <- arbitrary @Pallas.G
-    pure $ coerce (unsafePartial fromJust $ toAffine p :: AffinePoint StepField)
-
-  genShifted :: Gen (Type2 (SplitField (F StepField) Boolean))
-  genShifted = do
-    x <- arbitrary @StepField
-    pure $ toShifted (F x)
-
-  genShiftedType1 :: Gen (Type1 (F StepField))
-  genShiftedType1 = do
-    x <- arbitrary @StepField
-    pure $ toShifted (F x)
-
-  genDummyMessages = do
-    wComm <- Vector.generator (Proxy @15) genPoint
-    zComm <- genPoint
-    tComm <- Vector.generator (Proxy @7) genPoint
-    pure { wComm, zComm, tComm }
-
-  genDummyOpening = do
-    delta <- genPoint
-    sg <- genPoint
-    lr <- Vector.generator (Proxy @WrapIPARounds) do
-      l <- genPoint
-      r <- genPoint
-      pure { l, r }
-    z1 <- genShifted
-    z2 <- genShifted
-    pure { delta, sg, lr, z1, z2 }
-
-  genDummyFopProof = do
-    combinedInnerProduct <- genShiftedType1
-    b <- genShiftedType1
-    perm <- genShiftedType1
-    zetaToSrsLength <- genShiftedType1
-    zetaToDomainSize <- genShiftedType1
-    let genScalarChallenge = map (wrapF :: SizedF 128 StepField -> SizedF 128 (F StepField)) arbitrary
-    xi <- genScalarChallenge
-    alpha <- genScalarChallenge
-    beta <- genScalarChallenge
-    gamma <- genScalarChallenge
-    zeta <- genScalarChallenge
-    bulletproofChallenges <- Vector.generator (Proxy @WrapIPARounds) genScalarChallenge
-    spongeDigest <- arbitrary @StepField
-    pure
-      { deferredValues:
-          { plonk: { alpha, beta, gamma, zeta, perm, zetaToSrsLength, zetaToDomainSize }
-          , combinedInnerProduct
-          , xi
-          , bulletproofChallenges
-          , b
-          }
-      , shouldFinalize: false
-      , spongeDigestBeforeEvaluations: F spongeDigest
-      }
-
 -- | Extract the private witness data for StepProverM from proof contexts.
 -- | stepCtx provides polynomial evaluations (native Fp) for the inner Step proof.
 -- | wrapCtx provides commitments, opening proof, and bp challenges from the Wrap proof.
@@ -1772,36 +1654,54 @@ buildStepProverWitness stepCtx wrapCtx =
 -- | Build Step-side IVP params and input from a WrapProofContext
 -------------------------------------------------------------------------------
 
--- | Build compile-time parameters for the Step IVP circuit (Fp circuit verifying Pallas proof).
+-- | Build SRS-derived compile-time parameters for the Step IVP circuit.
+-- | Only contains true environment data (SRS lagrange commitments, blinding generator).
+-- | VK data (columnComms, sigmaCommLast) is NOT here — it goes in the input
+-- | as circuit variables, matching OCaml's exists ~request:(Req.Wrap_index).
 buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField ()
 buildStepIVPParams ctx =
   let
     numPublic = Array.length ctx.publicInputs
-    columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
-
-    indexComms :: Vector 6 (AffinePoint Vesta.ScalarField)
-    indexComms = toVectorOrThrow @6 "buildStepIVPParams indexComms" $ Array.take 6 columnCommsRaw
-
-    coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
-    coeffComms = toVectorOrThrow @15 "buildStepIVPParams coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
-
-    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
-    sigmaComms = toVectorOrThrow @6 "buildStepIVPParams sigmaComms" $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Pallas.G)
     , lagrangeComms: coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
-    , sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
+    , endo: stepEndo
+    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+    , correctionMode: PureCorrections
+    , useOptSponge: false
+    }
+
+-- | Extract Wrap VK data for the Step IVP input (circuit variables, not constants).
+-- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
+buildStepIVPVkInput
+  :: WrapProofContext
+  -> { sigmaCommLast :: AffinePoint (F StepField)
+     , columnComms ::
+         { index :: Vector 6 (AffinePoint (F StepField))
+         , coeff :: Vector 15 (AffinePoint (F StepField))
+         , sigma :: Vector 6 (AffinePoint (F StepField))
+         }
+     }
+buildStepIVPVkInput ctx =
+  let
+    columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
+
+    indexComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    indexComms = toVectorOrThrow @6 "buildStepIVPVkInput indexComms" $ Array.take 6 columnCommsRaw
+
+    coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
+    coeffComms = toVectorOrThrow @15 "buildStepIVPVkInput coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
+
+    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
+    sigmaComms = toVectorOrThrow @6 "buildStepIVPVkInput sigmaComms" $ Array.drop 21 columnCommsRaw
+  in
+    { sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
     , columnComms:
         { index: coerce indexComms
         , coeff: coerce coeffComms
         , sigma: coerce sigmaComms
         }
-    , indexDigest: ProofFFI.vestaVerifierIndexDigest ctx.verifierIndex
-    , endo: stepEndo
-    , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
-    , correctionMode: PureCorrections
-    , useOptSponge: false
     }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.
@@ -1812,6 +1712,7 @@ buildStepIVPInput
   -> IncrementallyVerifyProofInput (Vector nPublic (F StepField)) 0 WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean))
 buildStepIVPInput ctx =
   let
+    vk = buildStepIVPVkInput ctx
     commitments = ProofFFI.vestaProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -1863,6 +1764,9 @@ buildStepIVPInput ctx =
     { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
         map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
     , sgOld: Vector.nil
+    -- VK data (circuit variables in OCaml, F f here for test input)
+    , sigmaCommLast: vk.sigmaCommLast
+    , columnComms: vk.columnComms
     , deferredValues:
         let
           wrapPlonk = coerceWrapPlonkChallenges ctx

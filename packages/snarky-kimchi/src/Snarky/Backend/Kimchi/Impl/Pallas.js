@@ -75,3 +75,9 @@ export function pallasProverIndexVerify(proverIndex) {
     };
 }
 
+export function pallasSrsBPolyCommitment(srs) {
+    return function(challenges) {
+        return napi.pallasSrsBPolyCommitment(srs, challenges);
+    };
+}
+

@@ -76,3 +76,9 @@ export function vestaProverIndexVerify(proverIndex) {
         };
     };
 }
+
+export function vestaSrsBPolyCommitment(srs) {
+    return function(challenges) {
+        return napi.vestaSrsBPolyCommitment(srs, challenges);
+    };
+}

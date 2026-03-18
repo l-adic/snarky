@@ -58,6 +58,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..))
+import Test.DummyFixture as DummyFixture
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -444,3 +445,4 @@ spec =
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
+      DummyFixture.spec

@@ -22,7 +22,7 @@ import Pickles.Verify (incrementallyVerifyProof)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, SizedF, Snarky, assertEq, assertEqual_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, assertEq, assertEqual_, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -142,18 +142,13 @@ ivpWrapCircuit
   -> Snarky (KimchiConstraint WrapField) t m Unit
 ivpWrapCircuit { lagrangeComms, blindingH } input = do
   let
+    constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
+
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
       , lagrangeComms
       , blindingH
       , correctionMode: InCircuitCorrections
-      , sigmaCommLast: dummyVestaPt
-      , columnComms:
-          { index: (Vector.replicate dummyVestaPt) :: Vector 6 _
-          , coeff: (Vector.replicate dummyVestaPt) :: Vector 15 _
-          , sigma: (Vector.replicate dummyVestaPt) :: Vector 6 _
-          }
-      , indexDigest: zero
       , endo: wrapEndo
       , groupMapParams: groupMapParams (Proxy @VestaG)
       , useOptSponge: true
@@ -161,6 +156,13 @@ ivpWrapCircuit { lagrangeComms, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: Vector.nil
+      -- VK data as circuit variables (dummy constants for circuit-diff test)
+      , sigmaCommLast: constDummyPt
+      , columnComms:
+          { index: (Vector.replicate constDummyPt) :: Vector 6 _
+          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
+          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
+          }
       , deferredValues: input.deferredValues
       , wComm: input.wComm
       , zComm: input.zComm
