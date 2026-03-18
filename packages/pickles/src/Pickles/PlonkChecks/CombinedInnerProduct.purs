@@ -178,9 +178,8 @@ hornerCombine xi evals = label "horner-combine" do
 -- | Order: sg_evals(n), public_input, ft_eval, z+index+witness+coeff+sigma (43).
 -- | This matches `Evals.In_circuit.to_list` order for always-present fields.
 buildEvalList
-  :: forall n f _l
-   . Add 1 _l n
-  => { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
+  :: forall n f
+   . { sgEvals :: Vector n (Tuple (BoolVar f) (FVar f))
      , publicInput :: FVar f
      , ftEval :: FVar f
      , evals :: Vector 43 (FVar f)
@@ -188,11 +187,14 @@ buildEvalList
   -> NonEmptyArray (EvalOpt f)
 buildEvalList x =
   let
-    sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) (NEA.fromFoldable1 x.sgEvals)
+    sgEvals = map (\(Tuple keep eval) -> EvalMaybe keep eval) x.sgEvals
     others = NEA.cons' (EvalJust x.publicInput) [ EvalJust x.ftEval ]
     evals = map EvalJust $ NEA.fromFoldable1 x.evals
   in
-    NEA.concat $ NEA.cons' sgEvals [ others, evals ]
+    NEA.prependArray (Vector.toUnfoldable sgEvals)
+      $ NEA.concat
+      $
+        NEA.cons' others [ evals ]
 
 -- | Build evaluation list with all sg_evals unmasked (EvalJust).
 -- |

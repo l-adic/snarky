@@ -169,9 +169,8 @@ maxAlphaPower = 70
 -- |
 -- | Reference: step_verifier.ml:823-1165
 finalizeOtherProofCircuit
-  :: forall _d d _n n f f' g t m sf r1 r2
+  :: forall _d d n f f' g t m sf r1 r2
    . Add 1 _d d
-  => Add 1 _n n
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f

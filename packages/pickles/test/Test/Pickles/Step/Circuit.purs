@@ -80,6 +80,7 @@ spec cfg = describe "Pickles.Step.Circuit" do
         , fopProofStates: nil
         , messagesForNextWrapProof: nil
         }
+
       input :: StepTestInput
       input =
         { appInput: unit

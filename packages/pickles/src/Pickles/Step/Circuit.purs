@@ -140,7 +140,6 @@ hashMessagesForNextStepProofStub _challenges = do
   -- Stub: return zero digest
   pure $ const_ zero
 
-
 -------------------------------------------------------------------------------
 -- | Step Circuit Combinator
 -------------------------------------------------------------------------------

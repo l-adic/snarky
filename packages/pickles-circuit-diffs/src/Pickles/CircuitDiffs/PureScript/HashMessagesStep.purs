@@ -65,6 +65,7 @@ hashMessagesStepCircuit inputs = do
       let
         sgX = at (56 + proofIdx * 17)
         sgY = at (56 + proofIdx * 17 + 1)
+
         bpChals :: Vector WrapIPARounds (FVar StepField)
         bpChals = Vector.generate \j -> at (56 + proofIdx * 17 + 2 + getFinite j)
       s1 <- Sponge.absorb sgX s
