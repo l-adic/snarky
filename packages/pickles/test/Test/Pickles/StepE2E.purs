@@ -23,7 +23,7 @@ import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Types (StepField, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -46,7 +46,7 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit dummyStepParams (stepSchnorrAppCircuit false) input
+  _ <- stepCircuit (Proxy @StepIPARounds) (Proxy @0) dummyStepParams (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------

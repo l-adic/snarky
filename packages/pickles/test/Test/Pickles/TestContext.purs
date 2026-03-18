@@ -529,7 +529,7 @@ createStepProofContext stepCase = do
       -> Snarky (KimchiConstraint StepField) t m StepSchnorrOutputVar
     circuit _ = do
       i <- existsSchnorrStepInput
-      stepCircuit params (stepSchnorrAppCircuit mustVerify) i
+      stepCircuit (Proxy @StepIPARounds) (Proxy @0) params (stepSchnorrAppCircuit mustVerify) i
 
   -- Compile with Unit input — Step proof public input = StepStatement only
   builtState <- liftEffect $ compile

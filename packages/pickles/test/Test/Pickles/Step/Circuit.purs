@@ -71,7 +71,7 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
-  _ <- stepCircuit dummyStepParams trivialAppCircuit input
+  _ <- stepCircuit (Proxy @StepIPARounds) (Proxy @0) dummyStepParams trivialAppCircuit input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ realDataSpec cfg =
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do
-          _ <- stepCircuit params (stepSchnorrAppCircuit true) i
+          _ <- stepCircuit (Proxy @StepIPARounds) (Proxy @0) params (stepSchnorrAppCircuit true) i
           pure unit
 
       let
