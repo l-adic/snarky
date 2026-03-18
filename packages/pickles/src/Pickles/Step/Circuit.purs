@@ -34,7 +34,7 @@ import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.PublicInputCommit (CorrectionMode)
-import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getPrevChallenges, getProofWitnesses)
+import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessages, getOpeningProof, getPrevChallenges, getProofWitnesses, getWrapVerifierIndex)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Snarky.Circuit.Kimchi.GroupMap (GroupMapParams)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
@@ -232,6 +232,13 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   prevChallenges <- exists $ lift $ getPrevChallenges @_ @dw unit
   -- FOP proof states (Type1, private witness matching Per_proof_witness.proof_state)
   fopProofStates <- exists $ lift $ getFopProofStates @_ @dw unit
+  -- IVP witness data (for incrementallyVerifyProof, Step 3)
+  -- OCaml: Req.Wrap_index (step_main.ml:345-348)
+  -- IVP witness data (for incrementallyVerifyProof, wired in Step 3)
+  _wrapVk <- exists $ lift $ getWrapVerifierIndex @n @dw unit
+  _messages <- exists $ lift $ getMessages @n @dw unit
+  _openingProofs <- exists $ lift $ getOpeningProof @n @dw unit
+  -- TODO: wrapPublicInputFields requires nPublic type parameter for fixed-size Vector allocation
 
   -- 3. For each previous proof, verify and collect challenges
   -- prevChallenges and mask are shared across all proofs (each finalize_other_proof
