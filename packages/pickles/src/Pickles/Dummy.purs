@@ -131,20 +131,6 @@ replicateChal = do
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
   pure $ unsafePartial fromJust $ Vector.toVector @n (Array.reverse arr)
 
--- | Generate a (zeta, zeta_omega) eval pair.
--- |
--- | OCaml pitfall: tuple construction `(a(), a())` evaluates the right element
--- | first. So `let a () = Array.create ~len:1 (Ro.tock()) in (a(), a())`
--- | produces `(second_tock_call, first_tock_call)`. In the Evals type,
--- | `fst` = zeta evaluation, `snd` = zeta*omega evaluation. So:
--- |   fst (= zeta)      = second Ro.tock() call
--- |   snd (= zetaOmega) = first Ro.tock() call
-tockEvalPair :: RoM { zeta :: WrapField, zetaOmega :: WrapField }
-tockEvalPair = do
-  zetaOmega <- tock -- OCaml: right element of tuple, evaluated first → snd
-  zeta <- tock -- OCaml: left element of tuple, evaluated second → fst
-  pure { zeta, zetaOmega }
-
 -------------------------------------------------------------------------------
 -- | Shared Ro computation
 -- |
@@ -162,9 +148,11 @@ type RoComputeResult =
   , beta :: SizedF 128 WrapField
   , gamma :: SizedF 128 WrapField
   , zeta :: SizedF 128 WrapField
+  -- Dummy.evals (tock 1-89): the Wrap-side polynomial evaluations
+  , wrapDummyEvals :: AllEvals WrapField
   , cipRaw :: WrapField
   , bRaw :: WrapField
-  -- z1/z2 from proof.ml:dummy openings (tock 92-93, after Dummy.evals tock 1-91)
+  -- z1/z2 from proof.ml:dummy openings (tock 92-93)
   , proofZ1 :: WrapField
   , proofZ2 :: WrapField
   -- Step dummy plonk challenges from proof.ml:dummy.
@@ -216,18 +204,36 @@ roComputeResult = flip evalState mkRo do
   zeta <- scalarChal :: RoM (SizedF 128 WrapField)
 
   -- Phase 3: Dummy.evals tock calls (tock 1–89, see header comment for count)
-  _w <- sequence (Array.replicate 15 tockEvalPair)
-  _coefficients <- sequence (Array.replicate 15 tockEvalPair)
-  _z <- tockEvalPair
-  _s <- sequence (Array.replicate 6 tockEvalPair)
-  _genericSelector <- tockEvalPair
-  _poseidonSelector <- tockEvalPair
-  _completeAddSelector <- tockEvalPair
-  _mulSelector <- tockEvalPair
-  _emulSelector <- tockEvalPair
-  _endomulScalarSelector <- tockEvalPair
-  _publicInput <- tockEvalPair
-  _ftEval1 <- tock
+  -- Same right-to-left record + right-to-left :: eval order as the tick-based prev_evals.
+  let tockPointEval :: RoM { zeta :: WrapField, omegaTimesZeta :: WrapField }
+      tockPointEval = do
+        oz <- tock -- right tuple element first (OCaml right-to-left)
+        z <- tock
+        pure { zeta: z, omegaTimesZeta: oz }
+      tockPointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField })
+      tockPointEvalVec = do
+        v <- Vector.generateA (const tockPointEval)
+        pure (Vector.reverse v) -- OCaml Vector.map :: right-to-left side effects
+  -- Evals record right-to-left: selectors first, then s, z, coefficients, w
+  idxEndomulScalar <- tockPointEval
+  idxEmul <- tockPointEval
+  idxMul <- tockPointEval
+  idxCompleteAdd <- tockPointEval
+  idxPoseidon <- tockPointEval
+  idxGeneric <- tockPointEval
+  let wrapIndexEvals = unsafePartial fromJust $ Vector.toVector @6
+        [idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar]
+  wrapSigmaEvals <- tockPointEvalVec @6
+  wrapZEvals <- tockPointEval
+  wrapCoeffEvals <- tockPointEvalVec @15
+  wrapWitnessEvals <- tockPointEvalVec @15
+  wrapPublicEvals <- tockPointEval
+  wrapFtEval1 <- tock
+  let wrapDummyEvals =
+        { ftEval1: wrapFtEval1, publicEvals: wrapPublicEvals, zEvals: wrapZEvals
+        , indexEvals: wrapIndexEvals, witnessEvals: wrapWitnessEvals
+        , coeffEvals: wrapCoeffEvals, sigmaEvals: wrapSigmaEvals
+        }
 
   -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
   bRaw <- tock -- tock 90
@@ -265,15 +271,15 @@ roComputeResult = flip evalState mkRo do
       v <- Vector.generateA (const tickPointEval)
       pure (Vector.reverse v)
   -- Evals record right-to-left: selectors first, then s, z, coefficients, w
-  idxEndomulScalar <- tickPointEval
-  idxEmul <- tickPointEval
-  idxMul <- tickPointEval
-  idxCompleteAdd <- tickPointEval
-  idxPoseidon <- tickPointEval
-  idxGeneric <- tickPointEval
+  stepIdxEndomulScalar <- tickPointEval
+  stepIdxEmul <- tickPointEval
+  stepIdxMul <- tickPointEval
+  stepIdxCompleteAdd <- tickPointEval
+  stepIdxPoseidon <- tickPointEval
+  stepIdxGeneric <- tickPointEval
   let
     indexEvals = unsafePartial fromJust $ Vector.toVector @6
-      [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+      [ stepIdxGeneric, stepIdxPoseidon, stepIdxCompleteAdd, stepIdxMul, stepIdxEmul, stepIdxEndomulScalar ]
   sigmaEvals <- tickPointEvalVec @6
   zEvals <- tickPointEval
   coeffEvals <- tickPointEvalVec @15
@@ -300,6 +306,7 @@ roComputeResult = flip evalState mkRo do
     , beta
     , gamma
     , zeta
+    , wrapDummyEvals
     , cipRaw
     , bRaw
     , proofZ1
@@ -394,8 +401,6 @@ computeDummySgValues pallasSrs vestaSrs =
     shifted :: WrapField -> Type2 (F WrapField)
     shifted x = Type2 (F (x - type2Shift))
 
-    fromStr s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
-
     -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
@@ -428,10 +433,7 @@ computeDummySgValues pallasSrs vestaSrs =
         , zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
-            -- perm requires derive_plonk which depends on OCaml's implementation-defined
-            -- record evaluation order for Evals.map. Hardcoded from production OCaml fixture
-            -- (Shifted_value inner value = perm - shift).
-            { perm: Type2 (F (fromStr "23440605441886153126678695377597650431034969920935116593970373719018050817987"))
+            { perm: wrapDummyUnfinalizedProof.deferredValues.plonk.perm
             , zetaToSrsLength: shifted zetaPow2_15
             , zetaToDomainSize: shifted zetaToN
             }
@@ -490,14 +492,54 @@ dummyIpaChallenges =
 wrapDummyUnfinalizedProof :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
 wrapDummyUnfinalizedProof =
   let
-    zetaFq = toFieldPure roComputeResult.zeta wrapEndo
-    zetaPow2_15 = pow2pow zetaFq 15
+    r = roComputeResult
+    evals = r.wrapDummyEvals
+    Curves.EndoScalar wEndo = (Curves.endoScalar :: Curves.EndoScalar Pallas.ScalarField)
 
-    -- shifted: stores (value - shift), used for zetaToSrsLength/zetaToDomainSize/perm
+    -- Expand plonk challenges in WrapField
+    alphaExpanded = toFieldPure r.alpha wEndo
+    betaExpanded = SizedF.toField r.beta :: WrapField
+    gammaExpanded = SizedF.toField r.gamma :: WrapField
+    zetaExpanded = toFieldPure r.zeta wEndo
+
+    -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
+    -- srs_length_log2 = Tock.Rounds.n = WrapIPARounds = 15
+    wrapDomainLog2 = 15
+    zkRows = 3
+    omega = (domainGenerator wrapDomainLog2 :: WrapField)
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2)
+    zetaToNMinus1 = Curves.pow zetaExpanded n - one
+    omegaM1 = recip omega
+    omegaM2 = omegaM1 * omegaM1
+    omegaM3 = omegaM2 * omegaM1
+    zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
+    omegaToMinusZkRows = Curves.pow omega (n - BigInt.fromInt zkRows)
+
+    -- Compute perm via permScalar (same as Step side but in WrapField)
+    permInput =
+      { w: map _.zeta (Vector.take @7 evals.witnessEvals)
+      , sigma: map _.zeta evals.sigmaEvals
+      , z: evals.zEvals
+      , shifts: (domainShifts wrapDomainLog2 :: Vector 7 WrapField)
+      , alpha: alphaExpanded
+      , beta: betaExpanded
+      , gamma: gammaExpanded
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: zetaExpanded
+      }
+    perm = permScalar permInput
+
+    -- shifted: Type2 of_field = (value - shift)
     shifted x = Type2 (F (x - type2Shift))
 
-    fromStr s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
+    -- zetaToSrsLength = zeta^(2^srs_length_log2)
+    -- For Wrap: srs_length_log2 = Tock.Rounds.n = WrapIPARounds = 15
+    -- domain_log2 = 15 → zetaToDomainSize = zeta^(2^15) = same
+    zetaPow = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
 
+    -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
           + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
@@ -505,27 +547,27 @@ wrapDummyUnfinalizedProof =
           + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192)
       )
 
+    -- xi = Scalar_challenge.create(Challenge.Constant.dummy) = [1L, 1L] packed
     xi :: SizedF 128 (F WrapField)
     xi = SizedF.wrapF $ unsafePartial fromJust $ SizedF.fromField @128
       (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
   in
     { deferredValues:
         { plonk:
-            { alpha: SizedF.wrapF roComputeResult.alpha
-            , beta: SizedF.wrapF roComputeResult.beta
-            , gamma: SizedF.wrapF roComputeResult.gamma
-            , zeta: SizedF.wrapF roComputeResult.zeta
-            -- perm from derive_plonk with Dummy.evals — hardcoded from OCaml fixture
-            , perm: Type2 (F (fromStr "23440605441886153126678695377597650431034969920935116593970373719018050817987"))
-            , zetaToSrsLength: shifted zetaPow2_15
-            , zetaToDomainSize: shifted zetaPow2_15
+            { alpha: SizedF.wrapF r.alpha
+            , beta: SizedF.wrapF r.beta
+            , gamma: SizedF.wrapF r.gamma
+            , zeta: SizedF.wrapF r.zeta
+            , perm: shifted perm
+            , zetaToSrsLength: shifted zetaPow
+            , zetaToDomainSize: shifted zetaPow
             }
         -- OCaml: `Shifted_value(tock())` stores raw tock value directly (NOT tock - shift).
         -- Type2 (F raw) is the correct representation here, NOT toShifted (F raw).
-        , combinedInnerProduct: Type2 (F roComputeResult.cipRaw)
+        , combinedInnerProduct: Type2 (F r.cipRaw)
         , xi
-        , bulletproofChallenges: map SizedF.wrapF roComputeResult.wrapChalRaw
-        , b: Type2 (F roComputeResult.bRaw)
+        , bulletproofChallenges: map SizedF.wrapF r.wrapChalRaw
+        , b: Type2 (F r.bRaw)
         }
     , shouldFinalize: false
     , spongeDigestBeforeEvaluations: F digestDummy
