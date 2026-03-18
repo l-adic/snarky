@@ -179,17 +179,30 @@ type RoComputeResult =
 
 -- | Run the complete Ro sequence once (matching OCaml's global Ro state).
 -- |
--- | Sequence:
--- |   chal 1–16:  Dummy.Ipa.Wrap.challenges (replicateChal WrapIPARounds = 16)
--- |   chal 17–32: Dummy.Ipa.Step.challenges (replicateChal StepIPARounds = 16 — actually 16?)
--- |   Actually: WrapIPARounds = 15, StepIPARounds = 16 → chal 1–15, 16–31
--- |   chal 32: alpha (scalarChal)
--- |   chal 33: beta  (chal)
--- |   chal 34: gamma (chal)
--- |   chal 35: zeta  (scalarChal)
--- |   tock 1–89: Dummy.evals (42 eval pairs + 1 ft_eval1 scalar)
--- |   tock 90: b (evaluated before CIP in OCaml's record construction)
+-- | Chal sequence (35 calls):
+-- |   chal 1–15:  Dummy.Ipa.Wrap.challenges (WrapIPARounds = 15)
+-- |   chal 16–31: Dummy.Ipa.Step.challenges (StepIPARounds = 16)
+-- |   chal 32–35: Unfinalized.Constant.dummy plonk (alpha, beta, gamma, zeta)
+-- |
+-- | Tock sequence (93 calls):
+-- |   tock 1–89: Dummy.evals
+-- |     15 w evals            x 2 = 30
+-- |     15 coeff evals        x 2 = 30
+-- |      1 z eval             x 2 =  2
+-- |      6 sigma evals        x 2 = 12
+-- |      6 selector evals     x 2 = 12  (generic, poseidon, completeAdd, mul, emul, endomulScalar)
+-- |      1 publicInput        x 2 =  2
+-- |      1 ft_eval1           x 1 =  1
+-- |                                  89
+-- |   tock 90: b  (evaluated before CIP in OCaml record construction)
 -- |   tock 91: cipRaw
+-- |   tock 92–93: proof.ml:dummy openings z2, z1 (right-to-left)
+-- |
+-- | Chal sequence continued (4 more calls):
+-- |   chal 36–39: proof.ml:dummy plonk (zeta, gamma, beta, alpha — right-to-left)
+-- |
+-- | Tick sequence (89 calls, independent counter):
+-- |   tick 1–89: proof.ml:dummy prev_evals (see stepDummyPrevEvals)
 roComputeResult :: RoComputeResult
 roComputeResult = flip evalState mkRo do
   -- Phase 1: IPA challenges (chal counters 1–31)
@@ -202,9 +215,7 @@ roComputeResult = flip evalState mkRo do
   gamma <- chal :: RoM (SizedF 128 WrapField)
   zeta <- scalarChal :: RoM (SizedF 128 WrapField)
 
-  -- Phase 3: Dummy.evals tock calls (tock 1–89)
-  -- Each non-optional Evals field with length n produces two Ro.tock() calls.
-  -- Optional fields are None → no tock calls.
+  -- Phase 3: Dummy.evals tock calls (tock 1–89, see header comment for count)
   _w <- sequence (Array.replicate 15 tockEvalPair)
   _coefficients <- sequence (Array.replicate 15 tockEvalPair)
   _z <- tockEvalPair
@@ -217,11 +228,6 @@ roComputeResult = flip evalState mkRo do
   _endomulScalarSelector <- tockEvalPair
   _publicInput <- tockEvalPair
   _ftEval1 <- tock
-  -- Total: 42 eval pairs × 2 + 1 = 85 tock calls... wait, let me recount:
-  -- 15w + 15coeff + 1z + 6s + genericSel + poseidonSel + completeAddSel + mulSel + emulSel + endomulSel + pubInput
-  -- = (15+15+1+6+1+1+1+1+1+1+1) = 43 pairs × 2 + 1 ft_eval1 = 87 tock calls
-  -- Actually from the original comment: "42 fields × 2 + 2 + 1 = 89 tock calls"
-  -- Let me trust the counter: bRaw = tock 90, cipRaw = tock 91
 
   -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
   bRaw <- tock -- tock 90

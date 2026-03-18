@@ -2688,6 +2688,12 @@ pub fn pallas_srs_b_poly_commitment(
 ) -> Result<Vec<VestaFieldExternal>> {
     let chals: Vec<PallasScalarField> = challenges.iter().map(|f| ***f).collect();
     let coeffs = poly_commitment::commitment::b_poly_coefficients(&chals);
+    if coeffs.len() > srs.g.len() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("SRS too small: need {} generators, have {}", coeffs.len(), srs.g.len()),
+        ));
+    }
     let g = &srs.g[..coeffs.len()];
     use super::super::pasta::types::ProjectivePallas;
     let result: ProjectivePallas = ::ark_ec::VariableBaseMSM::msm_unchecked(g, &coeffs);
@@ -2709,6 +2715,12 @@ pub fn vesta_srs_b_poly_commitment(
 ) -> Result<Vec<PallasFieldExternal>> {
     let chals: Vec<VestaScalarField> = challenges.iter().map(|f| ***f).collect();
     let coeffs = poly_commitment::commitment::b_poly_coefficients(&chals);
+    if coeffs.len() > srs.g.len() {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("SRS too small: need {} generators, have {}", coeffs.len(), srs.g.len()),
+        ));
+    }
     let g = &srs.g[..coeffs.len()];
     use super::super::pasta::types::ProjectiveVesta;
     let result: ProjectiveVesta = ::ark_ec::VariableBaseMSM::msm_unchecked(g, &coeffs);

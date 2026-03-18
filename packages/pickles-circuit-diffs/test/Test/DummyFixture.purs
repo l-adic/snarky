@@ -14,6 +14,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Exception (throw)
 import JS.BigInt as BigInt
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
@@ -57,7 +58,7 @@ lookupFixture key entries = do
 assertField :: String -> String -> Array (Tuple String String) -> Aff Unit
 assertField label expected entries =
   case lookupFixture label entries of
-    Nothing -> liftEffect $ pure unit -- skip missing keys
+    Nothing -> liftEffect $ throw ("Missing fixture key: " <> label)
     Just val -> expected `shouldEqual` val
 
 spec :: SpecT Aff Unit Aff Unit
