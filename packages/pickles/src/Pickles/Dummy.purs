@@ -205,15 +205,17 @@ roComputeResult = flip evalState mkRo do
 
   -- Phase 3: Dummy.evals tock calls (tock 1–89, see header comment for count)
   -- Same right-to-left record + right-to-left :: eval order as the tick-based prev_evals.
-  let tockPointEval :: RoM { zeta :: WrapField, omegaTimesZeta :: WrapField }
-      tockPointEval = do
-        oz <- tock -- right tuple element first (OCaml right-to-left)
-        z <- tock
-        pure { zeta: z, omegaTimesZeta: oz }
-      tockPointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField })
-      tockPointEvalVec = do
-        v <- Vector.generateA (const tockPointEval)
-        pure (Vector.reverse v) -- OCaml Vector.map :: right-to-left side effects
+  let
+    tockPointEval :: RoM { zeta :: WrapField, omegaTimesZeta :: WrapField }
+    tockPointEval = do
+      oz <- tock -- right tuple element first (OCaml right-to-left)
+      z <- tock
+      pure { zeta: z, omegaTimesZeta: oz }
+
+    tockPointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField })
+    tockPointEvalVec = do
+      v <- Vector.generateA (const tockPointEval)
+      pure (Vector.reverse v) -- OCaml Vector.map :: right-to-left side effects
   -- Evals record right-to-left: selectors first, then s, z, coefficients, w
   idxEndomulScalar <- tockPointEval
   idxEmul <- tockPointEval
@@ -221,19 +223,25 @@ roComputeResult = flip evalState mkRo do
   idxCompleteAdd <- tockPointEval
   idxPoseidon <- tockPointEval
   idxGeneric <- tockPointEval
-  let wrapIndexEvals = unsafePartial fromJust $ Vector.toVector @6
-        [idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar]
+  let
+    wrapIndexEvals = unsafePartial fromJust $ Vector.toVector @6
+      [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
   wrapSigmaEvals <- tockPointEvalVec @6
   wrapZEvals <- tockPointEval
   wrapCoeffEvals <- tockPointEvalVec @15
   wrapWitnessEvals <- tockPointEvalVec @15
   wrapPublicEvals <- tockPointEval
   wrapFtEval1 <- tock
-  let wrapDummyEvals =
-        { ftEval1: wrapFtEval1, publicEvals: wrapPublicEvals, zEvals: wrapZEvals
-        , indexEvals: wrapIndexEvals, witnessEvals: wrapWitnessEvals
-        , coeffEvals: wrapCoeffEvals, sigmaEvals: wrapSigmaEvals
-        }
+  let
+    wrapDummyEvals =
+      { ftEval1: wrapFtEval1
+      , publicEvals: wrapPublicEvals
+      , zEvals: wrapZEvals
+      , indexEvals: wrapIndexEvals
+      , witnessEvals: wrapWitnessEvals
+      , coeffEvals: wrapCoeffEvals
+      , sigmaEvals: wrapSigmaEvals
+      }
 
   -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
   bRaw <- tock -- tock 90
@@ -366,13 +374,8 @@ computeDummySgValues pallasSrs vestaSrs =
     stepChalExpanded = map (\c -> toFieldPure c stepEndo) roComputeResult.stepChalRaw
 
     -- Expand plonk challenges to Fq (unfinalized.ml:36-39)
-    -- OCaml pitfall: alpha and zeta use `endo_to_field` which applies the scalar
-    -- challenge expansion formula (2 * endo * x + 1). Beta and gamma use
-    -- `Challenge.Constant.to_tock_field` which is just raw bit packing — NO endo.
-    -- Using endo expansion for beta/gamma produces wrong values.
+    -- alpha/zeta use endo expansion; beta/gamma use raw bit packing (no endo).
     alphaFq = toFieldPure roComputeResult.alpha wrapEndo
-    _betaFq = SizedF.toField roComputeResult.beta
-    _gammaFq = SizedF.toField roComputeResult.gamma
     zetaFq = toFieldPure roComputeResult.zeta wrapEndo
 
     -- Compute sg from SRS
@@ -383,23 +386,11 @@ computeDummySgValues pallasSrs vestaSrs =
       (Vector.toUnfoldable stepChalExpanded)
     stepSg = { x: unsafeIdx stepSgCoords 0, y: unsafeIdx stepSgCoords 1 }
 
-    -- derive_plonk values (unfinalized.ml:85-93, plonk_checks.ml:403-441)
     -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
-    -- srs_length_log2 = 15 (= Tock.Rounds.n)
-    domainLog2 = 15
-    _n = BigInt.fromInt (pow2 domainLog2)
-
-    -- zeta_to_srs_length = zeta^(2^15), computed by repeated squaring
-    -- OCaml: pow2pow zeta srs_length_log2 = 15 squarings of zeta
-    zetaPow2_15 = pow2pow zetaFq domainLog2
-    -- zeta_to_domain_size = zeta^n = same as zeta_to_srs_length when domain = srs
-    -- env.zeta_to_n_minus_1 + 1 = (zeta^n - 1) + 1 = zeta^n
-    zetaToN = zetaPow2_15
-
-    -- OCaml pitfall: Shifted_value.Type2.of_field ~shift s = Shifted_value (s - shift),
-    -- i.e. it SUBTRACTS the shift, not adds. The toShifted typeclass handles this correctly.
-    shifted :: WrapField -> Type2 (F WrapField)
-    shifted x = Type2 (F (x - type2Shift))
+    -- For Wrap: srs_length_log2 = Tock.Rounds.n = WrapIPARounds = domain_log2 = 15
+    -- So zetaToSrsLength = zetaToDomainSize = zeta^(2^15)
+    wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
+    zetaPow = Curves.pow zetaFq (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
 
     -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
@@ -434,8 +425,8 @@ computeDummySgValues pallasSrs vestaSrs =
         , alphaExpanded: alphaFq
         , plonk:
             { perm: wrapDummyUnfinalizedProof.deferredValues.plonk.perm
-            , zetaToSrsLength: shifted zetaPow2_15
-            , zetaToDomainSize: shifted zetaToN
+            , zetaToSrsLength: toShifted (F zetaPow)
+            , zetaToDomainSize: toShifted (F zetaPow)
             }
         , combinedInnerProduct: roComputeResult.cipRaw
         , b: roComputeResult.bRaw
@@ -445,20 +436,6 @@ computeDummySgValues pallasSrs vestaSrs =
 
 unsafeIdx :: forall a. Array a -> Int -> a
 unsafeIdx arr i = unsafePartial fromJust (Array.index arr i)
-
-pow2 :: Int -> Int
-pow2 0 = 1
-pow2 n' = 2 * pow2 (n' - 1)
-
--- | Compute x^(2^k) by k repeated squarings. Matches OCaml's pow2pow.
-pow2pow :: forall f. Semiring f => f -> Int -> f
-pow2pow x 0 = x
-pow2pow x k = pow2pow (x * x) (k - 1)
-
--- | Type2 shift = 2^255 (WrapField.size_in_bits = 255)
--- | OCaml: Shifted_value.Type2.Shift.create = two_to_the F.size_in_bits
-type2Shift :: WrapField
-type2Shift = Curves.fromBigInt (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 255))
 
 -------------------------------------------------------------------------------
 -- | Convenience re-exports
@@ -531,9 +508,6 @@ wrapDummyUnfinalizedProof =
       }
     perm = permScalar permInput
 
-    -- shifted: Type2 of_field = (value - shift)
-    shifted x = Type2 (F (x - type2Shift))
-
     -- zetaToSrsLength = zeta^(2^srs_length_log2)
     -- For Wrap: srs_length_log2 = Tock.Rounds.n = WrapIPARounds = 15
     -- domain_log2 = 15 → zetaToDomainSize = zeta^(2^15) = same
@@ -558,9 +532,9 @@ wrapDummyUnfinalizedProof =
             , beta: SizedF.wrapF r.beta
             , gamma: SizedF.wrapF r.gamma
             , zeta: SizedF.wrapF r.zeta
-            , perm: shifted perm
-            , zetaToSrsLength: shifted zetaPow
-            , zetaToDomainSize: shifted zetaPow
+            , perm: toShifted (F perm)
+            , zetaToSrsLength: toShifted (F zetaPow)
+            , zetaToDomainSize: toShifted (F zetaPow)
             }
         -- OCaml: `Shifted_value(tock())` stores raw tock value directly (NOT tock - shift).
         -- Type2 (F raw) is the correct representation here, NOT toShifted (F raw).
