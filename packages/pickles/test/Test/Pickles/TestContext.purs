@@ -200,6 +200,15 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
   -- | from the public input's Type2(SplitField) unfinalized proofs.
   , fopProofStates :: Vector n (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean)
   , messagesForNextWrapProof :: Vector n (F f)
+  , wrapVerifierIndex ::
+      { sigmaCommLast :: AffinePoint (F f)
+      , columnComms ::
+          { index :: Vector 6 (AffinePoint (F f))
+          , coeff :: Vector 15 (AffinePoint (F f))
+          , sigma :: Vector 6 (AffinePoint (F f))
+          }
+      }
+  , sgOld :: Vector n (AffinePoint (F f))
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -223,6 +232,8 @@ instance StepWitnessM n ds dw (StepProverM n ds dw f) f where
   getOpeningProof _ = StepProverM $ map _.openingProofs ask
   getFopProofStates _ = StepProverM $ map _.fopProofStates ask
   getMessagesForNextWrapProof _ = StepProverM $ map _.messagesForNextWrapProof ask
+  getWrapVerifierIndex _ = StepProverM $ map _.wrapVerifierIndex ask
+  getSgOld _ = StepProverM $ map _.sgOld ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -1676,6 +1687,8 @@ buildStepProverWitness stepCtx wrapCtx =
     , fopProofStates: fopInput.unfinalized :< Vector.nil
     -- TODO: compute real wrap proof message digest
     , messagesForNextWrapProof: F zero :< Vector.nil
+    , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
+    , sgOld: (coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof) :< Vector.nil
     }
 
 -------------------------------------------------------------------------------

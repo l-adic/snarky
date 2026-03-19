@@ -14,6 +14,7 @@ import Prelude
 import Data.Array.NonEmpty as NEA
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector, nil, (:<))
+import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
@@ -26,6 +27,7 @@ import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, extractWrapRawBpChallenges, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
@@ -71,7 +73,8 @@ spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec
 spec cfg = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case, n=0)" do
     let
-      -- n=0 advice: all vectors empty
+      -- n=0 advice: all vectors empty, dummy VK
+      dummyPt = { x: F zero, y: F zero } :: AffinePoint (F StepField)
       emptyAdvice =
         { stepInputFields: []
         , evals: nil
@@ -80,6 +83,15 @@ spec cfg = describe "Pickles.Step.Circuit" do
         , openingProofs: nil
         , fopProofStates: nil
         , messagesForNextWrapProof: nil
+        , wrapVerifierIndex:
+            { sigmaCommLast: dummyPt
+            , columnComms:
+                { index: Vector.generate \_ -> dummyPt
+                , coeff: Vector.generate \_ -> dummyPt
+                , sigma: Vector.generate \_ -> dummyPt
+                }
+            }
+        , sgOld: nil
         }
 
       input :: StepTestInput

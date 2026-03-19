@@ -766,6 +766,8 @@ dummyStepAdvice
      , openingProofs :: Vector 1 { delta :: AffinePoint (F StepField), sg :: AffinePoint (F StepField), lr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }, z1 :: Type2 (SplitField (F StepField) Boolean), z2 :: Type2 (SplitField (F StepField) Boolean) }
      , fopProofStates :: Vector 1 (UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean)
      , messagesForNextWrapProof :: Vector 1 (F StepField)
+     , wrapVerifierIndex :: { sigmaCommLast :: AffinePoint (F StepField), columnComms :: { index :: Vector 6 (AffinePoint (F StepField)), coeff :: Vector 15 (AffinePoint (F StepField)), sigma :: Vector 6 (AffinePoint (F StepField)) } }
+     , sgOld :: Vector 1 (AffinePoint (F StepField))
      }
 dummyStepAdvice =
   let
@@ -799,6 +801,15 @@ dummyStepAdvice =
         } :< Vector.nil
     , fopProofStates: stepDummyFopProofState :< Vector.nil
     , messagesForNextWrapProof: F zero :< Vector.nil
+    , wrapVerifierIndex:
+        { sigmaCommLast: g0
+        , columnComms:
+            { index: Vector.generate \_ -> g0
+            , coeff: Vector.generate \_ -> g0
+            , sigma: Vector.generate \_ -> g0
+            }
+        }
+    , sgOld: g0 :< Vector.nil
     }
 
 -- | Zero-valued proof witness for use in base case bootstrapping.

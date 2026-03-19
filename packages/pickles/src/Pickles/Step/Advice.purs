@@ -63,6 +63,8 @@ module Pickles.Step.Advice
   , getOpeningProof
   , getFopProofStates
   , getMessagesForNextWrapProof
+  , getWrapVerifierIndex
+  , getSgOld
   ) where
 
 import Prelude
@@ -149,6 +151,26 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
   -- | Each digest is a hash of (sg, expanded bp_challenges) for that proof.
   getMessagesForNextWrapProof :: Unit -> m (Vector n (F f))
 
+  -- | Wrap verifier index (VK) as circuit variables.
+  -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
+  -- | Contains sigma commitments (6 + sigmaLast), coefficient commitments (15),
+  -- | and index commitments (6).
+  getWrapVerifierIndex
+    :: Unit
+    -> m
+         { sigmaCommLast :: AffinePoint (F f)
+         , columnComms ::
+             { index :: Vector 6 (AffinePoint (F f))
+             , coeff :: Vector 15 (AffinePoint (F f))
+             , sigma :: Vector 6 (AffinePoint (F f))
+             }
+         }
+
+  -- | Per-proof sg points (prev_challenge_polynomial_commitments).
+  -- | One point per previous proof, from Per_proof_witness.
+  -- | OCaml: per_proof_witness.ml:91 prev_challenge_polynomial_commitments
+  getSgOld :: Unit -> m (Vector n (AffinePoint (F f)))
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => StepWitnessM n ds dw Effect f where
@@ -159,3 +181,5 @@ instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField 
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
+  getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
+  getSgOld _ = throw "impossible! getSgOld called during compilation"
