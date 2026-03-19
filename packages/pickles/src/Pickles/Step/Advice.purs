@@ -86,10 +86,11 @@ import Snarky.Types.Shifted (SplitField, Type1, Type2)
 -- |
 -- | Parameters:
 -- | - `n`: Number of previous proofs being verified
+-- | - `ds`: Step IPA rounds (determines FOP bp challenges and prevChallenges size)
 -- | - `dw`: Wrap IPA rounds (determines lr vector size in opening proof)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
 -- | - `f`: Circuit field (Vesta.ScalarField for Step)
-class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
+class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
   -- | Step circuit input as flat field elements (for private witness allocation).
   -- | In OCaml, the Step input (app_state, unfinalized_proofs, etc.) enters as
   -- | private witness via Req.App_state and Req.Unfinalized_proofs. The caller
@@ -104,7 +105,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | Expanded bulletproof challenges from each previous proof.
   -- | Used for challenge_digest (OptSponge) and sg_eval (bPoly) computations.
   -- | OCaml: prev_challenges from Req.Proof_with_datas
-  getPrevChallenges :: Unit -> m (Vector n (Vector dw (F f)))
+  getPrevChallenges :: Unit -> m (Vector n (Vector ds (F f)))
 
   -- | Protocol commitments for IVP verification.
   -- | OCaml: Req.Messages (per previous Wrap proof)
@@ -140,7 +141,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | These come from Per_proof_witness.proof_state (private witness),
   -- | distinct from the public input's Type2(SplitField) unfinalized proofs.
   -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
-  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
+  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean))
 
   -- | Digests for the next Wrap proof (one per previous proof).
   -- | In OCaml this is loaded via exists from Req.Messages_for_next_wrap_proof
@@ -150,7 +151,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
 
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
+instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => StepWitnessM n ds dw Effect f where
   getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"

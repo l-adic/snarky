@@ -13,19 +13,20 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Data.Schnorr.Gen (genValidSignature)
-import Data.Vector (nil, (:<))
+import Data.Vector (Vector, nil, (:<))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
-import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, extractWrapRawBpChallenges, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
@@ -59,11 +60,11 @@ trivialAppCircuit _ = pure
 testCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 0 WrapIPARounds m StepField
+  => StepWitnessM 0 StepIPARounds WrapIPARounds m StepField
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
-  _ <- stepCircuit dummyFinalizeOtherProofParams trivialAppCircuit input
+  _ <- stepCircuit @StepIPARounds dummyFinalizeOtherProofParams trivialAppCircuit input
   pure unit
 
 spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec Unit
@@ -92,9 +93,9 @@ spec cfg = describe "Pickles.Step.Circuit" do
     let
       testCircuit'
         :: forall t
-         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 0 WrapIPARounds StepField)
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 0 StepIPARounds WrapIPARounds StepField)
         => StepTestInputVar
-        -> Snarky (KimchiConstraint StepField) t (StepProverM 0 WrapIPARounds StepField) Unit
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 0 StepIPARounds WrapIPARounds StepField) Unit
       testCircuit' = testCircuit
     void $ circuitTestM' @StepField
       (runStepProverM emptyAdvice)
@@ -114,8 +115,8 @@ realDataSpec cfg =
     it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ step0, wrap0 } -> do
       schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
       let
-        challengeDigest = computeStepChallengeDigest wrap0
-        sgEvals = computeStepSgEvals step0 wrap0
+        challengeDigest = computeStepChallengeDigest step0
+        sgEvals = computeStepSgEvals step0
         params = buildStepFinalizeParams step0
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
@@ -124,11 +125,27 @@ realDataSpec cfg =
           , wrapCtx: wrap0
           }
 
+        -- Public input uses N=15 Wrap bp challenges, not N=16 FOP state
+        wrapBpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+        wrapBpChals = coerce (extractWrapRawBpChallenges wrap0)
+        fopDv = fopInput.unfinalized.deferredValues
+        publicUnfinalized = type1ToType2SF
+          { deferredValues:
+              { plonk: fopDv.plonk
+              , combinedInnerProduct: fopDv.combinedInnerProduct
+              , xi: fopDv.xi
+              , bulletproofChallenges: wrapBpChals
+              , b: fopDv.b
+              }
+          , shouldFinalize: fopInput.unfinalized.shouldFinalize
+          , spongeDigestBeforeEvaluations: fopInput.unfinalized.spongeDigestBeforeEvaluations
+          }
+
         input :: StepSchnorrInput
         input =
           { appInput: schnorrInput
           , previousProofInputs: unit :< nil
-          , unfinalizedProofs: type1ToType2SF fopInput.unfinalized :< nil
+          , unfinalizedProofs: publicUnfinalized :< nil
           , prevChallengeDigests: F challengeDigest :< nil
           }
         witnessData = buildStepProverWitness step0 wrap0
@@ -136,19 +153,19 @@ realDataSpec cfg =
         realCircuit
           :: forall t m
            . CircuitM StepField (KimchiConstraint StepField) t m
-          => StepWitnessM 1 WrapIPARounds m StepField
+          => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do
-          _ <- stepCircuit params (stepSchnorrAppCircuit true) i
+          _ <- stepCircuit @StepIPARounds params (stepSchnorrAppCircuit true) i
           pure unit
 
       let
         realCircuit'
           :: forall t
-           . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+           . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField)
           => StepSchnorrInputVar
-          -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+          -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField) Unit
         realCircuit' = realCircuit
       void $ circuitTestM' @StepField
         (runStepProverM witnessData)

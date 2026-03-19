@@ -12,6 +12,7 @@ module Pickles.Dummy
   , dummyIpaChallenges
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
+  , stepDummyFopProofState
   , dummyProofWitness
   , dummyStepAdvice
   , dummyFinalizeOtherProofParams
@@ -547,18 +548,17 @@ wrapDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
--- | Dummy unfinalized proof for the Step circuit's FOP (Step verifying a Wrap proof).
--- |
--- | Computes expand_deferred on tick()-derived proof evaluations, matching OCaml's
--- | Wrap_deferred_values.expand_deferred applied to proof.ml:dummy.
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_deferred_values.ml (expand_deferred)
--- | Verified against fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
-stepDummyUnfinalizedProof
-  :: forall sf
+-- | Shared computation for Step dummy unfinalized proofs.
+-- | The `d` parameter and bp challenges vary between:
+-- | - Public input side (WrapIPARounds = 15, Wrap IPA challenges)
+-- | - FOP side (StepIPARounds = 16, Step IPA challenges)
+-- | All other fields (plonk, cip, b, xi, spongeDigest) are identical.
+stepDummyUnfinalizedProofWith
+  :: forall d sf
    . Shifted (F StepField) sf
-  => UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
-stepDummyUnfinalizedProof =
+  => Vector d (SizedF 128 (F StepField))
+  -> UnfinalizedProof d (F StepField) sf Boolean
+stepDummyUnfinalizedProofWith bpChals =
   let
     r = roComputeResult
     evals = r.stepDummyPrevEvals
@@ -687,11 +687,6 @@ stepDummyUnfinalizedProof =
     srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
     zetaToSrsLength = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
     zetaToDomainSize = Curves.pow zetaExpanded n
-
-    -- Bulletproof challenges for the UnfinalizedProof record (WrapIPARounds = 15)
-    -- These are the raw 128-bit scalar challenges coerced from WrapField to StepField
-    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
-    bpChals = map (SizedF.wrapF <<< coerceViaBits) r.wrapChalRaw
   in
     { deferredValues:
         { plonk:
@@ -712,12 +707,53 @@ stepDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F (zero :: StepField)
     }
 
+-- | Dummy unfinalized proof for the Step circuit's FOP (Step verifying a Wrap proof).
+-- |
+-- | Computes expand_deferred on tick()-derived proof evaluations, matching OCaml's
+-- | Wrap_deferred_values.expand_deferred applied to proof.ml:dummy.
+-- |
+-- | Uses WrapIPARounds (15) bp challenges from the Wrap IPA, matching the public
+-- | input's unfinalized proof structure.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/wrap_deferred_values.ml (expand_deferred)
+-- | Verified against fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
+stepDummyUnfinalizedProof
+  :: forall sf
+   . Shifted (F StepField) sf
+  => UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
+stepDummyUnfinalizedProof =
+  let
+    -- Bulletproof challenges (WrapIPARounds = 15)
+    -- Raw 128-bit scalar challenges coerced from WrapField to StepField
+    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+    bpChals = map (SizedF.wrapF <<< coerceViaBits) roComputeResult.wrapChalRaw
+  in
+    stepDummyUnfinalizedProofWith bpChals
+
+-- | Dummy FOP proof state with StepIPARounds (16) bp challenges.
+-- |
+-- | Same deferred values as stepDummyUnfinalizedProof but with Step IPA challenges
+-- | (N16) instead of Wrap IPA challenges (N15). Used for the FOP proof states in
+-- | the advisory monad and prevChallenges vector.
+stepDummyFopProofState
+  :: forall sf
+   . Shifted (F StepField) sf
+  => UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+stepDummyFopProofState =
+  let
+    -- Bulletproof challenges (StepIPARounds = 16)
+    -- Raw 128-bit scalar challenges coerced from StepField
+    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bpChals = map SizedF.wrapF roComputeResult.stepChalRaw
+  in
+    stepDummyUnfinalizedProofWith bpChals
+
 -- | Dummy Step advice for base case (n=1 previous proof slot, all dummy).
 -- |
 -- | Uses deterministic values from OCaml's proof.ml:dummy:
 -- | - Messages: all Pallas generator (Tock.Curve.one)
 -- | - Opening proof: generator for delta/sg/lr, Ro.tock() for z1/z2
--- | - FOP proof state: stepDummyUnfinalizedProof (from expand_deferred)
+-- | - FOP proof state: stepDummyFopProofState (from expand_deferred, N16 bp challenges)
 -- | - Evals: dummyProofWitness (all zeros)
 -- | - Prev challenges: all zeros (base case)
 -- |
@@ -725,10 +761,10 @@ stepDummyUnfinalizedProof =
 dummyStepAdvice
   :: { stepInputFields :: Array (F StepField)
      , evals :: Vector 1 (ProofWitness (F StepField))
-     , prevChallenges :: Vector 1 (Vector WrapIPARounds (F StepField))
+     , prevChallenges :: Vector 1 (Vector StepIPARounds (F StepField))
      , messages :: Vector 1 { wComm :: Vector 15 (AffinePoint (F StepField)), zComm :: AffinePoint (F StepField), tComm :: Vector 7 (AffinePoint (F StepField)) }
      , openingProofs :: Vector 1 { delta :: AffinePoint (F StepField), sg :: AffinePoint (F StepField), lr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }, z1 :: Type2 (SplitField (F StepField) Boolean), z2 :: Type2 (SplitField (F StepField) Boolean) }
-     , fopProofStates :: Vector 1 (UnfinalizedProof WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean)
+     , fopProofStates :: Vector 1 (UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean)
      , messagesForNextWrapProof :: Vector 1 (F StepField)
      }
 dummyStepAdvice =
@@ -761,7 +797,7 @@ dummyStepAdvice =
         , z1
         , z2
         } :< Vector.nil
-    , fopProofStates: stepDummyUnfinalizedProof :< Vector.nil
+    , fopProofStates: stepDummyFopProofState :< Vector.nil
     , messagesForNextWrapProof: F zero :< Vector.nil
     }
 

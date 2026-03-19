@@ -23,7 +23,7 @@ import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Types (StepField, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -42,11 +42,11 @@ import Type.Proxy (Proxy(..))
 stepSchnorrCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 WrapIPARounds m StepField
+  => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  _ <- stepCircuit @StepIPARounds Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -64,7 +64,7 @@ genStepSchnorrInput = do
     }
 
 -- | Dummy advice using production library values (from Pickles.Dummy).
-genStepSchnorrAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
+genStepSchnorrAdvice :: Gen (StepAdvice 1 StepIPARounds WrapIPARounds StepField)
 genStepSchnorrAdvice = pure Dummy.dummyStepAdvice
 
 spec
@@ -77,9 +77,9 @@ spec cfg = describe "Step E2E with Schnorr" do
     let
       stepSchnorrCircuit'
         :: forall t
-         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField)
         => StepSchnorrInputVar
-        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField) Unit
       stepSchnorrCircuit' = stepSchnorrCircuit
     void $ circuitTestM' @StepField (runStepProverM advice)
       cfg

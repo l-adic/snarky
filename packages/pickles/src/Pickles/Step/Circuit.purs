@@ -165,11 +165,13 @@ hashMessagesForNextStepProofStub _challenges = do
 -- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
 -- | Proof witnesses are provided privately via `StepWitnessM`.
 stepCircuit
-  :: forall n ds _dw dw input prevInput output aux t m r
-   . Add 1 _dw dw
+  :: forall n _ds @ds _dw dw input prevInput output aux t m r
+   . Add 1 _ds ds
+  => Add 1 _dw dw
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  => StepWitnessM n dw m Vesta.ScalarField
+  => StepWitnessM n ds dw m Vesta.ScalarField
   => Reflectable n Int
+  => Reflectable ds Int
   => Reflectable dw Int
   => FinalizeOtherProofParams Vesta.ScalarField r
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
@@ -180,12 +182,12 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
-  proofWitnesses <- exists $ lift $ getProofWitnesses @_ @dw unit
-  prevChallenges <- exists $ lift $ getPrevChallenges @_ @dw unit
+  proofWitnesses <- exists $ lift $ getProofWitnesses @_ @ds @dw unit
+  prevChallenges <- exists $ lift $ getPrevChallenges @_ @ds @dw unit
   -- FOP proof states (Type1, private witness matching Per_proof_witness.proof_state)
-  fopProofStates <- exists $ lift $ getFopProofStates @_ @dw unit
+  fopProofStates <- exists $ lift $ getFopProofStates @_ @ds @dw unit
   -- Wrap proof message digests (loaded from prover, NOT computed in-circuit)
-  messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @dw unit
+  messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @ds @dw unit
 
   let
     shared =

@@ -19,12 +19,12 @@ import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, stepDummyUnfinalizedProof)
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyProofWitness, stepDummyFopProofState)
 import Pickles.PlonkChecks.XiCorrect (emptyPrevChallengeDigest)
 import Pickles.ShiftOps (FopShiftOps)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, finalizeOtherProofCircuit)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, assert_)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -39,11 +39,11 @@ import Test.Spec (Spec, SpecT, describe, it)
 
 -- | Value type for test input (Step-side finalize: verifying Wrap proof → d = WrapIPARounds)
 type FinalizeOtherProofTestInput =
-  FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean
+  FinalizeOtherProofInput 0 StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
 
 -- | Variable type for circuit
 type FinalizeOtherProofTestInputVar =
-  FinalizeOtherProofInput 0 WrapIPARounds (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
+  FinalizeOtherProofInput 0 StepIPARounds (FVar StepField) (Type1 (FVar StepField)) (BoolVar StepField)
 
 -------------------------------------------------------------------------------
 -- | Tests
@@ -57,7 +57,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: stepDummyUnfinalizedProof
+        { unfinalized: stepDummyFopProofState
         , witness: dummyProofWitness
         , mask: Vector.nil
         , prevChallenges: Vector.nil
