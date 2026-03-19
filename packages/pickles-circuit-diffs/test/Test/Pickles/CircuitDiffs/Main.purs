@@ -32,6 +32,7 @@ import Pickles.CircuitDiffs.PureScript.GroupMap (compileGroupMap)
 import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesStep (compileHashMessagesStep)
 import Pickles.CircuitDiffs.PureScript.IvpStep (compileIvpStep)
+import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
 import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationStep)
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
@@ -444,6 +445,15 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
+      describe "Step verify" do
+        let
+          -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
+          stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
+          stepVerifySrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 268) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
