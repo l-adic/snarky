@@ -64,11 +64,13 @@ module Test.Pickles.TestContext
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Identity (Identity(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
 import Data.Map (Map)
@@ -102,7 +104,7 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode(..))
+import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
 import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
@@ -1652,6 +1654,110 @@ computeStepSgEvals stepCtx =
       , omegaTimesZeta: bPoly expandedChals (plonkExpanded.zeta * omega)
       }
     ]
+
+-------------------------------------------------------------------------------
+-- | Pure x_hat computation via makeSolver
+-------------------------------------------------------------------------------
+
+-- | Compute x_hat (public input commitment) in pure mode by evaluating the
+-- | publicInputCommit circuit on concrete values via makeSolver.
+computeXhatPure
+  :: { lagrangeComms :: Array (AffinePoint (F StepField))
+     , blindingH :: AffinePoint (F StepField)
+     }
+  -> WrapStatementPublicInput StepIPARounds (F StepField)
+  -> AffinePoint (F StepField)
+computeXhatPure { lagrangeComms, blindingH } publicInput =
+  let
+    xhatCircuit
+      :: forall t
+       . CircuitM StepField (KimchiConstraint StepField) t Identity
+      => WrapStatementPublicInput StepIPARounds (FVar StepField)
+      -> Snarky (KimchiConstraint StepField) t Identity (AffinePoint (FVar StepField))
+    xhatCircuit = publicInputCommit
+      { curveParams: curveParams (Proxy @Pallas.G)
+      , lagrangeComms
+      , blindingH
+      , correctionMode: PureCorrections
+      }
+    solver = makeSolver (Proxy @(KimchiConstraint StepField)) xhatCircuit
+  in
+    case un Identity (runExceptT (solver publicInput)) of
+      Left e -> unsafeThrow ("computeXhatPure failed: " <> show e)
+      Right (Tuple result _) -> result
+
+-------------------------------------------------------------------------------
+-- | Pure Step IVP transcript computation
+-------------------------------------------------------------------------------
+
+-- | Compute the pure index_digest from VK commitments.
+-- | Matches the IVP's sponge_after_index computation (step_verifier.ml:1167-1176).
+computeIndexDigestPure
+  :: { sigma :: Vector 6 (AffinePoint (F StepField))
+     , sigmaLast :: AffinePoint (F StepField)
+     , coeff :: Vector 15 (AffinePoint (F StepField))
+     , index :: Vector 6 (AffinePoint (F StepField))
+     }
+  -> StepField
+computeIndexDigestPure vk =
+  let
+    absorbPt s { x: F x', y: F y' } = RandomOracle.absorb y' (RandomOracle.absorb x' s)
+    s0 = initialSponge :: Sponge StepField
+    s1 = foldl absorbPt s0 vk.sigma
+    s2 = absorbPt s1 vk.sigmaLast
+    s3 = foldl absorbPt s2 vk.coeff
+    s4 = foldl absorbPt s3 vk.index
+  in
+    (RandomOracle.squeeze s4).result
+
+-- | Compute the full Step IVP transcript in pure mode.
+-- |
+-- | Runs the same sponge transcript as incrementallyVerifyProof but on
+-- | concrete values. Returns the plonk challenges and sponge digest that
+-- | the circuit will verify via assertEq.
+-- |
+-- | This is the pure equivalent of OCaml's Oracles.create applied to the
+-- | Wrap proof data that the Step circuit verifies.
+computeStepIvpTranscript
+  :: { vk ::
+         { sigma :: Vector 6 (AffinePoint (F StepField))
+         , sigmaLast :: AffinePoint (F StepField)
+         , coeff :: Vector 15 (AffinePoint (F StepField))
+         , index :: Vector 6 (AffinePoint (F StepField))
+         }
+     , sgOld :: Vector 0 (AffinePoint StepField)
+     , publicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
+     , wComm :: Vector 15 (AffinePoint (F StepField))
+     , zComm :: AffinePoint (F StepField)
+     , tComm :: Vector 7 (AffinePoint (F StepField))
+     , lagrangeComms :: Array (AffinePoint (F StepField))
+     , blindingH :: AffinePoint (F StepField)
+     }
+  -> { beta :: SizedF 128 StepField
+     , gamma :: SizedF 128 StepField
+     , alphaChal :: SizedF 128 StepField
+     , zetaChal :: SizedF 128 StepField
+     , digest :: StepField
+     }
+computeStepIvpTranscript { vk, sgOld, publicInput, wComm, zComm, tComm, lagrangeComms, blindingH } =
+  let
+    indexDigest = computeIndexDigestPure vk
+
+    -- Compute x_hat via makeSolver on publicInputCommit
+    xHat = computeXhatPure { lagrangeComms, blindingH } publicInput
+
+    -- Run the Fq-sponge transcript in Step mode (regular sponge, absorb index_digest + sgOld before x_hat)
+    transcriptInput =
+      { indexDigest
+      , sgOld
+      , publicComm: coerce xHat :: AffinePoint StepField
+      , wComm: coerce wComm :: Vector 15 (AffinePoint StepField)
+      , zComm: coerce zComm :: AffinePoint StepField
+      , tComm: coerce tComm :: Vector 7 (AffinePoint StepField)
+      }
+  in
+    Pickles.Sponge.evalPureSpongeM (initialSponge :: Sponge StepField)
+      (spongeTranscriptPure transcriptInput)
 
 -------------------------------------------------------------------------------
 -- | Build Step-side private witness data from a WrapProofContext
