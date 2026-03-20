@@ -16,6 +16,9 @@ module Pickles.Step.Circuit
   , AppCircuitOutput
   -- * Step Circuit Types (re-exported from Pickles.Types)
   , module Pickles.Types
+  -- * Wrap Statement Public Input
+  , WrapStatementPublicInput
+  , buildWrapPublicInput
   -- * Step Circuit Combinator
   , stepCircuit
   ) where
@@ -23,10 +26,11 @@ module Pickles.Step.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Fin (unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
@@ -37,11 +41,14 @@ import Pickles.Types (StepInput, StepStatement)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Types.Shifted (SplitField, Type1, Type2)
+import Snarky.Types.Shifted (SplitField, Type1(..), Type2)
+import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -119,6 +126,106 @@ finalizeOtherProof params shared unfinalized witness =
     , prevChallenges: shared.prevChallenges
     , domainLog2Var: shared.domainLog2Var
     }
+
+-------------------------------------------------------------------------------
+-- | Wrap Statement Public Input (Spec.pack output)
+-------------------------------------------------------------------------------
+
+-- | Type alias for the Wrap Statement packed as public input for the Step IVP.
+-- |
+-- | This matches OCaml's Spec.pack of Types.Wrap.Statement.In_circuit:
+-- |   Vec5 FVar:       [cip, b, zetaToSrs, zetaToDom, perm]
+-- |   Vec2 SizedF128:  [beta, gamma]
+-- |   Vec3 SizedF128:  [alpha, zeta, xi]
+-- |   Vec3 FVar:       [spongeDigest, msgWrap, msgStep]
+-- |   Vec(ds) SizedF128: bulletproof_challenges (StepIPARounds)
+-- |   SizedF10:        branch_data
+-- |
+-- | Reference: composition_types.ml Per_proof.In_circuit.to_data (line 1212)
+type WrapStatementPublicInput ds f =
+  Tuple (Vector 5 (FVar f))
+    ( Tuple (Vector 2 (SizedF 128 (FVar f)))
+        ( Tuple (Vector 3 (SizedF 128 (FVar f)))
+            ( Tuple (Vector 3 (FVar f))
+                ( Tuple (Vector ds (SizedF 128 (FVar f)))
+                    (SizedF 10 (FVar f))
+                )
+            )
+        )
+    )
+
+-- | Build the Wrap Statement public input from per-proof data.
+-- |
+-- | Constructs the Spec.pack tuple from the fopState's deferred values,
+-- | message digests, and branch_data.
+-- |
+-- | branch_data = 4*domainLog2 + mask0 + 2*mask1
+-- |   where mask encodes proofs_verified (MaxProofsVerified=2)
+-- |
+-- | Reference: step_main.ml:70-80, step_verifier.ml:1242-1315
+buildWrapPublicInput
+  :: forall ds f
+   . PrimeField f
+  => { fopState :: UnfinalizedProof ds (FVar f) (Type1 (FVar f)) (BoolVar f)
+     , messagesForNextWrapProof :: FVar f
+     , messagesForNextStepProof :: FVar f
+     , domainLog2 :: Int
+     , mustVerify :: Vector 2 (BoolVar f)
+     }
+  -> WrapStatementPublicInput ds f
+buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepProof, domainLog2, mustVerify } =
+  let
+    dv = fopState.deferredValues
+    p = dv.plonk
+
+    -- Unwrap Type1 to get the underlying FVar
+    unwrap :: Type1 (FVar f) -> FVar f
+    unwrap (Type1 x) = x
+
+    -- Branch_data.pack: (four * domain_log2) + pack [mask_0; mask_1]
+    -- = 4*domainLog2 + mask_0 + 2*mask_1
+    packedBranchData =
+      let
+        four = one + one + one + one
+        two = one + one
+        mask0 :: FVar f
+        mask0 = coerce (Vector.index mustVerify (unsafeFinite @2 0))
+        mask1 :: FVar f
+        mask1 = coerce (Vector.index mustVerify (unsafeFinite @2 1))
+      in
+        CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ mask0 (CVar.scale_ two mask1))
+  in
+    Tuple
+      -- Vec5 FVar: [cip, b, zetaToSrs, zetaToDom, perm]
+      ( unwrap dv.combinedInnerProduct
+          :< unwrap dv.b
+          :< unwrap p.zetaToSrsLength
+          :< unwrap p.zetaToDomainSize
+          :< unwrap p.perm
+          :< Vector.nil
+      )
+      ( Tuple
+          -- Vec2 SizedF128: [beta, gamma]
+          (p.beta :< p.gamma :< Vector.nil)
+          ( Tuple
+              -- Vec3 SizedF128: [alpha, zeta, xi]
+              (p.alpha :< p.zeta :< dv.xi :< Vector.nil)
+              ( Tuple
+                  -- Vec3 FVar: [spongeDigest, msgWrap, msgStep]
+                  ( fopState.spongeDigestBeforeEvaluations
+                      :< messagesForNextWrapProof
+                      :< messagesForNextStepProof
+                      :< Vector.nil
+                  )
+                  ( Tuple
+                      -- Vec(ds) SizedF128: bulletproof_challenges
+                      dv.bulletproofChallenges
+                      -- SizedF10: branch_data
+                      (unsafeCoerce packedBranchData :: SizedF 10 (FVar f))
+                  )
+              )
+          )
+      )
 
 -------------------------------------------------------------------------------
 -- | Stub Implementations (to be replaced)
