@@ -91,11 +91,11 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, roComputeResult, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainShifts, evalSelectorPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator, domainShifts, evalSelectorPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.Linearization.Vesta as VestaTokens
@@ -128,7 +128,8 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, cre
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
+import Snarky.Circuit.DSL.SizedF (toField, wrapF) as SizedF
+import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -1758,6 +1759,168 @@ computeStepIvpTranscript { vk, sgOld, publicInput, wComm, zComm, tComm, lagrange
   in
     Pickles.Sponge.evalPureSpongeM (initialSponge :: Sponge StepField)
       (spongeTranscriptPure transcriptInput)
+
+-------------------------------------------------------------------------------
+-- | Self-consistent base case unfinalized proof
+-------------------------------------------------------------------------------
+
+-- | Build an unfinalized proof for the base case where the plonk challenges
+-- | and sponge digest are derived from the IVP transcript (not Ro).
+-- |
+-- | This ensures the IVP's internal assertEq for plonk passes during proving.
+-- | The plonk values come from computeStepIvpTranscript; everything else
+-- | (evals, bp challenges, Fr-sponge, CIP, b, perm) is computed from those.
+buildBaseCaseUnfinalizedProof
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { transcript ::
+         { beta :: SizedF 128 StepField
+         , gamma :: SizedF 128 StepField
+         , alphaChal :: SizedF 128 StepField
+         , zetaChal :: SizedF 128 StepField
+         , digest :: StepField
+         }
+     }
+  -> UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
+buildBaseCaseUnfinalizedProof { transcript } =
+  let
+    r = Dummy.roComputeResult
+    evals = r.stepDummyPrevEvals
+    EndoScalar stepEndoVal = (endoScalar :: EndoScalar Vesta.ScalarField)
+
+    -- Use transcript-derived plonk challenges instead of Ro-derived
+    alphaExpanded = toFieldPure transcript.alphaChal stepEndoVal
+    betaExpanded = SizedF.toField transcript.beta :: StepField
+    gammaExpanded = SizedF.toField transcript.gamma :: StepField
+    zetaExpanded = toFieldPure transcript.zetaChal stepEndoVal
+
+    -- Domain parameters (domain_log2 = 15 from proof.ml:dummy ~domain_log2:15)
+    domainLog2 = reflectType (Proxy @WrapIPARounds)
+    zkRows_ = 3
+    omega = (domainGenerator domainLog2 :: StepField)
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+    zetaw = zetaExpanded * omega
+    zetaToNMinus1 = pow zetaExpanded n - one
+    omegaM1 = recip omega
+    omegaM2 = omegaM1 * omegaM1
+    omegaM3 = omegaM2 * omegaM1
+    zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows_)
+
+    -- Fr-sponge: use transcript digest instead of zero
+    expandedBpChals :: Vector StepIPARounds StepField
+    expandedBpChals = map (\c -> toFieldPure c stepEndoVal) (map coerceViaBits r.stepChalRaw)
+
+    challengesDigest :: StepField
+    challengesDigest =
+      let
+        sponge = foldl (\s c -> RandomOracle.absorb c s) (initialSponge :: Sponge StepField) expandedBpChals
+        sponge2 = foldl (\s c -> RandomOracle.absorb c s) sponge expandedBpChals
+      in
+        (RandomOracle.squeeze sponge2).result
+
+    frInput :: FrSpongeInput StepField
+    frInput =
+      { fqDigest: transcript.digest -- transcript-derived, NOT zero
+      , prevChallengeDigest: challengesDigest
+      , ftEval1: evals.ftEval1
+      , publicEvals: evals.publicEvals
+      , zEvals: evals.zEvals
+      , indexEvals: evals.indexEvals
+      , witnessEvals: evals.witnessEvals
+      , coeffEvals: evals.coeffEvals
+      , sigmaEvals: evals.sigmaEvals
+      , endo: stepEndoVal
+      }
+    frResult = frSpongeChallengesPure frInput
+
+    -- Perm, ftEval0, CIP, b — same as stepDummyUnfinalizedProofWith but with transcript plonk
+    permInput =
+      { w: map _.zeta (Vector.take @7 evals.witnessEvals)
+      , sigma: map _.zeta evals.sigmaEvals
+      , z: evals.zEvals
+      , shifts: (domainShifts domainLog2 :: Vector 7 StepField)
+      , alpha: alphaExpanded
+      , beta: betaExpanded
+      , gamma: gammaExpanded
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: zetaExpanded
+      }
+    perm = permScalar permInput
+
+    permContrib = permContribution permInput
+    vanishesOnZk = one :: StepField
+    lagrangeFalse0 = unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zetaExpanded }
+    lagrangeTrue1 = unnormalizedLagrangeBasis { domainLog2, zkRows: zkRows_, offset: -1, pt: zetaExpanded }
+    evalPoint = buildEvalPoint
+      { witnessEvals: evals.witnessEvals
+      , coeffEvals: map _.zeta evals.coeffEvals
+      , indexEvals: evals.indexEvals
+      , defaultVal: zero
+      }
+    challenges_ = buildChallenges
+      { alpha: alphaExpanded
+      , beta: betaExpanded
+      , gamma: gammaExpanded
+      , jointCombiner: zero
+      , vanishesOnZk
+      , lagrangeFalse0
+      , lagrangeTrue1
+      }
+    env = fieldEnv evalPoint challenges_
+    gateConstraints = evaluate PallasTokens.constantTermTokens env
+    ftEval0Value = ftEval0
+      { permContribution: permContrib
+      , publicEval: negate evals.publicEvals.zeta
+      , gateConstraints
+      }
+
+    ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
+
+    allEvals45 :: Vector 45 (PointEval StepField)
+    allEvals45 =
+      (evals.publicEvals :< ftPointEval :< evals.zEvals :< Vector.nil)
+        `Vector.append` evals.indexEvals
+        `Vector.append` evals.witnessEvals
+        `Vector.append` evals.coeffEvals
+        `Vector.append` evals.sigmaEvals
+
+    sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
+    cipAllEvals = [ sgPointEval, sgPointEval ] <> Array.fromFoldable allEvals45
+    cipStep { result, scale } eval =
+      let term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
+      in { result: result + scale * term, scale: scale * frResult.xi }
+    cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
+
+    b_ = computeB expandedBpChals { zeta: zetaExpanded, zetaOmega: zetaw, evalscale: frResult.evalscale }
+
+    srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
+    zetaToSrsLength = pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
+    zetaToDomainSize = pow zetaExpanded n
+
+    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+    bpChals = map (SizedF.wrapF <<< coerceViaBits) r.wrapChalRaw
+  in
+    { deferredValues:
+        { plonk:
+            { alpha: SizedF.wrapF transcript.alphaChal
+            , beta: SizedF.wrapF transcript.beta
+            , gamma: SizedF.wrapF transcript.gamma
+            , zeta: SizedF.wrapF transcript.zetaChal
+            , perm: toShifted (F perm)
+            , zetaToSrsLength: toShifted (F zetaToSrsLength)
+            , zetaToDomainSize: toShifted (F zetaToDomainSize)
+            }
+        , combinedInnerProduct: toShifted (F cip)
+        , xi: SizedF.wrapF (coerceViaBits frResult.rawXi)
+        , bulletproofChallenges: bpChals
+        , b: toShifted (F b_)
+        }
+    , shouldFinalize: false
+    , spongeDigestBeforeEvaluations: F transcript.digest
+    }
 
 -------------------------------------------------------------------------------
 -- | Build Step-side private witness data from a WrapProofContext

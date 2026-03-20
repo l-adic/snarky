@@ -16,6 +16,7 @@ module Pickles.Dummy
   , dummyProofWitness
   , dummyStepAdvice
   , dummyFinalizeOtherProofParams
+  , roComputeResult
   , Ro
   , mkRo
   , tick
