@@ -147,12 +147,12 @@ finalizeOtherProof params shared unfinalized witness =
 -- |
 -- | Reference: composition_types.ml Per_proof.In_circuit.to_data (line 1212)
 type WrapStatementPublicInput ds f =
-  Tuple (Vector 5 (FVar f))
-    ( Tuple (Vector 2 (SizedF 128 (FVar f)))
-        ( Tuple (Vector 3 (SizedF 128 (FVar f)))
-            ( Tuple (Vector 3 (FVar f))
-                ( Tuple (Vector ds (SizedF 128 (FVar f)))
-                    (SizedF 10 (FVar f))
+  Tuple (Vector 5 f)
+    ( Tuple (Vector 2 (SizedF 128 f))
+        ( Tuple (Vector 3 (SizedF 128 f))
+            ( Tuple (Vector 3 f)
+                ( Tuple (Vector ds (SizedF 128 f))
+                    (SizedF 10 f)
                 )
             )
         )
@@ -177,7 +177,7 @@ buildWrapPublicInput
      , mask0 :: BoolVar f
      , mask1 :: BoolVar f
      }
-  -> WrapStatementPublicInput ds f
+  -> WrapStatementPublicInput ds (FVar f)
 buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepProof, domainLog2, mask0, mask1 } =
   let
     dv = fopState.deferredValues

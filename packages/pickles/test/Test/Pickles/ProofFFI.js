@@ -317,9 +317,23 @@ export const pallasSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => 
   return result;
 };
 
+export const vestaSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => {
+  const flat = crypto.vestaSrsLagrangeCommitments(srs, domainLog2, count);
+  const result = [];
+  for (let i = 0; i < flat.length; i += 2) {
+    result.push({ x: flat[i], y: flat[i + 1] });
+  }
+  return result;
+};
+
 // Blinding generator H directly from SRS
 export const pallasSrsBlindingGenerator = (srs) => {
   const flat = crypto.pallasSrsBlindingGenerator(srs);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaSrsBlindingGenerator = (srs) => {
+  const flat = crypto.vestaSrsBlindingGenerator(srs);
   return { x: flat[0], y: flat[1] };
 };
 

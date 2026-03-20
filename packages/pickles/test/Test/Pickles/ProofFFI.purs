@@ -44,7 +44,9 @@ module Test.Pickles.ProofFFI
   , pallasLagrangeCommitments
   , vestaLagrangeCommitments
   , pallasSrsLagrangeCommitments
+  , vestaSrsLagrangeCommitments
   , pallasSrsBlindingGenerator
+  , vestaSrsBlindingGenerator
   , pallasProofCommitments
   , vestaProofCommitments
   , pallasFtComm
@@ -238,9 +240,11 @@ foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseFiel
 
 -- Lagrange commitments directly from SRS (no verifier index needed)
 foreign import pallasSrsLagrangeCommitments :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
+foreign import vestaSrsLagrangeCommitments :: CRS Pallas.G -> Int -> Int -> Array (AffinePoint Vesta.ScalarField)
 
 -- Blinding generator H directly from SRS
 foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.ScalarField
+foreign import vestaSrsBlindingGenerator :: CRS Pallas.G -> AffinePoint Vesta.ScalarField
 
 -- ft_comm: the chunked commitment of the linearized constraint polynomial (in Fq)
 foreign import pallasFtComm :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField

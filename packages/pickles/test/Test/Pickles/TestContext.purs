@@ -107,7 +107,7 @@ import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -125,7 +125,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -136,6 +136,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromBigInt, fromInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
@@ -512,21 +513,25 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
+      -- The IVP verifies a Wrap proof on the Pallas curve, so lagrange comms
+      -- come from the Vesta SRS (Wrap circuit SRS). Domain log2 = WrapIPARounds = 15.
+      -- numPublic = number of fields consumed by publicInputCommit on WrapStatementPublicInput = 30.
+      -- The Step circuit verifies Wrap proofs. Lagrange comms come from the
+      -- Step SRS (CRS PallasG) via vestaSrsLagrangeCommitments, matching the
+      -- convention in the circuit-diffs tests.
+      stepSrs <- liftEffect $ PallasImpl.createCRS
       let
-        -- Pallas generator as a dummy lagrange commitment point
-        pallasGen :: AffinePoint (F StepField)
-        pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: Pallas.G) :: AffinePoint StepField)
-        -- The IVP needs lagrangeComms with enough entries for the public input.
-        -- WrapStatementPublicInput has 30 fields; provide 50 to be safe.
-        dummyIvpParams =
+        wrapDomainLog2 = reflectType (Proxy @WrapIPARounds)
+        numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
+        baseCaseIvpParams =
           { curveParams: curveParams (Proxy @Pallas.G)
-          , lagrangeComms: Array.replicate 50 pallasGen
-          , blindingH: pallasGen
+          , lagrangeComms: (coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField))
+          , blindingH: (coerce (ProofFFI.vestaSrsBlindingGenerator stepSrs)) :: AffinePoint (F StepField)
           , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
           , correctionMode: PureCorrections
           , useOptSponge: false
           }
-      pure $ Tuple false (Record.merge Dummy.dummyFinalizeOtherProofParams dummyIvpParams)
+      pure $ Tuple false (Record.merge Dummy.dummyFinalizeOtherProofParams baseCaseIvpParams)
     InductiveCase stepCtx wrapCtx -> do
       Console.info "creating Step proof for Inductive Step"
       pure $ Tuple true (Record.merge (buildStepFinalizeParams stepCtx) (buildStepIVPParams wrapCtx))
