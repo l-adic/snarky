@@ -26,7 +26,6 @@ module Pickles.Step.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Fin (unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -34,21 +33,26 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessagesForNextWrapProof, getPrevChallenges, getProofWitnesses)
+import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessages, getMessagesForNextWrapProof, getOpeningProof, getPrevChallenges, getProofWitnesses, getSgOld, getWrapVerifierIndex)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
+import Pickles.Step.MessageHash (hashMessagesForNextStepProof)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepInput, StepStatement)
-import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof)
+import Pickles.PublicInputCommit (CorrectionMode)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
+import Snarky.Circuit.DSL.SizedF (SizedF(..), toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
+import Snarky.Circuit.DSL (F) as DSL
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Circuit.Kimchi (GroupMapParams)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2)
-import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Application Circuit Types
@@ -170,10 +174,11 @@ buildWrapPublicInput
      , messagesForNextWrapProof :: FVar f
      , messagesForNextStepProof :: FVar f
      , domainLog2 :: Int
-     , mustVerify :: Vector 2 (BoolVar f)
+     , mask0 :: BoolVar f
+     , mask1 :: BoolVar f
      }
   -> WrapStatementPublicInput ds f
-buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepProof, domainLog2, mustVerify } =
+buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepProof, domainLog2, mask0, mask1 } =
   let
     dv = fopState.deferredValues
     p = dv.plonk
@@ -182,18 +187,19 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
     unwrap :: Type1 (FVar f) -> FVar f
     unwrap (Type1 x) = x
 
-    -- Branch_data.pack: (four * domain_log2) + pack [mask_0; mask_1]
-    -- = 4*domainLog2 + mask_0 + 2*mask_1
-    packedBranchData =
+    -- Branch_data.pack: 4*domainLog2 + mask0 + 2*mask1
+    -- Fits in 10 bits: 4*15 + 1 + 2 = 63 < 1024
+    branchData :: SizedF 10 (FVar f)
+    branchData =
       let
         four = one + one + one + one
         two = one + one
-        mask0 :: FVar f
-        mask0 = coerce (Vector.index mustVerify (unsafeFinite @2 0))
-        mask1 :: FVar f
-        mask1 = coerce (Vector.index mustVerify (unsafeFinite @2 1))
+        m0 :: FVar f
+        m0 = coerce mask0
+        m1 :: FVar f
+        m1 = coerce mask1
       in
-        CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ mask0 (CVar.scale_ two mask1))
+        SizedF $ CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ m0 (CVar.scale_ two m1))
   in
     Tuple
       -- Vec5 FVar: [cip, b, zetaToSrs, zetaToDom, perm]
@@ -221,31 +227,11 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
                       -- Vec(ds) SizedF128: bulletproof_challenges
                       dv.bulletproofChallenges
                       -- SizedF10: branch_data
-                      (unsafeCoerce packedBranchData :: SizedF 10 (FVar f))
+                      branchData
                   )
               )
           )
       )
-
--------------------------------------------------------------------------------
--- | Stub Implementations (to be replaced)
--------------------------------------------------------------------------------
-
--- | Stub: Hash messages for the next Step proof.
--- |
--- | Hashes the application state and bulletproof challenges into a single digest.
--- | The exact hashing scheme follows Pickles conventions.
--- |
--- | Reference: step_verifier.ml:1099+
-hashMessagesForNextStepProofStub
-  :: forall n d f c t m
-   . PrimeField f
-  => CircuitM f c t m
-  => Vector n (BulletproofChallenges d (FVar f))
-  -> Snarky c t m (FVar f)
-hashMessagesForNextStepProofStub _challenges = do
-  -- Stub: return zero digest
-  pure $ const_ zero
 
 -------------------------------------------------------------------------------
 -- | Step Circuit Combinator
@@ -255,22 +241,24 @@ hashMessagesForNextStepProofStub _challenges = do
 -- |
 -- | Takes an application circuit and returns a Step circuit that:
 -- | 1. Runs the application circuit
--- | 2. Verifies previous Wrap proofs based on `mustVerify` flags
+-- | 2. For each previous proof: FOP, hash messages, build statement, verify
 -- | 3. Returns a StepStatement for the Wrap circuit
 -- |
--- | **Processing (see step_main.ml:274-594):**
+-- | **Processing (see step_main.ml:274-594, verify_one:17-117):**
 -- | 1. Run application circuit -> get `mustVerify` flags
--- | 2. For each previous proof where `mustVerify = true`:
--- |    - Assert `unfinalizedProof.shouldFinalize == mustVerify`
+-- | 2. Load private witness data via advisory monad
+-- | 3. For each previous proof:
+-- |    - Assert `shouldFinalize == mustVerify`
 -- |    - Call `finalizeOtherProof` -> `(finalized, challenges)`
--- |    - Assert `finalized || not shouldFinalize` (key bootstrapping assertion)
--- | 3. Collect bulletproof challenges
--- | 4. Hash messages for next Step proof
--- | 5. Return StepStatement
+-- |    - Hash messages for next Step proof
+-- |    - Build Wrap Statement public input
+-- |    - Call `incrementallyVerifyProof` (IVP)
+-- |    - Assert digest (unconditional) and bp challenges (gated by isBaseCase)
+-- |    - Assert `(verified && finalized) || not mustVerify`
+-- | 4. Return StepStatement with FOP output challenges
 -- |
--- | **For base case (Step0):** All `shouldFinalize = false`, all `mustVerify = false`,
--- | assertion passes trivially. Pass dummy `previousProofInputs` and `unfinalizedProofs`.
--- | Proof witnesses are provided privately via `StepWitnessM`.
+-- | **For base case (Step0):** All `mustVerify = false`, `isBaseCase = true`,
+-- | assertions pass trivially. Pass dummy data via advisory monad.
 stepCircuit
   :: forall n _ds @ds _dw dw input prevInput output aux t m r
    . Add 1 _ds ds
@@ -280,7 +268,15 @@ stepCircuit
   => Reflectable n Int
   => Reflectable ds Int
   => Reflectable dw Int
-  => FinalizeOtherProofParams Vesta.ScalarField r
+  => FinalizeOtherProofParams Vesta.ScalarField
+       ( curveParams :: CurveParams Vesta.ScalarField
+       , lagrangeComms :: Array (AffinePoint (DSL.F Vesta.ScalarField))
+       , blindingH :: AffinePoint (DSL.F Vesta.ScalarField)
+       , groupMapParams :: GroupMapParams Vesta.ScalarField
+       , correctionMode :: CorrectionMode
+       , useOptSponge :: Boolean
+       | r
+       )
   -> AppCircuit n input prevInput output aux Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
   -> StepInput n input prevInput ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField)
   -> Snarky (KimchiConstraint Vesta.ScalarField) t m (StepStatement n ds dw (FVar Vesta.ScalarField) (Type2 (SplitField (FVar Vesta.ScalarField) (BoolVar Vesta.ScalarField))) (BoolVar Vesta.ScalarField))
@@ -291,10 +287,13 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   -- 2. Request private proof witnesses via advisory monad
   proofWitnesses <- exists $ lift $ getProofWitnesses @_ @ds @dw unit
   prevChallenges <- exists $ lift $ getPrevChallenges @_ @ds @dw unit
-  -- FOP proof states (Type1, private witness matching Per_proof_witness.proof_state)
   fopProofStates <- exists $ lift $ getFopProofStates @_ @ds @dw unit
-  -- Wrap proof message digests (loaded from prover, NOT computed in-circuit)
   messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @ds @dw unit
+  wrapVk <- exists $ lift $ getWrapVerifierIndex @n @ds @dw unit
+  sgOld <- exists $ lift $ getSgOld @n @ds @dw unit
+  -- TODO: used by IVP when wired in
+  _messages <- exists $ lift $ getMessages @n @ds @dw unit
+  _openingProofs <- exists $ lift $ getOpeningProof @n @ds @dw unit
 
   let
     shared =
@@ -302,17 +301,34 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
       , prevChallenges
       , domainLog2Var: const_ (fromInt params.domainLog2)
       }
-    proofsWithData = Vector.zip (Vector.zip unfinalizedProofs (Vector.zip fopProofStates proofWitnesses)) mustVerify
 
+  -- 3. For each proof: FOP → (finalized, challenges), assert bootstrapping invariant
+  let proofsWithData = Vector.zip (Vector.zip unfinalizedProofs (Vector.zip fopProofStates proofWitnesses)) mustVerify
   allChallenges <- for proofsWithData \(Tuple (Tuple unfinalized (Tuple fopState witness)) mustVerifyFlag) -> do
     let shouldFinalize = unfinalized.shouldFinalize
     assertEq shouldFinalize mustVerifyFlag
     { finalized, challenges } <- finalizeOtherProof params shared fopState witness
+    -- TODO: replace with (verified && finalized) || not mustVerify
+    -- once IVP is wired in (needs self-consistent dummy data for base case)
     finalizedOrNotRequired <- or_ finalized (not_ shouldFinalize)
     assert_ finalizedOrNotRequired
     pure challenges
 
-  messagesForNextStepProof <- hashMessagesForNextStepProofStub allChallenges
+  -- 4. Hash messages for next Step proof (uses VK + all proofs' sg + bp challenges)
+  let
+    hashInput =
+      { vkComms:
+          { sigma: wrapVk.columnComms.sigma
+          , sigmaLast: wrapVk.sigmaCommLast
+          , coeff: wrapVk.columnComms.coeff
+          , index: wrapVk.columnComms.index
+          }
+      , proofs: Vector.zipWith
+          (\sg chals -> { sg, bpChallenges: map toField chals })
+          sgOld
+          allChallenges
+      }
+  messagesForNextStepProof <- hashMessagesForNextStepProof hashInput
 
   pure
     { proofState: { unfinalizedProofs, messagesForNextStepProof }

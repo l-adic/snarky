@@ -103,6 +103,7 @@ import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.PublicInputCommit (CorrectionMode(..))
+import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
@@ -511,10 +512,24 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
-      pure $ Tuple false Dummy.dummyFinalizeOtherProofParams
-    InductiveCase stepCtx _ -> do
+      let
+        -- Pallas generator as a dummy lagrange commitment point
+        pallasGen :: AffinePoint (F StepField)
+        pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: Pallas.G) :: AffinePoint StepField)
+        -- The IVP needs lagrangeComms with enough entries for the public input.
+        -- WrapStatementPublicInput has 30 fields; provide 50 to be safe.
+        dummyIvpParams =
+          { curveParams: curveParams (Proxy @Pallas.G)
+          , lagrangeComms: Array.replicate 50 pallasGen
+          , blindingH: pallasGen
+          , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+          , correctionMode: PureCorrections
+          , useOptSponge: false
+          }
+      pure $ Tuple false (Record.merge Dummy.dummyFinalizeOtherProofParams dummyIvpParams)
+    InductiveCase stepCtx wrapCtx -> do
       Console.info "creating Step proof for Inductive Step"
-      pure $ Tuple true (buildStepFinalizeParams stepCtx)
+      pure $ Tuple true (Record.merge (buildStepFinalizeParams stepCtx) (buildStepIVPParams wrapCtx))
 
   let
     -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.

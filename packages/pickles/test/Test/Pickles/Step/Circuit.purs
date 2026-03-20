@@ -11,13 +11,19 @@ module Test.Pickles.Step.Circuit
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Maybe (fromJust)
+import Partial.Unsafe (unsafePartial)
+import Record as Record
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector, nil, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
+import Pickles.PublicInputCommit (CorrectionMode(..))
+import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
@@ -26,9 +32,10 @@ import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
+import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, extractWrapRawBpChallenges, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
+import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepIVPParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, extractWrapRawBpChallenges, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
 import Test.Spec (Spec, SpecT, describe, it)
@@ -66,7 +73,19 @@ testCircuit
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
-  _ <- stepCircuit @StepIPARounds dummyFinalizeOtherProofParams trivialAppCircuit input
+  let
+    -- n=0: loop body never runs, IVP params just need to type-check
+    pallasGen :: AffinePoint (F StepField)
+    pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
+    params = Record.merge dummyFinalizeOtherProofParams
+      { curveParams: curveParams (Proxy @PallasG)
+      , lagrangeComms: Array.replicate 50 pallasGen
+      , blindingH: pallasGen
+      , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
+      , correctionMode: PureCorrections
+      , useOptSponge: false
+      }
+  _ <- stepCircuit @StepIPARounds params trivialAppCircuit input
   pure unit
 
 spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec Unit
@@ -129,7 +148,7 @@ realDataSpec cfg =
       let
         challengeDigest = computeStepChallengeDigest step0
         sgEvals = computeStepSgEvals step0
-        params = buildStepFinalizeParams step0
+        params = Record.merge (buildStepFinalizeParams step0) (buildStepIVPParams wrap0)
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
           , sgPointEvals: sgEvals

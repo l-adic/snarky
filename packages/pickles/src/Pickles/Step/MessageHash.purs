@@ -10,7 +10,7 @@ module Pickles.Step.MessageHash
 
 import Prelude
 
-import Data.Foldable (foldM, for_)
+import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Pickles.Sponge (initialSpongeCircuit)
 import Snarky.Circuit.RandomOracle.Sponge (Sponge)

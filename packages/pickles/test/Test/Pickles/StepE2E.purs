@@ -15,16 +15,25 @@ module Test.Pickles.StepE2E
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Maybe (fromJust)
 import Data.Schnorr.Gen (genValidSignature)
+import Partial.Unsafe (unsafePartial)
+import Safe.Coerce (coerce)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
+import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Snarky.Circuit.DSL (class CircuitM, Snarky)
+import Record as Record
+import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
+import Snarky.Curves.Class (curveParams, generator, toAffine)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Pasta (PallasG)
@@ -46,7 +55,18 @@ stepSchnorrCircuit
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit @StepIPARounds Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  let
+    pallasGen :: AffinePoint (F StepField)
+    pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
+    params = Record.merge Dummy.dummyFinalizeOtherProofParams
+      { curveParams: curveParams (Proxy @PallasG)
+      , lagrangeComms: Array.replicate 50 pallasGen
+      , blindingH: pallasGen
+      , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
+      , correctionMode: PureCorrections
+      , useOptSponge: false
+      }
+  _ <- stepCircuit @StepIPARounds params (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------
