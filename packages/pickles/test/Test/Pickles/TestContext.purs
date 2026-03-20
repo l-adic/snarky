@@ -109,7 +109,7 @@ import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, buildWrapPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -128,7 +128,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, cre
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.DSL.SizedF (toField, wrapF) as SizedF
+import Snarky.Circuit.DSL.SizedF (SizedF(..), toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -575,10 +575,51 @@ createStepProofContext stepCase = do
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
-      pure $ Tuple Dummy.dummyStepAdvice
+      let
+        advice = Dummy.dummyStepAdvice
+        -- Build Wrap Statement public input from dummy fopState
+        -- (needed by computeStepIvpTranscript for x_hat computation)
+        dummyFopState = Vector.index advice.fopProofStates (unsafeFinite @1 0)
+        -- Build value-level WrapStatementPublicInput from dummy fopState
+        dummyDv = dummyFopState.deferredValues
+        dummyP = dummyDv.plonk
+        unwrapT1 (Type1 x) = x
+        -- branch_data = 4*domainLog2 + mask0 + 2*mask1, both masks false for base case = 0
+        dummyBranchData = SizedF.SizedF (F (fromInt (4 * params.domainLog2) :: StepField))
+        dummyPublicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
+        dummyPublicInput =
+          Tuple
+            (unwrapT1 dummyDv.combinedInnerProduct :< unwrapT1 dummyDv.b :< unwrapT1 dummyP.zetaToSrsLength :< unwrapT1 dummyP.zetaToDomainSize :< unwrapT1 dummyP.perm :< Vector.nil)
+            ( Tuple (dummyP.beta :< dummyP.gamma :< Vector.nil)
+                ( Tuple (dummyP.alpha :< dummyP.zeta :< dummyDv.xi :< Vector.nil)
+                    ( Tuple (dummyFopState.spongeDigestBeforeEvaluations :< F zero :< F zero :< Vector.nil)
+                        ( Tuple dummyDv.bulletproofChallenges dummyBranchData )
+                    )
+                )
+            )
+        vk = advice.wrapVerifierIndex
+        -- Compute the IVP transcript to get self-consistent plonk values
+        transcript = computeStepIvpTranscript
+          { vk:
+              { sigma: vk.columnComms.sigma
+              , sigmaLast: vk.sigmaCommLast
+              , coeff: vk.columnComms.coeff
+              , index: vk.columnComms.index
+              }
+          , sgOld: Vector.nil
+          , publicInput: dummyPublicInput
+          , wComm: (Vector.index advice.messages (unsafeFinite @1 0)).wComm
+          , zComm: (Vector.index advice.messages (unsafeFinite @1 0)).zComm
+          , tComm: (Vector.index advice.messages (unsafeFinite @1 0)).tComm
+          , lagrangeComms: params.lagrangeComms
+          , blindingH: params.blindingH
+          }
+        -- Build self-consistent unfinalized proof with transcript-derived plonk
+        baseCaseUnfinalized = buildBaseCaseUnfinalizedProof { transcript }
+      pure $ Tuple advice
         { appInput: schnorrInput
         , previousProofInputs: unit :< Vector.nil
-        , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
+        , unfinalizedProofs: baseCaseUnfinalized :< Vector.nil
         , prevChallengeDigests: zero :< Vector.nil
         }
     InductiveCase stepCtx wrapCtx ->
