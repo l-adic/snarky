@@ -14,10 +14,12 @@
 module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProof
   , hashMessagesForNextWrapProofCircuit
+  , hashMessagesForNextWrapProofCircuit'
   ) where
 
 import Prelude
 
+import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -73,6 +75,38 @@ hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } 
   Pickles.Sponge.absorbMany (map const_ dummyChallenges)
   -- Absorb real expanded challenges
   Pickles.Sponge.absorbMany expandedChallenges
+  -- Absorb sg point
+  absorb sg.x
+  absorb sg.y
+  -- Squeeze digest
+  squeeze
+
+-- | General circuit version: takes n vectors of expanded bp challenges
+-- | (all as circuit variables) + sg point.
+-- |
+-- | Matches OCaml's Wrap_hack.Checked.hash_messages_for_next_wrap_proof
+-- | with max_proofs_verified = n. No padding — all vectors are circuit inputs.
+-- |
+-- | Serialization order from Messages_for_next_wrap_proof.to_field_elements:
+-- | [old_bulletproof_challenges (flattened), sg.x, sg.y]
+-- |
+-- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
+hashMessagesForNextWrapProofCircuit'
+  :: forall n d f t m
+   . PrimeField f
+  => FieldSizeInBits f 255
+  => PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => Reflectable n Int
+  => Reflectable d Int
+  => { sg :: AffinePoint (FVar f)
+     , allChallenges :: Vector n (Vector d (FVar f))
+     }
+  -> SpongeM f (KimchiConstraint f) t m (FVar f)
+hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do
+  -- Absorb all challenge vectors in order (flattened)
+  for_ allChallenges \chals ->
+    Pickles.Sponge.absorbMany chals
   -- Absorb sg point
   absorb sg.x
   absorb sg.y

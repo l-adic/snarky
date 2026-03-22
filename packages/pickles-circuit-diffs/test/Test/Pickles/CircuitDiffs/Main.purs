@@ -31,6 +31,7 @@ import Pickles.CircuitDiffs.PureScript.FtcommStep (compileFtcommStep)
 import Pickles.CircuitDiffs.PureScript.GroupMap (compileGroupMap)
 import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesStep (compileHashMessagesStep)
+import Pickles.CircuitDiffs.PureScript.HashMessagesWrap (compileHashMessagesWrap)
 import Pickles.CircuitDiffs.PureScript.IvpStep (compileIvpStep)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
@@ -416,6 +417,7 @@ spec =
             }
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
       describe "Pickles Wrap sub-circuits" do
+        exactMatch "hash_messages_for_next_wrap_proof_circuit" (fromCompiledCircuit compileHashMessagesWrap)
         exactMatch "finalize_other_proof_wrap_circuit" (fromCompiledCircuit compileFopWrap)
         exactMatch "group_map_wrap_circuit" (fromCompiledCircuit compileGroupMap)
         exactMatch "bullet_reduce_one_wrap_circuit" (fromCompiledCircuit compileBulletReduceOne)
