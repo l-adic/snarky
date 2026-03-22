@@ -1170,6 +1170,10 @@ buildWrapCircuitInput ctx =
             , xi
             , bulletproofChallenges
             , b
+            , branchData:
+                { domainLog2: F (fromInt ctx.domainLog2 :: WrapField)
+                , proofsVerifiedMask: true :< false :< Vector.nil
+                }
             }
         , spongeDigestBeforeEvaluations: F spongeDigest
         , messagesForNextWrapProof: F messageHash
