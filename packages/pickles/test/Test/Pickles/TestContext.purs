@@ -91,7 +91,7 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, roComputeResult, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, roComputeResult, wrapDummyUnfinalizedProof) as Dummy
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
@@ -109,7 +109,7 @@ import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, buildWrapPublicInput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -128,7 +128,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, cre
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.DSL.SizedF (SizedF(..), toField, wrapF) as SizedF
+import Snarky.Circuit.DSL.SizedF (toField, unsafeMkSizedF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -585,7 +585,7 @@ createStepProofContext stepCase = do
         dummyP = dummyDv.plonk
         unwrapT1 (Type1 x) = x
         -- branch_data = 4*domainLog2 + mask0 + 2*mask1, both masks false for base case = 0
-        dummyBranchData = SizedF.SizedF (F (fromInt (4 * params.domainLog2) :: StepField))
+        dummyBranchData = SizedF.wrapF (SizedF.unsafeMkSizedF (fromInt (4 * params.domainLog2) :: StepField))
         dummyPublicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
         dummyPublicInput =
           Tuple

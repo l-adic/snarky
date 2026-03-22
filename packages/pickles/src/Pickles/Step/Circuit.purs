@@ -45,7 +45,7 @@ import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
-import Snarky.Circuit.DSL.SizedF (SizedF(..), toField)
+import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Circuit.DSL (F) as DSL
@@ -199,7 +199,7 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
         m1 :: FVar f
         m1 = coerce mask1
       in
-        SizedF $ CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ m0 (CVar.scale_ two m1))
+        unsafeMkSizedF $ CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ m0 (CVar.scale_ two m1))
   in
     Tuple
       -- Vec5 FVar: [cip, b, zetaToSrs, zetaToDom, perm]
