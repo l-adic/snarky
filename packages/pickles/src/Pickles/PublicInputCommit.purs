@@ -129,8 +129,10 @@ instance
   ) =>
   RPackStatement (RL.Cons s a tail) f r where
   rPackFields rec =
-    let field = Record.get (Proxy @s) rec
-    in packFields field <> rPackFields @tail (Record.delete (Proxy @s) rec)
+    let
+      field = Record.get (Proxy @s) rec
+    in
+      packFields field <> rPackFields @tail (Record.delete (Proxy @s) rec)
 
 -------------------------------------------------------------------------------
 -- | PublicInputCommit (existing, now derivable from PackStatement)

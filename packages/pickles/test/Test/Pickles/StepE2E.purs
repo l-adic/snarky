@@ -19,24 +19,24 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (fromJust)
 import Data.Schnorr.Gen (genValidSignature)
-import Partial.Unsafe (unsafePartial)
-import Safe.Coerce (coerce)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
+import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Record as Record
-import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
-import Snarky.Curves.Class (curveParams, generator, toAffine)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
+import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
+import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)

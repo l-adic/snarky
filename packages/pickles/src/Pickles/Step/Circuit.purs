@@ -33,24 +33,24 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessages, getMessagesForNextWrapProof, getOpeningProof, getPrevChallenges, getProofWitnesses, getSgOld, getWrapVerifierIndex)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProof)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepInput, StepStatement)
-import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
+import Snarky.Circuit.DSL (F) as DSL
 import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
+import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
-import Snarky.Circuit.DSL (F) as DSL
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2)
 
@@ -194,8 +194,10 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
       let
         four = one + one + one + one
         two = one + one
+
         m0 :: FVar f
         m0 = coerce mask0
+
         m1 :: FVar f
         m1 = coerce mask1
       in

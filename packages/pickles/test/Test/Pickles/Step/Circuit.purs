@@ -14,22 +14,22 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Maybe (fromJust)
-import Partial.Unsafe (unsafePartial)
-import Record as Record
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector, nil, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.PublicInputCommit (CorrectionMode(..))
-import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
+import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
+import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (curveParams, generator, toAffine)

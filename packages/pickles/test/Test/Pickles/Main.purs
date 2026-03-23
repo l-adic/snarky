@@ -20,6 +20,7 @@ import Test.Pickles.Permutation as Permutation
 import Test.Pickles.PublicInputCommitment as PublicInputCommitment
 import Test.Pickles.Step as Step
 import Test.Pickles.Step.Circuit as StepCircuit
+import Test.Pickles.Step.DummyWiring as DummyWiring
 import Test.Pickles.Step.FinalizeOtherProof as FinalizeOtherProofE2E
 import Test.Pickles.Step.FqSpongeTranscript as FqSpongeTranscript
 import Test.Pickles.Step.SubCircuits as StepSubCircuits
@@ -55,6 +56,7 @@ main = runSpecAndExitProcess'
       FqSpongeTranscript.spec kimchiTestConfig
       PublicInputCommitment.spec kimchiTestConfig
     mapSpec nat do
+      DummyWiring.spec
       MultiscaleKnown.spec kimchiTestConfig
       Commitments.spec kimchiTestConfig
       IPA.spec kimchiTestConfig

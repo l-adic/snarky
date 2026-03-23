@@ -13,13 +13,13 @@ import Prelude
 import Data.Foldable (foldM)
 import Data.Vector (Vector)
 import Pickles.Sponge (initialSpongeCircuit)
-import Snarky.Circuit.RandomOracle.Sponge (Sponge)
+import Poseidon (class PoseidonField)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky)
+import Snarky.Circuit.RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Poseidon (class PoseidonField)
 
 -- | Hash messages for next Step proof.
 -- |
@@ -40,10 +40,11 @@ hashMessagesForNextStepProof
          , coeff :: Vector 15 (AffinePoint (FVar f))
          , index :: Vector 6 (AffinePoint (FVar f))
          }
-     , proofs :: Vector n
-         { sg :: AffinePoint (FVar f)
-         , bpChallenges :: Vector d (FVar f)
-         }
+     , proofs ::
+         Vector n
+           { sg :: AffinePoint (FVar f)
+           , bpChallenges :: Vector d (FVar f)
+           }
      }
   -> Snarky (KimchiConstraint f) t m (FVar f)
 hashMessagesForNextStepProof { vkComms, proofs } = do
@@ -67,10 +68,10 @@ hashMessagesForNextStepProof { vkComms, proofs } = do
 
   -- 2. For each proof: absorb sg + bp_challenges
   spongeAfterProofs <- foldM
-    (\s proof -> do
-      s1 <- Sponge.absorb proof.sg.x s
-      s2 <- Sponge.absorb proof.sg.y s1
-      foldM (\s' c -> Sponge.absorb c s') s2 proof.bpChallenges
+    ( \s proof -> do
+        s1 <- Sponge.absorb proof.sg.x s
+        s2 <- Sponge.absorb proof.sg.y s1
+        foldM (\s' c -> Sponge.absorb c s') s2 proof.bpChallenges
     )
     spongeAfterIndex
     proofs

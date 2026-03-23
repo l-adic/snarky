@@ -111,42 +111,52 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
     publicInput =
       Tuple
         -- fp: [cip(121), b(122), zeta_to_srs(118), zeta_to_dom(119), perm(120)]
-        ( (Vector.generate \j ->
-            at (case getFinite j of
-              0 -> 121  -- combined_inner_product
-              1 -> 122  -- b
-              2 -> 118  -- zeta_to_srs_length
-              3 -> 119  -- zeta_to_domain_size
-              _ -> 120  -- perm
-            )) :: Vector 5 (FVar StepField)
+        ( ( Vector.generate \j ->
+              at
+                ( case getFinite j of
+                    0 -> 121 -- combined_inner_product
+                    1 -> 122 -- b
+                    2 -> 118 -- zeta_to_srs_length
+                    3 -> 119 -- zeta_to_domain_size
+                    _ -> 120 -- perm
+                )
+          ) :: Vector 5 (FVar StepField)
         )
         ( Tuple
             -- challenge: [beta(115), gamma(116)]
-            ( (Vector.generate \j ->
-                asSizedF128 (at (115 + getFinite j))) :: Vector 2 _
+            ( ( Vector.generate \j ->
+                  asSizedF128 (at (115 + getFinite j))
+              ) :: Vector 2 _
             )
             ( Tuple
                 -- scalar_challenge: [alpha(114), zeta(117), xi(123)]
-                ( (Vector.generate \j ->
-                    asSizedF128 (at (case getFinite j of
-                      0 -> 114  -- alpha
-                      1 -> 117  -- zeta
-                      _ -> 123  -- xi
-                    ))) :: Vector 3 _
+                ( ( Vector.generate \j ->
+                      asSizedF128
+                        ( at
+                            ( case getFinite j of
+                                0 -> 114 -- alpha
+                                1 -> 117 -- zeta
+                                _ -> 123 -- xi
+                            )
+                        )
+                  ) :: Vector 3 _
                 )
                 ( Tuple
                     -- digest: [sponge_digest(143), msg_wrap(266), msg_step(267)]
-                    ( (Vector.generate \j ->
-                        at (case getFinite j of
-                          0 -> 143  -- sponge_digest
-                          1 -> 266  -- messages_for_next_wrap_proof
-                          _ -> 267  -- messages_for_next_step_proof
-                        )) :: Vector 3 (FVar StepField)
+                    ( ( Vector.generate \j ->
+                          at
+                            ( case getFinite j of
+                                0 -> 143 -- sponge_digest
+                                1 -> 266 -- messages_for_next_wrap_proof
+                                _ -> 267 -- messages_for_next_step_proof
+                            )
+                      ) :: Vector 3 (FVar StepField)
                     )
                     ( Tuple
                         -- bulletproof_challenges (16, Tick.Rounds)
-                        ( (Vector.generate \j ->
-                            asSizedF128 (at (124 + getFinite j))) :: Vector 16 _
+                        ( ( Vector.generate \j ->
+                              asSizedF128 (at (124 + getFinite j))
+                          ) :: Vector 16 _
                         )
                         -- branch_data (packed, see packedBranchData below)
                         (asSizedF10 packedBranchData)
@@ -180,7 +190,7 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
       }
 
     isBaseCase = coerce (at 265) :: BoolVar StepField
-    claimedDigest = at 243  -- unfinalized sponge_digest
+    claimedDigest = at 243 -- unfinalized sponge_digest
 
     ---------------------------------------------------------------------------
     -- IVP params and input

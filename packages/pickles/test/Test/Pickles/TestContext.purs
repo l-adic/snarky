@@ -33,6 +33,7 @@ module Test.Pickles.TestContext
   , schnorrCircuit
   , schnorrSolver
   , stepSchnorrAppCircuit
+  , counterAppCircuit
   , zkRows
   , createWrapProofContext
   , mkWrapIpaContext
@@ -70,9 +71,9 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Identity (Identity(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
+import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, un)
@@ -105,7 +106,6 @@ import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
-import Record as Record
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
@@ -120,15 +120,18 @@ import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParam
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
+import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.DSL.SizedF (toField, unsafeMkSizedF, wrapF) as SizedF
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
@@ -139,7 +142,6 @@ import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromBigInt, fromInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
@@ -369,6 +371,30 @@ stepSchnorrAppCircuit mustVerify { appInput } = do
     , auxiliaryOutput: unit
     }
 
+-- | Counter application circuit: assert(self == prev + 1 || self == 0).
+-- | Mirrors OCaml's Simple_chain from test_no_sideloaded.ml.
+-- | - input: FVar StepField (the counter value = public input)
+-- | - prevInput: FVar StepField (previous counter value)
+-- | - n = 1 (one previous proof)
+counterAppCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Boolean
+  -> AppCircuitInput 1 (FVar StepField) (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
+counterAppCircuit mustVerify { appInput: self, previousProofInputs } = do
+  let prev = Vector.head previousProofInputs
+  isBaseCase <- equals_ self (const_ zero)
+  let onePlusPrev = CVar.add_ (const_ one) prev
+  selfCorrect <- equals_ onePlusPrev self
+  assert_ =<< any_ [ selfCorrect, isBaseCase ]
+  let mv = if mustVerify then true_ else false_
+  pure
+    { mustVerify: mv :< Vector.nil
+    , publicOutput: unit
+    , auxiliaryOutput: unit
+    }
+
 -- | Schnorr input coerced to Wrap field (Fq).
 -- | Same structure as SchnorrInput but with F WrapField instead of F StepField.
 -- | Used in WrapInput type where all field elements are WrapField.
@@ -585,7 +611,8 @@ createStepProofContext stepCase = do
         dummyP = dummyDv.plonk
         unwrapT1 (Type1 x) = x
         -- branch_data = 4*domainLog2 + mask0 + 2*mask1, both masks false for base case = 0
-        dummyBranchData = SizedF.wrapF (SizedF.unsafeMkSizedF (fromInt (4 * params.domainLog2) :: StepField))
+        dummyBranchData = SizedF.wrapF (unsafePartial $ fromJust $ SizedF.fromField @10 (fromInt (4 * params.domainLog2) :: StepField))
+
         dummyPublicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
         dummyPublicInput =
           Tuple
@@ -593,7 +620,7 @@ createStepProofContext stepCase = do
             ( Tuple (dummyP.beta :< dummyP.gamma :< Vector.nil)
                 ( Tuple (dummyP.alpha :< dummyP.zeta :< dummyDv.xi :< Vector.nil)
                     ( Tuple (dummyFopState.spongeDigestBeforeEvaluations :< F zero :< F zero :< Vector.nil)
-                        ( Tuple dummyDv.bulletproofChallenges dummyBranchData )
+                        (Tuple dummyDv.bulletproofChallenges dummyBranchData)
                     )
                 )
             )
@@ -632,6 +659,7 @@ createStepProofContext stepCase = do
           , stepCtx
           , wrapCtx
           }
+
         -- Public input unfinalized proof uses N=15 Wrap bp challenges,
         -- while FOP state uses N=16 Step bp challenges. Reconstruct with Wrap bp chals.
         wrapBpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
@@ -1689,6 +1717,7 @@ computeStepSgEvals :: StepProofContext -> Array (PointEval StepField)
 computeStepSgEvals stepCtx =
   let
     rawBpChallenges = extractStepRawBpChallenges stepCtx
+
     stepBpChallenges :: Vector StepIPARounds (SizedF 128 StepField)
     stepBpChallenges = map coerceViaBits rawBpChallenges
     expandedChals = map (\c -> toFieldPure c stepEndo) stepBpChallenges
@@ -1935,8 +1964,10 @@ buildBaseCaseUnfinalizedProof { transcript } =
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
     cipAllEvals = [ sgPointEval, sgPointEval ] <> Array.fromFoldable allEvals45
     cipStep { result, scale } eval =
-      let term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
-      in { result: result + scale * term, scale: scale * frResult.xi }
+      let
+        term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
+      in
+        { result: result + scale * term, scale: scale * frResult.xi }
     cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
 
     b_ = computeB expandedBpChals { zeta: zetaExpanded, zetaOmega: zetaw, evalscale: frResult.evalscale }

@@ -13,6 +13,7 @@ module Pickles.Dummy
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
   , stepDummyFopProofState
+  , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyStepAdvice
   , dummyFinalizeOtherProofParams
@@ -34,7 +35,7 @@ import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -557,9 +558,10 @@ wrapDummyUnfinalizedProof =
 stepDummyUnfinalizedProofWith
   :: forall d sf
    . Shifted (F StepField) sf
-  => Vector d (SizedF 128 (F StepField))
+  => { domainLog2 :: Int, mostRecentWidth :: Int }
+  -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProofWith bpChals =
+stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
   let
     r = roComputeResult
     evals = r.stepDummyPrevEvals
@@ -570,9 +572,6 @@ stepDummyUnfinalizedProofWith bpChals =
     betaExpanded = SizedF.toField r.stepDummyBeta :: StepField
     gammaExpanded = SizedF.toField r.stepDummyGamma :: StepField
     zetaExpanded = toFieldPure r.stepDummyZeta stepEndo
-
-    -- Domain parameters (domain_log2 = 15 from proof.ml:dummy ~domain_log2:15)
-    domainLog2 = 15
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
@@ -593,11 +592,16 @@ stepDummyUnfinalizedProofWith bpChals =
     challengesDigest :: StepField
     challengesDigest =
       let
-        sponge = foldl (\s c -> PureSponge.absorb c s) (initialSponge :: PureSponge.Sponge StepField) expandedBpChals
-        -- 2 copies (MaxProofsVerified=2): absorb same challenges twice
-        sponge2 = foldl (\s c -> PureSponge.absorb c s) sponge expandedBpChals
+        -- OCaml expand_deferred: absorbs old_bulletproof_challenges (expanded Step IPA challenges).
+        -- For Proof.dummy with most_recent_width = N, there are N copies of Dummy.Ipa.Step.challenges.
+        -- Each copy = expandedBpChals (16 Step IPA challenges expanded via endo).
+        -- No masking — expand_deferred knows the exact count, masking is only in the circuit.
+        sponge0 = initialSponge :: PureSponge.Sponge StepField
+        absorbOneCopy s = foldl (\s' c -> PureSponge.absorb c s') s expandedBpChals
+        -- Absorb mostRecentWidth copies
+        spongeN = Array.foldl (\s _ -> absorbOneCopy s) sponge0 (Array.replicate mostRecentWidth unit)
       in
-        (PureSponge.squeeze sponge2).result
+        (PureSponge.squeeze spongeN).result
 
     frInput :: FrSpongeInput StepField
     frInput =
@@ -670,10 +674,12 @@ stepDummyUnfinalizedProofWith bpChals =
         `Vector.append` evals.coeffEvals
         `Vector.append` evals.sigmaEvals
 
-    -- sg evals from bPoly on 2 copies of expanded bp challenges
+    -- sg evals from bPoly on expanded bp challenges.
+    -- OCaml: old_bulletproof_challenges has most_recent_width copies.
+    -- Each produces one sg eval point via challenge_polynomial.
     sgPointEval :: PointEval StepField
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
-    cipAllEvals = [ sgPointEval, sgPointEval ] <> Array.fromFoldable allEvals45
+    cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> Array.fromFoldable allEvals45
     cipStep { result, scale } eval =
       let
         term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
@@ -729,25 +735,41 @@ stepDummyUnfinalizedProof =
     bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
     bpChals = map (SizedF.wrapF <<< coerceViaBits) roComputeResult.wrapChalRaw
   in
-    stepDummyUnfinalizedProofWith bpChals
+    -- wrap_domains ~proofs_verified:2 = { h = 15 }
+    -- most_recent_width=2 (MaxProofsVerified for production Mina)
+    stepDummyUnfinalizedProofWith { domainLog2: 15, mostRecentWidth: 2 } bpChals
 
 -- | Dummy FOP proof state with StepIPARounds (16) bp challenges.
 -- |
 -- | Same deferred values as stepDummyUnfinalizedProof but with Step IPA challenges
 -- | (N16) instead of Wrap IPA challenges (N15). Used for the FOP proof states in
 -- | the advisory monad and prevChallenges vector.
+-- | domainLog2 for wrap_domains ~proofs_verified.
+-- | OCaml: common.ml:25-29
+-- |   0 -> 13, 1 -> 14, 2 -> 15
+wrapDomainLog2ForProofsVerified :: Int -> Int
+wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
+  0 -> 13
+  1 -> 14
+  2 -> 15
+  _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
+
 stepDummyFopProofState
   :: forall sf
    . Shifted (F StepField) sf
-  => UnfinalizedProof StepIPARounds (F StepField) sf Boolean
-stepDummyFopProofState =
+  => { proofsVerified :: Int }
+  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+stepDummyFopProofState { proofsVerified } =
   let
-    -- Bulletproof challenges (StepIPARounds = 16)
-    -- Raw 128-bit scalar challenges coerced from StepField
     bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
     bpChals = map SizedF.wrapF roComputeResult.stepChalRaw
   in
-    stepDummyUnfinalizedProofWith bpChals
+    -- most_recent_width = proofs_verified for Proof.dummy
+    stepDummyUnfinalizedProofWith
+      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
+      , mostRecentWidth: proofsVerified
+      }
+      bpChals
 
 -- | Dummy Step advice for base case (n=1 previous proof slot, all dummy).
 -- |
@@ -800,7 +822,7 @@ dummyStepAdvice =
         , z1
         , z2
         } :< Vector.nil
-    , fopProofStates: stepDummyFopProofState :< Vector.nil
+    , fopProofStates: stepDummyFopProofState { proofsVerified: 2 } :< Vector.nil
     , messagesForNextWrapProof: F zero :< Vector.nil
     , wrapVerifierIndex:
         { sigmaCommLast: g0

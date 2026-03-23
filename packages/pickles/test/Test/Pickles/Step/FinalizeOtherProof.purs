@@ -57,7 +57,7 @@ spec cfg = describe "Pickles.Step.FinalizeOtherProof" do
     let
       input :: FinalizeOtherProofTestInput
       input =
-        { unfinalized: stepDummyFopProofState
+        { unfinalized: stepDummyFopProofState { proofsVerified: 2 }
         , witness: dummyProofWitness
         , mask: Vector.nil
         , prevChallenges: Vector.nil
