@@ -156,7 +156,8 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       }
   success <- evalSpongeM initialSpongeCircuit $
     verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
-      wrapStmt.proofState.spongeDigestBeforeEvaluations Nothing
+      wrapStmt.proofState.spongeDigestBeforeEvaluations
+      Nothing
   assert_ success
 
   -- 4. Compute and assert messagesForNextWrapProof hash

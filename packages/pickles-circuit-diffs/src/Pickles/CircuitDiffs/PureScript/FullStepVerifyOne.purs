@@ -12,7 +12,7 @@ import Data.Fin (getFinite)
 import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, asSizedF10, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..))
@@ -48,6 +48,7 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
     readOtherField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
 
     constDummyPt = let { x: F x', y: F y' } = dummyPallasPt in { x: const_ x', y: const_ y' }
+
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
 
@@ -71,10 +72,12 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
       , wComm: (Vector.generate \j -> readPt (o + 2 * getFinite j)) :: Vector 15 _
       , zComm: readPt (o + 30)
       , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _
-      , lr: (Vector.generate \j ->
+      , lr:
+          ( Vector.generate \j ->
               { l: readPt (o + 46 + 4 * getFinite j)
               , r: readPt (o + 46 + 4 * getFinite j + 2)
-              }) :: Vector 15 _
+              }
+          ) :: Vector 15 _
       , z1: readOtherField (o + 106)
       , z2: readOtherField (o + 108)
       , delta: readPt (o + 110)
@@ -132,30 +135,40 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
       , proofMask: coerce mask1 :: BoolVar StepField
       , publicInput:
-          { fqFields: (Vector.generate \j ->
-                at (proofStateBase +
-                  case getFinite j of
-                    0 -> 7 -- combined_inner_product
-                    1 -> 8 -- b
-                    2 -> 4 -- zeta_to_srs_length
-                    3 -> 5 -- zeta_to_domain_size
-                    _ -> 6 -- perm
-                )) :: Vector 5 (FVar StepField)
-          , challengeFields: (Vector.generate \j ->
-                asSizedF128 (at (proofStateBase + 1 + getFinite j))
+          { fqFields:
+              ( Vector.generate \j ->
+                  at
+                    ( proofStateBase +
+                        case getFinite j of
+                          0 -> 7 -- combined_inner_product
+                          1 -> 8 -- b
+                          2 -> 4 -- zeta_to_srs_length
+                          3 -> 5 -- zeta_to_domain_size
+                          _ -> 6 -- perm
+                    )
+              ) :: Vector 5 (FVar StepField)
+          , challengeFields:
+              ( Vector.generate \j ->
+                  asSizedF128 (at (proofStateBase + 1 + getFinite j))
               ) :: Vector 2 _
-          , scalarChallengeFields: (Vector.generate \j ->
-                asSizedF128 (at (proofStateBase +
-                  case getFinite j of
-                    0 -> 0 -- alpha
-                    1 -> 3 -- zeta
-                    _ -> 9 -- xi
-                ))
+          , scalarChallengeFields:
+              ( Vector.generate \j ->
+                  asSizedF128
+                    ( at
+                        ( proofStateBase +
+                            case getFinite j of
+                              0 -> 0 -- alpha
+                              1 -> 3 -- zeta
+                              _ -> 9 -- xi
+                        )
+                    )
               ) :: Vector 3 _
           , packedBranchData:
-              let four = one + one + one + one
-                  two = one + one
-              in asSizedF10 (CVar.add_ (CVar.scale_ four (at (proofStateBase + 28))) (CVar.add_ mask0 (CVar.scale_ two mask1)))
+              let
+                four = one + one + one + one
+                two = one + one
+              in
+                asSizedF10 (CVar.add_ (CVar.scale_ four (at (proofStateBase + 28))) (CVar.add_ mask0 (CVar.scale_ two mask1)))
           }
       , vkComms:
           { sigma: (Vector.replicate constDummyPt) :: Vector 6 _

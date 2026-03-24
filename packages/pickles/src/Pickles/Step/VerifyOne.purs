@@ -12,6 +12,7 @@ module Pickles.Step.VerifyOne
 
 import Prelude
 
+import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
@@ -21,9 +22,8 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.Types (StepField)
-import Data.Fin (getFinite)
+import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
@@ -37,7 +37,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 type VerifyOneInput d tickD sf fv bv =
   { -- Per_proof_witness.app_state
     appState :: fv
-    -- Per_proof_witness.wrap_proof
+  -- Per_proof_witness.wrap_proof
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
   , tComm :: Vector 7 (AffinePoint fv)
@@ -46,7 +46,7 @@ type VerifyOneInput d tickD sf fv bv =
   , z2 :: sf
   , delta :: AffinePoint fv
   , sg :: AffinePoint fv
-    -- Per_proof_witness.proof_state (Wrap deferred values used by FOP)
+  -- Per_proof_witness.proof_state (Wrap deferred values used by FOP)
   , proofState ::
       { plonk ::
           { alpha :: SizedF 128 fv
@@ -63,7 +63,7 @@ type VerifyOneInput d tickD sf fv bv =
       , bulletproofChallenges :: Vector tickD (SizedF 128 fv)
       , spongeDigest :: fv
       }
-    -- Per_proof_witness.prev_proof_evals
+  -- Per_proof_witness.prev_proof_evals
   , allEvals ::
       { ftEval1 :: fv
       , publicEvals :: { zeta :: fv, omegaTimesZeta :: fv }
@@ -73,10 +73,10 @@ type VerifyOneInput d tickD sf fv bv =
       , sigmaEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
       , indexEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
       }
-    -- Per_proof_witness.prev_challenges + prev_challenge_polynomial_commitments
+  -- Per_proof_witness.prev_challenges + prev_challenge_polynomial_commitments
   , prevChallenges :: Vector 1 (Vector tickD fv)
   , prevSg :: AffinePoint fv
-    -- Unfinalized proof (Step.Per_proof.In_circuit)
+  -- Unfinalized proof (Step.Per_proof.In_circuit)
   , unfinalized ::
       { deferredValues ::
           { plonk ::
@@ -96,28 +96,28 @@ type VerifyOneInput d tickD sf fv bv =
       , shouldFinalize :: bv
       , claimedDigest :: fv
       }
-    -- Extra inputs
+  -- Extra inputs
   , messagesForNextWrapProof :: fv
   , mustVerify :: bv
-    -- Branch data fields (for publicInput construction)
+  -- Branch data fields (for publicInput construction)
   , branchData :: { mask0 :: fv, mask1 :: fv, domainLog2Var :: fv }
-    -- Mask for this proof (trimmed proofs_verified_mask)
+  -- Mask for this proof (trimmed proofs_verified_mask)
   , proofMask :: bv
-    -- Statement/publicInput construction helpers
+  -- Statement/publicInput construction helpers
   , publicInput ::
       { fqFields :: Vector 5 fv
       , challengeFields :: Vector 2 (SizedF 128 fv)
       , scalarChallengeFields :: Vector 3 (SizedF 128 fv)
       , packedBranchData :: SizedF 10 fv
       }
-    -- VK commitments for sponge_after_index and IVP
+  -- VK commitments for sponge_after_index and IVP
   , vkComms ::
       { sigma :: Vector 6 (AffinePoint fv)
       , sigmaLast :: AffinePoint fv
       , coeff :: Vector 15 (AffinePoint fv)
       , index :: Vector 6 (AffinePoint fv)
       }
-    -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
+  -- Padded sgOld (Wrap_hack.Padded_length = 2, dummy first)
   , sgOld :: Vector 2 (AffinePoint fv)
   }
 
@@ -178,16 +178,19 @@ verifyOne fopParams input ivpParams = do
         ( Tuple input.publicInput.challengeFields
             ( Tuple input.publicInput.scalarChallengeFields
                 ( Tuple
-                    (( let { spongeDigest, messagesForNextWrapProof: mnwp } =
+                    ( ( let
+                          { spongeDigest, messagesForNextWrapProof: mnwp } =
                             { spongeDigest: input.proofState.spongeDigest
                             , messagesForNextWrapProof: input.messagesForNextWrapProof
                             }
-                       in Vector.generate \j ->
+                        in
+                          Vector.generate \j ->
                             case getFinite j of
                               0 -> spongeDigest
                               1 -> mnwp
                               _ -> messagesForNextStepProof
-                     ) :: Vector 3 (FVar StepField))
+                      ) :: Vector 3 (FVar StepField)
+                    )
                     ( Tuple
                         input.proofState.bulletproofChallenges
                         input.publicInput.packedBranchData
