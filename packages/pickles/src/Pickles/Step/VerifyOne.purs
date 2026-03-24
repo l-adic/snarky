@@ -26,7 +26,7 @@ import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof,
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..))
+import Snarky.Circuit.Kimchi (SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
