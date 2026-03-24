@@ -9,6 +9,7 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reifyType)
 import Data.Tuple (Tuple(..))
@@ -563,6 +564,7 @@ incrementallyVerifyProofTest cfg ctx =
             StepOtherField.ipaScalarOps
             params
             input
+            Nothing
         assert_ success
     in
       void $ circuitTest' @Vesta.ScalarField
@@ -603,6 +605,7 @@ verifyTest cfg ctx =
             input
             false_ -- isBaseCase (real proof, not base case)
             (const_ claimedDigestFp)
+            Nothing
         assert_ success
     in
       void $ circuitTest' @Vesta.ScalarField

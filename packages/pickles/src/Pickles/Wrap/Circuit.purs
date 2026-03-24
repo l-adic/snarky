@@ -20,6 +20,7 @@ module Pickles.Wrap.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
@@ -155,7 +156,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       }
   success <- evalSpongeM initialSpongeCircuit $
     verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
-      wrapStmt.proofState.spongeDigestBeforeEvaluations
+      wrapStmt.proofState.spongeDigestBeforeEvaluations Nothing
   assert_ success
 
   -- 4. Compute and assert messagesForNextWrapProof hash

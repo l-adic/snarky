@@ -10,6 +10,7 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Foldable (for_)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -172,7 +173,7 @@ ivpStepCircuit { lagrangeComms, blindingH } input = do
       , opening: input.opening
       }
   output <- evalSpongeM initialSpongeCircuit $
-    incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams ivpInput
+    incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams ivpInput Nothing
   assertEqual_ output.spongeDigestBeforeEvaluations input.claimedDigest
   for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2

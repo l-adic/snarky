@@ -234,7 +234,7 @@ reduceToAffineExpression c =
       }
     Add l r ->
       { constant: constLeft + constRight
-      , terms: Map.unionWith (+) termsLeft termsRight
+      , terms: Map.filter (\v -> v /= zero) $ Map.unionWith (+) termsLeft termsRight
       }
       where
       { constant: constLeft, terms: termsLeft } = reduce' l

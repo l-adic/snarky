@@ -19,6 +19,7 @@ module Pickles.Verify
 import Prelude
 
 import Data.Foldable (for_)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -138,30 +139,37 @@ incrementallyVerifyProof
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
+  -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
-incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-proof" do
+incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
   -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
-  -- In OCaml, the VK enters the Step circuit as circuit variables via exists (step_main.ml:345).
-  -- The sponge_after_index is computed in-circuit from those variables (step_verifier.ml:1167-1176).
-  indexDigest <- liftSnarky $ label "ivp_index_digest" $
-    Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
-      -- Absorption order matches OCaml's index_to_field_elements:
-      -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
-      let
-        absorbPt { x, y } = do
-          Sponge.absorb x
-          Sponge.absorb y
-      -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
-      for_ input.columnComms.sigma absorbPt
-      absorbPt input.sigmaCommLast
-      -- coefficients_comm: 15
-      for_ input.columnComms.coeff absorbPt
-      -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
-      for_ input.columnComms.index absorbPt
-      -- Squeeze digest
-      Sponge.squeeze
+  -- When sponge_after_index is provided (full verify_one), just copy+squeeze.
+  -- When Nothing (standalone IVP), compute from scratch.
+  -- Reference: step_verifier.ml:530-536
+  indexDigest <- liftSnarky $ label "ivp_index_digest" $ case mSpongeAfterIndex of
+    Just spongeAfterIndex ->
+      -- OCaml: let index_sponge = Sponge.copy sponge_after_index in
+      --        Sponge.squeeze_field index_sponge
+      Sponge.evalSpongeM spongeAfterIndex Sponge.squeeze
+    Nothing ->
+      Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
+        -- Absorption order matches OCaml's index_to_field_elements:
+        -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
+        let
+          absorbPt { x, y } = do
+            Sponge.absorb x
+            Sponge.absorb y
+        -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
+        for_ input.columnComms.sigma absorbPt
+        absorbPt input.sigmaCommLast
+        -- coefficients_comm: 15
+        for_ input.columnComms.coeff absorbPt
+        -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
+        for_ input.columnComms.index absorbPt
+        -- Squeeze digest
+        Sponge.squeeze
 
   -- 2. Sponge transcript + x_hat
   -- Step (regular sponge): absorb index_digest + sg_old BEFORE x_hat, matching
@@ -177,8 +185,10 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
       -- Matches step_verifier.ml:528-530
-      Sponge.absorb indexDigest
-      for_ input.sgOld Sponge.absorbPoint
+      labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
+      labelM "ivp_absorb_sg_old" $ for_ input.sgOld \pt -> do
+        labelM "ivp_sg_x" $ Sponge.absorb pt.x
+        labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
@@ -288,10 +298,11 @@ verify
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
+  -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
-verify scalarOps params input isBaseCase claimedDigest = labelM "verify" do
+verify scalarOps params input isBaseCase claimedDigest mSpongeAfterIndex = labelM "verify" do
   -- 1. Call incrementallyVerifyProof
-  output <- incrementallyVerifyProof @g scalarOps params input
+  output <- incrementallyVerifyProof @g scalarOps params input mSpongeAfterIndex
 
   -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
   labelM "ivp_assert_digest" $ liftSnarky do

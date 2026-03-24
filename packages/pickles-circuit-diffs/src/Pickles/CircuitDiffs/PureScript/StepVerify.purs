@@ -7,6 +7,7 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Foldable (for_)
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -229,7 +230,7 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
 
   -- 1. Run IVP
   output <- evalSpongeM initialSpongeCircuit $
-    incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams ivpInput
+    incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams ivpInput Nothing
 
   -- 2. Assert digest — UNCONDITIONAL (step_verifier.ml:1297)
   assertEq output.spongeDigestBeforeEvaluations claimedDigest
