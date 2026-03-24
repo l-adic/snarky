@@ -33,7 +33,7 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
-import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkInCircuit, WrapDeferredValues, toPlonkMinimal)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
