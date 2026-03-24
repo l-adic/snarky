@@ -13,11 +13,13 @@ module Pickles.Verify
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , packStatement
   , verify
   ) where
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
@@ -31,11 +33,14 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
+import Pickles.Verify.Types (BranchData, BulletproofChallenges, DeferredValues, PlonkInCircuit, WrapDeferredValues, toPlonkMinimal)
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeMkSizedF)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_, label)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, assertEq, const_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -266,6 +271,66 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   where
   constPt :: AffinePoint (F f) -> AffinePoint (FVar f)
   constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
+
+-------------------------------------------------------------------------------
+-- | packStatement (Spec.pack + to_data for WrapStatement)
+-------------------------------------------------------------------------------
+
+-- | Convert a WrapStatement into the public input tuple expected by the IVP.
+-- |
+-- | This is the PureScript equivalent of OCaml's
+-- |   Spec.pack (Types.Wrap.Statement.In_circuit.spec ...) (to_data statement)
+-- |
+-- | The result type matches the PublicInputCommit instance used by publicInputCommit.
+-- |
+-- | Reference: step_verifier.ml:1249-1264
+packStatement
+  :: forall d f sf
+   . PrimeField f
+  => { proofState ::
+         { deferredValues :: WrapDeferredValues d (FVar f) sf (BoolVar f)
+         , spongeDigestBeforeEvaluations :: FVar f
+         , messagesForNextWrapProof :: FVar f
+         }
+     , messagesForNextStepProof :: FVar f
+     }
+  -> Tuple (Vector 5 sf)
+       (Tuple (Vector 2 (SizedF 128 (FVar f)))
+         (Tuple (Vector 3 (SizedF 128 (FVar f)))
+           (Tuple (Vector 3 (FVar f))
+             (Tuple (Vector d (SizedF 128 (FVar f)))
+               (SizedF 10 (FVar f))))))
+packStatement { proofState: ps, messagesForNextStepProof } =
+  let
+    dv = ps.deferredValues
+    plonk = dv.plonk
+    bd = dv.branchData
+    -- Branch_data.pack: 4*domain_log2 + mask_0 + 2*mask_1
+    m0 :: FVar f
+    m0 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 0))
+    m1 :: FVar f
+    m1 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 1))
+    packedBranchData = unsafeMkSizedF $
+      CVar.add_ (CVar.scale_ (one + one + one + one) bd.domainLog2)
+        (CVar.add_ m0 (CVar.scale_ (one + one) m1))
+  in
+    -- Vec5 sf: [cip, b, zetaToSrs, zetaToDom, perm]
+    Tuple
+      (dv.combinedInnerProduct :< dv.b :< plonk.zetaToSrsLength :< plonk.zetaToDomainSize :< plonk.perm :< Vector.nil)
+      -- Vec2 SizedF128: [beta, gamma]
+      (Tuple
+        (plonk.beta :< plonk.gamma :< Vector.nil)
+        -- Vec3 SizedF128: [alpha, zeta, xi]
+        (Tuple
+          (plonk.alpha :< plonk.zeta :< dv.xi :< Vector.nil)
+          -- Vec3 f: [sponge_digest, msg_wrap, msg_step]
+          (Tuple
+            (ps.spongeDigestBeforeEvaluations :< ps.messagesForNextWrapProof :< messagesForNextStepProof :< Vector.nil)
+            -- Vec d SizedF128: bulletproof_challenges
+            (Tuple
+              dv.bulletproofChallenges
+              -- SizedF10: packed branch_data
+              packedBranchData))))
 
 -------------------------------------------------------------------------------
 -- | verify (Step_verifier.verify)

@@ -12,7 +12,6 @@ module Pickles.Step.VerifyOne
 
 import Prelude
 
-import Data.Fin (getFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
@@ -23,9 +22,9 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherP
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
-import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof)
+import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -99,17 +98,10 @@ type VerifyOneInput d tickD sf fv bv =
   -- Extra inputs
   , messagesForNextWrapProof :: fv
   , mustVerify :: bv
-  -- Branch data fields (for publicInput construction)
+  -- Branch data fields (used by packStatement for publicInput construction)
   , branchData :: { mask0 :: fv, mask1 :: fv, domainLog2Var :: fv }
   -- Mask for this proof (trimmed proofs_verified_mask)
   , proofMask :: bv
-  -- Statement/publicInput construction helpers
-  , publicInput ::
-      { fqFields :: Vector 5 fv
-      , challengeFields :: Vector 2 (SizedF 128 fv)
-      , scalarChallengeFields :: Vector 3 (SizedF 128 fv)
-      , packedBranchData :: SizedF 10 fv
-      }
   -- VK commitments for sponge_after_index and IVP
   , vkComms ::
       { sigma :: Vector 6 (AffinePoint fv)
@@ -171,33 +163,28 @@ verifyOne fopParams input ivpParams = do
       , proofMask: input.proofMask
       }
 
-  -- Step 5: Build publicInput tuple (step_main.ml:88-111)
+  -- Step 5: Build statement and pack into publicInput (step_main.ml:88-111)
+  -- OCaml: Spec.pack(to_data(statement)) inside Step_verifier.verify
   let
-    publicInput =
-      Tuple input.publicInput.fqFields
-        ( Tuple input.publicInput.challengeFields
-            ( Tuple input.publicInput.scalarChallengeFields
-                ( Tuple
-                    ( ( let
-                          { spongeDigest, messagesForNextWrapProof: mnwp } =
-                            { spongeDigest: input.proofState.spongeDigest
-                            , messagesForNextWrapProof: input.messagesForNextWrapProof
-                            }
-                        in
-                          Vector.generate \j ->
-                            case getFinite j of
-                              0 -> spongeDigest
-                              1 -> mnwp
-                              _ -> messagesForNextStepProof
-                      ) :: Vector 3 (FVar StepField)
-                    )
-                    ( Tuple
-                        input.proofState.bulletproofChallenges
-                        input.publicInput.packedBranchData
-                    )
-                )
-            )
-        )
+    statement =
+      { proofState:
+          { deferredValues:
+              { plonk: input.proofState.plonk
+              , combinedInnerProduct: input.proofState.combinedInnerProduct
+              , xi: input.proofState.xi
+              , bulletproofChallenges: input.proofState.bulletproofChallenges
+              , b: input.proofState.b
+              , branchData:
+                  { domainLog2: input.branchData.domainLog2Var
+                  , proofsVerifiedMask: (coerce input.branchData.mask0 :: BoolVar StepField) :< (coerce input.branchData.mask1 :: BoolVar StepField) :< Vector.nil
+                  }
+              }
+          , spongeDigestBeforeEvaluations: input.proofState.spongeDigest
+          , messagesForNextWrapProof: input.messagesForNextWrapProof
+          }
+      , messagesForNextStepProof
+      }
+    publicInput = packStatement statement
 
   -- Step 6: IVP (step_main.ml:115-136)
   let

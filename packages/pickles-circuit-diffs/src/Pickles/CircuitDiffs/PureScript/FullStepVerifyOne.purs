@@ -12,7 +12,7 @@ import Data.Fin (getFinite)
 import Data.Fin as Fin
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..))
@@ -20,7 +20,6 @@ import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -134,42 +133,6 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
       , mustVerify: coerce (at 285) :: BoolVar StepField
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
       , proofMask: coerce mask1 :: BoolVar StepField
-      , publicInput:
-          { fqFields:
-              ( Vector.generate \j ->
-                  at
-                    ( proofStateBase +
-                        case getFinite j of
-                          0 -> 7 -- combined_inner_product
-                          1 -> 8 -- b
-                          2 -> 4 -- zeta_to_srs_length
-                          3 -> 5 -- zeta_to_domain_size
-                          _ -> 6 -- perm
-                    )
-              ) :: Vector 5 (FVar StepField)
-          , challengeFields:
-              ( Vector.generate \j ->
-                  asSizedF128 (at (proofStateBase + 1 + getFinite j))
-              ) :: Vector 2 _
-          , scalarChallengeFields:
-              ( Vector.generate \j ->
-                  asSizedF128
-                    ( at
-                        ( proofStateBase +
-                            case getFinite j of
-                              0 -> 0 -- alpha
-                              1 -> 3 -- zeta
-                              _ -> 9 -- xi
-                        )
-                    )
-              ) :: Vector 3 _
-          , packedBranchData:
-              let
-                four = one + one + one + one
-                two = one + one
-              in
-                asSizedF10 (CVar.add_ (CVar.scale_ four (at (proofStateBase + 28))) (CVar.add_ mask0 (CVar.scale_ two mask1)))
-          }
       , vkComms:
           { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           , sigmaLast: constDummyPt
