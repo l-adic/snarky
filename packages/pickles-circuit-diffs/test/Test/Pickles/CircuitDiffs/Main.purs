@@ -29,6 +29,7 @@ import Pickles.CircuitDiffs.PureScript.FopWrap (compileFopWrap)
 import Pickles.CircuitDiffs.PureScript.Ftcomm (compileFtcomm)
 import Pickles.CircuitDiffs.PureScript.FtcommStep (compileFtcommStep)
 import Pickles.CircuitDiffs.PureScript.FullStepVerifyOne (compileFullStepVerifyOne)
+import Pickles.CircuitDiffs.PureScript.FullStepVerifyOneN2 (compileFullStepVerifyOneN2)
 import Pickles.CircuitDiffs.PureScript.GroupMap (compileGroupMap)
 import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesStep (compileHashMessagesStep)
@@ -473,6 +474,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
+        let
+          fullStepN2SrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 304) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

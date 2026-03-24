@@ -21,7 +21,7 @@ import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepField)
+import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
@@ -33,7 +33,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
-type VerifyOneInput d tickD sf fv bv =
+type VerifyOneInput n d tickD sf fv bv =
   { -- Per_proof_witness.app_state
     appState :: fv
   -- Per_proof_witness.wrap_proof
@@ -73,8 +73,8 @@ type VerifyOneInput d tickD sf fv bv =
       , indexEvals :: Vector 6 { zeta :: fv, omegaTimesZeta :: fv }
       }
   -- Per_proof_witness.prev_challenges + prev_challenge_polynomial_commitments
-  , prevChallenges :: Vector 1 (Vector tickD fv)
-  , prevSg :: AffinePoint fv
+  , prevChallenges :: Vector n (Vector tickD fv)
+  , prevSgs :: Vector n (AffinePoint fv)
   -- Unfinalized proof (Step.Per_proof.In_circuit)
   , unfinalized ::
       { deferredValues ::
@@ -100,8 +100,8 @@ type VerifyOneInput d tickD sf fv bv =
   , mustVerify :: bv
   -- Branch data fields (used by packStatement for publicInput construction)
   , branchData :: { mask0 :: fv, mask1 :: fv, domainLog2Var :: fv }
-  -- Mask for this proof (trimmed proofs_verified_mask)
-  , proofMask :: bv
+  -- Mask for this proof (trimmed proofs_verified_mask, Vector n)
+  , proofMask :: Vector n bv
   -- VK commitments for sponge_after_index and IVP
   , vkComms ::
       { sigma :: Vector 6 (AffinePoint fv)
@@ -114,19 +114,19 @@ type VerifyOneInput d tickD sf fv bv =
   }
 
 type VerifyOneResult tickD fv =
-  { challenges :: Vector 1 (Vector tickD (SizedF 128 fv))
+  { challenges :: Vector tickD (SizedF 128 fv)
   , result :: BoolVar StepField
   }
 
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall t m r1
+  :: forall n t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
   => FinalizeOtherProofParams StepField r1
-  -> VerifyOneInput 15 16 (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
-  -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult 16 (FVar StepField))
+  -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))
 verifyOne fopParams input ivpParams = do
   -- Step 1: assert should_finalize == must_verify (step_main.ml:28)
   label "step1_assert_finalize" $ assertEq input.unfinalized.shouldFinalize input.mustVerify
@@ -146,21 +146,28 @@ verifyOne fopParams input ivpParams = do
         , spongeDigestBeforeEvaluations: ps.spongeDigest
         }
     , witness: { allEvals: input.allEvals }
-    , mask: (coerce input.proofMask :: BoolVar StepField) :< Vector.nil
+    , mask: input.proofMask
     , prevChallenges: input.prevChallenges
     , domainLog2Var: input.branchData.domainLog2Var
     }
 
   -- Steps 3-4: sponge_after_index + message hash (step_main.ml:76-104)
-  let rawChallenges = Vector.head input.prevChallenges
+  -- Build per-proof data for the opt_sponge message hash.
+  -- OCaml: old_bulletproof_challenges = prev_challenges, masked by proofs_verified_mask
+  -- sgOld is padded to Padded_length=2, but the message hash uses the pre-padded sg points.
+  -- For N1: trim_front [mask0,mask1] with lte N1 N2 → [mask1], 1 proof
+  -- For N2: trim_front [mask0,mask1] with lte N2 N2 → [mask0,mask1], 2 proofs
+  let
+    msgHashProofs = Vector.zipWith
+      (\mask (Tuple sg rawChals) -> { sg, rawChallenges: rawChals, mask })
+      input.proofMask
+      (Vector.zipWith Tuple input.prevSgs input.prevChallenges)
 
   { digest: messagesForNextStepProof, spongeAfterIndex } <-
     hashMessagesForNextStepProofOpt
       { vkComms: input.vkComms
       , appState: input.appState
-      , prevSg: input.prevSg
-      , rawChallenges
-      , proofMask: input.proofMask
+      , proofs: msgHashProofs
       }
 
   -- Step 5: Build statement and pack into publicInput (step_main.ml:88-111)
@@ -231,4 +238,4 @@ verifyOne fopParams input ivpParams = do
     verifiedAndFinalized <- and_ output.success finalized
     or_ verifiedAndFinalized (not_ input.mustVerify)
 
-  pure { challenges: (\x -> x :< Vector.nil) challenges, result }
+  pure { challenges, result }

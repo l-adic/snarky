@@ -108,7 +108,7 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
           , indexEvals: (Vector.generate (evalPair (evalsBase + 76))) :: Vector 6 _
           }
       , prevChallenges: (\x -> x :< Vector.nil) (Vector.generate \j -> at (234 + getFinite j))
-      , prevSg: readPt 250
+      , prevSgs: readPt 250 :< Vector.nil
       , unfinalized:
           { deferredValues:
               { plonk:
@@ -132,7 +132,7 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
       , messagesForNextWrapProof: at 284
       , mustVerify: coerce (at 285) :: BoolVar StepField
       , branchData: { mask0, mask1, domainLog2Var: at (proofStateBase + 28) }
-      , proofMask: coerce mask1 :: BoolVar StepField
+      , proofMask: (coerce mask1 :: BoolVar StepField) :< Vector.nil
       , vkComms:
           { sigma: (Vector.replicate constDummyPt) :: Vector 6 _
           , sigmaLast: constDummyPt

@@ -95,7 +95,7 @@ hashMessagesForNextStepProof { vkComms, proofs } = do
 -- |
 -- | Returns both the digest AND sponge_after_index (needed by IVP).
 hashMessagesForNextStepProofOpt
-  :: forall d f t m
+  :: forall n d f t m
    . PrimeField f
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
@@ -106,12 +106,15 @@ hashMessagesForNextStepProofOpt
          , index :: Vector 6 (AffinePoint (FVar f))
          }
      , appState :: FVar f
-     , prevSg :: AffinePoint (FVar f)
-     , rawChallenges :: Vector d (FVar f)
-     , proofMask :: BoolVar f
+     , proofs ::
+         Vector n
+           { sg :: AffinePoint (FVar f)
+           , rawChallenges :: Vector d (FVar f)
+           , mask :: BoolVar f
+           }
      }
   -> Snarky (KimchiConstraint f) t m { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
-hashMessagesForNextStepProofOpt { vkComms, appState, prevSg, rawChallenges, proofMask } = do
+hashMessagesForNextStepProofOpt { vkComms, appState, proofs } = do
   let
     absorbPt s { x, y } = do
       s1 <- Sponge.absorb x s
@@ -129,12 +132,13 @@ hashMessagesForNextStepProofOpt { vkComms, appState, prevSg, rawChallenges, proo
   digest <- label "msg_hash" do
     s1 <- label "msg_hash_absorb_app" $ Sponge.absorb appState spongeAfterIndex
 
-    -- 3. Switch to opt_sponge for masked sg + bp_challenges
+    -- 3. Switch to opt_sponge for masked sg + bp_challenges (one per proof)
     Tuple msg _ <- label "msg_hash_opt" $ OptSponge.runOptSpongeFromSponge s1 do
-      OptSponge.optAbsorb (Tuple proofMask prevSg.x)
-      OptSponge.optAbsorb (Tuple proofMask prevSg.y)
-      for_ rawChallenges \c ->
-        OptSponge.optAbsorb (Tuple proofMask c)
+      for_ proofs \proof -> do
+        OptSponge.optAbsorb (Tuple proof.mask proof.sg.x)
+        OptSponge.optAbsorb (Tuple proof.mask proof.sg.y)
+        for_ proof.rawChallenges \c ->
+          OptSponge.optAbsorb (Tuple proof.mask c)
       OptSponge.optSqueeze
     pure msg
 

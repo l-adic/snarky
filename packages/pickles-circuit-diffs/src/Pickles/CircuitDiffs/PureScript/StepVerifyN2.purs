@@ -65,8 +65,10 @@ stepVerifyN2Circuit { lagrangeComms, blindingH } inputs = do
     wComm :: Vector 15 (AffinePoint (FVar StepField))
     wComm = Vector.generate \j -> readPt (2 * getFinite j)
     zComm = readPt 30
+
     tComm :: Vector 7 (AffinePoint (FVar StepField))
     tComm = Vector.generate \j -> readPt (32 + 2 * getFinite j)
+
     lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
     lr = Vector.generate \j ->
       { l: readPt (46 + 4 * getFinite j)
