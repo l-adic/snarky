@@ -4,20 +4,14 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Foldable (for_)
 import Data.Int as Int
-import Data.Map as Map
-import Control.Bind (join)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
-import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Effect.Exception (throw)
-import Unsafe.Coerce (unsafeCoerce)
 import Node.Buffer as Buffer
 import Node.Encoding (Encoding(..))
 import Node.FS.Perms (all, mkPerms)
@@ -470,29 +464,7 @@ spec =
             { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 286) :: Array (AffinePoint (F Fp))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
-        let compiled = compileFullStepVerifyOne fullStepSrsData
-        it "dump varMetadata for target variables of public inputs" do
-          liftEffect do
-            let vm = compiled.varMetadata
-                circuit = fromCompiledCircuit compiled
-                gates = circuit.gates
-            for_ (Array.range 252 285) \i -> do
-              case Array.index gates i of
-                Nothing -> pure unit
-                Just g -> do
-                  case Array.index g.wires 0 of
-                    Nothing -> pure unit
-                    Just w -> do
-                      -- Find the variable at the target row/col
-                      case Array.index gates w.row of
-                        Nothing -> log $ "PI " <> show i <> ": target row " <> show w.row <> " out of bounds"
-                        Just tgtGate -> do
-                          case join (Array.index (Vector.toUnfoldable tgtGate.variables :: Array _) w.col) of
-                            Nothing -> log $ "PI " <> show i <> ": target col " <> show w.col <> " out of bounds"
-                            Just varId -> do
-                              let ctx = Map.lookup (unsafeCoerce varId :: _) vm
-                              log $ "PI " <> show i <> " -> var " <> show varId <> " @ (" <> show w.row <> "," <> show w.col <> "): " <> show ctx
-        exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit compiled)
+        exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

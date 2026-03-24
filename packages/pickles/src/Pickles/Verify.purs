@@ -304,10 +304,9 @@ verify scalarOps params input isBaseCase claimedDigest mSpongeAfterIndex = label
   -- 1. Call incrementallyVerifyProof
   output <- incrementallyVerifyProof @g scalarOps params input mSpongeAfterIndex
 
-  -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
-  labelM "ivp_assert_digest" $ liftSnarky do
-    digest' <- if_ isBaseCase claimedDigest output.spongeDigestBeforeEvaluations
-    assertEq digest' claimedDigest
+  -- 2. Assert sponge digest matches unconditionally (step_verifier.ml:1294)
+  labelM "ivp_assert_digest" $ liftSnarky $
+    assertEq claimedDigest output.spongeDigestBeforeEvaluations
 
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
   labelM "ivp_assert_bp_challenges" $ liftSnarky $
