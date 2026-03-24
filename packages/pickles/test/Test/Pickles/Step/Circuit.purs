@@ -24,10 +24,12 @@ import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
+import Pickles.Step.Circuit (WrapStatementPublicInput)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (sizeInFields)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -77,9 +79,10 @@ testCircuit input = do
     -- n=0: loop body never runs, IVP params just need to type-check
     pallasGen :: AffinePoint (F StepField)
     pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
+    numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
     params = Record.merge dummyFinalizeOtherProofParams
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms: Array.replicate 50 pallasGen
+      , lagrangeComms: Array.replicate numPublic pallasGen
       , blindingH: pallasGen
       , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
       , correctionMode: PureCorrections
