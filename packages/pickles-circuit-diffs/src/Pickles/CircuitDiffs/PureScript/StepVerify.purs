@@ -9,7 +9,9 @@ module Pickles.CircuitDiffs.PureScript.StepVerify
 import Prelude
 
 import Data.Fin (getFinite)
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
@@ -28,8 +30,6 @@ import Snarky.Curves.Class (curveParams)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
-import Data.Foldable (for_)
-import Data.Tuple (Tuple(..))
 
 -- | Step_verifier.verify circuit — tests the full verify pipeline:
 -- |   1. packStatement (Spec.pack equivalent)
@@ -70,8 +70,10 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
     wComm :: Vector 15 (AffinePoint (FVar StepField))
     wComm = Vector.generate \j -> readPt (2 * getFinite j)
     zComm = readPt 30
+
     tComm :: Vector 7 (AffinePoint (FVar StepField))
     tComm = Vector.generate \j -> readPt (32 + 2 * getFinite j)
+
     lr :: Vector 15 { l :: AffinePoint (FVar StepField), r :: AffinePoint (FVar StepField) }
     lr = Vector.generate \j ->
       { l: readPt (46 + 4 * getFinite j)
