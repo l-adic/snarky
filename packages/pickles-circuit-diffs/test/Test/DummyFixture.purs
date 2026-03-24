@@ -80,7 +80,7 @@ spec = describe "Pickles.Dummy fixture comparison" do
   checkedRef <- liftEffect $ Ref.new Set.empty
 
   let
-    assert entries = assertField checkedRef
+    assert _entries = assertField checkedRef
 
   it "all dummy values match OCaml dump_dummy fixture" do
     { entries } <- loadFixture

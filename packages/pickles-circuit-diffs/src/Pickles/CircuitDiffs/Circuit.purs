@@ -36,10 +36,10 @@ import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeGateData)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateGetWires)
 import Snarky.Backend.Kimchi.Types (gateWiresGetWire, wireGetCol, wireGetRow)
-import Snarky.Circuit.CVar (Variable(..), getVariable)
+import Snarky.Circuit.CVar (getVariable)
 import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState(..), GateKind(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, modulus, toBigInt, toHexLe)
+import Snarky.Curves.Class (class PrimeField, class SerdeHex, fromBigInt, fromHexLe, modulus, toBigInt)
 
 gateKindToString :: GateKind -> String
 gateKindToString = case _ of
