@@ -33,6 +33,7 @@ module Test.Pickles.TestContext
   , schnorrCircuit
   , schnorrSolver
   , stepSchnorrAppCircuit
+  , counterAppCircuit
   , zkRows
   , createWrapProofContext
   , mkWrapIpaContext
@@ -64,6 +65,7 @@ module Test.Pickles.TestContext
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Reader.Trans (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
@@ -71,6 +73,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldl)
+import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, un)
@@ -89,11 +92,11 @@ import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Commitments (combinedInnerProduct)
-import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, stepDummyUnfinalizedProof, wrapDummyUnfinalizedProof) as Dummy
+import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyIpaChallenges, dummyProofWitness, dummyStepAdvice, roComputeResult, wrapDummyUnfinalizedProof) as Dummy
 import Pickles.IPA (bPoly, computeB, extractScalarChallengesPure)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.Env (fieldEnv)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainShifts, evalSelectorPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
+import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator, domainShifts, evalSelectorPolys, proverIndexDomainLog2, unnormalizedLagrangeBasis, vanishesOnZkAndPreviousRows)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.Linearization.Vesta as VestaTokens
@@ -102,11 +105,11 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode(..))
+import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, stepCircuit)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
 import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
@@ -117,15 +120,19 @@ import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParam
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
 import RandomOracle.Sponge as RandomOracle
+import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, assert_, coerceViaBits, const_, exists, false_, fieldsToValue, toField, true_, valueToFields, wrapF)
-import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
+import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Circuit.Schnorr (SignatureVar(..), pallasScalarOps, verifies)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -177,10 +184,10 @@ createInductiveTestContext = do
 -- | Bundles the Step circuit input fields (as private witness), polynomial
 -- | evaluations (for finalize) and protocol commitments + opening proof (for IVP),
 -- | for each of the `n` previous Wrap proofs.
-type StepAdvice (n :: Int) (dw :: Int) f =
+type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
   { stepInputFields :: Array (F f)
   , evals :: Vector n (ProofWitness (F f))
-  , prevChallenges :: Vector n (Vector dw (F f))
+  , prevChallenges :: Vector n (Vector ds (F f))
   , messages ::
       Vector n
         { wComm :: Vector 15 (AffinePoint (F f))
@@ -198,24 +205,33 @@ type StepAdvice (n :: Int) (dw :: Int) f =
   -- | FOP proof states (Type1, from Per_proof_witness.proof_state).
   -- | These provide the private witness for finalizeOtherProof, distinct
   -- | from the public input's Type2(SplitField) unfinalized proofs.
-  , fopProofStates :: Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean)
+  , fopProofStates :: Vector n (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean)
   , messagesForNextWrapProof :: Vector n (F f)
+  , wrapVerifierIndex ::
+      { sigmaCommLast :: AffinePoint (F f)
+      , columnComms ::
+          { index :: Vector 6 (AffinePoint (F f))
+          , coeff :: Vector 15 (AffinePoint (F f))
+          , sigma :: Vector 6 (AffinePoint (F f))
+          }
+      }
+  , sgOld :: Vector n (AffinePoint (F f))
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
-newtype StepProverM (n :: Int) (dw :: Int) f a = StepProverM (ReaderT (StepAdvice n dw f) Effect a)
+newtype StepProverM (n :: Int) (ds :: Int) (dw :: Int) f a = StepProverM (ReaderT (StepAdvice n ds dw f) Effect a)
 
-derive instance Newtype (StepProverM n dw f a) _
-derive newtype instance Functor (StepProverM n dw f)
-derive newtype instance Apply (StepProverM n dw f)
-derive newtype instance Applicative (StepProverM n dw f)
-derive newtype instance Bind (StepProverM n dw f)
-derive newtype instance Monad (StepProverM n dw f)
+derive instance Newtype (StepProverM n ds dw f a) _
+derive newtype instance Functor (StepProverM n ds dw f)
+derive newtype instance Apply (StepProverM n ds dw f)
+derive newtype instance Applicative (StepProverM n ds dw f)
+derive newtype instance Bind (StepProverM n ds dw f)
+derive newtype instance Monad (StepProverM n ds dw f)
 
-runStepProverM :: forall n dw f a. StepAdvice n dw f -> StepProverM n dw f a -> Effect a
+runStepProverM :: forall n ds dw f a. StepAdvice n ds dw f -> StepProverM n ds dw f a -> Effect a
 runStepProverM privateData (StepProverM m) = runReaderT m privateData
 
-instance StepWitnessM n dw (StepProverM n dw f) f where
+instance StepWitnessM n ds dw (StepProverM n ds dw f) f where
   getStepInputFields _ = StepProverM $ map _.stepInputFields ask
   getProofWitnesses _ = StepProverM $ map _.evals ask
   getPrevChallenges _ = StepProverM $ map _.prevChallenges ask
@@ -223,6 +239,8 @@ instance StepWitnessM n dw (StepProverM n dw f) f where
   getOpeningProof _ = StepProverM $ map _.openingProofs ask
   getFopProofStates _ = StepProverM $ map _.fopProofStates ask
   getMessagesForNextWrapProof _ = StepProverM $ map _.messagesForNextWrapProof ask
+  getWrapVerifierIndex _ = StepProverM $ map _.wrapVerifierIndex ask
+  getSgOld _ = StepProverM $ map _.sgOld ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -353,6 +371,30 @@ stepSchnorrAppCircuit mustVerify { appInput } = do
     , auxiliaryOutput: unit
     }
 
+-- | Counter application circuit: assert(self == prev + 1 || self == 0).
+-- | Mirrors OCaml's Simple_chain from test_no_sideloaded.ml.
+-- | - input: FVar StepField (the counter value = public input)
+-- | - prevInput: FVar StepField (previous counter value)
+-- | - n = 1 (one previous proof)
+counterAppCircuit
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => Boolean
+  -> AppCircuitInput 1 (FVar StepField) (FVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (AppCircuitOutput 1 Unit Unit StepField)
+counterAppCircuit mustVerify { appInput: self, previousProofInputs } = do
+  let prev = Vector.head previousProofInputs
+  isBaseCase <- equals_ self (const_ zero)
+  let onePlusPrev = CVar.add_ (const_ one) prev
+  selfCorrect <- equals_ onePlusPrev self
+  assert_ =<< any_ [ selfCorrect, isBaseCase ]
+  let mv = if mustVerify then true_ else false_
+  pure
+    { mustVerify: mv :< Vector.nil
+    , publicOutput: unit
+    , auxiliaryOutput: unit
+    }
+
 -- | Schnorr input coerced to Wrap field (Fq).
 -- | Same structure as SchnorrInput but with F WrapField instead of F StepField.
 -- | Used in WrapInput type where all field elements are WrapField.
@@ -386,11 +428,11 @@ existsSchnorrStepIO = exists $ lift $
 existsSchnorrStepInput
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 WrapIPARounds m StepField
+  => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
   => Snarky (KimchiConstraint StepField) t m StepSchnorrInputVar
 existsSchnorrStepInput = exists $ lift $
   map (fieldsToValue @StepField @StepSchnorrInput <<< (coerce :: Array (F StepField) -> Array StepField))
-    (getStepInputFields @1 @WrapIPARounds unit)
+    (getStepInputFields @1 @StepIPARounds @WrapIPARounds unit)
 
 -- | Which case of the Step recursion to run.
 data StepCase
@@ -500,10 +542,28 @@ createStepProofContext stepCase = do
   Tuple mustVerify params <- case stepCase of
     BaseCase -> do
       Console.info "creating Step proof for BaseCase"
-      pure $ Tuple false Dummy.dummyFinalizeOtherProofParams
-    InductiveCase stepCtx _ -> do
+      -- The IVP verifies a Wrap proof on the Pallas curve, so lagrange comms
+      -- come from the Vesta SRS (Wrap circuit SRS). Domain log2 = WrapIPARounds = 15.
+      -- numPublic = number of fields consumed by publicInputCommit on WrapStatementPublicInput = 30.
+      -- The Step circuit verifies Wrap proofs. Lagrange comms come from the
+      -- Step SRS (CRS PallasG) via vestaSrsLagrangeCommitments, matching the
+      -- convention in the circuit-diffs tests.
+      stepSrs <- liftEffect $ PallasImpl.createCRS
+      let
+        wrapDomainLog2 = reflectType (Proxy @WrapIPARounds)
+        numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
+        baseCaseIvpParams =
+          { curveParams: curveParams (Proxy @Pallas.G)
+          , lagrangeComms: (coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField))
+          , blindingH: (coerce (ProofFFI.vestaSrsBlindingGenerator stepSrs)) :: AffinePoint (F StepField)
+          , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
+          , correctionMode: PureCorrections
+          , useOptSponge: false
+          }
+      pure $ Tuple false (Record.merge Dummy.dummyFinalizeOtherProofParams baseCaseIvpParams)
+    InductiveCase stepCtx wrapCtx -> do
       Console.info "creating Step proof for Inductive Step"
-      pure $ Tuple true (buildStepFinalizeParams stepCtx)
+      pure $ Tuple true (Record.merge (buildStepFinalizeParams stepCtx) (buildStepIVPParams wrapCtx))
 
   let
     -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.
@@ -513,12 +573,12 @@ createStepProofContext stepCase = do
     circuit
       :: forall t m
        . CircuitM StepField (KimchiConstraint StepField) t m
-      => StepWitnessM 1 WrapIPARounds m StepField
+      => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
       => Unit
       -> Snarky (KimchiConstraint StepField) t m StepSchnorrOutputVar
     circuit _ = do
       i <- existsSchnorrStepInput
-      stepCircuit params (stepSchnorrAppCircuit mustVerify) i
+      stepCircuit @StepIPARounds params (stepSchnorrAppCircuit mustVerify) i
 
   -- Compile with Unit input — Step proof public input = StepStatement only
   builtState <- liftEffect $ compile
@@ -531,34 +591,91 @@ createStepProofContext stepCase = do
     -- Solver with StepProverM to provide real witnesses
     solverCircuit
       :: forall t
-       . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+       . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField)
       => Unit
-      -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) StepSchnorrOutputVar
+      -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField) StepSchnorrOutputVar
     solverCircuit = circuit
 
-    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 WrapIPARounds StepField) Unit StepSchnorrOutput
+    rawSolver :: SolverT StepField (KimchiConstraint StepField) (StepProverM 1 StepIPARounds WrapIPARounds StepField) Unit StepSchnorrOutput
     rawSolver = makeSolver (Proxy @(KimchiConstraint StepField)) solverCircuit
 
   Tuple witnessData stepInput <- case stepCase of
     BaseCase -> liftEffect do
-      pure $ Tuple Dummy.dummyStepAdvice
+      let
+        advice = Dummy.dummyStepAdvice
+        -- Build Wrap Statement public input from dummy fopState
+        -- (needed by computeStepIvpTranscript for x_hat computation)
+        dummyFopState = Vector.index advice.fopProofStates (unsafeFinite @1 0)
+        -- Build value-level WrapStatementPublicInput from dummy fopState
+        dummyDv = dummyFopState.deferredValues
+        dummyP = dummyDv.plonk
+        unwrapT1 (Type1 x) = x
+        -- branch_data = 4*domainLog2 + mask0 + 2*mask1, both masks false for base case = 0
+        dummyBranchData = SizedF.wrapF (unsafePartial $ fromJust $ SizedF.fromField @10 (fromInt (4 * params.domainLog2) :: StepField))
+
+        dummyPublicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
+        dummyPublicInput =
+          Tuple
+            (unwrapT1 dummyDv.combinedInnerProduct :< unwrapT1 dummyDv.b :< unwrapT1 dummyP.zetaToSrsLength :< unwrapT1 dummyP.zetaToDomainSize :< unwrapT1 dummyP.perm :< Vector.nil)
+            ( Tuple (dummyP.beta :< dummyP.gamma :< Vector.nil)
+                ( Tuple (dummyP.alpha :< dummyP.zeta :< dummyDv.xi :< Vector.nil)
+                    ( Tuple (dummyFopState.spongeDigestBeforeEvaluations :< F zero :< F zero :< Vector.nil)
+                        (Tuple dummyDv.bulletproofChallenges dummyBranchData)
+                    )
+                )
+            )
+        vk = advice.wrapVerifierIndex
+        -- Compute the IVP transcript to get self-consistent plonk values
+        transcript = computeStepIvpTranscript
+          { vk:
+              { sigma: vk.columnComms.sigma
+              , sigmaLast: vk.sigmaCommLast
+              , coeff: vk.columnComms.coeff
+              , index: vk.columnComms.index
+              }
+          , sgOld: Vector.nil
+          , publicInput: dummyPublicInput
+          , wComm: (Vector.index advice.messages (unsafeFinite @1 0)).wComm
+          , zComm: (Vector.index advice.messages (unsafeFinite @1 0)).zComm
+          , tComm: (Vector.index advice.messages (unsafeFinite @1 0)).tComm
+          , lagrangeComms: params.lagrangeComms
+          , blindingH: params.blindingH
+          }
+        -- Build self-consistent unfinalized proof with transcript-derived plonk
+        baseCaseUnfinalized = buildBaseCaseUnfinalizedProof { transcript }
+      pure $ Tuple advice
         { appInput: schnorrInput
         , previousProofInputs: unit :< Vector.nil
-        , unfinalizedProofs: Dummy.stepDummyUnfinalizedProof :< Vector.nil
+        , unfinalizedProofs: baseCaseUnfinalized :< Vector.nil
         , prevChallengeDigests: zero :< Vector.nil
         }
     InductiveCase stepCtx wrapCtx ->
       let
-        challengeDigest = computeStepChallengeDigest wrapCtx
-        sgEvals = computeStepSgEvals stepCtx wrapCtx
+        challengeDigest = computeStepChallengeDigest stepCtx
+        sgEvals = computeStepSgEvals stepCtx
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
           , sgPointEvals: sgEvals
           , stepCtx
           , wrapCtx
           }
-        -- Convert Type1 unfinalized proof to Type2(SplitField) for public input
-        publicUnfinalized = type1ToType2SF fopInput.unfinalized
+
+        -- Public input unfinalized proof uses N=15 Wrap bp challenges,
+        -- while FOP state uses N=16 Step bp challenges. Reconstruct with Wrap bp chals.
+        wrapBpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+        wrapBpChals = coerce (extractWrapRawBpChallenges wrapCtx)
+        fopDv = fopInput.unfinalized.deferredValues
+        publicUnfinalized = type1ToType2SF
+          { deferredValues:
+              { plonk: fopDv.plonk
+              , combinedInnerProduct: fopDv.combinedInnerProduct
+              , xi: fopDv.xi
+              , bulletproofChallenges: wrapBpChals
+              , b: fopDv.b
+              }
+          , shouldFinalize: fopInput.unfinalized.shouldFinalize
+          , spongeDigestBeforeEvaluations: fopInput.unfinalized.spongeDigestBeforeEvaluations
+          }
       in
         pure $ Tuple (buildStepProverWitness stepCtx wrapCtx)
           { appInput: schnorrInput
@@ -1081,6 +1198,10 @@ buildWrapCircuitInput ctx =
             , xi
             , bulletproofChallenges
             , b
+            , branchData:
+                { domainLog2: F (fromInt ctx.domainLog2 :: WrapField)
+                , proofsVerifiedMask: true :< false :< Vector.nil
+                }
             }
         , spongeDigestBeforeEvaluations: F spongeDigest
         , messagesForNextWrapProof: F messageHash
@@ -1390,8 +1511,8 @@ buildStepFinalizeParams stepCtx =
 -- | Build FinalizeOtherProof circuit test input.
 -- | Uses StepProofContext for polynomial evaluations (native Fp) and
 -- | WrapProofContext for bulletproof challenges (from Wrap proof's IPA).
-buildStepFinalizeInput :: { prevChallengeDigest :: StepField, sgPointEvals :: Array (PointEval StepField), stepCtx :: StepProofContext, wrapCtx :: WrapProofContext } -> FinalizeOtherProofInput 0 WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean
-buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals, stepCtx, wrapCtx } =
+buildStepFinalizeInput :: { prevChallengeDigest :: StepField, sgPointEvals :: Array (PointEval StepField), stepCtx :: StepProofContext, wrapCtx :: WrapProofContext } -> FinalizeOtherProofInput 0 StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals, stepCtx, wrapCtx: _ } =
   let
     -- Sponge digest (native Fp, no coercion)
     spongeDigest = stepCtx.oracles.fqDigest
@@ -1507,17 +1628,19 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
         { result: result + scale * term, scale: scale * frResult.xi }
     cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
 
-    -- Extract bulletproof challenges (from Wrap proof's IPA — KEEP from wrapCtx)
-    rawBpChallenges = extractWrapRawBpChallenges wrapCtx
+    -- Extract bulletproof challenges from Step IPA (N16, stored in Wrap proof's proof_state)
+    rawStepBpChallenges = extractStepRawBpChallenges stepCtx
 
-    bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (F StepField))
-    bulletproofChallenges = coerce rawBpChallenges
+    -- Coerce from Pallas.ScalarField (Fq) to StepField (Fp) via bit representation
+    stepBpChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+    stepBpChallenges = map coerceViaBits rawStepBpChallenges
+
+    bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bulletproofChallenges = coerce stepBpChallenges
 
     -- Compute b and perm
-    expandedChals :: Vector WrapIPARounds StepField
-    expandedChals = map
-      (\c -> toFieldPure c stepEndo)
-      rawBpChallenges
+    expandedChals :: Vector StepIPARounds StepField
+    expandedChals = map (\c -> toFieldPure c stepEndo) stepBpChallenges
 
     b = computeB expandedChals
       { zeta: plonkExpanded.zeta
@@ -1571,13 +1694,17 @@ buildStepFinalizeInput { prevChallengeDigest: prevChallengeDigest_, sgPointEvals
 -- | Compute the challenge digest for Step-side verification of a Wrap proof.
 -- | This is the pure-side equivalent of what the circuit computes via OptSponge.
 -- | With mask=all-true, OptSponge is equivalent to a regular Poseidon sponge.
-computeStepChallengeDigest :: WrapProofContext -> StepField
-computeStepChallengeDigest wrapCtx =
+-- | Uses Step IPA challenges (N16) from the inner Step proof.
+computeStepChallengeDigest :: StepProofContext -> StepField
+computeStepChallengeDigest stepCtx =
   let
-    rawBpChallenges = extractWrapRawBpChallenges wrapCtx
+    rawBpChallenges = extractStepRawBpChallenges stepCtx
 
-    expandedChals :: Vector WrapIPARounds StepField
-    expandedChals = map (\c -> toFieldPure c stepEndo) rawBpChallenges
+    stepBpChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+    stepBpChallenges = map coerceViaBits rawBpChallenges
+
+    expandedChals :: Vector StepIPARounds StepField
+    expandedChals = map (\c -> toFieldPure c stepEndo) stepBpChallenges
     sponge = foldl (\s c -> RandomOracle.absorb c s) (initialSponge :: Sponge StepField) expandedChals
   in
     (RandomOracle.squeeze sponge).result
@@ -1585,13 +1712,15 @@ computeStepChallengeDigest wrapCtx =
 -- | Compute the sg (challenge polynomial) evaluations for Step-side CIP.
 -- | These are bPoly(expandedChals, zeta) and bPoly(expandedChals, zetaw),
 -- | which the circuit includes in the combined inner product Horner fold.
--- | stepCtx provides zeta and omega (inner Step proof's domain).
--- | wrapCtx provides bulletproof challenges (from Wrap proof's IPA).
-computeStepSgEvals :: StepProofContext -> WrapProofContext -> Array (PointEval StepField)
-computeStepSgEvals stepCtx wrapCtx =
+-- | stepCtx provides zeta, omega, and Step IPA bp challenges.
+computeStepSgEvals :: StepProofContext -> Array (PointEval StepField)
+computeStepSgEvals stepCtx =
   let
-    rawBpChallenges = extractWrapRawBpChallenges wrapCtx
-    expandedChals = map (\c -> toFieldPure c stepEndo) rawBpChallenges
+    rawBpChallenges = extractStepRawBpChallenges stepCtx
+
+    stepBpChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+    stepBpChallenges = map coerceViaBits rawBpChallenges
+    expandedChals = map (\c -> toFieldPure c stepEndo) stepBpChallenges
     plonk = stepPlonkChallenges stepCtx
     plonkExpanded = expandPlonkMinimal stepEndo plonk
     omega = (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
@@ -1602,6 +1731,274 @@ computeStepSgEvals stepCtx wrapCtx =
     ]
 
 -------------------------------------------------------------------------------
+-- | Pure x_hat computation via makeSolver
+-------------------------------------------------------------------------------
+
+-- | Compute x_hat (public input commitment) in pure mode by evaluating the
+-- | publicInputCommit circuit on concrete values via makeSolver.
+computeXhatPure
+  :: { lagrangeComms :: Array (AffinePoint (F StepField))
+     , blindingH :: AffinePoint (F StepField)
+     }
+  -> WrapStatementPublicInput StepIPARounds (F StepField)
+  -> AffinePoint (F StepField)
+computeXhatPure { lagrangeComms, blindingH } publicInput =
+  let
+    xhatCircuit
+      :: forall t
+       . CircuitM StepField (KimchiConstraint StepField) t Identity
+      => WrapStatementPublicInput StepIPARounds (FVar StepField)
+      -> Snarky (KimchiConstraint StepField) t Identity (AffinePoint (FVar StepField))
+    xhatCircuit = publicInputCommit
+      { curveParams: curveParams (Proxy @Pallas.G)
+      , lagrangeComms
+      , blindingH
+      , correctionMode: PureCorrections
+      }
+    solver = makeSolver (Proxy @(KimchiConstraint StepField)) xhatCircuit
+  in
+    case un Identity (runExceptT (solver publicInput)) of
+      Left e -> unsafeThrow ("computeXhatPure failed: " <> show e)
+      Right (Tuple result _) -> result
+
+-------------------------------------------------------------------------------
+-- | Pure Step IVP transcript computation
+-------------------------------------------------------------------------------
+
+-- | Compute the pure index_digest from VK commitments.
+-- | Matches the IVP's sponge_after_index computation (step_verifier.ml:1167-1176).
+computeIndexDigestPure
+  :: { sigma :: Vector 6 (AffinePoint (F StepField))
+     , sigmaLast :: AffinePoint (F StepField)
+     , coeff :: Vector 15 (AffinePoint (F StepField))
+     , index :: Vector 6 (AffinePoint (F StepField))
+     }
+  -> StepField
+computeIndexDigestPure vk =
+  let
+    absorbPt s { x: F x', y: F y' } = RandomOracle.absorb y' (RandomOracle.absorb x' s)
+    s0 = initialSponge :: Sponge StepField
+    s1 = foldl absorbPt s0 vk.sigma
+    s2 = absorbPt s1 vk.sigmaLast
+    s3 = foldl absorbPt s2 vk.coeff
+    s4 = foldl absorbPt s3 vk.index
+  in
+    (RandomOracle.squeeze s4).result
+
+-- | Compute the full Step IVP transcript in pure mode.
+-- |
+-- | Runs the same sponge transcript as incrementallyVerifyProof but on
+-- | concrete values. Returns the plonk challenges and sponge digest that
+-- | the circuit will verify via assertEq.
+-- |
+-- | This is the pure equivalent of OCaml's Oracles.create applied to the
+-- | Wrap proof data that the Step circuit verifies.
+computeStepIvpTranscript
+  :: { vk ::
+         { sigma :: Vector 6 (AffinePoint (F StepField))
+         , sigmaLast :: AffinePoint (F StepField)
+         , coeff :: Vector 15 (AffinePoint (F StepField))
+         , index :: Vector 6 (AffinePoint (F StepField))
+         }
+     , sgOld :: Vector 0 (AffinePoint StepField)
+     , publicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
+     , wComm :: Vector 15 (AffinePoint (F StepField))
+     , zComm :: AffinePoint (F StepField)
+     , tComm :: Vector 7 (AffinePoint (F StepField))
+     , lagrangeComms :: Array (AffinePoint (F StepField))
+     , blindingH :: AffinePoint (F StepField)
+     }
+  -> { beta :: SizedF 128 StepField
+     , gamma :: SizedF 128 StepField
+     , alphaChal :: SizedF 128 StepField
+     , zetaChal :: SizedF 128 StepField
+     , digest :: StepField
+     }
+computeStepIvpTranscript { vk, sgOld, publicInput, wComm, zComm, tComm, lagrangeComms, blindingH } =
+  let
+    indexDigest = computeIndexDigestPure vk
+
+    -- Compute x_hat via makeSolver on publicInputCommit
+    xHat = computeXhatPure { lagrangeComms, blindingH } publicInput
+
+    -- Run the Fq-sponge transcript in Step mode (regular sponge, absorb index_digest + sgOld before x_hat)
+    transcriptInput =
+      { indexDigest
+      , sgOld
+      , publicComm: coerce xHat :: AffinePoint StepField
+      , wComm: coerce wComm :: Vector 15 (AffinePoint StepField)
+      , zComm: coerce zComm :: AffinePoint StepField
+      , tComm: coerce tComm :: Vector 7 (AffinePoint StepField)
+      }
+  in
+    Pickles.Sponge.evalPureSpongeM (initialSponge :: Sponge StepField)
+      (spongeTranscriptPure transcriptInput)
+
+-------------------------------------------------------------------------------
+-- | Self-consistent base case unfinalized proof
+-------------------------------------------------------------------------------
+
+-- | Build an unfinalized proof for the base case where the plonk challenges
+-- | and sponge digest are derived from the IVP transcript (not Ro).
+-- |
+-- | This ensures the IVP's internal assertEq for plonk passes during proving.
+-- | The plonk values come from computeStepIvpTranscript; everything else
+-- | (evals, bp challenges, Fr-sponge, CIP, b, perm) is computed from those.
+buildBaseCaseUnfinalizedProof
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { transcript ::
+         { beta :: SizedF 128 StepField
+         , gamma :: SizedF 128 StepField
+         , alphaChal :: SizedF 128 StepField
+         , zetaChal :: SizedF 128 StepField
+         , digest :: StepField
+         }
+     }
+  -> UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
+buildBaseCaseUnfinalizedProof { transcript } =
+  let
+    r = Dummy.roComputeResult
+    evals = r.stepDummyPrevEvals
+    EndoScalar stepEndoVal = (endoScalar :: EndoScalar Vesta.ScalarField)
+
+    -- Use transcript-derived plonk challenges instead of Ro-derived
+    alphaExpanded = toFieldPure transcript.alphaChal stepEndoVal
+    betaExpanded = SizedF.toField transcript.beta :: StepField
+    gammaExpanded = SizedF.toField transcript.gamma :: StepField
+    zetaExpanded = toFieldPure transcript.zetaChal stepEndoVal
+
+    -- Domain parameters (domain_log2 = 15 from proof.ml:dummy ~domain_log2:15)
+    domainLog2 = reflectType (Proxy @WrapIPARounds)
+    zkRows_ = 3
+    omega = (domainGenerator domainLog2 :: StepField)
+    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+    zetaw = zetaExpanded * omega
+    zetaToNMinus1 = pow zetaExpanded n - one
+    omegaM1 = recip omega
+    omegaM2 = omegaM1 * omegaM1
+    omegaM3 = omegaM2 * omegaM1
+    zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
+    omegaToMinusZkRows = pow omega (n - BigInt.fromInt zkRows_)
+
+    -- Fr-sponge: use transcript digest instead of zero
+    expandedBpChals :: Vector StepIPARounds StepField
+    expandedBpChals = map (\c -> toFieldPure c stepEndoVal) (map coerceViaBits r.stepChalRaw)
+
+    challengesDigest :: StepField
+    challengesDigest =
+      let
+        sponge = foldl (\s c -> RandomOracle.absorb c s) (initialSponge :: Sponge StepField) expandedBpChals
+        sponge2 = foldl (\s c -> RandomOracle.absorb c s) sponge expandedBpChals
+      in
+        (RandomOracle.squeeze sponge2).result
+
+    frInput :: FrSpongeInput StepField
+    frInput =
+      { fqDigest: transcript.digest -- transcript-derived, NOT zero
+      , prevChallengeDigest: challengesDigest
+      , ftEval1: evals.ftEval1
+      , publicEvals: evals.publicEvals
+      , zEvals: evals.zEvals
+      , indexEvals: evals.indexEvals
+      , witnessEvals: evals.witnessEvals
+      , coeffEvals: evals.coeffEvals
+      , sigmaEvals: evals.sigmaEvals
+      , endo: stepEndoVal
+      }
+    frResult = frSpongeChallengesPure frInput
+
+    -- Perm, ftEval0, CIP, b — same as stepDummyUnfinalizedProofWith but with transcript plonk
+    permInput =
+      { w: map _.zeta (Vector.take @7 evals.witnessEvals)
+      , sigma: map _.zeta evals.sigmaEvals
+      , z: evals.zEvals
+      , shifts: (domainShifts domainLog2 :: Vector 7 StepField)
+      , alpha: alphaExpanded
+      , beta: betaExpanded
+      , gamma: gammaExpanded
+      , zkPolynomial: zkPoly
+      , zetaToNMinus1
+      , omegaToMinusZkRows
+      , zeta: zetaExpanded
+      }
+    perm = permScalar permInput
+
+    permContrib = permContribution permInput
+    vanishesOnZk = one :: StepField
+    lagrangeFalse0 = unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zetaExpanded }
+    lagrangeTrue1 = unnormalizedLagrangeBasis { domainLog2, zkRows: zkRows_, offset: -1, pt: zetaExpanded }
+    evalPoint = buildEvalPoint
+      { witnessEvals: evals.witnessEvals
+      , coeffEvals: map _.zeta evals.coeffEvals
+      , indexEvals: evals.indexEvals
+      , defaultVal: zero
+      }
+    challenges_ = buildChallenges
+      { alpha: alphaExpanded
+      , beta: betaExpanded
+      , gamma: gammaExpanded
+      , jointCombiner: zero
+      , vanishesOnZk
+      , lagrangeFalse0
+      , lagrangeTrue1
+      }
+    env = fieldEnv evalPoint challenges_
+    gateConstraints = evaluate PallasTokens.constantTermTokens env
+    ftEval0Value = ftEval0
+      { permContribution: permContrib
+      , publicEval: negate evals.publicEvals.zeta
+      , gateConstraints
+      }
+
+    ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
+
+    allEvals45 :: Vector 45 (PointEval StepField)
+    allEvals45 =
+      (evals.publicEvals :< ftPointEval :< evals.zEvals :< Vector.nil)
+        `Vector.append` evals.indexEvals
+        `Vector.append` evals.witnessEvals
+        `Vector.append` evals.coeffEvals
+        `Vector.append` evals.sigmaEvals
+
+    sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
+    cipAllEvals = [ sgPointEval, sgPointEval ] <> Array.fromFoldable allEvals45
+    cipStep { result, scale } eval =
+      let
+        term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
+      in
+        { result: result + scale * term, scale: scale * frResult.xi }
+    cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
+
+    b_ = computeB expandedBpChals { zeta: zetaExpanded, zetaOmega: zetaw, evalscale: frResult.evalscale }
+
+    srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
+    zetaToSrsLength = pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
+    zetaToDomainSize = pow zetaExpanded n
+
+    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+    bpChals = map (SizedF.wrapF <<< coerceViaBits) r.wrapChalRaw
+  in
+    { deferredValues:
+        { plonk:
+            { alpha: SizedF.wrapF transcript.alphaChal
+            , beta: SizedF.wrapF transcript.beta
+            , gamma: SizedF.wrapF transcript.gamma
+            , zeta: SizedF.wrapF transcript.zetaChal
+            , perm: toShifted (F perm)
+            , zetaToSrsLength: toShifted (F zetaToSrsLength)
+            , zetaToDomainSize: toShifted (F zetaToDomainSize)
+            }
+        , combinedInnerProduct: toShifted (F cip)
+        , xi: SizedF.wrapF (coerceViaBits frResult.rawXi)
+        , bulletproofChallenges: bpChals
+        , b: toShifted (F b_)
+        }
+    , shouldFinalize: false
+    , spongeDigestBeforeEvaluations: F transcript.digest
+    }
+
+-------------------------------------------------------------------------------
 -- | Build Step-side private witness data from a WrapProofContext
 -------------------------------------------------------------------------------
 
@@ -1610,12 +2007,12 @@ computeStepSgEvals stepCtx wrapCtx =
 -- | wrapCtx provides commitments, opening proof, and bp challenges from the Wrap proof.
 -- | The FOP proof states use the correct challengeDigest and sgPointEvals so that
 -- | the FOP circuit's computed CIP/b match the claimed values.
-buildStepProverWitness :: StepProofContext -> WrapProofContext -> StepAdvice 1 WrapIPARounds StepField
+buildStepProverWitness :: StepProofContext -> WrapProofContext -> StepAdvice 1 StepIPARounds WrapIPARounds StepField
 buildStepProverWitness stepCtx wrapCtx =
   let
     -- Compute correct challengeDigest and sgEvals for the FOP proof state
-    challengeDigest = computeStepChallengeDigest wrapCtx
-    sgEvals = computeStepSgEvals stepCtx wrapCtx
+    challengeDigest = computeStepChallengeDigest stepCtx
+    sgEvals = computeStepSgEvals stepCtx
     fopInput = buildStepFinalizeInput
       { prevChallengeDigest: challengeDigest
       , sgPointEvals: sgEvals
@@ -1627,11 +2024,14 @@ buildStepProverWitness stepCtx wrapCtx =
     tComm :: Vector 7 (AffinePoint (F StepField))
     tComm = toVectorOrThrow @7 "buildStepProverWitness tComm" $ coerce commitments.tComm
 
-    -- Expanded bulletproof challenges for challenge_digest and sg_eval
-    rawBpChallenges = extractWrapRawBpChallenges wrapCtx
+    -- Expanded Step IPA challenges (N16) for challenge_digest and sg_eval
+    rawStepBpChallenges = extractStepRawBpChallenges stepCtx
 
-    expandedChals :: Vector WrapIPARounds (F StepField)
-    expandedChals = map (\c -> F (toFieldPure c stepEndo)) rawBpChallenges
+    stepBpChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+    stepBpChallenges = map coerceViaBits rawStepBpChallenges
+
+    expandedChals :: Vector StepIPARounds (F StepField)
+    expandedChals = map (\c -> F (toFieldPure c stepEndo)) stepBpChallenges
   in
     { stepInputFields: [] -- StepInput fields provided by createStepProofContext
     , evals: fopInput.witness :< Vector.nil
@@ -1652,6 +2052,8 @@ buildStepProverWitness stepCtx wrapCtx =
     , fopProofStates: fopInput.unfinalized :< Vector.nil
     -- TODO: compute real wrap proof message digest
     , messagesForNextWrapProof: F zero :< Vector.nil
+    , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
+    , sgOld: (coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof) :< Vector.nil
     }
 
 -------------------------------------------------------------------------------

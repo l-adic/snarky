@@ -20,6 +20,7 @@ module Pickles.Wrap.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
@@ -32,13 +33,14 @@ import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify (verify)
+import Pickles.Verify.Types (toStepDeferredValues)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, UnChecked(..), assert_, const_, equals_, exists, false_, fieldsToValue, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, equals_, exists, false_, fieldsToValue, label, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -47,11 +49,11 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -- | Public input for the Wrap circuit (value level).
 type WrapInput :: Int -> Type
-type WrapInput ds = WrapStatement ds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField))
+type WrapInput ds = WrapStatement ds (F Pallas.ScalarField) (Type1 (F Pallas.ScalarField)) Boolean
 
 -- | Public input for the Wrap circuit (variable level).
 type WrapInputVar :: Int -> Type
-type WrapInputVar ds = WrapStatement ds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField))
+type WrapInputVar ds = WrapStatement ds (FVar Pallas.ScalarField) (Type1 (FVar Pallas.ScalarField)) (BoolVar Pallas.ScalarField)
 
 -- | The Step proof's public input type as seen by the Wrap verifier for x_hat.
 type StepPublicInput :: Int -> Int -> Int -> Type -> Type -> Type
@@ -139,7 +141,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       { publicInput
       -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
-      , deferredValues: wrapStmt.proofState.deferredValues
+      , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues
       -- Step VK data (constant in Wrap circuit)
       , sigmaCommLast: constPt params.sigmaCommLast
       , columnComms:
@@ -155,6 +157,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
   success <- evalSpongeM initialSpongeCircuit $
     verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
       wrapStmt.proofState.spongeDigestBeforeEvaluations
+      Nothing
   assert_ success
 
   -- 4. Compute and assert messagesForNextWrapProof hash

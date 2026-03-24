@@ -15,19 +15,30 @@ module Test.Pickles.StepE2E
 
 import Prelude
 
+import Data.Array as Array
 import Data.Array.NonEmpty as NEA
+import Data.Maybe (fromJust)
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Class (liftEffect)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
+import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Step.Advice (class StepWitnessM)
+import Pickles.Step.Circuit (WrapStatementPublicInput)
 import Pickles.Step.Circuit (stepCircuit)
-import Pickles.Types (StepField, WrapIPARounds)
-import Snarky.Circuit.DSL (class CircuitM, Snarky)
+import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
+import Record as Record
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
+import Snarky.Circuit.DSL (sizeInFields)
+import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
+import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Pickles.TestContext (StepAdvice, StepProverM, StepSchnorrInput, StepSchnorrInputVar, runStepProverM, stepSchnorrAppCircuit)
 import Test.QuickCheck.Gen (Gen, randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
@@ -42,11 +53,23 @@ import Type.Proxy (Proxy(..))
 stepSchnorrCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 WrapIPARounds m StepField
+  => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do
-  _ <- stepCircuit Dummy.dummyFinalizeOtherProofParams (stepSchnorrAppCircuit false) input
+  let
+    pallasGen :: AffinePoint (F StepField)
+    pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
+    numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
+    params = Record.merge Dummy.dummyFinalizeOtherProofParams
+      { curveParams: curveParams (Proxy @PallasG)
+      , lagrangeComms: Array.replicate numPublic pallasGen
+      , blindingH: pallasGen
+      , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
+      , correctionMode: PureCorrections
+      , useOptSponge: false
+      }
+  _ <- stepCircuit @StepIPARounds params (stepSchnorrAppCircuit false) input
   pure unit
 
 -------------------------------------------------------------------------------
@@ -64,7 +87,7 @@ genStepSchnorrInput = do
     }
 
 -- | Dummy advice using production library values (from Pickles.Dummy).
-genStepSchnorrAdvice :: Gen (StepAdvice 1 WrapIPARounds StepField)
+genStepSchnorrAdvice :: Gen (StepAdvice 1 StepIPARounds WrapIPARounds StepField)
 genStepSchnorrAdvice = pure Dummy.dummyStepAdvice
 
 spec
@@ -77,9 +100,9 @@ spec cfg = describe "Step E2E with Schnorr" do
     let
       stepSchnorrCircuit'
         :: forall t
-         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField)
+         . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField)
         => StepSchnorrInputVar
-        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 WrapIPARounds StepField) Unit
+        -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField) Unit
       stepSchnorrCircuit' = stepSchnorrCircuit
     void $ circuitTestM' @StepField (runStepProverM advice)
       cfg

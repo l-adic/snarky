@@ -63,6 +63,8 @@ module Pickles.Step.Advice
   , getOpeningProof
   , getFopProofStates
   , getMessagesForNextWrapProof
+  , getWrapVerifierIndex
+  , getSgOld
   ) where
 
 import Prelude
@@ -86,10 +88,11 @@ import Snarky.Types.Shifted (SplitField, Type1, Type2)
 -- |
 -- | Parameters:
 -- | - `n`: Number of previous proofs being verified
+-- | - `ds`: Step IPA rounds (determines FOP bp challenges and prevChallenges size)
 -- | - `dw`: Wrap IPA rounds (determines lr vector size in opening proof)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
 -- | - `f`: Circuit field (Vesta.ScalarField for Step)
-class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
+class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
   -- | Step circuit input as flat field elements (for private witness allocation).
   -- | In OCaml, the Step input (app_state, unfinalized_proofs, etc.) enters as
   -- | private witness via Req.App_state and Req.Unfinalized_proofs. The caller
@@ -104,7 +107,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | Expanded bulletproof challenges from each previous proof.
   -- | Used for challenge_digest (OptSponge) and sg_eval (bPoly) computations.
   -- | OCaml: prev_challenges from Req.Proof_with_datas
-  getPrevChallenges :: Unit -> m (Vector n (Vector dw (F f)))
+  getPrevChallenges :: Unit -> m (Vector n (Vector ds (F f)))
 
   -- | Protocol commitments for IVP verification.
   -- | OCaml: Req.Messages (per previous Wrap proof)
@@ -140,7 +143,7 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | These come from Per_proof_witness.proof_state (private witness),
   -- | distinct from the public input's Type2(SplitField) unfinalized proofs.
   -- | OCaml: step_main.ml:29 proof_state.deferred_values (Type1)
-  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof dw (F f) (Type1 (F f)) Boolean))
+  getFopProofStates :: Unit -> m (Vector n (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean))
 
   -- | Digests for the next Wrap proof (one per previous proof).
   -- | In OCaml this is loaded via exists from Req.Messages_for_next_wrap_proof
@@ -148,9 +151,29 @@ class Monad m <= StepWitnessM (n :: Int) (dw :: Int) m f where
   -- | Each digest is a hash of (sg, expanded bp_challenges) for that proof.
   getMessagesForNextWrapProof :: Unit -> m (Vector n (F f))
 
+  -- | Wrap verifier index (VK) as circuit variables.
+  -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
+  -- | Contains sigma commitments (6 + sigmaLast), coefficient commitments (15),
+  -- | and index commitments (6).
+  getWrapVerifierIndex
+    :: Unit
+    -> m
+         { sigmaCommLast :: AffinePoint (F f)
+         , columnComms ::
+             { index :: Vector 6 (AffinePoint (F f))
+             , coeff :: Vector 15 (AffinePoint (F f))
+             , sigma :: Vector 6 (AffinePoint (F f))
+             }
+         }
+
+  -- | Per-proof sg points (prev_challenge_polynomial_commitments).
+  -- | One point per previous proof, from Per_proof_witness.
+  -- | OCaml: per_proof_witness.ml:91 prev_challenge_polynomial_commitments
+  getSgOld :: Unit -> m (Vector n (AffinePoint (F f)))
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n dw Effect f where
+instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => StepWitnessM n ds dw Effect f where
   getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
@@ -158,3 +181,5 @@ instance (Reflectable n Int, Reflectable dw Int, PrimeField f) => StepWitnessM n
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getFopProofStates _ = throw "impossible! getFopProofStates called during compilation"
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
+  getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
+  getSgOld _ = throw "impossible! getSgOld called during compilation"

@@ -195,6 +195,7 @@
             "pickles-linearization-types",
             "poseidon",
             "prelude",
+            "random-oracle",
             "safe-coerce",
             "simple-json",
             "snarky",
@@ -213,6 +214,7 @@
             "exceptions",
             "node-buffer",
             "node-fs",
+            "refs",
             "spec",
             "spec-node"
           ]

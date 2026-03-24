@@ -21,13 +21,15 @@ module Pickles.OptSponge
   , optChallenge
   , optScalarChallenge
   , toRegularSponge
+  , ofSponge
+  , runOptSpongeFromSponge
   ) where
 
 import Prelude
 
 import Control.Monad.State.Trans (StateT(..), runStateT)
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.List (List)
 import Data.List as List
@@ -301,6 +303,19 @@ runOptSpongeM computation =
     , needsFinalPermuteIfEmpty: true
     }
 
+-- | Run an OptSpongeM computation starting from a regular sponge.
+-- | Converts the regular sponge to OptSpongeState via ofSponge, then runs.
+runOptSpongeFromSponge
+  :: forall f t m a
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => RegSponge.Sponge (FVar f)
+  -> OptSpongeM f (KimchiConstraint f) t m a
+  -> Snarky (KimchiConstraint f) t m (Tuple a (OptSpongeState f))
+runOptSpongeFromSponge sponge computation = do
+  initState <- ofSponge sponge
+  runStateT (unwrap computation) initState
+
 -- | Lift a Snarky computation into OptSpongeM.
 liftSnarky
   :: forall f t m a
@@ -404,6 +419,44 @@ toRegularSponge = wrap $ StateT \s -> case s.phase of
     pure $ Tuple
       { state: s.state, spongeState: RegSponge.Absorbed (unsafeFinite @3 0) }
       s
+
+-- | Convert a regular sponge to OptSpongeState, matching OCaml's Opt_sponge.of_sponge.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/opt_sponge.ml:46-74
+ofSponge
+  :: forall f t m
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => RegSponge.Sponge (FVar f)
+  -> Snarky (KimchiConstraint f) t m (OptSpongeState f)
+ofSponge sponge = case sponge.spongeState of
+  RegSponge.Squeezed n ->
+    pure
+      { state: sponge.state
+      , phase: OptSqueezed (getFinite n)
+      , needsFinalPermuteIfEmpty: true
+      }
+  RegSponge.Absorbed n -> case getFinite n of
+    0 ->
+      pure
+        { state: sponge.state
+        , phase: Absorbing { nextIndex: false_, xs: List.Nil }
+        , needsFinalPermuteIfEmpty: true
+        }
+    1 ->
+      pure
+        { state: sponge.state
+        , phase: Absorbing { nextIndex: true_, xs: List.Nil }
+        , needsFinalPermuteIfEmpty: true
+        }
+    _ -> do
+      -- Absorbed 2: apply permutation, reset to position 0
+      permuted <- poseidon sponge.state
+      pure
+        { state: permuted
+        , phase: Absorbing { nextIndex: false_, xs: List.Nil }
+        , needsFinalPermuteIfEmpty: false
+        }
 
 -- Internal: lowest128Bits for use within OptSponge.
 -- Inlined from Sponge.lowest128Bits' to avoid circular dependency.

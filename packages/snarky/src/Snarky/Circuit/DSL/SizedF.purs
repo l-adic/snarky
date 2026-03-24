@@ -7,6 +7,7 @@ module Snarky.Circuit.DSL.SizedF
   ( SizedF
   , wrapF
   , unwrapF
+  , unsafeMkSizedF
   , fromField
   , toField
   , fromBits
@@ -47,6 +48,11 @@ wrapF (SizedF a) = SizedF $ F a
 
 unwrapF :: forall n f. SizedF n (F f) -> SizedF n f
 unwrapF (SizedF (F f)) = SizedF f
+
+-- | Wrap a value as SizedF without runtime checking.
+-- | The caller is responsible for ensuring the value fits in n bits.
+unsafeMkSizedF :: forall n f. f -> SizedF n f
+unsafeMkSizedF = SizedF
 
 instance
   ( FieldSizeInBits f m

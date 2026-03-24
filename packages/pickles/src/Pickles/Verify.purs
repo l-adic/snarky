@@ -13,12 +13,15 @@ module Pickles.Verify
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , packStatement
   , verify
   ) where
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -30,11 +33,14 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
-import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, toPlonkMinimal)
+import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, assertEq, const_, if_, label)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar as CVar
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, assertEq, const_, if_, label)
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeMkSizedF)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -138,30 +144,37 @@ incrementallyVerifyProof
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
+  -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index. Nothing = compute internally.
   -> SpongeM f (KimchiConstraint f) t m (IncrementallyVerifyProofOutput d f)
-incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-proof" do
+incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incrementally-verify-proof" do
   let endoParams = { endo: const_ params.endo, groupMapParams: params.groupMapParams }
 
   -- 1. Compute index_digest by hashing VK commitments (matches OCaml sponge_after_index)
-  -- In OCaml, the VK enters the Step circuit as circuit variables via exists (step_main.ml:345).
-  -- The sponge_after_index is computed in-circuit from those variables (step_verifier.ml:1167-1176).
-  indexDigest <- liftSnarky $ label "ivp_index_digest" $
-    Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
-      -- Absorption order matches OCaml's index_to_field_elements:
-      -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
-      let
-        absorbPt { x, y } = do
-          Sponge.absorb x
-          Sponge.absorb y
-      -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
-      for_ input.columnComms.sigma absorbPt
-      absorbPt input.sigmaCommLast
-      -- coefficients_comm: 15
-      for_ input.columnComms.coeff absorbPt
-      -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
-      for_ input.columnComms.index absorbPt
-      -- Squeeze digest
-      Sponge.squeeze
+  -- When sponge_after_index is provided (full verify_one), just copy+squeeze.
+  -- When Nothing (standalone IVP), compute from scratch.
+  -- Reference: step_verifier.ml:530-536
+  indexDigest <- liftSnarky $ label "ivp_index_digest" $ case mSpongeAfterIndex of
+    Just spongeAfterIndex ->
+      -- OCaml: let index_sponge = Sponge.copy sponge_after_index in
+      --        Sponge.squeeze_field index_sponge
+      Sponge.evalSpongeM spongeAfterIndex Sponge.squeeze
+    Nothing ->
+      Sponge.evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
+        -- Absorption order matches OCaml's index_to_field_elements:
+        -- sigma_comm (7) → coefficients_comm (15) → index comms (6)
+        let
+          absorbPt { x, y } = do
+            Sponge.absorb x
+            Sponge.absorb y
+        -- sigma_comm: sigma (6) + sigmaCommLast (1) = 7
+        for_ input.columnComms.sigma absorbPt
+        absorbPt input.sigmaCommLast
+        -- coefficients_comm: 15
+        for_ input.columnComms.coeff absorbPt
+        -- index comms: generic, psm, complete_add, mul, emul, endomul_scalar = 6
+        for_ input.columnComms.index absorbPt
+        -- Squeeze digest
+        Sponge.squeeze
 
   -- 2. Sponge transcript + x_hat
   -- Step (regular sponge): absorb index_digest + sg_old BEFORE x_hat, matching
@@ -177,8 +190,10 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
       -- Matches step_verifier.ml:528-530
-      Sponge.absorb indexDigest
-      for_ input.sgOld Sponge.absorbPoint
+      labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
+      labelM "ivp_absorb_sg_old" $ for_ input.sgOld \pt -> do
+        labelM "ivp_sg_x" $ Sponge.absorb pt.x
+        labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
@@ -258,6 +273,76 @@ incrementallyVerifyProof scalarOps params input = labelM "incrementally-verify-p
   constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
 
 -------------------------------------------------------------------------------
+-- | packStatement (Spec.pack + to_data for WrapStatement)
+-------------------------------------------------------------------------------
+
+-- | Convert a WrapStatement into the public input tuple expected by the IVP.
+-- |
+-- | This is the PureScript equivalent of OCaml's
+-- |   Spec.pack (Types.Wrap.Statement.In_circuit.spec ...) (to_data statement)
+-- |
+-- | The result type matches the PublicInputCommit instance used by publicInputCommit.
+-- |
+-- | Reference: step_verifier.ml:1249-1264
+packStatement
+  :: forall d f sf
+   . PrimeField f
+  => { proofState ::
+         { deferredValues :: WrapDeferredValues d (FVar f) sf (BoolVar f)
+         , spongeDigestBeforeEvaluations :: FVar f
+         , messagesForNextWrapProof :: FVar f
+         }
+     , messagesForNextStepProof :: FVar f
+     }
+  -> Tuple (Vector 5 sf)
+       ( Tuple (Vector 2 (SizedF 128 (FVar f)))
+           ( Tuple (Vector 3 (SizedF 128 (FVar f)))
+               ( Tuple (Vector 3 (FVar f))
+                   ( Tuple (Vector d (SizedF 128 (FVar f)))
+                       (SizedF 10 (FVar f))
+                   )
+               )
+           )
+       )
+packStatement { proofState: ps, messagesForNextStepProof } =
+  let
+    dv = ps.deferredValues
+    plonk = dv.plonk
+    bd = dv.branchData
+
+    -- Branch_data.pack: 4*domain_log2 + mask_0 + 2*mask_1
+    m0 :: FVar f
+    m0 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 0))
+
+    m1 :: FVar f
+    m1 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 1))
+    packedBranchData = unsafeMkSizedF $
+      CVar.add_ (CVar.scale_ (one + one + one + one) bd.domainLog2)
+        (CVar.add_ m0 (CVar.scale_ (one + one) m1))
+  in
+    -- Vec5 sf: [cip, b, zetaToSrs, zetaToDom, perm]
+    Tuple
+      (dv.combinedInnerProduct :< dv.b :< plonk.zetaToSrsLength :< plonk.zetaToDomainSize :< plonk.perm :< Vector.nil)
+      -- Vec2 SizedF128: [beta, gamma]
+      ( Tuple
+          (plonk.beta :< plonk.gamma :< Vector.nil)
+          -- Vec3 SizedF128: [alpha, zeta, xi]
+          ( Tuple
+              (plonk.alpha :< plonk.zeta :< dv.xi :< Vector.nil)
+              -- Vec3 f: [sponge_digest, msg_wrap, msg_step]
+              ( Tuple
+                  (ps.spongeDigestBeforeEvaluations :< ps.messagesForNextWrapProof :< messagesForNextStepProof :< Vector.nil)
+                  -- Vec d SizedF128: bulletproof_challenges
+                  ( Tuple
+                      dv.bulletproofChallenges
+                      -- SizedF10: packed branch_data
+                      packedBranchData
+                  )
+              )
+          )
+      )
+
+-------------------------------------------------------------------------------
 -- | verify (Step_verifier.verify)
 -------------------------------------------------------------------------------
 
@@ -288,15 +373,15 @@ verify
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
   -> BoolVar f -- isBaseCase
   -> FVar f -- claimed spongeDigestBeforeEvaluations
+  -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index
   -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
-verify scalarOps params input isBaseCase claimedDigest = labelM "verify" do
+verify scalarOps params input isBaseCase claimedDigest mSpongeAfterIndex = labelM "verify" do
   -- 1. Call incrementallyVerifyProof
-  output <- incrementallyVerifyProof @g scalarOps params input
+  output <- incrementallyVerifyProof @g scalarOps params input mSpongeAfterIndex
 
-  -- 2. Assert sponge digest matches (soft-gated for base case, line 1207)
-  labelM "ivp_assert_digest" $ liftSnarky do
-    digest' <- if_ isBaseCase claimedDigest output.spongeDigestBeforeEvaluations
-    assertEq digest' claimedDigest
+  -- 2. Assert sponge digest matches unconditionally (step_verifier.ml:1294)
+  labelM "ivp_assert_digest" $ liftSnarky $
+    assertEq claimedDigest output.spongeDigestBeforeEvaluations
 
   -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
   labelM "ivp_assert_bp_challenges" $ liftSnarky $

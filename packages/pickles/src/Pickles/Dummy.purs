@@ -12,9 +12,12 @@ module Pickles.Dummy
   , dummyIpaChallenges
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
+  , stepDummyFopProofState
+  , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyStepAdvice
   , dummyFinalizeOtherProofParams
+  , roComputeResult
   , Ro
   , mkRo
   , tick
@@ -32,7 +35,7 @@ import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -547,18 +550,18 @@ wrapDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
--- | Dummy unfinalized proof for the Step circuit's FOP (Step verifying a Wrap proof).
--- |
--- | Computes expand_deferred on tick()-derived proof evaluations, matching OCaml's
--- | Wrap_deferred_values.expand_deferred applied to proof.ml:dummy.
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_deferred_values.ml (expand_deferred)
--- | Verified against fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
-stepDummyUnfinalizedProof
-  :: forall sf
+-- | Shared computation for Step dummy unfinalized proofs.
+-- | The `d` parameter and bp challenges vary between:
+-- | - Public input side (WrapIPARounds = 15, Wrap IPA challenges)
+-- | - FOP side (StepIPARounds = 16, Step IPA challenges)
+-- | All other fields (plonk, cip, b, xi, spongeDigest) are identical.
+stepDummyUnfinalizedProofWith
+  :: forall d sf
    . Shifted (F StepField) sf
-  => UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
-stepDummyUnfinalizedProof =
+  => { domainLog2 :: Int, mostRecentWidth :: Int }
+  -> Vector d (SizedF 128 (F StepField))
+  -> UnfinalizedProof d (F StepField) sf Boolean
+stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
   let
     r = roComputeResult
     evals = r.stepDummyPrevEvals
@@ -569,9 +572,6 @@ stepDummyUnfinalizedProof =
     betaExpanded = SizedF.toField r.stepDummyBeta :: StepField
     gammaExpanded = SizedF.toField r.stepDummyGamma :: StepField
     zetaExpanded = toFieldPure r.stepDummyZeta stepEndo
-
-    -- Domain parameters (domain_log2 = 15 from proof.ml:dummy ~domain_log2:15)
-    domainLog2 = 15
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
@@ -592,11 +592,16 @@ stepDummyUnfinalizedProof =
     challengesDigest :: StepField
     challengesDigest =
       let
-        sponge = foldl (\s c -> PureSponge.absorb c s) (initialSponge :: PureSponge.Sponge StepField) expandedBpChals
-        -- 2 copies (MaxProofsVerified=2): absorb same challenges twice
-        sponge2 = foldl (\s c -> PureSponge.absorb c s) sponge expandedBpChals
+        -- OCaml expand_deferred: absorbs old_bulletproof_challenges (expanded Step IPA challenges).
+        -- For Proof.dummy with most_recent_width = N, there are N copies of Dummy.Ipa.Step.challenges.
+        -- Each copy = expandedBpChals (16 Step IPA challenges expanded via endo).
+        -- No masking — expand_deferred knows the exact count, masking is only in the circuit.
+        sponge0 = initialSponge :: PureSponge.Sponge StepField
+        absorbOneCopy s = foldl (\s' c -> PureSponge.absorb c s') s expandedBpChals
+        -- Absorb mostRecentWidth copies
+        spongeN = Array.foldl (\s _ -> absorbOneCopy s) sponge0 (Array.replicate mostRecentWidth unit)
       in
-        (PureSponge.squeeze sponge2).result
+        (PureSponge.squeeze spongeN).result
 
     frInput :: FrSpongeInput StepField
     frInput =
@@ -669,10 +674,12 @@ stepDummyUnfinalizedProof =
         `Vector.append` evals.coeffEvals
         `Vector.append` evals.sigmaEvals
 
-    -- sg evals from bPoly on 2 copies of expanded bp challenges
+    -- sg evals from bPoly on expanded bp challenges.
+    -- OCaml: old_bulletproof_challenges has most_recent_width copies.
+    -- Each produces one sg eval point via challenge_polynomial.
     sgPointEval :: PointEval StepField
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
-    cipAllEvals = [ sgPointEval, sgPointEval ] <> Array.fromFoldable allEvals45
+    cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> Array.fromFoldable allEvals45
     cipStep { result, scale } eval =
       let
         term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
@@ -687,11 +694,6 @@ stepDummyUnfinalizedProof =
     srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
     zetaToSrsLength = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
     zetaToDomainSize = Curves.pow zetaExpanded n
-
-    -- Bulletproof challenges for the UnfinalizedProof record (WrapIPARounds = 15)
-    -- These are the raw 128-bit scalar challenges coerced from WrapField to StepField
-    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
-    bpChals = map (SizedF.wrapF <<< coerceViaBits) r.wrapChalRaw
   in
     { deferredValues:
         { plonk:
@@ -712,12 +714,69 @@ stepDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F (zero :: StepField)
     }
 
+-- | Dummy unfinalized proof for the Step circuit's FOP (Step verifying a Wrap proof).
+-- |
+-- | Computes expand_deferred on tick()-derived proof evaluations, matching OCaml's
+-- | Wrap_deferred_values.expand_deferred applied to proof.ml:dummy.
+-- |
+-- | Uses WrapIPARounds (15) bp challenges from the Wrap IPA, matching the public
+-- | input's unfinalized proof structure.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/wrap_deferred_values.ml (expand_deferred)
+-- | Verified against fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
+stepDummyUnfinalizedProof
+  :: forall sf
+   . Shifted (F StepField) sf
+  => UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
+stepDummyUnfinalizedProof =
+  let
+    -- Bulletproof challenges (WrapIPARounds = 15)
+    -- Raw 128-bit scalar challenges coerced from WrapField to StepField
+    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
+    bpChals = map (SizedF.wrapF <<< coerceViaBits) roComputeResult.wrapChalRaw
+  in
+    -- wrap_domains ~proofs_verified:2 = { h = 15 }
+    -- most_recent_width=2 (MaxProofsVerified for production Mina)
+    stepDummyUnfinalizedProofWith { domainLog2: 15, mostRecentWidth: 2 } bpChals
+
+-- | Dummy FOP proof state with StepIPARounds (16) bp challenges.
+-- |
+-- | Same deferred values as stepDummyUnfinalizedProof but with Step IPA challenges
+-- | (N16) instead of Wrap IPA challenges (N15). Used for the FOP proof states in
+-- | the advisory monad and prevChallenges vector.
+-- | domainLog2 for wrap_domains ~proofs_verified.
+-- | OCaml: common.ml:25-29
+-- |   0 -> 13, 1 -> 14, 2 -> 15
+wrapDomainLog2ForProofsVerified :: Int -> Int
+wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
+  0 -> 13
+  1 -> 14
+  2 -> 15
+  _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
+
+stepDummyFopProofState
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { proofsVerified :: Int }
+  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+stepDummyFopProofState { proofsVerified } =
+  let
+    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bpChals = map SizedF.wrapF roComputeResult.stepChalRaw
+  in
+    -- most_recent_width = proofs_verified for Proof.dummy
+    stepDummyUnfinalizedProofWith
+      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
+      , mostRecentWidth: proofsVerified
+      }
+      bpChals
+
 -- | Dummy Step advice for base case (n=1 previous proof slot, all dummy).
 -- |
 -- | Uses deterministic values from OCaml's proof.ml:dummy:
 -- | - Messages: all Pallas generator (Tock.Curve.one)
 -- | - Opening proof: generator for delta/sg/lr, Ro.tock() for z1/z2
--- | - FOP proof state: stepDummyUnfinalizedProof (from expand_deferred)
+-- | - FOP proof state: stepDummyFopProofState (from expand_deferred, N16 bp challenges)
 -- | - Evals: dummyProofWitness (all zeros)
 -- | - Prev challenges: all zeros (base case)
 -- |
@@ -725,11 +784,13 @@ stepDummyUnfinalizedProof =
 dummyStepAdvice
   :: { stepInputFields :: Array (F StepField)
      , evals :: Vector 1 (ProofWitness (F StepField))
-     , prevChallenges :: Vector 1 (Vector WrapIPARounds (F StepField))
+     , prevChallenges :: Vector 1 (Vector StepIPARounds (F StepField))
      , messages :: Vector 1 { wComm :: Vector 15 (AffinePoint (F StepField)), zComm :: AffinePoint (F StepField), tComm :: Vector 7 (AffinePoint (F StepField)) }
      , openingProofs :: Vector 1 { delta :: AffinePoint (F StepField), sg :: AffinePoint (F StepField), lr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }, z1 :: Type2 (SplitField (F StepField) Boolean), z2 :: Type2 (SplitField (F StepField) Boolean) }
-     , fopProofStates :: Vector 1 (UnfinalizedProof WrapIPARounds (F StepField) (Type1 (F StepField)) Boolean)
+     , fopProofStates :: Vector 1 (UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean)
      , messagesForNextWrapProof :: Vector 1 (F StepField)
+     , wrapVerifierIndex :: { sigmaCommLast :: AffinePoint (F StepField), columnComms :: { index :: Vector 6 (AffinePoint (F StepField)), coeff :: Vector 15 (AffinePoint (F StepField)), sigma :: Vector 6 (AffinePoint (F StepField)) } }
+     , sgOld :: Vector 1 (AffinePoint (F StepField))
      }
 dummyStepAdvice =
   let
@@ -761,8 +822,17 @@ dummyStepAdvice =
         , z1
         , z2
         } :< Vector.nil
-    , fopProofStates: stepDummyUnfinalizedProof :< Vector.nil
+    , fopProofStates: stepDummyFopProofState { proofsVerified: 2 } :< Vector.nil
     , messagesForNextWrapProof: F zero :< Vector.nil
+    , wrapVerifierIndex:
+        { sigmaCommLast: g0
+        , columnComms:
+            { index: Vector.generate \_ -> g0
+            , coeff: Vector.generate \_ -> g0
+            , sigma: Vector.generate \_ -> g0
+            }
+        }
+    , sgOld: g0 :< Vector.nil
     }
 
 -- | Zero-valued proof witness for use in base case bootstrapping.

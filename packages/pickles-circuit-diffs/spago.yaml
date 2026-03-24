@@ -17,6 +17,7 @@ package:
     - pickles-linearization-types
     - poseidon
     - prelude
+    - random-oracle
     - safe-coerce
     - simple-json
     - snarky
@@ -34,5 +35,6 @@ package:
       - exceptions
       - node-buffer
       - node-fs
+      - refs
       - spec
       - spec-node

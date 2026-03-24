@@ -19,10 +19,13 @@ module Pickles.Verify.Types
   , PlonkExpanded
   , expandPlonkMinimal
   , expandPlonkMinimalCircuit
-  -- * Full Deferred Values
+  -- * Step Deferred Values & Unfinalized Proof
   , DeferredValues
-  -- * Unfinalized Proof
   , UnfinalizedProof
+  -- * Wrap Deferred Values
+  , BranchData
+  , WrapDeferredValues
+  , toStepDeferredValues
   ) where
 
 import Prelude
@@ -204,4 +207,48 @@ type UnfinalizedProof d f sf b =
   { deferredValues :: DeferredValues d f sf
   , shouldFinalize :: b
   , spongeDigestBeforeEvaluations :: f
+  }
+
+-------------------------------------------------------------------------------
+-- | Wrap Deferred Values
+-------------------------------------------------------------------------------
+
+-- | Branch data: encodes which step branch was verified.
+-- |
+-- | In OCaml: Branch_data.Checked.Step.t = { domain_log2, proofs_verified_mask }
+-- | Packed as: branch_data = 4*domain_log2 + mask[0] + 2*mask[1]
+-- |
+-- | Reference: composition_types.ml line 211, branch_data.ml
+type BranchData f b =
+  { domainLog2 :: f
+  , proofsVerifiedMask :: Vector 2 b
+  }
+
+-- | Wrap deferred values: Step deferred values + branch_data.
+-- |
+-- | This is what step_verifier.finalize_other_proof receives in OCaml.
+-- | The Step FOP uses branch_data for domain selection and proofs-verified masking.
+-- |
+-- | Note: OCaml's Wrap.Plonk.In_circuit also has feature_flags and joint_combiner,
+-- | but these are all constant false/None for vanilla Mina and are omitted here.
+-- |
+-- | Reference: Wrap.Proof_state.Deferred_values.In_circuit.t (composition_types.ml:185-213)
+type WrapDeferredValues d f sf b =
+  { plonk :: PlonkInCircuit f sf
+  , combinedInnerProduct :: sf
+  , xi :: ScalarChallenge f
+  , bulletproofChallenges :: BulletproofChallenges d f
+  , b :: sf
+  , branchData :: BranchData f b
+  }
+
+-- | Project Wrap deferred values to Step deferred values (drops branch_data).
+-- | Used when passing Wrap statement data to the IVP, which expects Step's DeferredValues.
+toStepDeferredValues :: forall d f sf b. WrapDeferredValues d f sf b -> DeferredValues d f sf
+toStepDeferredValues dv =
+  { plonk: dv.plonk
+  , combinedInnerProduct: dv.combinedInnerProduct
+  , xi: dv.xi
+  , bulletproofChallenges: dv.bulletproofChallenges
+  , b: dv.b
   }

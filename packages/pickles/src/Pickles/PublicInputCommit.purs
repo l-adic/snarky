@@ -16,10 +16,15 @@
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
+  , class PackStatement
+  , class RPackStatement
+  , PackedField(..)
   , CorrectionMode(..)
   , DeferredScaleMul(..)
   , MsmTerm(..)
   , ScalarMulResult
+  , packFields
+  , rPackFields
   , scalarMuls
   , rScalarMuls
   , publicInputCommit
@@ -55,6 +60,83 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..))
 import Type.Proxy (Proxy(..))
+
+-------------------------------------------------------------------------------
+-- | PackedField: decoupled packing (mirrors OCaml's Spec.pack output)
+-------------------------------------------------------------------------------
+
+-- | A tagged field element from packing a structured public input.
+-- | Mirrors OCaml's `[ \`Field of f | \`Packed_bits of f * int ]`.
+data PackedField f
+  = FullField (FVar f) -- ^ Full 255-bit field element (OCaml: \`Field x)
+  | PackedBits (FVar f) Int -- ^ n-bit packed value (OCaml: \`Packed_bits(x, n))
+  | SplitShifted (FVar f) (BoolVar f) -- ^ Type2 shifted: sDiv2 (255-bit) + sOdd (1-bit)
+
+-- | Walks a structured public input type and produces a flat array of
+-- | PackedField values, mirroring OCaml's Spec.pack.
+-- | This is the packing step only — no constraints, no MSM.
+class PackStatement a f where
+  packFields :: a -> Array (PackedField f)
+
+-- Leaf instances
+instance PackStatement (FVar f) f where
+  packFields fv = [ FullField fv ]
+
+instance PackStatement (SizedF 128 (FVar f)) f where
+  packFields sized = [ PackedBits (toField sized) 128 ]
+
+instance PackStatement (SizedF 10 (FVar f)) f where
+  packFields sized = [ PackedBits (toField sized) 10 ]
+
+instance PackStatement (BoolVar f) f where
+  packFields b = [ PackedBits (coerce b) 1 ]
+
+instance PackStatement (Type1 (FVar f)) f where
+  packFields (Type1 fv) = [ FullField fv ]
+
+instance PackStatement (SplitField (FVar f) (BoolVar f)) f where
+  packFields (SplitField { sDiv2, sOdd }) = [ SplitShifted sDiv2 sOdd ]
+
+instance PackStatement (Type2 (SplitField (FVar f) (BoolVar f))) f where
+  packFields (Type2 sf) = packFields sf
+
+-- Structural instances
+instance PackStatement Unit f where
+  packFields _ = []
+
+instance (PackStatement a f, PackStatement b f) => PackStatement (Tuple a b) f where
+  packFields (Tuple a b) = packFields a <> packFields b
+
+instance (PackStatement a f, Reflectable n Int) => PackStatement (Vector n a) f where
+  packFields vec = Array.concatMap packFields (Array.fromFoldable vec)
+
+instance (RL.RowToList r rl, RPackStatement rl f r) => PackStatement (Record r) f where
+  packFields rec = rPackFields @rl rec
+
+-- | RowList walker for PackStatement (alphabetical field order)
+class RPackStatement (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r where
+  rPackFields :: Record r -> Array (PackedField f)
+
+instance RPackStatement RL.Nil f () where
+  rPackFields _ = []
+
+instance
+  ( IsSymbol s
+  , Row.Cons s a rest r
+  , Row.Lacks s rest
+  , PackStatement a f
+  , RPackStatement tail f rest
+  ) =>
+  RPackStatement (RL.Cons s a tail) f r where
+  rPackFields rec =
+    let
+      field = Record.get (Proxy @s) rec
+    in
+      packFields field <> rPackFields @tail (Record.delete (Proxy @s) rec)
+
+-------------------------------------------------------------------------------
+-- | PublicInputCommit (existing, now derivable from PackStatement)
+-------------------------------------------------------------------------------
 
 -- | Controls how correction points are combined during public input commitment.
 -- | PureCorrections: sum as pure field arithmetic (no circuit cost) — for Step verifier.

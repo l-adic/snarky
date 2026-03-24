@@ -9,7 +9,7 @@ import Prelude
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Identity (Identity)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -496,6 +496,7 @@ incrementallyVerifyProofTest cfg ctx = do
           WrapOtherField.ipaScalarOps
           params
           input
+          Nothing
       assert_ success
 
   void $ circuitTest' @Pallas.ScalarField
@@ -614,6 +615,7 @@ verifyTest cfg ctx = do
           input
           false_ -- isBaseCase (real proof, not base case)
           (const_ claimedDigestFq)
+          Nothing
       assert_ success
 
   void $ circuitTest' @Pallas.ScalarField
