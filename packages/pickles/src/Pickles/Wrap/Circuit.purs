@@ -2,7 +2,7 @@
 -- |
 -- | This circuit runs two verification steps:
 -- | 1. For each of `mpv` previous proofs: `finalizeOtherProof` + assert finalized
--- | 2. `verify` (incrementallyVerifyProof) — checks the IPA opening proof
+-- | 2. `wrapVerify` — IVP + 4 assertions (wrap_main.ml:78-135)
 -- |
 -- | The finalize and IVP subcircuits operate on SEPARATE inputs:
 -- | - IVP uses the current Step proof's deferred values (cross-field Fp→Fq)
@@ -20,31 +20,25 @@ module Pickles.Wrap.Circuit
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PublicInputCommit (CorrectionMode)
-import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
-import Pickles.Verify (verify)
 import Pickles.Verify.Types (toStepDeferredValues)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofCircuit)
-import Pickles.Wrap.OtherField as WrapOtherField
+import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, equals_, exists, false_, fieldsToValue, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 
 -- | Public input for the Wrap circuit (value level).
@@ -132,9 +126,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
     assert_ finalizedOrNotRequired
     pure expandedChallenges
 
-  -- 3. Verify the Step proof's IPA opening (uses public input deferred values)
-  -- In the Wrap circuit, the Step VK is a compile-time constant (wrap_main.ml:209
-  -- Inner_curve.constant). We wrap with constPt to match the FVar leaf type.
+  -- 3. IVP + assertions (wrap_main.ml:78-135)
   let
     constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
     fullIvpInput =
@@ -142,7 +134,6 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
       , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues
-      -- Step VK data (constant in Wrap circuit)
       , sigmaCommLast: constPt params.sigmaCommLast
       , columnComms:
           { index: map constPt params.columnComms.index
@@ -154,19 +145,11 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       , tComm: messages.tComm
       , opening: openingProof
       }
-  success <- evalSpongeM initialSpongeCircuit $
-    verify @VestaG WrapOtherField.ipaScalarOps params fullIvpInput false_
-      wrapStmt.proofState.spongeDigestBeforeEvaluations
-      Nothing
-  assert_ success
-
-  -- 4. Compute and assert messagesForNextWrapProof hash
-  -- TODO: use expandedChallengesAll (all mpv sets) instead of single + dummies
-  let expandedChallenges = Vector.head expandedChallengesAll
-  computedDigest <- evalSpongeM initialSpongeCircuit $
-    hashMessagesForNextWrapProofCircuit
-      { sg: openingProof.sg
-      , expandedChallenges
-      , dummyChallenges: dummyIpaChallenges.wrapExpanded
+    verifyInput =
+      { spongeDigestBeforeEvaluations: wrapStmt.proofState.spongeDigestBeforeEvaluations
+      , messagesForNextWrapProofDigest: wrapStmt.proofState.messagesForNextWrapProof
+      , bulletproofChallenges: (toStepDeferredValues wrapStmt.proofState.deferredValues).bulletproofChallenges
+      , newBpChallenges: expandedChallengesAll
+      , sg: openingProof.sg
       }
-  assert_ =<< equals_ computedDigest wrapStmt.proofState.messagesForNextWrapProof
+  wrapVerify params fullIvpInput verifyInput
