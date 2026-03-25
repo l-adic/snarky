@@ -23,7 +23,7 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Sponge (SpongeM, absorb, absorbMany, getSpongeState, initialSponge, labelM, runPureSpongeM, squeeze)
 import Pickles.Sponge as Pickles.Sponge
@@ -129,16 +129,16 @@ dummyPaddingSpongeStates
    . PoseidonField f
   => Reflectable d Int
   => Vector d f
-  -> { s0 :: Sponge f, s1 :: Sponge f, s2 :: Sponge f }
+  -> Vector 3 (Sponge f)
 dummyPaddingSpongeStates dummyChallenges =
   let
+    go sponge = runPureSpongeM sponge do
+      absorbMany dummyChallenges
+      getSpongeState
     Tuple _ s0 = runPureSpongeM (initialSponge :: Sponge f) getSpongeState
-    Tuple _ s1 = runPureSpongeM (initialSponge :: Sponge f) do
-      absorbMany dummyChallenges
-      getSpongeState
-    Tuple _ s2 = runPureSpongeM (initialSponge :: Sponge f) do
-      absorbMany dummyChallenges
-      absorbMany dummyChallenges
-      getSpongeState
+    Tuple _ s1 = go s0
+    Tuple _ s2 = go s1
   in
-    { s0, s1, s2 }
+    -- Indexed by n (number of real challenge vectors provided):
+    -- index 0 = n=0 (2 dummies absorbed), index 1 = n=1, index 2 = n=2 (fresh sponge)
+    s2 :< s1 :< s0 :< Vector.nil

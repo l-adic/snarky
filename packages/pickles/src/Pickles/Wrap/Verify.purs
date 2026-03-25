@@ -20,7 +20,8 @@ import Prelude
 
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Fin (reflectFinite)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -31,14 +32,13 @@ import Pickles.Types (WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
-import Partial.Unsafe (unsafeCrashWith)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Circuit.Kimchi (Type1)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (VestaG)
-import Type.Proxy (Proxy(..))
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Input to wrapVerify beyond the IVP params/input.
@@ -67,6 +67,7 @@ wrapVerify
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
+  => Compare n 3 LT
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases
   => Add 1 _l4 totalBases
@@ -87,11 +88,7 @@ wrapVerify ivpParams ivpInput verifyInput = do
   -- n dummy vectors have already been provided as real data, so (2-n) are absorbed offline.
   let
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-    paddingState = case reflectType (Proxy @n) of
-      0 -> states.s2
-      1 -> states.s1
-      2 -> states.s0
-      _ -> unsafeCrashWith "wrapVerify: n must be 0, 1, or 2"
+    paddingState = Vector.index states (reflectFinite @n)
     msgHashSponge = spongeFromConstants { state: paddingState.state, spongeState: paddingState.spongeState }
   computedDigest <- evalSpongeM msgHashSponge $
     hashMessagesForNextWrapProofCircuit'

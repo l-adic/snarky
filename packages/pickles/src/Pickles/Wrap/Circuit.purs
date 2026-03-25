@@ -95,6 +95,7 @@ wrapCircuit
   => Reflectable n Int
   => Add 1 _l3 ds
   => Compare 0 mpv LT
+  => Compare mpv 3 LT
   => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit

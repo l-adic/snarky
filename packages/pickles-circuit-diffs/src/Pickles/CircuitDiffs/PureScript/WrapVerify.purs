@@ -50,6 +50,13 @@ wrapVerifyCircuit { lagrangeComms, blindingH } inputs = do
       , useOptSponge: true
       }
 
+    -- Layout (N1, 196 inputs):
+    --   0-176:   IVP input (parseIvpWrapInput)
+    --   177:     messagesForNextWrapProofDigest
+    --   178-192: newBpChallenges[0]  (WrapIPARounds = 15)
+    --   193:     unused (OCaml dump assumes Tock.Rounds=16 for offset calc, but it's 15;
+    --            in N2 this slot is used by newBpChallenges[1])
+    --   194-195: sgOld[0] (x, y)
     fullIvpInput =
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 194 :< Vector.nil

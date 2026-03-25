@@ -31,7 +31,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assert_, assertEqual_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
