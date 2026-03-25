@@ -29,6 +29,7 @@ import Pickles.CircuitDiffs.PureScript.FopWrap (compileFopWrap)
 import Pickles.CircuitDiffs.PureScript.Ftcomm (compileFtcomm)
 import Pickles.CircuitDiffs.PureScript.FtcommStep (compileFtcommStep)
 import Pickles.CircuitDiffs.PureScript.FullStepVerifyOne (compileFullStepVerifyOne)
+import Pickles.CircuitDiffs.PureScript.FullStepVerifyOneN2 (compileFullStepVerifyOneN2)
 import Pickles.CircuitDiffs.PureScript.GroupMap (compileGroupMap)
 import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesStep (compileHashMessagesStep)
@@ -39,6 +40,7 @@ import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationSt
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
+import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
@@ -457,6 +459,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
+        let
+          stepVerifyN2SrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 304) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
       describe "Full step verify_one" do
         let
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -465,6 +473,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
+        let
+          fullStepN2SrsData =
+            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 304) :: Array (AffinePoint (F Fp))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
