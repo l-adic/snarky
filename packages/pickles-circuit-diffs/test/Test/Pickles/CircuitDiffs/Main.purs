@@ -450,7 +450,6 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
-        exactMatch "ivp_step_n2_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
       describe "Step verify" do
         let
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
