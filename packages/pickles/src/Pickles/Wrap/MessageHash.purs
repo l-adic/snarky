@@ -15,17 +15,20 @@ module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProof
   , hashMessagesForNextWrapProofCircuit
   , hashMessagesForNextWrapProofCircuit'
+  , dummyPaddingSpongeStates
   ) where
 
 import Prelude
 
 import Data.Foldable (for_)
 import Data.Reflectable (class Reflectable)
-import Data.Vector (Vector)
+import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.Sponge (SpongeM, absorb, labelM, squeeze)
+import Pickles.Sponge (SpongeM, absorb, absorbMany, getSpongeState, initialSponge, labelM, runPureSpongeM, squeeze)
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField, hash)
+import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.DSL (class CircuitM, FVar, const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
@@ -112,3 +115,30 @@ hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messag
   absorb sg.y
   -- Squeeze digest
   squeeze
+
+-- | Pre-computed sponge states after absorbing 0, 1, or 2 dummy challenge
+-- | vectors. Used to start the message hash sponge from a checkpoint,
+-- | avoiding in-circuit Poseidon gates for dummy absorption.
+-- |
+-- | Index i = sponge state after absorbing i dummy vectors.
+-- | For max_proofs_verified = n, use index (MaxProofsVerified - n).
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/wrap_hack.ml:96-110
+dummyPaddingSpongeStates
+  :: forall d f
+   . PoseidonField f
+  => Reflectable d Int
+  => Vector d f
+  -> Vector 3 (Sponge f)
+dummyPaddingSpongeStates dummyChallenges =
+  let
+    go sponge = runPureSpongeM sponge do
+      absorbMany dummyChallenges
+      getSpongeState
+    Tuple _ s0 = runPureSpongeM (initialSponge :: Sponge f) getSpongeState
+    Tuple _ s1 = go s0
+    Tuple _ s2 = go s1
+  in
+    -- Indexed by n (number of real challenge vectors provided):
+    -- index 0 = n=0 (2 dummies absorbed), index 1 = n=1, index 2 = n=2 (fresh sponge)
+    s2 :< s1 :< s0 :< Vector.nil

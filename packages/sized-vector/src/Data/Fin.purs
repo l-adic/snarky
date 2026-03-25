@@ -21,6 +21,7 @@ module Data.Fin
   , getFinite
   , finite
   , unsafeFinite
+  , reflectFinite
   , finites
   ) where
 
@@ -34,6 +35,8 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Show.Generic (genericShow)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
 import Type.Proxy (Proxy(..))
 
 -- | A finite type with exactly `n` inhabitants: the integers `0` through `n-1`.
@@ -113,6 +116,15 @@ unsafeFinite k =
         n = reflectType (Proxy @n)
       in
         unsafeThrowException (error ("Attempted to coerce " <> show k <> " to Finite " <> show n))
+
+-- | Construct a `Finite m` from a type-level integer `n`, proven safe by
+-- | `Compare n m LT` (n < m).
+-- |
+-- | ```purescript
+-- | reflectFinite @1 @3 :: Finite 3  -- safe: 1 < 3
+-- | ```
+reflectFinite :: forall @n @m. Reflectable n Int => Compare n m LT => Finite m
+reflectFinite = Finite (reflectType (Proxy @n))
 
 -- | Enumerate all values of `Finite n` in ascending order.
 -- |
