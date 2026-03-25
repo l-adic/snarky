@@ -15,6 +15,7 @@ module Snarky.Types.Shifted
   , fromShiftedType2Circuit
   , shiftedEqualType2
   , fromShiftedSplitFieldCircuit
+  , splitFieldCircuit
   ) where
 
 import Prelude
@@ -30,7 +31,7 @@ import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assert_, const_, equals_, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, scale_, sizeInFields, sub_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assert_, assertEqual_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -166,6 +167,35 @@ instance CheckedType Vesta.ScalarField c (SplitField (FVar Vesta.ScalarField) (B
 
 instance CheckedType Pallas.ScalarField c (SplitField (FVar Pallas.ScalarField) (BoolVar Pallas.ScalarField)) where
   check = genericCheck
+
+-- | Split a field element into high bits and low bit.
+-- |
+-- | Witnesses (sDiv2, sOdd) such that x = 2*sDiv2 + sOdd.
+-- | Does NOT check that sDiv2 fits in (n-1) bits — that check is deferred
+-- | to scale_fast2 which performs it during the scalar multiplication.
+-- |
+-- | Reference: wrap_main.ml:57-69
+splitFieldCircuit
+  :: forall f c t m
+   . PrimeField f
+  => CircuitM f c t m
+  => FVar f
+  -> Snarky c t m (SplitField (FVar f) (BoolVar f))
+splitFieldCircuit x = do
+  let
+    two = one + one
+    readIsOdd = do
+      F xVal <- readCVar x
+      pure $ toBigInt xVal `BigInt.and` fromInt 1 == fromInt 1
+    readSDiv2 = do
+      F xVal <- readCVar x
+      let isOdd = toBigInt xVal `BigInt.and` fromInt 1 == fromInt 1
+      pure $ F $ (if isOdd then xVal - one else xVal) * recip two
+  sDiv2 <- exists readSDiv2
+  sOdd <- exists readIsOdd
+  -- Assert: 2 * sDiv2 + sOdd == x
+  assertEqual_ x (add_ (scale_ two sDiv2) (coerce sOdd))
+  pure $ SplitField { sDiv2, sOdd }
 
 --------------------------------------------------------------------------------
 -- Shifted class
