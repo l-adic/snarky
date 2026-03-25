@@ -18,9 +18,9 @@ module Pickles.Wrap.Verify
 
 import Prelude
 
+import Data.Fin (reflectFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
-import Data.Fin (reflectFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
