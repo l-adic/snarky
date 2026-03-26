@@ -21,7 +21,9 @@ module Pickles.CircuitDiffs.PureScript.WrapMain
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
+import Data.Maybe (fromJust)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -44,7 +46,8 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
 import Snarky.Curves.Class (fromBigInt)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, sub_)
+import Partial.Unsafe (unsafePartial)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -264,12 +267,30 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   gen0 <- label "block3-wrap-domain-gen-0" $
     Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
   let shifts0 = map const_ (LinFFI.domainShifts @WrapField 15)
-  let vanishingPoly z = do
-        zetaToN <- pow2PowMul z wrapDomainLog2
-        pure (zetaToN `sub_` const_ one)
+  -- Pseudo.Domain.vanishing_polynomial (pseudo.ml:118-127):
+  -- pow2_pows = [x, x^2, x^4, ..., x^(2^max_log2)]
+  -- seal(choose which [pow2_pows[13], pow2_pows[14], pow2_pows[15]] - one)
+  let
+    -- Build pow2_pows: [z, z^2, z^4, ..., z^(2^maxLog2)] via repeated squaring
+    -- Uses Field.square (Square constraint), matching OCaml pseudo.ml:122
+    buildPow2Pows z = go [z] 15
+      where
+      go acc 0 = pure acc
+      go acc n = do
+        let prev = unsafePartial $ fromJust $ Array.last acc
+        sq <- square_ prev
+        go (acc <> [sq]) (n - 1)
+
+    pseudoVanishingPoly which z = do
+      pow2s <- buildPow2Pows z
+      -- choose: select pow2_pows[log2_size] for the chosen domain
+      zetaToN <- Pseudo.choose which allPossibleLog2s
+        (\log2 -> unsafePartial $ fromJust $ Array.index pow2s log2)
+      -- seal(result - one): exists y; assertEqual_ y (zetaToN - 1); pure y
+      seal (zetaToN `sub_` const_ one)
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen0, shifts: shifts0 } } fopBaseParams)
-    vanishingPoly
+    (pseudoVanishingPoly which0)
     { unfinalized: toUnfinalized unfProof0
     , witness: evals0
     , prevChallenges: oldBpChals0 :< Vector.nil
@@ -287,7 +308,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let shifts1 = map const_ (LinFFI.domainShifts @WrapField 15)
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen1, shifts: shifts1 } } fopBaseParams)
-    vanishingPoly
+    (pseudoVanishingPoly which1)
     { unfinalized: toUnfinalized unfProof1
     , witness: evals1
     , prevChallenges: Vector.nil
