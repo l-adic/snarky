@@ -20,7 +20,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, mul_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)
 import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -44,13 +44,9 @@ oneHotVector
   => Reflectable n Int
   => FVar f
   -> Snarky (KimchiConstraint f) t m (Vector n (BoolVar f))
-oneHotVector index = do
-  -- Vector.init length ~f:(fun j -> Field.equal (Field.of_int j) i)
+oneHotVector index = label "one-hot-vector" do
   v <- traverse (\j -> equals_ (const_ (fromBigInt (fromInt (getFinite j)))) index)
     (Vector.generate identity :: Vector n _)
-  -- Boolean.Assert.any (Vector.to_list v) = assert_non_zero (num_true v)
-  -- num_true = Array.fold ~init:(Cvar.constant zero) ~f:Cvar.add (utils.ml:334-336)
-  -- assert_non_zero = void (inv v) (utils.ml:170-173)
   assertNonZero_ (sum_ (Vector.toUnfoldable (map (coerce :: BoolVar f -> FVar f) v)))
   pure v
 
@@ -72,11 +68,9 @@ mask
   => Vector n (BoolVar f)
   -> Vector n (FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
-mask bits xs = do
-  -- Vector.map (Vector.zip bits xs) ~f:(fun (b, x) -> Field.((b :> t) * x))
+mask bits xs = label "pseudo-mask" do
   terms <- traverse (\(Tuple b x) -> mul_ (coerce b :: FVar f) x) $
     Vector.zip bits xs
-  -- |> Vector.fold ~init:Field.zero ~f:Field.(+)
   pure $ sum_ (Vector.toUnfoldable terms)
 
 -- | Choose a value from a vector using a one-hot selector.
