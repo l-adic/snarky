@@ -80,7 +80,10 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
 type FinalizeOtherProofParams :: Type -> Row Type -> Type
 type FinalizeOtherProofParams f r =
-  { domain :: { generator :: f, shifts :: Vector 7 f }
+  { domain ::
+      { generator :: FVar f
+      , shifts :: Vector 7 (FVar f)
+      }
   , domainLog2 :: Int
   , srsLengthLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
@@ -208,7 +211,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Then: zetaw = mul gen zeta → R1CS because gen is non-constant
   ---------------------------------------------------------------------------
   domainWhich <- equals_ (const_ (fromInt params.domainLog2)) domainLog2Var
-  let maskedGen = scale_ params.domain.generator (coerce domainWhich :: FVar f)
+  maskedGen <- mul_ params.domain.generator (coerce domainWhich :: FVar f)
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------

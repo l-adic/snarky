@@ -118,9 +118,20 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
   -- 2. Finalize each of mpv previous proofs
   -- OCaml: Vector.mapn [unfinalized_proofs; old_bp_chals; evals; wrap_domains]
   --        ~f:(fun [...] -> finalize_other_proof ...)
+  let
+    fopParams =
+      { domain:
+          { generator: const_ params.domain.generator
+          , shifts: map const_ params.domain.shifts
+          }
+      , domainLog2: params.domainLog2
+      , srsLengthLog2: params.srsLengthLog2
+      , linearizationPoly: params.linearizationPoly
+      , endo: params.endo
+      }
   expandedChallengesAll <- for (Vector.zip unfinalizedProofs (Vector.zip evalsAll oldBpChallenges)) \(Tuple unfinalized (Tuple witness prevChallenges)) -> do
     { finalized, expandedChallenges } <-
-      wrapFinalizeOtherProofCircuit params
+      wrapFinalizeOtherProofCircuit fopParams
         { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
     -- Assert finalized || not shouldFinalize
     finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)

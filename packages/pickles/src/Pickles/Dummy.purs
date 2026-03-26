@@ -59,7 +59,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, fromBits)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
@@ -861,8 +861,8 @@ dummyProofWitness =
 dummyFinalizeOtherProofParams :: forall f. Curves.PrimeField f => FinalizeOtherProofParams f ()
 dummyFinalizeOtherProofParams =
   { domain:
-      { generator: one
-      , shifts: Vector.generate \_ -> one
+      { generator: const_ one :: FVar f
+      , shifts: Vector.generate \_ -> (const_ one :: FVar f)
       }
   , domainLog2: 0
   , srsLengthLog2: 0
