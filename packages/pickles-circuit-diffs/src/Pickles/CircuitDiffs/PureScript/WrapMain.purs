@@ -31,6 +31,8 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
+import Pickles.Pseudo as Pseudo
+import Record as Record
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
@@ -191,13 +193,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     tComm :: Vector 7 (AffinePoint (FVar WrapField))
     tComm = Vector.generate \j -> readPt (387 + 2 * getFinite j)
 
-    -- ---- FOP params ----
-    fopParams =
-      { domain:
-          { generator: const_ (LinFFI.domainGenerator @WrapField wrapDomainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
-          }
-      , domainLog2: wrapDomainLog2
+    -- ---- FOP base params (domain computed dynamically per proof) ----
+    -- all_possible_domains = [Pow_2_roots_of_unity 13, 14, 15]
+    -- num_possible_domains = 3 (= S(Padded_length) = S(N2))
+    allPossibleLog2s = 13 :< 14 :< 15 :< Vector.nil :: Vector 3 Int
+    fopBaseParams =
+      { domainLog2: wrapDomainLog2  -- TODO: this is still compile-time, used for pow2pow
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
@@ -257,9 +258,19 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- (choose_key makes the VK non-constant even for single branch).
   -- We skip this for now — the VK is constant in our dump, so the flags may differ.
 
-  -- Block 3: FOP loop (2 proofs)
+  -- Block 3: Compute wrap_domains + FOP loop (2 proofs)
+  -- For each proof, compute domain from wrap_domain_index via one-hot selection
+  -- then run FOP with that domain.
+  -- Reference: wrap_main.ml:418-485
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
-  { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit fopParams
+
+  -- Proof 0: compute domain from wrap_domain_index
+  which0 <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
+  gen0 <- Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+  -- shifts are all the same across domains (optimization in pseudo.ml:88)
+  let shifts0 = map const_ (LinFFI.domainShifts @WrapField 15)
+  { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
+    (Record.merge { domain: { generator: gen0, shifts: shifts0 } } fopBaseParams)
     { unfinalized: toUnfinalized unfProof0
     , witness: evals0
     , prevChallenges: oldBpChals0 :< Vector.nil
@@ -267,7 +278,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   finalizedOrNot0 <- or_ finalized0 (not_ unfProof0.shouldFinalize)
   assert_ finalizedOrNot0
 
-  { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit fopParams
+  -- Proof 1: compute domain from wrap_domain_index
+  which1 <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
+  gen1 <- Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+  let shifts1 = map const_ (LinFFI.domainShifts @WrapField 15)
+  { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
+    (Record.merge { domain: { generator: gen1, shifts: shifts1 } } fopBaseParams)
     { unfinalized: toUnfinalized unfProof1
     , witness: evals1
     , prevChallenges: Vector.nil
