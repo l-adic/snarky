@@ -40,7 +40,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
@@ -56,7 +56,7 @@ import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMin
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (negate_, scale_)
+import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
@@ -283,8 +283,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       , defaultVal: const_ zero
       }
 
-    gen = params.domain.generator
-
     w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
 
@@ -320,7 +318,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
     mul_ t1 (zeta `sub_` omegaZk)
 
-  -- zetaToNMinus1 via domainVanishingPoly (mask * zeta^n - 1, sealed)
+  -- zetaToNMinus1 via domain vanishing polynomial (with domain masking)
+  -- Uses domainVanishingPoly to match OCaml's step_verifier.ml constraint structure.
   zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
 
   let
