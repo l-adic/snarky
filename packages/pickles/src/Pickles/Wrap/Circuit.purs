@@ -31,11 +31,11 @@ import Pickles.PublicInputCommit (CorrectionMode)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify.Types (toStepDeferredValues)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
-import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_, sub_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -129,9 +129,13 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       , linearizationPoly: params.linearizationPoly
       , endo: params.endo
       }
+  let
+    wrapVanishingPoly z = do
+      zetaToN <- pow2PowMul z params.domainLog2
+      pure (zetaToN `sub_` const_ one)
   expandedChallengesAll <- for (Vector.zip unfinalizedProofs (Vector.zip evalsAll oldBpChallenges)) \(Tuple unfinalized (Tuple witness prevChallenges)) -> do
     { finalized, expandedChallenges } <-
-      wrapFinalizeOtherProofCircuit fopParams
+      wrapFinalizeOtherProofCircuit fopParams wrapVanishingPoly
         { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
     -- Assert finalized || not shouldFinalize
     finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)

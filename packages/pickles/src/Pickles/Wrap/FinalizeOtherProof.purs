@@ -14,6 +14,7 @@
 module Pickles.Wrap.FinalizeOtherProof
   ( WrapFinalizeOtherProofInput
   , wrapFinalizeOtherProofCircuit
+  , pow2PowMul
   ) where
 
 import Prelude
@@ -93,9 +94,10 @@ wrapFinalizeOtherProofCircuit
   => LinearizationFFI f g
   => Reflectable d Int
   => FinalizeOtherProofParams f r2
+  -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
   -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
+wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
   let
     ops = WrapOtherField.fopShiftOps @f @m
     deferred = unfinalized.deferredValues
@@ -227,9 +229,8 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
   -- zetaToNMinus1: zeta^n - 1 (no domain masking, just pow2pow and subtract)
   -- Uses mul_ (R1CS) not square_ because this comes from plonk_checks.pow2pow
   -- which uses F.(acc * acc), unlike wrap_verifier.pow2pow which uses Field.square.
-  zetaToNMinus1 <- label "step7_zetaToNMinus1" do
-    zetaToN <- pow2PowMul zeta params.domainLog2
-    pure (zetaToN `sub_` const_ one)
+  zetaToNMinus1 <- label "step7_zetaToNMinus1" $
+    vanishingPolynomial zeta
 
   let
     alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n

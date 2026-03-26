@@ -37,14 +37,14 @@ import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (WrapField, WrapIPARounds, StepIPARounds)
-import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Verify (wrapVerify)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
 import Snarky.Curves.Class (fromBigInt)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -264,8 +264,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   gen0 <- label "block3-wrap-domain-gen-0" $
     Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
   let shifts0 = map const_ (LinFFI.domainShifts @WrapField 15)
+  let vanishingPoly z = do
+        zetaToN <- pow2PowMul z wrapDomainLog2
+        pure (zetaToN `sub_` const_ one)
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen0, shifts: shifts0 } } fopBaseParams)
+    vanishingPoly
     { unfinalized: toUnfinalized unfProof0
     , witness: evals0
     , prevChallenges: oldBpChals0 :< Vector.nil
@@ -283,6 +287,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let shifts1 = map const_ (LinFFI.domainShifts @WrapField 15)
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen1, shifts: shifts1 } } fopBaseParams)
+    vanishingPoly
     { unfinalized: toUnfinalized unfProof1
     , witness: evals1
     , prevChallenges: Vector.nil
