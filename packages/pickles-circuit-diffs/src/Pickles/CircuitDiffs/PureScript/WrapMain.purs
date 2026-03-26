@@ -257,25 +257,24 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- expand_feature_flags: all constant false — no constraints
   -- assert_consistent: Boolean.Assert.= false_ false_ — no constraints (both constant)
 
-  -- Block 3: Compute wrap_domains + FOP loop (2 proofs)
-  -- For each proof, compute domain from wrap_domain_index via one-hot selection
-  -- then run FOP with that domain.
-  -- Reference: wrap_main.ml:418-485
+  -- Block 3: Compute wrap_domains THEN FOP loop
+  -- OCaml: Vector.map wrap_domain_indices ~f:(oneHotVector + to_domain) BEFORE Vector.mapn FOP
+  -- Reference: wrap_main.ml:418-433 (domains), 435-485 (FOP loop)
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
 
-  -- Block 3: FOP proof 0 — domain + finalize
-  which0 <- label "block3-wrap-domain-0" do
-    w <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
-    pure w
-  gen0 <- label "block3-wrap-domain-gen-0" $
-    Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
-  let shifts0 = map const_ (LinFFI.domainShifts @WrapField 15)
-  -- Pseudo.Domain.vanishing_polynomial (pseudo.ml:118-127):
-  -- pow2_pows = [x, x^2, x^4, ..., x^(2^max_log2)]
-  -- seal(choose which [pow2_pows[13], pow2_pows[14], pow2_pows[15]] - one)
+  -- Compute BOTH domains before FOP (matching OCaml ordering)
+  which0 <- label "block3-wrap-domain-0" $
+    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
+  gen0 <- Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+
+  which1 <- label "block3-wrap-domain-1" $
+    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
+  gen1 <- Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+
   let
-    -- Build pow2_pows: [z, z^2, z^4, ..., z^(2^maxLog2)] via repeated squaring
-    -- Uses Field.square (Square constraint), matching OCaml pseudo.ml:122
+    shifts_ = map const_ (LinFFI.domainShifts @WrapField 15)
+
+    -- Pseudo.Domain.vanishing_polynomial (pseudo.ml:118-127)
     buildPow2Pows z = go [z] 15
       where
       go acc 0 = pure acc
@@ -286,13 +285,13 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
 
     pseudoVanishingPoly which z = do
       pow2s <- buildPow2Pows z
-      -- choose: select pow2_pows[log2_size] for the chosen domain
       zetaToN <- Pseudo.choose which allPossibleLog2s
         (\log2 -> unsafePartial $ fromJust $ Array.index pow2s log2)
-      -- seal(result - one): exists y; assertEqual_ y (zetaToN - 1); pure y
       seal (zetaToN `sub_` const_ one)
+
+  -- FOP proof 0
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
-    (Record.merge { domain: { generator: gen0, shifts: shifts0 } } fopBaseParams)
+    (Record.merge { domain: { generator: gen0, shifts: shifts_ } } fopBaseParams)
     (pseudoVanishingPoly which0)
     { unfinalized: toUnfinalized unfProof0
     , witness: evals0
@@ -302,15 +301,9 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     finalizedOrNot0 <- or_ finalized0 (not_ unfProof0.shouldFinalize)
     assert_ finalizedOrNot0
 
-  -- Block 3: FOP proof 1 — domain + finalize
-  which1 <- label "block3-wrap-domain-1" do
-    w <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
-    pure w
-  gen1 <- label "block3-wrap-domain-gen-1" $
-    Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
-  let shifts1 = map const_ (LinFFI.domainShifts @WrapField 15)
+  -- FOP proof 1
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
-    (Record.merge { domain: { generator: gen1, shifts: shifts1 } } fopBaseParams)
+    (Record.merge { domain: { generator: gen1, shifts: shifts_ } } fopBaseParams)
     (pseudoVanishingPoly which1)
     { unfinalized: toUnfinalized unfProof1
     , witness: evals1
