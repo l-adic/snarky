@@ -117,13 +117,13 @@ linearizationCircuitM domLog2 tokens inputs = do
     -- Omega constant lookup for unnormalized lagrange basis
     -- Matches OCaml's unnormalized_lagrange_basis omega resolution
     omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then one -- omega^0 = 1
-      else if zk && offset == (-1) then omegaToMinus4 -- omega^(n - zk_rows - 1)
-      else if not zk && offset == 1 then gen -- omega^1
-      else if not zk && offset == (-1) then omegaToMinus1 -- omega^(-1)
-      else if not zk && offset == (-2) then omegaToMinus2 -- omega^(-2)
-      else if zk && offset == 0 then omegaToMinus3 -- omega^(n - zk_rows) = omega^(-zk_rows)
-      else one -- fallback (shouldn't happen for constant_term tokens)
+      if not zk && offset == 0 then const_ one
+      else if zk && offset == (-1) then const_ omegaToMinus4
+      else if not zk && offset == 1 then const_ gen
+      else if not zk && offset == (-1) then const_ omegaToMinus1
+      else if not zk && offset == (-2) then const_ omegaToMinus2
+      else if zk && offset == 0 then const_ omegaToMinus3
+      else const_ one
 
   -- 1. Precompute alpha powers (69 R1CS constraints for successive multiplication)
   alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha

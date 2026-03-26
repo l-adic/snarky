@@ -187,21 +187,20 @@ evaluateGateConstraints params zeta input = label "evaluate-gate-constraints" do
 
     gen = domainGenerator @f params.domainLog2
 
-    -- Omega power constants (no circuit vars)
-    omegaToMinus1 = recip gen
-    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
-    omegaToMinus3 = omegaToMinus2 * omegaToMinus1
-    omegaToMinus4 = omegaToMinus3 * omegaToMinus1
+    -- Omega power constants wrapped as FVar for lagrange basis
+    omegaToMinus1 = const_ (recip gen)
+    omegaToMinus2 = const_ (recip gen * recip gen)
+    omegaToMinus3 = const_ (recip gen * recip gen * recip gen)
+    omegaToMinus4 = const_ (recip gen * recip gen * recip gen * recip gen)
 
-    -- Omega constant lookup for unnormalized lagrange basis
     omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then one
+      if not zk && offset == 0 then const_ one
       else if zk && offset == (-1) then omegaToMinus4
-      else if not zk && offset == 1 then gen
+      else if not zk && offset == 1 then const_ gen
       else if not zk && offset == (-1) then omegaToMinus1
       else if not zk && offset == (-2) then omegaToMinus2
       else if zk && offset == 0 then omegaToMinus3
-      else one
+      else const_ one
 
   -- Precompute alpha^0..alpha^70 (69 R1CS constraints)
   alphaPowers <- precomputeAlphaPowers 70 input.alpha
