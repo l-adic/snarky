@@ -109,8 +109,8 @@ fopWrapCircuit input =
       }
     params =
       { domain:
-          { generator: LinFFI.domainGenerator @WrapField wrapDomainLog2
-          , shifts: LinFFI.domainShifts @WrapField wrapDomainLog2
+          { generator: const_ (LinFFI.domainGenerator @WrapField wrapDomainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
           }
       , domainLog2: wrapDomainLog2
       , srsLengthLog2: wrapSrsLengthLog2

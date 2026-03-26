@@ -113,8 +113,8 @@ fopStepCircuit input =
       }
     params =
       { domain:
-          { generator: LinFFI.domainGenerator @StepField domainLog2
-          , shifts: LinFFI.domainShifts @StepField domainLog2
+          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
           }
       , domainLog2
       , srsLengthLog2

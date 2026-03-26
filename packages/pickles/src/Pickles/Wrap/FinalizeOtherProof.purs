@@ -46,7 +46,7 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.CVar (negate_, scale_)
+import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
@@ -126,7 +126,7 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
   -- OCaml: zetaw = Field.mul domain#generator plonk.zeta
   -- Generator is Field.constant → scale_ produces no R1CS
   ---------------------------------------------------------------------------
-  let zetaw = scale_ params.domain.generator zeta
+  zetaw <- mul_ params.domain.generator zeta
 
   ---------------------------------------------------------------------------
   -- Step 3: Compute challenge polynomial evaluations (sg_evals)

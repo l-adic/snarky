@@ -903,8 +903,8 @@ extractStepRawBpChallenges ctx =
 buildFinalizeParams :: StepProofContext -> FinalizeOtherProofParams WrapField ()
 buildFinalizeParams stepCtx =
   { domain:
-      { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
-      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 WrapField)
+      { generator: const_ (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
+      , shifts: map const_ (domainShifts stepCtx.domainLog2 :: Vector 7 WrapField)
       }
   , domainLog2: stepCtx.domainLog2
   , endo: wrapEndo
@@ -1495,8 +1495,8 @@ extractWrapRawBpChallenges ctx =
 buildStepFinalizeParams :: StepProofContext -> FinalizeOtherProofParams StepField ()
 buildStepFinalizeParams stepCtx =
   { domain:
-      { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
-      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
+      { generator: const_ (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
+      , shifts: map const_ (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
       }
   , domainLog2: stepCtx.domainLog2
   , endo: stepEndo
