@@ -283,20 +283,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       , defaultVal: const_ zero
       }
 
-    gen = domainGenerator @f params.domainLog2
-    omegaToMinus1 = recip gen
-    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
-    omegaToMinus3 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-    omegaToMinus4 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-
-    omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then one
-      else if zk && offset == (-1) then omegaToMinus4
-      else if not zk && offset == 1 then gen
-      else if not zk && offset == (-1) then omegaToMinus1
-      else if not zk && offset == (-2) then omegaToMinus2
-      else if zk && offset == 0 then omegaToMinus3
-      else one
+    gen = params.domain.generator
 
     w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
@@ -307,8 +294,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     zZeta = allEvals.zEvals.zeta
     zOmegaTimesZeta = allEvals.zEvals.omegaTimesZeta
 
-    shifts :: Vector 7 f
-    shifts = domainShifts @f params.domainLog2
+    shifts = params.domain.shifts
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega powers to match OCaml constraint order.
@@ -358,7 +344,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let term1MinusP = sub_ term1 pEval0
 
   term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-  let wShifts = zipWith Tuple (Vector.take @7 w0) (map (const_ :: f -> FVar f) shifts)
+  let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
   term2 <- foldM
     ( \acc (Tuple wi si) -> do
         betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
@@ -383,6 +369,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let permResult = add_ (sub_ term1MinusP term2) boundary
 
   let
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then const_ one
+      else if not zk && offset == 1 then maskedGen
+      else if not zk && offset == (-1) then omegaM1
+      else if not zk && offset == (-2) then omegaZkP1
+      else if not zk && offset == (-3) then omegaZk
+      else if zk && offset == 0 then omegaZk
+      -- (true, -1) is lazy in OCaml; not used by constant_term tokens
+      else const_ one
+
     vanishesOnZk = const_ one
 
     baseEnv :: EnvM f (Snarky (KimchiConstraint f) t m)
