@@ -210,49 +210,52 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- ======== Circuit blocks ========
 
   -- Block 1: Branch selection + branch_data assert
-  whichBranchBool <- label "block1-which-branch" do
-    b <- equals_ _whichBranch (const_ zero)
-    assert_ b
-    pure b
+  -- Matches wrap_main.ml:222-255 and dump_circuit_impl.ml:2208-2238
 
+  -- One_hot_vector.of_index which_branch' ~length:N1
+  whichBranch <- label "block1-one-hot" $
+    (Pseudo.oneHotVector :: _ -> _ (Vector 1 _)) _whichBranch
+
+  -- Pseudo.choose (which_branch, step_widths=[1]) ~f:Field.of_int
+  -- mask [bool] [const_ 1] = Scale(1, bool) — non-constant!
+  firstZero <- label "block1-first-zero" $
+    Pseudo.choose whichBranch (1 :< Vector.nil :: Vector 1 Int)
+      (\w -> const_ (fromBigInt (fromInt w)))
+
+  -- ones_vector ~first_zero N2 |> Vector.rev
+  -- go true_ 0 2:
+  --   i=0: value = true_ && not(equal first_zero 0)
+  --   i=1: value = prev  && not(equal first_zero 1)
   { maskVal0, maskVal1 } <- label "block1-ones-vector" do
-    let firstZero = const_ one :: FVar WrapField
+    let true_ = coerce (const_ one :: FVar WrapField) :: BoolVar WrapField
     eq0 <- equals_ firstZero (const_ zero)
-    let notEq0 = not_ eq0
-    v0 <- and_ whichBranchBool notEq0
+    v0 <- and_ true_ (not_ eq0)
     eq1 <- equals_ firstZero (const_ one)
-    let notEq1 = not_ eq1
-    v1 <- and_ v0 notEq1
+    v1 <- and_ v0 (not_ eq1)
     pure { maskVal0: v0, maskVal1: v1 }
 
-  label "block1-branch-data-pack" do
-    let sixteen = one + one + one + one + one + one + one + one + one + one + one + one + one + one + one + one :: WrapField
-        domainLog2 = const_ sixteen :: FVar WrapField
-        four = one + one + one + one :: WrapField
-        two = one + one :: WrapField
+  -- domain_log2 = Pseudo.choose (which_branch, [16]) ~f:Field.of_int
+  domainLog2 <- label "block1-domain-log2" $
+    Pseudo.choose whichBranch (16 :< Vector.nil :: Vector 1 Int)
+      (\d -> const_ (fromBigInt (fromInt d)))
+
+  -- Branch_data.Checked.Wrap.pack + Field.Assert.equal
+  label "block1-branch-data-assert" do
+    let two = one + one :: WrapField
+        four = two + two :: WrapField
+    -- pack(mask) = mask[1] + 2*mask[0] (Vector.rev order)
     twoTimesMask0 <- mul_ (const_ two) (coerce maskVal0 :: FVar WrapField)
     let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
+    -- packed = 4*domain_log2 + pack(mask)
     fourTimesDom <- mul_ (const_ four) domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
     assertEqual_ _branchData packedBranchData
 
-  -- Block 2: Feature flag consistency
-  -- For Features.none: all flags are constant false_, all comms are Opt.Nothing.
-  -- expand_feature_flags with all false_ → all expanded flags are false_ (no constraints).
-  -- Each assert_consistent Opt.Nothing (lazy false_) → Boolean.Assert.= false_ false_.
-  -- 15 assertions of constant equality → may or may not generate constraints depending on impl.
-  -- OCaml Boolean.Assert.= with two constants generates an R1CS checking 0 = 0.
-  -- In PureScript, assertEqual_ on constants also generates constraints.
-  -- TODO: determine if these generate constraints or are optimized away.
-  -- For now, attempt the 15 assertions:
-  let ff = coerce (const_ zero :: FVar WrapField) :: BoolVar WrapField  -- false_
-  -- The OCaml generates constraints from assert_consistent for each optional commitment.
-  -- Each call is: Boolean.Assert.= (commitment_flag Opt.Nothing) (Lazy.force flag)
-  --            = Boolean.Assert.= false_ false_
-  -- This is: assert_ (equals_ false_ false_) which is trivially true for constants.
-  -- But the OCaml DOES generate R1CS here because the values flow through non-constant paths
-  -- (choose_key makes the VK non-constant even for single branch).
-  -- We skip this for now — the VK is constant in our dump, so the flags may differ.
+  -- Block 2: choose_key + feature flag consistency
+  -- For single branch with all constant VK and Features.none:
+  -- choose_key: Scale(const, bool) per coord — no constraints
+  -- expand_feature_flags: all constant false — no constraints
+  -- assert_consistent: Boolean.Assert.= false_ false_ — no constraints (both constant)
 
   -- Block 3: Compute wrap_domains + FOP loop (2 proofs)
   -- For each proof, compute domain from wrap_domain_index via one-hot selection
