@@ -44,7 +44,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
 import Snarky.Curves.Class (fromBigInt)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, mul_, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -207,38 +207,31 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- ======== Circuit blocks ========
 
   -- Block 1: Branch selection + branch_data assert
-  -- One_hot_vector.of_index: for length=1, Field.equal 0 which_branch + Assert.any
-  whichBranchBool <- equals_ _whichBranch (const_ zero)
-  assert_ whichBranchBool  -- Assert.any [bool] = assert_ bool
+  whichBranchBool <- label "block1-which-branch" do
+    b <- equals_ _whichBranch (const_ zero)
+    assert_ b
+    pure b
 
-  -- ones_vector ~first_zero:(Pseudo.choose (which_branch, [1])) N2 |> Vector.rev
-  -- For single branch: first_zero = Pseudo.choose([true_], [1]) = 1 (constant since which_branch=0)
-  -- ones_vector with first_zero=1, length=2: go true_ 0 2
-  --   i=0: value = true_ && not(equal 1 0) = true_ && true_ = true_  -> [true_; ...]
-  --   i=1: value = true_ && not(equal 1 1) = true_ && false_ = false_ -> [true_; false_]
-  -- Vector.rev -> [false_; true_]
-  -- So actual_proofs_verified_mask = [false_; true_]
-  let firstZero = const_ one :: FVar WrapField  -- Pseudo.choose for single branch, step_widths=[1]
-  eq0 <- equals_ firstZero (const_ zero)
-  let notEq0 = not_ eq0
-  maskVal0 <- and_ whichBranchBool notEq0
-  eq1 <- equals_ firstZero (const_ one)
-  let notEq1 = not_ eq1
-  maskVal1 <- and_ maskVal0 notEq1
-  -- Reversed: [maskVal1, maskVal0]
-  let actualProofsVerifiedMask = maskVal1 :< maskVal0 :< Vector.nil
+  { maskVal0, maskVal1 } <- label "block1-ones-vector" do
+    let firstZero = const_ one :: FVar WrapField
+    eq0 <- equals_ firstZero (const_ zero)
+    let notEq0 = not_ eq0
+    v0 <- and_ whichBranchBool notEq0
+    eq1 <- equals_ firstZero (const_ one)
+    let notEq1 = not_ eq1
+    v1 <- and_ v0 notEq1
+    pure { maskVal0: v0, maskVal1: v1 }
 
-  -- Branch_data.Checked.Wrap.pack: 4*domain_log2 + pack(mask)
-  -- domain_log2 = Pseudo.choose(which_branch, [16]) = 16 (constant for single branch)
-  let sixteen = one + one + one + one + one + one + one + one + one + one + one + one + one + one + one + one :: WrapField
-      domainLog2 = const_ sixteen :: FVar WrapField
-      four = one + one + one + one :: WrapField
-      two = one + one :: WrapField
-  twoTimesMask0 <- mul_ (const_ two) (coerce maskVal0 :: FVar WrapField)
-  let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
-  fourTimesDom <- mul_ (const_ four) domainLog2
-  let packedBranchData = add_ packedMask fourTimesDom
-  assertEqual_ _branchData packedBranchData
+  label "block1-branch-data-pack" do
+    let sixteen = one + one + one + one + one + one + one + one + one + one + one + one + one + one + one + one :: WrapField
+        domainLog2 = const_ sixteen :: FVar WrapField
+        four = one + one + one + one :: WrapField
+        two = one + one :: WrapField
+    twoTimesMask0 <- mul_ (const_ two) (coerce maskVal0 :: FVar WrapField)
+    let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
+    fourTimesDom <- mul_ (const_ four) domainLog2
+    let packedBranchData = add_ packedMask fourTimesDom
+    assertEqual_ _branchData packedBranchData
 
   -- Block 2: Feature flag consistency
   -- For Features.none: all flags are constant false_, all comms are Opt.Nothing.
@@ -264,10 +257,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- Reference: wrap_main.ml:418-485
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
 
-  -- Proof 0: compute domain from wrap_domain_index
-  which0 <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
-  gen0 <- Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
-  -- shifts are all the same across domains (optimization in pseudo.ml:88)
+  -- Block 3: FOP proof 0 — domain + finalize
+  which0 <- label "block3-wrap-domain-0" do
+    w <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
+    pure w
+  gen0 <- label "block3-wrap-domain-gen-0" $
+    Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
   let shifts0 = map const_ (LinFFI.domainShifts @WrapField 15)
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen0, shifts: shifts0 } } fopBaseParams)
@@ -275,12 +270,16 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     , witness: evals0
     , prevChallenges: oldBpChals0 :< Vector.nil
     }
-  finalizedOrNot0 <- or_ finalized0 (not_ unfProof0.shouldFinalize)
-  assert_ finalizedOrNot0
+  label "block3-fop-assert-0" do
+    finalizedOrNot0 <- or_ finalized0 (not_ unfProof0.shouldFinalize)
+    assert_ finalizedOrNot0
 
-  -- Proof 1: compute domain from wrap_domain_index
-  which1 <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
-  gen1 <- Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+  -- Block 3: FOP proof 1 — domain + finalize
+  which1 <- label "block3-wrap-domain-1" do
+    w <- (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
+    pure w
+  gen1 <- label "block3-wrap-domain-gen-1" $
+    Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
   let shifts1 = map const_ (LinFFI.domainShifts @WrapField 15)
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: gen1, shifts: shifts1 } } fopBaseParams)
@@ -288,28 +287,26 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     , witness: evals1
     , prevChallenges: Vector.nil
     }
-  finalizedOrNot1 <- or_ finalized1 (not_ unfProof1.shouldFinalize)
-  assert_ finalizedOrNot1
+  label "block3-fop-assert-1" do
+    finalizedOrNot1 <- or_ finalized1 (not_ unfProof1.shouldFinalize)
+    assert_ finalizedOrNot1
 
   -- Block 4: prev_statement construction + messages_for_next_step_proof assert
-  -- Hash messages_for_next_wrap_proof for each proof using pre-computed sponge states
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-  -- Proof 0: max_local = N1, so sponge index = 1 (1 dummy absorbed)
-  msgForWrap0 <- evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState }) $
-    hashMessagesForNextWrapProofCircuit'
-      { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }
-  -- Proof 1: max_local = N0, so sponge index = 0 (2 dummies absorbed)
-  msgForWrap1 <- evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState }) $
-    hashMessagesForNextWrapProofCircuit'
-      { sg: prevStepAcc1, allChallenges: Vector.nil :: Vector 0 (Vector WrapIPARounds (FVar WrapField)) }
+  msgForWrap0 <- label "block4-msg-hash-0" $
+    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState }) $
+      hashMessagesForNextWrapProofCircuit'
+        { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }
+  msgForWrap1 <- label "block4-msg-hash-1" $
+    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState }) $
+      hashMessagesForNextWrapProofCircuit'
+        { sg: prevStepAcc1, allChallenges: Vector.nil :: Vector 0 (Vector WrapIPARounds (FVar WrapField)) }
 
-  assertEqual_ messagesForNextStepProof prevMsgForNextStep
+  label "block4-assert-msg-step" $ assertEqual_ messagesForNextStepProof prevMsgForNextStep
 
   -- Block 5: pack_statement with split_field
-  -- Apply split_field to each fq (Type1 shifted value) in each unfinalized proof
-  let splitFq = splitFieldCircuit
-  sf0 <- traverse splitFq unfProof0.rawFq
-  sf1 <- traverse splitFq unfProof1.rawFq
+  sf0 <- label "block5-split-field-0" $ traverse splitFieldCircuit unfProof0.rawFq
+  sf1 <- label "block5-split-field-1" $ traverse splitFieldCircuit unfProof1.rawFq
   let
     mkPerProofTuple unf splitFqs =
       Tuple (map (\sf -> Type2 sf :: Type2 (SplitField (FVar WrapField) (BoolVar WrapField))) splitFqs)
