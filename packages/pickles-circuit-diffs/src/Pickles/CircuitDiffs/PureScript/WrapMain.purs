@@ -34,6 +34,7 @@ import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Pseudo as Pseudo
+import Pickles.VerificationKey (chooseKey)
 import Record as Record
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (CorrectionMode(..))
@@ -252,11 +253,20 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     assertEqual_ _branchData packedBranchData
 
   -- Block 2: choose_key + feature flag consistency
-  -- OCaml generates 14 Generic gates from choose_key (observed in fixture labels).
-  -- These come from (b :> t) * coord multiplications in Wrap_verifier.choose_key.
-  -- Our mul_ optimizes (non_const, Const) to Scale with 0 constraints.
-  -- The OCaml somehow generates constraints — possibly from the Run layer or
-  -- Kimchi backend materializing Scale values. This is a known gap.
+  let { x: F dummyX, y: F dummyY } = dummyVestaPt
+      dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
+      dummyComm = [dummyPt]
+      dummyVK =
+        { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
+        , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
+        , genericComm: dummyComm
+        , psmComm: dummyComm
+        , completeAddComm: dummyComm
+        , mulComm: dummyComm
+        , emulComm: dummyComm
+        , endomulScalarComm: dummyComm
+        }
+  _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
   -- Feature flag consistency: 0 constraints for Features.none with constant VK.
 
   -- Block 3: Compute wrap_domains THEN FOP loop
