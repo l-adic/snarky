@@ -1,0 +1,9 @@
+{"row":0,"context":[]}
+{"row":1,"context":[]}
+{"row":2,"context":[]}
+{"row":3,"context":[]}
+{"row":4,"context":[]}
+{"row":5,"context":[]}
+{"row":6,"context":[]}
+{"row":7,"context":["any: File \"src/lib/snarky/src/base/utils.ml\", line 385, characters 6-97","assert_non_zero: File \"src/lib/snarky/src/base/utils.ml\", line 170, characters 2-106","Checked.inv"]}
+{"row":8,"context":["any: File \"src/lib/snarky/src/base/utils.ml\", line 385, characters 6-97","assert_non_zero: File \"src/lib/snarky/src/base/utils.ml\", line 170, characters 2-106","Checked.inv"]}

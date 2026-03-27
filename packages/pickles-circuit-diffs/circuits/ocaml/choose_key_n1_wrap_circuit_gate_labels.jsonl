@@ -1,0 +1,17 @@
+{"row":0,"context":[]}
+{"row":1,"context":["one_hot"]}
+{"row":2,"context":["one_hot","any: File \"src/lib/snarky/src/base/utils.ml\", line 385, characters 6-97","assert_non_zero: File \"src/lib/snarky/src/base/utils.ml\", line 170, characters 2-106","Checked.inv"]}
+{"row":3,"context":["choose_key"]}
+{"row":4,"context":["choose_key"]}
+{"row":5,"context":["choose_key"]}
+{"row":6,"context":["choose_key"]}
+{"row":7,"context":["choose_key"]}
+{"row":8,"context":["choose_key"]}
+{"row":9,"context":["choose_key"]}
+{"row":10,"context":["choose_key"]}
+{"row":11,"context":["choose_key"]}
+{"row":12,"context":["choose_key"]}
+{"row":13,"context":["choose_key"]}
+{"row":14,"context":["choose_key"]}
+{"row":15,"context":["choose_key"]}
+{"row":16,"context":["choose_key"]}
