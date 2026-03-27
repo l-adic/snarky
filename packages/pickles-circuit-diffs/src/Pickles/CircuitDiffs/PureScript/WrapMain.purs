@@ -252,10 +252,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     assertEqual_ _branchData packedBranchData
 
   -- Block 2: choose_key + feature flag consistency
-  -- For single branch with all constant VK and Features.none:
-  -- choose_key: Scale(const, bool) per coord — no constraints
-  -- expand_feature_flags: all constant false — no constraints
-  -- assert_consistent: Boolean.Assert.= false_ false_ — no constraints (both constant)
+  -- OCaml generates 14 Generic gates from choose_key (observed in fixture labels).
+  -- These come from (b :> t) * coord multiplications in Wrap_verifier.choose_key.
+  -- Our mul_ optimizes (non_const, Const) to Scale with 0 constraints.
+  -- The OCaml somehow generates constraints — possibly from the Run layer or
+  -- Kimchi backend materializing Scale values. This is a known gap.
+  -- Feature flag consistency: 0 constraints for Features.none with constant VK.
 
   -- Block 3: Compute wrap_domains THEN FOP loop
   -- OCaml: Vector.map wrap_domain_indices ~f:(oneHotVector + to_domain) BEFORE Vector.mapn FOP
