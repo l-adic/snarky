@@ -19,7 +19,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, label, mul_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, label, mul_, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Prim.Int (class Add)
 import Snarky.Curves.Class (class PrimeField)
@@ -79,7 +79,10 @@ chooseKey bools keys = label "choose-key" do
     Vector.reverse (Vector.zip bools keys)
   let scaled = Vector.reverse scaledRev
   -- Vector.reduce_exn ~f:(Step.map2 ~f:(Array.map2_exn ~f:(Double.map2 ~f:(+))))
-  pure $ foldl1 addVK scaled
+  let reduced = foldl1 addVK scaled
+  -- wrap_verifier.ml:321-322: Step.map ~f:(Array.map ~f:(Double.map ~f:seal))
+  -- seal materializes Scale(coord, bool) into a fresh variable + assertEqual_
+  sealVK reduced
   where
   -- fun b key -> Step.map key ~f:(Array.map ~f:(fun g -> Double.map g ~f:((*) (b :> t))))
   scaleVK :: BoolVar f -> StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
@@ -114,6 +117,30 @@ chooseKey bools keys = label "choose-key" do
   traverseRev f v = do
     rev <- traverse f (Vector.reverse v)
     pure $ Vector.reverse rev
+
+  -- wrap_verifier.ml:321-322: seal all coordinates
+  -- OCaml record fields evaluate right-to-left
+  sealVK :: StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
+  sealVK vk = do
+    endomulScalarComm <- sealArr vk.endomulScalarComm
+    emulComm <- sealArr vk.emulComm
+    mulComm <- sealArr vk.mulComm
+    completeAddComm <- sealArr vk.completeAddComm
+    psmComm <- sealArr vk.psmComm
+    genericComm <- sealArr vk.genericComm
+    coefficientsComm <- traverseRev sealArr vk.coefficientsComm
+    sigmaComm <- traverseRev sealArr vk.sigmaComm
+    pure { sigmaComm, coefficientsComm, genericComm, psmComm
+         , completeAddComm, mulComm, emulComm, endomulScalarComm }
+
+  sealArr :: Array (AffinePoint (FVar f)) -> Snarky (KimchiConstraint f) t m (Array (AffinePoint (FVar f)))
+  sealArr arr = do
+    -- OCaml Array.map right-to-left, Double.map (x,y) evaluates y first
+    revResult <- traverse (\{ x, y } -> do
+      y' <- seal y
+      x' <- seal x
+      pure { x: x', y: y' }) (Array.reverse arr)
+    pure $ Array.reverse revResult
 
   addVK :: StepVK (FVar f) -> StepVK (FVar f) -> StepVK (FVar f)
   addVK a b_ =
