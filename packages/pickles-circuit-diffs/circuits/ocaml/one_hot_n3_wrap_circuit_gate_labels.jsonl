@@ -1,0 +1,9 @@
+{"row":0,"context":[]}
+{"row":1,"context":["one_hot_n3"]}
+{"row":2,"context":["one_hot_n3"]}
+{"row":3,"context":["one_hot_n3"]}
+{"row":4,"context":["one_hot_n3"]}
+{"row":5,"context":["one_hot_n3"]}
+{"row":6,"context":["one_hot_n3"]}
+{"row":7,"context":["one_hot_n3","any: File \"src/lib/snarky/src/base/utils.ml\", line 385, characters 6-97","assert_non_zero: File \"src/lib/snarky/src/base/utils.ml\", line 170, characters 2-106","Checked.inv"]}
+{"row":8,"context":["one_hot_n3","any: File \"src/lib/snarky/src/base/utils.ml\", line 385, characters 6-97","assert_non_zero: File \"src/lib/snarky/src/base/utils.ml\", line 170, characters 2-106","Checked.inv"]}
