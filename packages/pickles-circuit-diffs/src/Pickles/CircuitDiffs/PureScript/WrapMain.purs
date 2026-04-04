@@ -324,15 +324,16 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     assertNonZero_ sum1
 
   -- Block 4: prev_statement construction + messages_for_next_step_proof assert
+  -- OCaml: Vector.map2 right-to-left → proof 1 (dummy) first, then proof 0 (real)
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-  msgForWrap0 <- label "block4-msg-hash-0" $
-    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState }) $
-      hashMessagesForNextWrapProofCircuit'
-        { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }
   msgForWrap1 <- label "block4-msg-hash-1" $
     evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState }) $
       hashMessagesForNextWrapProofCircuit'
         { sg: prevStepAcc1, allChallenges: Vector.nil :: Vector 0 (Vector WrapIPARounds (FVar WrapField)) }
+  msgForWrap0 <- label "block4-msg-hash-0" $
+    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState }) $
+      hashMessagesForNextWrapProofCircuit'
+        { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }
 
   label "block4-assert-msg-step" $ assertEqual_ messagesForNextStepProof prevMsgForNextStep
 
