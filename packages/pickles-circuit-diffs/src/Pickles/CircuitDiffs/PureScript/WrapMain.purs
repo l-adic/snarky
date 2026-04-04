@@ -40,19 +40,18 @@ import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (WrapField, WrapIPARounds, StepIPARounds)
-import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Verify (wrapVerify)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
-import Snarky.Curves.Class (fromBigInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assertNonZero_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams)
+import Snarky.Curves.Class (curveParams, fromBigInt)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (splitFieldCircuit)
@@ -208,6 +207,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
       , linearizationPoly: Linearization.vesta
       }
 
+    -- Dummy IPA challenges for padding (matching OCaml's Wrap_hack.Checked.pad_challenges)
+    -- OCaml pads old_bulletproof_challenges to Padded_length=N2 by prepending constant dummy values.
+    -- Reference: wrap_hack.ml:82-87
+    dummyWrapChals :: Vector WrapIPARounds (FVar WrapField)
+    dummyWrapChals = map const_ dummyIpaChallenges.wrapExpanded
+
   -- ======== Circuit blocks ========
 
   -- Block 1: Branch selection + branch_data assert
@@ -275,55 +280,48 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
 
   -- Compute BOTH domains before FOP (matching OCaml ordering)
+  -- Reference: wrap_main.ml:418-433
+  let domainConfig =
+        { shifts: LinFFI.domainShifts @WrapField
+        , domainGenerator: LinFFI.domainGenerator @WrapField
+        }
+
   which0 <- label "block3-wrap-domain-0" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
-  gen0 <- Pseudo.choose which0 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
+  domain0 <- Pseudo.toDomain domainConfig which0 allPossibleLog2s
 
   which1 <- label "block3-wrap-domain-1" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
-  gen1 <- Pseudo.choose which1 allPossibleLog2s (\log2 -> const_ (LinFFI.domainGenerator @WrapField log2))
-
-  let
-    shifts_ = map const_ (LinFFI.domainShifts @WrapField 15)
-
-    -- Pseudo.Domain.vanishing_polynomial (pseudo.ml:118-127)
-    buildPow2Pows z = go [z] 15
-      where
-      go acc 0 = pure acc
-      go acc n = do
-        let prev = unsafePartial $ fromJust $ Array.last acc
-        sq <- square_ prev
-        go (acc <> [sq]) (n - 1)
-
-    pseudoVanishingPoly which z = do
-      pow2s <- buildPow2Pows z
-      zetaToN <- Pseudo.choose which allPossibleLog2s
-        (\log2 -> unsafePartial $ fromJust $ Array.index pow2s log2)
-      seal (zetaToN `sub_` const_ one)
+  domain1 <- Pseudo.toDomain domainConfig which1 allPossibleLog2s
 
   -- FOP proof 0
+  -- OCaml pads prevChallenges from 1 to 2 entries (prepend 1 dummy).
+  -- Reference: wrap_hack.ml:82-87, wrap_main.ml:471-474
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
-    (Record.merge { domain: { generator: gen0, shifts: shifts_ } } fopBaseParams)
-    (pseudoVanishingPoly which0)
+    (Record.merge { domain: { generator: domain0.generator, shifts: domain0.shifts } } fopBaseParams)
+    domain0.vanishingPolynomial
     { unfinalized: toUnfinalized unfProof0
     , witness: evals0
-    , prevChallenges: oldBpChals0 :< Vector.nil
+    , prevChallenges: dummyWrapChals :< oldBpChals0 :< Vector.nil
     }
+  -- OCaml: Boolean.Assert.any [finalized; not should_finalize]
+  -- = assert_non_zero (finalized + (1 - should_finalize))
   label "block3-fop-assert-0" do
-    finalizedOrNot0 <- or_ finalized0 (not_ unfProof0.shouldFinalize)
-    assert_ finalizedOrNot0
+    let sum0 = add_ (coerce finalized0 :: FVar WrapField) (coerce (not_ unfProof0.shouldFinalize) :: FVar WrapField)
+    assertNonZero_ sum0
 
   -- FOP proof 1
+  -- OCaml pads prevChallenges from 0 to 2 entries (prepend 2 dummies).
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
-    (Record.merge { domain: { generator: gen1, shifts: shifts_ } } fopBaseParams)
-    (pseudoVanishingPoly which1)
+    (Record.merge { domain: { generator: domain1.generator, shifts: domain1.shifts } } fopBaseParams)
+    domain1.vanishingPolynomial
     { unfinalized: toUnfinalized unfProof1
     , witness: evals1
-    , prevChallenges: Vector.nil
+    , prevChallenges: dummyWrapChals :< dummyWrapChals :< Vector.nil
     }
   label "block3-fop-assert-1" do
-    finalizedOrNot1 <- or_ finalized1 (not_ unfProof1.shouldFinalize)
-    assert_ finalizedOrNot1
+    let sum1 = add_ (coerce finalized1 :: FVar WrapField) (coerce (not_ unfProof1.shouldFinalize) :: FVar WrapField)
+    assertNonZero_ sum1
 
   -- Block 4: prev_statement construction + messages_for_next_step_proof assert
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
