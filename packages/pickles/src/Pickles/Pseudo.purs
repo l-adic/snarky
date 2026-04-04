@@ -9,21 +9,30 @@ module Pickles.Pseudo
   ( oneHotVector
   , mask
   , choose
+  , PlonkDomain
+  , toDomain
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Fin (getFinite)
+import Data.Foldable (foldM, foldl)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_)
+import Partial.Unsafe (unsafePartial)
+import Snarky.Circuit.CVar (sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)
 import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Safe.Coerce (coerce)
 
@@ -92,3 +101,62 @@ choose
   -> (a -> FVar f)
   -> Snarky (KimchiConstraint f) t m (FVar f)
 choose bits xs f = mask bits (map f xs)
+
+-- | Plonk domain with dynamically-selected parameters.
+-- |
+-- | Reference: plonk_checks.ml plonk_domain object type
+type PlonkDomain f t m =
+  { generator :: FVar f
+  , shifts :: Vector 7 (FVar f)
+  , vanishingPolynomial :: FVar f -> Snarky (KimchiConstraint f) t m (FVar f)
+  }
+
+-- | Pseudo.Domain.to_domain: construct a plonk domain from a one-hot selection
+-- | over possible domain sizes.
+-- |
+-- | Shifts optimization: if all domain sizes produce identical shifts (which
+-- | they do in practice), returns constants with 0 constraints. The OCaml
+-- | implementation fails at runtime if shifts differ (disabled_not_the_same).
+-- |
+-- | Generator: selected via mask, generates n R1CS constraints.
+-- |
+-- | VanishingPolynomial: lazy closure that when called:
+-- |   1. Builds pow2_pows via repeated squaring (max_log2 Square constraints)
+-- |   2. Selects x^(2^log2_size) via choose/mask (n R1CS constraints)
+-- |   3. Subtracts 1 and seals (exists + assertEqual = 1 R1CS)
+-- |
+-- | Reference: pseudo.ml:103-128
+toDomain
+  :: forall n f t m
+   . CircuitM f (KimchiConstraint f) t m
+  => PrimeField f
+  => Reflectable n Int
+  => Compare 0 n LT
+  => { shifts :: Int -> Vector 7 f
+     , domainGenerator :: Int -> f
+     }
+  -> Vector n (BoolVar f)
+  -> Vector n Int
+  -> Snarky (KimchiConstraint f) t m (PlonkDomain f t m)
+toDomain { shifts: getShifts, domainGenerator } which log2s = do
+  -- Shifts: all domains have same shifts, return constants (pseudo.ml:61-73)
+  let shifts_ = map const_ (getShifts (Vector.head log2s))
+  -- Generator: mask-select over domain generators (pseudo.ml:95-96)
+  generator <- mask which (map (\d -> const_ (domainGenerator d)) log2s)
+  let
+    maxLog2 = foldl max 0 log2s
+    -- Vanishing polynomial closure (pseudo.ml:118-127)
+    vanishingPolynomial x = do
+      -- pow2_pows = [x, x^2, x^4, ..., x^(2^max_log2)]
+      pow2Pows <- buildPow2Pows x maxLog2
+      zetaToN <- choose which log2s
+        (\log2 -> unsafePartial $ fromJust $ Array.index pow2Pows log2)
+      seal (zetaToN `sub_` const_ one)
+  pure { generator, shifts: shifts_, vanishingPolynomial }
+  where
+  buildPow2Pows z n = do
+    Tuple _ acc <- foldM (\(Tuple prev acc) _ -> do
+      sq <- square_ prev
+      pure (Tuple sq (Array.snoc acc sq))
+      ) (Tuple z [z]) (Array.range 1 n)
+    pure acc

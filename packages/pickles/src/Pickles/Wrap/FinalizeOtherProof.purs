@@ -217,7 +217,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
   ---------------------------------------------------------------------------
   omegaM1 <- inv_ gen                     -- omega^-1 = one / gen
-  omegaM2 <- square_ omegaM1              -- omega^-2
+  omegaM2 <- mul_ omegaM1 omegaM1         -- omega^-2 (OCaml: let square x = x * x in plonk_checks)
   let omegaZkP1 = omegaM2                 -- zk_rows == zk_rows_by_default → empty loop
   omegaZk <- mul_ omegaZkP1 omegaM1       -- omega^-3
 

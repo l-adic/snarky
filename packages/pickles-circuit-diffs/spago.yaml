@@ -18,6 +18,7 @@ package:
     - poseidon
     - prelude
     - random-oracle
+    - record
     - safe-coerce
     - simple-json
     - snarky
