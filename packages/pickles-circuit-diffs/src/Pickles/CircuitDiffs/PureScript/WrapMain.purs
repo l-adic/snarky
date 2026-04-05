@@ -271,8 +271,19 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
         , emulComm: dummyComm
         , endomulScalarComm: dummyComm
         }
-  _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
+  chosenVK <- chooseKey whichBranch (dummyVK :< Vector.nil)
   -- Feature flag consistency: 0 constraints for Features.none with constant VK.
+  -- Extract chosen VK commitments for the IVP (non-constant, from Pseudo.mask + seal)
+  let
+    firstPt arr = unsafePartial $ fromJust $ Array.index arr 0
+    chosenSigmaCommLast = firstPt (Vector.index chosenVK.sigmaComm (unsafeFinite 6))
+    chosenColumnComms =
+      { index: firstPt chosenVK.genericComm :< firstPt chosenVK.psmComm :< firstPt chosenVK.completeAddComm
+          :< firstPt chosenVK.mulComm :< firstPt chosenVK.emulComm :< firstPt chosenVK.endomulScalarComm :< Vector.nil
+          :: Vector 6 _
+      , coeff: map firstPt chosenVK.coefficientsComm :: Vector 15 _
+      , sigma: map firstPt (Vector.take @6 chosenVK.sigmaComm) :: Vector 6 _
+      }
 
   -- Block 3: Compute wrap_domains THEN FOP loop
   -- OCaml: Vector.map wrap_domain_indices ~f:(oneHotVector + to_domain) BEFORE Vector.mapn FOP
@@ -375,12 +386,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput
       , sgOld: prevStepAcc0 :< prevStepAcc1 :< Vector.nil
-      , sigmaCommLast: constDummyPt
-      , columnComms:
-          { index: (Vector.replicate constDummyPt) :: Vector 6 _
-          , coeff: (Vector.replicate constDummyPt) :: Vector 15 _
-          , sigma: (Vector.replicate constDummyPt) :: Vector 6 _
-          }
+      , sigmaCommLast: chosenSigmaCommLast
+      , columnComms: chosenColumnComms
       , deferredValues:
           { plonk
           , combinedInnerProduct
