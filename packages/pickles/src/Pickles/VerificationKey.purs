@@ -84,8 +84,16 @@ chooseKey bools keys = label "choose-key" do
     -- Vector.map ~f also evaluates right-to-left
     coefficientsComm <- traverseRev (scalePt bf) vk.coefficientsComm
     sigmaComm <- traverseRev (scalePt bf) vk.sigmaComm
-    pure { sigmaComm, coefficientsComm, genericComm, psmComm
-         , completeAddComm, mulComm, emulComm, endomulScalarComm }
+    pure
+      { sigmaComm
+      , coefficientsComm
+      , genericComm
+      , psmComm
+      , completeAddComm
+      , mulComm
+      , emulComm
+      , endomulScalarComm
+      }
 
   traverseRev :: forall k a b_. Reflectable k Int => (a -> Snarky (KimchiConstraint f) t m b_) -> Vector k a -> Snarky (KimchiConstraint f) t m (Vector k b_)
   traverseRev f v = do
@@ -110,8 +118,16 @@ chooseKey bools keys = label "choose-key" do
     genericComm <- sealPt vk.genericComm
     coefficientsComm <- traverseRev sealPt vk.coefficientsComm
     sigmaComm <- traverseRev sealPt vk.sigmaComm
-    pure { sigmaComm, coefficientsComm, genericComm, psmComm
-         , completeAddComm, mulComm, emulComm, endomulScalarComm }
+    pure
+      { sigmaComm
+      , coefficientsComm
+      , genericComm
+      , psmComm
+      , completeAddComm
+      , mulComm
+      , emulComm
+      , endomulScalarComm
+      }
 
   addVK :: StepVK (FVar f) -> StepVK (FVar f) -> StepVK (FVar f)
   addVK a b_ =
