@@ -6,6 +6,8 @@ module Pickles.CircuitDiffs.PureScript.WrapVerify
 -- | and calls the library wrapVerify function.
 
 import Prelude
+import Data.Maybe (Maybe(..))
+import Safe.Coerce (coerce)
 
 import Data.Fin (getFinite)
 import Data.Vector (Vector, (:<))
@@ -16,7 +18,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (WrapField, WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (Bool(..), class CircuitM, F(..), FVar, Snarky, const_, true_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -60,6 +62,7 @@ wrapVerifyCircuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 194 :< Vector.nil
+      , sgOldMask: (const_ one) :< Vector.nil
       , sigmaCommLast: constDummyPt
       , columnComms:
           { index: (Vector.replicate constDummyPt) :: Vector 6 _

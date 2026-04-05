@@ -81,6 +81,8 @@ type IncrementallyVerifyProofParams f r =
 type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
+  , sgOldMask :: Vector sgOldN fv
+    -- ^ actual_proofs_verified_mask (OCaml absorbs sg_old with keep flags).
   , deferredValues :: DeferredValues d fv sf
   -- Verifier index (VK) data — circuit variables in Step, constants in Wrap
   , sigmaCommLast :: AffinePoint fv
@@ -185,7 +187,8 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- Wrap path: compute x_hat first, then OptSponge for all absorptions
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
       let spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
-      result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams spongeInput
+          mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
+      result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat

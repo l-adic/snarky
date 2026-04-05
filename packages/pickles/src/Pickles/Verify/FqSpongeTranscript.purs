@@ -34,11 +34,14 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Safe.Coerce (coerce)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Sponge as Sponge
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, SizedF, true_)
+import Data.Vector (Vector)
+import Data.Vector as Vector
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -123,16 +126,21 @@ spongeTranscriptOptCircuit
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
+  -> Vector sgOldN (Bool (FVar f))  -- actual_proofs_verified_mask
   -> FqSpongeInput sgOldN chunks (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
-spongeTranscriptOptCircuit params input = do
+spongeTranscriptOptCircuit params sgOldMask input = do
   -- Run the Opt sponge transcript in Snarky (not SpongeM)
   result <- Sponge.liftSnarky do
     Tuple r _ <- OptSponge.runOptSpongeM do
       -- 1. Absorb index digest
       OptSponge.optAbsorb (Tuple true_ input.indexDigest)
-      -- 2. Absorb sg_old points
-      for_ input.sgOld OptSponge.optAbsorbPoint
+      -- 2. Absorb sg_old points with actual_proofs_verified_mask
+      -- OCaml: Vector.iter ~f:(absorb sponge PC) sg_old where sg_old = map2 mask sg ~f:(keep, sg)
+      for_ (Vector.zip sgOldMask input.sgOld) \(Tuple bKeep sg) -> do
+        let keep = coerce bKeep :: BoolVar f
+        OptSponge.optAbsorb (Tuple keep sg.x)
+        OptSponge.optAbsorb (Tuple keep sg.y)
       -- 3. Absorb public_comm point
       OptSponge.optAbsorbPoint input.publicComm
       -- 4. Absorb w_comm points

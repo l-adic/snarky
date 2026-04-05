@@ -13,7 +13,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector, nil, (:<))
 import Data.Vector as Vector
@@ -114,6 +114,7 @@ spec cfg = describe "Pickles.Step.Circuit" do
                 }
             }
         , sgOld: nil
+        , sgOldMask: Vector.nil
         }
 
       input :: StepTestInput

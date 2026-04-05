@@ -22,7 +22,7 @@ import Pickles.Types (StepField)
 import Pickles.Verify (incrementallyVerifyProof, packStatement)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, if_, true_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -148,6 +148,7 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
     ivpInput =
       { publicInput
       , sgOld: constDummySg :< constDummySg :< Vector.nil
+      , sgOldMask: Vector.replicate ((const_ one))
       , sigmaCommLast: constDummyPt
       , columnComms:
           { index: (Vector.replicate constDummyPt) :: Vector 6 _
