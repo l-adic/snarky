@@ -44,7 +44,7 @@ import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), addConstraint, add_, all_, and_, any_, assertEqual_, const_, exists, false_, if_, label, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), addConstraint, add_, all_, and_, any_, assertEqual_, const_, exists, false_, if_, mul_, not_, or_, read, readCVar, scale_, true_, xor_)
 import Snarky.Circuit.DSL as SizedF
 import Snarky.Circuit.Kimchi.EndoScalar as EndoScalar
 import Snarky.Circuit.Kimchi.Poseidon (poseidon)
@@ -153,41 +153,41 @@ consumePair
   => { state :: Vector 3 (FVar f), pos :: BoolVar f }
   -> Tuple { b :: BoolVar f, x :: FVar f } { b :: BoolVar f, x :: FVar f }
   -> Snarky (KimchiConstraint f) t m { state :: Vector 3 (FVar f), pos :: BoolVar f }
-consumePair { state, pos: p } (Tuple first second) = label "consume-pair" do
+consumePair { state, pos: p } (Tuple first second) = do
   let { b, x } = first
   let { b: b', x: y } = second
 
   -- Position tracking
-  p' <- label "cp-xor1" $ xor_ p b
-  posAfter <- label "cp-xor2" $ xor_ p' b'
+  p' <- xor_ p b
+  posAfter <- xor_ p' b'
 
   -- Mask y by b'
-  yMasked <- label "cp-mask-y" $ mul_ y (coerce b')
+  yMasked <- mul_ y (coerce b')
 
   -- Only add y after permutation when (b=1, b'=1, p=1)
-  addInYAfter <- label "cp-all3" $ all_ [ b, b', p ]
+  addInYAfter <- all_ [ b, b', p ]
   let addInYBefore = not_ addInYAfter
 
   -- Add x*b to state at position p
-  xb <- label "cp-mask-x" $ mul_ x (coerce b)
-  state1 <- label "cp-addIn1" $ addIn state p xb
+  xb <- mul_ x (coerce b)
+  state1 <- addIn state p xb
 
   -- Add yMasked*before_flag to state at position p'
-  yBefore <- label "cp-mask-yBefore" $ mul_ yMasked (coerce addInYBefore)
-  state2 <- label "cp-addIn2" $ addIn state1 p' yBefore
+  yBefore <- mul_ yMasked (coerce addInYBefore)
+  state2 <- addIn state1 p' yBefore
 
   -- Compute permute flag: (b && b') || (p && (b || b'))
-  bOrB' <- label "cp-bOrB" $ or_ b b'
-  pAndBOrB' <- label "cp-pAndBOrB" $ and_ p bOrB'
-  bAndB' <- label "cp-bAndB" $ and_ b b'
-  permute <- label "cp-permute" $ or_ bAndB' pAndBOrB'
+  bOrB' <- or_ b b'
+  pAndBOrB' <- and_ p bOrB'
+  bAndB' <- and_ b b'
+  permute <- or_ bAndB' pAndBOrB'
 
   -- Conditional permutation
-  state3 <- label "cp-condPermute" $ condPermute permute state2
+  state3 <- condPermute permute state2
 
   -- Add yMasked*after_flag to state at position p'
-  yAfter <- label "cp-mask-yAfter" $ mul_ yMasked (coerce addInYAfter)
-  state4 <- label "cp-addIn3" $ addIn state3 p' yAfter
+  yAfter <- mul_ yMasked (coerce addInYAfter)
+  state4 <- addIn state3 p' yAfter
 
   pure { state: state4, pos: posAfter }
 
@@ -219,23 +219,23 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   { state, pos } <- foldM consumePair { state: initState, pos: startPos } pairs
 
   -- Compute empty_input = not (any (map fst input))
-  emptyInput <- label "empty-input" $ not $ any_ (map fst input)
+  emptyInput <- not $ any_ (map fst input)
 
   -- Handle remainder and compute should_permute
   case leftover of
     Nothing -> do
-      shouldPermute <- label "should-permute-r0" $
+      shouldPermute <-
         if needsFinalPermuteIfEmpty then or_ emptyInput pos
         else pure pos
-      label "final-cond-permute" $ condPermute shouldPermute state
+      condPermute shouldPermute state
     Just (Tuple b x) -> do
-      _posAfter <- label "leftover-xor" $ xor_ pos b
-      xb <- label "leftover-mask" $ mul_ x (coerce b)
-      state' <- label "leftover-addIn" $ addIn state pos xb
-      shouldPermute <- label "should-permute-r1" $
+      _posAfter <- xor_ pos b
+      xb <- mul_ x (coerce b)
+      state' <- addIn state pos xb
+      shouldPermute <-
         if needsFinalPermuteIfEmpty then any_ [ pos, b, emptyInput ]
         else any_ [ pos, b ]
-      label "final-cond-permute" $ condPermute shouldPermute state'
+      condPermute shouldPermute state'
   where
   mkPairs
     :: forall a

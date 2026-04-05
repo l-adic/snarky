@@ -4,7 +4,6 @@
 -- |            mina/src/lib/crypto/pickles/wrap_verifier.ml:212-310
 module Pickles.VerificationKey
   ( StepVK
-  , mapStepVK
   , chooseKey
   ) where
 
@@ -38,26 +37,6 @@ type StepVK f =
   , emulComm :: AffinePoint f
   , endomulScalarComm :: AffinePoint f
   }
-
--- | Step.map ~f — maps a function over each commitment.
--- | OCaml record construction evaluates right-to-left.
-mapStepVK :: forall a b. (a -> b) -> StepVK a -> StepVK b
-mapStepVK f vk =
-  -- Right-to-left: last field first
-  let
-    endomulScalarComm = mapPt f vk.endomulScalarComm
-    emulComm = mapPt f vk.emulComm
-    mulComm = mapPt f vk.mulComm
-    completeAddComm = mapPt f vk.completeAddComm
-    psmComm = mapPt f vk.psmComm
-    genericComm = mapPt f vk.genericComm
-    coefficientsComm = map (mapPt f) vk.coefficientsComm
-    sigmaComm = map (mapPt f) vk.sigmaComm
-  in
-    { sigmaComm, coefficientsComm, genericComm, psmComm
-    , completeAddComm, mulComm, emulComm, endomulScalarComm }
-  where
-  mapPt g { x, y } = { x: g x, y: g y }
 
 -- | Wrap_verifier.choose_key
 -- |
