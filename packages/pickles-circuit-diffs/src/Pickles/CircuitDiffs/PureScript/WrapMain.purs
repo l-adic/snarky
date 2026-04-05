@@ -47,6 +47,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
+import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -369,13 +370,19 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     publicInput = fromPackedTuple stmtTuple
 
   -- Block 6: wrapVerify (IVP + 4 assertions)
-  -- TODO: OCaml masks Lagrange comms with which_branch (lagrange_with_correction),
-  -- producing non-constant base AND correction points. This requires a deeper refactor
-  -- of publicInputCommit to carry masked corrections alongside masked bases.
+  -- OCaml's lagrange_with_correction has a single-domain optimization
+  -- (wrap_verifier.ml:427-428) that returns Const base+correction when all
+  -- domains are equal. Only `lagrange` (for CondAdd) masks by which_branch.
+  -- So: circuit = constPt (unmasked), maskPt = Scale by branchBool (for CondAdd).
+  let branchBool0 = coerce (Vector.head whichBranch) :: FVar WrapField
+      maskByBool :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
+      maskByBool { x: F x', y: F y' } = { x: CVar.scale_ x' branchBool0, y: CVar.scale_ y' branchBool0 }
+      maskedLagrangeComms = map (\lb ->
+        { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBool }) lagrangeComms
   let
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeComms
+      , lagrangeComms: maskedLagrangeComms
       , blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo
