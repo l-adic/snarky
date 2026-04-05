@@ -105,7 +105,7 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase, mkConstLagrangeBase, publicInputCommit)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
@@ -554,7 +554,7 @@ createStepProofContext stepCase = do
         numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
         baseCaseIvpParams =
           { curveParams: curveParams (Proxy @Pallas.G)
-          , lagrangeComms: (coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField))
+          , lagrangeComms: map mkConstLagrangeBase ((coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField)))
           , blindingH: (coerce (ProofFFI.vestaSrsBlindingGenerator stepSrs)) :: AffinePoint (F StepField)
           , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
           , correctionMode: PureCorrections
@@ -846,7 +846,7 @@ buildWrapCircuitParams ctx =
     sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Vesta.G)
-    , lagrangeComms: coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
+    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic))
     , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
     , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
     , columnComms:
@@ -1737,7 +1737,7 @@ computeStepSgEvals stepCtx =
 -- | Compute x_hat (public input commitment) in pure mode by evaluating the
 -- | publicInputCommit circuit on concrete values via makeSolver.
 computeXhatPure
-  :: { lagrangeComms :: Array (AffinePoint (F StepField))
+  :: { lagrangeComms :: Array (LagrangeBase StepField)
      , blindingH :: AffinePoint (F StepField)
      }
   -> WrapStatementPublicInput StepIPARounds (F StepField)
@@ -1805,7 +1805,7 @@ computeStepIvpTranscript
      , wComm :: Vector 15 (AffinePoint (F StepField))
      , zComm :: AffinePoint (F StepField)
      , tComm :: Vector 7 (AffinePoint (F StepField))
-     , lagrangeComms :: Array (AffinePoint (F StepField))
+     , lagrangeComms :: Array (LagrangeBase StepField)
      , blindingH :: AffinePoint (F StepField)
      }
   -> { beta :: SizedF 128 StepField
@@ -2070,7 +2070,7 @@ buildStepIVPParams ctx =
     numPublic = Array.length ctx.publicInputs
   in
     { curveParams: curveParams (Proxy @Pallas.G)
-    , lagrangeComms: coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
+    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic))
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     , endo: stepEndo
     , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)

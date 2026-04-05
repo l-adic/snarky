@@ -12,7 +12,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
-import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase, mkConstLagrangeBase, publicInputCommit)
 import Pickles.PublicInputCommitment (publicInputCommitment)
 import Pickles.Step.Circuit (StepStatement)
 import Pickles.Types (StepIPARounds, WrapIPARounds)
@@ -45,7 +45,7 @@ type StepCircuitField = Pallas.ScalarField
 
 type StepTestContext =
   { stepCtx :: E2E.StepProofContext
-  , lagrangeComms :: Array (AffinePoint (F StepCircuitField))
+  , lagrangeComms :: Array (LagrangeBase StepCircuitField)
   , blindingH :: AffinePoint (F StepCircuitField)
   }
 
@@ -80,7 +80,7 @@ type WrapCircuitField = Vesta.ScalarField
 
 type WrapTestContext =
   { wrapCtx :: E2E.WrapProofContext
-  , lagrangeComms :: Array (AffinePoint (F WrapCircuitField))
+  , lagrangeComms :: Array (LagrangeBase WrapCircuitField)
   , blindingH :: AffinePoint (F WrapCircuitField)
   }
 
@@ -113,7 +113,7 @@ spec cfg =
   mkStepCtx :: E2E.StepProofContext -> StepTestContext
   mkStepCtx step0 =
     { stepCtx: step0
-    , lagrangeComms: coerce $ ProofFFI.pallasLagrangeCommitments step0.verifierIndex (Array.length step0.publicInputs)
+    , lagrangeComms: map mkConstLagrangeBase $ coerce $ ProofFFI.pallasLagrangeCommitments step0.verifierIndex (Array.length step0.publicInputs)
     , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator step0.verifierIndex
     }
 
@@ -148,7 +148,7 @@ spec cfg =
               $ NEA.fromArray
               $
                 Array.zipWith
-                  (\scalar base -> { scalar, base })
+                  (\scalar base -> { scalar, base: base.constant })
                   (varToFields @StepCircuitField @(Vector nPublic (F StepCircuitField)) inputs)
                   (ctx.lagrangeComms)
         in
@@ -235,7 +235,7 @@ spec cfg =
   mkWrapCtx :: E2E.WrapProofContext -> WrapTestContext
   mkWrapCtx wrap0 =
     { wrapCtx: wrap0
-    , lagrangeComms: coerce $ ProofFFI.vestaLagrangeCommitments wrap0.verifierIndex (Array.length wrap0.publicInputs)
+    , lagrangeComms: map mkConstLagrangeBase $ coerce $ ProofFFI.vestaLagrangeCommitments wrap0.verifierIndex (Array.length wrap0.publicInputs)
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator wrap0.verifierIndex
     }
 

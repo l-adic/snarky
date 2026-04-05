@@ -33,7 +33,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode)
+import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
 import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessages, getMessagesForNextWrapProof, getOpeningProof, getPrevChallenges, getProofWitnesses, getSgOld, getWrapVerifierIndex)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProof)
@@ -272,7 +272,7 @@ stepCircuit
   => Reflectable dw Int
   => FinalizeOtherProofParams Vesta.ScalarField
        ( curveParams :: CurveParams Vesta.ScalarField
-       , lagrangeComms :: Array (AffinePoint (DSL.F Vesta.ScalarField))
+       , lagrangeComms :: Array (LagrangeBase Vesta.ScalarField)
        , blindingH :: AffinePoint (DSL.F Vesta.ScalarField)
        , groupMapParams :: GroupMapParams Vesta.ScalarField
        , correctionMode :: CorrectionMode

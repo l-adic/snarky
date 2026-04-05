@@ -369,6 +369,9 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     publicInput = fromPackedTuple stmtTuple
 
   -- Block 6: wrapVerify (IVP + 4 assertions)
+  -- TODO: OCaml masks Lagrange comms with which_branch (lagrange_with_correction),
+  -- producing non-constant base AND correction points. This requires a deeper refactor
+  -- of publicInputCommit to carry masked corrections alongside masked bases.
   let
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)

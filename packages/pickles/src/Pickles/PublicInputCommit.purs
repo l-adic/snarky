@@ -28,6 +28,8 @@ module Pickles.PublicInputCommit
   , scalarMuls
   , rScalarMuls
   , publicInputCommit
+  , LagrangeBase
+  , mkConstLagrangeBase
   ) where
 
 import Prelude
@@ -159,10 +161,19 @@ data MsmTerm f
   = AddWithCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (F f) }
   | CondAdd (BoolVar f) (AffinePoint (F f))
 
+-- | A Lagrange base point carrying both constant (for pure correction computation)
+-- | and circuit (for scaleFast2') versions. In OCaml, the circuit version comes
+-- | from masking with which_branch; in standalone tests, it's just constPt.
+type LagrangeBase f = { constant :: AffinePoint (F f), circuit :: AffinePoint (FVar f) }
+
+-- | Construct a LagrangeBase where both constant and circuit are the same value.
+mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
+mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt }
+
 -- | Intermediate result from walking the structure.
 type ScalarMulResult f =
   { results :: Array (MsmTerm f)
-  , rest :: Array (AffinePoint (F f))
+  , rest :: Array (LagrangeBase f)
   }
 
 -------------------------------------------------------------------------------
@@ -182,7 +193,7 @@ class PublicInputCommit a f where
      . CircuitM f (KimchiConstraint f) t m
     => CurveParams f
     -> a
-    -> Array (AffinePoint (F f))
+    -> Array (LagrangeBase f)
     -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 
 -------------------------------------------------------------------------------
@@ -211,7 +222,7 @@ instance PublicInputCommit (BoolVar f) f where
     -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-    pure { results: [ CondAdd bool head ], rest: tail }
+    pure { results: [ CondAdd bool head.constant ], rest: tail }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -229,7 +240,7 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
-    pure { results: r1 <> [ CondAdd sOdd oddBase ], rest: rest2 }
+    pure { results: r1 <> [ CondAdd sOdd oddBase.constant ], rest: rest2 }
 
 -- | Type2-wrapped SplitField: delegates to bare SplitField instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (SplitField (FVar f) (BoolVar f))) f where
@@ -284,7 +295,7 @@ class RPublicInputCommit (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r whe
      . CircuitM f (KimchiConstraint f) t m
     => CurveParams f
     -> Record r
-    -> Array (AffinePoint (F f))
+    -> Array (LagrangeBase f)
     -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 
 instance RPublicInputCommit RL.Nil f () where
@@ -321,7 +332,7 @@ publicInputCommit
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
   => { curveParams :: CurveParams f
-     , lagrangeComms :: Array (AffinePoint (F f))
+     , lagrangeComms :: Array (LagrangeBase f)
      , blindingH :: AffinePoint (F f)
      , correctionMode :: CorrectionMode
      | r
@@ -431,18 +442,18 @@ scalarMulLeaf
   => PrimeField f
   => CurveParams f
   -> FVar f
-  -> Array (AffinePoint (F f))
+  -> Array (LagrangeBase f)
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 scalarMulLeaf params scalar bases =
   let
     { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
     actualShift = reflectType (Proxy @bitsUsed)
-    -- Correction is negated to match OCaml: correction = negate([2^shift] * base)
-    -- so that init = Σ(correction_i) + Σ(scaleFast2'(g_i, s_i)) = Σ([s_i] * g_i)
-    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head actualShift
-    -- Defer the scalar multiplication so it can be interleaved with add_fast
-    -- during the fold in publicInputCommit (matching OCaml's inline scale_fast2')
-    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits (constPt head) scalar)
+    -- Correction uses the CONSTANT base (pure arithmetic, no circuit cost).
+    -- Negated to match OCaml: correction = negate([2^shift] * base)
+    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head.constant actualShift
+    -- scaleFast2' uses the CIRCUIT base (may be non-constant from domain masking).
+    -- This matches OCaml where lagrange_with_correction masks by which_branch.
+    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits head.circuit scalar)
   in
     pure
       { results: [ AddWithCorrection { scaleMul, correction } ]
