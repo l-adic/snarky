@@ -453,6 +453,7 @@ incrementallyVerifyProofTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , sigmaCommLast: params.sigmaCommLast
       , columnComms: params.columnComms
       , deferredValues:
@@ -566,6 +567,7 @@ verifyTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , sigmaCommLast: params.sigmaCommLast
       , columnComms: params.columnComms
       , deferredValues:

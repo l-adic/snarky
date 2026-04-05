@@ -23,7 +23,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -393,6 +393,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput
       , sgOld: prevStepAcc0 :< prevStepAcc1 :< Vector.nil
+      , sgOldMask: coerce maskVal1 :< coerce maskVal0 :< Vector.nil  -- Vector.rev of [maskVal0, maskVal1]
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:

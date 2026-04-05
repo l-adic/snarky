@@ -130,7 +130,7 @@ import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
@@ -216,6 +216,7 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
           }
       }
   , sgOld :: Vector n (AffinePoint (F f))
+  , sgOldMask :: Vector n (FVar f)
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -634,6 +635,7 @@ createStepProofContext stepCase = do
               , index: vk.columnComms.index
               }
           , sgOld: Vector.nil
+          , sgOldMask: Vector.nil
           , publicInput: dummyPublicInput
           , wComm: (Vector.index advice.messages (unsafeFinite @1 0)).wComm
           , zComm: (Vector.index advice.messages (unsafeFinite @1 0)).zComm
@@ -1801,6 +1803,7 @@ computeStepIvpTranscript
          , index :: Vector 6 (AffinePoint (F StepField))
          }
      , sgOld :: Vector 0 (AffinePoint StepField)
+     , sgOldMask :: Vector 0 (FVar StepField)
      , publicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
      , wComm :: Vector 15 (AffinePoint (F StepField))
      , zComm :: AffinePoint (F StepField)
@@ -2054,6 +2057,7 @@ buildStepProverWitness stepCtx wrapCtx =
     , messagesForNextWrapProof: F zero :< Vector.nil
     , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
     , sgOld: (coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof) :< Vector.nil
+    , sgOldMask: (const_ one) :< Vector.nil
     }
 
 -------------------------------------------------------------------------------
@@ -2170,6 +2174,7 @@ buildStepIVPInput ctx =
     { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
         map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
     , sgOld: Vector.nil
+    , sgOldMask: Vector.nil
     -- VK data (circuit variables in OCaml, F f here for test input)
     , sigmaCommLast: vk.sigmaCommLast
     , columnComms: vk.columnComms

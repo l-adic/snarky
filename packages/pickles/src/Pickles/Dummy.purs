@@ -29,7 +29,7 @@ import Control.Monad.State (State, evalState, get, put)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
 import Data.Foldable (foldl)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
@@ -59,7 +59,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, SizedF, coerceViaBits, const_, fromBits, true_)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
@@ -791,6 +791,7 @@ dummyStepAdvice
      , messagesForNextWrapProof :: Vector 1 (F StepField)
      , wrapVerifierIndex :: { sigmaCommLast :: AffinePoint (F StepField), columnComms :: { index :: Vector 6 (AffinePoint (F StepField)), coeff :: Vector 15 (AffinePoint (F StepField)), sigma :: Vector 6 (AffinePoint (F StepField)) } }
      , sgOld :: Vector 1 (AffinePoint (F StepField))
+     , sgOldMask :: Vector 1 (FVar StepField)
      }
 dummyStepAdvice =
   let
@@ -833,6 +834,7 @@ dummyStepAdvice =
             }
         }
     , sgOld: g0 :< Vector.nil
+    , sgOldMask: (const_ one) :< Vector.nil
     }
 
 -- | Zero-valued proof witness for use in base case bootstrapping.

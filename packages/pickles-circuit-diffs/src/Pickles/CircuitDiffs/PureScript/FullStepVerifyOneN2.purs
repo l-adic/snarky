@@ -17,6 +17,7 @@ module Pickles.CircuitDiffs.PureScript.FullStepVerifyOneN2
 -- |   303:      must_verify
 
 import Prelude
+import Data.Maybe (Maybe(..))
 
 import Data.Fin (getFinite)
 import Data.Fin as Fin
@@ -30,7 +31,7 @@ import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_, true_)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi

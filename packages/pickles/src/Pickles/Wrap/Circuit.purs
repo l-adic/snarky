@@ -18,6 +18,7 @@ module Pickles.Wrap.Circuit
   ) where
 
 import Prelude
+import Data.Maybe (Maybe(..))
 
 import Control.Monad.Trans.Class (lift)
 import Data.Newtype (unwrap)
@@ -149,6 +150,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       { publicInput
       -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues
       , sigmaCommLast: constPt params.sigmaCommLast
       , columnComms:
