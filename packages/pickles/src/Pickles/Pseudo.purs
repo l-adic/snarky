@@ -26,15 +26,15 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (sub_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)
 import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Prim.Int (class Compare)
-import Prim.Ordering (LT)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
-import Safe.Coerce (coerce)
 
 -- | Create a one-hot vector from a field variable index.
 -- |
@@ -155,8 +155,11 @@ toDomain { shifts: getShifts, domainGenerator } which log2s = do
   pure { generator, shifts: shifts_, vanishingPolynomial }
   where
   buildPow2Pows z n = do
-    Tuple _ acc <- foldM (\(Tuple prev acc) _ -> do
-      sq <- square_ prev
-      pure (Tuple sq (Array.snoc acc sq))
-      ) (Tuple z [z]) (Array.range 1 n)
+    Tuple _ acc <- foldM
+      ( \(Tuple prev acc) _ -> do
+          sq <- square_ prev
+          pure (Tuple sq (Array.snoc acc sq))
+      )
+      (Tuple z [ z ])
+      (Array.range 1 n)
     pure acc

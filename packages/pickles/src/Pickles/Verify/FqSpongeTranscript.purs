@@ -34,13 +34,13 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
-import Safe.Coerce (coerce)
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Sponge as Sponge
 import Poseidon (class PoseidonField)
-import Data.Vector (Vector)
-import Data.Vector as Vector
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
@@ -126,7 +126,7 @@ spongeTranscriptOptCircuit
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
   => { endo :: FVar f | r }
-  -> Vector sgOldN (Bool (FVar f))  -- actual_proofs_verified_mask
+  -> Vector sgOldN (Bool (FVar f)) -- actual_proofs_verified_mask
   -> FqSpongeInput sgOldN chunks (FVar f)
   -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
 spongeTranscriptOptCircuit params sgOldMask input = do
