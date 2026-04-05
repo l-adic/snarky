@@ -6,7 +6,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldl)
 import Data.Identity (Identity)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -134,7 +134,7 @@ combinedPolyCommTest cfg ctx = do
       => CombinedPolyCommInput (FVar CircuitField)
       -> Snarky (KimchiConstraint CircuitField) t Identity Unit
     circuit { xi } = do
-      result <- combinePolynomials allBases xi
+      result <- combinePolynomials allBases (Vector.replicate Nothing) xi
       assertEq result { x: const_ expected.x, y: const_ expected.y }
 
   void $ circuitTest' @CircuitField

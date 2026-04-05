@@ -334,6 +334,7 @@ checkBulletproofTest cfg ctx = do
           WrapOtherField.ipaScalarOps
           endoParams
           allBases
+          (Vector.replicate Nothing)
           input
       assert_ success
       pure challenges
