@@ -157,18 +157,27 @@ newtype DeferredScaleMul f = DeferredScaleMul
 
 -- | A single term from walking the public input structure.
 -- | Matches OCaml's `Add_with_correction` and `Cond_add` variants.
+-- |
+-- | Correction is always constant (OCaml's lagrange_with_correction has a
+-- | single-domain optimization that skips which_branch masking).
+-- | CondAdd's Lagrange point is masked (OCaml's `lagrange` always masks).
 data MsmTerm f
   = AddWithCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (F f) }
-  | CondAdd (BoolVar f) (AffinePoint (F f))
+  | CondAdd (BoolVar f) (AffinePoint (FVar f))
 
 -- | A Lagrange base point carrying both constant (for pure correction computation)
 -- | and circuit (for scaleFast2') versions. In OCaml, the circuit version comes
 -- | from masking with which_branch; in standalone tests, it's just constPt.
-type LagrangeBase f = { constant :: AffinePoint (F f), circuit :: AffinePoint (FVar f) }
+-- | `maskPt` converts any constant point using the same masking (for CondAdd targets).
+type LagrangeBase f =
+  { constant :: AffinePoint (F f)
+  , circuit :: AffinePoint (FVar f)
+  , maskPt :: AffinePoint (F f) -> AffinePoint (FVar f)
+  }
 
 -- | Construct a LagrangeBase where both constant and circuit are the same value.
 mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
-mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt }
+mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt, maskPt: constPt }
 
 -- | Intermediate result from walking the structure.
 type ScalarMulResult f =
@@ -222,7 +231,7 @@ instance PublicInputCommit (BoolVar f) f where
     -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-    pure { results: [ CondAdd bool head.constant ], rest: tail }
+    pure { results: [ CondAdd bool (head.maskPt head.constant) ], rest: tail }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -240,7 +249,7 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
-    pure { results: r1 <> [ CondAdd sOdd oddBase.constant ], rest: rest2 }
+    pure { results: r1 <> [ CondAdd sOdd (oddBase.maskPt oddBase.constant) ], rest: rest2 }
 
 -- | Type2-wrapped SplitField: delegates to bare SplitField instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (SplitField (FVar f) (BoolVar f))) f where
@@ -376,7 +385,7 @@ publicInputCommit params input = label "public-input-commit" do
             ( \acc result -> case result of
                 Left point -> _.p <$> addComplete acc point
                 Right { b, lagrangePt } -> do
-                  added <- _.p <$> addComplete (constPt lagrangePt) acc
+                  added <- _.p <$> addComplete lagrangePt acc
                   y' <- if_ b added.y acc.y
                   x' <- if_ b added.x acc.x
                   pure { x: x', y: y' }
@@ -385,11 +394,6 @@ publicInputCommit params input = label "public-input-commit" do
             rest
 
           -- Phase 3: Add total correction (constant) to accumulator.
-          --   Matches OCaml's: acc + constant(negate correction |> add_opt constant_part)
-          --   Raw corrections are already negated (negate(pow2pow(base, shift))),
-          --   so their sum IS the negated total correction.
-          --   The constPt triggers reduceToVariable constant caching → 1 Generic gate,
-          --   which double-packs with the queued R1CS from Phase 1's last if_.
           let correctionPt = constPt $ foldl (addPurePt params.curveParams) corrHead corrTail
           accWithCorr <- _.p <$> addComplete acc correctionPt
 
@@ -409,7 +413,7 @@ publicInputCommit params input = label "public-input-commit" do
                   point <- doScaleMul
                   _.p <$> addComplete acc point
                 CondAdd b lagrangePt -> do
-                  added <- _.p <$> addComplete (constPt lagrangePt) acc
+                  added <- _.p <$> addComplete lagrangePt acc
                   y' <- if_ b added.y acc.y
                   x' <- if_ b added.x acc.x
                   pure { x: x', y: y' }
