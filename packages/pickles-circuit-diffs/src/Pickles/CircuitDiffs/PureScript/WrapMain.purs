@@ -47,7 +47,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertEqual_, assertNonZero_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -316,10 +316,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     , prevChallenges: dummyWrapChals :< oldBpChals0 :< Vector.nil
     }
   -- OCaml: Boolean.Assert.any [finalized; not should_finalize]
-  -- = assert_non_zero (finalized + (1 - should_finalize))
   label "block3-fop-assert-0" do
-    let sum0 = add_ (coerce finalized0 :: FVar WrapField) (coerce (not_ unfProof0.shouldFinalize) :: FVar WrapField)
-    assertNonZero_ sum0
+    assertAny_ [finalized0, not_ unfProof0.shouldFinalize]
 
   -- FOP proof 1
   -- OCaml pads prevChallenges from 0 to 2 entries (prepend 2 dummies).
@@ -331,8 +329,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     , prevChallenges: dummyWrapChals :< dummyWrapChals :< Vector.nil
     }
   label "block3-fop-assert-1" do
-    let sum1 = add_ (coerce finalized1 :: FVar WrapField) (coerce (not_ unfProof1.shouldFinalize) :: FVar WrapField)
-    assertNonZero_ sum1
+    assertAny_ [finalized1, not_ unfProof1.shouldFinalize]
 
   -- Block 4: prev_statement construction + messages_for_next_step_proof assert
   -- OCaml: Vector.map2 right-to-left → proof 1 (dummy) first, then proof 0 (real)
