@@ -28,7 +28,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBase, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
@@ -59,7 +59,7 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
 type IncrementallyVerifyProofParams f r =
   { curveParams :: CurveParams f
-  , lagrangeComms :: Array (AffinePoint (F f))
+  , lagrangeComms :: Array (LagrangeBase f)
   , blindingH :: AffinePoint (F f)
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
