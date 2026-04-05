@@ -130,7 +130,7 @@ import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi

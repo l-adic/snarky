@@ -26,13 +26,11 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
 import Pickles.PublicInputCommit (CorrectionMode(..), mkConstLagrangeBase)
 import Pickles.Step.Advice (class StepWitnessM)
-import Pickles.Step.Circuit (WrapStatementPublicInput)
-import Pickles.Step.Circuit (stepCircuit)
+import Pickles.Step.Circuit (WrapStatementPublicInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
-import Snarky.Circuit.DSL (sizeInFields)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, sizeInFields)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)

@@ -34,7 +34,6 @@ import Prelude
 import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
-import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)

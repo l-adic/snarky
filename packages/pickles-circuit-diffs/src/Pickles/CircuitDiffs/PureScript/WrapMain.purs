@@ -23,7 +23,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -48,7 +48,7 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, mul_, not_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -121,7 +121,6 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
-    constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
 
     -- ---- 1. WrapStatement (positions 0-29) ----
     plonk =
@@ -287,7 +286,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- Extract chosen VK commitments for the IVP (non-constant, from Pseudo.mask + seal)
   let
     firstPt arr = unsafePartial $ fromJust $ Array.index arr 0
-    chosenSigmaCommLast = firstPt (Vector.index chosenVK.sigmaComm (unsafeFinite 6))
+    chosenSigmaCommLast = firstPt (Vector.index chosenVK.sigmaComm (unsafeFinite @7 6))
     chosenColumnComms =
       { index:
           firstPt chosenVK.genericComm :< firstPt chosenVK.psmComm :< firstPt chosenVK.completeAddComm
@@ -352,12 +351,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- OCaml: Vector.map2 right-to-left → proof 1 (dummy) first, then proof 0 (real)
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
   msgForWrap1 <- label "block4-msg-hash-1"
-    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState })
+    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite @3 0)).state, spongeState: (Vector.index states (unsafeFinite @3 0)).spongeState })
     $
       hashMessagesForNextWrapProofCircuit'
         { sg: prevStepAcc1, allChallenges: Vector.nil :: Vector 0 (Vector WrapIPARounds (FVar WrapField)) }
   msgForWrap0 <- label "block4-msg-hash-0"
-    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState })
+    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite @3 1)).state, spongeState: (Vector.index states (unsafeFinite @3 1)).spongeState })
     $
       hashMessagesForNextWrapProofCircuit'
         { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }

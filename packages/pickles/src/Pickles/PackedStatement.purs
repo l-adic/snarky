@@ -32,7 +32,7 @@ import Snarky.Circuit.DSL (class CircuitM, class CircuitType, BoolVar, F, FVar, 
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (CurveParams)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------

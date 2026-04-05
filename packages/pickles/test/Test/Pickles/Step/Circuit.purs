@@ -13,7 +13,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Array.NonEmpty as NEA
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Schnorr.Gen (genValidSignature)
 import Data.Vector (Vector, nil, (:<))
 import Data.Vector as Vector
@@ -23,13 +23,11 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.PublicInputCommit (CorrectionMode(..), mkConstLagrangeBase)
 import Pickles.Step.Advice (class StepWitnessM)
-import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, stepCircuit)
-import Pickles.Step.Circuit (WrapStatementPublicInput)
+import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky)
-import Snarky.Circuit.DSL (sizeInFields)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, sizeInFields)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
