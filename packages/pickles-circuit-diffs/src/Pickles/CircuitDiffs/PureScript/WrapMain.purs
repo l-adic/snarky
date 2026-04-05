@@ -204,7 +204,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     -- ---- FOP base params (domain computed dynamically per proof) ----
     -- all_possible_domains = [Pow_2_roots_of_unity 13, 14, 15]
     -- num_possible_domains = 3 (= S(Padded_length) = S(N2))
-    allPossibleLog2s = 13 :< 14 :< 15 :< Vector.nil :: Vector 3 Int
+    allPossibleLog2s = unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
     fopBaseParams =
       { domainLog2: wrapDomainLog2 -- TODO: this is still compile-time, used for pow2pow
       , srsLengthLog2: wrapSrsLengthLog2
@@ -310,11 +310,11 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
 
   which1 <- label "block3-wrap-domain-1" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
-  domain1 <- Pseudo.toDomain domainConfig which1 allPossibleLog2s
+  domain1 <- Pseudo.toDomain @16 domainConfig which1 allPossibleLog2s
 
   which0 <- label "block3-wrap-domain-0" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
-  domain0 <- Pseudo.toDomain domainConfig which0 allPossibleLog2s
+  domain0 <- Pseudo.toDomain @16 domainConfig which0 allPossibleLog2s
 
   -- FOP proof 0
   -- OCaml pads prevChallenges from 1 to 2 entries (prepend 1 dummy).
