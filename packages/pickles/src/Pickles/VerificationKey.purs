@@ -10,7 +10,6 @@ module Pickles.VerificationKey
 
 import Prelude
 
-import Data.Array as Array
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable (foldl1)
 import Data.Traversable (traverse)
@@ -25,43 +24,38 @@ import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | Plonk_verification_key_evals.Step.t
+-- | Plonk_verification_key_evals.t
 -- | Non-optional fields only (optional are all Opt.Nothing for Features.none).
+-- | Each field is a single commitment (curve point), not an array.
+-- | OCaml: 'comm t where 'comm is instantiated to a curve point.
 type StepVK f =
-  { sigmaComm :: Vector 7 (Array (AffinePoint f))
-  , coefficientsComm :: Vector 15 (Array (AffinePoint f))
-  , genericComm :: Array (AffinePoint f)
-  , psmComm :: Array (AffinePoint f)
-  , completeAddComm :: Array (AffinePoint f)
-  , mulComm :: Array (AffinePoint f)
-  , emulComm :: Array (AffinePoint f)
-  , endomulScalarComm :: Array (AffinePoint f)
+  { sigmaComm :: Vector 7 (AffinePoint f)
+  , coefficientsComm :: Vector 15 (AffinePoint f)
+  , genericComm :: AffinePoint f
+  , psmComm :: AffinePoint f
+  , completeAddComm :: AffinePoint f
+  , mulComm :: AffinePoint f
+  , emulComm :: AffinePoint f
+  , endomulScalarComm :: AffinePoint f
   }
 
--- | Step.map ~f — maps a function over each commitment array.
+-- | Step.map ~f — maps a function over each commitment.
 -- | OCaml record construction evaluates right-to-left.
 mapStepVK :: forall a b. (a -> b) -> StepVK a -> StepVK b
 mapStepVK f vk =
   -- Right-to-left: last field first
   let
-    endomulScalarComm = map (mapPt f) vk.endomulScalarComm
-    emulComm = map (mapPt f) vk.emulComm
-    mulComm = map (mapPt f) vk.mulComm
-    completeAddComm = map (mapPt f) vk.completeAddComm
-    psmComm = map (mapPt f) vk.psmComm
-    genericComm = map (mapPt f) vk.genericComm
-    coefficientsComm = map (map (mapPt f)) vk.coefficientsComm
-    sigmaComm = map (map (mapPt f)) vk.sigmaComm
+    endomulScalarComm = mapPt f vk.endomulScalarComm
+    emulComm = mapPt f vk.emulComm
+    mulComm = mapPt f vk.mulComm
+    completeAddComm = mapPt f vk.completeAddComm
+    psmComm = mapPt f vk.psmComm
+    genericComm = mapPt f vk.genericComm
+    coefficientsComm = map (mapPt f) vk.coefficientsComm
+    sigmaComm = map (mapPt f) vk.sigmaComm
   in
-    { sigmaComm
-    , coefficientsComm
-    , genericComm
-    , psmComm
-    , completeAddComm
-    , mulComm
-    , emulComm
-    , endomulScalarComm
-    }
+    { sigmaComm, coefficientsComm, genericComm, psmComm
+    , completeAddComm, mulComm, emulComm, endomulScalarComm }
   where
   mapPt g { x, y } = { x: g x, y: g y }
 
@@ -82,107 +76,74 @@ chooseKey
   -> Vector n (StepVK (FVar f))
   -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
 chooseKey bools keys = label "choose-key" do
-  -- Vector.map2 (bs :> ...) keys ~f:(fun b key -> Step.map key ~f:(Array.map ~f:(fun g -> Double.map g ~f:((*) (b :> t)))))
   -- OCaml Vector.map2 evaluates right-to-left via :: constructor
   scaledRev <- traverse (\(Tuple b key) -> scaleVK b key) $
     Vector.reverse (Vector.zip bools keys)
   let scaled = Vector.reverse scaledRev
-  -- Vector.reduce_exn ~f:(Step.map2 ~f:(Array.map2_exn ~f:(Double.map2 ~f:(+))))
   let reduced = foldl1 addVK scaled
-  -- wrap_verifier.ml:321-322: Step.map ~f:(Array.map ~f:(Double.map ~f:seal))
-  -- seal materializes Scale(coord, bool) into a fresh variable + assertEqual_
+  -- wrap_verifier.ml:321-322: Step.map ~f:(Double.map ~f:seal)
   sealVK reduced
   where
-  -- fun b key -> Step.map key ~f:(Array.map ~f:(fun g -> Double.map g ~f:((*) (b :> t))))
+  -- Scale each commitment point by the branch boolean.
+  -- OCaml: Double.map g ~f:((*) (b :> t)) — evaluates y first (right-to-left)
+  scalePt :: FVar f -> AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  scalePt bf { x, y } = do
+    y' <- mul_ bf y
+    x' <- mul_ bf x
+    pure { x: x', y: y' }
+
   scaleVK :: BoolVar f -> StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
   scaleVK b vk = do
     let bf = coerce b :: FVar f
     -- OCaml record fields evaluate right-to-left
-    -- Each field: Array.map ~f:(fun g -> Double.map g ~f:((*) (b :> t)))
-    -- OCaml Array.map evaluates right-to-left
-    -- OCaml Double.map (x,y) ~f evaluates f y then f x
-    endomulScalarComm <- scaleArr bf vk.endomulScalarComm
-    emulComm <- scaleArr bf vk.emulComm
-    mulComm <- scaleArr bf vk.mulComm
-    completeAddComm <- scaleArr bf vk.completeAddComm
-    psmComm <- scaleArr bf vk.psmComm
-    genericComm <- scaleArr bf vk.genericComm
+    endomulScalarComm <- scalePt bf vk.endomulScalarComm
+    emulComm <- scalePt bf vk.emulComm
+    mulComm <- scalePt bf vk.mulComm
+    completeAddComm <- scalePt bf vk.completeAddComm
+    psmComm <- scalePt bf vk.psmComm
+    genericComm <- scalePt bf vk.genericComm
     -- Vector.map ~f also evaluates right-to-left
-    coefficientsComm <- traverseRev (scaleArr bf) vk.coefficientsComm
-    sigmaComm <- traverseRev (scaleArr bf) vk.sigmaComm
-    pure
-      { sigmaComm
-      , coefficientsComm
-      , genericComm
-      , psmComm
-      , completeAddComm
-      , mulComm
-      , emulComm
-      , endomulScalarComm
-      }
-
-  scaleArr :: FVar f -> Array (AffinePoint (FVar f)) -> Snarky (KimchiConstraint f) t m (Array (AffinePoint (FVar f)))
-  scaleArr bf arr = do
-    -- Array.map right-to-left, Double.map (x,y) evaluates y first
-    revResult <- traverse
-      ( \{ x, y } -> do
-          y' <- mul_ bf y
-          x' <- mul_ bf x
-          pure { x: x', y: y' }
-      )
-      (Array.reverse arr)
-    pure $ Array.reverse revResult
+    coefficientsComm <- traverseRev (scalePt bf) vk.coefficientsComm
+    sigmaComm <- traverseRev (scalePt bf) vk.sigmaComm
+    pure { sigmaComm, coefficientsComm, genericComm, psmComm
+         , completeAddComm, mulComm, emulComm, endomulScalarComm }
 
   traverseRev :: forall k a b_. Reflectable k Int => (a -> Snarky (KimchiConstraint f) t m b_) -> Vector k a -> Snarky (KimchiConstraint f) t m (Vector k b_)
   traverseRev f v = do
     rev <- traverse f (Vector.reverse v)
     pure $ Vector.reverse rev
 
-  -- wrap_verifier.ml:321-322: seal all coordinates
-  -- OCaml record fields evaluate right-to-left
+  -- Seal all coordinates (wrap_verifier.ml:321-322)
+  -- OCaml: Double.map ~f:seal — evaluates y first
+  sealPt :: AffinePoint (FVar f) -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
+  sealPt { x, y } = do
+    y' <- seal y
+    x' <- seal x
+    pure { x: x', y: y' }
+
   sealVK :: StepVK (FVar f) -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))
   sealVK vk = do
-    endomulScalarComm <- sealArr vk.endomulScalarComm
-    emulComm <- sealArr vk.emulComm
-    mulComm <- sealArr vk.mulComm
-    completeAddComm <- sealArr vk.completeAddComm
-    psmComm <- sealArr vk.psmComm
-    genericComm <- sealArr vk.genericComm
-    coefficientsComm <- traverseRev sealArr vk.coefficientsComm
-    sigmaComm <- traverseRev sealArr vk.sigmaComm
-    pure
-      { sigmaComm
-      , coefficientsComm
-      , genericComm
-      , psmComm
-      , completeAddComm
-      , mulComm
-      , emulComm
-      , endomulScalarComm
-      }
-
-  sealArr :: Array (AffinePoint (FVar f)) -> Snarky (KimchiConstraint f) t m (Array (AffinePoint (FVar f)))
-  sealArr arr = do
-    -- OCaml Array.map right-to-left, Double.map (x,y) evaluates y first
-    revResult <- traverse
-      ( \{ x, y } -> do
-          y' <- seal y
-          x' <- seal x
-          pure { x: x', y: y' }
-      )
-      (Array.reverse arr)
-    pure $ Array.reverse revResult
+    endomulScalarComm <- sealPt vk.endomulScalarComm
+    emulComm <- sealPt vk.emulComm
+    mulComm <- sealPt vk.mulComm
+    completeAddComm <- sealPt vk.completeAddComm
+    psmComm <- sealPt vk.psmComm
+    genericComm <- sealPt vk.genericComm
+    coefficientsComm <- traverseRev sealPt vk.coefficientsComm
+    sigmaComm <- traverseRev sealPt vk.sigmaComm
+    pure { sigmaComm, coefficientsComm, genericComm, psmComm
+         , completeAddComm, mulComm, emulComm, endomulScalarComm }
 
   addVK :: StepVK (FVar f) -> StepVK (FVar f) -> StepVK (FVar f)
   addVK a b_ =
-    { sigmaComm: Vector.zipWith (Array.zipWith addPt) a.sigmaComm b_.sigmaComm
-    , coefficientsComm: Vector.zipWith (Array.zipWith addPt) a.coefficientsComm b_.coefficientsComm
-    , genericComm: Array.zipWith addPt a.genericComm b_.genericComm
-    , psmComm: Array.zipWith addPt a.psmComm b_.psmComm
-    , completeAddComm: Array.zipWith addPt a.completeAddComm b_.completeAddComm
-    , mulComm: Array.zipWith addPt a.mulComm b_.mulComm
-    , emulComm: Array.zipWith addPt a.emulComm b_.emulComm
-    , endomulScalarComm: Array.zipWith addPt a.endomulScalarComm b_.endomulScalarComm
+    { sigmaComm: Vector.zipWith addPt a.sigmaComm b_.sigmaComm
+    , coefficientsComm: Vector.zipWith addPt a.coefficientsComm b_.coefficientsComm
+    , genericComm: addPt a.genericComm b_.genericComm
+    , psmComm: addPt a.psmComm b_.psmComm
+    , completeAddComm: addPt a.completeAddComm b_.completeAddComm
+    , mulComm: addPt a.mulComm b_.mulComm
+    , emulComm: addPt a.emulComm b_.emulComm
+    , endomulScalarComm: addPt a.endomulScalarComm b_.endomulScalarComm
     }
 
   addPt :: AffinePoint (FVar f) -> AffinePoint (FVar f) -> AffinePoint (FVar f)

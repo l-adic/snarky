@@ -21,15 +21,12 @@ module Pickles.CircuitDiffs.PureScript.WrapMain
 
 import Prelude
 
-import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Maybe (fromJust)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
-import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -270,33 +267,31 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let
     { x: F dummyX, y: F dummyY } = dummyVestaPt
     dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
-    dummyComm = [ dummyPt ]
     dummyVK =
-      { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
-      , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
-      , genericComm: dummyComm
-      , psmComm: dummyComm
-      , completeAddComm: dummyComm
-      , mulComm: dummyComm
-      , emulComm: dummyComm
-      , endomulScalarComm: dummyComm
+      { sigmaComm: Vector.replicate dummyPt :: Vector 7 _
+      , coefficientsComm: Vector.replicate dummyPt :: Vector 15 _
+      , genericComm: dummyPt
+      , psmComm: dummyPt
+      , completeAddComm: dummyPt
+      , mulComm: dummyPt
+      , emulComm: dummyPt
+      , endomulScalarComm: dummyPt
       }
   chosenVK <- chooseKey whichBranch (dummyVK :< Vector.nil)
   -- Feature flag consistency: 0 constraints for Features.none with constant VK.
   -- Extract chosen VK commitments for the IVP (non-constant, from Pseudo.mask + seal)
   let
-    firstPt arr = unsafePartial $ fromJust $ Array.index arr 0
-    chosenSigmaCommLast = firstPt (Vector.index chosenVK.sigmaComm (unsafeFinite @7 6))
+    chosenSigmaCommLast = Vector.index chosenVK.sigmaComm (unsafeFinite @7 6)
     chosenColumnComms =
       { index:
-          firstPt chosenVK.genericComm :< firstPt chosenVK.psmComm :< firstPt chosenVK.completeAddComm
-            :< firstPt chosenVK.mulComm
-            :< firstPt chosenVK.emulComm
-            :< firstPt chosenVK.endomulScalarComm
+          chosenVK.genericComm :< chosenVK.psmComm :< chosenVK.completeAddComm
+            :< chosenVK.mulComm
+            :< chosenVK.emulComm
+            :< chosenVK.endomulScalarComm
             :< Vector.nil
             :: Vector 6 _
-      , coeff: map firstPt chosenVK.coefficientsComm :: Vector 15 _
-      , sigma: map firstPt (Vector.take @6 chosenVK.sigmaComm) :: Vector 6 _
+      , coeff: chosenVK.coefficientsComm
+      , sigma: Vector.take @6 chosenVK.sigmaComm
       }
 
   -- Block 3: Compute wrap_domains THEN FOP loop

@@ -206,16 +206,15 @@ chooseKeyN1WrapCircuit inputs = do
     at = unsafeIdx inputs
     { x: F dummyX, y: F dummyY } = dummyVestaPt
     dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
-    dummyComm = [ dummyPt ]
     dummyVK =
-      { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
-      , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
-      , genericComm: dummyComm
-      , psmComm: dummyComm
-      , completeAddComm: dummyComm
-      , mulComm: dummyComm
-      , emulComm: dummyComm
-      , endomulScalarComm: dummyComm
+      { sigmaComm: Vector.replicate dummyPt :: Vector 7 _
+      , coefficientsComm: Vector.replicate dummyPt :: Vector 15 _
+      , genericComm: dummyPt
+      , psmComm: dummyPt
+      , completeAddComm: dummyPt
+      , mulComm: dummyPt
+      , emulComm: dummyPt
+      , endomulScalarComm: dummyPt
       }
   whichBranch <- label "one_hot" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
   _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
