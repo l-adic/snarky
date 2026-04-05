@@ -18,9 +18,9 @@ module Pickles.Wrap.Circuit
   ) where
 
 import Prelude
-import Data.Maybe (Maybe(..))
 
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)

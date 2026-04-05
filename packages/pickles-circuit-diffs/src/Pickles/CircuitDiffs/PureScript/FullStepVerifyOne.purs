@@ -7,10 +7,10 @@ module Pickles.CircuitDiffs.PureScript.FullStepVerifyOne
 -- | Parses 286 flat inputs and calls the library function.
 
 import Prelude
-import Data.Maybe (Maybe(..))
 
 import Data.Fin (getFinite)
 import Data.Fin as Fin
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)

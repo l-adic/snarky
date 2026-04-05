@@ -17,11 +17,11 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, label, mul_, seal)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Prim.Int (class Add)
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -43,16 +43,25 @@ type StepVK f =
 mapStepVK :: forall a b. (a -> b) -> StepVK a -> StepVK b
 mapStepVK f vk =
   -- Right-to-left: last field first
-  let endomulScalarComm = map (mapPt f) vk.endomulScalarComm
-      emulComm = map (mapPt f) vk.emulComm
-      mulComm = map (mapPt f) vk.mulComm
-      completeAddComm = map (mapPt f) vk.completeAddComm
-      psmComm = map (mapPt f) vk.psmComm
-      genericComm = map (mapPt f) vk.genericComm
-      coefficientsComm = map (map (mapPt f)) vk.coefficientsComm
-      sigmaComm = map (map (mapPt f)) vk.sigmaComm
-  in { sigmaComm, coefficientsComm, genericComm, psmComm
-     , completeAddComm, mulComm, emulComm, endomulScalarComm }
+  let
+    endomulScalarComm = map (mapPt f) vk.endomulScalarComm
+    emulComm = map (mapPt f) vk.emulComm
+    mulComm = map (mapPt f) vk.mulComm
+    completeAddComm = map (mapPt f) vk.completeAddComm
+    psmComm = map (mapPt f) vk.psmComm
+    genericComm = map (mapPt f) vk.genericComm
+    coefficientsComm = map (map (mapPt f)) vk.coefficientsComm
+    sigmaComm = map (map (mapPt f)) vk.sigmaComm
+  in
+    { sigmaComm
+    , coefficientsComm
+    , genericComm
+    , psmComm
+    , completeAddComm
+    , mulComm
+    , emulComm
+    , endomulScalarComm
+    }
   where
   mapPt g { x, y } = { x: g x, y: g y }
 
@@ -101,16 +110,27 @@ chooseKey bools keys = label "choose-key" do
     -- Vector.map ~f also evaluates right-to-left
     coefficientsComm <- traverseRev (scaleArr bf) vk.coefficientsComm
     sigmaComm <- traverseRev (scaleArr bf) vk.sigmaComm
-    pure { sigmaComm, coefficientsComm, genericComm, psmComm
-         , completeAddComm, mulComm, emulComm, endomulScalarComm }
+    pure
+      { sigmaComm
+      , coefficientsComm
+      , genericComm
+      , psmComm
+      , completeAddComm
+      , mulComm
+      , emulComm
+      , endomulScalarComm
+      }
 
   scaleArr :: FVar f -> Array (AffinePoint (FVar f)) -> Snarky (KimchiConstraint f) t m (Array (AffinePoint (FVar f)))
   scaleArr bf arr = do
     -- Array.map right-to-left, Double.map (x,y) evaluates y first
-    revResult <- traverse (\{ x, y } -> do
-      y' <- mul_ bf y
-      x' <- mul_ bf x
-      pure { x: x', y: y' }) (Array.reverse arr)
+    revResult <- traverse
+      ( \{ x, y } -> do
+          y' <- mul_ bf y
+          x' <- mul_ bf x
+          pure { x: x', y: y' }
+      )
+      (Array.reverse arr)
     pure $ Array.reverse revResult
 
   traverseRev :: forall k a b_. Reflectable k Int => (a -> Snarky (KimchiConstraint f) t m b_) -> Vector k a -> Snarky (KimchiConstraint f) t m (Vector k b_)
@@ -130,16 +150,27 @@ chooseKey bools keys = label "choose-key" do
     genericComm <- sealArr vk.genericComm
     coefficientsComm <- traverseRev sealArr vk.coefficientsComm
     sigmaComm <- traverseRev sealArr vk.sigmaComm
-    pure { sigmaComm, coefficientsComm, genericComm, psmComm
-         , completeAddComm, mulComm, emulComm, endomulScalarComm }
+    pure
+      { sigmaComm
+      , coefficientsComm
+      , genericComm
+      , psmComm
+      , completeAddComm
+      , mulComm
+      , emulComm
+      , endomulScalarComm
+      }
 
   sealArr :: Array (AffinePoint (FVar f)) -> Snarky (KimchiConstraint f) t m (Array (AffinePoint (FVar f)))
   sealArr arr = do
     -- OCaml Array.map right-to-left, Double.map (x,y) evaluates y first
-    revResult <- traverse (\{ x, y } -> do
-      y' <- seal y
-      x' <- seal x
-      pure { x: x', y: y' }) (Array.reverse arr)
+    revResult <- traverse
+      ( \{ x, y } -> do
+          y' <- seal y
+          x' <- seal x
+          pure { x: x', y: y' }
+      )
+      (Array.reverse arr)
     pure $ Array.reverse revResult
 
   addVK :: StepVK (FVar f) -> StepVK (FVar f) -> StepVK (FVar f)

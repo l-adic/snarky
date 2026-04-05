@@ -28,25 +28,25 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import JS.BigInt (fromInt)
+import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.Pseudo as Pseudo
-import Pickles.VerificationKey (chooseKey)
-import Record as Record
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
+import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (WrapField, WrapIPARounds, StepIPARounds)
+import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.VerificationKey (chooseKey)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Verify (wrapVerify)
+import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import JS.BigInt (fromInt)
-import Partial.Unsafe (unsafePartial)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, assert_, const_, equals_, label, mul_, not_, or_, seal, square_, sub_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
@@ -67,7 +67,9 @@ type InputSize = 401
 -- |   8-10:  scalar_challenge: alpha, zeta, xi          (3 fields)
 -- |   11-25: bp_chals: WrapIPARounds = 15 fields
 -- |   26:    bool: should_finalize                      (1 field)
-parseUnfinalizedProof :: (Int -> FVar WrapField) -> Int
+parseUnfinalizedProof
+  :: (Int -> FVar WrapField)
+  -> Int
   -> { deferredValues ::
          { plonk ::
              { alpha :: SizedF 128 (FVar WrapField)
@@ -135,6 +137,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     combinedInnerProduct = Type1 (at 8)
     b_ = Type1 (at 9)
     _branchData = at 10
+
     bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (FVar WrapField))
     bulletproofChallenges = Vector.generate \j -> asSizedF128 (at (11 + getFinite j))
     spongeDigestBeforeEvaluations = at 27
@@ -159,7 +162,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
 
     -- ---- 6. evals (positions 105-282, 2 × 89 = 178 fields) ----
     parseEvals base =
-      let ep b i = { zeta: at (b + 2 * i), omegaTimesZeta: at (b + 2 * i + 1) }
+      let
+        ep b i = { zeta: at (b + 2 * i), omegaTimesZeta: at (b + 2 * i + 1) }
       in
         { allEvals:
             { ftEval1: at (base + 88)
@@ -181,10 +185,12 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     -- ---- 8. openings_proof (positions 285-354, 70 fields) ----
     -- OCaml hlist order: lr(64), z1(1), z2(1), delta(2), sg(2)
     openingProof =
-      { lr: (Vector.generate \j ->
+      { lr:
+          ( Vector.generate \j ->
               { l: readPt (285 + 4 * getFinite j)
               , r: readPt (285 + 4 * getFinite j + 2)
-              }) :: Vector StepIPARounds _
+              }
+          ) :: Vector StepIPARounds _
       , z1: Type1 (at 349)
       , z2: Type1 (at 350)
       , delta: readPt 351
@@ -195,6 +201,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     wComm :: Vector 15 (AffinePoint (FVar WrapField))
     wComm = Vector.generate \j -> readPt (355 + 2 * getFinite j)
     zComm = readPt 385
+
     tComm :: Vector 7 (AffinePoint (FVar WrapField))
     tComm = Vector.generate \j -> readPt (387 + 2 * getFinite j)
 
@@ -203,7 +210,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     -- num_possible_domains = 3 (= S(Padded_length) = S(N2))
     allPossibleLog2s = 13 :< 14 :< 15 :< Vector.nil :: Vector 3 Int
     fopBaseParams =
-      { domainLog2: wrapDomainLog2  -- TODO: this is still compile-time, used for pow2pow
+      { domainLog2: wrapDomainLog2 -- TODO: this is still compile-time, used for pow2pow
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
@@ -249,8 +256,9 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
 
   -- Branch_data.Checked.Wrap.pack + Field.Assert.equal
   label "block1-branch-data-assert" do
-    let two = one + one :: WrapField
-        four = two + two :: WrapField
+    let
+      two = one + one :: WrapField
+      four = two + two :: WrapField
     -- pack(mask) = mask[1] + 2*mask[0] (Vector.rev order)
     twoTimesMask0 <- mul_ (const_ two) (coerce maskVal0 :: FVar WrapField)
     let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
@@ -260,19 +268,20 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     assertEqual_ _branchData packedBranchData
 
   -- Block 2: choose_key + feature flag consistency
-  let { x: F dummyX, y: F dummyY } = dummyVestaPt
-      dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
-      dummyComm = [dummyPt]
-      dummyVK =
-        { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
-        , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
-        , genericComm: dummyComm
-        , psmComm: dummyComm
-        , completeAddComm: dummyComm
-        , mulComm: dummyComm
-        , emulComm: dummyComm
-        , endomulScalarComm: dummyComm
-        }
+  let
+    { x: F dummyX, y: F dummyY } = dummyVestaPt
+    dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
+    dummyComm = [ dummyPt ]
+    dummyVK =
+      { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
+      , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
+      , genericComm: dummyComm
+      , psmComm: dummyComm
+      , completeAddComm: dummyComm
+      , mulComm: dummyComm
+      , emulComm: dummyComm
+      , endomulScalarComm: dummyComm
+      }
   chosenVK <- chooseKey whichBranch (dummyVK :< Vector.nil)
   -- Feature flag consistency: 0 constraints for Features.none with constant VK.
   -- Extract chosen VK commitments for the IVP (non-constant, from Pseudo.mask + seal)
@@ -280,9 +289,13 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     firstPt arr = unsafePartial $ fromJust $ Array.index arr 0
     chosenSigmaCommLast = firstPt (Vector.index chosenVK.sigmaComm (unsafeFinite 6))
     chosenColumnComms =
-      { index: firstPt chosenVK.genericComm :< firstPt chosenVK.psmComm :< firstPt chosenVK.completeAddComm
-          :< firstPt chosenVK.mulComm :< firstPt chosenVK.emulComm :< firstPt chosenVK.endomulScalarComm :< Vector.nil
-          :: Vector 6 _
+      { index:
+          firstPt chosenVK.genericComm :< firstPt chosenVK.psmComm :< firstPt chosenVK.completeAddComm
+            :< firstPt chosenVK.mulComm
+            :< firstPt chosenVK.emulComm
+            :< firstPt chosenVK.endomulScalarComm
+            :< Vector.nil
+            :: Vector 6 _
       , coeff: map firstPt chosenVK.coefficientsComm :: Vector 15 _
       , sigma: map firstPt (Vector.take @6 chosenVK.sigmaComm) :: Vector 6 _
       }
@@ -295,10 +308,11 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- Compute BOTH domains before FOP (matching OCaml ordering)
   -- OCaml: Vector.map wrap_domain_indices evaluates right-to-left → domain-1 first
   -- Reference: wrap_main.ml:418-433
-  let domainConfig =
-        { shifts: LinFFI.domainShifts @WrapField
-        , domainGenerator: LinFFI.domainGenerator @WrapField
-        }
+  let
+    domainConfig =
+      { shifts: LinFFI.domainShifts @WrapField
+      , domainGenerator: LinFFI.domainGenerator @WrapField
+      }
 
   which1 <- label "block3-wrap-domain-1" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
@@ -320,7 +334,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     }
   -- OCaml: Boolean.Assert.any [finalized; not should_finalize]
   label "block3-fop-assert-0" do
-    assertAny_ [finalized0, not_ unfProof0.shouldFinalize]
+    assertAny_ [ finalized0, not_ unfProof0.shouldFinalize ]
 
   -- FOP proof 1
   -- OCaml pads prevChallenges from 0 to 2 entries (prepend 2 dummies).
@@ -332,17 +346,19 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     , prevChallenges: dummyWrapChals :< dummyWrapChals :< Vector.nil
     }
   label "block3-fop-assert-1" do
-    assertAny_ [finalized1, not_ unfProof1.shouldFinalize]
+    assertAny_ [ finalized1, not_ unfProof1.shouldFinalize ]
 
   -- Block 4: prev_statement construction + messages_for_next_step_proof assert
   -- OCaml: Vector.map2 right-to-left → proof 1 (dummy) first, then proof 0 (real)
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-  msgForWrap1 <- label "block4-msg-hash-1" $
-    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState }) $
+  msgForWrap1 <- label "block4-msg-hash-1"
+    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 0)).state, spongeState: (Vector.index states (unsafeFinite 0)).spongeState })
+    $
       hashMessagesForNextWrapProofCircuit'
         { sg: prevStepAcc1, allChallenges: Vector.nil :: Vector 0 (Vector WrapIPARounds (FVar WrapField)) }
-  msgForWrap0 <- label "block4-msg-hash-0" $
-    evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState }) $
+  msgForWrap0 <- label "block4-msg-hash-0"
+    $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite 1)).state, spongeState: (Vector.index states (unsafeFinite 1)).spongeState })
+    $
       hashMessagesForNextWrapProofCircuit'
         { sg: prevStepAcc0, allChallenges: oldBpChals0 :< Vector.nil }
 
@@ -376,11 +392,16 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- (wrap_verifier.ml:427-428) that returns Const base+correction when all
   -- domains are equal. Only `lagrange` (for CondAdd) masks by which_branch.
   -- So: circuit = constPt (unmasked), maskPt = Scale by branchBool (for CondAdd).
-  let branchBool0 = coerce (Vector.head whichBranch) :: FVar WrapField
-      maskByBool :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
-      maskByBool { x: F x', y: F y' } = { x: CVar.scale_ x' branchBool0, y: CVar.scale_ y' branchBool0 }
-      maskedLagrangeComms = map (\lb ->
-        { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBool }) lagrangeComms
+  let
+    branchBool0 = coerce (Vector.head whichBranch) :: FVar WrapField
+
+    maskByBool :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
+    maskByBool { x: F x', y: F y' } = { x: CVar.scale_ x' branchBool0, y: CVar.scale_ y' branchBool0 }
+    maskedLagrangeComms = map
+      ( \lb ->
+          { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBool }
+      )
+      lagrangeComms
   let
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
@@ -395,7 +416,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput
       , sgOld: prevStepAcc0 :< prevStepAcc1 :< Vector.nil
-      , sgOldMask: coerce maskVal1 :< coerce maskVal0 :< Vector.nil  -- Vector.rev of [maskVal0, maskVal1]
+      , sgOldMask: coerce maskVal1 :< coerce maskVal0 :< Vector.nil -- Vector.rev of [maskVal0, maskVal1]
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:

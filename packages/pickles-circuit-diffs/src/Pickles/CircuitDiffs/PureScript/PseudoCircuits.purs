@@ -21,12 +21,12 @@ import Prelude
 
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
-import Pickles.Pseudo (oneHotVector, choose)
-import Pickles.Types (StepField, WrapField)
 import JS.BigInt (fromInt)
-import Snarky.Backend.Compile (compilePure)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
+import Pickles.Pseudo (choose, oneHotVector)
+import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (chooseKey)
+import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_, label)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -51,11 +51,13 @@ oneHotN1Circuit inputs = do
 
 compileOneHotN1Step :: CompiledCircuit StepField
 compileOneHotN1Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  oneHotN1Circuit Kimchi.initialState
+  oneHotN1Circuit
+  Kimchi.initialState
 
 compileOneHotN1Wrap :: CompiledCircuit WrapField
 compileOneHotN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  oneHotN1Circuit Kimchi.initialState
+  oneHotN1Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- one_hot_vector N3
@@ -74,11 +76,13 @@ oneHotN3Circuit inputs = do
 
 compileOneHotN3Step :: CompiledCircuit StepField
 compileOneHotN3Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  oneHotN3Circuit Kimchi.initialState
+  oneHotN3Circuit
+  Kimchi.initialState
 
 compileOneHotN3Wrap :: CompiledCircuit WrapField
 compileOneHotN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  oneHotN3Circuit Kimchi.initialState
+  oneHotN3Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_mask N1
@@ -98,11 +102,13 @@ pseudoMaskN1Circuit inputs = do
 
 compilePseudoMaskN1Step :: CompiledCircuit StepField
 compilePseudoMaskN1Step = compilePure (Proxy @(Vector 2 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  pseudoMaskN1Circuit Kimchi.initialState
+  pseudoMaskN1Circuit
+  Kimchi.initialState
 
 compilePseudoMaskN1Wrap :: CompiledCircuit WrapField
 compilePseudoMaskN1Wrap = compilePure (Proxy @(Vector 2 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  pseudoMaskN1Circuit Kimchi.initialState
+  pseudoMaskN1Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_mask N3
@@ -122,11 +128,13 @@ pseudoMaskN3Circuit inputs = do
 
 compilePseudoMaskN3Step :: CompiledCircuit StepField
 compilePseudoMaskN3Step = compilePure (Proxy @(Vector 4 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  pseudoMaskN3Circuit Kimchi.initialState
+  pseudoMaskN3Circuit
+  Kimchi.initialState
 
 compilePseudoMaskN3Wrap :: CompiledCircuit WrapField
 compilePseudoMaskN3Wrap = compilePure (Proxy @(Vector 4 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  pseudoMaskN3Circuit Kimchi.initialState
+  pseudoMaskN3Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_choose N1 (constant targets)
@@ -147,11 +155,13 @@ pseudoChooseN1Circuit inputs = do
 
 compilePseudoChooseN1Step :: CompiledCircuit StepField
 compilePseudoChooseN1Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  pseudoChooseN1Circuit Kimchi.initialState
+  pseudoChooseN1Circuit
+  Kimchi.initialState
 
 compilePseudoChooseN1Wrap :: CompiledCircuit WrapField
 compilePseudoChooseN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  pseudoChooseN1Circuit Kimchi.initialState
+  pseudoChooseN1Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- pseudo_choose N3 (constant targets)
@@ -172,11 +182,13 @@ pseudoChooseN3Circuit inputs = do
 
 compilePseudoChooseN3Step :: CompiledCircuit StepField
 compilePseudoChooseN3Step = compilePure (Proxy @(Vector 1 (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-  pseudoChooseN3Circuit Kimchi.initialState
+  pseudoChooseN3Circuit
+  Kimchi.initialState
 
 compilePseudoChooseN3Wrap :: CompiledCircuit WrapField
 compilePseudoChooseN3Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  pseudoChooseN3Circuit Kimchi.initialState
+  pseudoChooseN3Circuit
+  Kimchi.initialState
 
 --------------------------------------------------------------------------------
 -- choose_key N1 (single branch, dummy VK, Wrap side only)
@@ -190,24 +202,26 @@ chooseKeyN1WrapCircuit
   => Vector 1 (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
 chooseKeyN1WrapCircuit inputs = do
-  let at = unsafeIdx inputs
-      { x: F dummyX, y: F dummyY } = dummyVestaPt
-      dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
-      dummyComm = [dummyPt]
-      dummyVK =
-        { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
-        , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
-        , genericComm: dummyComm
-        , psmComm: dummyComm
-        , completeAddComm: dummyComm
-        , mulComm: dummyComm
-        , emulComm: dummyComm
-        , endomulScalarComm: dummyComm
-        }
+  let
+    at = unsafeIdx inputs
+    { x: F dummyX, y: F dummyY } = dummyVestaPt
+    dummyPt = { x: const_ dummyX, y: const_ dummyY } :: AffinePoint (FVar WrapField)
+    dummyComm = [ dummyPt ]
+    dummyVK =
+      { sigmaComm: Vector.replicate dummyComm :: Vector 7 _
+      , coefficientsComm: Vector.replicate dummyComm :: Vector 15 _
+      , genericComm: dummyComm
+      , psmComm: dummyComm
+      , completeAddComm: dummyComm
+      , mulComm: dummyComm
+      , emulComm: dummyComm
+      , endomulScalarComm: dummyComm
+      }
   whichBranch <- label "one_hot" $ (oneHotVector :: _ -> _ (Vector 1 _)) (at 0)
   _ <- chooseKey whichBranch (dummyVK :< Vector.nil)
   pure unit
 
 compileChooseKeyN1Wrap :: CompiledCircuit WrapField
 compileChooseKeyN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-  chooseKeyN1WrapCircuit Kimchi.initialState
+  chooseKeyN1WrapCircuit
+  Kimchi.initialState

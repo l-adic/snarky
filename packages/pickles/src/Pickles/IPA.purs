@@ -48,6 +48,7 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Foldable (fold, foldM, for_, product)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -58,7 +59,6 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Data.Maybe (Maybe(..))
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
@@ -529,7 +529,7 @@ combinePolynomials
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => Vector n (AffinePoint (FVar f))
-  -> Vector n (Maybe (BoolVar f))  -- per-base keep mask (Nothing = unconditional)
+  -> Vector n (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 combinePolynomials bases masks xi = label "combine-polynomials" do
@@ -596,7 +596,7 @@ checkBulletproof
   => IpaScalarOps f t m sf
   -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> Vector numBases (AffinePoint (FVar f))
-  -> Vector numBases (Maybe (BoolVar f))  -- per-base keep mask (Nothing = unconditional)
+  -> Vector numBases (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases baseMasks input = do

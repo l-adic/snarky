@@ -17,10 +17,10 @@ module Pickles.CircuitDiffs.PureScript.FullStepVerifyOneN2
 -- |   303:      must_verify
 
 import Prelude
-import Data.Maybe (Maybe(..))
 
 import Data.Fin (getFinite)
 import Data.Fin as Fin
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)

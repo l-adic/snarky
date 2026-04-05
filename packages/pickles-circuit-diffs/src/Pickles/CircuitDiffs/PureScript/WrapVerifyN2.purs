@@ -6,10 +6,9 @@ module Pickles.CircuitDiffs.PureScript.WrapVerifyN2
 -- | and calls the library wrapVerify function.
 
 import Prelude
-import Data.Maybe (Maybe(..))
-import Safe.Coerce (coerce)
 
 import Data.Fin (getFinite)
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx, wrapEndo)
@@ -17,8 +16,9 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, parseIvpWrapInput
 import Pickles.PublicInputCommit (CorrectionMode(..))
 import Pickles.Types (WrapField, WrapIPARounds)
 import Pickles.Wrap.Verify (wrapVerify)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (Bool(..), class CircuitM, F(..), FVar, Snarky, const_, true_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), F(..), FVar, Snarky, const_, true_)
 import Snarky.Circuit.Kimchi (groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
