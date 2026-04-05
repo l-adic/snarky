@@ -179,15 +179,16 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
     _wrapDomainIdx1 = at 284
 
     -- ---- 8. openings_proof (positions 285-354, 70 fields) ----
+    -- OCaml hlist order: lr(64), z1(1), z2(1), delta(2), sg(2)
     openingProof =
-      { delta: readPt 285
-      , sg: readPt 287
-      , lr: (Vector.generate \j ->
-              { l: readPt (289 + 4 * getFinite j)
-              , r: readPt (289 + 4 * getFinite j + 2)
+      { lr: (Vector.generate \j ->
+              { l: readPt (285 + 4 * getFinite j)
+              , r: readPt (285 + 4 * getFinite j + 2)
               }) :: Vector StepIPARounds _
-      , z1: Type1 (at 353)
-      , z2: Type1 (at 354)
+      , z1: Type1 (at 349)
+      , z2: Type1 (at 350)
+      , delta: readPt 351
+      , sg: readPt 353
       }
 
     -- ---- 9. messages (positions 355-400, 46 fields) ----
@@ -292,19 +293,20 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
 
   -- Compute BOTH domains before FOP (matching OCaml ordering)
+  -- OCaml: Vector.map wrap_domain_indices evaluates right-to-left → domain-1 first
   -- Reference: wrap_main.ml:418-433
   let domainConfig =
         { shifts: LinFFI.domainShifts @WrapField
         , domainGenerator: LinFFI.domainGenerator @WrapField
         }
 
-  which0 <- label "block3-wrap-domain-0" $
-    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
-  domain0 <- Pseudo.toDomain domainConfig which0 allPossibleLog2s
-
   which1 <- label "block3-wrap-domain-1" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx1
   domain1 <- Pseudo.toDomain domainConfig which1 allPossibleLog2s
+
+  which0 <- label "block3-wrap-domain-0" $
+    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) _wrapDomainIdx0
+  domain0 <- Pseudo.toDomain domainConfig which0 allPossibleLog2s
 
   -- FOP proof 0
   -- OCaml pads prevChallenges from 1 to 2 entries (prepend 1 dummy).
