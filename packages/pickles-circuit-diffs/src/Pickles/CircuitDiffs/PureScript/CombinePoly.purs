@@ -8,7 +8,7 @@ module Pickles.CircuitDiffs.PureScript.CombinePoly
 import Prelude
 
 import Data.Fin (getFinite)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -74,7 +74,7 @@ combinePolyCircuit input =
         `Vector.append` coeffComms
         `Vector.append` sigmaComms
   in
-    combinePolynomials allBases input.xi
+    combinePolynomials allBases (Vector.replicate Nothing) input.xi
 
 compileCombinePoly :: CompiledCircuit WrapField
 compileCombinePoly =
