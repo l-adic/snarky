@@ -27,8 +27,8 @@ module Pickles.Wrap.Main
 
 import Prelude
 
-import Data.Foldable (foldl)
 import Data.Fin (Finite, unsafeFinite)
+import Data.Foldable (foldl)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -37,8 +37,6 @@ import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
-import Snarky.Curves.Pallas as Pallas
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
@@ -55,7 +53,9 @@ import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, not_)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (splitFieldCircuit)
@@ -73,12 +73,16 @@ type WrapMainConfig branches =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK (FVar WrapField))
-    -- ^ VK commitments as circuit variables (from chooseKey mask+seal).
-    -- Callers wrap constant points with const_ before passing.
+  -- ^ VK commitments as circuit variables (from chooseKey mask+seal).
+  -- Callers wrap constant points with const_ before passing.
   , lagrangeComms :: Array (LagrangeBase WrapField)
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
-    -- ^ [13, 14, 15] — the possible wrap domain sizes
+  -- ^ [13, 14, 15] — the possible wrap domain sizes
+  , wrapDomainLog2 :: Int
+  -- ^ Domain log2 for pow2pow in FOP (usually 15)
+  , wrapSrsLengthLog2 :: Int
+  -- ^ SRS length log2 (usually 15)
   }
 
 -- | Per-proof advice data from exists/request.
@@ -199,8 +203,8 @@ wrapMainCircuit
 wrapMainCircuit config stmt advice = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
-    wrapDomainLog2 = 16  -- TODO: parameterize
-    wrapSrsLengthLog2 = 16
+    wrapDomainLog2 = config.wrapDomainLog2
+    wrapSrsLengthLog2 = config.wrapSrsLengthLog2
 
     toUnfinalized u =
       { deferredValues: u.deferredValues
@@ -305,15 +309,15 @@ wrapMainCircuit config stmt advice = do
 
   -- ======== Block 4: Message hash ========
   -- OCaml: Vector.map2 right-to-left → proof 1 first, then proof 0
+  -- dummyPaddingSpongeStates: index i = sponge after absorbing (2-i) dummy vectors.
+  -- So index = number of REAL vectors provided (0 = all dummies, 2 = no dummies).
   let states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-  -- Proof 1: slot1Width real vectors → (2 - slot1Width) dummies absorbed
-  let spongeIdx1 = 2 - Vector.length advice.slot1Chals
+  let spongeIdx1 = Vector.length advice.slot1Chals
   msgForWrap1 <- label "block4-msg-hash-1"
     $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite @3 spongeIdx1)).state, spongeState: (Vector.index states (unsafeFinite @3 spongeIdx1)).spongeState })
     $ hashMessagesForNextWrapProofCircuit'
         { sg: advice.prevStepAccs.acc1, allChallenges: advice.slot1Chals }
-  -- Proof 0: slot0Width real vectors → (2 - slot0Width) dummies absorbed
-  let spongeIdx0 = 2 - Vector.length advice.slot0Chals
+  let spongeIdx0 = Vector.length advice.slot0Chals
   msgForWrap0 <- label "block4-msg-hash-0"
     $ evalSpongeM (spongeFromConstants { state: (Vector.index states (unsafeFinite @3 spongeIdx0)).state, spongeState: (Vector.index states (unsafeFinite @3 spongeIdx0)).spongeState })
     $ hashMessagesForNextWrapProofCircuit'
@@ -363,7 +367,8 @@ wrapMainCircuit config stmt advice = do
           (\acc b -> { x: CVar.add_ acc.x (CVar.scale_ x' b), y: CVar.add_ acc.y (CVar.scale_ y' b) })
           { x: scaledX0, y: scaledY0 }
           bbRest
-      in { x: finalX, y: finalY }
+      in
+        { x: finalX, y: finalY }
 
     maskedLagrangeComms = map
       (\lb -> { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools })
