@@ -43,6 +43,7 @@ import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, c
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
+import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
@@ -450,6 +451,7 @@ spec =
         exactMatch "wrap_verify_circuit" (fromCompiledCircuit $ compileWrapVerify wrapSrsData)
         exactMatch "wrap_verify_n2_circuit" (fromCompiledCircuit $ compileWrapVerifyN2 wrapSrsData)
         exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapSrsData)
+        exactMatch "wrap_main_n2_circuit" (fromCompiledCircuit $ compileWrapMainN2 wrapSrsData)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
