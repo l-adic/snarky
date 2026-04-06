@@ -25,6 +25,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
+import Data.Foldable (foldl)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
@@ -359,13 +360,27 @@ wrapMainN2Circuit { lagrangeComms, blindingH } inputs = do
 
   -- Block 6: wrapVerify (IVP + 4 assertions) — same structure as N1
   let
-    branchBool0 = coerce (Vector.head whichBranch) :: FVar WrapField
+    -- N2: OCaml's lagrange masks by EACH branch bool then sums:
+    -- Vector.map2 which_branch ~f:(fun b -> Scale(coord, b))
+    -- |> Vector.reduce_exn ~f:Field.(+)
+    -- For 2 branches with same domain: result = Scale(coord, b0) + Scale(coord, b1) = Scale(coord, b0+b1)
+    -- We use Add(Scale(coord, b0), Scale(coord, b1)) to match the CVar structure.
+    { head: branchBool0, tail: branchBoolRest } = Vector.uncons (map (coerce :: BoolVar WrapField -> FVar WrapField) whichBranch)
 
-    maskByBool :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
-    maskByBool { x: F x', y: F y' } = { x: CVar.scale_ x' branchBool0, y: CVar.scale_ y' branchBool0 }
+    maskByBools :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
+    maskByBools { x: F x', y: F y' } =
+      let
+        scaledX0 = CVar.scale_ x' branchBool0
+        scaledY0 = CVar.scale_ y' branchBool0
+        -- Sum across all branches (for single-domain, all branches produce same coord)
+        { x: finalX, y: finalY } = foldl
+          (\acc b -> { x: add_ acc.x (CVar.scale_ x' b), y: add_ acc.y (CVar.scale_ y' b) })
+          { x: scaledX0, y: scaledY0 }
+          branchBoolRest
+      in { x: finalX, y: finalY }
     maskedLagrangeComms = map
       ( \lb ->
-          { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBool }
+          { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools }
       )
       lagrangeComms
   let
