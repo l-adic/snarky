@@ -41,7 +41,7 @@ import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (MaxProofsVerified, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
@@ -99,8 +99,8 @@ type WrapMainAdvice slot0Width slot1Width =
       }
   , prevStepAccs :: { acc0 :: AffinePoint (FVar WrapField), acc1 :: AffinePoint (FVar WrapField) }
   -- Padded to N2: caller prepends dummies as needed
-  , paddedChals0 :: Vector 2 (Vector WrapIPARounds (FVar WrapField))
-  , paddedChals1 :: Vector 2 (Vector WrapIPARounds (FVar WrapField))
+  , paddedChals0 :: Vector MaxProofsVerified (Vector WrapIPARounds (FVar WrapField))
+  , paddedChals1 :: Vector MaxProofsVerified (Vector WrapIPARounds (FVar WrapField))
   -- Real (unpadded) challenges per slot, for message hash
   , slot0Chals :: Vector slot0Width (Vector WrapIPARounds (FVar WrapField))
   , slot1Chals :: Vector slot1Width (Vector WrapIPARounds (FVar WrapField))
