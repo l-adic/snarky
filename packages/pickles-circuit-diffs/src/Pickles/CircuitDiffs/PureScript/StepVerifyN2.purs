@@ -25,8 +25,8 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
-import Pickles.PublicInputCommit (CorrectionMode(..))
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, stepEndo, unsafeIdx)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
@@ -43,7 +43,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepVerifyN2Params =
-  { lagrangeComms :: Array (AffinePoint (F StepField))
+  { lagrangeComms :: Array (LagrangeBase StepField)
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -145,6 +145,7 @@ stepVerifyN2Circuit { lagrangeComms, blindingH } inputs = do
     ivpInput =
       { publicInput
       , sgOld
+      , sgOldMask: Vector.replicate ((const_ one))
       , sigmaCommLast: constDummyPt
       , columnComms:
           { index: (Vector.replicate constDummyPt) :: Vector 6 _

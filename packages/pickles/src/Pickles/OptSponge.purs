@@ -177,10 +177,6 @@ consumePair { state, pos: p } (Tuple first second) = do
   state2 <- addIn state1 p' yBefore
 
   -- Compute permute flag: (b && b') || (p && (b || b'))
-  -- OCaml evaluates right-to-left for list construction, so:
-  -- 1. all [p, b ||| b'] is computed first (rightmost list element)
-  -- 2. all [b, b'] is computed second (leftmost)
-  -- 3. any [left, right]
   bOrB' <- or_ b b'
   pAndBOrB' <- and_ p bOrB'
   bAndB' <- and_ b b'
@@ -226,7 +222,6 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
   emptyInput <- not $ any_ (map fst input)
 
   -- Handle remainder and compute should_permute
-  -- unsafePartial is safe because remainder is mod 2
   case leftover of
     Nothing -> do
       shouldPermute <-

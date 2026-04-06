@@ -14,6 +14,7 @@
 module Pickles.Wrap.FinalizeOtherProof
   ( WrapFinalizeOtherProofInput
   , wrapFinalizeOtherProofCircuit
+  , pow2PowMul
   ) where
 
 import Prelude
@@ -31,7 +32,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
 import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
@@ -46,8 +47,8 @@ import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.CVar (negate_, scale_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, label, mul_, pow_, seal, sub_)
+import Snarky.Circuit.CVar (negate_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type2, toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -93,9 +94,10 @@ wrapFinalizeOtherProofCircuit
   => LinearizationFFI f g
   => Reflectable d Int
   => FinalizeOtherProofParams f r2
+  -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
   -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
-wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
+wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
   let
     ops = WrapOtherField.fopShiftOps @f @m
     deferred = unfinalized.deferredValues
@@ -126,7 +128,7 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
   -- OCaml: zetaw = Field.mul domain#generator plonk.zeta
   -- Generator is Field.constant → scale_ produces no R1CS
   ---------------------------------------------------------------------------
-  let zetaw = scale_ params.domain.generator zeta
+  zetaw <- mul_ params.domain.generator zeta
 
   ---------------------------------------------------------------------------
   -- Step 3: Compute challenge polynomial evaluations (sg_evals)
@@ -189,20 +191,10 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
       , defaultVal: const_ zero
       }
 
-    gen = domainGenerator @f params.domainLog2
-    omegaToMinus1 = recip gen
-    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
-    omegaToMinus3 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-    omegaToMinus4 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-
-    omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then one
-      else if zk && offset == (-1) then omegaToMinus4
-      else if not zk && offset == 1 then gen
-      else if not zk && offset == (-1) then omegaToMinus1
-      else if not zk && offset == (-2) then omegaToMinus2
-      else if zk && offset == 0 then omegaToMinus3
-      else one
+    -- Omega powers derived from params.domain.generator (matching OCaml plonk_checks.ml:248-265)
+    -- When generator is Const (standalone test), inv_/mul_ short-circuit to constants.
+    -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
+    gen = params.domain.generator
 
     w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
@@ -213,22 +205,21 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
     zZeta = allEvals.zEvals.zeta
     zOmegaTimesZeta = allEvals.zEvals.omegaTimesZeta
 
-    shifts :: Vector 7 f
-    shifts = domainShifts @f params.domainLog2
+    shifts = params.domain.shifts
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega power usage to match OCaml constraint order.
   alphaPowers <- label "step6_alphaPowers" $ precomputeAlphaPowers maxAlphaPower alpha
 
   ---------------------------------------------------------------------------
-  -- Step 6: Omega powers — all constant, no in-circuit constraints
-  -- (Unlike Step FOP which uses inv_/mul_ on non-constant maskedGen)
+  -- Step 6: Omega powers from domain#generator (plonk_checks.ml:248-265)
+  -- When generator is Const, inv_/mul_/square_ short-circuit to constants.
+  -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
   ---------------------------------------------------------------------------
-  let
-    omegaM1 = const_ omegaToMinus1
-    omegaM2 = const_ omegaToMinus2
-    omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
-    omegaZk = const_ omegaToMinus3
+  omegaM1 <- inv_ gen -- omega^-1 = one / gen
+  omegaM2 <- mul_ omegaM1 omegaM1 -- omega^-2 (OCaml: let square x = x * x in plonk_checks)
+  let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
+  omegaZk <- mul_ omegaZkP1 omegaM1 -- omega^-3
 
   -- zkPoly = (zeta - omega^-1)(zeta - omega^-2)(zeta - omega^-3)
   zkPoly <- label "step7_zkPoly" do
@@ -238,9 +229,8 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
   -- zetaToNMinus1: zeta^n - 1 (no domain masking, just pow2pow and subtract)
   -- Uses mul_ (R1CS) not square_ because this comes from plonk_checks.pow2pow
   -- which uses F.(acc * acc), unlike wrap_verifier.pow2pow which uses Field.square.
-  zetaToNMinus1 <- label "step7_zetaToNMinus1" do
-    zetaToN <- pow2PowMul zeta params.domainLog2
-    pure (zetaToN `sub_` const_ one)
+  zetaToNMinus1 <- label "step7_zetaToNMinus1" $
+    vanishingPolynomial zeta
 
   let
     alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n
@@ -263,7 +253,7 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
   let term1MinusP = sub_ term1 pEval0
 
   term2Init <- label "step7_ft_term2init" $ mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-  let wShifts = zipWith Tuple (Vector.take @7 w0) (map (const_ :: f -> FVar f) shifts)
+  let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
   term2 <- label "step7_ft_term2" $ foldM
     ( \acc (Tuple wi si) -> do
         betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
@@ -287,7 +277,20 @@ wrapFinalizeOtherProofCircuit params { unfinalized, witness, prevChallenges } = 
 
   let permResult = add_ (sub_ term1MinusP term2) boundary
 
+  -- omegaForLagrange: matches OCaml plonk_checks.ml:311-328 unnormalized_lagrange_basis
+  -- Returns the omega power for a given lagrange basis position.
+  -- Uses circuit-computed omega values (constant when domain is constant).
   let
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then const_ one
+      else if not zk && offset == 1 then gen
+      else if not zk && offset == (-1) then omegaM1
+      else if not zk && offset == (-2) then omegaZkP1
+      else if not zk && offset == (-3) then omegaZk
+      else if zk && offset == 0 then omegaZk
+      -- (true, -1) is lazy in OCaml; not used by constant_term tokens
+      else const_ one
+
     vanishesOnZk = const_ one
 
     baseEnv :: EnvM f (Snarky (KimchiConstraint f) t m)

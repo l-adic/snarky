@@ -40,7 +40,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator, domainShifts)
+import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
@@ -56,7 +56,7 @@ import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMin
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (negate_, scale_)
+import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
@@ -80,7 +80,10 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
 type FinalizeOtherProofParams :: Type -> Row Type -> Type
 type FinalizeOtherProofParams f r =
-  { domain :: { generator :: f, shifts :: Vector 7 f }
+  { domain ::
+      { generator :: FVar f
+      , shifts :: Vector 7 (FVar f)
+      }
   , domainLog2 :: Int
   , srsLengthLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
@@ -208,7 +211,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Then: zetaw = mul gen zeta → R1CS because gen is non-constant
   ---------------------------------------------------------------------------
   domainWhich <- equals_ (const_ (fromInt params.domainLog2)) domainLog2Var
-  let maskedGen = scale_ params.domain.generator (coerce domainWhich :: FVar f)
+  maskedGen <- mul_ params.domain.generator (coerce domainWhich :: FVar f)
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------
@@ -280,21 +283,6 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       , defaultVal: const_ zero
       }
 
-    gen = domainGenerator @f params.domainLog2
-    omegaToMinus1 = recip gen
-    omegaToMinus2 = omegaToMinus1 * omegaToMinus1
-    omegaToMinus3 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-    omegaToMinus4 = omegaToMinus1 * omegaToMinus1 * omegaToMinus1 * omegaToMinus1
-
-    omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then one
-      else if zk && offset == (-1) then omegaToMinus4
-      else if not zk && offset == 1 then gen
-      else if not zk && offset == (-1) then omegaToMinus1
-      else if not zk && offset == (-2) then omegaToMinus2
-      else if zk && offset == 0 then omegaToMinus3
-      else one
-
     w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
 
@@ -304,8 +292,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     zZeta = allEvals.zEvals.zeta
     zOmegaTimesZeta = allEvals.zEvals.omegaTimesZeta
 
-    shifts :: Vector 7 f
-    shifts = domainShifts @f params.domainLog2
+    shifts = params.domain.shifts
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega powers to match OCaml constraint order.
@@ -331,7 +318,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
     mul_ t1 (zeta `sub_` omegaZk)
 
-  -- zetaToNMinus1 via domainVanishingPoly (mask * zeta^n - 1, sealed)
+  -- zetaToNMinus1 via domain vanishing polynomial (with domain masking)
+  -- Uses domainVanishingPoly to match OCaml's step_verifier.ml constraint structure.
   zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
 
   let
@@ -355,7 +343,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let term1MinusP = sub_ term1 pEval0
 
   term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-  let wShifts = zipWith Tuple (Vector.take @7 w0) (map (const_ :: f -> FVar f) shifts)
+  let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
   term2 <- foldM
     ( \acc (Tuple wi si) -> do
         betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
@@ -380,6 +368,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let permResult = add_ (sub_ term1MinusP term2) boundary
 
   let
+    omegaForLagrange { zkRows: zk, offset } =
+      if not zk && offset == 0 then const_ one
+      else if not zk && offset == 1 then maskedGen
+      else if not zk && offset == (-1) then omegaM1
+      else if not zk && offset == (-2) then omegaZkP1
+      else if not zk && offset == (-3) then omegaZk
+      else if zk && offset == 0 then omegaZk
+      -- (true, -1) is lazy in OCaml; not used by constant_term tokens
+      else const_ one
+
     vanishesOnZk = const_ one
 
     baseEnv :: EnvM f (Snarky (KimchiConstraint f) t m)

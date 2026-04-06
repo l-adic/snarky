@@ -15,10 +15,10 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput)
 import Pickles.Types (WrapField)
-import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), F, FVar, SizedF, Snarky, const_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), F, FVar, SizedF, Snarky, const_, sub_)
 import Snarky.Circuit.Kimchi (Type2(..))
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -109,16 +109,19 @@ fopWrapCircuit input =
       }
     params =
       { domain:
-          { generator: LinFFI.domainGenerator @WrapField wrapDomainLog2
-          , shifts: LinFFI.domainShifts @WrapField wrapDomainLog2
+          { generator: const_ (LinFFI.domainGenerator @WrapField wrapDomainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
           }
       , domainLog2: wrapDomainLog2
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
       }
+    vanishingPoly z = do
+      zetaToN <- pow2PowMul z wrapDomainLog2
+      pure (zetaToN `sub_` const_ one)
   in
-    wrapFinalizeOtherProofCircuit params
+    wrapFinalizeOtherProofCircuit params vanishingPoly
       { unfinalized
       , witness: { allEvals: input.allEvals }
       , prevChallenges: input.prevChallenges

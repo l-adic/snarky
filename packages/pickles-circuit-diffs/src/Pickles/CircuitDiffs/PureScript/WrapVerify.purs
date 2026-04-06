@@ -60,6 +60,7 @@ wrapVerifyCircuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 194 :< Vector.nil
+      , sgOldMask: (const_ one) :< Vector.nil
       , sigmaCommLast: constDummyPt
       , columnComms:
           { index: (Vector.replicate constDummyPt) :: Vector 6 _

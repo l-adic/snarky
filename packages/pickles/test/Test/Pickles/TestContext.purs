@@ -105,7 +105,7 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode(..), publicInputCommit)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase, mkConstLagrangeBase, publicInputCommit)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
@@ -216,6 +216,7 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
           }
       }
   , sgOld :: Vector n (AffinePoint (F f))
+  , sgOldMask :: Vector n (FVar f)
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -554,7 +555,7 @@ createStepProofContext stepCase = do
         numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
         baseCaseIvpParams =
           { curveParams: curveParams (Proxy @Pallas.G)
-          , lagrangeComms: (coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField))
+          , lagrangeComms: map mkConstLagrangeBase ((coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField)))
           , blindingH: (coerce (ProofFFI.vestaSrsBlindingGenerator stepSrs)) :: AffinePoint (F StepField)
           , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
           , correctionMode: PureCorrections
@@ -634,6 +635,7 @@ createStepProofContext stepCase = do
               , index: vk.columnComms.index
               }
           , sgOld: Vector.nil
+          , sgOldMask: Vector.nil
           , publicInput: dummyPublicInput
           , wComm: (Vector.index advice.messages (unsafeFinite @1 0)).wComm
           , zComm: (Vector.index advice.messages (unsafeFinite @1 0)).zComm
@@ -846,7 +848,7 @@ buildWrapCircuitParams ctx =
     sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Vesta.G)
-    , lagrangeComms: coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic)
+    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic))
     , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
     , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
     , columnComms:
@@ -903,8 +905,8 @@ extractStepRawBpChallenges ctx =
 buildFinalizeParams :: StepProofContext -> FinalizeOtherProofParams WrapField ()
 buildFinalizeParams stepCtx =
   { domain:
-      { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
-      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 WrapField)
+      { generator: const_ (ProofFFI.domainGenerator stepCtx.domainLog2 :: WrapField)
+      , shifts: map const_ (domainShifts stepCtx.domainLog2 :: Vector 7 WrapField)
       }
   , domainLog2: stepCtx.domainLog2
   , endo: wrapEndo
@@ -1495,8 +1497,8 @@ extractWrapRawBpChallenges ctx =
 buildStepFinalizeParams :: StepProofContext -> FinalizeOtherProofParams StepField ()
 buildStepFinalizeParams stepCtx =
   { domain:
-      { generator: (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
-      , shifts: (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
+      { generator: const_ (ProofFFI.domainGenerator stepCtx.domainLog2 :: StepField)
+      , shifts: map const_ (domainShifts stepCtx.domainLog2 :: Vector 7 StepField)
       }
   , domainLog2: stepCtx.domainLog2
   , endo: stepEndo
@@ -1737,7 +1739,7 @@ computeStepSgEvals stepCtx =
 -- | Compute x_hat (public input commitment) in pure mode by evaluating the
 -- | publicInputCommit circuit on concrete values via makeSolver.
 computeXhatPure
-  :: { lagrangeComms :: Array (AffinePoint (F StepField))
+  :: { lagrangeComms :: Array (LagrangeBase StepField)
      , blindingH :: AffinePoint (F StepField)
      }
   -> WrapStatementPublicInput StepIPARounds (F StepField)
@@ -1801,11 +1803,12 @@ computeStepIvpTranscript
          , index :: Vector 6 (AffinePoint (F StepField))
          }
      , sgOld :: Vector 0 (AffinePoint StepField)
+     , sgOldMask :: Vector 0 (FVar StepField)
      , publicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
      , wComm :: Vector 15 (AffinePoint (F StepField))
      , zComm :: AffinePoint (F StepField)
      , tComm :: Vector 7 (AffinePoint (F StepField))
-     , lagrangeComms :: Array (AffinePoint (F StepField))
+     , lagrangeComms :: Array (LagrangeBase StepField)
      , blindingH :: AffinePoint (F StepField)
      }
   -> { beta :: SizedF 128 StepField
@@ -2054,6 +2057,7 @@ buildStepProverWitness stepCtx wrapCtx =
     , messagesForNextWrapProof: F zero :< Vector.nil
     , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
     , sgOld: (coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof) :< Vector.nil
+    , sgOldMask: (const_ one) :< Vector.nil
     }
 
 -------------------------------------------------------------------------------
@@ -2070,7 +2074,7 @@ buildStepIVPParams ctx =
     numPublic = Array.length ctx.publicInputs
   in
     { curveParams: curveParams (Proxy @Pallas.G)
-    , lagrangeComms: coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic)
+    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic))
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     , endo: stepEndo
     , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
@@ -2170,6 +2174,7 @@ buildStepIVPInput ctx =
     { publicInput: toVectorOrThrow @nPublic "buildStepIVPInput publicInput" $
         map (\fq -> F (unsafeFqToFp fq)) ctx.publicInputs
     , sgOld: Vector.nil
+    , sgOldMask: Vector.nil
     -- VK data (circuit variables in OCaml, F f here for test input)
     , sigmaCommLast: vk.sigmaCommLast
     , columnComms: vk.columnComms

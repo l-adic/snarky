@@ -53,6 +53,7 @@ wrapVerifyN2Circuit { lagrangeComms, blindingH } inputs = do
     fullIvpInput =
       { publicInput: ivpInput.publicInput
       , sgOld: readPt 208 :< readPt 210 :< Vector.nil
+      , sgOldMask: Vector.replicate ((const_ one))
       , sigmaCommLast: constDummyPt
       , columnComms:
           { index: (Vector.replicate constDummyPt) :: Vector 6 _

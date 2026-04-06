@@ -9,6 +9,8 @@ module Snarky.Circuit.DSL.Assert
   , assertNotEqual_
   , assertSquare_
   , assert_
+  , assertAny_
+  , assertAll_
   , class AssertEqual
   , assertEq
   , isEqual
@@ -40,10 +42,11 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (CVar(Const), const_, sub_)
-import Snarky.Circuit.DSL.Field (equals_)
+import Snarky.Circuit.DSL.Field (equals_, sum_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky, addConstraint, and_, inv_)
 import Snarky.Circuit.Types (Bool(..), BoolVar, FVar)
 import Snarky.Constraint.Basic (equal, square)
+import Snarky.Curves.Class (class PrimeField, fromInt)
 import Type.Proxy (Proxy(..))
 
 assertNonZero_
@@ -88,6 +91,34 @@ assert_
   => BoolVar f
   -> Snarky c t m Unit
 assert_ v = assertEqual_ (coerce v) (const_ $ one @f)
+
+-- | Boolean.Assert.any: assert at least one boolean is true.
+-- | Uses assert_non_zero(sum) — no special case for 2 elements.
+-- | Reference: mina/src/lib/snarky/src/base/utils.ml:385-386
+assertAny_
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => Array (BoolVar f)
+  -> Snarky c t m Unit
+assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
+  where
+  boolToField :: BoolVar f -> FVar f
+  boolToField = coerce
+
+-- | Boolean.Assert.all: assert all booleans are true.
+-- | Uses assertEqual(sum, n) — no special case for 2 elements.
+-- | Reference: mina/src/lib/snarky/src/base/utils.ml:388-391
+assertAll_
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => Array (BoolVar f)
+  -> Snarky c t m Unit
+assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array.length bs)))
+  where
+  boolToField :: BoolVar f -> FVar f
+  boolToField = coerce
 
 -- | AND all booleans together. Empty array returns true.
 allBools

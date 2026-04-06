@@ -334,6 +334,7 @@ checkBulletproofTest cfg ctx = do
           WrapOtherField.ipaScalarOps
           endoParams
           allBases
+          (Vector.replicate Nothing)
           input
       assert_ success
       pure challenges
@@ -453,6 +454,7 @@ incrementallyVerifyProofTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , sigmaCommLast: params.sigmaCommLast
       , columnComms: params.columnComms
       , deferredValues:
@@ -566,6 +568,7 @@ verifyTest cfg ctx = do
     circuitInput =
       { publicInput: buildStepPublicInput ctx
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , sigmaCommLast: params.sigmaCommLast
       , columnComms: params.columnComms
       , deferredValues:

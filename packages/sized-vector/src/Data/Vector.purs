@@ -255,7 +255,7 @@ generateA :: forall @n a f. Reflectable n Int => Applicative f => (Finite n -> f
 generateA f = Vector <$> traverse f (finites @n)
 
 -- | Create a vector of `n` copies of a value.
-replicate :: forall n a. Reflectable n Int => a -> Vector n a
+replicate :: forall @n a. Reflectable n Int => a -> Vector n a
 replicate a = generate (const a)
 
 -- | Split an array into chunks of the specified size (internal helper).

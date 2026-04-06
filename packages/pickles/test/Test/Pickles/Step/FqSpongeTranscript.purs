@@ -154,6 +154,7 @@ buildFqSpongeTestContext ctx =
     circuitInput =
       { indexDigest: F indexDigest
       , sgOld: Vector.nil
+
       , publicComm: coerce publicComm
       , wComm: coerce wComm
       , zComm: coerce zComm

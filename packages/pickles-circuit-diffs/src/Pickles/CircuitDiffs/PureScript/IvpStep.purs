@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..))
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
@@ -43,7 +43,7 @@ type IvpStepPublicInput =
     )
 
 type IvpStepParams =
-  { lagrangeComms :: Array (AffinePoint (F StepField))
+  { lagrangeComms :: Array (LagrangeBase StepField)
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -159,6 +159,7 @@ ivpStepCircuit { lagrangeComms, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: constDummySg :< constDummySg :< Vector.nil
+      , sgOldMask: Vector.replicate ((const_ one))
       -- VK data as circuit variables (dummy constants for circuit-diff test)
       , sigmaCommLast: constDummyPt
       , columnComms:

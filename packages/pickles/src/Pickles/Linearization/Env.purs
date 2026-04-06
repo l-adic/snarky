@@ -208,7 +208,7 @@ buildCircuitEnvM
   => Array (FVar f) -- ^ precomputed alpha powers (alpha^0 .. alpha^n)
   -> FVar f -- ^ zeta
   -> Int -- ^ domainLog2 (for computing zeta^n - 1)
-  -> ({ zkRows :: Boolean, offset :: Int } -> f) -- ^ omega constant for lagrange basis call
+  -> ({ zkRows :: Boolean, offset :: Int } -> FVar f) -- ^ omega power for lagrange basis (may be circuit variable)
   -> EvalPoint (FVar f)
   -> FVar f -- ^ vanishesOnZeroKnowledgeAndPreviousRows
   -> FVar f -- ^ beta
@@ -235,7 +235,7 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
       zetaToN <- pow_ zeta (Int.pow 2 domainLog2)
       pure (zetaToN `sub_` const_ one)
   , lagrangeBasis: \zetaToNMinus1 args ->
-      div_ zetaToNMinus1 (zeta `sub_` const_ (omegaForLagrange args))
+      div_ zetaToNMinus1 (zeta `sub_` omegaForLagrange args)
   , jointCombiner
   , beta
   , gamma

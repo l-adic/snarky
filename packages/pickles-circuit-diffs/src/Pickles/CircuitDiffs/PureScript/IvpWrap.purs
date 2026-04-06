@@ -16,7 +16,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..))
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (WrapField)
 import Pickles.Verify (incrementallyVerifyProof)
@@ -33,7 +33,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
-  { lagrangeComms :: Array (AffinePoint (F WrapField))
+  { lagrangeComms :: Array (LagrangeBase WrapField)
   , blindingH :: AffinePoint (F WrapField)
   }
 
@@ -157,6 +157,7 @@ ivpWrapCircuit { lagrangeComms, blindingH } input = do
     ivpInput =
       { publicInput: input.publicInput
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       -- VK data as circuit variables (dummy constants for circuit-diff test)
       , sigmaCommLast: constDummyPt
       , columnComms:

@@ -48,6 +48,7 @@ import Prelude
 
 import Data.Fin (getFinite)
 import Data.Foldable (fold, foldM, for_, product)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -58,7 +59,7 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, label)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -515,6 +516,12 @@ ipaFinalCheckCircuit scalarOps params input = do
 -- | Bases can be constants or circuit variables.
 -- |
 -- | Reference: Pcs_batch.combine_split_commitments in OCaml
+-- | Combine polynomial commitments using Horner's method with endo scalar multiplication.
+-- |
+-- | `masks` provides optional keep flags per base (from actual_proofs_verified_mask for sg_old).
+-- | When Just keep, OCaml's combine_split_commitments generates:
+-- |   if_ keep ~then_:point ~else_:acc.point
+-- | matching Opt.Maybe handling. When Nothing, the entry is unconditional (Opt.Just).
 combinePolynomials
   :: forall n f f' t m _l
    . Add 1 _l n
@@ -522,17 +529,22 @@ combinePolynomials
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
   => Vector n (AffinePoint (FVar f))
+  -> Vector n (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> SizedF 128 (FVar f)
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
-combinePolynomials bases xi = label "combine-polynomials" do
+combinePolynomials bases masks xi = label "combine-polynomials" do
   let
-    reversed = Vector.reverse bases
-    { head: h, tail: t } = Vector.uncons reversed
+    paired = Vector.zip bases masks
+    reversed = Vector.reverse paired
+    { head: Tuple h _, tail: t } = Vector.uncons reversed
   foldM
-    ( \acc base -> do
+    ( \acc (Tuple base mKeep) -> do
         xiAcc <- endo acc xi
         { p } <- addComplete base xiAcc
-        pure p
+        -- OCaml: if_ keep ~then_:point ~else_:acc.point (for Opt.Maybe entries)
+        case mKeep of
+          Nothing -> pure p
+          Just keep -> if_ keep p acc
     )
     h
     t
@@ -584,9 +596,10 @@ checkBulletproof
   => IpaScalarOps f t m sf
   -> { endo :: FVar f, groupMapParams :: GroupMapParams f | r }
   -> Vector numBases (AffinePoint (FVar f))
+  -> Vector numBases (Maybe (BoolVar f)) -- per-base keep mask (Nothing = unconditional)
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
-checkBulletproof scalarOps params commitmentBases input = do
+checkBulletproof scalarOps params commitmentBases baseMasks input = do
   -- 1. Absorb shift_scalar(CIP) into sponge
   -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
@@ -602,7 +615,7 @@ checkBulletproof scalarOps params commitmentBases input = do
   -- 3. Compute combined polynomial via Horner (AFTER u, matching OCaml)
   -- OCaml: let combined_polynomial = Split_commitments.combine ...
   combinedPolynomial <- labelM "bp_combine_poly" $ liftSnarky $
-    combinePolynomials commitmentBases input.xi
+    combinePolynomials commitmentBases baseMasks input.xi
 
   -- 4. Delegate to ipaFinalCheckCircuit (u already computed)
   labelM "bp_ipa_check" $ ipaFinalCheckCircuit @f @g scalarOps params

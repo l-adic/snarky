@@ -200,6 +200,7 @@ verifyOne fopParams input ivpParams = do
     ivpInput =
       { publicInput
       , sgOld: input.sgOld
+      , sgOldMask: Vector.replicate ((const_ one))
       , sigmaCommLast: input.vkComms.sigmaLast
       , columnComms:
           { index: input.vkComms.index

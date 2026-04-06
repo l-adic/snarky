@@ -15,7 +15,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..))
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
@@ -30,7 +30,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type FullStepVerifyOneParams =
-  { lagrangeComms :: Array (AffinePoint (F StepField))
+  { lagrangeComms :: Array (LagrangeBase StepField)
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -145,8 +145,8 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
     domainLog2 = 16
     fopParams =
       { domain:
-          { generator: LinFFI.domainGenerator @StepField domainLog2
-          , shifts: LinFFI.domainShifts @StepField domainLog2
+          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
           }
       , domainLog2
       , srsLengthLog2: 16

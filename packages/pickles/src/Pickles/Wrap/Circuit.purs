@@ -27,15 +27,15 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PublicInputCommit (CorrectionMode)
+import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify.Types (toStepDeferredValues)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
-import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_, sub_)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -59,7 +59,7 @@ type WrapParams :: Type -> Type
 type WrapParams f =
   { -- IVP params
     curveParams :: CurveParams f
-  , lagrangeComms :: Array (AffinePoint (F f))
+  , lagrangeComms :: Array (LagrangeBase f)
   , blindingH :: AffinePoint (F f)
   , sigmaCommLast :: AffinePoint (F f)
   , columnComms ::
@@ -118,9 +118,24 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
   -- 2. Finalize each of mpv previous proofs
   -- OCaml: Vector.mapn [unfinalized_proofs; old_bp_chals; evals; wrap_domains]
   --        ~f:(fun [...] -> finalize_other_proof ...)
+  let
+    fopParams =
+      { domain:
+          { generator: const_ params.domain.generator
+          , shifts: map const_ params.domain.shifts
+          }
+      , domainLog2: params.domainLog2
+      , srsLengthLog2: params.srsLengthLog2
+      , linearizationPoly: params.linearizationPoly
+      , endo: params.endo
+      }
+  let
+    wrapVanishingPoly z = do
+      zetaToN <- pow2PowMul z params.domainLog2
+      pure (zetaToN `sub_` const_ one)
   expandedChallengesAll <- for (Vector.zip unfinalizedProofs (Vector.zip evalsAll oldBpChallenges)) \(Tuple unfinalized (Tuple witness prevChallenges)) -> do
     { finalized, expandedChallenges } <-
-      wrapFinalizeOtherProofCircuit params
+      wrapFinalizeOtherProofCircuit fopParams wrapVanishingPoly
         { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
     -- Assert finalized || not shouldFinalize
     finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
@@ -134,6 +149,7 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
       { publicInput
       -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
+      , sgOldMask: Vector.nil
       , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues
       , sigmaCommLast: constPt params.sigmaCommLast
       , columnComms:

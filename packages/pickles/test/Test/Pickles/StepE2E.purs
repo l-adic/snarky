@@ -24,15 +24,13 @@ import Data.Vector as Vector
 import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams, dummyStepAdvice, stepDummyUnfinalizedProof) as Dummy
-import Pickles.PublicInputCommit (CorrectionMode(..))
+import Pickles.PublicInputCommit (CorrectionMode(..), mkConstLagrangeBase)
 import Pickles.Step.Advice (class StepWitnessM)
-import Pickles.Step.Circuit (WrapStatementPublicInput)
-import Pickles.Step.Circuit (stepCircuit)
+import Pickles.Step.Circuit (WrapStatementPublicInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Record as Record
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky)
-import Snarky.Circuit.DSL (sizeInFields)
+import Snarky.Circuit.DSL (class CircuitM, F(..), Snarky, sizeInFields)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -63,7 +61,7 @@ stepSchnorrCircuit input = do
     numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
     params = Record.merge Dummy.dummyFinalizeOtherProofParams
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms: Array.replicate numPublic pallasGen
+      , lagrangeComms: map mkConstLagrangeBase (Array.replicate numPublic pallasGen)
       , blindingH: pallasGen
       , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
       , correctionMode: PureCorrections

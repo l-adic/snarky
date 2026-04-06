@@ -28,7 +28,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBase, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
@@ -59,7 +59,7 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
 type IncrementallyVerifyProofParams f r =
   { curveParams :: CurveParams f
-  , lagrangeComms :: Array (AffinePoint (F f))
+  , lagrangeComms :: Array (LagrangeBase f)
   , blindingH :: AffinePoint (F f)
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
@@ -81,6 +81,8 @@ type IncrementallyVerifyProofParams f r =
 type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
   { publicInput :: publicInput
   , sgOld :: Vector sgOldN (AffinePoint fv)
+  , sgOldMask :: Vector sgOldN fv
+  -- ^ actual_proofs_verified_mask (OCaml absorbs sg_old with keep flags).
   , deferredValues :: DeferredValues d fv sf
   -- Verifier index (VK) data — circuit variables in Step, constants in Wrap
   , sigmaCommLast :: AffinePoint fv
@@ -90,6 +92,9 @@ type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
       , sigma :: Vector 6 (AffinePoint fv)
       }
   -- Protocol messages and opening proof
+  -- TODO(num_chunks): When num_chunks > 1, each commitment point becomes
+  -- Vector numChunks (AffinePoint fv). The tComm size (currently 7) is
+  -- ceil(domain_size / max_poly_size) * 7. For num_chunks = 1 this is just 7.
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
   , tComm :: Vector 7 (AffinePoint fv)
@@ -184,8 +189,10 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     if params.useOptSponge then do
       -- Wrap path: compute x_hat first, then OptSponge for all absorptions
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
-      let spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
-      result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams spongeInput
+      let
+        spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
+        mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
+      result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
@@ -233,6 +240,10 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 
   -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
   -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
+  -- TODO(num_chunks): With num_chunks > 1, each commitment is an array of chunk
+  -- points. The allBases vector would grow by a factor of num_chunks, and
+  -- totalBases = sgOldN + num_chunks * 45. The combinePolynomials fold would
+  -- need inner loops over chunks (see OCaml's Pcs_batch.combine_split_commitments).
   let
     allBases :: Vector totalBases (AffinePoint (FVar f))
     allBases =
@@ -243,6 +254,13 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
             `Vector.append` input.columnComms.coeff
             `Vector.append` input.columnComms.sigma
         )
+
+    -- Per-base masks: sg_old entries use actual_proofs_verified_mask (Maybe keep),
+    -- all other bases are unconditional (Nothing). Matches OCaml's Opt.Maybe for sg_old.
+    allBaseMasks :: Vector totalBases (Maybe (BoolVar f))
+    allBaseMasks =
+      (map (Just <<< coerce) input.sgOldMask) `Vector.append`
+        (Vector.replicate @45 Nothing)
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let
@@ -263,6 +281,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     scalarOps
     endoParams
     allBases
+    allBaseMasks
     bpInput
 
   -- 7. Return output

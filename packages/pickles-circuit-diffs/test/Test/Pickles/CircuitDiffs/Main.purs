@@ -39,13 +39,16 @@ import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
 import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationStep)
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
+import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
+import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
 import Pickles.CircuitDiffs.PureScript.XhatStep (compileXhatStep)
 import Pickles.CircuitDiffs.Types (CircuitComparison)
+import Pickles.PublicInputCommit (mkConstLagrangeBase)
 import Safe.Coerce (coerce)
 import Simple.JSON (writeJSON)
 import Snarky.Backend.Compile (compilePure)
@@ -417,7 +420,7 @@ spec =
         let
           stepSrs = pallasCrsCreate (2 `Int.pow` 16)
           stepSrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepSrs 16 30) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
@@ -432,7 +435,7 @@ spec =
         let
           srs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
-            { lagrangeComms: coerce $ pallasSrsLagrangeCommitments srs 16 177
+            { lagrangeComms: map mkConstLagrangeBase (coerce $ pallasSrsLagrangeCommitments srs 16 177)
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
@@ -440,17 +443,18 @@ spec =
         let
           wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
-            { lagrangeComms: coerce $ pallasSrsLagrangeCommitments wrapSrs 16 177
+            { lagrangeComms: map mkConstLagrangeBase (coerce $ pallasSrsLagrangeCommitments wrapSrs 16 177)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
         exactMatch "wrap_verify_circuit" (fromCompiledCircuit $ compileWrapVerify wrapSrsData)
         exactMatch "wrap_verify_n2_circuit" (fromCompiledCircuit $ compileWrapVerifyN2 wrapSrsData)
+        exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapSrsData)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepSrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepSrs 15 175) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepSrs 15 175) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
@@ -459,13 +463,13 @@ spec =
           -- Same SRS as IVP step: OCaml uses SRS.Fq.create (1 lsl 15) and domain 15
           stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
           stepVerifySrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 268) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 268) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
         let
           stepVerifyN2SrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 304) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepVerifySrs 15 304) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
@@ -473,17 +477,31 @@ spec =
         let
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           fullStepSrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 286) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 286) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
         let
           fullStepN2SrsData =
-            { lagrangeComms: (coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 304) :: Array (AffinePoint (F Fp))
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments fullStepSrs 14 304) :: Array (AffinePoint (F Fp)))
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
+      describe "Pseudo module" do
+        exactMatch "one_hot_n1_step_circuit" (fromCompiledCircuit compileOneHotN1Step)
+        exactMatch "one_hot_n1_wrap_circuit" (fromCompiledCircuit compileOneHotN1Wrap)
+        exactMatch "one_hot_n3_step_circuit" (fromCompiledCircuit compileOneHotN3Step)
+        exactMatch "one_hot_n3_wrap_circuit" (fromCompiledCircuit compileOneHotN3Wrap)
+        exactMatch "pseudo_mask_n1_step_circuit" (fromCompiledCircuit compilePseudoMaskN1Step)
+        exactMatch "pseudo_mask_n1_wrap_circuit" (fromCompiledCircuit compilePseudoMaskN1Wrap)
+        exactMatch "pseudo_mask_n3_step_circuit" (fromCompiledCircuit compilePseudoMaskN3Step)
+        exactMatch "pseudo_mask_n3_wrap_circuit" (fromCompiledCircuit compilePseudoMaskN3Wrap)
+        exactMatch "pseudo_choose_n1_step_circuit" (fromCompiledCircuit compilePseudoChooseN1Step)
+        exactMatch "pseudo_choose_n1_wrap_circuit" (fromCompiledCircuit compilePseudoChooseN1Wrap)
+        exactMatch "pseudo_choose_n3_step_circuit" (fromCompiledCircuit compilePseudoChooseN3Step)
+        exactMatch "pseudo_choose_n3_wrap_circuit" (fromCompiledCircuit compilePseudoChooseN3Wrap)
+        exactMatch "choose_key_n1_wrap_circuit" (fromCompiledCircuit compileChooseKeyN1Wrap)
       DummyFixture.spec
