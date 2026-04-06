@@ -50,7 +50,7 @@ import Prim.Int (class Add)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, not_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, not_, true_)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
@@ -207,6 +207,9 @@ wrapMainCircuit config stmt advice = do
     wrapDomainLog2 = wrapIpaRounds
     wrapSrsLengthLog2 = wrapIpaRounds
 
+    boolToField :: BoolVar WrapField -> FVar WrapField
+    boolToField = coerce
+
     toUnfinalized u =
       { deferredValues: u.deferredValues
       , shouldFinalize: u.shouldFinalize
@@ -216,7 +219,7 @@ wrapMainCircuit config stmt advice = do
   -- ======== Block 1: Branch selection + branch_data assert ========
   -- OCaml: One_hot_vector.of_index which_branch' ~length:branches
   whichBranch <- label "block1-one-hot" $
-    (Pseudo.oneHotVector :: _ -> _ (Vector branches _)) advice.whichBranch
+    Pseudo.oneHotVector @branches advice.whichBranch
 
   -- Pseudo.choose (which_branch, step_widths) ~f:Field.of_int
   firstZero <- label "block1-first-zero" $
@@ -225,7 +228,6 @@ wrapMainCircuit config stmt advice = do
 
   -- ones_vector ~first_zero N2 |> Vector.rev
   { maskVal0, maskVal1 } <- label "block1-ones-vector" do
-    let true_ = coerce (const_ one :: FVar WrapField) :: BoolVar WrapField
     eq0 <- equals_ firstZero (const_ zero)
     v0 <- and_ true_ (not_ eq0)
     eq1 <- equals_ firstZero (const_ one)
@@ -242,8 +244,14 @@ wrapMainCircuit config stmt advice = do
     let
       two = fromInt 2 :: WrapField
       four = fromInt 4 :: WrapField
-    let twoTimesMask0 = CVar.scale_ two (coerce maskVal0 :: FVar WrapField)
-    let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
+
+      maskVal0Field :: FVar WrapField
+      maskVal0Field = coerce maskVal0
+
+      maskVal1Field :: FVar WrapField
+      maskVal1Field = coerce maskVal1
+    let twoTimesMask0 = CVar.scale_ two maskVal0Field
+    let packedMask = add_ maskVal1Field twoTimesMask0
     let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
     assertEqual_ stmt.branchData packedBranchData
@@ -259,7 +267,6 @@ wrapMainCircuit config stmt advice = do
             :< chosenVK.emulComm
             :< chosenVK.endomulScalarComm
             :< Vector.nil
-            :: Vector 6 _
       , coeff: chosenVK.coefficientsComm
       , sigma: Vector.take @6 chosenVK.sigmaComm
       }
@@ -279,11 +286,11 @@ wrapMainCircuit config stmt advice = do
 
   -- OCaml: Vector.map wrap_domain_indices evaluates right-to-left
   which1 <- label "block3-wrap-domain-1" $
-    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) advice.wrapDomainIndices.idx1
+    Pseudo.oneHotVector @3 advice.wrapDomainIndices.idx1
   domain1 <- Pseudo.toDomain @16 domainConfig which1 config.allPossibleDomainLog2s
 
   which0 <- label "block3-wrap-domain-0" $
-    (Pseudo.oneHotVector :: _ -> _ (Vector 3 _)) advice.wrapDomainIndices.idx0
+    Pseudo.oneHotVector @3 advice.wrapDomainIndices.idx0
   domain0 <- Pseudo.toDomain @16 domainConfig which0 config.allPossibleDomainLog2s
 
   -- FOP proof 0: uses pre-padded slot0 challenges
@@ -355,7 +362,7 @@ wrapMainCircuit config stmt advice = do
   -- Only CondAdd targets are masked (via maskPt).
   let
     branchBools :: Vector branches (FVar WrapField)
-    branchBools = map (coerce :: BoolVar WrapField -> FVar WrapField) whichBranch
+    branchBools = map boolToField whichBranch
 
     { head: bb0, tail: bbRest } = Vector.uncons branchBools
 
@@ -389,7 +396,7 @@ wrapMainCircuit config stmt advice = do
     fullIvpInput =
       { publicInput
       , sgOld: advice.prevStepAccs.acc0 :< advice.prevStepAccs.acc1 :< Vector.nil
-      , sgOldMask: coerce maskVal1 :< coerce maskVal0 :< Vector.nil
+      , sgOldMask: boolToField maskVal1 :< boolToField maskVal0 :< Vector.nil
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:

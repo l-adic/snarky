@@ -32,7 +32,7 @@ The manual parsers in `WrapMain.purs` (`parseUnfinalizedProof`, `parseEvals`) de
 Affected:
 - `parseUnfinalizedProof` (27 fields) — should be a `CircuitType` instance on `UnfinalizedProof`
 - `parseEvals` (89 fields) — should be a `CircuitType` instance on `AllEvals`
-- `stmtTuple` construction (nested Tuples for `pack_statement`) — should be hidden behind a newtype with a clean API
+- `stmtTuple` construction in `Pickles.Wrap.Main` (nested Tuples for `pack_statement`) — should be hidden behind a newtype with a clean API
 
 ## FOP domain as separate argument
 
