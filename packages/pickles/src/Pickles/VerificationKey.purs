@@ -25,8 +25,14 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | Plonk_verification_key_evals.t
 -- | Non-optional fields only (optional are all Opt.Nothing for Features.none).
--- | Each field is a single commitment (curve point), not an array.
+-- | Each field is a single commitment (curve point).
 -- | OCaml: 'comm t where 'comm is instantiated to a curve point.
+-- |
+-- | TODO(num_chunks): When num_chunks > 1 (circuits exceeding SRS degree),
+-- | each commitment becomes an array of chunk points. This type would need
+-- | a @numChunks parameter: each field becomes Vector numChunks (AffinePoint f).
+-- | The chooseKey operations (scalePt, sealPt, addPt) would need to map over
+-- | chunks. See OCaml's wrap_verifier.ml:296-310 which uses Array.map over chunks.
 type StepVK f =
   { sigmaComm :: Vector 7 (AffinePoint f)
   , coefficientsComm :: Vector 15 (AffinePoint f)

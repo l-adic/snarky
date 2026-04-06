@@ -50,6 +50,10 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | `chunks` is the number of t_comm chunks (= 7 * ceil(domain_size / max_poly_size)).
 -------------------------------------------------------------------------------
 
+-- | TODO(num_chunks): When num_chunks > 1, each commitment becomes
+-- | Vector numChunks (AffinePoint f). The `chunks` parameter here is the
+-- | total number of tComm points (currently 7 = num_chunks * 7).
+-- | wComm and zComm would similarly need chunking.
 type FqSpongeInput sgOldN chunks f =
   { indexDigest :: f
   , sgOld :: Vector sgOldN (AffinePoint f)

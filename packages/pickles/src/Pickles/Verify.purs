@@ -92,6 +92,9 @@ type IncrementallyVerifyProofInput publicInput sgOldN d fv sf =
       , sigma :: Vector 6 (AffinePoint fv)
       }
   -- Protocol messages and opening proof
+  -- TODO(num_chunks): When num_chunks > 1, each commitment point becomes
+  -- Vector numChunks (AffinePoint fv). The tComm size (currently 7) is
+  -- ceil(domain_size / max_poly_size) * 7. For num_chunks = 1 this is just 7.
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
   , tComm :: Vector 7 (AffinePoint fv)
@@ -237,6 +240,10 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
 
   -- 5. Assemble commitment bases: sg_old + 45 fixed bases (to_batch order)
   -- Matches OCaml: sg_old[0..1], x_hat, ft_comm, z_comm, index(6), w_comm(15), coeff(15), sigma(6)
+  -- TODO(num_chunks): With num_chunks > 1, each commitment is an array of chunk
+  -- points. The allBases vector would grow by a factor of num_chunks, and
+  -- totalBases = sgOldN + num_chunks * 45. The combinePolynomials fold would
+  -- need inner loops over chunks (see OCaml's Pcs_batch.combine_split_commitments).
   let
     allBases :: Vector totalBases (AffinePoint (FVar f))
     allBases =
