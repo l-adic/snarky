@@ -260,7 +260,7 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     allBaseMasks :: Vector totalBases (Maybe (BoolVar f))
     allBaseMasks =
       (map (Just <<< coerce) input.sgOldMask) `Vector.append`
-        (Vector.replicate Nothing :: Vector 45 _)
+        (Vector.replicate @45 Nothing)
 
   -- 6. Build CheckBulletproofInput and run checkBulletproof
   let

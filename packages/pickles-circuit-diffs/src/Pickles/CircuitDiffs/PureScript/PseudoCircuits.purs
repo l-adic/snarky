@@ -38,6 +38,7 @@ import Type.Proxy (Proxy(..))
 -- one_hot_vector N1
 --------------------------------------------------------------------------------
 
+-- | Takes 1 public input field (the index to select).
 oneHotN1Circuit
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m
@@ -63,6 +64,7 @@ compileOneHotN1Wrap = compilePure (Proxy @(Vector 1 (F WrapField))) (Proxy @Unit
 -- one_hot_vector N3
 --------------------------------------------------------------------------------
 
+-- | Takes 1 public input field (the index to select).
 oneHotN3Circuit
   :: forall f t m
    . CircuitM f (KimchiConstraint f) t m

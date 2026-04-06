@@ -52,10 +52,15 @@ oneHotVector
   -> Snarky (KimchiConstraint f) t m (Vector n (BoolVar f))
 oneHotVector index = label "one-hot-vector" do
   -- OCaml Vector.init evaluates right-to-left (j=n-1 first, j=0 last)
+  let indices = Vector.generate @n identity
   vRev <- traverse (\j -> equals_ (const_ (fromBigInt (fromInt (getFinite j)))) index)
-    (Vector.reverse (Vector.generate identity :: Vector n _))
-  let v = Vector.reverse vRev
-  assertNonZero_ (sum_ (Vector.toUnfoldable (map (coerce :: BoolVar f -> FVar f) v)))
+    (Vector.reverse indices)
+  let
+    v = Vector.reverse vRev
+
+    asFields :: Vector n (FVar f)
+    asFields = map coerce v
+  assertNonZero_ (sum_ (Vector.toUnfoldable asFields))
   pure v
 
 -- | Mask-select: compute ∑ bits[i] * xs[i].
@@ -78,7 +83,10 @@ mask
   -> Snarky (KimchiConstraint f) t m (FVar f)
 mask bits xs = label "pseudo-mask" do
   -- OCaml Vector.map evaluates right-to-left (::  constructor)
-  termsRev <- traverse (\(Tuple b x) -> mul_ (coerce b :: FVar f) x) $
+  let
+    boolToField :: BoolVar f -> FVar f
+    boolToField = coerce
+  termsRev <- traverse (\(Tuple b x) -> mul_ (boolToField b) x) $
     Vector.reverse (Vector.zip bits xs)
   let terms = Vector.reverse termsRev
   pure $ sum_ (Vector.toUnfoldable terms)

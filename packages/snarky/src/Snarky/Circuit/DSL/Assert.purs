@@ -101,7 +101,10 @@ assertAny_
   => PrimeField f
   => Array (BoolVar f)
   -> Snarky c t m Unit
-assertAny_ bs = assertNonZero_ (sum_ (map (coerce :: BoolVar f -> FVar f) bs))
+assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
+  where
+  boolToField :: BoolVar f -> FVar f
+  boolToField = coerce
 
 -- | Boolean.Assert.all: assert all booleans are true.
 -- | Uses assertEqual(sum, n) — no special case for 2 elements.
@@ -112,7 +115,10 @@ assertAll_
   => PrimeField f
   => Array (BoolVar f)
   -> Snarky c t m Unit
-assertAll_ bs = assertEqual_ (sum_ (map (coerce :: BoolVar f -> FVar f) bs)) (const_ (fromInt (Array.length bs)))
+assertAll_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ (fromInt (Array.length bs)))
+  where
+  boolToField :: BoolVar f -> FVar f
+  boolToField = coerce
 
 -- | AND all booleans together. Empty array returns true.
 allBools

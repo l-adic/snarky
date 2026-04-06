@@ -26,7 +26,6 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Dummy (dummyIpaChallenges)
@@ -45,11 +44,11 @@ import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, mul_, not_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, SizedF, Snarky, add_, and_, assertAny_, assertEqual_, const_, equals_, label, not_)
 import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Curves.Class (curveParams, fromBigInt)
+import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (splitFieldCircuit)
@@ -224,6 +223,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- Matches wrap_main.ml:222-255 and dump_circuit_impl.ml:2208-2238
 
   -- One_hot_vector.of_index which_branch' ~length:N1
+  -- Vector 1 = number of branches (N1 specialization). N2 would be Vector 2.
   whichBranch <- label "block1-one-hot" $
     (Pseudo.oneHotVector :: _ -> _ (Vector 1 _)) _whichBranch
 
@@ -231,7 +231,7 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- mask [bool] [const_ 1] = Scale(1, bool) — non-constant!
   firstZero <- label "block1-first-zero" $
     Pseudo.choose whichBranch (1 :< Vector.nil :: Vector 1 Int)
-      (\w -> const_ (fromBigInt (fromInt w)))
+      (\w -> const_ (fromInt w))
 
   -- ones_vector ~first_zero N2 |> Vector.rev
   -- go true_ 0 2:
@@ -248,18 +248,18 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- domain_log2 = Pseudo.choose (which_branch, [16]) ~f:Field.of_int
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch (16 :< Vector.nil :: Vector 1 Int)
-      (\d -> const_ (fromBigInt (fromInt d)))
+      (\d -> const_ (fromInt d))
 
   -- Branch_data.Checked.Wrap.pack + Field.Assert.equal
   label "block1-branch-data-assert" do
     let
-      two = one + one :: WrapField
-      four = two + two :: WrapField
+      two = fromInt 2 :: WrapField
+      four = fromInt 4 :: WrapField
     -- pack(mask) = mask[1] + 2*mask[0] (Vector.rev order)
-    twoTimesMask0 <- mul_ (const_ two) (coerce maskVal0 :: FVar WrapField)
+    let twoTimesMask0 = CVar.scale_ two (coerce maskVal0 :: FVar WrapField)
     let packedMask = add_ (coerce maskVal1 :: FVar WrapField) twoTimesMask0
     -- packed = 4*domain_log2 + pack(mask)
-    fourTimesDom <- mul_ (const_ four) domainLog2
+    let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
     assertEqual_ _branchData packedBranchData
 
@@ -297,6 +297,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   -- Block 3: Compute wrap_domains THEN FOP loop
   -- OCaml: Vector.map wrap_domain_indices ~f:(oneHotVector + to_domain) BEFORE Vector.mapn FOP
   -- Reference: wrap_main.ml:418-433 (domains), 435-485 (FOP loop)
+  -- Extract the FOP-relevant fields from the parsed proof. Drops rawFq (used
+  -- only for pack_statement/split_field later) to match FOP's UnfinalizedProof type.
   let toUnfinalized u = { deferredValues: u.deferredValues, shouldFinalize: u.shouldFinalize, spongeDigestBeforeEvaluations: u.spongeDigestBeforeEvaluations }
 
   -- Compute BOTH domains before FOP (matching OCaml ordering)
@@ -317,6 +319,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
   domain0 <- Pseudo.toDomain @16 domainConfig which0 allPossibleLog2s
 
   -- FOP proof 0
+  -- Domain is per-proof (from Pseudo.toDomain), merged into static fopBaseParams.
+  -- TODO: cleaner to pass domain as a separate arg to wrapFinalizeOtherProofCircuit.
   -- OCaml pads prevChallenges from 1 to 2 entries (prepend 1 dummy).
   -- Reference: wrap_hack.ml:82-87, wrap_main.ml:471-474
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
