@@ -29,7 +29,7 @@ import Prelude
 
 import Data.Fin (Finite, unsafeFinite)
 import Data.Foldable (foldl)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -79,10 +79,6 @@ type WrapMainConfig branches =
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   -- ^ [13, 14, 15] — the possible wrap domain sizes
-  , wrapDomainLog2 :: Int
-  -- ^ Domain log2 for pow2pow in FOP (usually 15)
-  , wrapSrsLengthLog2 :: Int
-  -- ^ SRS length log2 (usually 15)
   }
 
 -- | Per-proof advice data from exists/request.
@@ -203,8 +199,13 @@ wrapMainCircuit
 wrapMainCircuit config stmt advice = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
-    wrapDomainLog2 = config.wrapDomainLog2
-    wrapSrsLengthLog2 = config.wrapSrsLengthLog2
+    -- Both derived from WrapIPARounds (= Backend.Tock.Rounds.n = 15).
+    -- In OCaml: Common.Max_degree.wrap_log2 = Nat.to_int Backend.Tock.Rounds.n.
+    -- TODO(num_chunks): With num_chunks > 1, srs_length_log2 stays at WrapIPARounds
+    -- but domain_log2 may differ. num_chunks = ceil(domain_size / 2^srs_length_log2).
+    wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
+    wrapDomainLog2 = wrapIpaRounds
+    wrapSrsLengthLog2 = wrapIpaRounds
 
     toUnfinalized u =
       { deferredValues: u.deferredValues

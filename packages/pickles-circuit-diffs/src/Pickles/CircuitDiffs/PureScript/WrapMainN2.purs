@@ -166,8 +166,6 @@ wrapMainN2Test { lagrangeComms, blindingH } inputs = do
       , lagrangeComms: lagrangeComms
       , blindingH
       , allPossibleDomainLog2s: unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , wrapDomainLog2: 15
-      , wrapSrsLengthLog2: 15
       }
 
   wrapMainCircuit @2 @2 @1 config stmt advice

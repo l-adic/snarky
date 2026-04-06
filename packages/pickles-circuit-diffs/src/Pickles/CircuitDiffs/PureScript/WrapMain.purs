@@ -15,7 +15,7 @@ import Prelude
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapDomainLog2, wrapSrsLengthLog2)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Types (StepIPARounds, WrapField, WrapIPARounds)
@@ -159,8 +159,6 @@ wrapMainN1Test { lagrangeComms, blindingH } inputs = do
       , lagrangeComms: lagrangeComms
       , blindingH
       , allPossibleDomainLog2s: unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-      , wrapDomainLog2: wrapDomainLog2
-      , wrapSrsLengthLog2: wrapSrsLengthLog2
       }
 
   wrapMainCircuit @1 @1 @0 config stmt advice
