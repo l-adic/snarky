@@ -1,8 +1,14 @@
 module Pickles.CircuitDiffs.PureScript.WrapMain
-  ( compileWrapMain
+  ( compileWrapMainN1
   ) where
 
--- | Full wrap_main circuit test wrapper.
+-- | Full wrap_main circuit test wrapper — N1 specialization.
+-- |
+-- | This is the N1 case: 1 branch verifying 1 previous proof.
+-- | Max_widths_by_slot=[N1,N0] means slot 0 carries 1 real proof's
+-- | challenges and slot 1 is empty (dummy-padded).
+-- | For N2 (2 real previous proofs), see FOLLOW-UPS.md.
+-- |
 -- | Parses 401 flat inputs and inlines the wrap_main logic.
 -- |
 -- | Configuration: single-branch fold, branches=1, step_widths=[1],
@@ -440,8 +446,8 @@ wrapMainCircuit { lagrangeComms, blindingH } inputs = do
 
   wrapVerify ivpParams fullIvpInput verifyInput
 
-compileWrapMain :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMain srsData =
+compileWrapMainN1 :: IvpWrapParams -> CompiledCircuit WrapField
+compileWrapMainN1 srsData =
   compilePure (Proxy @(Vector InputSize (F WrapField))) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\inputs -> wrapMainCircuit srsData inputs)
     Kimchi.initialState
