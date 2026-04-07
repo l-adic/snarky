@@ -175,20 +175,21 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     delta <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
     sg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
-    -- 3. Proof_state: allocated in OCaml's typ hlist order:
-    --    Plonk.In_circuit.typ: alpha, beta, gamma, zeta, perm, zetaToSrs, zetaToDom
-    --    Deferred_values: [Plonk, cip, b, xi, bpChals, branch_data]
-    --    Proof_state: [Deferred_values, sponge_digest, Unit]
-    psAlpha <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
-    psBeta <- exists (dummy :: _ (F StepField))  -- Challenge
-    psGamma <- exists (dummy :: _ (F StepField))  -- Challenge
-    psZeta <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
-    psPerm <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
-    psZetaToSrs <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
-    psZetaToDom <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
-    psCip <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
-    psB <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
-    psXi <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
+    -- 3. Proof_state: allocated in OCaml's to_data order (NOT hlist order!)
+    --    OCaml uses Typ.transport ~there:to_data, so exists allocates in to_data order:
+    --    fq=[cip,b,zetaToSrs,zetaToDom,perm], digest=[sponge],
+    --    challenge=[beta,gamma], scalar_challenge=[alpha,zeta,xi], bpChals(16)
+    psCip <- exists (dummy :: _ (F StepField))
+    psB <- exists (dummy :: _ (F StepField))
+    psZetaToSrs <- exists (dummy :: _ (F StepField))
+    psZetaToDom <- exists (dummy :: _ (F StepField))
+    psPerm <- exists (dummy :: _ (F StepField))
+    psSponge <- exists (dummy :: _ (F StepField))  -- sponge_digest
+    psBeta <- exists (dummy :: _ (F StepField))
+    psGamma <- exists (dummy :: _ (F StepField))
+    psAlpha <- exists (dummy :: _ (F StepField))
+    psZeta <- exists (dummy :: _ (F StepField))
+    psXi <- exists (dummy :: _ (F StepField))
     psBpChals :: Vector 16 (FVar StepField) <- exists (dummy :: _ (Vector 16 (F StepField)))
     -- branch_data is LAST in Deferred_values.In_circuit.typ
     -- OCaml Branch_data.typ hlist: [proofs_verified_mask, domain_log2]
@@ -198,8 +199,6 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     domLog2 <- exists (dummy :: _ (F StepField))
     let branchData = { mask0: bdMask0, mask1: bdMask1, domainLog2Var: domLog2 }
     _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
-    -- sponge_digest comes AFTER Deferred_values in the Proof_state.In_circuit.typ hlist
-    psSponge <- exists (dummy :: _ (F StepField))
     -- Build the fopState record (after all allocations)
     let fopState =
           { plonk:
@@ -261,23 +260,25 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
   --   1 × Boolean.typ check on shouldFinalize
   --   Challenges/digest/bpChallenges: plain Field.typ, NO check
   unfinalized <- label "exists_unfinalized" do
-    -- OCaml Deferred_values.In_circuit.typ hlist:
-    --   Plonk{alpha,beta,gamma,zeta,perm,zetaToSrs,zetaToDom}, cip, b, xi, bpChals
-    -- Then Proof_state adds: sponge_digest, shouldFinalize
-    -- Note: no branch_data for unfinalized (only for per_proof_witness)
-    unfAlpha <- exists (dummy :: _ (F StepField))
-    unfBeta <- exists (dummy :: _ (F StepField))
-    unfGamma <- exists (dummy :: _ (F StepField))
-    unfZeta <- exists (dummy :: _ (F StepField))
-    unfPerm <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))  -- Other_field: checked
+    -- OCaml allocates in Spec.packed_typ to_data order (via Typ.transport):
+    --   fq=[cip,b,zetaToSrs,zetaToDom,perm] (each Type2 = 2 fields, checked)
+    --   digest=[sponge] (1 field)
+    --   challenge=[beta,gamma] (2 fields)
+    --   scalar_challenge=[alpha,zeta,xi] (3 fields)
+    --   bpChals(15 fields)
+    --   bool=[shouldFinalize] (1 field)
+    unfCip <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))  -- Other_field: checked
+    unfB <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
     unfZetaToSrs <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
     unfZetaToDom <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
-    unfCip <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
-    unfB <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfPerm <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfClaimedDigest <- exists (dummy :: _ (F StepField))  -- sponge_digest
+    unfBeta <- exists (dummy :: _ (F StepField))
+    unfGamma <- exists (dummy :: _ (F StepField))
+    unfAlpha <- exists (dummy :: _ (F StepField))
+    unfZeta <- exists (dummy :: _ (F StepField))
     unfXi <- exists (dummy :: _ (F StepField))
     unfBpChals :: Vector 15 (FVar StepField) <- exists (dummy :: _ (Vector 15 (F StepField)))
-    -- Proof_state outer: sponge_digest, shouldFinalize
-    unfClaimedDigest <- exists (dummy :: _ (F StepField))
     unfShouldFinalize :: BoolVar StepField <- exists (dummy :: _ Boolean)
     pure
       { deferredValues:
