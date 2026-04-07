@@ -611,6 +611,7 @@ forbiddenSplitFieldValues
    . PrimeField scalarField
   => PrimeField circuitField
   => FieldSizeInBits scalarField 255
+  => FieldSizeInBits circuitField 255
   => Array { sDiv2 :: F circuitField, sOdd :: Boolean }
 forbiddenSplitFieldValues =
   let
@@ -620,12 +621,16 @@ forbiddenSplitFieldValues =
 
     rawValues = forbiddenShiftedValues { modulus: scalarMod, sizeInBits }
 
-    -- Convert raw x to (sDiv2, sOdd) where x = 2*sDiv2 + sOdd
+    -- Convert raw x to (lo, hi) matching OCaml's Other_field decomposition:
+    --   hi = test_bit x (Field.size_in_bits - 1)  -- high bit of circuit field
+    --   lo = x >> 1                                -- remaining bits
+    -- Reference: impls.ml:66-74
+    circuitSizeInBits = fieldSizeBits (Proxy @circuitField)
     toSplitField :: BigInt -> Maybe { sDiv2 :: F circuitField, sOdd :: Boolean }
     toSplitField x =
       let
-        sOdd = BigInt.odd x
-        sDiv2BigInt = (x - (if sOdd then BigInt.fromInt 1 else BigInt.fromInt 0)) / BigInt.fromInt 2
+        sOdd = BigInt.and (BigInt.shr x (BigInt.fromInt (circuitSizeInBits - 1))) (BigInt.fromInt 1) == BigInt.fromInt 1
+        sDiv2BigInt = BigInt.shr x (BigInt.fromInt 1)
       in
         -- sDiv2 must fit in the circuit field
         if sDiv2BigInt < circuitMod then Just { sDiv2: F (fromBigInt sDiv2BigInt), sOdd }
