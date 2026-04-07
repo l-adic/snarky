@@ -145,60 +145,62 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
 
   -- VK (Plonk_verification_key_evals.typ with Inner_curve.typ)
   -- On-curve checks happen automatically via WeierstrassAffinePoint CheckedType
-  vk <- exists (dummy :: _ { sigma :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
+  vk <- label "exists_wrap_index" $ exists (dummy :: _ { sigma :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
          , sigmaLast :: WeierstrassAffinePoint PallasG (F StepField)
          , coeff :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
          , index :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
          })
 
-  -- Per-proof witness: commitments (curve-checked)
-  comms <- exists (dummy :: _ { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
-           , zComm :: WeierstrassAffinePoint PallasG (F StepField)
-           , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (F StepField))
-           })
-
-  -- Per-proof witness: opening (curve points checked, z1/z2 unchecked)
-  opening <- exists (dummy :: _ { lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }
-             , z1 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
-             , z2 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
-             , delta :: WeierstrassAffinePoint PallasG (F StepField)
-             , sg :: WeierstrassAffinePoint PallasG (F StepField)
+  -- Per-proof witness: comms + opening + proof_state + evals + prevChals
+  -- All part of OCaml's single `exists (Prev_typ.f ...)` call
+  { comms, opening, fopState, allEvals, prevChals } <- label "exists_prevs" do
+    comms <- exists (dummy :: _ { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
+             , zComm :: WeierstrassAffinePoint PallasG (F StepField)
+             , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (F StepField))
              })
 
-  -- Per-proof proof_state (Type1 deferred values — unchecked, OCaml uses typ_unchecked)
-  fopState <- exists (dummy :: _ (UnChecked { plonk ::
-                  { alpha :: SizedF 128 (F StepField)
-                  , beta :: SizedF 128 (F StepField)
-                  , gamma :: SizedF 128 (F StepField)
-                  , zeta :: SizedF 128 (F StepField)
-                  , perm :: Type1 (F StepField)
-                  , zetaToSrsLength :: Type1 (F StepField)
-                  , zetaToDomainSize :: Type1 (F StepField)
-                  }
-              , combinedInnerProduct :: Type1 (F StepField)
-              , b :: Type1 (F StepField)
-              , xi :: SizedF 128 (F StepField)
-              , bulletproofChallenges :: Vector 16 (SizedF 128 (F StepField))
-              , spongeDigest :: F StepField
-              }))
-
-  -- Per-proof allEvals (unchecked)
-  allEvals <- exists (dummy :: _ (UnChecked { ftEval1 :: F StepField
-              , publicEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              , witnessEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              , coeffEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              , zEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              , sigmaEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              , indexEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-              }))
-
-  -- Previous challenges + sg (curve-checked)
-  prevChals <- exists (dummy :: _ { challenges :: UnChecked (Vector 16 (F StepField))
+    opening <- exists (dummy :: _ { lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }
+               , z1 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
+               , z2 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
+               , delta :: WeierstrassAffinePoint PallasG (F StepField)
                , sg :: WeierstrassAffinePoint PallasG (F StepField)
                })
 
-  -- Unfinalized proof (unchecked — OCaml uses typ_unchecked for Other_field)
-  unfinalized <- exists (dummy :: _ (UnChecked { deferredValues ::
+    fopState <- exists (dummy :: _ (UnChecked { plonk ::
+                    { alpha :: SizedF 128 (F StepField)
+                    , beta :: SizedF 128 (F StepField)
+                    , gamma :: SizedF 128 (F StepField)
+                    , zeta :: SizedF 128 (F StepField)
+                    , perm :: Type1 (F StepField)
+                    , zetaToSrsLength :: Type1 (F StepField)
+                    , zetaToDomainSize :: Type1 (F StepField)
+                    }
+                , combinedInnerProduct :: Type1 (F StepField)
+                , b :: Type1 (F StepField)
+                , xi :: SizedF 128 (F StepField)
+                , bulletproofChallenges :: Vector 16 (SizedF 128 (F StepField))
+                , spongeDigest :: F StepField
+                }))
+
+    allEvals <- exists (dummy :: _ (UnChecked { ftEval1 :: F StepField
+                , publicEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                , witnessEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                , coeffEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                , zEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                , sigmaEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                , indexEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
+                }))
+
+    prevChals <- exists (dummy :: _ { challenges :: UnChecked (Vector 16 (F StepField))
+                 , sg :: WeierstrassAffinePoint PallasG (F StepField)
+                 })
+
+    pure { comms, opening, fopState, allEvals, prevChals }
+
+  -- Unfinalized proof — UnChecked for now; OCaml's Unfinalized.typ runs
+  -- Other_field.check (forbidden shifted values) + assert_16_bits which our
+  -- CheckedType doesn't match. TODO: align CheckedType with OCaml's exact checks.
+  unfinalized <- label "exists_unfinalized" $ exists (dummy :: _ (UnChecked { deferredValues ::
                      { plonk ::
                          { alpha :: SizedF 128 (F StepField)
                          , beta :: SizedF 128 (F StepField)
@@ -237,7 +239,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , index: map unwrapPt vk.index
       }
 
-    -- Unwrap UnChecked wrappers
+    -- Unwrap UnChecked wrappers where needed
     UnChecked fopState' = fopState
     UnChecked allEvals' = allEvals
     UnChecked unfinalized' = unfinalized
@@ -250,7 +252,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , zComm: unwrapPt comms.zComm
       , tComm: map unwrapPt comms.tComm
       , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) opening.lr
-      , z1: unsafeCoerce opening.z1 -- UnChecked Type2 → Type2
+      , z1: unsafeCoerce opening.z1
       , z2: unsafeCoerce opening.z2
       , delta: unwrapPt opening.delta
       , sg: unwrapPt opening.sg
