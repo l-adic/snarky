@@ -28,7 +28,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAny_, assert_, const_, equals_, exists, label, not_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Kimchi (SplitField, Type1, Type2, groupMapParams)
+import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2, groupMapParams)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -167,35 +167,67 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     delta <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
     sg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
-    -- 3. Proof_state (UnChecked) + branch_data (with boolean mask + endo check)
-    fopState <- exists (dummy :: _ (UnChecked { plonk ::
-                    { alpha :: SizedF 128 (F StepField)
-                    , beta :: SizedF 128 (F StepField)
-                    , gamma :: SizedF 128 (F StepField)
-                    , zeta :: SizedF 128 (F StepField)
-                    , perm :: Type1 (F StepField)
-                    , zetaToSrsLength :: Type1 (F StepField)
-                    , zetaToDomainSize :: Type1 (F StepField)
-                    }
-                , combinedInnerProduct :: Type1 (F StepField)
-                , b :: Type1 (F StepField)
-                , xi :: SizedF 128 (F StepField)
-                , bulletproofChallenges :: Vector 16 (SizedF 128 (F StepField))
-                , spongeDigest :: F StepField
-                }))
+    -- 3. Proof_state: allocated in OCaml's Per_proof.In_circuit.to_data order:
+    --    fq=[cip,b,zetaToSrs,zetaToDom,perm], digest=[sponge], challenge=[beta,gamma],
+    --    scalar_challenge=[alpha,zeta,xi], bp_challenges(16)
+    -- All UnChecked since OCaml uses typ_unchecked for these
+    psCip <- exists (dummy :: _ (F StepField))  -- combinedInnerProduct (Type1)
+    psB <- exists (dummy :: _ (F StepField))  -- b (Type1)
+    psZetaToSrs <- exists (dummy :: _ (F StepField))  -- zetaToSrsLength (Type1)
+    psZetaToDom <- exists (dummy :: _ (F StepField))  -- zetaToDomainSize (Type1)
+    psPerm <- exists (dummy :: _ (F StepField))  -- perm (Type1)
+    psSponge <- exists (dummy :: _ (F StepField))  -- spongeDigest
+    psBeta <- exists (dummy :: _ (F StepField))  -- beta (Challenge)
+    psGamma <- exists (dummy :: _ (F StepField))  -- gamma (Challenge)
+    psAlpha <- exists (dummy :: _ (F StepField))  -- alpha (Scalar Challenge)
+    psZeta <- exists (dummy :: _ (F StepField))  -- zeta (Scalar Challenge)
+    psXi <- exists (dummy :: _ (F StepField))  -- xi (Scalar Challenge)
+    psBpChals :: Vector 16 (FVar StepField) <- exists (dummy :: _ (Vector 16 (F StepField)))
+    let fopState =
+          { plonk:
+              { alpha: unsafeCoerce psAlpha :: SizedF 128 (FVar StepField)
+              , beta: unsafeCoerce psBeta :: SizedF 128 (FVar StepField)
+              , gamma: unsafeCoerce psGamma :: SizedF 128 (FVar StepField)
+              , zeta: unsafeCoerce psZeta :: SizedF 128 (FVar StepField)
+              , perm: Type1 psPerm
+              , zetaToSrsLength: Type1 psZetaToSrs
+              , zetaToDomainSize: Type1 psZetaToDom
+              }
+          , combinedInnerProduct: Type1 psCip
+          , b: Type1 psB
+          , xi: unsafeCoerce psXi :: SizedF 128 (FVar StepField)
+          , bulletproofChallenges: unsafeCoerce psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
+          , spongeDigest: psSponge
+          }
     branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
     let UnChecked domLog2 = branchData.domainLog2Var
     _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
 
-    -- 4. All_evals (UnChecked)
-    allEvals <- exists (dummy :: _ (UnChecked { ftEval1 :: F StepField
-                , publicEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                , witnessEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                , coeffEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                , zEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                , sigmaEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                , indexEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
-                }))
+    -- 4. All_evals: allocated in OCaml hlist order
+    --    All_evals = { evals: With_public_input, ft_eval1 }
+    --    With_public_input = { public_input: (zeta, omega), evals: Evals }
+    --    Evals hlist: w(15), coefficients(15), z(1), s(6), generic_sel, poseidon_sel,
+    --                 complete_add_sel, mul_sel, emul_sel, endomul_scalar_sel
+    --    Each eval is a pair (zeta_eval, omega_eval) — allocated as (zeta, omega)
+    --    Note: OCaml's pair is (fst, snd) = (zeta, omega) in left-to-right order
+    publicEvalsZ <- exists (dummy :: _ (F StepField))
+    publicEvalsOZ <- exists (dummy :: _ (F StepField))
+    witnessEvals <- exists (dummy :: _ (Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    coeffEvals <- exists (dummy :: _ (Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    zEvalsZ <- exists (dummy :: _ (F StepField))
+    zEvalsOZ <- exists (dummy :: _ (F StepField))
+    sigmaEvals <- exists (dummy :: _ (Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    indexEvals <- exists (dummy :: _ (Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    ftEval1 <- exists (dummy :: _ (F StepField))
+    let allEvals =
+          { ftEval1
+          , publicEvals: { zeta: publicEvalsZ, omegaTimesZeta: publicEvalsOZ }
+          , witnessEvals
+          , coeffEvals
+          , zEvals: { zeta: zEvalsZ, omegaTimesZeta: zEvalsOZ }
+          , sigmaEvals
+          , indexEvals
+          }
 
     -- 5. prev_challenges
     prevChallenges <- exists (dummy :: _ (UnChecked (Vector 16 (F StepField))))
@@ -246,8 +278,6 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       }
 
     -- Unwrap UnChecked wrappers where needed
-    UnChecked fopState' = fopState
-    UnChecked allEvals' = allEvals
     UnChecked prevChallenges' = prevChallenges
     UnChecked branchDomainLog2 = branchData.domainLog2Var
 
@@ -262,14 +292,14 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , delta: unwrapPt delta
       , sg: unwrapPt sg
       , proofState:
-          { plonk: fopState'.plonk
-          , combinedInnerProduct: fopState'.combinedInnerProduct
-          , b: fopState'.b
-          , xi: fopState'.xi
-          , bulletproofChallenges: fopState'.bulletproofChallenges
-          , spongeDigest: fopState'.spongeDigest
+          { plonk: fopState.plonk
+          , combinedInnerProduct: fopState.combinedInnerProduct
+          , b: fopState.b
+          , xi: fopState.xi
+          , bulletproofChallenges: fopState.bulletproofChallenges
+          , spongeDigest: fopState.spongeDigest
           }
-      , allEvals: allEvals'
+      , allEvals
       , prevChallenges: prevChallenges' :< Vector.nil
       , prevSgs: unwrapPt prevSg :< Vector.nil
       , unfinalized:
