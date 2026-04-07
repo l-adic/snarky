@@ -29,7 +29,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAny_, assert_, const_, equals_, exists, label, not_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2, groupMapParams)
+import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -113,9 +113,9 @@ stepMainSimpleChainCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => StepMainSimpleChainParams
-  -> Vector InputSize (FVar StepField)
-  -> Snarky (KimchiConstraint StepField) t m Unit
-stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
+  -> Unit
+  -> Snarky (KimchiConstraint StepField) t m (Vector InputSize (FVar StepField))
+stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
 
   ---------------------------------------------------------------------------
   -- 1. exists input_typ (app_state)
@@ -388,7 +388,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
   -- 6. Outer hash: hash_messages_for_next_step_proof
   --    OCaml: sponge_after_index(VK) → absorb app_state → absorb sg + bp_challenges → squeeze
   ---------------------------------------------------------------------------
-  _outerDigest <- label "hash_messages_for_next_step_proof" do
+  outerDigest <- label "hash_messages_for_next_step_proof" do
     let
       absorbPt s pt = do
         let { x, y } = unwrapPt pt
@@ -418,10 +418,42 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     { result: digest } <- Sponge.squeeze sAfterProofs
     pure digest
 
-  pure unit
+  -- Build the Step.Statement output in OCaml's Per_proof.In_circuit.to_data order:
+  --   fq=[cip, b, zetaToSrs, zetaToDom, perm] (5 × Type2 = 10 fields)
+  --   digest=[spongeDigest] (1 field)
+  --   challenge=[beta, gamma] (2 fields)
+  --   scalar_challenge=[alpha, zeta, xi] (3 fields)
+  --   bulletproof_challenges (15 fields)
+  --   bool=[shouldFinalize] (1 field)
+  -- Total per unfinalized: 32 fields
+  -- Then: messages_for_next_step_proof (1 field), messages_for_next_wrap_proof (1 field)
+  -- Grand total: 34 fields
+  let
+    -- Type2 SplitField to 2 fields: sDiv2 then sOdd (matching OCaml tuple2 field bool)
+    sf2 (Type2 (SplitField { sDiv2, sOdd })) = [ sDiv2, unsafeCoerce sOdd :: FVar StepField ]
+    fqFields = sf2 unfinalized.deferredValues.combinedInnerProduct
+            <> sf2 unfinalized.deferredValues.b
+            <> sf2 unfinalized.deferredValues.plonk.zetaToSrsLength
+            <> sf2 unfinalized.deferredValues.plonk.zetaToDomainSize
+            <> sf2 unfinalized.deferredValues.plonk.perm
+    digestFields = [ unfinalized.claimedDigest ]
+    challengeFields = [ unsafeCoerce unfinalized.deferredValues.plonk.beta :: FVar StepField
+                      , unsafeCoerce unfinalized.deferredValues.plonk.gamma :: FVar StepField ]
+    scalarChalFields = [ unsafeCoerce unfinalized.deferredValues.plonk.alpha :: FVar StepField
+                       , unsafeCoerce unfinalized.deferredValues.plonk.zeta :: FVar StepField
+                       , unsafeCoerce unfinalized.deferredValues.xi :: FVar StepField ]
+    bpChalFields = Vector.toUnfoldable (unsafeCoerce unfinalized.deferredValues.bulletproofChallenges :: Vector 15 (FVar StepField))
+    boolFields = [ unsafeCoerce unfinalized.shouldFinalize :: FVar StepField ]
+    msgStepField = [ outerDigest ]
+    msgWrapField = [ messagesForNextWrapProof ]
+
+    outputArr = fqFields <> digestFields <> challengeFields <> scalarChalFields
+             <> bpChalFields <> boolFields <> msgStepField <> msgWrapField
+
+  pure (unsafeCoerce outputArr :: Vector InputSize (FVar StepField))
 
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
 compileStepMainSimpleChain params =
-  compilePure (Proxy @(Vector InputSize (F StepField))) (Proxy @Unit) (Proxy @(KimchiConstraint StepField))
-    (\inputs -> stepMainSimpleChainCircuit params inputs)
+  compilePure (Proxy @Unit) (Proxy @(Vector InputSize (F StepField))) (Proxy @(KimchiConstraint StepField))
+    (\_ -> stepMainSimpleChainCircuit params unit)
     Kimchi.initialState
