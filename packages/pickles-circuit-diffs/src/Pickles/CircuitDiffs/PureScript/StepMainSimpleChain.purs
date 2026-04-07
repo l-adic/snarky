@@ -14,6 +14,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Data.Foldable (foldM)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyWrapSg, stepEndo)
@@ -212,21 +213,25 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     --    Note: OCaml's pair is (fst, snd) = (zeta, omega) in left-to-right order
     publicEvalsZ <- exists (dummy :: _ (F StepField))
     publicEvalsOZ <- exists (dummy :: _ (F StepField))
-    witnessEvals <- exists (dummy :: _ (Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
-    coeffEvals <- exists (dummy :: _ (Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    -- Eval pairs: OCaml allocates (zeta, omega) left-to-right.
+    -- PureScript record { omegaTimesZeta, zeta } RowList is o < z = wrong order.
+    -- Use Tuple to force zeta-first allocation, then convert.
+    let toPair (Tuple z oz) = { zeta: z, omegaTimesZeta: oz }
+    witnessEvalsRaw <- exists (dummy :: _ (Vector 15 (Tuple (F StepField) (F StepField))))
+    coeffEvalsRaw <- exists (dummy :: _ (Vector 15 (Tuple (F StepField) (F StepField))))
     zEvalsZ <- exists (dummy :: _ (F StepField))
     zEvalsOZ <- exists (dummy :: _ (F StepField))
-    sigmaEvals <- exists (dummy :: _ (Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
-    indexEvals <- exists (dummy :: _ (Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }))
+    sigmaEvalsRaw <- exists (dummy :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
+    indexEvalsRaw <- exists (dummy :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
     ftEval1 <- exists (dummy :: _ (F StepField))
     let allEvals =
           { ftEval1
           , publicEvals: { zeta: publicEvalsZ, omegaTimesZeta: publicEvalsOZ }
-          , witnessEvals
-          , coeffEvals
+          , witnessEvals: map toPair witnessEvalsRaw
+          , coeffEvals: map toPair coeffEvalsRaw
           , zEvals: { zeta: zEvalsZ, omegaTimesZeta: zEvalsOZ }
-          , sigmaEvals
-          , indexEvals
+          , sigmaEvals: map toPair sigmaEvalsRaw
+          , indexEvals: map toPair indexEvalsRaw
           }
 
     -- 5. prev_challenges
