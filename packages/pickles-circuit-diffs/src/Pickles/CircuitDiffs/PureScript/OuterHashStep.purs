@@ -42,11 +42,15 @@ outerHashCircuit
   -> Snarky (KimchiConstraint StepField) t m Unit
 outerHashCircuit _ = do
   -- Allocate VK (with curve checks, matching OCaml exists with Inner_curve.typ)
-  vk <- exists (dummy :: _ { sigma :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
-       , sigmaLast :: WeierstrassAffinePoint PallasG (F StepField)
-       , coeff :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
-       , index :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
-       })
+  vk <- exists
+    ( dummy
+        :: _
+             { sigma :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
+             , sigmaLast :: WeierstrassAffinePoint PallasG (F StepField)
+             , coeff :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
+             , index :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
+             }
+    )
 
   -- Allocate appState
   appState <- exists (dummy :: _ (F StepField))
@@ -55,8 +59,7 @@ outerHashCircuit _ = do
   sg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
   -- Allocate 16 bp_challenges as plain fields (matching OCaml)
-  bpChallenges :: Vector StepIPARounds (FVar StepField)
-    <- exists (dummy :: _ (Vector StepIPARounds (F StepField)))
+  bpChallenges :: Vector StepIPARounds (FVar StepField) <- exists (dummy :: _ (Vector StepIPARounds (F StepField)))
 
   -- Run the non-opt hash
   let unwrapPt (WeierstrassAffinePoint pt) = pt

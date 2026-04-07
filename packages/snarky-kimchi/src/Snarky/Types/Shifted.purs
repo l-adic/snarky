@@ -626,6 +626,7 @@ forbiddenSplitFieldValues =
     --   lo = x >> 1                                -- remaining bits
     -- Reference: impls.ml:66-74
     circuitSizeInBits = fieldSizeBits (Proxy @circuitField)
+
     toSplitField :: BigInt -> Maybe { sDiv2 :: F circuitField, sOdd :: Boolean }
     toSplitField x =
       let

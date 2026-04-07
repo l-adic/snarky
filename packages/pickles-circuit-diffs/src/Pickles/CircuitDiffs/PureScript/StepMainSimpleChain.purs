@@ -156,8 +156,9 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     -- 6 individual commitments
     vkIndex <- exists (dummy :: _ (Vector 6 (WeierstrassAffinePoint PallasG (F StepField))))
     -- Split sigma into sigma(6) + sigmaLast(1) for the verifyOne input
-    let vkSigma6 = unsafeCoerce (Vector.take @6 vkSigma) :: Vector 6 _
-        vkSigmaLast = Vector.last vkSigma
+    let
+      vkSigma6 = unsafeCoerce (Vector.take @6 vkSigma) :: Vector 6 _
+      vkSigmaLast = Vector.last vkSigma
     pure { sigma: vkSigma6, sigmaLast: vkSigmaLast, coeff: vkCoeff, index: vkIndex }
 
   -- Per-proof witness: allocated in OCaml hlist order to match variable indices.
@@ -184,7 +185,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     psZetaToSrs <- exists (dummy :: _ (F StepField))
     psZetaToDom <- exists (dummy :: _ (F StepField))
     psPerm <- exists (dummy :: _ (F StepField))
-    psSponge <- exists (dummy :: _ (F StepField))  -- sponge_digest
+    psSponge <- exists (dummy :: _ (F StepField)) -- sponge_digest
     psBeta <- exists (dummy :: _ (F StepField))
     psGamma <- exists (dummy :: _ (F StepField))
     psAlpha <- exists (dummy :: _ (F StepField))
@@ -200,22 +201,23 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     let branchData = { mask0: bdMask0, mask1: bdMask1, domainLog2Var: domLog2 }
     _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
     -- Build the fopState record (after all allocations)
-    let fopState =
-          { plonk:
-              { alpha: unsafeCoerce psAlpha :: SizedF 128 (FVar StepField)
-              , beta: unsafeCoerce psBeta :: SizedF 128 (FVar StepField)
-              , gamma: unsafeCoerce psGamma :: SizedF 128 (FVar StepField)
-              , zeta: unsafeCoerce psZeta :: SizedF 128 (FVar StepField)
-              , perm: Type1 psPerm
-              , zetaToSrsLength: Type1 psZetaToSrs
-              , zetaToDomainSize: Type1 psZetaToDom
-              }
-          , combinedInnerProduct: Type1 psCip
-          , b: Type1 psB
-          , xi: unsafeCoerce psXi :: SizedF 128 (FVar StepField)
-          , bulletproofChallenges: unsafeCoerce psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
-          , spongeDigest: psSponge
-          }
+    let
+      fopState =
+        { plonk:
+            { alpha: unsafeCoerce psAlpha :: SizedF 128 (FVar StepField)
+            , beta: unsafeCoerce psBeta :: SizedF 128 (FVar StepField)
+            , gamma: unsafeCoerce psGamma :: SizedF 128 (FVar StepField)
+            , zeta: unsafeCoerce psZeta :: SizedF 128 (FVar StepField)
+            , perm: Type1 psPerm
+            , zetaToSrsLength: Type1 psZetaToSrs
+            , zetaToDomainSize: Type1 psZetaToDom
+            }
+        , combinedInnerProduct: Type1 psCip
+        , b: Type1 psB
+        , xi: unsafeCoerce psXi :: SizedF 128 (FVar StepField)
+        , bulletproofChallenges: unsafeCoerce psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
+        , spongeDigest: psSponge
+        }
 
     -- 4. All_evals: allocated in OCaml hlist order
     --    All_evals = { evals: With_public_input, ft_eval1 }
@@ -237,15 +239,16 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     sigmaEvalsRaw <- exists (dummy :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
     indexEvalsRaw <- exists (dummy :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
     ftEval1 <- exists (dummy :: _ (F StepField))
-    let allEvals =
-          { ftEval1
-          , publicEvals: { zeta: publicEvalsZ, omegaTimesZeta: publicEvalsOZ }
-          , witnessEvals: map toPair witnessEvalsRaw
-          , coeffEvals: map toPair coeffEvalsRaw
-          , zEvals: { zeta: zEvalsZ, omegaTimesZeta: zEvalsOZ }
-          , sigmaEvals: map toPair sigmaEvalsRaw
-          , indexEvals: map toPair indexEvalsRaw
-          }
+    let
+      allEvals =
+        { ftEval1
+        , publicEvals: { zeta: publicEvalsZ, omegaTimesZeta: publicEvalsOZ }
+        , witnessEvals: map toPair witnessEvalsRaw
+        , coeffEvals: map toPair coeffEvalsRaw
+        , zEvals: { zeta: zEvalsZ, omegaTimesZeta: zEvalsOZ }
+        , sigmaEvals: map toPair sigmaEvalsRaw
+        , indexEvals: map toPair indexEvalsRaw
+        }
 
     -- 5. prev_challenges
     prevChallenges <- exists (dummy :: _ (UnChecked (Vector 16 (F StepField))))
@@ -267,12 +270,12 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     --   scalar_challenge=[alpha,zeta,xi] (3 fields)
     --   bpChals(15 fields)
     --   bool=[shouldFinalize] (1 field)
-    unfCip <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))  -- Other_field: checked
+    unfCip <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean))) -- Other_field: checked
     unfB <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
     unfZetaToSrs <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
     unfZetaToDom <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
     unfPerm <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
-    unfClaimedDigest <- exists (dummy :: _ (F StepField))  -- sponge_digest
+    unfClaimedDigest <- exists (dummy :: _ (F StepField)) -- sponge_digest
     unfBeta <- exists (dummy :: _ (F StepField))
     unfGamma <- exists (dummy :: _ (F StepField))
     unfAlpha <- exists (dummy :: _ (F StepField))
@@ -345,10 +348,11 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
       , unfinalized
       , messagesForNextWrapProof
       , mustVerify
-      , branchData: { mask0: unsafeCoerce branchData.mask0 :: FVar StepField
-                    , mask1: unsafeCoerce branchData.mask1 :: FVar StepField
-                    , domainLog2Var: branchDomainLog2
-                    }
+      , branchData:
+          { mask0: unsafeCoerce branchData.mask0 :: FVar StepField
+          , mask1: unsafeCoerce branchData.mask1 :: FVar StepField
+          , domainLog2Var: branchDomainLog2
+          }
       , proofMask: branchData.mask1 :< Vector.nil
       , vkComms
       , sgOld: constDummySg :< unwrapPt prevSg :< Vector.nil
@@ -433,23 +437,30 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _ = do
     -- Type2 SplitField to 2 fields: sDiv2 then sOdd (matching OCaml tuple2 field bool)
     sf2 (Type2 (SplitField { sDiv2, sOdd })) = [ sDiv2, unsafeCoerce sOdd :: FVar StepField ]
     fqFields = sf2 unfinalized.deferredValues.combinedInnerProduct
-            <> sf2 unfinalized.deferredValues.b
-            <> sf2 unfinalized.deferredValues.plonk.zetaToSrsLength
-            <> sf2 unfinalized.deferredValues.plonk.zetaToDomainSize
-            <> sf2 unfinalized.deferredValues.plonk.perm
+      <> sf2 unfinalized.deferredValues.b
+      <> sf2 unfinalized.deferredValues.plonk.zetaToSrsLength
+      <> sf2 unfinalized.deferredValues.plonk.zetaToDomainSize
+      <> sf2 unfinalized.deferredValues.plonk.perm
     digestFields = [ unfinalized.claimedDigest ]
-    challengeFields = [ unsafeCoerce unfinalized.deferredValues.plonk.beta :: FVar StepField
-                      , unsafeCoerce unfinalized.deferredValues.plonk.gamma :: FVar StepField ]
-    scalarChalFields = [ unsafeCoerce unfinalized.deferredValues.plonk.alpha :: FVar StepField
-                       , unsafeCoerce unfinalized.deferredValues.plonk.zeta :: FVar StepField
-                       , unsafeCoerce unfinalized.deferredValues.xi :: FVar StepField ]
+    challengeFields =
+      [ unsafeCoerce unfinalized.deferredValues.plonk.beta :: FVar StepField
+      , unsafeCoerce unfinalized.deferredValues.plonk.gamma :: FVar StepField
+      ]
+    scalarChalFields =
+      [ unsafeCoerce unfinalized.deferredValues.plonk.alpha :: FVar StepField
+      , unsafeCoerce unfinalized.deferredValues.plonk.zeta :: FVar StepField
+      , unsafeCoerce unfinalized.deferredValues.xi :: FVar StepField
+      ]
     bpChalFields = Vector.toUnfoldable (unsafeCoerce unfinalized.deferredValues.bulletproofChallenges :: Vector 15 (FVar StepField))
     boolFields = [ unsafeCoerce unfinalized.shouldFinalize :: FVar StepField ]
     msgStepField = [ outerDigest ]
     msgWrapField = [ messagesForNextWrapProof ]
 
     outputArr = fqFields <> digestFields <> challengeFields <> scalarChalFields
-             <> bpChalFields <> boolFields <> msgStepField <> msgWrapField
+      <> bpChalFields
+      <> boolFields
+      <> msgStepField
+      <> msgWrapField
 
   pure (unsafeCoerce outputArr :: Vector InputSize (FVar StepField))
 

@@ -31,8 +31,9 @@ otherFieldCheckCircuit
   => Unit
   -> Snarky (KimchiConstraint StepField) t m Unit
 otherFieldCheckCircuit _ = do
-  let dummy :: forall a b. Applicative b => b a
-      dummy = pure (unsafeCoerce unit)
+  let
+    dummy :: forall a b. Applicative b => b a
+    dummy = pure (unsafeCoerce unit)
   _ <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
   pure unit
 
