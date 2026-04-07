@@ -183,9 +183,13 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     psB <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
     psXi <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
     psBpChals :: Vector 16 (FVar StepField) <- exists (dummy :: _ (Vector 16 (F StepField)))
-    -- branch_data is LAST in Deferred_values.In_circuit.typ (the `index` parameter)
-    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
-    let UnChecked domLog2 = branchData.domainLog2Var
+    -- branch_data is LAST in Deferred_values.In_circuit.typ
+    -- OCaml Branch_data.typ hlist: [proofs_verified_mask, domain_log2]
+    -- Mask first (2 Booleans), then domain_log2 (field)
+    bdMask0 :: BoolVar StepField <- exists (dummy :: _ Boolean)
+    bdMask1 :: BoolVar StepField <- exists (dummy :: _ Boolean)
+    domLog2 <- exists (dummy :: _ (F StepField))
+    let branchData = { mask0: bdMask0, mask1: bdMask1, domainLog2Var: domLog2 }
     _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
     -- sponge_digest comes AFTER Deferred_values in the Proof_state.In_circuit.typ hlist
     psSponge <- exists (dummy :: _ (F StepField))
@@ -287,7 +291,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
 
     -- Unwrap UnChecked wrappers where needed
     UnChecked prevChallenges' = prevChallenges
-    UnChecked branchDomainLog2 = branchData.domainLog2Var
+    branchDomainLog2 = branchData.domainLog2Var
 
     input =
       { appState: prevAppState
