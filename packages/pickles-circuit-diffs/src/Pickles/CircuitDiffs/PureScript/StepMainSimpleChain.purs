@@ -152,22 +152,22 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
          , index :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
          })
 
-  -- Per-proof witness: comms + opening + proof_state + evals + prevChals
-  -- All part of OCaml's single `exists (Prev_typ.f ...)` call
-  { comms, opening, fopState, allEvals, prevChals, branchData } <- label "exists_prevs" do
-    comms <- exists (dummy :: _ { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
-             , zComm :: WeierstrassAffinePoint PallasG (F StepField)
-             , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (F StepField))
-             })
+  -- Per-proof witness: allocated in OCaml hlist order to match variable indices.
+  -- OCaml Per_proof_witness hlist: [statement; Wrap_proof; Proof_state; All_evals; prev_challenges; prev_sgs]
+  { wComm, zComm, tComm, lr, z1, z2, delta, sg, fopState, allEvals, branchData, prevChallenges, prevSg } <- label "exists_prevs" do
+    -- 1. Wrap_proof.Messages: w_comm, z_comm, t_comm (OCaml hlist order)
+    wComm <- exists (dummy :: _ (Vector 15 (WeierstrassAffinePoint PallasG (F StepField))))
+    zComm <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
+    tComm <- exists (dummy :: _ (Vector 7 (WeierstrassAffinePoint PallasG (F StepField))))
 
-    -- z1/z2 use Other_field.typ (checked) — generates forbidden shifted value checks
-    opening <- exists (dummy :: _ { lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }
-               , z1 :: Type2 (SplitField (F StepField) Boolean)
-               , z2 :: Type2 (SplitField (F StepField) Boolean)
-               , delta :: WeierstrassAffinePoint PallasG (F StepField)
-               , sg :: WeierstrassAffinePoint PallasG (F StepField)
-               })
+    -- 2. Wrap_proof.Bulletproof: lr, z1, z2, delta, sg (OCaml hlist order)
+    lr <- exists (dummy :: _ (Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }))
+    z1 <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    z2 <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    delta <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
+    sg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
+    -- 3. Proof_state (UnChecked) + branch_data (with boolean mask + endo check)
     fopState <- exists (dummy :: _ (UnChecked { plonk ::
                     { alpha :: SizedF 128 (F StepField)
                     , beta :: SizedF 128 (F StepField)
@@ -183,7 +183,11 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                 , bulletproofChallenges :: Vector 16 (SizedF 128 (F StepField))
                 , spongeDigest :: F StepField
                 }))
+    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
+    let UnChecked domLog2 = branchData.domainLog2Var
+    _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
 
+    -- 4. All_evals (UnChecked)
     allEvals <- exists (dummy :: _ (UnChecked { ftEval1 :: F StepField
                 , publicEvals :: { zeta :: F StepField, omegaTimesZeta :: F StepField }
                 , witnessEvals :: Vector 15 { zeta :: F StepField, omegaTimesZeta :: F StepField }
@@ -193,20 +197,13 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                 , indexEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
                 }))
 
-    -- Branch data: inside Per_proof_witness.proof_state.deferred_values.branch_data
-    -- OCaml: proof_state is checked BEFORE prev_challenges/prev_sgs in the hlist
-    -- Branch_data.typ runs assert_16_bits on domain_log2 via endoscalar gate
-    -- Branch_data.typ: mask fields use Boolean.typ (checked), domainLog2 is plain field
-    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
-    let UnChecked domLog2 = branchData.domainLog2Var
-    _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
+    -- 5. prev_challenges
+    prevChallenges <- exists (dummy :: _ (UnChecked (Vector 16 (F StepField))))
 
-    -- prev_challenges + prev_sgs (curve check on sg comes AFTER branch_data endoscalar)
-    prevChals <- exists (dummy :: _ { challenges :: UnChecked (Vector 16 (F StepField))
-                 , sg :: WeierstrassAffinePoint PallasG (F StepField)
-                 })
+    -- 6. prev_sgs (curve check comes AFTER all of the above)
+    prevSg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
-    pure { comms, opening, fopState, allEvals, prevChals, branchData }
+    pure { wComm, zComm, tComm, lr, z1, z2, delta, sg, fopState, allEvals, branchData, prevChallenges, prevSg }
 
   -- Unfinalized proof: OCaml's Unfinalized.typ checks:
   --   5 × Other_field.check (forbidden shifted values) on the Type2 shifted values
@@ -251,19 +248,19 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     -- Unwrap UnChecked wrappers where needed
     UnChecked fopState' = fopState
     UnChecked allEvals' = allEvals
-    UnChecked prevChallenges' = prevChals.challenges
+    UnChecked prevChallenges' = prevChallenges
     UnChecked branchDomainLog2 = branchData.domainLog2Var
 
     input =
       { appState: prevAppState
-      , wComm: map unwrapPt comms.wComm
-      , zComm: unwrapPt comms.zComm
-      , tComm: map unwrapPt comms.tComm
-      , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) opening.lr
-      , z1: opening.z1
-      , z2: opening.z2
-      , delta: unwrapPt opening.delta
-      , sg: unwrapPt opening.sg
+      , wComm: map unwrapPt wComm
+      , zComm: unwrapPt zComm
+      , tComm: map unwrapPt tComm
+      , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) lr
+      , z1
+      , z2
+      , delta: unwrapPt delta
+      , sg: unwrapPt sg
       , proofState:
           { plonk: fopState'.plonk
           , combinedInnerProduct: fopState'.combinedInnerProduct
@@ -274,7 +271,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
           }
       , allEvals: allEvals'
       , prevChallenges: prevChallenges' :< Vector.nil
-      , prevSgs: unwrapPt prevChals.sg :< Vector.nil
+      , prevSgs: unwrapPt prevSg :< Vector.nil
       , unfinalized:
           let dv = unfinalized.deferredValues
               UnChecked bpChals = dv.bulletproofChallenges
@@ -306,7 +303,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                     }
       , proofMask: branchData.mask1 :< Vector.nil
       , vkComms
-      , sgOld: constDummySg :< unwrapPt prevChals.sg :< Vector.nil
+      , sgOld: constDummySg :< unwrapPt prevSg :< Vector.nil
       }
 
     domainLog2 = 16
@@ -363,7 +360,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     s1 <- Sponge.absorb appState spongeAfterIndex
 
     -- 3. For each proof: absorb sg (challenge_polynomial_commitment) + bp_challenges
-    let sgPt = unwrapPt opening.sg
+    let sgPt = unwrapPt sg
     s2 <- Sponge.absorb sgPt.x s1
     s3 <- Sponge.absorb sgPt.y s2
     -- OCaml's FOP returns compute_challenges ~scalar bp_challenges = expanded via to_field_checked.

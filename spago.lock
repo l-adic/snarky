@@ -511,7 +511,6 @@
             "bifunctors",
             "control",
             "curves",
-            "debug",
             "effect",
             "either",
             "exceptions",
@@ -1415,15 +1414,6 @@
         "partial",
         "prelude",
         "tuples"
-      ]
-    },
-    "debug": {
-      "type": "registry",
-      "version": "6.0.2",
-      "integrity": "sha256-d/EzRm/J2JyzvlIeo2Ex78Y7HRB0IXBitnVJywL4gHk=",
-      "dependencies": [
-        "functions",
-        "prelude"
       ]
     },
     "distributive": {
