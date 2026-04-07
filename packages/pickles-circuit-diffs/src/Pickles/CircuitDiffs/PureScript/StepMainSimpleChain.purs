@@ -260,24 +260,44 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
   --   5 × Other_field.check (forbidden shifted values) on the Type2 shifted values
   --   1 × Boolean.typ check on shouldFinalize
   --   Challenges/digest/bpChallenges: plain Field.typ, NO check
-  unfinalized <- label "exists_unfinalized" $ exists (dummy :: _ { deferredValues ::
-                     { plonk ::
-                         { alpha :: UnChecked (SizedF 128 (F StepField))  -- Challenge: no check
-                         , beta :: UnChecked (SizedF 128 (F StepField))
-                         , gamma :: UnChecked (SizedF 128 (F StepField))
-                         , zeta :: UnChecked (SizedF 128 (F StepField))
-                         , perm :: Type2 (SplitField (F StepField) Boolean)  -- Other_field: checked
-                         , zetaToSrsLength :: Type2 (SplitField (F StepField) Boolean)
-                         , zetaToDomainSize :: Type2 (SplitField (F StepField) Boolean)
-                         }
-                     , combinedInnerProduct :: Type2 (SplitField (F StepField) Boolean)
-                     , b :: Type2 (SplitField (F StepField) Boolean)
-                     , xi :: UnChecked (SizedF 128 (F StepField))  -- Scalar_challenge: no check
-                     , bulletproofChallenges :: UnChecked (Vector 15 (SizedF 128 (F StepField)))  -- no check
-                     }
-                 , shouldFinalize :: Boolean  -- Boolean.typ: checked
-                 , claimedDigest :: UnChecked (F StepField)  -- Digest: no check
-                 })
+  unfinalized <- label "exists_unfinalized" do
+    -- OCaml Deferred_values.In_circuit.typ hlist:
+    --   Plonk{alpha,beta,gamma,zeta,perm,zetaToSrs,zetaToDom}, cip, b, xi, bpChals
+    -- Then Proof_state adds: sponge_digest, shouldFinalize
+    -- Note: no branch_data for unfinalized (only for per_proof_witness)
+    unfAlpha <- exists (dummy :: _ (F StepField))
+    unfBeta <- exists (dummy :: _ (F StepField))
+    unfGamma <- exists (dummy :: _ (F StepField))
+    unfZeta <- exists (dummy :: _ (F StepField))
+    unfPerm <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))  -- Other_field: checked
+    unfZetaToSrs <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfZetaToDom <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfCip <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfB <- exists (dummy :: _ (Type2 (SplitField (F StepField) Boolean)))
+    unfXi <- exists (dummy :: _ (F StepField))
+    unfBpChals :: Vector 15 (FVar StepField) <- exists (dummy :: _ (Vector 15 (F StepField)))
+    -- Proof_state outer: sponge_digest, shouldFinalize
+    unfClaimedDigest <- exists (dummy :: _ (F StepField))
+    unfShouldFinalize :: BoolVar StepField <- exists (dummy :: _ Boolean)
+    pure
+      { deferredValues:
+          { plonk:
+              { alpha: unsafeCoerce unfAlpha :: SizedF 128 (FVar StepField)
+              , beta: unsafeCoerce unfBeta :: SizedF 128 (FVar StepField)
+              , gamma: unsafeCoerce unfGamma :: SizedF 128 (FVar StepField)
+              , zeta: unsafeCoerce unfZeta :: SizedF 128 (FVar StepField)
+              , perm: unfPerm
+              , zetaToSrsLength: unfZetaToSrs
+              , zetaToDomainSize: unfZetaToDom
+              }
+          , combinedInnerProduct: unfCip
+          , b: unfB
+          , xi: unsafeCoerce unfXi :: SizedF 128 (FVar StepField)
+          , bulletproofChallenges: unsafeCoerce unfBpChals :: Vector 15 (SizedF 128 (FVar StepField))
+          }
+      , shouldFinalize: unfShouldFinalize
+      , claimedDigest: unfClaimedDigest
+      }
 
   -- Messages for next wrap proof
   messagesForNextWrapProof <- exists (dummy :: _ (F StepField))
@@ -321,29 +341,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , allEvals
       , prevChallenges: prevChallenges' :< Vector.nil
       , prevSgs: unwrapPt prevSg :< Vector.nil
-      , unfinalized:
-          let dv = unfinalized.deferredValues
-              UnChecked bpChals = dv.bulletproofChallenges
-              UnChecked claimedDigest = unfinalized.claimedDigest
-          in
-          { deferredValues:
-              { plonk:
-                  { alpha: unsafeCoerce dv.plonk.alpha  -- unwrap UnChecked SizedF
-                  , beta: unsafeCoerce dv.plonk.beta
-                  , gamma: unsafeCoerce dv.plonk.gamma
-                  , zeta: unsafeCoerce dv.plonk.zeta
-                  , perm: dv.plonk.perm
-                  , zetaToSrsLength: dv.plonk.zetaToSrsLength
-                  , zetaToDomainSize: dv.plonk.zetaToDomainSize
-                  }
-              , combinedInnerProduct: dv.combinedInnerProduct
-              , b: dv.b
-              , xi: unsafeCoerce dv.xi
-              , bulletproofChallenges: bpChals
-              }
-          , shouldFinalize: unsafeCoerce unfinalized.shouldFinalize :: BoolVar StepField
-          , claimedDigest
-          }
+      , unfinalized
       , messagesForNextWrapProof
       , mustVerify
       , branchData: { mask0: unsafeCoerce branchData.mask0 :: FVar StepField
