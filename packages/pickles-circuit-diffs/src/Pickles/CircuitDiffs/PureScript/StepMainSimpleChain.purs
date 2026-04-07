@@ -145,13 +145,20 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     dummy :: forall a b. Applicative b => b a
     dummy = pure (unsafeCoerce unit)
 
-  -- VK (Plonk_verification_key_evals.typ with Inner_curve.typ)
-  -- On-curve checks happen automatically via WeierstrassAffinePoint CheckedType
-  vk <- label "exists_wrap_index" $ exists (dummy :: _ { sigma :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
-         , sigmaLast :: WeierstrassAffinePoint PallasG (F StepField)
-         , coeff :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
-         , index :: Vector 6 (WeierstrassAffinePoint PallasG (F StepField))
-         })
+  -- VK (Plonk_verification_key_evals.typ): OCaml hlist order:
+  --   sigma_comm(7), coefficients_comm(15), generic, psm, complete_add, mul, emul, endomul_scalar
+  -- Note: our sigma(6) + sigmaLast(1) = OCaml's sigma_comm(7)
+  vk <- label "exists_wrap_index" do
+    -- sigma_comm: 7 curve points (Permuts.n = 7)
+    vkSigma <- exists (dummy :: _ (Vector 7 (WeierstrassAffinePoint PallasG (F StepField))))
+    -- coefficients_comm: 15 curve points (Columns.n = 15)
+    vkCoeff <- exists (dummy :: _ (Vector 15 (WeierstrassAffinePoint PallasG (F StepField))))
+    -- 6 individual commitments
+    vkIndex <- exists (dummy :: _ (Vector 6 (WeierstrassAffinePoint PallasG (F StepField))))
+    -- Split sigma into sigma(6) + sigmaLast(1) for the verifyOne input
+    let vkSigma6 = unsafeCoerce (Vector.take @6 vkSigma) :: Vector 6 _
+        vkSigmaLast = Vector.last vkSigma
+    pure { sigma: vkSigma6, sigmaLast: vkSigmaLast, coeff: vkCoeff, index: vkIndex }
 
   -- Per-proof witness: allocated in OCaml hlist order to match variable indices.
   -- OCaml Per_proof_witness hlist: [statement; Wrap_proof; Proof_state; All_evals; prev_challenges; prev_sgs]
