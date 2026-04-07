@@ -196,9 +196,10 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     -- Branch data: inside Per_proof_witness.proof_state.deferred_values.branch_data
     -- OCaml: proof_state is checked BEFORE prev_challenges/prev_sgs in the hlist
     -- Branch_data.typ runs assert_16_bits on domain_log2 via endoscalar gate
-    branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
-    let UnChecked branchData' = branchData
-    _ <- EndoScalar.toField @1 (unsafeCoerce branchData'.domainLog2Var :: SizedF 16 (FVar StepField)) (const_ stepEndo)
+    -- Branch_data.typ: mask fields use Boolean.typ (checked), domainLog2 is plain field
+    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
+    let UnChecked domLog2 = branchData.domainLog2Var
+    _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
 
     -- prev_challenges + prev_sgs (curve check on sg comes AFTER branch_data endoscalar)
     prevChals <- exists (dummy :: _ { challenges :: UnChecked (Vector 16 (F StepField))
@@ -250,8 +251,8 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     -- Unwrap UnChecked wrappers where needed
     UnChecked fopState' = fopState
     UnChecked allEvals' = allEvals
-    UnChecked branchData' = branchData
     UnChecked prevChallenges' = prevChals.challenges
+    UnChecked branchDomainLog2 = branchData.domainLog2Var
 
     input =
       { appState: prevAppState
@@ -299,8 +300,11 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
           }
       , messagesForNextWrapProof
       , mustVerify
-      , branchData: branchData'
-      , proofMask: (unsafeCoerce branchData'.mask1 :: BoolVar StepField) :< Vector.nil
+      , branchData: { mask0: unsafeCoerce branchData.mask0 :: FVar StepField
+                    , mask1: unsafeCoerce branchData.mask1 :: FVar StepField
+                    , domainLog2Var: branchDomainLog2
+                    }
+      , proofMask: branchData.mask1 :< Vector.nil
       , vkComms
       , sgOld: constDummySg :< unwrapPt prevChals.sg :< Vector.nil
       }
