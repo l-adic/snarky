@@ -168,22 +168,28 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     delta <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
     sg <- exists (dummy :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
-    -- 3. Proof_state: allocated in OCaml's Per_proof.In_circuit.to_data order:
-    --    fq=[cip,b,zetaToSrs,zetaToDom,perm], digest=[sponge], challenge=[beta,gamma],
-    --    scalar_challenge=[alpha,zeta,xi], bp_challenges(16)
-    -- All UnChecked since OCaml uses typ_unchecked for these
-    psCip <- exists (dummy :: _ (F StepField))  -- combinedInnerProduct (Type1)
-    psB <- exists (dummy :: _ (F StepField))  -- b (Type1)
-    psZetaToSrs <- exists (dummy :: _ (F StepField))  -- zetaToSrsLength (Type1)
-    psZetaToDom <- exists (dummy :: _ (F StepField))  -- zetaToDomainSize (Type1)
-    psPerm <- exists (dummy :: _ (F StepField))  -- perm (Type1)
-    psSponge <- exists (dummy :: _ (F StepField))  -- spongeDigest
-    psBeta <- exists (dummy :: _ (F StepField))  -- beta (Challenge)
-    psGamma <- exists (dummy :: _ (F StepField))  -- gamma (Challenge)
-    psAlpha <- exists (dummy :: _ (F StepField))  -- alpha (Scalar Challenge)
-    psZeta <- exists (dummy :: _ (F StepField))  -- zeta (Scalar Challenge)
-    psXi <- exists (dummy :: _ (F StepField))  -- xi (Scalar Challenge)
+    -- 3. Proof_state: allocated in OCaml's typ hlist order:
+    --    Plonk.In_circuit.typ: alpha, beta, gamma, zeta, perm, zetaToSrs, zetaToDom
+    --    Deferred_values: [Plonk, cip, b, xi, bpChals, branch_data]
+    --    Proof_state: [Deferred_values, sponge_digest, Unit]
+    psAlpha <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
+    psBeta <- exists (dummy :: _ (F StepField))  -- Challenge
+    psGamma <- exists (dummy :: _ (F StepField))  -- Challenge
+    psZeta <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
+    psPerm <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
+    psZetaToSrs <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
+    psZetaToDom <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
+    psCip <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
+    psB <- exists (dummy :: _ (F StepField))  -- fp (shifted Type1)
+    psXi <- exists (dummy :: _ (F StepField))  -- Scalar_challenge
     psBpChals :: Vector 16 (FVar StepField) <- exists (dummy :: _ (Vector 16 (F StepField)))
+    -- branch_data is LAST in Deferred_values.In_circuit.typ (the `index` parameter)
+    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
+    let UnChecked domLog2 = branchData.domainLog2Var
+    _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
+    -- sponge_digest comes AFTER Deferred_values in the Proof_state.In_circuit.typ hlist
+    psSponge <- exists (dummy :: _ (F StepField))
+    -- Build the fopState record (after all allocations)
     let fopState =
           { plonk:
               { alpha: unsafeCoerce psAlpha :: SizedF 128 (FVar StepField)
@@ -200,9 +206,6 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
           , bulletproofChallenges: unsafeCoerce psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
           , spongeDigest: psSponge
           }
-    branchData <- exists (dummy :: _ { mask0 :: Boolean, mask1 :: Boolean, domainLog2Var :: UnChecked (F StepField) })
-    let UnChecked domLog2 = branchData.domainLog2Var
-    _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndo)
 
     -- 4. All_evals: allocated in OCaml hlist order
     --    All_evals = { evals: With_public_input, ft_eval1 }
