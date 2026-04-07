@@ -193,16 +193,17 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                 , indexEvals :: Vector 6 { zeta :: F StepField, omegaTimesZeta :: F StepField }
                 }))
 
+    -- Branch data: inside Per_proof_witness.proof_state.deferred_values.branch_data
+    -- OCaml: proof_state is checked BEFORE prev_challenges/prev_sgs in the hlist
+    -- Branch_data.typ runs assert_16_bits on domain_log2 via endoscalar gate
+    branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
+    let UnChecked branchData' = branchData
+    _ <- EndoScalar.toField @1 (unsafeCoerce branchData'.domainLog2Var :: SizedF 16 (FVar StepField)) (const_ stepEndo)
+
+    -- prev_challenges + prev_sgs (curve check on sg comes AFTER branch_data endoscalar)
     prevChals <- exists (dummy :: _ { challenges :: UnChecked (Vector 16 (F StepField))
                  , sg :: WeierstrassAffinePoint PallasG (F StepField)
                  })
-
-    -- Branch data: inside Per_proof_witness.proof_state.deferred_values.branch_data
-    -- OCaml's Branch_data.typ runs assert_16_bits on domain_log2 via endoscalar gate
-    branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
-    let UnChecked branchData' = branchData
-    -- assert_n_bits ~n:16 on domain_log2: uses endoscalar gate as a range-check hack
-    _ <- EndoScalar.toField @1 (unsafeCoerce branchData'.domainLog2Var :: SizedF 16 (FVar StepField)) (const_ stepEndo)
 
     pure { comms, opening, fopState, allEvals, prevChals, branchData }
 
