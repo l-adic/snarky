@@ -198,27 +198,28 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
 
     pure { comms, opening, fopState, allEvals, prevChals }
 
-  -- Unfinalized proof — UnChecked for now; OCaml's Unfinalized.typ runs
-  -- Other_field.check (forbidden shifted values) + assert_16_bits which our
-  -- CheckedType doesn't match. TODO: align CheckedType with OCaml's exact checks.
-  unfinalized <- label "exists_unfinalized" $ exists (dummy :: _ (UnChecked { deferredValues ::
+  -- Unfinalized proof: OCaml's Unfinalized.typ checks:
+  --   5 × Other_field.check (forbidden shifted values) on the Type2 shifted values
+  --   1 × Boolean.typ check on shouldFinalize
+  --   Challenges/digest/bpChallenges: plain Field.typ, NO check
+  unfinalized <- label "exists_unfinalized" $ exists (dummy :: _ { deferredValues ::
                      { plonk ::
-                         { alpha :: SizedF 128 (F StepField)
-                         , beta :: SizedF 128 (F StepField)
-                         , gamma :: SizedF 128 (F StepField)
-                         , zeta :: SizedF 128 (F StepField)
-                         , perm :: Type2 (SplitField (F StepField) Boolean)
+                         { alpha :: UnChecked (SizedF 128 (F StepField))  -- Challenge: no check
+                         , beta :: UnChecked (SizedF 128 (F StepField))
+                         , gamma :: UnChecked (SizedF 128 (F StepField))
+                         , zeta :: UnChecked (SizedF 128 (F StepField))
+                         , perm :: Type2 (SplitField (F StepField) Boolean)  -- Other_field: checked
                          , zetaToSrsLength :: Type2 (SplitField (F StepField) Boolean)
                          , zetaToDomainSize :: Type2 (SplitField (F StepField) Boolean)
                          }
                      , combinedInnerProduct :: Type2 (SplitField (F StepField) Boolean)
                      , b :: Type2 (SplitField (F StepField) Boolean)
-                     , xi :: SizedF 128 (F StepField)
-                     , bulletproofChallenges :: Vector 15 (SizedF 128 (F StepField))
+                     , xi :: UnChecked (SizedF 128 (F StepField))  -- Scalar_challenge: no check
+                     , bulletproofChallenges :: UnChecked (Vector 15 (SizedF 128 (F StepField)))  -- no check
                      }
-                 , shouldFinalize :: Boolean
-                 , claimedDigest :: F StepField
-                 }))
+                 , shouldFinalize :: Boolean  -- Boolean.typ: checked
+                 , claimedDigest :: UnChecked (F StepField)  -- Digest: no check
+                 })
 
   -- Branch data (unchecked)
   branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
@@ -243,7 +244,6 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     -- Unwrap UnChecked wrappers where needed
     UnChecked fopState' = fopState
     UnChecked allEvals' = allEvals
-    UnChecked unfinalized' = unfinalized
     UnChecked branchData' = branchData
     UnChecked prevChallenges' = prevChals.challenges
 
@@ -269,9 +269,27 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , prevChallenges: prevChallenges' :< Vector.nil
       , prevSgs: unwrapPt prevChals.sg :< Vector.nil
       , unfinalized:
-          { deferredValues: unfinalized'.deferredValues
-          , shouldFinalize: unsafeCoerce unfinalized'.shouldFinalize :: BoolVar StepField
-          , claimedDigest: unfinalized'.claimedDigest
+          let dv = unfinalized.deferredValues
+              UnChecked bpChals = dv.bulletproofChallenges
+              UnChecked claimedDigest = unfinalized.claimedDigest
+          in
+          { deferredValues:
+              { plonk:
+                  { alpha: unsafeCoerce dv.plonk.alpha  -- unwrap UnChecked SizedF
+                  , beta: unsafeCoerce dv.plonk.beta
+                  , gamma: unsafeCoerce dv.plonk.gamma
+                  , zeta: unsafeCoerce dv.plonk.zeta
+                  , perm: dv.plonk.perm
+                  , zetaToSrsLength: dv.plonk.zetaToSrsLength
+                  , zetaToDomainSize: dv.plonk.zetaToDomainSize
+                  }
+              , combinedInnerProduct: dv.combinedInnerProduct
+              , b: dv.b
+              , xi: unsafeCoerce dv.xi
+              , bulletproofChallenges: bpChals
+              }
+          , shouldFinalize: unsafeCoerce unfinalized.shouldFinalize :: BoolVar StepField
+          , claimedDigest
           }
       , messagesForNextWrapProof
       , mustVerify
