@@ -1,6 +1,59 @@
-# Agentic Loop: step_main Simple_Chain Circuit Diff Convergence
+# Agentic Loop: step_main Circuit Diff Convergence
 
-## Goal
+## Status
+
+**Simple_Chain (N1): COMPLETE — 10,821 gates, 0 diffs, 73/73 circuit tests pass, 71/71 pickles tests pass.**
+
+**Next: Tree_proof (N2) — 2 previous proofs, branching circuit.**
+
+## N1 Completion Summary
+
+The N1 circuit achieved exact match through iterative diff convergence:
+- Phase 1 (gate count): Fixed type-check constraints (WeierstrassAffinePoint curve checks, Other_field forbidden values, SizedF 128 = UnChecked challenges, Boolean mask checks, endoscalar 16-bit range check)
+- Phase 2 (coefficients): Fixed forbidden value bit extraction (high bit not low bit), expanded challenges in outer hash (from FOP's to_field_checked output)
+- Phase 3 (wires): Fixed variable allocation order to match OCaml's `Typ.transport ~there:to_data` order (NOT hlist order), broke Record exists into individual field exists, used Tuple for eval pairs
+
+### Critical Lesson: OCaml `exists` Allocation Order
+
+OCaml's `Spec.packed_typ` with `Typ.transport ~there:to_data ~back:of_data` allocates variables in **`to_data` order**, not the `typ` hlist order. For `Per_proof.In_circuit`:
+```
+to_data: fq=[cip,b,zetaToSrs,zetaToDom,perm], digest=[sponge], challenge=[beta,gamma],
+         scalar_challenge=[alpha,zeta,xi], bpChals, bool=[shouldFinalize]
+```
+
+PureScript RowList alphabetical ordering will NEVER match this. Use individual `exists` calls.
+
+## N2 Goal
+
+Drive the PureScript step_main circuit (Tree_proof, N2) to exact match with the OCaml fixture. Tree_proof has:
+- `max_proofs_verified = N2` (2 previous proofs)
+- `prevs = [No_recursion.tag, self]` (base proof always verified, self-recursive gated)
+- Rule allocates: `no_recursive_input`, `no_recursive_proof`, `prev`, `prev_proof`
+- Rule checks: `is_base_case = (0 == self)`, `self_correct = (1+prev == self)`
+- Two `previous_proof_statements`: first with `proof_must_verify = true_`, second gated
+- `override_wrap_domain = N1`
+
+### What N2 adds over N1
+- 2 verify_one iterations (not 1)
+- 2 unfinalized proofs in the Step.Statement output
+- 2 messages_for_next_wrap_proof digests
+- Different proofs_verified_mask values
+- `Vector.extend_front` padding (N2 → max_proofs_verified)
+- 2 sets of prev_challenges + prev_sgs
+- Different per-proof feature_flags (first proof = N0 base, second = N2 self)
+- Per_proof_witness.typ differs per proof (different max_proofs_verified)
+
+### Plan
+1. Add OCaml fixture in dump_circuit_impl.ml (step_main_tree_proof_circuit)
+2. Create StepMainTreeProof.purs following N1 patterns
+3. Apply all N1 allocation order lessons from the start
+4. Iterate with diff tools
+
+---
+
+## N1 Reference (Original Document Below)
+
+### Original Goal
 
 Drive the PureScript step_main circuit (Simple_Chain, N1) to exact match with the OCaml fixture (0 diffs). This is the full `step_main` function — not just `verify_one`, but the complete step circuit including the inductive rule's application logic, the verify_one loop, Assert.all, and the outer message hash.
 
