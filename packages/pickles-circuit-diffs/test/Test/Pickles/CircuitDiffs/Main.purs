@@ -41,6 +41,7 @@ import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWr
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
+import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
@@ -490,6 +491,8 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
+      describe "Typ checks" do
+        exactMatch "other_field_check_step_circuit" (fromCompiledCircuit compileOtherFieldCheck)
       describe "Step main" do
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15), wrap domain Pow_2_roots_of_unity 14
