@@ -44,7 +44,7 @@ import Snarky.Curves.Class (class PrimeField, fromBigInt)
 -- |
 -- | Reference: one_hot_vector.ml:21-24
 oneHotVector
-  :: forall n f t m
+  :: forall @n f t m
    . CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => Reflectable n Int
