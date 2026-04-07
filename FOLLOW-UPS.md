@@ -15,16 +15,6 @@ Affected locations:
 
 Currently `num_chunks = 1` is correct for all Mina circuits. This would only matter for very large circuits exceeding the SRS degree bound.
 
-## N2 wrap_main variant
-
-The current `wrap_main_circuit` fixture is for `max_proofs_verified = N1` (1 real previous proof, 1 dummy padded to N2). A separate fixture and equivalence test is needed for `max_proofs_verified = N2` (2 real previous proofs), which would exercise:
-- `actual_proofs_verified_mask = [true, true]`
-- Two real challenge vectors in FOP (no dummy padding)
-- Different message hash sponge starting states
-- Full sgOld absorption with both flags true
-
-OCaml's `dump_circuit_impl.ml` can generate this variant.
-
 ## CircuitType instances for WrapMain input parsing
 
 The manual parsers in `WrapMain.purs` (`parseUnfinalizedProof`, `parseEvals`) decode flat field arrays by hardcoded offsets. These should be replaced with proper `CircuitType` newtypes that handle serialization/deserialization, matching OCaml's `Typ` mechanism for `exists`/`alloc_typ`.
