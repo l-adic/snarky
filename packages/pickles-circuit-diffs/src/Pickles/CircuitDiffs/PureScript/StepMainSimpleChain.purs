@@ -159,9 +159,10 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
              , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (F StepField))
              })
 
+    -- z1/z2 use Other_field.typ (checked) — generates forbidden shifted value checks
     opening <- exists (dummy :: _ { lr :: Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }
-               , z1 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
-               , z2 :: UnChecked (Type2 (SplitField (F StepField) Boolean))
+               , z1 :: Type2 (SplitField (F StepField) Boolean)
+               , z2 :: Type2 (SplitField (F StepField) Boolean)
                , delta :: WeierstrassAffinePoint PallasG (F StepField)
                , sg :: WeierstrassAffinePoint PallasG (F StepField)
                })
@@ -252,8 +253,8 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
       , zComm: unwrapPt comms.zComm
       , tComm: map unwrapPt comms.tComm
       , lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) opening.lr
-      , z1: unsafeCoerce opening.z1
-      , z2: unsafeCoerce opening.z2
+      , z1: opening.z1
+      , z2: opening.z2
       , delta: unwrapPt opening.delta
       , sg: unwrapPt opening.sg
       , proofState:
