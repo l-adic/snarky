@@ -330,7 +330,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
   ---------------------------------------------------------------------------
   -- 5. verify_one + Assert.all (inside prevs_verified label)
   ---------------------------------------------------------------------------
-  { challenges, result: _ } <- label "prevs_verified" do
+  { expandedChallenges, result: _ } <- label "prevs_verified" do
     res <- verifyOne fopParams input ivpParams
     -- Boolean.Assert.all [v] for N1 = assert_ v
     assert_ res.result
@@ -362,7 +362,9 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
     let sgPt = unwrapPt opening.sg
     s2 <- Sponge.absorb sgPt.x s1
     s3 <- Sponge.absorb sgPt.y s2
-    sAfterProofs <- foldM (\s c -> Sponge.absorb (unsafeCoerce c :: FVar StepField) s) s3 challenges
+    -- OCaml's FOP returns compute_challenges ~scalar bp_challenges = expanded via to_field_checked.
+    -- These are compound CVars (scale a endo + b), not simple Vars.
+    sAfterProofs <- foldM (\s c -> Sponge.absorb c s) s3 expandedChallenges
 
     -- 4. Squeeze
     { result: digest } <- Sponge.squeeze sAfterProofs
