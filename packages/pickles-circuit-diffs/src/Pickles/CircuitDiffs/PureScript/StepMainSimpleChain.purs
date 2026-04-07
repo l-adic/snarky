@@ -29,6 +29,7 @@ import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAny_, assert_, const_, equals_, exists, label, not_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2, groupMapParams)
+import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -153,7 +154,7 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
 
   -- Per-proof witness: comms + opening + proof_state + evals + prevChals
   -- All part of OCaml's single `exists (Prev_typ.f ...)` call
-  { comms, opening, fopState, allEvals, prevChals } <- label "exists_prevs" do
+  { comms, opening, fopState, allEvals, prevChals, branchData } <- label "exists_prevs" do
     comms <- exists (dummy :: _ { wComm :: Vector 15 (WeierstrassAffinePoint PallasG (F StepField))
              , zComm :: WeierstrassAffinePoint PallasG (F StepField)
              , tComm :: Vector 7 (WeierstrassAffinePoint PallasG (F StepField))
@@ -196,7 +197,14 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                  , sg :: WeierstrassAffinePoint PallasG (F StepField)
                  })
 
-    pure { comms, opening, fopState, allEvals, prevChals }
+    -- Branch data: inside Per_proof_witness.proof_state.deferred_values.branch_data
+    -- OCaml's Branch_data.typ runs assert_16_bits on domain_log2 via endoscalar gate
+    branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
+    let UnChecked branchData' = branchData
+    -- assert_n_bits ~n:16 on domain_log2: uses endoscalar gate as a range-check hack
+    _ <- EndoScalar.toField @1 (unsafeCoerce branchData'.domainLog2Var :: SizedF 16 (FVar StepField)) (const_ stepEndo)
+
+    pure { comms, opening, fopState, allEvals, prevChals, branchData }
 
   -- Unfinalized proof: OCaml's Unfinalized.typ checks:
   --   5 × Other_field.check (forbidden shifted values) on the Type2 shifted values
@@ -220,9 +228,6 @@ stepMainSimpleChainCircuit { lagrangeComms, blindingH } _publicInputs = do
                  , shouldFinalize :: Boolean  -- Boolean.typ: checked
                  , claimedDigest :: UnChecked (F StepField)  -- Digest: no check
                  })
-
-  -- Branch data (unchecked)
-  branchData <- exists (dummy :: _ (UnChecked { mask0 :: F StepField, mask1 :: F StepField, domainLog2Var :: F StepField }))
 
   -- Messages for next wrap proof
   messagesForNextWrapProof <- exists (dummy :: _ (F StepField))
