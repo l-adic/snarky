@@ -26,6 +26,8 @@ module Pickles.Types
   , StepProofState(..)
   , StepPerProofWitness(..)
   , PerProofUnfinalized(..)
+  , WrapPrevProofState(..)
+  , WrapOldBpChals(..)
   ) where
 
 import Prelude
@@ -774,3 +776,119 @@ instance
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
         (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize)
     )
+
+-------------------------------------------------------------------------------
+-- | Wrap circuit witness allocation types (used by Pickles.Wrap.Advice)
+-------------------------------------------------------------------------------
+
+-- | The combined wrap-circuit `Req.Proof_state` allocation: `mpv`
+-- | unfinalized proofs (Type2-shifted scalars) + `messages_for_next_step_proof`.
+-- |
+-- | OCaml's `wrap_typ` over `Types.Step.Proof_state` puts `unfinalized_proofs`
+-- | first (a Vector of length `mpv`) and `messages_for_next_step_proof` second.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/composition_types/composition_types.ml
+-- | (`Types.Step.Proof_state.wrap_typ`) and `wrap_main.ml:267` exists call.
+newtype WrapPrevProofState (mpv :: Int) sf f b = WrapPrevProofState
+  { unfinalizedProofs :: Vector mpv (PerProofUnfinalized WrapIPARounds sf f b)
+  , messagesForNextStepProof :: f
+  }
+
+instance
+  ( CircuitType f sf sfvar
+  , CircuitType f b bvar
+  , FieldSizeInBits f m
+  , Reflectable mpv Int
+  ) =>
+  CircuitType f
+    (WrapPrevProofState mpv sf (F f) b)
+    (WrapPrevProofState mpv sfvar (FVar f) bvar) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f)))
+  valueToFields (WrapPrevProofState r) = genericValueToFields
+    (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+  fieldsToValue fs =
+    let
+      tup :: Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f)
+      tup = genericFieldsToValue fs
+    in
+      uncurry2
+        ( \unfinalizedProofs messagesForNextStepProof ->
+            WrapPrevProofState { unfinalizedProofs, messagesForNextStepProof }
+        )
+        tup
+  varToFields (WrapPrevProofState r) = genericVarToFields
+    @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f))
+    (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+  fieldsToVar fs =
+    let
+      tup :: Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sfvar (FVar f) bvar)) (FVar f)
+      tup = genericFieldsToVar
+        @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f))
+        fs
+    in
+      uncurry2
+        ( \unfinalizedProofs messagesForNextStepProof ->
+            WrapPrevProofState { unfinalizedProofs, messagesForNextStepProof }
+        )
+        tup
+
+instance
+  ( CheckedType f c (Vector mpv (PerProofUnfinalized WrapIPARounds sfvar fvar bvar))
+  , CheckedType f c fvar
+  ) =>
+  CheckedType f c (WrapPrevProofState mpv sfvar fvar bvar) where
+  check (WrapPrevProofState r) = check (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+
+-- | Old bulletproof challenges grouped by slot. The wrap circuit's
+-- | `Req.Old_bulletproof_challenges` allocates a heterogeneous list over
+-- | `Max_widths_by_slot.maxes`; for the configurations we currently dump,
+-- | both slots are present but their widths can differ.
+-- |
+-- | OCaml's H1.Wrap_typ iterates head-to-tail over the maxes list, so slot 0
+-- | is allocated first and slot 1 second.
+-- |
+-- | Type parameters:
+-- | - `slot0Width`: number of bulletproof-challenge vectors in slot 0
+-- | - `slot1Width`: number of bulletproof-challenge vectors in slot 1
+-- | - `f`: field element type (`F f` or `FVar f`)
+-- |
+-- | Reference: wrap_main.ml:372-404 (`Req.Old_bulletproof_challenges`).
+newtype WrapOldBpChals (slot0Width :: Int) (slot1Width :: Int) f = WrapOldBpChals
+  { slot0 :: Vector slot0Width (Vector WrapIPARounds f)
+  , slot1 :: Vector slot1Width (Vector WrapIPARounds f)
+  }
+
+instance
+  ( CircuitType f a var
+  , Reflectable slot0Width Int
+  , Reflectable slot1Width Int
+  ) =>
+  CircuitType f (WrapOldBpChals slot0Width slot1Width a) (WrapOldBpChals slot0Width slot1Width var) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))))
+  valueToFields (WrapOldBpChals r) = genericValueToFields (tuple2 r.slot0 r.slot1)
+  fieldsToValue fs =
+    let
+      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))
+      tup = genericFieldsToValue fs
+    in
+      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
+  varToFields (WrapOldBpChals r) = genericVarToFields
+    @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
+    (tuple2 r.slot0 r.slot1)
+  fieldsToVar fs =
+    let
+      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds var)) (Vector slot1Width (Vector WrapIPARounds var))
+      tup = genericFieldsToVar
+        @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
+        fs
+    in
+      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
+
+instance
+  ( CheckedType f c (Vector slot0Width (Vector WrapIPARounds var))
+  , CheckedType f c (Vector slot1Width (Vector WrapIPARounds var))
+  ) =>
+  CheckedType f c (WrapOldBpChals slot0Width slot1Width var) where
+  check (WrapOldBpChals r) = check (tuple2 r.slot0 r.slot1)
