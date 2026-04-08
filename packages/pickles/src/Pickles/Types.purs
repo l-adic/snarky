@@ -15,12 +15,18 @@ module Pickles.Types
   , StepInput
   , StepStatement
   , WrapStatement
+  , PointEval(..)
+  , VerificationKey(..)
   ) where
 
+import Data.Tuple.Nested (Tuple2, Tuple3, tuple2, tuple3, uncurry2, uncurry3)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Snarky.Circuit.DSL.Monad (class CheckedType, check)
+import Snarky.Circuit.Types (class CircuitType, genericFieldsToVar, genericFieldsToValue, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
+import Type.Proxy (Proxy(..))
 
 -- | Step circuit field (Fp = Vesta.ScalarField = Pallas.BaseField).
 type StepField = Vesta.ScalarField
@@ -108,3 +114,69 @@ type WrapStatement d f sf b =
       }
   , messagesForNextStepProof :: f
   }
+
+-------------------------------------------------------------------------------
+-- | Building blocks for structured witness allocation
+-- |
+-- | These newtypes wrap records but their `CircuitType`/`CheckedType`
+-- | instances delegate to an internal nested-`Tuple` representation that
+-- | enforces OCaml's exact allocation order (instead of the alphabetical
+-- | RowList order a record would give).
+-- |
+-- | Parameterized by a single element type so the same newtype works for
+-- | both value (`F f`) and var (`FVar f`) representations.
+-------------------------------------------------------------------------------
+
+-- | A polynomial evaluation at the pair (zeta, zeta*omega).
+-- |
+-- | OCaml pairs are allocated as `(zeta_eval, omega_eval)` — zeta FIRST,
+-- | then omega*zeta. A plain record `{zeta, omegaTimesZeta}` would
+-- | alphabetize to (omegaTimesZeta, zeta) via RowList, which is WRONG.
+-- | This newtype enforces OCaml order via nested-Tuple delegation.
+newtype PointEval a = PointEval
+  { zeta :: a
+  , omegaTimesZeta :: a
+  }
+
+instance (CircuitType f a var) => CircuitType f (PointEval a) (PointEval var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 a a))
+  valueToFields (PointEval r) = genericValueToFields (tuple2 r.zeta r.omegaTimesZeta)
+  fieldsToValue fs =
+    let tup = genericFieldsToValue fs :: Tuple2 a a
+    in uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
+  varToFields (PointEval r) = genericVarToFields @(Tuple2 a a) (tuple2 r.zeta r.omegaTimesZeta)
+  fieldsToVar fs =
+    let tup = genericFieldsToVar @(Tuple2 a a) fs :: Tuple2 var var
+    in uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
+
+instance (CheckedType f c var) => CheckedType f c (PointEval var) where
+  check (PointEval r) = check (tuple2 r.zeta r.omegaTimesZeta)
+
+-- | Plonk verification key: sigma(7), coefficients(15), index(6) commitments.
+-- |
+-- | OCaml hlist order: sigma_comm, coefficients_comm, index commitments
+-- | (generic, psm, complete_add, mul, emul, endomul_scalar).
+-- |
+-- | Parameterized by the element type so the same newtype works for both
+-- | value and var representations on either Pasta curve.
+-- |
+-- | Reference: plonk_verification_key_evals.ml
+newtype VerificationKey pt = VerificationKey
+  { sigma :: Vector 7 pt
+  , coeff :: Vector 15 pt
+  , index :: Vector 6 pt
+  }
+
+instance (CircuitType f a var) => CircuitType f (VerificationKey a) (VerificationKey var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)))
+  valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
+  fieldsToValue fs =
+    let tup = genericFieldsToValue fs :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
+    in uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
+  varToFields (VerificationKey r) = genericVarToFields @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) (tuple3 r.sigma r.coeff r.index)
+  fieldsToVar fs =
+    let tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
+    in uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
+
+instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
+  check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)

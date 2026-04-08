@@ -111,7 +111,7 @@ import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
-import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, WrapField, WrapIPARounds)
+import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, StepStatement, VerificationKey(..), WrapField, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
@@ -143,7 +143,7 @@ import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoS
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
 import Test.Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck.Gen (randomSampleOne)
@@ -207,14 +207,7 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
   -- | from the public input's Type2(SplitField) unfinalized proofs.
   , fopProofStates :: Vector n (UnfinalizedProof ds (F f) (Type1 (F f)) Boolean)
   , messagesForNextWrapProof :: Vector n (F f)
-  , wrapVerifierIndex ::
-      { sigmaCommLast :: AffinePoint (F f)
-      , columnComms ::
-          { index :: Vector 6 (AffinePoint (F f))
-          , coeff :: Vector 15 (AffinePoint (F f))
-          , sigma :: Vector 6 (AffinePoint (F f))
-          }
-      }
+  , wrapVerifierIndex :: VerificationKey (WeierstrassAffinePoint PallasG (F f))
   , sgOld :: Vector n (AffinePoint (F f))
   , sgOldMask :: Vector n (FVar f)
   }
@@ -625,14 +618,16 @@ createStepProofContext stepCase = do
                     )
                 )
             )
-        vk = advice.wrapVerifierIndex
+        VerificationKey vk = advice.wrapVerifierIndex
+        unwrapVk (WeierstrassAffinePoint pt) = pt
+        sigma7 = map unwrapVk vk.sigma
         -- Compute the IVP transcript to get self-consistent plonk values
         transcript = computeStepIvpTranscript
           { vk:
-              { sigma: vk.columnComms.sigma
-              , sigmaLast: vk.sigmaCommLast
-              , coeff: vk.columnComms.coeff
-              , index: vk.columnComms.index
+              { sigma: Vector.take @6 sigma7
+              , sigmaLast: Vector.last sigma7
+              , coeff: map unwrapVk vk.coeff
+              , index: map unwrapVk vk.index
               }
           , sgOld: Vector.nil
           , sgOldMask: Vector.nil
@@ -2084,15 +2079,12 @@ buildStepIVPParams ctx =
 
 -- | Extract Wrap VK data for the Step IVP input (circuit variables, not constants).
 -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
-buildStepIVPVkInput
-  :: WrapProofContext
-  -> { sigmaCommLast :: AffinePoint (F StepField)
-     , columnComms ::
-         { index :: Vector 6 (AffinePoint (F StepField))
-         , coeff :: Vector 15 (AffinePoint (F StepField))
-         , sigma :: Vector 6 (AffinePoint (F StepField))
-         }
-     }
+-- | Returns a `VerificationKey` with sigma as Vector 7 (matching OCaml's hlist
+-- | allocation), combining the 6 sigmas from columnComms with sigmaCommLast.
+-- |
+-- | Wrapped in `WeierstrassAffinePoint PallasG` so the on-curve checks fire
+-- | during `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
+buildStepIVPVkInput :: WrapProofContext -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
 buildStepIVPVkInput ctx =
   let
     columnCommsRaw = ProofFFI.vestaVerifierIndexColumnComms ctx.verifierIndex
@@ -2103,16 +2095,20 @@ buildStepIVPVkInput ctx =
     coeffComms :: Vector 15 (AffinePoint Vesta.ScalarField)
     coeffComms = toVectorOrThrow @15 "buildStepIVPVkInput coeffComms" $ Array.take 15 $ Array.drop 6 columnCommsRaw
 
-    sigmaComms :: Vector 6 (AffinePoint Vesta.ScalarField)
-    sigmaComms = toVectorOrThrow @6 "buildStepIVPVkInput sigmaComms" $ Array.drop 21 columnCommsRaw
+    sigma6 :: Vector 6 (AffinePoint Vesta.ScalarField)
+    sigma6 = toVectorOrThrow @6 "buildStepIVPVkInput sigmaComms" $ Array.drop 21 columnCommsRaw
+
+    sigmaLast :: AffinePoint Vesta.ScalarField
+    sigmaLast = coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
+
+    sigma7 :: Vector 7 (AffinePoint Vesta.ScalarField)
+    sigma7 = toVectorOrThrow @7 "buildStepIVPVkInput sigma7" $ (Vector.toUnfoldable sigma6 :: Array _) <> [ sigmaLast ]
   in
-    { sigmaCommLast: coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
-    , columnComms:
-        { index: coerce indexComms
-        , coeff: coerce coeffComms
-        , sigma: coerce sigmaComms
-        }
-    }
+    VerificationKey
+      { sigma: map WeierstrassAffinePoint (coerce sigma7)
+      , coeff: map WeierstrassAffinePoint (coerce coeffComms)
+      , index: map WeierstrassAffinePoint (coerce indexComms)
+      }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.
 buildStepIVPInput
@@ -2122,7 +2118,7 @@ buildStepIVPInput
   -> IncrementallyVerifyProofInput (Vector nPublic (F StepField)) 0 WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean))
 buildStepIVPInput ctx =
   let
-    vk = buildStepIVPVkInput ctx
+    VerificationKey vk = buildStepIVPVkInput ctx
     commitments = ProofFFI.vestaProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -2176,8 +2172,15 @@ buildStepIVPInput ctx =
     , sgOld: Vector.nil
     , sgOldMask: Vector.nil
     -- VK data (circuit variables in OCaml, F f here for test input)
-    , sigmaCommLast: vk.sigmaCommLast
-    , columnComms: vk.columnComms
+    -- Unwrap WeierstrassAffinePoint and split sigma (Vector 7) into sigma (Vector 6) + sigmaLast.
+    , sigmaCommLast: case Vector.last vk.sigma of WeierstrassAffinePoint pt -> pt
+    , columnComms:
+        let unwrapVk (WeierstrassAffinePoint pt) = pt
+        in
+          { sigma: map unwrapVk (Vector.take @6 vk.sigma)
+          , coeff: map unwrapVk vk.coeff
+          , index: map unwrapVk vk.index
+          }
     , deferredValues:
         let
           wrapPlonk = coerceWrapPlonkChallenges ctx

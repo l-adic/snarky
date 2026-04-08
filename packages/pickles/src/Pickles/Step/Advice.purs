@@ -74,10 +74,12 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Types (VerificationKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type1, Type2)
 
 -- | Advisory monad for the Step circuit.
@@ -153,18 +155,13 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
 
   -- | Wrap verifier index (VK) as circuit variables.
   -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
-  -- | Contains sigma commitments (6 + sigmaLast), coefficient commitments (15),
-  -- | and index commitments (6).
-  getWrapVerifierIndex
-    :: Unit
-    -> m
-         { sigmaCommLast :: AffinePoint (F f)
-         , columnComms ::
-             { index :: Vector 6 (AffinePoint (F f))
-             , coeff :: Vector 15 (AffinePoint (F f))
-             , sigma :: Vector 6 (AffinePoint (F f))
-             }
-         }
+  -- | Contains sigma commitments (Vector 7), coefficient commitments (15),
+  -- | and index commitments (6). The sigmaLast split (6 + 1) is done at
+  -- | use time, not allocation time — OCaml allocates all 7 sigmas together.
+  -- |
+  -- | Wrapped in `WeierstrassAffinePoint PallasG` so the on-curve checks
+  -- | run during `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
+  getWrapVerifierIndex :: Unit -> m (VerificationKey (WeierstrassAffinePoint PallasG (F f)))
 
   -- | Per-proof sg points (prev_challenge_polynomial_commitments).
   -- | One point per previous proof, from Per_proof_witness.

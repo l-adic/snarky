@@ -23,6 +23,7 @@ module Pickles.Step.Main
 
 import Prelude
 
+import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Foldable (foldM, foldMap)
 import Data.Maybe (fromJust)
@@ -35,11 +36,14 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
+import Pickles.Step.Advice (class StepWitnessM, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (StepField)
+import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compilePure)
+import Effect (Effect)
+import Effect.Unsafe (unsafePerformEffect)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label, throwAsProver)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
@@ -420,6 +424,7 @@ unfFields unf =
 stepMain
   :: forall @n @outputSize t m
    . CircuitM StepField (KimchiConstraint StepField) t m
+  => StepWitnessM n StepIPARounds WrapIPARounds m StepField
   => Reflectable n Int
   => Reflectable outputSize Int
   => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
@@ -434,15 +439,17 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
   -- 2. rule_main
   { prevPublicInputs, proofMustVerify } <- label "rule_main" $ rule appState
 
-  -- 3. exists: VK (sigma7 + coeff15 + index6)
-  vk <- label "exists_wrap_index" do
-    vkSigma <- exists (advice :: _ (Vector 7 (WeierstrassAffinePoint PallasG (F StepField))))
-    vkCoeff <- exists (advice :: _ (Vector 15 (WeierstrassAffinePoint PallasG (F StepField))))
-    vkIndex <- exists (advice :: _ (Vector 6 (WeierstrassAffinePoint PallasG (F StepField))))
-    let
-      vkSigma6 = Vector.take @6 vkSigma
-      vkSigmaLast = Vector.last vkSigma
-    pure { sigma: vkSigma6, sigmaLast: vkSigmaLast, coeff: vkCoeff, index: vkIndex }
+  -- 3. exists: VK via the advice monad. The VerificationKey CircuitType
+  --    instance allocates sigma(7), coeff(15), index(6) in OCaml hlist order.
+  VerificationKey vkRec <- label "exists_wrap_index" $
+    exists $ lift $ getWrapVerifierIndex @n @StepIPARounds @WrapIPARounds unit
+  let
+    vk =
+      { sigma: Vector.take @6 vkRec.sigma
+      , sigmaLast: Vector.last vkRec.sigma
+      , coeff: vkRec.coeff
+      , index: vkRec.index
+      }
 
   -- 4. exists: per-proof witnesses (n proofs, sequential)
   proofWitnesses <- label "exists_prevs" $
@@ -553,20 +560,22 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
 -------------------------------------------------------------------------------
 -- | Compile step_main
 -- |
--- | Uses `compilePure` (Identity base monad). The `advice` helper works for
--- | any Monad m, so it works with Identity. During compilation, `exists`
--- | ignores the advice entirely (CircuitBuilderT discards the AsProverT arg).
+-- | Uses `compile` with `m = Effect`. The Effect-based StepWitnessM instance
+-- | (from Pickles.Step.Advice) throws if any advice method is called — but
+-- | during compilation, `exists` in `CircuitBuilderT` ignores the AsProverT
+-- | argument entirely, so the throw never fires. `unsafePerformEffect` is safe
+-- | here because the compilation is deterministic and pure-in-effect.
 -------------------------------------------------------------------------------
 
 compileStepMain
   :: forall @n @outputSize
    . Reflectable n Int
   => Reflectable outputSize Int
-  => (forall t m. CircuitM StepField (KimchiConstraint StepField) t m => FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
+  => (forall t. CircuitM StepField (KimchiConstraint StepField) t Effect => FVar StepField -> Snarky (KimchiConstraint StepField) t Effect (RuleOutput n StepField))
   -> StepMainSrsData
   -> AffinePoint StepField
   -> CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
-compileStepMain rule srsData dummySg =
-  compilePure (Proxy @Unit) (Proxy @(Vector outputSize (F StepField))) (Proxy @(KimchiConstraint StepField))
+compileStepMain rule srsData dummySg = unsafePerformEffect $
+  compile (Proxy @Unit) (Proxy @(Vector outputSize (F StepField))) (Proxy @(KimchiConstraint StepField))
     (\_ -> stepMain @n @outputSize rule srsData dummySg)
     Kimchi.initialState

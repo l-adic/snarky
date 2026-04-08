@@ -38,7 +38,7 @@ import Pickles.Step.Advice (class StepWitnessM, getFopProofStates, getMessages, 
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams, finalizeOtherProofCircuit)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProof)
 import Pickles.Step.OtherField as StepOtherField
-import Pickles.Types (StepInput, StepStatement)
+import Pickles.Types (StepInput, StepStatement, VerificationKey(..))
 import Pickles.Verify.Types (UnfinalizedProof)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -51,7 +51,7 @@ import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
+import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2)
 
 -------------------------------------------------------------------------------
@@ -291,7 +291,7 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   prevChallenges <- exists $ lift $ getPrevChallenges @_ @ds @dw unit
   fopProofStates <- exists $ lift $ getFopProofStates @_ @ds @dw unit
   messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @ds @dw unit
-  wrapVk <- exists $ lift $ getWrapVerifierIndex @n @ds @dw unit
+  VerificationKey wrapVk <- exists $ lift $ getWrapVerifierIndex @n @ds @dw unit
   sgOld <- exists $ lift $ getSgOld @n @ds @dw unit
   -- TODO: used by IVP when wired in
   _messages <- exists $ lift $ getMessages @n @ds @dw unit
@@ -317,13 +317,17 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
     pure challenges
 
   -- 4. Hash messages for next Step proof (uses VK + all proofs' sg + bp challenges)
+  -- Split sigma (Vector 7) into sigma (Vector 6) + sigmaLast at use time.
+  -- Unwrap WeierstrassAffinePoint to bare AffinePoint for the hash.
   let
+    unwrap (WeierstrassAffinePoint pt) = pt
+    sigma7 = map unwrap wrapVk.sigma
     hashInput =
       { vkComms:
-          { sigma: wrapVk.columnComms.sigma
-          , sigmaLast: wrapVk.sigmaCommLast
-          , coeff: wrapVk.columnComms.coeff
-          , index: wrapVk.columnComms.index
+          { sigma: Vector.take @6 sigma7
+          , sigmaLast: Vector.last sigma7
+          , coeff: map unwrap wrapVk.coeff
+          , index: map unwrap wrapVk.index
           }
       , proofs: Vector.zipWith
           (\sg chals -> { sg, bpChallenges: map toField chals })
