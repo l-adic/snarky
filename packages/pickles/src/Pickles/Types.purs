@@ -17,13 +17,23 @@ module Pickles.Types
   , WrapStatement
   , PointEval(..)
   , VerificationKey(..)
+  , BranchData(..)
   ) where
+
+import Prelude
 
 import Data.Tuple.Nested (Tuple2, Tuple3, tuple2, tuple3, uncurry2, uncurry3)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
+import Prim.Int (class Compare)
+import Prim.Ordering (LT)
+import Snarky.Circuit.DSL (BoolVar, FVar, const_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
+import Snarky.Circuit.DSL.SizedF (unsafeMkSizedF)
+import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToVar, genericFieldsToValue, genericSizeInFields, genericValueToFields, genericVarToFields)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, EndoScalar(..), endoScalar)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
@@ -180,3 +190,58 @@ instance (CircuitType f a var) => CircuitType f (VerificationKey a) (Verificatio
 
 instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
   check (VerificationKey r) = check (tuple3 r.sigma r.coeff r.index)
+
+-- | Per-proof branch data: which previous proof slot is in use, plus the
+-- | wrap proof's domain log2.
+-- |
+-- | OCaml hlist order: (mask0, mask1, domainLog2). Allocation order matches
+-- | the OCaml `Branch_data.typ`.
+-- |
+-- | The `CheckedType` instance:
+-- | - Boolean checks on the masks (via Tuple3 delegation to inner instances)
+-- | - Endoscalar check on `domainLog2` (matching OCaml's
+-- |   `Branch_data.typ.check`, which expands the 16-bit log2 into a full
+-- |   field element through the endo).
+-- |
+-- | The endo constant is determined by `f` via the `HasEndo` class — for
+-- | `f = StepField` (= Vesta.ScalarField), the base field is Vesta.BaseField
+-- | and `endoScalar @Vesta.BaseField @StepField` gives the right value.
+-- |
+-- | Reference: branch_data.ml, mina/src/lib/crypto/pickles/impls.ml
+newtype BranchData f b = BranchData
+  { mask0 :: b
+  , mask1 :: b
+  , domainLog2 :: f
+  }
+
+instance
+  ( CircuitType f a fvar
+  , CircuitType f b bvar
+  ) =>
+  CircuitType f (BranchData a b) (BranchData fvar bvar) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 b b a))
+  valueToFields (BranchData r) = genericValueToFields (tuple3 r.mask0 r.mask1 r.domainLog2)
+  fieldsToValue fs =
+    let tup = genericFieldsToValue fs :: Tuple3 b b a
+    in uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
+  varToFields (BranchData r) = genericVarToFields @(Tuple3 b b a) (tuple3 r.mask0 r.mask1 r.domainLog2)
+  fieldsToVar fs =
+    let tup = genericFieldsToVar @(Tuple3 b b a) fs :: Tuple3 bvar bvar fvar
+    in uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
+
+-- | CheckedType for the var representation: Boolean checks on the masks
+-- | plus the endoscalar check on domainLog2.
+instance
+  ( FieldSizeInBits f n
+  , Compare 16 n LT
+  , HasEndo basef f
+  , CheckedType f (KimchiConstraint f) (Tuple3 (BoolVar f) (BoolVar f) (FVar f))
+  ) =>
+  CheckedType f (KimchiConstraint f) (BranchData (FVar f) (BoolVar f)) where
+  check (BranchData r) = label "branch-data-check" do
+    -- Boolean checks on masks + (no-op) check on domLog2 via Tuple3 delegation
+    check (tuple3 r.mask0 r.mask1 r.domainLog2)
+    -- Endoscalar check on domainLog2 (matches OCaml Branch_data.typ.check)
+    let EndoScalar e = endoScalar @basef @f
+    _ <- EndoScalar.toField @1 (unsafeMkSizedF r.domainLog2) (const_ e)
+    pure unit

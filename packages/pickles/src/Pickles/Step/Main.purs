@@ -38,7 +38,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
+import Pickles.Types (BranchData(..), StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Effect (Effect)
@@ -47,7 +47,6 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label, throwAsProver)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
-import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -185,11 +184,14 @@ allocatePerProofWitness = do
   psXi <- exists (advice :: _ (F StepField))
   psBpChals :: Vector 16 (FVar StepField) <- exists (advice :: _ (Vector 16 (F StepField)))
 
-  -- Branch_data: mask0(bool), mask1(bool), domLog2(field + endoscalar)
-  bdMask0 :: BoolVar StepField <- exists (advice :: _ Boolean)
-  bdMask1 :: BoolVar StepField <- exists (advice :: _ Boolean)
-  domLog2 <- exists (advice :: _ (F StepField))
-  _ <- EndoScalar.toField @1 (unsafeMkSizedF domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndoVal)
+  -- Branch_data: mask0, mask1, domLog2 — single allocation via BranchData,
+  -- whose CheckedType instance does the boolean checks AND the endoscalar
+  -- check on domLog2 (matching OCaml Branch_data.typ.check).
+  BranchData branchDataRec <- exists (advice :: _ (BranchData (F StepField) Boolean))
+  let
+    bdMask0 = branchDataRec.mask0
+    bdMask1 = branchDataRec.mask1
+    domLog2 = branchDataRec.domainLog2
 
   let
     fopState =
