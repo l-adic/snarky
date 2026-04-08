@@ -64,8 +64,8 @@ import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
@@ -827,12 +827,14 @@ dummyStepAdvice =
     , fopProofStates: stepDummyFopProofState { proofsVerified: 2 } :< Vector.nil
     , messagesForNextWrapProof: F zero :< Vector.nil
     , wrapVerifierIndex:
-        let g0w = WeierstrassAffinePoint g0
-        in VerificationKey
-          { sigma: Vector.generate \_ -> g0w
-          , coeff: Vector.generate \_ -> g0w
-          , index: Vector.generate \_ -> g0w
-          }
+        let
+          g0w = WeierstrassAffinePoint g0
+        in
+          VerificationKey
+            { sigma: Vector.generate \_ -> g0w
+            , coeff: Vector.generate \_ -> g0w
+            , index: Vector.generate \_ -> g0w
+            }
     , sgOld: g0 :< Vector.nil
     , sgOldMask: (const_ one) :< Vector.nil
     }

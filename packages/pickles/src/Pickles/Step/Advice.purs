@@ -65,6 +65,12 @@ module Pickles.Step.Advice
   , getMessagesForNextWrapProof
   , getWrapVerifierIndex
   , getSgOld
+  -- Composed advice methods used by Pickles.Step.Main.stepMain.
+  -- These mirror OCaml's `Req.App_state`, `Req.Proof_with_datas`,
+  -- and `Req.Unfinalized_proofs`.
+  , getStepAppState
+  , getStepPerProofWitnesses
+  , getStepUnfinalizedProofs
   ) where
 
 import Prelude
@@ -74,7 +80,7 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Types (VerificationKey)
+import Pickles.Types (PerProofUnfinalized, StepPerProofWitness, VerificationKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Curves.Class (class PrimeField)
@@ -168,6 +174,40 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
   -- | OCaml: per_proof_witness.ml:91 prev_challenge_polynomial_commitments
   getSgOld :: Unit -> m (Vector n (AffinePoint (F f)))
 
+  -- | App state (the rule's public input). Singleton.
+  -- | OCaml: Req.App_state in step_main.ml:275.
+  getStepAppState :: Unit -> m (F f)
+
+  -- | The composed per-proof witness Vector — ONE allocation matching
+  -- | OCaml's `exists (Prev_typ.f prev_proof_typs) ~request:Req.Proof_with_datas`.
+  -- | Returns a `Vector n` of structured per-proof witnesses; subcircuits
+  -- | extract whatever they need via the `StepPerProofWitness` accessors.
+  getStepPerProofWitnesses
+    :: Unit
+    -> m
+         ( Vector n
+             ( StepPerProofWitness
+                 n
+                 (F f)
+                 (Type2 (SplitField (F f) Boolean))
+                 Boolean
+             )
+         )
+
+  -- | The composed unfinalized proofs Vector — ONE allocation matching
+  -- | OCaml's `exists (Vector.typ' ...) ~request:Req.Unfinalized_proofs`.
+  getStepUnfinalizedProofs
+    :: Unit
+    -> m
+         ( Vector n
+             ( PerProofUnfinalized
+                 15
+                 (Type2 (SplitField (F f) Boolean))
+                 (F f)
+                 Boolean
+             )
+         )
+
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
 instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => StepWitnessM n ds dw Effect f where
@@ -180,3 +220,6 @@ instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField 
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
   getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
   getSgOld _ = throw "impossible! getSgOld called during compilation"
+  getStepAppState _ = throw "impossible! getStepAppState called during compilation"
+  getStepPerProofWitnesses _ = throw "impossible! getStepPerProofWitnesses called during compilation"
+  getStepUnfinalizedProofs _ = throw "impossible! getStepUnfinalizedProofs called during compilation"

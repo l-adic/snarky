@@ -235,6 +235,13 @@ instance StepWitnessM n ds dw (StepProverM n ds dw f) f where
   getMessagesForNextWrapProof _ = StepProverM $ map _.messagesForNextWrapProof ask
   getWrapVerifierIndex _ = StepProverM $ map _.wrapVerifierIndex ask
   getSgOld _ = StepProverM $ map _.sgOld ask
+  -- Composed advice methods used by Pickles.Step.Main.stepMain.
+  -- Not yet wired into the existing prover witness data — stepMain has
+  -- its own compilation-only path, and these would need real values
+  -- for proving (TODO: extend StepAdvice to provide them).
+  getStepAppState _ = StepProverM $ liftEffect $ throw "StepProverM: getStepAppState not yet implemented"
+  getStepPerProofWitnesses _ = StepProverM $ liftEffect $ throw "StepProverM: getStepPerProofWitnesses not yet implemented"
+  getStepUnfinalizedProofs _ = StepProverM $ liftEffect $ throw "StepProverM: getStepUnfinalizedProofs not yet implemented"
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -2175,7 +2182,8 @@ buildStepIVPInput ctx =
     -- Unwrap WeierstrassAffinePoint and split sigma (Vector 7) into sigma (Vector 6) + sigmaLast.
     , sigmaCommLast: case Vector.last vk.sigma of WeierstrassAffinePoint pt -> pt
     , columnComms:
-        let unwrapVk (WeierstrassAffinePoint pt) = pt
+        let
+          unwrapVk (WeierstrassAffinePoint pt) = pt
         in
           { sigma: map unwrapVk (Vector.take @6 vk.sigma)
           , coeff: map unwrapVk vk.coeff

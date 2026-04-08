@@ -11,10 +11,8 @@
 -- | Reference: mina/src/lib/crypto/pickles/step_main.ml
 -- |            mina/src/lib/crypto/pickles/dump_circuit_impl.ml
 module Pickles.Step.Main
-  ( -- * Advice
-    advice
-  -- * Rule abstraction
-  , RuleOutput
+  ( -- * Rule abstraction
+    RuleOutput
   -- * Generic step_main
   , StepMainSrsData
   , stepMain
@@ -28,22 +26,23 @@ import Data.Array as Array
 import Data.Foldable (foldM, foldMap)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
+import Effect (Effect)
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepWitnessM, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, VerificationKey(..), WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
-import Effect (Effect)
-import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label, throwAsProver)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
 import Snarky.Circuit.DSL.SizedF (SizedF(..), toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
@@ -57,20 +56,17 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
--- | Advice: throwing prover computation for compilation safety
--- |
--- | During circuit compilation (CircuitBuilderT), `exists` ignores its
--- | AsProverT argument entirely. This `advice` throws at the Effect level
--- | if somehow evaluated — a safety net against bugs.
--------------------------------------------------------------------------------
-
-advice :: forall f m a. Monad m => AsProverT f m a
-advice = throwAsProver (FailedAssertion "advice: evaluated during compilation (bug)")
-
--------------------------------------------------------------------------------
 -- | Rule abstraction
 -------------------------------------------------------------------------------
 
+-- | Rules route their own witness allocations through application-specific
+-- | advice typeclasses (one per rule), not via a generic throwing helper.
+-- | Each rule defines a class with methods for the values it needs, plus
+-- | an `Effect` instance that throws for compilation. The prover side
+-- | provides a real interpreter via a different monad.
+-- |
+-- | Reference: `SimpleChainAdvice` in StepMainSimpleChain.purs for the
+-- | N1 rule, `SimpleChainN2Advice` for N2.
 type RuleOutput n f =
   { prevPublicInputs :: Vector n (FVar f)
   , proofMustVerify :: Vector n (BoolVar f)
@@ -155,40 +151,18 @@ allocatePerProofWitness
   :: forall @n t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
-allocatePerProofWitness = do
-  -- 1. Wrap_proof.Messages: wComm, zComm, tComm
-  WrapProofMessages msgRec <- exists (advice :: _ (WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))))
-
-  -- 2. Wrap_proof.Bulletproof: lr, z1, z2, delta, sg
-  WrapProofOpening openRec <- exists
-    ( advice :: _
-        ( WrapProofOpening
-            (WeierstrassAffinePoint PallasG (F StepField))
-            (Type2 (SplitField (F StepField) Boolean))
-        )
-    )
-
-  -- 3. FOP proof state: 11 scalars + bpChals(16), in OCaml to_data order
-  FopProofState fopRec <- exists (advice :: _ (FopProofState 16 (F StepField)))
-
-  -- Branch_data: mask0, mask1, domLog2 with endoscalar check
-  BranchData branchDataRec <- exists (advice :: _ (BranchData (F StepField) Boolean))
-
-  -- 4. All evals: publicEvals, witness, coeff, z, sigma, index, ftEval1
-  StepAllEvals evalsRec <- exists (advice :: _ (StepAllEvals (F StepField)))
-
-  -- 5. prev_challenges: n sets of 16 (UnChecked)
-  prevChalVecs <- Vector.generateA @n \_ -> do
-    uc <- exists (advice :: _ (UnChecked (Vector 16 (F StepField))))
-    let UnChecked v = uc
-    pure v
-
-  -- 6. prev_sgs: n curve points
-  prevSgs <- Vector.generateA @n \_ ->
-    exists (advice :: _ (WeierstrassAffinePoint PallasG (F StepField)))
-
+  => StepPerProofWitness n (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
+allocatePerProofWitness (StepPerProofWitness ppw) = do
   let
+    WrapProof wrapProofRec = ppw.wrapProof
+    WrapProofMessages msgRec = wrapProofRec.messages
+    WrapProofOpening openRec = wrapProofRec.opening
+    StepProofState psRec = ppw.proofState
+    FopProofState fopRec = psRec.fopState
+    BranchData branchDataRec = psRec.branchData
+    StepAllEvals evalsRec = ppw.prevEvals
+
     fopState =
       { plonk:
           { alpha: coerce fopRec.alpha
@@ -215,6 +189,7 @@ allocatePerProofWitness = do
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
+    unwrapUnChecked (UnChecked v) = v
 
   pure
     { wComm: msgRec.wComm
@@ -232,8 +207,8 @@ allocatePerProofWitness = do
         , mask1: branchDataRec.mask1
         , domainLog2Var: branchDataRec.domainLog2
         }
-    , prevChallenges: prevChalVecs
-    , prevSgs
+    , prevChallenges: map unwrapUnChecked ppw.prevChallenges
+    , prevSgs: ppw.prevSgs
     }
 
 -------------------------------------------------------------------------------
@@ -260,43 +235,32 @@ type UnfinalizedProof =
   , claimedDigest :: FVar StepField
   }
 
-allocateUnfinalized
+-- | Unpack one PerProofUnfinalized (allocated via the advice monad upstream)
+-- | into the legacy `UnfinalizedProof` record shape consumed by `verifyOne`.
+unpackUnfinalized
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Snarky (KimchiConstraint StepField) t m UnfinalizedProof
-allocateUnfinalized = do
-  -- Single allocation via PerProofUnfinalized newtype, whose CircuitType
-  -- delegates to a Tuple representation in OCaml's to_data order:
-  -- (5 Type2 SplitField) + digest + (2 challenges) + (3 scalar challenges)
-  -- + bpChals(15) + shouldFinalize.
-  PerProofUnfinalized r <- exists
-    ( advice :: _
-        ( PerProofUnfinalized
-            15
-            (Type2 (SplitField (F StepField) Boolean))
-            (F StepField)
-            Boolean
-        )
-    )
-  pure
-    { deferredValues:
-        { plonk:
-            { alpha: coerce r.alpha :: SizedF 128 (FVar StepField)
-            , beta: coerce r.beta :: SizedF 128 (FVar StepField)
-            , gamma: coerce r.gamma :: SizedF 128 (FVar StepField)
-            , zeta: coerce r.zeta :: SizedF 128 (FVar StepField)
-            , perm: r.perm
-            , zetaToSrsLength: r.zetaToSrsLength
-            , zetaToDomainSize: r.zetaToDomainSize
-            }
-        , combinedInnerProduct: r.combinedInnerProduct
-        , b: r.b
-        , xi: coerce r.xi :: SizedF 128 (FVar StepField)
-        , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
-        }
-    , shouldFinalize: r.shouldFinalize
-    , claimedDigest: r.spongeDigest
-    }
+  => PerProofUnfinalized 15 (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> Snarky (KimchiConstraint StepField) t m UnfinalizedProof
+unpackUnfinalized (PerProofUnfinalized r) = pure
+  { deferredValues:
+      { plonk:
+          { alpha: coerce r.alpha :: SizedF 128 (FVar StepField)
+          , beta: coerce r.beta :: SizedF 128 (FVar StepField)
+          , gamma: coerce r.gamma :: SizedF 128 (FVar StepField)
+          , zeta: coerce r.zeta :: SizedF 128 (FVar StepField)
+          , perm: r.perm
+          , zetaToSrsLength: r.zetaToSrsLength
+          , zetaToDomainSize: r.zetaToDomainSize
+          }
+      , combinedInnerProduct: r.combinedInnerProduct
+      , b: r.b
+      , xi: coerce r.xi :: SizedF 128 (FVar StepField)
+      , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
+      }
+  , shouldFinalize: r.shouldFinalize
+  , claimedDigest: r.spongeDigest
+  }
 
 -------------------------------------------------------------------------------
 -- | Build verify_one input from allocated witnesses
@@ -412,15 +376,18 @@ stepMain
 stepMain rule { lagrangeComms, blindingH } dummySg = do
 
   -- 1. exists input_typ (app_state)
-  appState <- exists (advice :: _ (F StepField))
+  -- 1. exists: app_state via Req.App_state
+  appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds unit
 
   -- 2. rule_main
   { prevPublicInputs, proofMustVerify } <- label "rule_main" $ rule appState
 
-  -- 3. exists: VK via the advice monad. The VerificationKey CircuitType
+  -- 3. exists: VK via Req.Wrap_index. The VerificationKey CircuitType
   --    instance allocates sigma(7), coeff(15), index(6) in OCaml hlist order.
-  VerificationKey vkRec <- label "exists_wrap_index" $
-    exists $ lift $ getWrapVerifierIndex @n @StepIPARounds @WrapIPARounds unit
+  VerificationKey vkRec <- label "exists_wrap_index"
+    $ exists
+    $ lift
+    $ getWrapVerifierIndex @n @StepIPARounds @WrapIPARounds unit
   let
     vk =
       { sigma: Vector.take @6 vkRec.sigma
@@ -429,16 +396,27 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
       , index: vkRec.index
       }
 
-  -- 4. exists: per-proof witnesses (n proofs, sequential)
-  proofWitnesses <- label "exists_prevs" $
-    Vector.generateA @n \_ -> allocatePerProofWitness @n
+  -- 4. exists: per-proof witnesses via Req.Proof_with_datas — ONE
+  --    structured allocation matching OCaml's
+  --    `exists (Prev_typ.f prev_proof_typs)`.
+  rawProofWitnesses <- label "exists_prevs"
+    $ exists
+    $ lift
+    $ getStepPerProofWitnesses @n @StepIPARounds @WrapIPARounds unit
+  proofWitnesses <- traverse (allocatePerProofWitness @n) rawProofWitnesses
 
-  -- 5. exists: unfinalized proofs (n)
-  unfinalizedProofs <- label "exists_unfinalized" $
-    Vector.generateA @n \_ -> allocateUnfinalized
+  -- 5. exists: unfinalized proofs via Req.Unfinalized_proofs — ONE
+  --    structured allocation matching OCaml's
+  --    `exists (Vector.typ' Unfinalized.typ ...)`.
+  rawUnfinalizedProofs <- label "exists_unfinalized"
+    $ exists
+    $ lift
+    $ getStepUnfinalizedProofs @n @StepIPARounds @WrapIPARounds unit
+  unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
-  -- 6. exists: messages_for_next_wrap_proof (n digests)
-  msgsWrap <- Vector.generateA @n \_ -> exists (advice :: _ (F StepField))
+  -- 6. exists: messages_for_next_wrap_proof via Req.Messages_for_next_wrap_proof
+  --    ONE Vector allocation matching OCaml.
+  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @n @StepIPARounds @WrapIPARounds unit
 
   -- 7. Build VK comms (shared by all proofs since prevs = [self, ...])
   let

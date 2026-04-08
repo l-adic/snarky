@@ -3,7 +3,9 @@ package:
   dependencies:
     - arrays
     - curves
+    - effect
     - either
+    - exceptions
     - foldable-traversable
     - foreign
     - integers
@@ -24,6 +26,7 @@ package:
     - snarky-curves
     - snarky-kimchi
     - strings
+    - transformers
     - tuples
     - unsafe-coerce
     - vector-sized
