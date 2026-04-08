@@ -28,7 +28,6 @@ import Data.Array as Array
 import Data.Foldable (foldM, foldMap)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -38,14 +37,14 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
+import Pickles.Types (BranchData(..), FopProofState(..), PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, VerificationKey(..), WrapIPARounds, WrapProofMessages(..), WrapProofOpening(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label, throwAsProver)
-import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
+import Snarky.Circuit.DSL.SizedF (SizedF(..), toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -158,80 +157,26 @@ allocatePerProofWitness
   => Reflectable n Int
   => Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
 allocatePerProofWitness = do
-  -- 1. Wrap_proof.Messages
-  wComm <- exists (advice :: _ (Vector 15 (WeierstrassAffinePoint PallasG (F StepField))))
-  zComm <- exists (advice :: _ (WeierstrassAffinePoint PallasG (F StepField)))
-  tComm <- exists (advice :: _ (Vector 7 (WeierstrassAffinePoint PallasG (F StepField))))
+  -- 1. Wrap_proof.Messages: wComm, zComm, tComm
+  WrapProofMessages msgRec <- exists (advice :: _ (WrapProofMessages (WeierstrassAffinePoint PallasG (F StepField))))
 
-  -- 2. Wrap_proof.Bulletproof
-  lr <- exists (advice :: _ (Vector 15 { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }))
-  z1 <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  z2 <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  delta <- exists (advice :: _ (WeierstrassAffinePoint PallasG (F StepField)))
-  sg <- exists (advice :: _ (WeierstrassAffinePoint PallasG (F StepField)))
+  -- 2. Wrap_proof.Bulletproof: lr, z1, z2, delta, sg
+  WrapProofOpening openRec <- exists
+    ( advice :: _
+        ( WrapProofOpening
+            (WeierstrassAffinePoint PallasG (F StepField))
+            (Type2 (SplitField (F StepField) Boolean))
+        )
+    )
 
-  -- 3. Proof_state in to_data order
-  psCip <- exists (advice :: _ (F StepField))
-  psB <- exists (advice :: _ (F StepField))
-  psZetaToSrs <- exists (advice :: _ (F StepField))
-  psZetaToDom <- exists (advice :: _ (F StepField))
-  psPerm <- exists (advice :: _ (F StepField))
-  psSponge <- exists (advice :: _ (F StepField))
-  psBeta <- exists (advice :: _ (F StepField))
-  psGamma <- exists (advice :: _ (F StepField))
-  psAlpha <- exists (advice :: _ (F StepField))
-  psZeta <- exists (advice :: _ (F StepField))
-  psXi <- exists (advice :: _ (F StepField))
-  psBpChals :: Vector 16 (FVar StepField) <- exists (advice :: _ (Vector 16 (F StepField)))
+  -- 3. FOP proof state: 11 scalars + bpChals(16), in OCaml to_data order
+  FopProofState fopRec <- exists (advice :: _ (FopProofState 16 (F StepField)))
 
-  -- Branch_data: mask0, mask1, domLog2 — single allocation via BranchData,
-  -- whose CheckedType instance does the boolean checks AND the endoscalar
-  -- check on domLog2 (matching OCaml Branch_data.typ.check).
+  -- Branch_data: mask0, mask1, domLog2 with endoscalar check
   BranchData branchDataRec <- exists (advice :: _ (BranchData (F StepField) Boolean))
-  let
-    bdMask0 = branchDataRec.mask0
-    bdMask1 = branchDataRec.mask1
-    domLog2 = branchDataRec.domainLog2
 
-  let
-    fopState =
-      { plonk:
-          { alpha: unsafeMkSizedF psAlpha :: SizedF 128 (FVar StepField)
-          , beta: unsafeMkSizedF psBeta :: SizedF 128 (FVar StepField)
-          , gamma: unsafeMkSizedF psGamma :: SizedF 128 (FVar StepField)
-          , zeta: unsafeMkSizedF psZeta :: SizedF 128 (FVar StepField)
-          , perm: Type1 psPerm
-          , zetaToSrsLength: Type1 psZetaToSrs
-          , zetaToDomainSize: Type1 psZetaToDom
-          }
-      , combinedInnerProduct: Type1 psCip
-      , b: Type1 psB
-      , xi: unsafeMkSizedF psXi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges: map unsafeMkSizedF psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
-      , spongeDigest: psSponge
-      }
-
-  -- 4. All_evals in OCaml hlist order
-  let toPair (Tuple z oz) = { zeta: z, omegaTimesZeta: oz }
-  publicEvalsZ <- exists (advice :: _ (F StepField))
-  publicEvalsOZ <- exists (advice :: _ (F StepField))
-  witnessEvalsRaw <- exists (advice :: _ (Vector 15 (Tuple (F StepField) (F StepField))))
-  coeffEvalsRaw <- exists (advice :: _ (Vector 15 (Tuple (F StepField) (F StepField))))
-  zEvalsZ <- exists (advice :: _ (F StepField))
-  zEvalsOZ <- exists (advice :: _ (F StepField))
-  sigmaEvalsRaw <- exists (advice :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
-  indexEvalsRaw <- exists (advice :: _ (Vector 6 (Tuple (F StepField) (F StepField))))
-  ftEval1 <- exists (advice :: _ (F StepField))
-  let
-    allEvals =
-      { ftEval1
-      , publicEvals: { zeta: publicEvalsZ, omegaTimesZeta: publicEvalsOZ }
-      , witnessEvals: map toPair witnessEvalsRaw
-      , coeffEvals: map toPair coeffEvalsRaw
-      , zEvals: { zeta: zEvalsZ, omegaTimesZeta: zEvalsOZ }
-      , sigmaEvals: map toPair sigmaEvalsRaw
-      , indexEvals: map toPair indexEvalsRaw
-      }
+  -- 4. All evals: publicEvals, witness, coeff, z, sigma, index, ftEval1
+  StepAllEvals evalsRec <- exists (advice :: _ (StepAllEvals (F StepField)))
 
   -- 5. prev_challenges: n sets of 16 (UnChecked)
   prevChalVecs <- Vector.generateA @n \_ -> do
@@ -243,18 +188,50 @@ allocatePerProofWitness = do
   prevSgs <- Vector.generateA @n \_ ->
     exists (advice :: _ (WeierstrassAffinePoint PallasG (F StepField)))
 
+  let
+    fopState =
+      { plonk:
+          { alpha: coerce fopRec.alpha
+          , beta: coerce fopRec.beta
+          , gamma: coerce fopRec.gamma
+          , zeta: coerce fopRec.zeta
+          , perm: Type1 fopRec.perm
+          , zetaToSrsLength: Type1 fopRec.zetaToSrsLength
+          , zetaToDomainSize: Type1 fopRec.zetaToDomainSize
+          }
+      , combinedInnerProduct: Type1 fopRec.combinedInnerProduct
+      , b: Type1 fopRec.b
+      , xi: coerce fopRec.xi
+      , bulletproofChallenges: coerce fopRec.bulletproofChallenges
+      , spongeDigest: fopRec.spongeDigest
+      }
+    unwrapPointEval (PointEval pe) = { zeta: pe.zeta, omegaTimesZeta: pe.omegaTimesZeta }
+    allEvals =
+      { ftEval1: evalsRec.ftEval1
+      , publicEvals: unwrapPointEval evalsRec.publicEvals
+      , witnessEvals: map unwrapPointEval evalsRec.witnessEvals
+      , coeffEvals: map unwrapPointEval evalsRec.coeffEvals
+      , zEvals: unwrapPointEval evalsRec.zEvals
+      , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
+      , indexEvals: map unwrapPointEval evalsRec.indexEvals
+      }
+
   pure
-    { wComm
-    , zComm
-    , tComm
-    , lr
-    , z1
-    , z2
-    , delta
-    , sg
+    { wComm: msgRec.wComm
+    , zComm: msgRec.zComm
+    , tComm: msgRec.tComm
+    , lr: openRec.lr
+    , z1: openRec.z1
+    , z2: openRec.z2
+    , delta: openRec.delta
+    , sg: openRec.sg
     , fopState
     , allEvals
-    , branchData: { mask0: bdMask0, mask1: bdMask1, domainLog2Var: domLog2 }
+    , branchData:
+        { mask0: branchDataRec.mask0
+        , mask1: branchDataRec.mask1
+        , domainLog2Var: branchDataRec.domainLog2
+        }
     , prevChallenges: prevChalVecs
     , prevSgs
     }
@@ -288,38 +265,37 @@ allocateUnfinalized
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Snarky (KimchiConstraint StepField) t m UnfinalizedProof
 allocateUnfinalized = do
-  -- OCaml to_data order: fq(5×Type2), digest, challenge(2), scalar_challenge(3), bpChals(15), bool
-  unfCip <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  unfB <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  unfZetaToSrs <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  unfZetaToDom <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  unfPerm <- exists (advice :: _ (Type2 (SplitField (F StepField) Boolean)))
-  unfClaimedDigest <- exists (advice :: _ (F StepField))
-  unfBeta <- exists (advice :: _ (F StepField))
-  unfGamma <- exists (advice :: _ (F StepField))
-  unfAlpha <- exists (advice :: _ (F StepField))
-  unfZeta <- exists (advice :: _ (F StepField))
-  unfXi <- exists (advice :: _ (F StepField))
-  unfBpChals :: Vector 15 (FVar StepField) <- exists (advice :: _ (Vector 15 (F StepField)))
-  unfShouldFinalize :: BoolVar StepField <- exists (advice :: _ Boolean)
+  -- Single allocation via PerProofUnfinalized newtype, whose CircuitType
+  -- delegates to a Tuple representation in OCaml's to_data order:
+  -- (5 Type2 SplitField) + digest + (2 challenges) + (3 scalar challenges)
+  -- + bpChals(15) + shouldFinalize.
+  PerProofUnfinalized r <- exists
+    ( advice :: _
+        ( PerProofUnfinalized
+            15
+            (Type2 (SplitField (F StepField) Boolean))
+            (F StepField)
+            Boolean
+        )
+    )
   pure
     { deferredValues:
         { plonk:
-            { alpha: unsafeMkSizedF unfAlpha :: SizedF 128 (FVar StepField)
-            , beta: unsafeMkSizedF unfBeta :: SizedF 128 (FVar StepField)
-            , gamma: unsafeMkSizedF unfGamma :: SizedF 128 (FVar StepField)
-            , zeta: unsafeMkSizedF unfZeta :: SizedF 128 (FVar StepField)
-            , perm: unfPerm
-            , zetaToSrsLength: unfZetaToSrs
-            , zetaToDomainSize: unfZetaToDom
+            { alpha: coerce r.alpha :: SizedF 128 (FVar StepField)
+            , beta: coerce r.beta :: SizedF 128 (FVar StepField)
+            , gamma: coerce r.gamma :: SizedF 128 (FVar StepField)
+            , zeta: coerce r.zeta :: SizedF 128 (FVar StepField)
+            , perm: r.perm
+            , zetaToSrsLength: r.zetaToSrsLength
+            , zetaToDomainSize: r.zetaToDomainSize
             }
-        , combinedInnerProduct: unfCip
-        , b: unfB
-        , xi: unsafeMkSizedF unfXi :: SizedF 128 (FVar StepField)
-        , bulletproofChallenges: map unsafeMkSizedF unfBpChals :: Vector 15 (SizedF 128 (FVar StepField))
+        , combinedInnerProduct: r.combinedInnerProduct
+        , b: r.b
+        , xi: coerce r.xi :: SizedF 128 (FVar StepField)
+        , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
         }
-    , shouldFinalize: unfShouldFinalize
-    , claimedDigest: unfClaimedDigest
+    , shouldFinalize: r.shouldFinalize
+    , claimedDigest: r.spongeDigest
     }
 
 -------------------------------------------------------------------------------

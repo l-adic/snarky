@@ -1,6 +1,6 @@
 -- | Pickles-specific type aliases for the Pasta 2-cycle.
 -- |
--- | Centralizes field types, IPA round counts, commitment curve aliases,
+-- | Centralizes f types, IPA round counts, commitment curve aliases,
 -- | and Step circuit I/O types used throughout the Pickles modules and tests.
 -- |
 -- | Reference: mina/src/lib/pickles/common/nat.ml, kimchi_pasta_basic.ml
@@ -18,18 +18,24 @@ module Pickles.Types
   , PointEval(..)
   , VerificationKey(..)
   , BranchData(..)
+  , WrapProofMessages(..)
+  , WrapProofOpening(..)
+  , StepAllEvals(..)
+  , FopProofState(..)
+  , PerProofUnfinalized(..)
   ) where
 
 import Prelude
 
-import Data.Tuple.Nested (Tuple2, Tuple3, tuple2, tuple3, uncurry2, uncurry3)
+import Data.Reflectable (class Reflectable)
+import Data.Tuple.Nested (Tuple2, Tuple3, Tuple5, Tuple7, Tuple10, tuple2, tuple3, tuple5, tuple7, tuple10, uncurry2, uncurry3, uncurry5, uncurry7, uncurry10)
 import Data.Vector (Vector)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (BoolVar, FVar, const_, label)
+import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
-import Snarky.Circuit.DSL.SizedF (unsafeMkSizedF)
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeMkSizedF)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToVar, genericFieldsToValue, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -38,10 +44,10 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Type.Proxy (Proxy(..))
 
--- | Step circuit field (Fp = Vesta.ScalarField = Pallas.BaseField).
+-- | Step circuit f (Fp = Vesta.ScalarField = Pallas.BaseField).
 type StepField = Vesta.ScalarField
 
--- | Wrap circuit field (Fq = Pallas.ScalarField = Vesta.BaseField).
+-- | Wrap circuit f (Fq = Pallas.ScalarField = Vesta.BaseField).
 type WrapField = Pallas.ScalarField
 
 -- | IPA rounds in a Step proof (= log2 of Vesta SRS size = Rounds.Step = 16).
@@ -54,10 +60,10 @@ type WrapIPARounds = 15
 -- | Reference: mina/src/lib/pickles/common/nat.ml (N2)
 type MaxProofsVerified = 2
 
--- | Step proofs commit on Vesta (scalar field = Fp = StepField).
+-- | Step proofs commit on Vesta (scalar f = Fp = StepField).
 type StepCommitmentCurve = Vesta.G
 
--- | Wrap proofs commit on Pallas (scalar field = Fq = WrapField).
+-- | Wrap proofs commit on Pallas (scalar f = Fq = WrapField).
 type WrapCommitmentCurve = Pallas.G
 
 -------------------------------------------------------------------------------
@@ -89,7 +95,7 @@ type StepInput n input prevInput ds dw f sf b =
 -- |
 -- | This becomes part of the public input for the Wrap circuit to verify.
 -- |
--- | The `fv` parameter is the field variable type (e.g., `FVar f` in circuits).
+-- | The `fv` parameter is the f variable type (e.g., `FVar f` in circuits).
 -- | The `sf` parameter is the shifted value type (e.g., `Type1 (FVar f)`).
 -- | The `b` parameter is the boolean type (e.g., `BoolVar f`).
 -- |
@@ -201,10 +207,10 @@ instance (CheckedType f c var) => CheckedType f c (VerificationKey var) where
 -- | - Boolean checks on the masks (via Tuple3 delegation to inner instances)
 -- | - Endoscalar check on `domainLog2` (matching OCaml's
 -- |   `Branch_data.typ.check`, which expands the 16-bit log2 into a full
--- |   field element through the endo).
+-- |   f element through the endo).
 -- |
 -- | The endo constant is determined by `f` via the `HasEndo` class — for
--- | `f = StepField` (= Vesta.ScalarField), the base field is Vesta.BaseField
+-- | `f = StepField` (= Vesta.ScalarField), the base f is Vesta.BaseField
 -- | and `endoScalar @Vesta.BaseField @StepField` gives the right value.
 -- |
 -- | Reference: branch_data.ml, mina/src/lib/crypto/pickles/impls.ml
@@ -245,3 +251,269 @@ instance
     let EndoScalar e = endoScalar @basef @f
     _ <- EndoScalar.toField @1 (unsafeMkSizedF r.domainLog2) (const_ e)
     pure unit
+
+-- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
+-- |
+-- | OCaml hlist order: w_comm (15), z_comm (1), t_comm (7).
+-- | Reference: kimchi_types.ml prover_proof.commitments
+newtype WrapProofMessages pt = WrapProofMessages
+  { wComm :: Vector 15 pt
+  , zComm :: pt
+  , tComm :: Vector 7 pt
+  }
+
+instance (CircuitType f a var) => CircuitType f (WrapProofMessages a) (WrapProofMessages var) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple3 (Vector 15 a) a (Vector 7 a)))
+  valueToFields (WrapProofMessages r) = genericValueToFields (tuple3 r.wComm r.zComm r.tComm)
+  fieldsToValue fs =
+    let tup = genericFieldsToValue fs :: Tuple3 (Vector 15 a) a (Vector 7 a)
+    in uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
+  varToFields (WrapProofMessages r) = genericVarToFields @(Tuple3 (Vector 15 a) a (Vector 7 a)) (tuple3 r.wComm r.zComm r.tComm)
+  fieldsToVar fs =
+    let tup = genericFieldsToVar @(Tuple3 (Vector 15 a) a (Vector 7 a)) fs :: Tuple3 (Vector 15 var) var (Vector 7 var)
+    in uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
+
+instance (CheckedType f c var) => CheckedType f c (WrapProofMessages var) where
+  check (WrapProofMessages r) = check (tuple3 r.wComm r.zComm r.tComm)
+
+-- | Wrap proof opening: bulletproof opening data allocated in the per-proof witness.
+-- |
+-- | OCaml hlist order: lr (Vector d {l, r}), z1, z2, delta, sg.
+-- | Reference: kimchi_types.ml opening_proof
+newtype WrapProofOpening pt sf = WrapProofOpening
+  { lr :: Vector 15 { l :: pt, r :: pt }
+  , z1 :: sf
+  , z2 :: sf
+  , delta :: pt
+  , sg :: pt
+  }
+
+instance
+  ( CircuitType f a avar
+  , CircuitType f b bvar
+  ) =>
+  CircuitType f (WrapProofOpening a b) (WrapProofOpening avar bvar) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a))
+  valueToFields (WrapProofOpening r) = genericValueToFields (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
+  fieldsToValue fs =
+    let tup = genericFieldsToValue fs :: Tuple5 (Vector 15 { l :: a, r :: a }) b b a a
+    in uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
+  varToFields (WrapProofOpening r) = genericVarToFields @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
+  fieldsToVar fs =
+    let tup = genericFieldsToVar @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) fs :: Tuple5 (Vector 15 { l :: avar, r :: avar }) bvar bvar avar avar
+    in uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
+
+instance
+  ( CheckedType f c avar
+  , CheckedType f c bvar
+  ) =>
+  CheckedType f c (WrapProofOpening avar bvar) where
+  check (WrapProofOpening r) = check (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
+
+-- | All polynomial evaluations for the wrap proof being verified.
+-- |
+-- | OCaml hlist order: public_input, witness (15), coefficients (15), z, sigma (6),
+-- | index_evals (6 selectors), ft_eval1.
+-- |
+-- | Each evaluation is a `PointEval` (zeta, omega*zeta) — the `PointEval` newtype
+-- | enforces zeta-first ordering.
+newtype StepAllEvals a = StepAllEvals
+  { publicEvals :: PointEval a
+  , witnessEvals :: Vector 15 (PointEval a)
+  , coeffEvals :: Vector 15 (PointEval a)
+  , zEvals :: PointEval a
+  , sigmaEvals :: Vector 6 (PointEval a)
+  , indexEvals :: Vector 6 (PointEval a)
+  , ftEval1 :: a
+  }
+
+instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals var) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a))
+  valueToFields (StepAllEvals r) = genericValueToFields
+    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
+  fieldsToValue fs =
+    let
+      tup = genericFieldsToValue fs ::
+        Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a
+    in
+      uncurry7 (\publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
+        StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }) tup
+  varToFields (StepAllEvals r) = genericVarToFields
+    @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
+    (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
+  fieldsToVar fs =
+    let
+      tup = genericFieldsToVar
+        @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
+        fs ::
+        Tuple7 (PointEval var) (Vector 15 (PointEval var)) (Vector 15 (PointEval var)) (PointEval var) (Vector 6 (PointEval var)) (Vector 6 (PointEval var)) var
+    in
+      uncurry7 (\publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
+        StepAllEvals { publicEvals, witnessEvals, coeffEvals, zEvals, sigmaEvals, indexEvals, ftEval1 }) tup
+
+instance (CheckedType f c var) => CheckedType f c (StepAllEvals var) where
+  check (StepAllEvals r) = check (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
+
+-- | FOP proof state: deferred values + sponge digest, in OCaml's to_data order.
+-- |
+-- | OCaml to_data order (from `Spec.pack` of `Per_proof_witness.proof_state`):
+-- |   cip, b, zetaToSrs, zetaToDom, perm,    -- 5 plain fields (Type1 in step)
+-- |   spongeDigest,                          -- digest (plain f)
+-- |   beta, gamma,                           -- 2 128-bit challenges
+-- |   alpha, zeta, xi,                       -- 3 128-bit scalar challenges
+-- |   bulletproofChallenges                  -- Vector d of 128-bit challenges
+-- |
+-- | The `UnChecked (SizedF 128 f)` fields are claimed-128-bit but NOT range-checked
+-- | at allocation (matching OCaml's `Challenge.typ = Typ.f`). Use
+-- | `challengeToSizedF` at the boundary with FOP/IVP code that needs
+-- | `SizedF 128 f`.
+-- |
+-- | Note: the `branchData` is allocated separately within the per-proof witness;
+-- | it is NOT part of this newtype.
+newtype FopProofState (d :: Int) f = FopProofState
+  { combinedInnerProduct :: f
+  , b :: f
+  , zetaToSrsLength :: f
+  , zetaToDomainSize :: f
+  , perm :: f
+  , spongeDigest :: f
+  , beta :: UnChecked (SizedF 128 f)
+  , gamma :: UnChecked (SizedF 128 f)
+  , alpha :: UnChecked (SizedF 128 f)
+  , zeta :: UnChecked (SizedF 128 f)
+  , xi :: UnChecked (SizedF 128 f)
+  , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
+  }
+
+instance
+  ( FieldSizeInBits f m
+  , Reflectable d Int
+  ) =>
+  CircuitType f (FopProofState d (F f)) (FopProofState d (FVar f)) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))))))
+  valueToFields (FopProofState r) = genericValueToFields
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple2 r.xi r.bulletproofChallenges))
+  fieldsToValue fs =
+    let
+      tup = genericFieldsToValue fs :: Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))))
+    in
+      uncurry2 (\t10 t2 ->
+        uncurry10 (\cip b zetaToSrsLength zetaToDomainSize perm spongeDigest beta gamma alpha zeta ->
+          uncurry2 (\xi bulletproofChallenges ->
+            FopProofState { combinedInnerProduct: cip, b, zetaToSrsLength, zetaToDomainSize, perm, spongeDigest, beta, gamma, alpha, zeta, xi, bulletproofChallenges })
+            t2) t10) tup
+  varToFields (FopProofState r) = genericVarToFields
+    @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f))))))
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple2 r.xi r.bulletproofChallenges))
+  fieldsToVar fs =
+    let
+      tup = genericFieldsToVar
+        @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f))))))
+        fs ::
+        Tuple2 (Tuple10 (FVar f) (FVar f) (FVar f) (FVar f) (FVar f) (FVar f) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f)))) (Tuple2 (UnChecked (SizedF 128 (FVar f))) (Vector d (UnChecked (SizedF 128 (FVar f)))))
+    in
+      uncurry2 (\t10 t2 ->
+        uncurry10 (\cip b zetaToSrsLength zetaToDomainSize perm spongeDigest beta gamma alpha zeta ->
+          uncurry2 (\xi bulletproofChallenges ->
+            FopProofState { combinedInnerProduct: cip, b, zetaToSrsLength, zetaToDomainSize, perm, spongeDigest, beta, gamma, alpha, zeta, xi, bulletproofChallenges })
+            t2) t10) tup
+
+instance (CheckedType f c var) => CheckedType f c (FopProofState d var) where
+  check (FopProofState r) = check
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple2 r.xi r.bulletproofChallenges))
+
+-- | Per-proof unfinalized proof: the OCaml `Unfinalized.t` allocation that
+-- | becomes part of the Step.Statement public input.
+-- |
+-- | OCaml to_data order:
+-- |   cip, b, zetaToSrs, zetaToDom, perm,    -- 5 shifted fields (Type2 in step)
+-- |   spongeDigest,                          -- digest (plain f)
+-- |   beta, gamma,                           -- 2 128-bit challenges
+-- |   alpha, zeta, xi,                       -- 3 128-bit scalar challenges
+-- |   bulletproofChallenges,                 -- Vector d of 128-bit challenges
+-- |   shouldFinalize                         -- bool
+-- |
+-- | The `UnChecked (SizedF 128 f)` fields are claimed-128-bit but NOT range-checked
+-- | at allocation (matching OCaml's `Challenge.typ = Typ.f`).
+-- |
+-- | Type parameters:
+-- | - `d`: number of bulletproof challenges
+-- | - `sf`: shifted-f type (e.g., `Type2 (SplitField (F f) Boolean)`)
+-- | - `f`: plain f type
+-- | - `b`: boolean type
+-- |
+-- | Reference: unfinalized.ml
+newtype PerProofUnfinalized (d :: Int) sf f b = PerProofUnfinalized
+  { combinedInnerProduct :: sf
+  , b :: sf
+  , zetaToSrsLength :: sf
+  , zetaToDomainSize :: sf
+  , perm :: sf
+  , spongeDigest :: f
+  , beta :: UnChecked (SizedF 128 f)
+  , gamma :: UnChecked (SizedF 128 f)
+  , alpha :: UnChecked (SizedF 128 f)
+  , zeta :: UnChecked (SizedF 128 f)
+  , xi :: UnChecked (SizedF 128 f)
+  , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
+  , shouldFinalize :: b
+  }
+
+instance
+  ( CircuitType f sf sfvar
+  , CircuitType f b bvar
+  , FieldSizeInBits f m
+  , Reflectable d Int
+  ) =>
+  CircuitType f (PerProofUnfinalized d sf (F f) b) (PerProofUnfinalized d sfvar (FVar f) bvar) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b)))
+  valueToFields (PerProofUnfinalized r) = genericValueToFields
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize))
+  fieldsToValue fs =
+    let
+      tup = genericFieldsToValue fs :: Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b)
+    in
+      uncurry2 (\t10 t3 ->
+        uncurry10 (\cip bb zetaToSrsLength zetaToDomainSize perm spongeDigest beta gamma alpha zeta ->
+          uncurry3 (\xi bulletproofChallenges shouldFinalize ->
+            PerProofUnfinalized { combinedInnerProduct: cip, b: bb, zetaToSrsLength, zetaToDomainSize, perm, spongeDigest, beta, gamma, alpha, zeta, xi, bulletproofChallenges, shouldFinalize })
+            t3) t10) tup
+  varToFields (PerProofUnfinalized r) = genericVarToFields
+    @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b))
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize))
+  fieldsToVar fs =
+    let
+      tup = genericFieldsToVar
+        @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b))
+        fs ::
+        Tuple2 (Tuple10 sfvar sfvar sfvar sfvar sfvar (FVar f) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f)))) (Tuple3 (UnChecked (SizedF 128 (FVar f))) (Vector d (UnChecked (SizedF 128 (FVar f)))) bvar)
+    in
+      uncurry2 (\t10 t3 ->
+        uncurry10 (\cip bb zetaToSrsLength zetaToDomainSize perm spongeDigest beta gamma alpha zeta ->
+          uncurry3 (\xi bulletproofChallenges shouldFinalize ->
+            PerProofUnfinalized { combinedInnerProduct: cip, b: bb, zetaToSrsLength, zetaToDomainSize, perm, spongeDigest, beta, gamma, alpha, zeta, xi, bulletproofChallenges, shouldFinalize })
+            t3) t10) tup
+
+instance
+  ( CheckedType f c sfvar
+  , CheckedType f c fvar
+  , CheckedType f c bvar
+  ) =>
+  CheckedType f c (PerProofUnfinalized d sfvar fvar bvar) where
+  check (PerProofUnfinalized r) = check
+    (tuple2
+      (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
+      (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize))

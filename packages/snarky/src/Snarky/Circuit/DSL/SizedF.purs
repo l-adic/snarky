@@ -4,7 +4,7 @@
 -- | safe coercion between different fields when the value is small enough to fit
 -- | in both. The `CheckedType` instance constrains the high bits to be zero.
 module Snarky.Circuit.DSL.SizedF
-  ( SizedF
+  ( SizedF(..)
   , wrapF
   , unwrapF
   , unsafeMkSizedF
