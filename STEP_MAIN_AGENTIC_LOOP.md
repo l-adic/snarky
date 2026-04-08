@@ -1,0 +1,365 @@
+# Agentic Loop: step_main Circuit Diff Convergence
+
+## Status
+
+**Simple_Chain (N1): COMPLETE — 10,821 gates, 0 diffs, 73/73 circuit tests pass, 71/71 pickles tests pass.**
+
+**Next: Tree_proof (N2) — 2 previous proofs, branching circuit.**
+
+## N1 Completion Summary
+
+The N1 circuit achieved exact match through iterative diff convergence:
+- Phase 1 (gate count): Fixed type-check constraints (WeierstrassAffinePoint curve checks, Other_field forbidden values, SizedF 128 = UnChecked challenges, Boolean mask checks, endoscalar 16-bit range check)
+- Phase 2 (coefficients): Fixed forbidden value bit extraction (high bit not low bit), expanded challenges in outer hash (from FOP's to_field_checked output)
+- Phase 3 (wires): Fixed variable allocation order to match OCaml's `Typ.transport ~there:to_data` order (NOT hlist order), broke Record exists into individual field exists, used Tuple for eval pairs
+
+### Critical Lesson: OCaml `exists` Allocation Order
+
+OCaml's `Spec.packed_typ` with `Typ.transport ~there:to_data ~back:of_data` allocates variables in **`to_data` order**, not the `typ` hlist order. For `Per_proof.In_circuit`:
+```
+to_data: fq=[cip,b,zetaToSrs,zetaToDom,perm], digest=[sponge], challenge=[beta,gamma],
+         scalar_challenge=[alpha,zeta,xi], bpChals, bool=[shouldFinalize]
+```
+
+PureScript RowList alphabetical ordering will NEVER match this. Use individual `exists` calls.
+
+## N2 Goal
+
+Drive the PureScript step_main circuit (Tree_proof, N2) to exact match with the OCaml fixture. Tree_proof has:
+- `max_proofs_verified = N2` (2 previous proofs)
+- `prevs = [No_recursion.tag, self]` (base proof always verified, self-recursive gated)
+- Rule allocates: `no_recursive_input`, `no_recursive_proof`, `prev`, `prev_proof`
+- Rule checks: `is_base_case = (0 == self)`, `self_correct = (1+prev == self)`
+- Two `previous_proof_statements`: first with `proof_must_verify = true_`, second gated
+- `override_wrap_domain = N1`
+
+### What N2 adds over N1
+- 2 verify_one iterations (not 1)
+- 2 unfinalized proofs in the Step.Statement output
+- 2 messages_for_next_wrap_proof digests
+- Different proofs_verified_mask values
+- `Vector.extend_front` padding (N2 → max_proofs_verified)
+- 2 sets of prev_challenges + prev_sgs
+- Different per-proof feature_flags (first proof = N0 base, second = N2 self)
+- Per_proof_witness.typ differs per proof (different max_proofs_verified)
+
+### Plan
+1. Add OCaml fixture in dump_circuit_impl.ml (step_main_tree_proof_circuit)
+2. Create StepMainTreeProof.purs following N1 patterns
+3. Apply all N1 allocation order lessons from the start
+4. Iterate with diff tools
+
+---
+
+## N1 Reference (Original Document Below)
+
+### Original Goal
+
+Drive the PureScript step_main circuit (Simple_Chain, N1) to exact match with the OCaml fixture (0 diffs). This is the full `step_main` function — not just `verify_one`, but the complete step circuit including the inductive rule's application logic, the verify_one loop, Assert.all, and the outer message hash.
+
+## Background
+
+### What is step_main?
+
+`step_main` (in `mina/src/lib/crypto/pickles/step_main.ml`) is the SNARK function for a single branch of a recursive proof system. It:
+
+1. Allocates the app state (`exists input_typ`)
+2. Runs the user's inductive rule (`rule.main`)
+3. For each previous proof: calls `verify_one` (FOP + message hash + IVP + assertions)
+4. Asserts all verification results (`Boolean.Assert.all`)
+5. Hashes this circuit's own messages for the next step proof (outer hash)
+6. Returns the `Step.Statement`
+
+### Simple_Chain rule
+
+The fixture uses the Simple_Chain rule from `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml`:
+- `public_input = Input Field.typ` (1 field element)
+- `max_proofs_verified = N1`
+- `prevs = [self]` (self-referential, 1 previous proof)
+- Application logic: `self = prev + 1` (or base case where `self = 0`)
+- `feature_flags = none`, `num_chunks = 1`
+
+### What step_main adds over verify_one
+
+We already have exact-match fixtures for `full_step_verify_one` (N1 and N2). The step_main circuit adds:
+- **Rule main constraints**: `exists prev`, `Field.equal zero self` (is_base_case), `Boolean.not` (proof_must_verify), `Field.equal (one + prev) self` (self_correct), `Boolean.Assert.any [self_correct; is_base_case]`
+- **`exists` for VK**: The wrap verification key (`dlog_plonk_index`) is allocated as **circuit variables** via `exists`, not as constants. This means the VK fields in `verify_one` are non-constant, potentially generating more constraints than the standalone verify_one fixture (which uses constant dummy VK).
+- **`Boolean.Assert.all vs`**: Assert all verification results pass (for N1, this is a single boolean — trivial)
+- **Outer message hash**: `hash_messages_for_next_step_proof` (non-opt version) absorbing this circuit's own app_state + sg points + bp challenges
+- **Statement padding**: `Vector.extend_front` to pad unfinalized proofs to `max_proofs_verified`
+
+### OCaml fixture
+
+Generated by calling the real `Step_main.step_main` with the Simple_Chain `InductiveRule` (not inlined).
+
+- **File**: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_simple_chain_circuit.json`
+- **Gates**: 10,821
+- **Public inputs**: 34
+- **Labels**: `step_main_simple_chain_circuit_labels.jsonl` (3,235 constraint events)
+- **Gate labels**: `step_main_simple_chain_circuit_gate_labels.jsonl`
+- **Cached constants**: `step_main_simple_chain_circuit_cached_constants.json`
+
+Gate label structure (from OCaml):
+- Rows 0-33: public input rows (empty context)
+- Rows 34-38: `rule_main` (Simple_Chain application logic)
+- Rows 39+: `prevs_verified` > verify_one internals (FOP, message hash, IVP)
+- Final rows: `hash_messages_for_next_step_proof` (outer hash) + `Assert.all`
+
+## PureScript Side: What Needs to Be Built
+
+### Starting point
+
+The verify_one library function already exists and matches OCaml:
+- `packages/pickles/src/Pickles/Step/VerifyOne.purs` — full verify_one (FOP + opt hash + IVP + assertions)
+
+The step_main wrapper needs to:
+1. Inline the Simple_Chain rule logic (exists prev, equals checks, Assert.any)
+2. Call `verifyOne` with the correct inputs
+3. Add `assertAll_` on the results
+4. Add the outer `hashMessagesForNextStepProof` (non-opt, absorbs app_state)
+5. Compile to a flat circuit and compare
+
+### Key design decision: appState type
+
+The existing `verifyOne` takes `appState :: FVar f` (single field). For the general step_main, this needs to be `appStateFields :: Array (FVar f)` because different rules have different public input sizes. For Simple_Chain (1 field), this is `[appState]`.
+
+**Changes needed to library code:**
+- `MessageHash.purs`: `hashMessagesForNextStepProofOpt` — change `appState :: FVar f` to `appStateFields :: Array (FVar f)`, use `foldM absorb` instead of single `absorb`
+- `VerifyOne.purs`: `appState :: fv` → `appStateFields :: Array (FVar f)`, pass through to message hash
+
+**IMPORTANT**: These library changes must not break existing `full_step_verify_one` circuit diff tests. For length-1 arrays, `foldM absorb [x]` generates the same single absorb constraint as `absorb x`.
+
+### New files needed
+
+- `packages/pickles-circuit-diffs/src/Pickles/CircuitDiffs/PureScript/StepMainSimpleChain.purs` — the PureScript step_main circuit for Simple_Chain
+
+### Test registration
+
+In `packages/pickles-circuit-diffs/test/Test/Pickles/CircuitDiffs/Main.purs`, add to the spec:
+```purescript
+describe "Step main" do
+  let
+    stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
+    stepMainSrsData = { lagrangeComms: ..., blindingH: ... }
+  exactMatch "step_main_simple_chain_circuit" (fromCompiledCircuit $ compileStepMainSimpleChain stepMainSrsData)
+```
+
+The SRS parameters must match OCaml's: `SRS.Fq.create (1 lsl 15)`, domain `Pow_2_roots_of_unity 14` for wrap, domain `Pow_2_roots_of_unity 16` for step.
+
+## Progress Metric & Commit Policy
+
+**Commit if and only if** the first-difference index strictly increases (or the circuit reaches full match).
+
+- **Phase 1 metric**: Gate row of first kind+coefficient difference (from `circuit-diff-summary.mjs`)
+- **Phase 2 metric**: Gate row of first wire difference (from `circuit-wire-diff.mjs`)
+- **Phase transition**: When `circuit-diff-summary.mjs` reports "All gates match exactly (kinds + coefficients)" but the test still reports "mismatch", switch to Phase 2.
+
+## Regression Guard
+
+These tests MUST continue to pass after any change:
+- `full_step_verify_one_circuit` (N1)
+- `full_step_verify_one_n2_circuit` (N2)
+- `finalize_other_proof_step_circuit` (FOP)
+- `hash_messages_for_next_step_proof_circuit` (message hash)
+- `ivp_step_circuit` (IVP)
+- `step_verify_circuit` / `step_verify_n2_circuit`
+
+If a fix changes library code (anything outside `StepMainSimpleChain.purs`), run all of these before committing. Run them with:
+```bash
+npx spago test -p pickles-circuit-diffs -- --example "full_step_verify_one" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "finalize_other_proof_step" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "hash_messages_for_next_step" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "step_verify" 2>&1 | tail -5
+```
+
+## Key Files
+
+### PureScript (modify)
+- `packages/pickles-circuit-diffs/src/Pickles/CircuitDiffs/PureScript/StepMainSimpleChain.purs` — NEW, top-level step_main test circuit
+- `packages/pickles/src/Pickles/Step/VerifyOne.purs` — verify_one library (appState generalization)
+- `packages/pickles/src/Pickles/Step/MessageHash.purs` — message hash (appState generalization)
+- `packages/pickles-circuit-diffs/test/Test/Pickles/CircuitDiffs/Main.purs` — test registration
+
+### OCaml (read-only reference)
+- `mina/src/lib/crypto/pickles/step_main.ml` — the reference implementation
+- `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml` — Simple_Chain rule definition
+- `mina/src/lib/crypto/pickles/step_verifier.ml` — verify_one internals (FOP, IVP)
+- `mina/src/lib/crypto/pickles/dump_circuit_impl.ml` — fixture generation (see `step_main_simple_chain` function)
+
+### Existing PureScript patterns to follow
+- `packages/pickles-circuit-diffs/src/Pickles/CircuitDiffs/PureScript/FullStepVerifyOne.purs` — closest existing test (verify_one with flat input parsing)
+- `packages/pickles-circuit-diffs/src/Pickles/CircuitDiffs/PureScript/WrapMain.purs` — wrap_main library circuit (similar top-level structure)
+- `packages/pickles/src/Pickles/Wrap/Main.purs` — wrap_main library (reference for how wrap does the same job)
+
+### Tools
+
+All circuit diff tools read the result JSON at `packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json`.
+
+- **`tools/circuit-diff-summary.mjs <results-json>`** — Phase 1 primary tool. First gate diff, type breakdown, cached constants.
+  ```bash
+  node tools/circuit-diff-summary.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json
+  ```
+
+- **`tools/circuit-r1cs-diff.mjs <results-json> [context-lines]`** — Phase 1 deep dive. R1CS generation order, first divergence, seal detection.
+  ```bash
+  node tools/circuit-r1cs-diff.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json 5
+  ```
+
+- **`tools/circuit-wire-diff.mjs <results-json> [context-lines]`** — Phase 2 primary tool. First wire difference.
+  ```bash
+  node tools/circuit-wire-diff.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json 5
+  ```
+
+### Test artifacts
+- Result: `packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json`
+- OCaml fixture: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_simple_chain_circuit.json`
+- OCaml labels: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_simple_chain_circuit_gate_labels.jsonl`
+- OCaml cached constants: `packages/pickles-circuit-diffs/circuits/ocaml/step_main_simple_chain_circuit_cached_constants.json`
+
+## Build & Test Commands
+
+```bash
+# Type-check (fast, no codegen)
+npx purs compile -g corefn $(npx spago sources -p pickles-circuit-diffs 2>/dev/null | grep -v '/test/') \
+  packages/pickles-circuit-diffs/test/**/*.purs --json-errors
+
+# Run just the step_main test
+npx spago test -p pickles-circuit-diffs -- --example "step_main_simple_chain" 2>&1 | tee /tmp/step_main_test.txt
+
+# Run full circuit diff suite (slow — only after changes are stable)
+npx spago test -p pickles-circuit-diffs 2>&1 | tee /tmp/full_circuit_diffs.txt
+```
+
+## CRITICAL: Differences from wrap_main
+
+### VK is circuit variables, not constants
+
+In wrap_main, the step VK comes from `chooseKey` (Pseudo.mask) — circuit variables. In the standalone verify_one fixture, the VK is constant (dummy).
+
+In step_main, the VK is allocated by `exists (Plonk_verification_key_evals.typ ...)` — **circuit variables**. This is the same as wrap_main's pattern. The VK then flows into `verify_one` as `d.wrap_key`, where it's used for:
+- `hash_messages_for_next_step_proof_opt` (sponge_after_index)
+- `Step_verifier.verify` (wrap_verification_key)
+
+This means verify_one inside step_main generates MORE constraints than the standalone verify_one fixture, because VK absorption into the sponge uses non-constant inputs.
+
+### Two message hashes
+
+1. **Inside verify_one**: `hash_messages_for_next_step_proof_opt` (with mask) — hashes the PREVIOUS proof's app_state
+2. **After the loop**: `hash_messages_for_next_step_proof` (no mask) — hashes THIS circuit's own app_state
+
+The outer hash uses `basic.public_input` (Typ) to serialize the app_state. For Simple_Chain, `var_to_fields` on `Field.typ` returns `[| x |]` (1 field).
+
+### Rule main generates constraints
+
+Before verify_one, the Simple_Chain rule's `main` function generates:
+- `exists Field.typ` → 1 fresh variable (prev)
+- `Field.equal Field.zero self_input` → equals_ constraints
+- `Boolean.not is_base_case` → 1 constraint
+- `Field.equal (one + prev) self_input` → equals_ constraints
+- `Boolean.Assert.any [self_correct; is_base_case]` → assertNonZero_ of sum
+
+These appear at rows 34-38 in the OCaml fixture (labeled `rule_main`).
+
+## Seal Awareness
+
+See `WRAP_MAIN_AGENTIC_LOOP.md` for the full seal reference. The same principles apply:
+- `seal` converts complex CVar to single variable (1 R1CS)
+- Missing/extra seal causes gate count and coefficient differences
+- Use `circuit-r1cs-diff.mjs` to detect seal signatures (constant in R1CS slot 5)
+
+## The Loop
+
+### Step 0: Initialize
+
+Write the initial PureScript `StepMainSimpleChain.purs`, register the test, run it once.
+
+```bash
+PREV_DIFF_ROW=0  # Will be set after first run
+PHASE=1
+```
+
+### Step 1: Analyze the current first difference
+
+```bash
+# Use EXISTING result file — do NOT re-run tests yet
+node tools/circuit-diff-summary.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json
+node tools/circuit-r1cs-diff.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json 5
+```
+
+Extract:
+- `DIFF_ROW`: gate row of first kind+coeff difference
+- `PS_CTX` / `OC_CTX`: context labels at that row
+- `DIFF_TYPE`: kind diff, coeff diff, or wire diff
+
+### Step 2: Identify responsible code on BOTH sides
+
+**PureScript side**: Use PS context labels to find code in StepMainSimpleChain.purs or the verify_one library.
+
+**OCaml side**: Use gate labels from `step_main_simple_chain_circuit_gate_labels.jsonl`. Key label prefixes:
+- `rule_main` → Simple_Chain rule logic (rows 34-38)
+- `prevs_verified` → verify_one loop
+- `prevs_verified > step_main.ml:31` → FOP (finalize_other_proof)
+- `prevs_verified > step_main.ml:60` → message hash (hash_messages_for_next_step_proof_opt)
+- `prevs_verified > step_main.ml:85` → IVP (incrementally_verify_proof)
+- `hash_messages_for_next_step_proof` → outer message hash
+
+### Step 3: Formulate a targeted fix
+
+Same categories as wrap_main:
+- **A. Missing R1CS** (PS fewer gates): PS treats something as constant that OCaml has as non-constant
+- **B. Extra R1CS** (PS more gates): PS seals/constrains where OCaml doesn't
+- **C. Wrong coefficients**: Different R1CS formula
+- **D. Missing seal**: OCaml seals, PS doesn't
+- **E. Extra seal**: PS seals, OCaml doesn't
+
+### Step 4: Type-check
+```bash
+npx purs compile -g corefn $(npx spago sources -p pickles-circuit-diffs 2>/dev/null | grep -v '/test/') \
+  packages/pickles-circuit-diffs/test/**/*.purs --json-errors
+```
+
+### Step 5: Run the test
+```bash
+npx spago test -p pickles-circuit-diffs -- --example "step_main_simple_chain" 2>&1 | tee /tmp/step_main_test.txt
+```
+
+### Step 6: Measure progress
+
+```bash
+node tools/circuit-diff-summary.mjs packages/pickles-circuit-diffs/circuits/results/step_main_simple_chain_circuit.json 2>&1 | tee /tmp/step_main_summary.txt
+```
+
+**Decision tree:**
+- `NEW_DIFF_ROW > PREV_DIFF_ROW` → **Progress!** Go to Step 7.
+- `NEW_DIFF_ROW == PREV_DIFF_ROW` → Fix didn't help. Revert, re-analyze.
+- `NEW_DIFF_ROW < PREV_DIFF_ROW` → **Regression.** Revert immediately.
+- Test passes → **Done!** Go to Step 8.
+
+### Step 7: Regression check + commit
+
+If library code changed:
+```bash
+npx spago test -p pickles-circuit-diffs -- --example "full_step_verify_one" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "finalize_other_proof_step" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "hash_messages_for_next_step" 2>&1 | tail -5
+npx spago test -p pickles-circuit-diffs -- --example "step_verify" 2>&1 | tail -5
+```
+
+All pass → Commit: `step_main: fix <description> (first diff row N→M)`
+Update `PREV_DIFF_ROW = NEW_DIFF_ROW`, return to Step 1.
+
+### Step 8: Final verification
+```bash
+npx spago test -p pickles-circuit-diffs 2>&1 | tee /tmp/full_circuit_diffs.txt
+```
+
+## Important Rules
+
+1. **Never re-run expensive tests** to grep for different output. Save to `/tmp/` first.
+2. **Never commit unless the first-diff row strictly increases.**
+3. **Always use merlin for OCaml type queries.** Do not manually trace types through functors.
+4. **Prefer StepMainSimpleChain.purs changes over library changes** to avoid regressions.
+5. **Type-check before running tests** — `purs compile -g corefn` is fast; tests are slow.
+6. **One fix at a time.** Don't batch speculative fixes.
+7. **Pay attention to seal at every divergence.**
+8. **The VK is non-constant in step_main.** This is different from the standalone verify_one fixture.

@@ -137,4 +137,4 @@ finites =
   let
     n = reflectType (Proxy @n)
   in
-    Finite <$> (0 .. (n - 1))
+    if n <= 0 then [] else Finite <$> (0 .. (n - 1))

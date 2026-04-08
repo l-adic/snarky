@@ -38,8 +38,11 @@ import Pickles.CircuitDiffs.PureScript.IvpStep (compileIvpStep)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
 import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationStep)
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
+import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap)
+import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
+import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
@@ -489,6 +492,23 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
+      describe "Typ checks" do
+        exactMatch "other_field_check_step_circuit" (fromCompiledCircuit compileOtherFieldCheck)
+      describe "Step main" do
+        let
+          -- OCaml uses SRS.Fq.create (1 lsl 15), wrap domain Pow_2_roots_of_unity 14
+          stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
+          stepMainSrsData =
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepMainSrs 14 286) :: Array (AffinePoint (F Fp)))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "step_main_simple_chain_circuit" (fromCompiledCircuit $ compileStepMainSimpleChain stepMainSrsData)
+        let
+          stepMainN2SrsData =
+            { lagrangeComms: map mkConstLagrangeBase ((coerce $ vestaSrsLagrangeCommitments stepMainSrs 14 304) :: Array (AffinePoint (F Fp)))
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "step_main_simple_chain_n2_circuit" (fromCompiledCircuit $ compileStepMainSimpleChainN2 stepMainN2SrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

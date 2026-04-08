@@ -114,7 +114,8 @@ type VerifyOneInput n d tickD sf fv bv =
   }
 
 type VerifyOneResult tickD fv =
-  { challenges :: Vector tickD (SizedF 128 fv)
+  { challenges :: Vector tickD (SizedF 128 fv) -- raw 128-bit challenges
+  , expandedChallenges :: Vector tickD fv -- expanded via endo (compound CVar)
   , result :: BoolVar StepField
   }
 
@@ -133,7 +134,7 @@ verifyOne fopParams input ivpParams = do
 
   -- Step 2: FOP (step_main.ml:61-73)
   let ps = input.proofState
-  { finalized, challenges } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
+  { finalized, challenges, expandedChallenges } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
     { unfinalized:
         { deferredValues:
             { plonk: ps.plonk
@@ -239,4 +240,4 @@ verifyOne fopParams input ivpParams = do
     verifiedAndFinalized <- and_ output.success finalized
     or_ verifiedAndFinalized (not_ input.mustVerify)
 
-  pure { challenges, result }
+  pure { challenges, expandedChallenges, result }

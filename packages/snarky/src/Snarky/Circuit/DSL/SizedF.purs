@@ -7,8 +7,8 @@ module Snarky.Circuit.DSL.SizedF
   ( SizedF
   , wrapF
   , unwrapF
-  , unsafeMkSizedF
   , fromField
+  , unsafeFromField
   , toField
   , fromBits
   , toBits
@@ -48,11 +48,6 @@ wrapF (SizedF a) = SizedF $ F a
 
 unwrapF :: forall n f. SizedF n (F f) -> SizedF n f
 unwrapF (SizedF (F f)) = SizedF f
-
--- | Wrap a value as SizedF without runtime checking.
--- | The caller is responsible for ensuring the value fits in n bits.
-unsafeMkSizedF :: forall n f. f -> SizedF n f
-unsafeMkSizedF = SizedF
 
 instance
   ( FieldSizeInBits f m
@@ -113,6 +108,17 @@ fromField x =
   in
     if all not after then Just (SizedF x)
     else Nothing
+
+-- | Unsafe smart constructor: wraps a value as `SizedF n` without verifying
+-- | it fits in `n` bits. Marked `Partial` so callers must explicitly discharge
+-- | the obligation via `unsafePartial`.
+-- |
+-- | Use the checked `fromField` for prime field values where the runtime bit
+-- | check is meaningful. This escape hatch is intended for in-circuit `FVar`
+-- | contexts where the value is constructed from already-checked components
+-- | (and `fromField` cannot apply because there is no concrete value yet).
+unsafeFromField :: forall n f. Partial => f -> SizedF n f
+unsafeFromField = SizedF
 
 toField :: forall n f. SizedF n f -> f
 toField (SizedF x) = x

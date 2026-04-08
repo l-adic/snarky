@@ -24,7 +24,7 @@ import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.PublicInputCommit (CorrectionMode(..), mkConstLagrangeBase)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, WrapStatementPublicInput, stepCircuit)
-import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, sizeInFields)
@@ -34,7 +34,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (curveParams, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Pickles.TestContext (InductiveTestContext, SchnorrInputVar, StepProverM, StepSchnorrInput, buildStepFinalizeInput, buildStepFinalizeParams, buildStepIVPParams, buildStepProverWitness, computeStepChallengeDigest, computeStepSgEvals, extractWrapRawBpChallenges, runStepProverM, stepSchnorrAppCircuit, type1ToType2SF)
 import Test.QuickCheck.Gen (randomSampleOne)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTestM', satisfied_)
@@ -69,7 +69,7 @@ trivialAppCircuit _ = pure
 testCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 0 StepIPARounds WrapIPARounds m StepField
+  => StepWitnessM 0 StepIPARounds WrapIPARounds PallasG StepField m
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
@@ -95,6 +95,10 @@ spec cfg = describe "Pickles.Step.Circuit" do
     let
       -- n=0 advice: all vectors empty, dummy VK
       dummyPt = { x: F zero, y: F zero } :: AffinePoint (F StepField)
+
+      -- Pallas generator (on-curve, satisfies the WeierstrassAffinePoint check)
+      pallasGenPt :: WeierstrassAffinePoint PallasG (F StepField)
+      pallasGenPt = WeierstrassAffinePoint $ coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
       emptyAdvice =
         { stepInputFields: []
         , evals: nil
@@ -103,13 +107,10 @@ spec cfg = describe "Pickles.Step.Circuit" do
         , openingProofs: nil
         , fopProofStates: nil
         , messagesForNextWrapProof: nil
-        , wrapVerifierIndex:
-            { sigmaCommLast: dummyPt
-            , columnComms:
-                { index: Vector.generate \_ -> dummyPt
-                , coeff: Vector.generate \_ -> dummyPt
-                , sigma: Vector.generate \_ -> dummyPt
-                }
+        , wrapVerifierIndex: VerificationKey
+            { sigma: Vector.generate (const pallasGenPt)
+            , coeff: Vector.generate (const pallasGenPt)
+            , index: Vector.generate (const pallasGenPt)
             }
         , sgOld: nil
         , sgOldMask: Vector.nil
@@ -186,7 +187,7 @@ realDataSpec cfg =
         realCircuit
           :: forall t m
            . CircuitM StepField (KimchiConstraint StepField) t m
-          => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
+          => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do

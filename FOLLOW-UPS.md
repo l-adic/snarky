@@ -15,24 +15,30 @@ Affected locations:
 
 Currently `num_chunks = 1` is correct for all Mina circuits. This would only matter for very large circuits exceeding the SRS degree bound.
 
-## N2 wrap_main variant
+## Refactor wrap_main to advice pattern (symmetric to step_main) — `TODO(wrap_main_advice)`
 
-The current `wrap_main_circuit` fixture is for `max_proofs_verified = N1` (1 real previous proof, 1 dummy padded to N2). A separate fixture and equivalence test is needed for `max_proofs_verified = N2` (2 real previous proofs), which would exercise:
-- `actual_proofs_verified_mask = [true, true]`
-- Two real challenge vectors in FOP (no dummy padding)
-- Different message hash sponge starting states
-- Full sgOld absorption with both flags true
+step_main now uses a clean advice pattern (`Pickles.Step.Main.stepMain` takes a rule, allocates everything via `exists advice` in OCaml hlist order, Unit input → flat output Vector). wrap_main does NOT — it cheats.
 
-OCaml's `dump_circuit_impl.ml` can generate this variant.
+**Current wrap_main shortcut:**
+- OCaml fixture `mina/src/lib/crypto/pickles/dump_circuit_impl.ml:2147 wrap_main_circuit` is INLINED. Takes a flat input array, uses `var_of_fields` to allocate structured vars manually, replacing each `exists ~request`. Does NOT call the production `Wrap_main.wrap_main`.
+- PureScript `Pickles.Wrap.Main.wrapMainCircuit` takes a `WrapMainAdvice` record of pre-allocated CVars built by `parseUnfinalizedProof`/`parseEvals` from public input parsing in the test wrappers. The "advice" name is a misnomer — it's just typed CVars, not advice in any monadic sense.
 
-## CircuitType instances for WrapMain input parsing
+**Why this is wrong for top-level circuits:** Sub-circuit fixtures can cheat with public-input parsing. wrap_main and step_main are top-level — in production, all this data MUST enter via `exists ~request:...` (private witness from prover requests), not via public input. step_main is now correct; wrap_main is still wrong.
 
-The manual parsers in `WrapMain.purs` (`parseUnfinalizedProof`, `parseEvals`) decode flat field arrays by hardcoded offsets. These should be replaced with proper `CircuitType` newtypes that handle serialization/deserialization, matching OCaml's `Typ` mechanism for `exists`/`alloc_typ`.
+**Required refactor:**
 
-Affected:
-- `parseUnfinalizedProof` (27 fields) — should be a `CircuitType` instance on `UnfinalizedProof`
-- `parseEvals` (89 fields) — should be a `CircuitType` instance on `AllEvals`
-- `stmtTuple` construction in `Pickles.Wrap.Main` (nested Tuples for `pack_statement`) — should be hidden behind a newtype with a clean API
+OCaml side:
+- Add `wrap_main_for_dump.ml` mirroring `step_main_for_dump.ml` — calls real `Wrap_main.wrap_main` with `~input_typ:Typ.unit` and `~request:Req.*` for all witnesses
+- Regenerate `wrap_main_circuit.json`, `wrap_main_n2_circuit.json` (and any other variants) with matching gate_labels.jsonl and cached_constants.json
+
+PureScript side:
+- Refactor `Pickles.Wrap.Main.wrapMainCircuit` to take Unit input, do its own `exists advice` allocations in OCaml hlist order, return wrap statement as flat output Vector
+- Delete `WrapMainAdvice`, `parseUnfinalizedProof`, `parseEvals` (this obsoletes the previous "CircuitType instances for WrapMain input parsing" follow-up)
+- Test wrappers in `pickles-circuit-diffs` become thin specializations like `compileStepMainSimpleChain` — just config + a `compileWrapMain` call
+
+**Scope:** Bigger than step_main work because wrap_main has more variety (branches, step_widths, slot widths, choose_key, feature flags). Multiple wrap fixtures to regenerate.
+
+**Reference pattern:** `packages/pickles/src/Pickles/Step/Main.purs` (the symmetric step_main library — uses `throwAsProver` for advice via `Pickles.Step.Main.advice`, individual `exists` calls in OCaml hlist order, parameterized by `n` and rule).
 
 ## FOP domain as separate argument
 
