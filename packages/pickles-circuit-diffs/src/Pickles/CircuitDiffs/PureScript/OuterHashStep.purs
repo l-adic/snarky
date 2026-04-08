@@ -12,7 +12,7 @@ import Prelude
 
 import Data.Foldable (foldM)
 import Data.Vector (Vector)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, stepEndo)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Types (StepField, StepIPARounds)
 import Snarky.Backend.Compile (compilePure)

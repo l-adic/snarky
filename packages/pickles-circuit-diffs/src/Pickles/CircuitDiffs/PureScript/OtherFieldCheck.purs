@@ -14,7 +14,7 @@ import Prelude
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, exists)
+import Snarky.Circuit.DSL (class CircuitM, F, Snarky, exists)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi

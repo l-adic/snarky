@@ -25,26 +25,27 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldM, foldMap)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (!!), (:<))
+import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (StepField)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compilePure)
-import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, AsProverT, BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, assertAny_, const_, equals_, exists, label, not_, throwAsProver)
-import Snarky.Circuit.DSL.SizedF (SizedF)
+import Snarky.Circuit.DSL (class CircuitM, AsProverT, Bool(..), BoolVar, EvaluationError(..), F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label, throwAsProver)
+import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (EndoScalar(..), curveParams, endoScalar)
@@ -52,7 +53,6 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Advice: throwing prover computation for compilation safety
@@ -185,23 +185,23 @@ allocatePerProofWitness = do
   bdMask0 :: BoolVar StepField <- exists (advice :: _ Boolean)
   bdMask1 :: BoolVar StepField <- exists (advice :: _ Boolean)
   domLog2 <- exists (advice :: _ (F StepField))
-  _ <- EndoScalar.toField @1 (unsafeCoerce domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndoVal)
+  _ <- EndoScalar.toField @1 (unsafeMkSizedF domLog2 :: SizedF 16 (FVar StepField)) (const_ stepEndoVal)
 
   let
     fopState =
       { plonk:
-          { alpha: unsafeCoerce psAlpha :: SizedF 128 (FVar StepField)
-          , beta: unsafeCoerce psBeta :: SizedF 128 (FVar StepField)
-          , gamma: unsafeCoerce psGamma :: SizedF 128 (FVar StepField)
-          , zeta: unsafeCoerce psZeta :: SizedF 128 (FVar StepField)
+          { alpha: unsafeMkSizedF psAlpha :: SizedF 128 (FVar StepField)
+          , beta: unsafeMkSizedF psBeta :: SizedF 128 (FVar StepField)
+          , gamma: unsafeMkSizedF psGamma :: SizedF 128 (FVar StepField)
+          , zeta: unsafeMkSizedF psZeta :: SizedF 128 (FVar StepField)
           , perm: Type1 psPerm
           , zetaToSrsLength: Type1 psZetaToSrs
           , zetaToDomainSize: Type1 psZetaToDom
           }
       , combinedInnerProduct: Type1 psCip
       , b: Type1 psB
-      , xi: unsafeCoerce psXi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges: unsafeCoerce psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
+      , xi: unsafeMkSizedF psXi :: SizedF 128 (FVar StepField)
+      , bulletproofChallenges: map unsafeMkSizedF psBpChals :: Vector 16 (SizedF 128 (FVar StepField))
       , spongeDigest: psSponge
       }
 
@@ -299,18 +299,18 @@ allocateUnfinalized = do
   pure
     { deferredValues:
         { plonk:
-            { alpha: unsafeCoerce unfAlpha :: SizedF 128 (FVar StepField)
-            , beta: unsafeCoerce unfBeta :: SizedF 128 (FVar StepField)
-            , gamma: unsafeCoerce unfGamma :: SizedF 128 (FVar StepField)
-            , zeta: unsafeCoerce unfZeta :: SizedF 128 (FVar StepField)
+            { alpha: unsafeMkSizedF unfAlpha :: SizedF 128 (FVar StepField)
+            , beta: unsafeMkSizedF unfBeta :: SizedF 128 (FVar StepField)
+            , gamma: unsafeMkSizedF unfGamma :: SizedF 128 (FVar StepField)
+            , zeta: unsafeMkSizedF unfZeta :: SizedF 128 (FVar StepField)
             , perm: unfPerm
             , zetaToSrsLength: unfZetaToSrs
             , zetaToDomainSize: unfZetaToDom
             }
         , combinedInnerProduct: unfCip
         , b: unfB
-        , xi: unsafeCoerce unfXi :: SizedF 128 (FVar StepField)
-        , bulletproofChallenges: unsafeCoerce unfBpChals :: Vector 15 (SizedF 128 (FVar StepField))
+        , xi: unsafeMkSizedF unfXi :: SizedF 128 (FVar StepField)
+        , bulletproofChallenges: map unsafeMkSizedF unfBpChals :: Vector 15 (SizedF 128 (FVar StepField))
         }
     , shouldFinalize: unfShouldFinalize
     , claimedDigest: unfClaimedDigest
@@ -342,11 +342,11 @@ buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
     n = reflectType (Proxy @n)
     sgArr = map unwrapPt (Vector.toUnfoldable pw.prevSgs :: Array _)
     paddedSgArr = Array.replicate (2 - n) dummySg <> sgArr
-    sgOld = unsafeCoerce paddedSgArr :: Vector 2 (AffinePoint (FVar StepField))
+    sgOld = unsafePartial $ fromJust $ Vector.toVector @2 paddedSgArr
 
     -- proofMask: last n elements of [mask0, mask1]
     maskArr = Array.drop (2 - n) [ pw.branchData.mask0, pw.branchData.mask1 ]
-    proofMask = unsafeCoerce maskArr :: Vector n (BoolVar StepField)
+    proofMask = unsafePartial $ fromJust $ Vector.toVector @n maskArr
   in
     { appState
     , wComm: map unwrapPt pw.wComm
@@ -372,8 +372,8 @@ buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
     , messagesForNextWrapProof: msgWrap
     , mustVerify
     , branchData:
-        { mask0: unsafeCoerce pw.branchData.mask0 :: FVar StepField
-        , mask1: unsafeCoerce pw.branchData.mask1 :: FVar StepField
+        { mask0: coerce pw.branchData.mask0 :: FVar StepField
+        , mask1: coerce pw.branchData.mask1 :: FVar StepField
         , domainLog2Var: pw.branchData.domainLog2Var
         }
     , proofMask
@@ -388,7 +388,7 @@ buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
 unfFields :: UnfinalizedProof -> Array (FVar StepField)
 unfFields unf =
   let
-    sf2 (Type2 (SplitField { sDiv2, sOdd })) = [ sDiv2, unsafeCoerce sOdd :: FVar StepField ]
+    sf2 (Type2 (SplitField { sDiv2, sOdd })) = [ sDiv2, coerce sOdd :: FVar StepField ]
   in
     sf2 unf.deferredValues.combinedInnerProduct
       <> sf2 unf.deferredValues.b
@@ -397,16 +397,16 @@ unfFields unf =
       <> sf2 unf.deferredValues.plonk.perm
       <> [ unf.claimedDigest ]
       <>
-        [ unsafeCoerce unf.deferredValues.plonk.beta :: FVar StepField
-        , unsafeCoerce unf.deferredValues.plonk.gamma :: FVar StepField
+        [ toField unf.deferredValues.plonk.beta
+        , toField unf.deferredValues.plonk.gamma
         ]
       <>
-        [ unsafeCoerce unf.deferredValues.plonk.alpha :: FVar StepField
-        , unsafeCoerce unf.deferredValues.plonk.zeta :: FVar StepField
-        , unsafeCoerce unf.deferredValues.xi :: FVar StepField
+        [ toField unf.deferredValues.plonk.alpha
+        , toField unf.deferredValues.plonk.zeta
+        , toField unf.deferredValues.xi
         ]
-      <> Vector.toUnfoldable (unsafeCoerce unf.deferredValues.bulletproofChallenges :: Vector 15 (FVar StepField))
-      <> [ unsafeCoerce unf.shouldFinalize :: FVar StepField ]
+      <> (Vector.toUnfoldable (map toField unf.deferredValues.bulletproofChallenges) :: Array _)
+      <> [ coerce unf.shouldFinalize :: FVar StepField ]
 
 -------------------------------------------------------------------------------
 -- | Generic step_main circuit
@@ -421,6 +421,7 @@ stepMain
   :: forall @n @outputSize t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
+  => Reflectable outputSize Int
   => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
@@ -439,7 +440,7 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
     vkCoeff <- exists (advice :: _ (Vector 15 (WeierstrassAffinePoint PallasG (F StepField))))
     vkIndex <- exists (advice :: _ (Vector 6 (WeierstrassAffinePoint PallasG (F StepField))))
     let
-      vkSigma6 = unsafeCoerce (Vector.take @6 vkSigma) :: Vector 6 _
+      vkSigma6 = Vector.take @6 vkSigma
       vkSigmaLast = Vector.last vkSigma
     pure { sigma: vkSigma6, sigmaLast: vkSigmaLast, coeff: vkCoeff, index: vkIndex }
 
@@ -547,7 +548,7 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
         <> [ outerDigest ]
         <> (Vector.toUnfoldable msgsWrap :: Array _)
 
-  pure (unsafeCoerce outputArr :: Vector outputSize (FVar StepField))
+  pure $ unsafePartial $ fromJust $ Vector.toVector @outputSize outputArr
 
 -------------------------------------------------------------------------------
 -- | Compile step_main
