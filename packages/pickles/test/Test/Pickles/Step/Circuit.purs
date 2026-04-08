@@ -69,7 +69,7 @@ trivialAppCircuit _ = pure
 testCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 0 StepIPARounds WrapIPARounds m StepField
+  => StepWitnessM 0 StepIPARounds WrapIPARounds PallasG StepField m
   => StepTestInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 testCircuit input = do
@@ -108,9 +108,9 @@ spec cfg = describe "Pickles.Step.Circuit" do
         , fopProofStates: nil
         , messagesForNextWrapProof: nil
         , wrapVerifierIndex: VerificationKey
-            { sigma: Vector.generate \_ -> pallasGenPt
-            , coeff: Vector.generate \_ -> pallasGenPt
-            , index: Vector.generate \_ -> pallasGenPt
+            { sigma: Vector.generate (const pallasGenPt)
+            , coeff: Vector.generate (const pallasGenPt)
+            , index: Vector.generate (const pallasGenPt)
             }
         , sgOld: nil
         , sgOldMask: Vector.nil
@@ -187,7 +187,7 @@ realDataSpec cfg =
         realCircuit
           :: forall t m
            . CircuitM StepField (KimchiConstraint StepField) t m
-          => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
+          => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
           => StepSchnorrInputVar
           -> Snarky (KimchiConstraint StepField) t m Unit
         realCircuit i = do

@@ -225,7 +225,7 @@ derive newtype instance Monad (StepProverM n ds dw f)
 runStepProverM :: forall n ds dw f a. StepAdvice n ds dw f -> StepProverM n ds dw f a -> Effect a
 runStepProverM privateData (StepProverM m) = runReaderT m privateData
 
-instance StepWitnessM n ds dw (StepProverM n ds dw f) f where
+instance StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField (StepProverM n StepIPARounds WrapIPARounds StepField) where
   getStepInputFields _ = StepProverM $ map _.stepInputFields ask
   getProofWitnesses _ = StepProverM $ map _.evals ask
   getPrevChallenges _ = StepProverM $ map _.prevChallenges ask
@@ -429,11 +429,11 @@ existsSchnorrStepIO = exists $ lift $
 existsSchnorrStepInput
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
+  => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
   => Snarky (KimchiConstraint StepField) t m StepSchnorrInputVar
 existsSchnorrStepInput = exists $ lift $
   map (fieldsToValue @StepField @StepSchnorrInput <<< (coerce :: Array (F StepField) -> Array StepField))
-    (getStepInputFields @1 @StepIPARounds @WrapIPARounds unit)
+    (getStepInputFields @1 @StepIPARounds @WrapIPARounds @PallasG unit)
 
 -- | Which case of the Step recursion to run.
 data StepCase
@@ -574,7 +574,7 @@ createStepProofContext stepCase = do
     circuit
       :: forall t m
        . CircuitM StepField (KimchiConstraint StepField) t m
-      => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
+      => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
       => Unit
       -> Snarky (KimchiConstraint StepField) t m StepSchnorrOutputVar
     circuit _ = do
@@ -2109,12 +2109,12 @@ buildStepIVPVkInput ctx =
     sigmaLast = coerce $ ProofFFI.vestaSigmaCommLast ctx.verifierIndex
 
     sigma7 :: Vector 7 (AffinePoint Vesta.ScalarField)
-    sigma7 = toVectorOrThrow @7 "buildStepIVPVkInput sigma7" $ (Vector.toUnfoldable sigma6 :: Array _) <> [ sigmaLast ]
+    sigma7 = Vector.snoc sigma6 sigmaLast
   in
     VerificationKey
-      { sigma: map WeierstrassAffinePoint (coerce sigma7)
-      , coeff: map WeierstrassAffinePoint (coerce coeffComms)
-      , index: map WeierstrassAffinePoint (coerce indexComms)
+      { sigma: WeierstrassAffinePoint <$> coerce sigma7
+      , coeff: WeierstrassAffinePoint <$> coerce coeffComms
+      , index: WeierstrassAffinePoint <$> coerce indexComms
       }
 
 -- | Build IVP circuit input for an Fp circuit verifying a Wrap (Pallas) proof.

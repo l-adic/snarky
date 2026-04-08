@@ -831,9 +831,9 @@ dummyStepAdvice =
           g0w = WeierstrassAffinePoint g0
         in
           VerificationKey
-            { sigma: Vector.generate \_ -> g0w
-            , coeff: Vector.generate \_ -> g0w
-            , index: Vector.generate \_ -> g0w
+            { sigma: Vector.generate (const g0w)
+            , coeff: Vector.generate (const g0w)
+            , index: Vector.generate (const g0w)
             }
     , sgOld: g0 :< Vector.nil
     , sgOldMask: (const_ one) :< Vector.nil

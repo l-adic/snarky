@@ -83,24 +83,31 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Types (PerProofUnfinalized, StepPerProofWitness, VerificationKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type1, Type2)
 
 -- | Advisory monad for the Step circuit.
 -- |
--- | Provides private witness data via `exists $ lift $ getXxx unit`.
--- | The Step circuit verifies `n` previous Wrap proofs, so methods
--- | return vectors of size `n`.
--- |
 -- | Parameters:
--- | - `n`: Number of previous proofs being verified
--- | - `ds`: Step IPA rounds (determines FOP bp challenges and prevChallenges size)
--- | - `dw`: Wrap IPA rounds (determines lr vector size in opening proof)
+-- | - `n`: Number of previous proofs being verified (max_proofs_verified)
+-- | - `ds`: IPA rounds for the inner Step proof (= StepIPARounds = 16)
+-- | - `dw`: IPA rounds for the Wrap proof being verified (= WrapIPARounds = 15)
+-- | - `g`: Commitment curve of the Wrap proof being verified (= PallasG for Step)
+-- | - `f`: Base field of `g` — uniquely determined via `WeierstrassCurve f g`
+-- |        (= Pallas.BaseField = Vesta.ScalarField = StepField)
 -- | - `m`: Base monad (Effect for compilation, StepProverM for proving)
--- | - `f`: Circuit field (Vesta.ScalarField for Step)
-class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
+-- |
+-- | The curve `g` is the primary abstraction: it picks which Wrap proof's
+-- | commitments the Step circuit verifies, and determines the circuit's
+-- | native field via `WeierstrassCurve f g | g -> f`. Call sites concretize
+-- | `g = PallasG` for the Pasta cycle.
+class
+  ( Monad m
+  , WeierstrassCurve f g
+  ) <=
+  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m
+  | g -> f where
   -- | Step circuit input as flat field elements (for private witness allocation).
   -- | In OCaml, the Step input (app_state, unfinalized_proofs, etc.) enters as
   -- | private witness via Req.App_state and Req.Unfinalized_proofs. The caller
@@ -165,9 +172,9 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
   -- | and index commitments (6). The sigmaLast split (6 + 1) is done at
   -- | use time, not allocation time — OCaml allocates all 7 sigmas together.
   -- |
-  -- | Wrapped in `WeierstrassAffinePoint PallasG` so the on-curve checks
-  -- | run during `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
-  getWrapVerifierIndex :: Unit -> m (VerificationKey (WeierstrassAffinePoint PallasG (F f)))
+  -- | Wrapped in `WeierstrassAffinePoint g` so the on-curve checks run during
+  -- | `exists`, matching OCaml's `Step_verifier.Inner_curve.typ`.
+  getWrapVerifierIndex :: Unit -> m (VerificationKey (WeierstrassAffinePoint g (F f)))
 
   -- | Per-proof sg points (prev_challenge_polynomial_commitments).
   -- | One point per previous proof, from Per_proof_witness.
@@ -201,7 +208,7 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
     -> m
          ( Vector n
              ( PerProofUnfinalized
-                 15
+                 dw
                  (Type2 (SplitField (F f) Boolean))
                  (F f)
                  Boolean
@@ -210,7 +217,11 @@ class Monad m <= StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) m f where
 
 -- | Compilation instance: never called, exists only to satisfy the constraint
 -- | during `compile` which uses Effect as the base monad.
-instance (Reflectable n Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => StepWitnessM n ds dw Effect f where
+instance
+  ( WeierstrassCurve f g
+  , Reflectable n Int
+  ) =>
+  StepWitnessM n ds dw g f Effect where
   getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"

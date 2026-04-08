@@ -26,6 +26,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBase, publicInputCommit)
@@ -40,7 +41,7 @@ import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, assertEq, const_, if_, label)
-import Snarky.Circuit.DSL.SizedF (SizedF, unsafeMkSizedF)
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -335,7 +336,7 @@ packStatement { proofState: ps, messagesForNextStepProof } =
 
     m1 :: FVar f
     m1 = coerce (Vector.index bd.proofsVerifiedMask (unsafeFinite @2 1))
-    packedBranchData = unsafeMkSizedF $
+    packedBranchData = unsafePartial $ unsafeFromField $
       CVar.add_ (CVar.scale_ (one + one + one + one) bd.domainLog2)
         (CVar.add_ m0 (CVar.scale_ (one + one) m1))
   in

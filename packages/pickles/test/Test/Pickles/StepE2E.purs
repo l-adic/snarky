@@ -51,7 +51,7 @@ import Type.Proxy (Proxy(..))
 stepSchnorrCircuit
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM 1 StepIPARounds WrapIPARounds m StepField
+  => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
   => StepSchnorrInputVar
   -> Snarky (KimchiConstraint StepField) t m Unit
 stepSchnorrCircuit input = do

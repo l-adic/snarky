@@ -22,28 +22,26 @@ module Pickles.Step.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Array as Array
-import Data.Foldable (foldM, foldMap)
-import Data.Maybe (fromJust)
-import Data.Reflectable (class Reflectable, reflectType)
+import Data.Foldable (foldM)
+import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
-import Data.Vector (Vector, (!!))
+import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
-import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
-import Snarky.Circuit.DSL.SizedF (SizedF(..), toField)
+import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -130,7 +128,7 @@ type PerProofWitness n =
       , combinedInnerProduct :: Type1 (FVar StepField)
       , b :: Type1 (FVar StepField)
       , xi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges :: Vector 16 (SizedF 128 (FVar StepField))
+      , bulletproofChallenges :: Vector StepIPARounds (SizedF 128 (FVar StepField))
       , spongeDigest :: FVar StepField
       }
   , allEvals ::
@@ -143,7 +141,7 @@ type PerProofWitness n =
       , indexEvals :: Vector 6 { zeta :: FVar StepField, omegaTimesZeta :: FVar StepField }
       }
   , branchData :: { mask0 :: BoolVar StepField, mask1 :: BoolVar StepField, domainLog2Var :: FVar StepField }
-  , prevChallenges :: Vector n (Vector 16 (FVar StepField))
+  , prevChallenges :: Vector n (Vector StepIPARounds (FVar StepField))
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG (FVar StepField))
   }
 
@@ -189,8 +187,6 @@ allocatePerProofWitness (StepPerProofWitness ppw) = do
       , sigmaEvals: map unwrapPointEval evalsRec.sigmaEvals
       , indexEvals: map unwrapPointEval evalsRec.indexEvals
       }
-    unwrapUnChecked (UnChecked v) = v
-
   pure
     { wComm: msgRec.wComm
     , zComm: msgRec.zComm
@@ -207,7 +203,7 @@ allocatePerProofWitness (StepPerProofWitness ppw) = do
         , mask1: branchDataRec.mask1
         , domainLog2Var: branchDataRec.domainLog2
         }
-    , prevChallenges: map unwrapUnChecked ppw.prevChallenges
+    , prevChallenges: coerce ppw.prevChallenges
     , prevSgs: ppw.prevSgs
     }
 
@@ -229,7 +225,7 @@ type UnfinalizedProof =
       , combinedInnerProduct :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
       , b :: Type2 (SplitField (FVar StepField) (BoolVar StepField))
       , xi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
+      , bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar StepField))
       }
   , shouldFinalize :: BoolVar StepField
   , claimedDigest :: FVar StepField
@@ -240,7 +236,7 @@ type UnfinalizedProof =
 unpackUnfinalized
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => PerProofUnfinalized 15 (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  => PerProofUnfinalized WrapIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> Snarky (KimchiConstraint StepField) t m UnfinalizedProof
 unpackUnfinalized (PerProofUnfinalized r) = pure
   { deferredValues:
@@ -256,7 +252,7 @@ unpackUnfinalized (PerProofUnfinalized r) = pure
       , combinedInnerProduct: r.combinedInnerProduct
       , b: r.b
       , xi: coerce r.xi :: SizedF 128 (FVar StepField)
-      , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector 15 (SizedF 128 (FVar StepField))
+      , bulletproofChallenges: coerce r.bulletproofChallenges :: Vector WrapIPARounds (SizedF 128 (FVar StepField))
       }
   , shouldFinalize: r.shouldFinalize
   , claimedDigest: r.spongeDigest
@@ -267,8 +263,10 @@ unpackUnfinalized (PerProofUnfinalized r) = pure
 -------------------------------------------------------------------------------
 
 buildVerifyOneInput
-  :: forall @n
+  :: forall @n pad
    . Reflectable n Int
+  => Reflectable pad Int
+  => Add pad n MaxProofsVerified
   => PerProofWitness n
   -> FVar StepField
   -> BoolVar StepField
@@ -280,19 +278,23 @@ buildVerifyOneInput
      , index :: Vector 6 (AffinePoint (FVar StepField))
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
-  -> VerifyOneInput n 15 16 (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
+  -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
   let
-    -- sgOld: pad prevSgs to Vector 2 (Wrap_hack.Padded_length)
-    -- extend_front puts padding at front: [dummy..., sg0, sg1, ...]
-    n = reflectType (Proxy @n)
-    sgArr = map unwrapPt (Vector.toUnfoldable pw.prevSgs :: Array _)
-    paddedSgArr = Array.replicate (2 - n) dummySg <> sgArr
-    sgOld = unsafePartial $ fromJust $ Vector.toVector @2 paddedSgArr
+    -- sgOld: pad prevSgs to MaxProofsVerified (Wrap_hack.Padded_length).
+    -- extend_front puts `pad` dummies at the front, where pad + n = MaxProofsVerified.
+    sgPadding :: Vector pad (AffinePoint (FVar StepField))
+    sgPadding = Vector.replicate dummySg
 
-    -- proofMask: last n elements of [mask0, mask1]
-    maskArr = Array.drop (2 - n) [ pw.branchData.mask0, pw.branchData.mask1 ]
-    proofMask = unsafePartial $ fromJust $ Vector.toVector @n maskArr
+    sgOld :: Vector MaxProofsVerified (AffinePoint (FVar StepField))
+    sgOld = Vector.append sgPadding (map unwrapPt pw.prevSgs)
+
+    -- proofMask: drop the front `pad` elements of [mask0, mask1] to keep the last `n`.
+    fullMasks :: Vector MaxProofsVerified (BoolVar StepField)
+    fullMasks = pw.branchData.mask0 :< pw.branchData.mask1 :< Vector.nil
+
+    proofMask :: Vector n (BoolVar StepField)
+    proofMask = Vector.drop @pad fullMasks
   in
     { appState
     , wComm: map unwrapPt pw.wComm
@@ -331,28 +333,52 @@ buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
 -- | Serialize unfinalized proof to output fields (to_data order)
 -------------------------------------------------------------------------------
 
-unfFields :: UnfinalizedProof -> Array (FVar StepField)
+-- | Unfinalized proof serialized as a fixed-width public-input vector.
+-- |
+-- | Layout (32 fields = 17 + WrapIPARounds):
+-- |   5 × Type2 (10) + digest (1) + 2 challenges + 3 scalar challenges
+-- |   + WrapIPARounds bp challenges (15) + shouldFinalize (1)
+unfFields :: UnfinalizedProof -> Vector 32 (FVar StepField)
 unfFields unf =
   let
-    sf2 (Type2 (SplitField { sDiv2, sOdd })) = [ sDiv2, coerce sOdd :: FVar StepField ]
+    sf2 :: Type2 (SplitField (FVar StepField) (BoolVar StepField)) -> Vector 2 (FVar StepField)
+    sf2 (Type2 (SplitField { sDiv2, sOdd })) = sDiv2 :< coerce sOdd :< Vector.nil
+
+    cipFields = sf2 unf.deferredValues.combinedInnerProduct
+    bFields = sf2 unf.deferredValues.b
+    zetaSrsFields = sf2 unf.deferredValues.plonk.zetaToSrsLength
+    zetaDomFields = sf2 unf.deferredValues.plonk.zetaToDomainSize
+    permFields = sf2 unf.deferredValues.plonk.perm
+
+    digestField :: Vector 1 (FVar StepField)
+    digestField = unf.claimedDigest :< Vector.nil
+
+    betaGamma :: Vector 2 (FVar StepField)
+    betaGamma = toField unf.deferredValues.plonk.beta :< toField unf.deferredValues.plonk.gamma :< Vector.nil
+
+    alphaZetaXi :: Vector 3 (FVar StepField)
+    alphaZetaXi =
+      toField unf.deferredValues.plonk.alpha
+        :< toField unf.deferredValues.plonk.zeta
+        :< toField unf.deferredValues.xi
+        :< Vector.nil
+
+    bpFields :: Vector WrapIPARounds (FVar StepField)
+    bpFields = map toField unf.deferredValues.bulletproofChallenges
+
+    shouldFinalizeField :: Vector 1 (FVar StepField)
+    shouldFinalizeField = (coerce unf.shouldFinalize :: FVar StepField) :< Vector.nil
   in
-    sf2 unf.deferredValues.combinedInnerProduct
-      <> sf2 unf.deferredValues.b
-      <> sf2 unf.deferredValues.plonk.zetaToSrsLength
-      <> sf2 unf.deferredValues.plonk.zetaToDomainSize
-      <> sf2 unf.deferredValues.plonk.perm
-      <> [ unf.claimedDigest ]
-      <>
-        [ toField unf.deferredValues.plonk.beta
-        , toField unf.deferredValues.plonk.gamma
-        ]
-      <>
-        [ toField unf.deferredValues.plonk.alpha
-        , toField unf.deferredValues.plonk.zeta
-        , toField unf.deferredValues.xi
-        ]
-      <> (Vector.toUnfoldable (map toField unf.deferredValues.bulletproofChallenges) :: Array _)
-      <> [ coerce unf.shouldFinalize :: FVar StepField ]
+    cipFields
+      `Vector.append` bFields
+      `Vector.append` zetaSrsFields
+      `Vector.append` zetaDomFields
+      `Vector.append` permFields
+      `Vector.append` digestField
+      `Vector.append` betaGamma
+      `Vector.append` alphaZetaXi
+      `Vector.append` bpFields
+      `Vector.append` shouldFinalizeField
 
 -------------------------------------------------------------------------------
 -- | Generic step_main circuit
@@ -364,20 +390,23 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @n @outputSize t m
+  :: forall @n pad unfsTotal digestPlusUnfs @outputSize t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM n StepIPARounds WrapIPARounds m StepField
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
   => Reflectable n Int
-  => Reflectable outputSize Int
+  => Reflectable pad Int
+  => Add pad n MaxProofsVerified
+  => Mul n 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs n outputSize
   => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain rule { lagrangeComms, blindingH } dummySg = do
 
-  -- 1. exists input_typ (app_state)
   -- 1. exists: app_state via Req.App_state
-  appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds unit
+  appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds @PallasG unit
 
   -- 2. rule_main
   { prevPublicInputs, proofMustVerify } <- label "rule_main" $ rule appState
@@ -387,7 +416,7 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
   VerificationKey vkRec <- label "exists_wrap_index"
     $ exists
     $ lift
-    $ getWrapVerifierIndex @n @StepIPARounds @WrapIPARounds unit
+    $ getWrapVerifierIndex @n @StepIPARounds @WrapIPARounds @PallasG unit
   let
     vk =
       { sigma: Vector.take @6 vkRec.sigma
@@ -402,7 +431,7 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
   rawProofWitnesses <- label "exists_prevs"
     $ exists
     $ lift
-    $ getStepPerProofWitnesses @n @StepIPARounds @WrapIPARounds unit
+    $ getStepPerProofWitnesses @n @StepIPARounds @WrapIPARounds @PallasG unit
   proofWitnesses <- traverse (allocatePerProofWitness @n) rawProofWitnesses
 
   -- 5. exists: unfinalized proofs via Req.Unfinalized_proofs — ONE
@@ -411,12 +440,12 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
   rawUnfinalizedProofs <- label "exists_unfinalized"
     $ exists
     $ lift
-    $ getStepUnfinalizedProofs @n @StepIPARounds @WrapIPARounds unit
+    $ getStepUnfinalizedProofs @n @StepIPARounds @WrapIPARounds @PallasG unit
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
   -- 6. exists: messages_for_next_wrap_proof via Req.Messages_for_next_wrap_proof
   --    ONE Vector allocation matching OCaml.
-  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @n @StepIPARounds @WrapIPARounds unit
+  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @n @StepIPARounds @WrapIPARounds @PallasG unit
 
   -- 7. Build VK comms (shared by all proofs since prevs = [self, ...])
   let
@@ -506,12 +535,16 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
 
   -- 10. Build output: n × 32 (unfinalized) + 1 (step msg) + n (wrap msgs)
   let
-    outputArr =
-      foldMap unfFields (Vector.toUnfoldable unfinalizedProofs :: Array _)
-        <> [ outerDigest ]
-        <> (Vector.toUnfoldable msgsWrap :: Array _)
+    unfsFlat :: Vector unfsTotal (FVar StepField)
+    unfsFlat = Vector.concat (map unfFields unfinalizedProofs)
 
-  pure $ unsafePartial $ fromJust $ Vector.toVector @outputSize outputArr
+    digestVec :: Vector 1 (FVar StepField)
+    digestVec = outerDigest :< Vector.nil
+
+    outputV :: Vector outputSize (FVar StepField)
+    outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
+
+  pure outputV
 
 -------------------------------------------------------------------------------
 -- | Compile step_main
@@ -524,8 +557,13 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
 -------------------------------------------------------------------------------
 
 compileStepMain
-  :: forall @n @outputSize
+  :: forall @n pad unfsTotal digestPlusUnfs @outputSize
    . Reflectable n Int
+  => Reflectable pad Int
+  => Add pad n MaxProofsVerified
+  => Mul n 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs n outputSize
   => Reflectable outputSize Int
   => (forall t. CircuitM StepField (KimchiConstraint StepField) t Effect => FVar StepField -> Snarky (KimchiConstraint StepField) t Effect (RuleOutput n StepField))
   -> StepMainSrsData

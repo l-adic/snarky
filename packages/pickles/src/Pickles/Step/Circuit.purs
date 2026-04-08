@@ -31,6 +31,7 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
@@ -46,10 +47,11 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, assertEq, assert_, const_, exists, label, not_, or_)
 import Snarky.Circuit.DSL (F) as DSL
-import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeMkSizedF)
+import Snarky.Circuit.DSL.SizedF (SizedF, toField, unsafeFromField)
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromInt)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, CurveParams, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2)
@@ -201,7 +203,8 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
         m1 :: FVar f
         m1 = coerce mask1
       in
-        unsafeMkSizedF $ CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ m0 (CVar.scale_ two m1))
+        unsafePartial $ unsafeFromField $
+          CVar.add_ (CVar.scale_ four (const_ (fromInt domainLog2))) (CVar.add_ m0 (CVar.scale_ two m1))
   in
     Tuple
       -- Vec5 FVar: [cip, b, zetaToSrs, zetaToDom, perm]
@@ -266,7 +269,7 @@ stepCircuit
    . Add 1 _ds ds
   => Add 1 _dw dw
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  => StepWitnessM n ds dw m Vesta.ScalarField
+  => StepWitnessM n ds dw PallasG Vesta.ScalarField m
   => Reflectable n Int
   => Reflectable ds Int
   => Reflectable dw Int
@@ -287,15 +290,15 @@ stepCircuit params appCircuit { appInput, previousProofInputs, unfinalizedProofs
   { mustVerify } <- appCircuit { appInput, previousProofInputs }
 
   -- 2. Request private proof witnesses via advisory monad
-  proofWitnesses <- exists $ lift $ getProofWitnesses @_ @ds @dw unit
-  prevChallenges <- exists $ lift $ getPrevChallenges @_ @ds @dw unit
-  fopProofStates <- exists $ lift $ getFopProofStates @_ @ds @dw unit
-  messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @_ @ds @dw unit
-  VerificationKey wrapVk <- exists $ lift $ getWrapVerifierIndex @n @ds @dw unit
-  sgOld <- exists $ lift $ getSgOld @n @ds @dw unit
+  proofWitnesses <- exists $ lift $ getProofWitnesses @n @ds @dw @PallasG unit
+  prevChallenges <- exists $ lift $ getPrevChallenges @n @ds @dw @PallasG unit
+  fopProofStates <- exists $ lift $ getFopProofStates @n @ds @dw @PallasG unit
+  messagesForNextWrapProof <- exists $ lift $ getMessagesForNextWrapProof @n @ds @dw @PallasG unit
+  VerificationKey wrapVk <- exists $ lift $ getWrapVerifierIndex @n @ds @dw @PallasG unit
+  sgOld <- exists $ lift $ getSgOld @n @ds @dw @PallasG unit
   -- TODO: used by IVP when wired in
-  _messages <- exists $ lift $ getMessages @n @ds @dw unit
-  _openingProofs <- exists $ lift $ getOpeningProof @n @ds @dw unit
+  _messages <- exists $ lift $ getMessages @n @ds @dw @PallasG unit
+  _openingProofs <- exists $ lift $ getOpeningProof @n @ds @dw @PallasG unit
 
   let
     shared =

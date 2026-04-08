@@ -33,12 +33,13 @@ import Prelude
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (BoolVar, F, FVar, UnChecked, const_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
-import Snarky.Circuit.DSL.SizedF (SizedF, unsafeMkSizedF)
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi.EndoScalar (toField) as EndoScalar
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -164,13 +165,15 @@ instance (CircuitType f a var) => CircuitType f (PointEval a) (PointEval var) wh
   valueToFields (PointEval r) = genericValueToFields (tuple2 r.zeta r.omegaTimesZeta)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple2 a a
+      tup :: Tuple2 a a
+      tup = genericFieldsToValue fs
     in
       uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
   varToFields (PointEval r) = genericVarToFields @(Tuple2 a a) (tuple2 r.zeta r.omegaTimesZeta)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple2 a a) fs :: Tuple2 var var
+      tup :: Tuple2 var var
+      tup = genericFieldsToVar @(Tuple2 a a) fs
     in
       uncurry2 (\zeta omegaTimesZeta -> PointEval { zeta, omegaTimesZeta }) tup
 
@@ -197,13 +200,15 @@ instance (CircuitType f a var) => CircuitType f (VerificationKey a) (Verificatio
   valueToFields (VerificationKey r) = genericValueToFields (tuple3 r.sigma r.coeff r.index)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
+      tup :: Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)
+      tup = genericFieldsToValue fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
   varToFields (VerificationKey r) = genericVarToFields @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) (tuple3 r.sigma r.coeff r.index)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
+      tup :: Tuple3 (Vector 7 var) (Vector 15 var) (Vector 6 var)
+      tup = genericFieldsToVar @(Tuple3 (Vector 7 a) (Vector 15 a) (Vector 6 a)) fs
     in
       uncurry3 (\sigma coeff index -> VerificationKey { sigma, coeff, index }) tup
 
@@ -242,13 +247,15 @@ instance
   valueToFields (BranchData r) = genericValueToFields (tuple3 r.mask0 r.mask1 r.domainLog2)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple3 b b a
+      tup :: Tuple3 b b a
+      tup = genericFieldsToValue fs
     in
       uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
   varToFields (BranchData r) = genericVarToFields @(Tuple3 b b a) (tuple3 r.mask0 r.mask1 r.domainLog2)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple3 b b a) fs :: Tuple3 bvar bvar fvar
+      tup :: Tuple3 bvar bvar fvar
+      tup = genericFieldsToVar @(Tuple3 b b a) fs
     in
       uncurry3 (\mask0 mask1 domainLog2 -> BranchData { mask0, mask1, domainLog2 }) tup
 
@@ -266,7 +273,7 @@ instance
     check (tuple3 r.mask0 r.mask1 r.domainLog2)
     -- Endoscalar check on domainLog2 (matches OCaml Branch_data.typ.check)
     let EndoScalar e = endoScalar @basef @f
-    _ <- EndoScalar.toField @1 (unsafeMkSizedF r.domainLog2) (const_ e)
+    _ <- EndoScalar.toField @1 (unsafePartial (unsafeFromField r.domainLog2) :: SizedF 16 (FVar f)) (const_ e)
     pure unit
 
 -- | Wrap proof messages: protocol commitments allocated in the per-proof witness.
@@ -284,13 +291,15 @@ instance (CircuitType f a var) => CircuitType f (WrapProofMessages a) (WrapProof
   valueToFields (WrapProofMessages r) = genericValueToFields (tuple3 r.wComm r.zComm r.tComm)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple3 (Vector 15 a) a (Vector 7 a)
+      tup :: Tuple3 (Vector 15 a) a (Vector 7 a)
+      tup = genericFieldsToValue fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
   varToFields (WrapProofMessages r) = genericVarToFields @(Tuple3 (Vector 15 a) a (Vector 7 a)) (tuple3 r.wComm r.zComm r.tComm)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple3 (Vector 15 a) a (Vector 7 a)) fs :: Tuple3 (Vector 15 var) var (Vector 7 var)
+      tup :: Tuple3 (Vector 15 var) var (Vector 7 var)
+      tup = genericFieldsToVar @(Tuple3 (Vector 15 a) a (Vector 7 a)) fs
     in
       uncurry3 (\wComm zComm tComm -> WrapProofMessages { wComm, zComm, tComm }) tup
 
@@ -318,13 +327,15 @@ instance
   valueToFields (WrapProofOpening r) = genericValueToFields (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple5 (Vector 15 { l :: a, r :: a }) b b a a
+      tup :: Tuple5 (Vector 15 { l :: a, r :: a }) b b a a
+      tup = genericFieldsToValue fs
     in
       uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
   varToFields (WrapProofOpening r) = genericVarToFields @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) fs :: Tuple5 (Vector 15 { l :: avar, r :: avar }) bvar bvar avar avar
+      tup :: Tuple5 (Vector 15 { l :: avar, r :: avar }) bvar bvar avar avar
+      tup = genericFieldsToVar @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) fs
     in
       uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
 
@@ -353,13 +364,15 @@ instance
   valueToFields (WrapProof r) = genericValueToFields (tuple2 r.messages r.opening)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple2 (WrapProofMessages a) (WrapProofOpening a b)
+      tup :: Tuple2 (WrapProofMessages a) (WrapProofOpening a b)
+      tup = genericFieldsToValue fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
   varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)) (tuple2 r.messages r.opening)
   fieldsToVar fs =
     let
-      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)) fs :: Tuple2 (WrapProofMessages avar) (WrapProofOpening avar bvar)
+      tup :: Tuple2 (WrapProofMessages avar) (WrapProofOpening avar bvar)
+      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)) fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
 
@@ -394,9 +407,8 @@ instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals v
     (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
   fieldsToValue fs =
     let
-      tup =
-        genericFieldsToValue fs
-          :: Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a
+      tup :: Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a
+      tup = genericFieldsToValue fs
     in
       uncurry7
         ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
@@ -408,11 +420,11 @@ instance (CircuitType f a var) => CircuitType f (StepAllEvals a) (StepAllEvals v
     (tuple7 r.publicEvals r.witnessEvals r.coeffEvals r.zEvals r.sigmaEvals r.indexEvals r.ftEval1)
   fieldsToVar fs =
     let
+      tup :: Tuple7 (PointEval var) (Vector 15 (PointEval var)) (Vector 15 (PointEval var)) (PointEval var) (Vector 6 (PointEval var)) (Vector 6 (PointEval var)) var
       tup =
         genericFieldsToVar
           @(Tuple7 (PointEval a) (Vector 15 (PointEval a)) (Vector 15 (PointEval a)) (PointEval a) (Vector 6 (PointEval a)) (Vector 6 (PointEval a)) a)
           fs
-          :: Tuple7 (PointEval var) (Vector 15 (PointEval var)) (Vector 15 (PointEval var)) (PointEval var) (Vector 6 (PointEval var)) (Vector 6 (PointEval var)) var
     in
       uncurry7
         ( \publicEvals witnessEvals coeffEvals zEvals sigmaEvals indexEvals ftEval1 ->
@@ -454,13 +466,19 @@ newtype FopProofState (d :: Int) f = FopProofState
   , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
   }
 
+-- | Tuple shape for FopProofState (parameterized by element type x).
+-- | Used by both value (x = F f) and var (x = FVar f) instances.
+type FopProofStateTuple d x =
+  Tuple2
+    (Tuple10 x x x x x x (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)))
+    (Tuple2 (UnChecked (SizedF 128 x)) (Vector d (UnChecked (SizedF 128 x))))
+
 instance
   ( FieldSizeInBits f m
   , Reflectable d Int
   ) =>
   CircuitType f (FopProofState d (F f)) (FopProofState d (FVar f)) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))))))
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(FopProofStateTuple d (F f)))
   valueToFields (FopProofState r) = genericValueToFields
     ( tuple2
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
@@ -468,7 +486,8 @@ instance
     )
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))))
+      tup :: FopProofStateTuple d (F f)
+      tup = genericFieldsToValue fs
     in
       uncurry2
         ( \t10 t2 ->
@@ -484,18 +503,15 @@ instance
         )
         tup
   varToFields (FopProofState r) = genericVarToFields
-    @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f))))))
+    @(FopProofStateTuple d (F f))
     ( tuple2
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
         (tuple2 r.xi r.bulletproofChallenges)
     )
   fieldsToVar fs =
     let
-      tup =
-        genericFieldsToVar
-          @(Tuple2 (Tuple10 (F f) (F f) (F f) (F f) (F f) (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple2 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f))))))
-          fs
-          :: Tuple2 (Tuple10 (FVar f) (FVar f) (FVar f) (FVar f) (FVar f) (FVar f) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f)))) (Tuple2 (UnChecked (SizedF 128 (FVar f))) (Vector d (UnChecked (SizedF 128 (FVar f)))))
+      tup :: FopProofStateTuple d (FVar f)
+      tup = genericFieldsToVar @(FopProofStateTuple d (F f)) fs
     in
       uncurry2
         ( \t10 t2 ->
@@ -528,7 +544,7 @@ instance (CheckedType f c var) => CheckedType f c (FopProofState d var) where
 -- |
 -- | Reference: composition_types.ml `Wrap.Proof_state` allocation
 newtype StepProofState f b = StepProofState
-  { fopState :: FopProofState 16 f
+  { fopState :: FopProofState StepIPARounds f
   , branchData :: BranchData f b
   }
 
@@ -537,28 +553,26 @@ instance
   ) =>
   CircuitType f (StepProofState (F f) Boolean) (StepProofState (FVar f) (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (FopProofState 16 (F f)) (BranchData (F f) Boolean)))
+    (Proxy @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)))
   valueToFields (StepProofState r) = genericValueToFields (tuple2 r.fopState r.branchData)
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple2 (FopProofState 16 (F f)) (BranchData (F f) Boolean)
+      tup :: Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)
+      tup = genericFieldsToValue fs
     in
       uncurry2 (\fopState branchData -> StepProofState { fopState, branchData }) tup
   varToFields (StepProofState r) = genericVarToFields
-    @(Tuple2 (FopProofState 16 (F f)) (BranchData (F f) Boolean))
+    @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean))
     (tuple2 r.fopState r.branchData)
   fieldsToVar fs =
     let
-      tup =
-        genericFieldsToVar
-          @(Tuple2 (FopProofState 16 (F f)) (BranchData (F f) Boolean))
-          fs
-          :: Tuple2 (FopProofState 16 (FVar f)) (BranchData (FVar f) (BoolVar f))
+      tup :: Tuple2 (FopProofState StepIPARounds (FVar f)) (BranchData (FVar f) (BoolVar f))
+      tup = genericFieldsToVar @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)) fs
     in
       uncurry2 (\fopState branchData -> StepProofState { fopState, branchData }) tup
 
 instance
-  ( CheckedType f (KimchiConstraint f) (FopProofState 16 (FVar f))
+  ( CheckedType f (KimchiConstraint f) (FopProofState StepIPARounds (FVar f))
   , CheckedType f (KimchiConstraint f) (BranchData (FVar f) (BoolVar f))
   ) =>
   CheckedType f (KimchiConstraint f) (StepProofState (FVar f) (BoolVar f)) where
@@ -581,9 +595,21 @@ newtype StepPerProofWitness (n :: Int) f sf b = StepPerProofWitness
   { wrapProof :: WrapProof (WeierstrassAffinePoint PallasG f) sf
   , proofState :: StepProofState f b
   , prevEvals :: StepAllEvals f
-  , prevChallenges :: Vector n (UnChecked (Vector 16 f))
+  , prevChallenges :: Vector n (UnChecked (Vector StepIPARounds f))
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG f)
   }
+
+-- | Tuple shape for StepPerProofWitness, parameterized by:
+-- |   - x:  field element type (F f or FVar f)
+-- |   - sf: shifted-f type
+-- |   - b:  boolean type
+type StepPerProofWitnessTuple n x sf b =
+  Tuple5
+    (WrapProof (WeierstrassAffinePoint PallasG x) sf)
+    (StepProofState x b)
+    (StepAllEvals x)
+    (Vector n (UnChecked (Vector StepIPARounds x)))
+    (Vector n (WeierstrassAffinePoint PallasG x))
 
 instance
   ( FieldSizeInBits f m
@@ -594,27 +620,13 @@ instance
     (StepPerProofWitness n (F f) sf Boolean)
     (StepPerProofWitness n (FVar f) sfvar (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    ( Proxy
-        @( Tuple5
-            (WrapProof (WeierstrassAffinePoint PallasG (F f)) sf)
-            (StepProofState (F f) Boolean)
-            (StepAllEvals (F f))
-            (Vector n (UnChecked (Vector 16 (F f))))
-            (Vector n (WeierstrassAffinePoint PallasG (F f)))
-        )
-    )
+    (Proxy @(StepPerProofWitnessTuple n (F f) sf Boolean))
   valueToFields (StepPerProofWitness r) = genericValueToFields
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToValue fs =
     let
-      tup =
-        genericFieldsToValue fs
-          :: Tuple5
-               (WrapProof (WeierstrassAffinePoint PallasG (F f)) sf)
-               (StepProofState (F f) Boolean)
-               (StepAllEvals (F f))
-               (Vector n (UnChecked (Vector 16 (F f))))
-               (Vector n (WeierstrassAffinePoint PallasG (F f)))
+      tup :: StepPerProofWitnessTuple n (F f) sf Boolean
+      tup = genericFieldsToValue fs
     in
       uncurry5
         ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
@@ -622,32 +634,12 @@ instance
         )
         tup
   varToFields (StepPerProofWitness r) = genericVarToFields
-    @( Tuple5
-        (WrapProof (WeierstrassAffinePoint PallasG (F f)) sf)
-        (StepProofState (F f) Boolean)
-        (StepAllEvals (F f))
-        (Vector n (UnChecked (Vector 16 (F f))))
-        (Vector n (WeierstrassAffinePoint PallasG (F f)))
-    )
+    @(StepPerProofWitnessTuple n (F f) sf Boolean)
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToVar fs =
     let
-      tup =
-        genericFieldsToVar
-          @( Tuple5
-              (WrapProof (WeierstrassAffinePoint PallasG (F f)) sf)
-              (StepProofState (F f) Boolean)
-              (StepAllEvals (F f))
-              (Vector n (UnChecked (Vector 16 (F f))))
-              (Vector n (WeierstrassAffinePoint PallasG (F f)))
-          )
-          fs
-          :: Tuple5
-               (WrapProof (WeierstrassAffinePoint PallasG (FVar f)) sfvar)
-               (StepProofState (FVar f) (BoolVar f))
-               (StepAllEvals (FVar f))
-               (Vector n (UnChecked (Vector 16 (FVar f))))
-               (Vector n (WeierstrassAffinePoint PallasG (FVar f)))
+      tup :: StepPerProofWitnessTuple n (FVar f) sfvar (BoolVar f)
+      tup = genericFieldsToVar @(StepPerProofWitnessTuple n (F f) sf Boolean) fs
     in
       uncurry5
         ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
@@ -662,15 +654,12 @@ instance
   , Reflectable n Int
   ) =>
   CheckedType StepField (KimchiConstraint StepField) (StepPerProofWitness n (FVar StepField) sfvar (BoolVar StepField)) where
-  check (StepPerProofWitness r) = check
-    ( tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
-        :: Tuple5
-             (WrapProof (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
-             (StepProofState (FVar StepField) (BoolVar StepField))
-             (StepAllEvals (FVar StepField))
-             (Vector n (UnChecked (Vector 16 (FVar StepField))))
-             (Vector n (WeierstrassAffinePoint PallasG (FVar StepField)))
-    )
+  check (StepPerProofWitness r) =
+    let
+      tup :: StepPerProofWitnessTuple n (FVar StepField) sfvar (BoolVar StepField)
+      tup = tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
+    in
+      check tup
 
 -- | Per-proof unfinalized proof: the OCaml `Unfinalized.t` allocation that
 -- | becomes part of the Step.Statement public input.
@@ -709,6 +698,15 @@ newtype PerProofUnfinalized (d :: Int) sf f b = PerProofUnfinalized
   , shouldFinalize :: b
   }
 
+-- | Tuple shape for PerProofUnfinalized, parameterized by:
+-- |   - sf: shifted-f type (sf or sfvar)
+-- |   - x:  field element type (F f or FVar f)
+-- |   - b:  boolean type (b or bvar)
+type PerProofUnfinalizedTuple d sf x b =
+  Tuple2
+    (Tuple10 sf sf sf sf sf x (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)) (UnChecked (SizedF 128 x)))
+    (Tuple3 (UnChecked (SizedF 128 x)) (Vector d (UnChecked (SizedF 128 x))) b)
+
 instance
   ( CircuitType f sf sfvar
   , CircuitType f b bvar
@@ -716,8 +714,7 @@ instance
   , Reflectable d Int
   ) =>
   CircuitType f (PerProofUnfinalized d sf (F f) b) (PerProofUnfinalized d sfvar (FVar f) bvar) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b)))
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(PerProofUnfinalizedTuple d sf (F f) b))
   valueToFields (PerProofUnfinalized r) = genericValueToFields
     ( tuple2
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
@@ -725,7 +722,8 @@ instance
     )
   fieldsToValue fs =
     let
-      tup = genericFieldsToValue fs :: Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b)
+      tup :: PerProofUnfinalizedTuple d sf (F f) b
+      tup = genericFieldsToValue fs
     in
       uncurry2
         ( \t10 t3 ->
@@ -741,18 +739,15 @@ instance
         )
         tup
   varToFields (PerProofUnfinalized r) = genericVarToFields
-    @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b))
+    @(PerProofUnfinalizedTuple d sf (F f) b)
     ( tuple2
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
         (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize)
     )
   fieldsToVar fs =
     let
-      tup =
-        genericFieldsToVar
-          @(Tuple2 (Tuple10 sf sf sf sf sf (F f) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f))) (UnChecked (SizedF 128 (F f)))) (Tuple3 (UnChecked (SizedF 128 (F f))) (Vector d (UnChecked (SizedF 128 (F f)))) b))
-          fs
-          :: Tuple2 (Tuple10 sfvar sfvar sfvar sfvar sfvar (FVar f) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f))) (UnChecked (SizedF 128 (FVar f)))) (Tuple3 (UnChecked (SizedF 128 (FVar f))) (Vector d (UnChecked (SizedF 128 (FVar f)))) bvar)
+      tup :: PerProofUnfinalizedTuple d sfvar (FVar f) bvar
+      tup = genericFieldsToVar @(PerProofUnfinalizedTuple d sf (F f) b) fs
     in
       uncurry2
         ( \t10 t3 ->
