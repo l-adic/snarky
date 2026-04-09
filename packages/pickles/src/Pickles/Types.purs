@@ -847,7 +847,7 @@ instance
         tup
 
 instance
-  ( CheckedType f c (Vector mpv (PerProofUnfinalized WrapIPARounds sfvar fvar bvar))
+  ( CheckedType f c (PerProofUnfinalized WrapIPARounds sfvar fvar bvar)
   , CheckedType f c fvar
   ) =>
   CheckedType f c (WrapPrevProofState mpv sfvar fvar bvar) where
@@ -900,8 +900,7 @@ instance
       uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
 
 instance
-  ( CheckedType f c (Vector slot0Width (Vector WrapIPARounds var))
-  , CheckedType f c (Vector slot1Width (Vector WrapIPARounds var))
+  ( CheckedType f c var
   ) =>
   CheckedType f c (WrapOldBpChals slot0Width slot1Width var) where
   check (WrapOldBpChals r) = check (tuple2 r.slot0 r.slot1)
