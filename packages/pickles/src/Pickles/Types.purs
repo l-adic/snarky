@@ -33,9 +33,11 @@ module Pickles.Types
 
 import Prelude
 
+import Data.Foldable (traverse_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
 import Prim.Int (class Compare)
@@ -1032,7 +1034,7 @@ instance
         tup
 
 instance
-  ( CheckedType f c (Vector 5 sfvar)
+  ( CheckedType f c sfvar
   , CheckedType f c fvar
   ) =>
   CheckedType f c (WrapStatementPacked d sfvar fvar bvar) where
@@ -1041,5 +1043,11 @@ instance
     -- forbidden_shifted_values, mirroring OCaml's Other_field.check).
     -- Challenges are UnChecked → no-op. Digests, branchData, featureFlags,
     -- and lookupOpt fields are plain f → no-op. So this `check` reduces to
-    -- just the fp Vector check.
-    check r.fpFields
+    -- just the 5 fp checks.
+    --
+    -- IMPORTANT: emit the checks in REVERSE order. OCaml's `Vector.map`
+    -- processes `f x :: map xs ~f` right-to-left (because `::` evaluates
+    -- right-to-left), so `Other_field.check` runs on `perm` first and
+    -- `combined_inner_product` last. The `Vector.reverse` here matches
+    -- that evaluation order so PI-variable copy-cycles line up with OCaml.
+    traverse_ check (Vector.reverse r.fpFields)
