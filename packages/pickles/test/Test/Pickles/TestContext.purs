@@ -25,6 +25,9 @@ module Test.Pickles.TestContext
   , WrapAdvice
   , WrapProverM(..)
   , runWrapProverM
+  , WrapMainAdvice
+  , WrapMainProverM(..)
+  , runWrapMainProverM
   , computePublicEval
   , createStepProofContext
   , createTestContext'
@@ -115,7 +118,8 @@ import Pickles.Types (MaxProofsVerified, StepField, StepIPARounds, StepInput, St
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
-import Pickles.Wrap.Advice (class WrapWitnessM, getStepIOFields)
+import Pickles.Types (WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening, StepAllEvals)
+import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM, class WrapWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
@@ -141,7 +145,7 @@ import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromBigInt, fromInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
@@ -285,14 +289,71 @@ derive newtype instance Monad (WrapProverM mpv ds dw f)
 runWrapProverM :: forall mpv ds dw f a. WrapAdvice mpv ds dw f -> WrapProverM mpv ds dw f a -> Effect a
 runWrapProverM privateData (WrapProverM m) = runReaderT m privateData
 
-instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapWitnessM mpv ds dw (WrapProverM mpv ds dw f) f where
+instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapSubCircuitWitnessM mpv ds dw (WrapProverM mpv ds dw f) f where
   getStepIOFields _ = WrapProverM $ map _.stepIOFields ask
-  getEvals _ = WrapProverM $ map _.evals ask
-  getMessages _ = WrapProverM $ map _.messages ask
-  getOpeningProof _ = WrapProverM $ map _.openingProof ask
+  getEvalsLegacy _ = WrapProverM $ map _.evals ask
+  getMessagesLegacy _ = WrapProverM $ map _.messages ask
+  getOpeningProofLegacy _ = WrapProverM $ map _.openingProof ask
   getUnfinalizedProofs _ = WrapProverM $ map _.unfinalizedProofs ask
-  getStepAccs _ = WrapProverM $ map _.stepAccs ask
+  getStepAccsLegacy _ = WrapProverM $ map _.stepAccs ask
   getOldBpChallenges _ = WrapProverM $ map _.oldBpChallenges ask
+
+-------------------------------------------------------------------------------
+-- | WrapMainProverM: prove-time advisory monad for the new `wrapMain` flow
+-- |
+-- | Sibling to `WrapProverM` (which serves the deprecated `wrapCircuit`
+-- | sub-circuit). Implements the new `WrapWitnessM` class with one record
+-- | field per `Req.*` request.
+-- |
+-- | The actual proof-side wiring (filling in the WrapMainAdvice from a real
+-- | StepProofContext) is Phase 7 work; right now this exists so that
+-- | (a) the test infrastructure compiles, and
+-- | (b) the prover-side path is named for future reference.
+-------------------------------------------------------------------------------
+
+type WrapMainAdvice (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) f =
+  { whichBranch :: F f
+  , wrapProofState :: WrapPrevProofState mpv (Type2 (F f)) (F f) Boolean
+  , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F f))
+  , oldBpChals :: WrapOldBpChals slot0Width slot1Width (F f)
+  , evals :: Vector mpv (StepAllEvals (F f))
+  , wrapDomainIndices :: Vector mpv (F f)
+  , openingProof :: WrapProofOpening (WeierstrassAffinePoint VestaG (F f)) (Type1 (F f))
+  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F f))
+  }
+
+newtype WrapMainProverM (branches :: Int) (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) f a =
+  WrapMainProverM (ReaderT (WrapMainAdvice mpv slot0Width slot1Width f) Effect a)
+
+derive instance Newtype (WrapMainProverM branches mpv slot0Width slot1Width f a) _
+derive newtype instance Functor (WrapMainProverM branches mpv slot0Width slot1Width f)
+derive newtype instance Apply (WrapMainProverM branches mpv slot0Width slot1Width f)
+derive newtype instance Applicative (WrapMainProverM branches mpv slot0Width slot1Width f)
+derive newtype instance Bind (WrapMainProverM branches mpv slot0Width slot1Width f)
+derive newtype instance Monad (WrapMainProverM branches mpv slot0Width slot1Width f)
+
+runWrapMainProverM
+  :: forall branches mpv slot0Width slot1Width f a
+   . WrapMainAdvice mpv slot0Width slot1Width f
+  -> WrapMainProverM branches mpv slot0Width slot1Width f a
+  -> Effect a
+runWrapMainProverM advice (WrapMainProverM m) = runReaderT m advice
+
+instance
+  ( Reflectable branches Int
+  , Reflectable mpv Int
+  , Reflectable slot0Width Int
+  , Reflectable slot1Width Int
+  ) =>
+  WrapWitnessM branches mpv slot0Width slot1Width VestaG WrapField (WrapMainProverM branches mpv slot0Width slot1Width WrapField) where
+  getWhichBranch _ = WrapMainProverM $ map _.whichBranch ask
+  getWrapProofState _ = WrapMainProverM $ map _.wrapProofState ask
+  getStepAccs _ = WrapMainProverM $ map _.stepAccs ask
+  getOldBulletproofChallenges _ = WrapMainProverM $ map _.oldBpChals ask
+  getEvals _ = WrapMainProverM $ map _.evals ask
+  getWrapDomainIndices _ = WrapMainProverM $ map _.wrapDomainIndices ask
+  getOpeningProof _ = WrapMainProverM $ map _.openingProof ask
+  getMessages _ = WrapMainProverM $ map _.messages ask
 
 -------------------------------------------------------------------------------
 -- | Schnorr circuit setup
@@ -417,7 +478,7 @@ type WrapSchnorrStepIOVar = StepPublicInput 1 StepIPARounds WrapIPARounds (FVar 
 existsSchnorrStepIO
   :: forall t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => WrapWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m WrapField
+  => WrapSubCircuitWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m WrapField
   => Snarky (KimchiConstraint WrapField) t m WrapSchnorrStepIOVar
 existsSchnorrStepIO = exists $ lift $
   map (fieldsToValue @WrapField @WrapSchnorrStepIOVal <<< (coerce :: Array (F WrapField) -> Array WrapField))
@@ -1350,7 +1411,7 @@ createWrapProofContext stepCtx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => WrapWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m Pallas.ScalarField
+      => WrapSubCircuitWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit =

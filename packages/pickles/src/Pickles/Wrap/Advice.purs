@@ -26,7 +26,8 @@
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/wrap_main.ml lines 138–578
 module Pickles.Wrap.Advice
-  ( class WrapWitnessM
+  ( -- The new advice class used by `Pickles.Wrap.Main.wrapMain`.
+    class WrapWitnessM
   , getWhichBranch
   , getWrapProofState
   , getStepAccs
@@ -35,6 +36,17 @@ module Pickles.Wrap.Advice
   , getWrapDomainIndices
   , getOpeningProof
   , getMessages
+    -- Legacy advice class used by the deprecated `Pickles.Wrap.Circuit`
+    -- sub-circuit and the test fixtures it powers (`createWrapProofContext`,
+    -- `WrapE2E`). Phase 7 decides whether to retire or revive this surface.
+  , class WrapSubCircuitWitnessM
+  , getStepIOFields
+  , getEvalsLegacy
+  , getMessagesLegacy
+  , getOpeningProofLegacy
+  , getUnfinalizedProofs
+  , getStepAccsLegacy
+  , getOldBpChallenges
   ) where
 
 import Prelude
@@ -43,11 +55,13 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
+import Pickles.ProofWitness (ProofWitness)
 import Pickles.Types (StepAllEvals, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
-import Snarky.Curves.Class (class WeierstrassCurve)
-import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
 -- | Advisory monad for the Wrap circuit.
 -- |
@@ -142,3 +156,45 @@ instance
   getWrapDomainIndices _ = throw "impossible! getWrapDomainIndices called during compilation"
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
+
+-------------------------------------------------------------------------------
+-- Legacy WrapSubCircuitWitnessM — used by the deprecated `wrapCircuit`
+-- sub-circuit and the test fixtures around it. Kept compiling so the
+-- pickles test suite still builds.
+-------------------------------------------------------------------------------
+
+-- | Legacy advice class for the small `wrapCircuit` sub-circuit. Methods
+-- | match what the original (pre-refactor) `Pickles.Wrap.Advice` class
+-- | exposed; method names are suffixed `Legacy` where they collide with the
+-- | new `WrapWitnessM` to avoid ambiguous resolution.
+class Monad m <= WrapSubCircuitWitnessM (mpv :: Int) (ds :: Int) (dw :: Int) m f where
+  getStepIOFields :: Unit -> m (Array (F f))
+  getEvalsLegacy :: Unit -> m (Vector mpv (ProofWitness (F f)))
+  getMessagesLegacy
+    :: Unit
+    -> m
+         { wComm :: Vector 15 (AffinePoint (F f))
+         , zComm :: AffinePoint (F f)
+         , tComm :: Vector 7 (AffinePoint (F f))
+         }
+  getOpeningProofLegacy
+    :: Unit
+    -> m
+         { delta :: AffinePoint (F f)
+         , sg :: AffinePoint (F f)
+         , lr :: Vector ds { l :: AffinePoint (F f), r :: AffinePoint (F f) }
+         , z1 :: Type1 (F f)
+         , z2 :: Type1 (F f)
+         }
+  getUnfinalizedProofs :: Unit -> m (Vector mpv (UnfinalizedProof dw (F f) (Type2 (F f)) Boolean))
+  getStepAccsLegacy :: Unit -> m (Vector mpv (AffinePoint (F f)))
+  getOldBpChallenges :: Unit -> m (Vector mpv (Vector dw (F f)))
+
+instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapSubCircuitWitnessM mpv ds dw Effect f where
+  getStepIOFields _ = throw "impossible! getStepIOFields called during compilation"
+  getEvalsLegacy _ = throw "impossible! getEvalsLegacy called during compilation"
+  getMessagesLegacy _ = throw "impossible! getMessagesLegacy called during compilation"
+  getOpeningProofLegacy _ = throw "impossible! getOpeningProofLegacy called during compilation"
+  getUnfinalizedProofs _ = throw "impossible! getUnfinalizedProofs called during compilation"
+  getStepAccsLegacy _ = throw "impossible! getStepAccsLegacy called during compilation"
+  getOldBpChallenges _ = throw "impossible! getOldBpChallenges called during compilation"

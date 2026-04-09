@@ -18,7 +18,7 @@ import Prelude
 import Data.Array.NonEmpty as NEA
 import Effect.Aff (Aff)
 import Pickles.Types (MaxProofsVerified, StepIPARounds, WrapIPARounds)
-import Pickles.Wrap.Advice (class WrapWitnessM)
+import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM)
 import Pickles.Wrap.Circuit (WrapInputVar, wrapCircuit)
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -43,7 +43,7 @@ wrapCircuitSatisfiableTest cfg ctx = do
     circuit
       :: forall t m
        . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-      => WrapWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m Pallas.ScalarField
+      => WrapSubCircuitWitnessM MaxProofsVerified StepIPARounds WrapIPARounds m Pallas.ScalarField
       => WrapInputVar StepIPARounds
       -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
     circuit = wrapCircuit @MaxProofsVerified @1 @StepIPARounds params
