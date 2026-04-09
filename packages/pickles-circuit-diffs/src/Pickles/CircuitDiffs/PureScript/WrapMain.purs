@@ -23,6 +23,7 @@ compileWrapMainN1 :: IvpWrapParams -> CompiledCircuit WrapField
 compileWrapMainN1 { lagrangeComms, blindingH } =
   let
     { x: F dummyX, y: F dummyY } = dummyVestaPt
+
     dummyPt :: AffinePoint _
     dummyPt = { x: const_ dummyX, y: const_ dummyY }
     dummyVK =

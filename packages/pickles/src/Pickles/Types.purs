@@ -940,27 +940,27 @@ newtype WrapStatementPacked d sf f b = WrapStatementPacked
   { -- 5 Type1 fp fields, in OCaml `to_data` order:
     -- combined_inner_product, b, zetaToSrsLength, zetaToDomainSize, perm
     fpFields :: Vector 5 sf
-    -- 2 raw challenges: beta, gamma
+  -- 2 raw challenges: beta, gamma
   , challenges :: Vector 2 (UnChecked (SizedF 128 f))
-    -- 3 scalar challenges: alpha, zeta, xi
+  -- 3 scalar challenges: alpha, zeta, xi
   , scalarChallenges :: Vector 3 (UnChecked (SizedF 128 f))
-    -- 3 digests: sponge_digest, msg_for_next_wrap, msg_for_next_step
+  -- 3 digests: sponge_digest, msg_for_next_wrap, msg_for_next_step
   , digests :: Vector 3 f
-    -- d bulletproof challenges
+  -- d bulletproof challenges
   , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
-    -- 1 packed branch_data field
+  -- 1 packed branch_data field
   , branchData :: f
-    -- 8 constant feature_flags slots. OCaml's `Spec.T.Constant` in
-    -- `wrap_packed_typ` still allocates the underlying `Boolean.typ` field
-    -- (with the check skipped, see spec.ml:485-494). For `Features.Full.none`
-    -- all 8 are constant `false`. The wrap_main body never reads them.
+  -- 8 constant feature_flags slots. OCaml's `Spec.T.Constant` in
+  -- `wrap_packed_typ` still allocates the underlying `Boolean.typ` field
+  -- (with the check skipped, see spec.ml:485-494). For `Features.Full.none`
+  -- all 8 are constant `false`. The wrap_main body never reads them.
   , featureFlags :: Vector 8 f
-    -- 2 lookup-parameters slots. OCaml's `Lookup_parameters.opt_spec` is
-    -- `Spec.T.Opt { inner = Struct [Scalar Challenge]; flag = use; ... }`.
-    -- For `lookup.use = No`, `Opt.constant_layout_typ` (opt.ml:118) still
-    -- allocates `tuple2 Boolean.typ inner_typ` — that's 1 boolean flag
-    -- field plus 1 scalar challenge field, both unconstrained. The wrap
-    -- circuit never reads them.
+  -- 2 lookup-parameters slots. OCaml's `Lookup_parameters.opt_spec` is
+  -- `Spec.T.Opt { inner = Struct [Scalar Challenge]; flag = use; ... }`.
+  -- For `lookup.use = No`, `Opt.constant_layout_typ` (opt.ml:118) still
+  -- allocates `tuple2 Boolean.typ inner_typ` — that's 1 boolean flag
+  -- field plus 1 scalar challenge field, both unconstrained. The wrap
+  -- circuit never reads them.
   , lookupOptFlag :: f
   , lookupOptScalarChallenge :: f
   }
@@ -1003,8 +1003,15 @@ instance
             uncurry3
               ( \featureFlags lookupOptFlag lookupOptScalarChallenge ->
                   WrapStatementPacked
-                    { fpFields, challenges, scalarChallenges, digests, bulletproofChallenges
-                    , branchData, featureFlags, lookupOptFlag, lookupOptScalarChallenge
+                    { fpFields
+                    , challenges
+                    , scalarChallenges
+                    , digests
+                    , bulletproofChallenges
+                    , branchData
+                    , featureFlags
+                    , lookupOptFlag
+                    , lookupOptScalarChallenge
                     }
               )
               tail3
@@ -1025,8 +1032,15 @@ instance
             uncurry3
               ( \featureFlags lookupOptFlag lookupOptScalarChallenge ->
                   WrapStatementPacked
-                    { fpFields, challenges, scalarChallenges, digests, bulletproofChallenges
-                    , branchData, featureFlags, lookupOptFlag, lookupOptScalarChallenge
+                    { fpFields
+                    , challenges
+                    , scalarChallenges
+                    , digests
+                    , bulletproofChallenges
+                    , branchData
+                    , featureFlags
+                    , lookupOptFlag
+                    , lookupOptScalarChallenge
                     }
               )
               tail3

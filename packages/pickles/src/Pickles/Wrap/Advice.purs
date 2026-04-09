@@ -36,9 +36,9 @@ module Pickles.Wrap.Advice
   , getWrapDomainIndices
   , getOpeningProof
   , getMessages
-    -- Legacy advice class used by the deprecated `Pickles.Wrap.Circuit`
-    -- sub-circuit and the test fixtures it powers (`createWrapProofContext`,
-    -- `WrapE2E`). Phase 7 decides whether to retire or revive this surface.
+  -- Legacy advice class used by the deprecated `Pickles.Wrap.Circuit`
+  -- sub-circuit and the test fixtures it powers (`createWrapProofContext`,
+  -- `WrapE2E`). Phase 7 decides whether to retire or revive this surface.
   , class WrapSubCircuitWitnessM
   , getStepIOFields
   , getEvalsLegacy

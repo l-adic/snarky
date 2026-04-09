@@ -38,17 +38,18 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PackedStatement (PackedStepPublicInput(..))
+import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapOldBpChals(..), WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
-import Pickles.ProofWitness (ProofWitness)
-import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.VerificationKey (StepVK, chooseKey)
+import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
@@ -56,12 +57,15 @@ import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add)
 import Record as Record
 import Safe.Coerce (coerce)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pallas as Pallas
@@ -69,11 +73,6 @@ import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
-
-import Effect.Unsafe (unsafePerformEffect)
-import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compile)
-import Snarky.Constraint.Kimchi.Types (AuxState)
 
 -- | Public input to `wrapMain` at value level. The `WrapStatementPacked`
 -- | newtype is the OCaml-allocation-faithful representation: challenge fields
@@ -334,8 +333,10 @@ wrapMain config (WrapStatementPacked stmtR) = do
     let
       two = fromInt 2 :: WrapField
       four = fromInt 4 :: WrapField
+
       maskVal0Field :: FVar WrapField
       maskVal0Field = coerce maskVal0
+
       maskVal1Field :: FVar WrapField
       maskVal1Field = coerce maskVal1
     let twoTimesMask0 = CVar.scale_ two maskVal0Field
@@ -517,6 +518,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
     branchBools :: Vector branches (FVar WrapField)
     branchBools = map boolToField whichBranch
     { head: bb0, tail: bbRest } = Vector.uncons branchBools
+
     maskByBools :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
     maskByBools { x: F x', y: F y' } =
       let
