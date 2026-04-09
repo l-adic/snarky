@@ -56,7 +56,7 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Types (StepAllEvals, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (StepAllEvals, StepIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
@@ -124,6 +124,7 @@ class
     :: Unit
     -> m
          ( WrapProofOpening
+             StepIPARounds
              (WeierstrassAffinePoint g (F f))
              (Type1 (F f))
          )

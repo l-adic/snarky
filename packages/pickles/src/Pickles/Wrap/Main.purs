@@ -45,19 +45,19 @@ import Pickles.PackedStatement (PackedStepPublicInput(..))
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), WrapField, WrapIPARounds, WrapOldBpChals(..), WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatement)
+import Pickles.Types (MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapOldBpChals(..), WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
-import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
+import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, sub_, true_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
@@ -75,15 +75,25 @@ import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (compile)
 import Snarky.Constraint.Kimchi.Types (AuxState)
 
--- | Public input to `wrapMain` at value level: the structured Wrap statement.
-type WrapMainInput :: Int -> Type
-type WrapMainInput d =
-  WrapStatement d (F WrapField) (Type1 (F WrapField)) Boolean
+-- | Public input to `wrapMain` at value level. The `WrapStatementPacked`
+-- | newtype is the OCaml-allocation-faithful representation: challenge fields
+-- | are `UnChecked (SizedF 128 ...)` (matching `Spec.wrap_packed_typ` which
+-- | allocates them via plain `Field.typ`), Type1 fp fields keep their
+-- | forbidden_shifted_values check, and the field order matches OCaml's
+-- | `Wrap.Statement.In_circuit.to_data` hlist layout.
+-- |
+-- | The `d` parameter is the bulletproof-challenges length, which is
+-- | `Backend.Tick.Rounds.n = StepIPARounds = 16` because the wrap statement
+-- | carries the STEP proof's deferred values (the wrap circuit verifies a
+-- | step proof, so its public input contains the step proof's challenges).
+type WrapMainInput :: Type
+type WrapMainInput =
+  WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
 
 -- | Public input to `wrapMain` at var level (what the circuit body operates on).
-type WrapMainInputVar :: Int -> Type
-type WrapMainInputVar d =
-  WrapStatement d (FVar WrapField) (Type1 (FVar WrapField)) (BoolVar WrapField)
+type WrapMainInputVar :: Type
+type WrapMainInputVar =
+  WrapStatementPacked StepIPARounds (Type1 (FVar WrapField)) (FVar WrapField) (BoolVar WrapField)
 
 -- | Compile-time configuration for `wrapMain`.
 -- |
@@ -254,9 +264,9 @@ wrapMain
   => Add pad1 slot1Width MaxProofsVerified
   => Add 1 _branchesPred branches
   => WrapMainConfig branches
-  -> WrapMainInputVar WrapIPARounds
+  -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapMain config stmt = do
+wrapMain config (WrapStatementPacked stmtR) = do
   let
     wrapEndo = let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField in e
     wrapIpaRounds = reflectType (Proxy @WrapIPARounds)
@@ -265,6 +275,36 @@ wrapMain config stmt = do
 
     boolToField :: BoolVar WrapField -> FVar WrapField
     boolToField = coerce
+
+    -- Project the WrapStatementPacked vectors into named fields, in OCaml
+    -- `to_data` order. The `coerce` calls strip the `UnChecked` wrapper —
+    -- this is the explicit "trusted from public input" boundary the
+    -- conceptually-pure design exposes (see WrapStatementPacked docs).
+    fpVec = stmtR.fpFields
+    chalVec = stmtR.challenges
+    scalarChalVec = stmtR.scalarChallenges
+    digestVec = stmtR.digests
+
+    stmt =
+      { plonk:
+          { alpha: coerce (Vector.index scalarChalVec (unsafeFinite @3 0)) :: SizedF 128 (FVar WrapField)
+          , beta: coerce (Vector.index chalVec (unsafeFinite @2 0)) :: SizedF 128 (FVar WrapField)
+          , gamma: coerce (Vector.index chalVec (unsafeFinite @2 1)) :: SizedF 128 (FVar WrapField)
+          , zeta: coerce (Vector.index scalarChalVec (unsafeFinite @3 1)) :: SizedF 128 (FVar WrapField)
+          , perm: Vector.index fpVec (unsafeFinite @5 4)
+          , zetaToSrsLength: Vector.index fpVec (unsafeFinite @5 2)
+          , zetaToDomainSize: Vector.index fpVec (unsafeFinite @5 3)
+          }
+      , combinedInnerProduct: Vector.index fpVec (unsafeFinite @5 0)
+      , b: Vector.index fpVec (unsafeFinite @5 1)
+      , xi: coerce (Vector.index scalarChalVec (unsafeFinite @3 2)) :: SizedF 128 (FVar WrapField)
+      , bulletproofChallenges:
+          map (coerce :: UnChecked (SizedF 128 (FVar WrapField)) -> SizedF 128 (FVar WrapField)) stmtR.bulletproofChallenges
+      , spongeDigestBeforeEvaluations: Vector.index digestVec (unsafeFinite @3 0)
+      , messagesForNextWrapProofDigest: Vector.index digestVec (unsafeFinite @3 1)
+      , messagesForNextStepProof: Vector.index digestVec (unsafeFinite @3 2)
+      , branchData: stmtR.branchData
+      }
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $ lift $
@@ -302,9 +342,9 @@ wrapMain config stmt = do
     let packedMask = add_ maskVal1Field twoTimesMask0
     let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
-    -- WrapMainInputVar has branchData as a record; we use its domainLog2 field.
-    -- Phase 6 may need to project differently if the public-input shape changes.
-    assertEqual_ stmt.proofState.deferredValues.branchData.domainLog2 packedBranchData
+    -- The wrap statement's branch_data is a single packed field (4*log2 + mask),
+    -- matching OCaml's `Branch_data.wrap_packed_typ`.
+    assertEqual_ stmt.branchData packedBranchData
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
   WrapPrevProofState pps <- label "proof-state" $ exists $ lift $
@@ -359,9 +399,6 @@ wrapMain config stmt = do
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta
       }
-    wrapVanishingPoly z = do
-      zetaToN <- pow2PowMul z wrapDomainLog2
-      pure (zetaToN `sub_` const_ one)
 
     -- Project the index-i `PerProofUnfinalized` and `StepAllEvals` for the
     -- two FOP iterations.
@@ -385,10 +422,12 @@ wrapMain config stmt = do
     Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @MaxProofsVerified 0))
   domain0 <- Pseudo.toDomain @16 domainConfig which0 config.allPossibleDomainLog2s
 
-  -- FOP proof 0
+  -- FOP proof 0. Use the per-domain `vanishingPolynomial` from
+  -- `Pseudo.toDomain` (which mirrors OCaml's `wrap_domain.vanishing_polynomial`)
+  -- — NOT a hand-rolled `pow2PowMul` wrapper.
   { finalized: finalized0, expandedChallenges: expandedChals0 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: domain0.generator, shifts: domain0.shifts } } fopBaseParams)
-    wrapVanishingPoly
+    domain0.vanishingPolynomial
     { unfinalized: unfView0
     , witness: witness0
     , prevChallenges: paddedChals0
@@ -399,7 +438,7 @@ wrapMain config stmt = do
   -- FOP proof 1
   { finalized: finalized1, expandedChallenges: expandedChals1 } <- wrapFinalizeOtherProofCircuit
     (Record.merge { domain: { generator: domain1.generator, shifts: domain1.shifts } } fopBaseParams)
-    wrapVanishingPoly
+    domain1.vanishingPolynomial
     { unfinalized: unfView1
     , witness: witness1
     , prevChallenges: paddedChals1
@@ -510,11 +549,11 @@ wrapMain config stmt = do
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:
-          { plonk: stmt.proofState.deferredValues.plonk
-          , combinedInnerProduct: stmt.proofState.deferredValues.combinedInnerProduct
-          , b: stmt.proofState.deferredValues.b
-          , xi: stmt.proofState.deferredValues.xi
-          , bulletproofChallenges: stmt.proofState.deferredValues.bulletproofChallenges
+          { plonk: stmt.plonk
+          , combinedInnerProduct: stmt.combinedInnerProduct
+          , b: stmt.b
+          , xi: stmt.xi
+          , bulletproofChallenges: stmt.bulletproofChallenges
           }
       , wComm: messages.wComm
       , zComm: messages.zComm
@@ -522,9 +561,9 @@ wrapMain config stmt = do
       , opening: openingProof
       }
     verifyInput =
-      { spongeDigestBeforeEvaluations: stmt.proofState.spongeDigestBeforeEvaluations
-      , messagesForNextWrapProofDigest: stmt.proofState.messagesForNextWrapProof
-      , bulletproofChallenges: stmt.proofState.deferredValues.bulletproofChallenges
+      { spongeDigestBeforeEvaluations: stmt.spongeDigestBeforeEvaluations
+      , messagesForNextWrapProofDigest: stmt.messagesForNextWrapProofDigest
+      , bulletproofChallenges: stmt.bulletproofChallenges
       , newBpChallenges: expandedChals0 :< expandedChals1 :< Vector.nil
       , sg: openingProof.sg
       }
@@ -555,7 +594,7 @@ compileWrapMain
   -> CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
 compileWrapMain config = unsafePerformEffect $
   compile
-    (Proxy @(WrapMainInput WrapIPARounds))
+    (Proxy @WrapMainInput)
     (Proxy @Unit)
     (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @branches @slot0Width @slot1Width config stmt)

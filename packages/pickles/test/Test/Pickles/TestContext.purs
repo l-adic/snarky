@@ -318,7 +318,7 @@ type WrapMainAdvice (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) f =
   , oldBpChals :: WrapOldBpChals slot0Width slot1Width (F f)
   , evals :: Vector mpv (StepAllEvals (F f))
   , wrapDomainIndices :: Vector mpv (F f)
-  , openingProof :: WrapProofOpening (WeierstrassAffinePoint VestaG (F f)) (Type1 (F f))
+  , openingProof :: WrapProofOpening StepIPARounds (WeierstrassAffinePoint VestaG (F f)) (Type1 (F f))
   , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F f))
   }
 
