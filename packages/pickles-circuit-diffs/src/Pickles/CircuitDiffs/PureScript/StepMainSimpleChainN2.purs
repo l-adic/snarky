@@ -14,25 +14,25 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Vector (Vector)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Data.Vector (Vector)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBase)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
-import Snarky.Constraint.Kimchi (KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState)
-import Type.Proxy (Proxy(..))
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainN2Params =
   { lagrangeComms :: Array (LagrangeBase StepField)
