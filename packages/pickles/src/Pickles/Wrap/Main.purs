@@ -26,6 +26,7 @@ module Pickles.Wrap.Main
   , WrapMainInput
   , WrapMainInputVar
   , wrapMain
+  , compileWrapMain
   ) where
 
 import Prelude
@@ -59,7 +60,8 @@ import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pallas as Pallas
@@ -67,6 +69,11 @@ import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
+
+import Effect.Unsafe (unsafePerformEffect)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Compile (compile)
+import Snarky.Constraint.Kimchi.Types (AuxState)
 
 -- | Public input to `wrapMain` at value level: the structured Wrap statement.
 type WrapMainInput :: Int -> Type
@@ -523,3 +530,33 @@ wrapMain config stmt = do
       }
 
   wrapVerify ivpParams fullIvpInput verifyInput
+
+-------------------------------------------------------------------------------
+-- | Compile wrapMain
+-- |
+-- | Mirrors `compileStepMain` (Pickles.Step.Main): uses `compile` with the
+-- | `Effect` base monad. The `Effect` instance of `WrapWitnessM` throws on
+-- | every method, but during compilation `exists` discards the prover side
+-- | so the throws never fire. `unsafePerformEffect` is sound here because
+-- | compilation is deterministic and pure-in-effect.
+-------------------------------------------------------------------------------
+
+compileWrapMain
+  :: forall @branches @slot0Width @slot1Width pad0 pad1 _branchesPred
+   . Reflectable branches Int
+  => Reflectable slot0Width Int
+  => Reflectable slot1Width Int
+  => Reflectable pad0 Int
+  => Reflectable pad1 Int
+  => Add pad0 slot0Width MaxProofsVerified
+  => Add pad1 slot1Width MaxProofsVerified
+  => Add 1 _branchesPred branches
+  => WrapMainConfig branches
+  -> CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
+compileWrapMain config = unsafePerformEffect $
+  compile
+    (Proxy @(WrapMainInput WrapIPARounds))
+    (Proxy @Unit)
+    (Proxy @(KimchiConstraint WrapField))
+    (\stmt -> wrapMain @branches @slot0Width @slot1Width config stmt)
+    Kimchi.initialState

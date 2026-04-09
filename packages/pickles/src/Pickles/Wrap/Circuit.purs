@@ -19,23 +19,14 @@ module Pickles.Wrap.Circuit
 
 import Prelude
 
-import Control.Monad.Trans.Class (lift)
-import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (for)
-import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
-import Data.Vector as Vector
+import Data.Vector (Vector)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
-import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
-import Pickles.Verify.Types (toStepDeferredValues)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
-import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
-import Pickles.Wrap.Verify (wrapVerify)
+import Pickles.Types (StepStatement, WrapStatement)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, Snarky, UnChecked(..), assert_, const_, exists, fieldsToValue, label, not_, or_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F, FVar, Snarky, label)
 import Snarky.Circuit.Kimchi (GroupMapParams, SplitField, Type1, Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pallas as Pallas
@@ -86,10 +77,17 @@ type WrapParams f =
 -- | - `mpv`: max_proofs_verified (always 2 in Pickles)
 -- | - `n`: number of Step proof branches (currently 1)
 -- | - `ds`: Step IPA rounds
+-- | TODO(phase7): retarget against the new Pickles.Wrap.Advice methods
+-- |
+-- | The previous body called `getStepIOFields` / `getUnfinalizedProofs` /
+-- | `getOldBpChallenges` etc., which no longer exist on the rewritten
+-- | WrapWitnessM. Phase 4 disables this body so the package compiles; the
+-- | sub-circuit will be either re-targeted at the new advice methods or
+-- | deprecated (it's only used by `Test.Pickles.WrapE2E` and a single
+-- | TestContext satisfiability check, both of which Phase 7 deals with).
 wrapCircuit
   :: forall @mpv @n @ds _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-  => WrapWitnessM mpv ds WrapIPARounds m Pallas.ScalarField
   => Reflectable mpv Int
   => Reflectable ds Int
   => Reflectable n Int
@@ -99,74 +97,5 @@ wrapCircuit
   => WrapParams Pallas.ScalarField
   -> WrapInputVar ds
   -> Snarky (KimchiConstraint Pallas.ScalarField) t m Unit
-wrapCircuit params wrapStmt = label "wrap-circuit" do
-  -- 1. Obtain private witness data via advisory monad
-  UnChecked publicInput <- exists $ lift $ do
-    fs <- getStepIOFields @mpv @ds @WrapIPARounds @m @Pallas.ScalarField unit
-    pure $ UnChecked $ fieldsToValue @_ @(StepPublicInput n ds WrapIPARounds (F Pallas.ScalarField) Boolean) (map unwrap fs)
-  evalsAll <- exists $ lift $ getEvals @mpv @ds @WrapIPARounds unit
-  messages <- exists $ lift $ getMessages @mpv @ds @WrapIPARounds unit
-  openingProof <- exists $ lift $ getOpeningProof @mpv @ds @WrapIPARounds unit
-  -- UnChecked: OCaml's exists allocates raw fields without bit-range checks.
-  -- The SizedF 128 scalar challenges inside UnfinalizedProof and oldBpChallenges
-  -- would otherwise generate ~382 constraints each (unpack + assert high bits zero).
-  -- The actual range checking happens later in the FOP via squeezeScalar.
-  UnChecked unfinalizedProofs <- exists $ lift $ UnChecked <$> getUnfinalizedProofs @mpv @ds @WrapIPARounds @_ @Pallas.ScalarField unit
-  _sgOld <- exists $ lift $ getStepAccs @mpv @ds @WrapIPARounds unit
-  UnChecked oldBpChallenges <- exists $ lift $ UnChecked <$> getOldBpChallenges @mpv @ds @WrapIPARounds unit
-
-  -- 2. Finalize each of mpv previous proofs
-  -- OCaml: Vector.mapn [unfinalized_proofs; old_bp_chals; evals; wrap_domains]
-  --        ~f:(fun [...] -> finalize_other_proof ...)
-  let
-    fopParams =
-      { domain:
-          { generator: const_ params.domain.generator
-          , shifts: map const_ params.domain.shifts
-          }
-      , domainLog2: params.domainLog2
-      , srsLengthLog2: params.srsLengthLog2
-      , linearizationPoly: params.linearizationPoly
-      , endo: params.endo
-      }
-  let
-    wrapVanishingPoly z = do
-      zetaToN <- pow2PowMul z params.domainLog2
-      pure (zetaToN `sub_` const_ one)
-  expandedChallengesAll <- for (Vector.zip unfinalizedProofs (Vector.zip evalsAll oldBpChallenges)) \(Tuple unfinalized (Tuple witness prevChallenges)) -> do
-    { finalized, expandedChallenges } <-
-      wrapFinalizeOtherProofCircuit fopParams wrapVanishingPoly
-        { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
-    -- Assert finalized || not shouldFinalize
-    finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
-    assert_ finalizedOrNotRequired
-    pure expandedChallenges
-
-  -- 3. IVP + assertions (wrap_main.ml:78-135)
-  let
-    constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
-    fullIvpInput =
-      { publicInput
-      -- TODO: pass real sgOld once oracle/transcript computation includes them
-      , sgOld: Vector.nil
-      , sgOldMask: Vector.nil
-      , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues
-      , sigmaCommLast: constPt params.sigmaCommLast
-      , columnComms:
-          { index: map constPt params.columnComms.index
-          , coeff: map constPt params.columnComms.coeff
-          , sigma: map constPt params.columnComms.sigma
-          }
-      , wComm: messages.wComm
-      , zComm: messages.zComm
-      , tComm: messages.tComm
-      , opening: openingProof
-      }
-    verifyInput =
-      { spongeDigestBeforeEvaluations: wrapStmt.proofState.spongeDigestBeforeEvaluations
-      , messagesForNextWrapProofDigest: wrapStmt.proofState.messagesForNextWrapProof
-      , bulletproofChallenges: (toStepDeferredValues wrapStmt.proofState.deferredValues).bulletproofChallenges
-      , newBpChallenges: expandedChallengesAll
-      , sg: openingProof.sg
-      }
-  wrapVerify params fullIvpInput verifyInput
+wrapCircuit _params _wrapStmt = label "wrap-circuit" do
+  pure unit

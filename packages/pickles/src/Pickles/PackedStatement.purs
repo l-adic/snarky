@@ -27,6 +27,14 @@
 -- |            `Statement.to_data` (line 1344).
 module Pickles.PackedStatement
   ( PackedStepPublicInput(..)
+  -- Re-exported for circuit-diffs test wrappers that construct
+  -- PackedStepPublicInput from a flat input array. Production code should
+  -- prefer the record constructor; the tuple helpers exist purely as a
+  -- convenience to keep test wrappers small.
+  , PerProofTuple
+  , StmtTuple
+  , fromPackedTuple
+  , toPackedTuple
   ) where
 
 import Prelude
