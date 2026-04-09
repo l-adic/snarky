@@ -1,29 +1,38 @@
 -- | Packed Step Statement with OCaml-compatible field ordering.
 -- |
--- | OCaml's `Spec.pack` serializes Per_proof fields in `to_data` order
--- | (composition_types.ml:1212), not alphabetical.  Since the Lagrange MSM
--- | for x_hat consumes fields left-to-right, the ordering must match.
+-- | OCaml's `Spec.pack` serializes `Per_proof` fields in `to_data` order
+-- | (composition_types.ml:1212), not alphabetical. Since the Lagrange MSM
+-- | for `x_hat` consumes fields left-to-right, the ordering must match.
 -- |
--- | This newtype wraps the StepStatement record but delegates CircuitType
--- | and PublicInputCommit to a nested-tuple whose layout matches OCaml:
+-- | This newtype wraps the Step statement record but its `CircuitType` and
+-- | `PublicInputCommit` instances delegate through nested `Data.Tuple.Nested`
+-- | shapes that mirror OCaml's per-proof and statement layouts:
 -- |
--- |   Per_proof → (fq5, digest, challenge2, scalarChal3, bpChals, bool)
--- |     fq order: cip, b, ztSrs, ztDs, perm
+-- |   Per_proof to_data:
+-- |     [ fq (5)         — combined_inner_product, b, ztSrs, ztDs, perm
+-- |     ; digest         — sponge_digest_before_evaluations
+-- |     ; challenge (2)  — beta, gamma
+-- |     ; scalar_chal (3)— alpha, zeta, xi
+-- |     ; bp_challenges  — bulletproof_challenges
+-- |     ; bool           — should_finalize
+-- |     ]
 -- |
--- |   Statement → (Vector perProof, mfnsp, Vector mfnwp)
+-- |   Statement to_data:
+-- |     [ Vector n per_proof
+-- |     ; messages_for_next_step_proof
+-- |     ; Vector n messages_for_next_wrap_proof
+-- |     ]
 -- |
--- | Reference: composition_types.ml Per_proof.In_circuit.to_data (line 1212),
--- |            Statement.to_data (line 1344), Statement.spec (line 1370)
+-- | Reference: composition_types.ml `Per_proof.In_circuit.to_data` (line 1212),
+-- |            `Statement.to_data` (line 1344).
 module Pickles.PackedStatement
   ( PackedStepPublicInput(..)
-  , toPackedTuple
-  , fromPackedTuple
   ) where
 
 import Prelude
 
 import Data.Fin (unsafeFinite)
-import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (Tuple3, Tuple6, tuple3, tuple6, uncurry3, uncurry6)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.PublicInputCommit (class PublicInputCommit, LagrangeBase, ScalarMulResult, scalarMuls)
@@ -36,7 +45,7 @@ import Snarky.Data.EllipticCurve (CurveParams)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
--- | Newtype
+-- | The packed statement newtype
 -------------------------------------------------------------------------------
 
 newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInput
@@ -48,100 +57,74 @@ newtype PackedStepPublicInput (n :: Int) (dw :: Int) fv b = PackedStepPublicInpu
   }
 
 -------------------------------------------------------------------------------
--- | CircuitType instance
+-- | Internal tuple shapes mirroring OCaml `to_data` order
 -------------------------------------------------------------------------------
 
+-- | One per-proof "page" in OCaml `to_data` order. Each component matches
+-- | the corresponding `Spec.T.Vector` entry in `Per_proof.In_circuit.spec`.
+type PerProofTuple dw fv b =
+  Tuple6
+    (Vector 5 (Type2 (SplitField fv b))) -- fq: cip, b, ztSrs, ztDs, perm
+    fv -- digest: sponge_digest_before_evaluations
+    (Vector 2 (SizedF 128 fv)) -- challenge: beta, gamma
+    (Vector 3 (SizedF 128 fv)) -- scalar_challenge: alpha, zeta, xi
+    (Vector dw (SizedF 128 fv)) -- bp_challenges
+    b -- bool: should_finalize
+
+-- | Whole-statement tuple in OCaml `Statement.to_data` order:
+-- | (Vector mpv per_proof, msg_for_next_step, Vector mpv msg_for_next_wrap).
+type StmtTuple n dw fv b =
+  Tuple3
+    (Vector n (PerProofTuple dw fv b))
+    fv
+    (Vector n fv)
+
+-- | Convenience alias used by both instances to drive
+-- | `genericValueToFields` / `genericFieldsToValue` etc.
 type StmtTupleVal n dw f = StmtTuple n dw (F f) Boolean
 
-instance
-  ( PrimeField f
-  , CircuitType f (StmtTupleVal n dw f) (StmtTuple n dw (FVar f) (BoolVar f))
-  ) =>
-  CircuitType f
-    (PackedStepPublicInput n dw (F f) Boolean)
-    (PackedStepPublicInput n dw (FVar f) (BoolVar f)) where
-  valueToFields x = valueToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
-  fieldsToValue fs = fromPackedTuple (fieldsToValue @f @(StmtTupleVal n dw f) fs)
-  sizeInFields _ _ = sizeInFields (Proxy @f) (Proxy @(StmtTupleVal n dw f))
-  varToFields x = varToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
-  fieldsToVar fs = fromPackedTuple (fieldsToVar @f @(StmtTupleVal n dw f) fs)
-
 -------------------------------------------------------------------------------
--- | PublicInputCommit instance
+-- | Internal conversions (NOT exported — clients construct PackedStepPublicInput
+-- | directly via the record constructor and never see the tuple shape).
 -------------------------------------------------------------------------------
 
-instance
-  ( PublicInputCommit (StmtTuple n dw (FVar f) (BoolVar f)) f
-  ) =>
-  PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
-  scalarMuls
-    :: forall t m
-     . CircuitM f (KimchiConstraint f) t m
-    => CurveParams f
-    -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
-    -> Array (LagrangeBase f)
-    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-  scalarMuls params x bases =
-    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) bases
-
--- Boilerplate
-
--------------------------------------------------------------------------------
--- | Tuple types matching OCaml layout
--------------------------------------------------------------------------------
-
-type PerProofTuple dw fv b =
-  Tuple (Vector 5 (Type2 (SplitField fv b))) -- [cip, b, ztSrs, ztDs, perm]
-    ( Tuple fv -- sponge_digest
-        ( Tuple (Vector 2 (SizedF 128 fv)) -- [beta, gamma]
-            ( Tuple (Vector 3 (SizedF 128 fv)) -- [alpha, zeta, xi]
-                ( Tuple (Vector dw (SizedF 128 fv)) -- bp_challenges
-                    b
-                )
-            )
-        )
-    ) -- should_finalize
-
-type StmtTuple n dw fv b =
-  Tuple (Vector n (PerProofTuple dw fv b))
-    (Tuple fv (Vector n fv))
-
--------------------------------------------------------------------------------
--- | Conversion (polymorphic in fv/b, works for both value and var level)
--------------------------------------------------------------------------------
-
-toPackedTuple :: forall n dw fv b. PackedStepPublicInput n dw fv b -> StmtTuple n dw fv b
+toPackedTuple
+  :: forall n dw fv b
+   . PackedStepPublicInput n dw fv b
+  -> StmtTuple n dw fv b
 toPackedTuple (PackedStepPublicInput s) =
-  Tuple
-    (map ppToTuple s.proofState.unfinalizedProofs)
-    (Tuple s.proofState.messagesForNextStepProof s.messagesForNextWrapProof)
+  tuple3
+    (map perProofToTuple s.proofState.unfinalizedProofs)
+    s.proofState.messagesForNextStepProof
+    s.messagesForNextWrapProof
   where
-  ppToTuple up =
+  perProofToTuple up =
     let
       dv = up.deferredValues
       p = dv.plonk
     in
-      Tuple (dv.combinedInnerProduct :< dv.b :< p.zetaToSrsLength :< p.zetaToDomainSize :< p.perm :< Vector.nil)
-        ( Tuple up.spongeDigestBeforeEvaluations
-            ( Tuple (p.beta :< p.gamma :< Vector.nil)
-                ( Tuple (p.alpha :< p.zeta :< dv.xi :< Vector.nil)
-                    (Tuple dv.bulletproofChallenges up.shouldFinalize)
-                )
-            )
-        )
+      tuple6
+        (dv.combinedInnerProduct :< dv.b :< p.zetaToSrsLength :< p.zetaToDomainSize :< p.perm :< Vector.nil)
+        up.spongeDigestBeforeEvaluations
+        (p.beta :< p.gamma :< Vector.nil)
+        (p.alpha :< p.zeta :< dv.xi :< Vector.nil)
+        dv.bulletproofChallenges
+        up.shouldFinalize
 
-fromPackedTuple :: forall n dw fv b. StmtTuple n dw fv b -> PackedStepPublicInput n dw fv b
-fromPackedTuple (Tuple proofs (Tuple mfnsp mfnwp)) =
+fromPackedTuple
+  :: forall n dw fv b
+   . StmtTuple n dw fv b
+  -> PackedStepPublicInput n dw fv b
+fromPackedTuple = uncurry3 \proofs mfnsp mfnwp ->
   PackedStepPublicInput
     { proofState:
-        { unfinalizedProofs: map ppFromTuple proofs
+        { unfinalizedProofs: map perProofFromTuple proofs
         , messagesForNextStepProof: mfnsp
         }
     , messagesForNextWrapProof: mfnwp
     }
   where
-  ppFromTuple :: PerProofTuple dw fv b -> UnfinalizedProof dw fv (Type2 (SplitField fv b)) b
-  ppFromTuple (Tuple fq (Tuple digest (Tuple ch (Tuple sc (Tuple bpc bool))))) =
+  perProofFromTuple = uncurry6 \fq digest ch sc bpc bool ->
     { deferredValues:
         { plonk:
             { alpha: sc !! unsafeFinite @3 0
@@ -160,3 +143,38 @@ fromPackedTuple (Tuple proofs (Tuple mfnsp mfnwp)) =
     , shouldFinalize: bool
     , spongeDigestBeforeEvaluations: digest
     }
+
+-------------------------------------------------------------------------------
+-- | CircuitType instance — delegates to the tuple, which gives OCaml ordering.
+-------------------------------------------------------------------------------
+
+instance
+  ( PrimeField f
+  , CircuitType f (StmtTupleVal n dw f) (StmtTuple n dw (FVar f) (BoolVar f))
+  ) =>
+  CircuitType f
+    (PackedStepPublicInput n dw (F f) Boolean)
+    (PackedStepPublicInput n dw (FVar f) (BoolVar f)) where
+  sizeInFields pf _ = sizeInFields pf (Proxy @(StmtTupleVal n dw f))
+  valueToFields x = valueToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
+  fieldsToValue fs = fromPackedTuple (fieldsToValue @f @(StmtTupleVal n dw f) fs)
+  varToFields x = varToFields @f @(StmtTupleVal n dw f) (toPackedTuple x)
+  fieldsToVar fs = fromPackedTuple (fieldsToVar @f @(StmtTupleVal n dw f) fs)
+
+-------------------------------------------------------------------------------
+-- | PublicInputCommit instance — same delegation pattern.
+-------------------------------------------------------------------------------
+
+instance
+  ( PublicInputCommit (StmtTuple n dw (FVar f) (BoolVar f)) f
+  ) =>
+  PublicInputCommit (PackedStepPublicInput n dw (FVar f) (BoolVar f)) f where
+  scalarMuls
+    :: forall t m
+     . CircuitM f (KimchiConstraint f) t m
+    => CurveParams f
+    -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
+    -> Array (LagrangeBase f)
+    -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
+  scalarMuls params x bases =
+    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) bases

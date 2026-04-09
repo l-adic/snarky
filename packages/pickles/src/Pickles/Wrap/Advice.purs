@@ -45,7 +45,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.Types (StepAllEvals, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
 import Snarky.Circuit.DSL (F)
-import Snarky.Circuit.Kimchi (SplitField, Type1, Type2)
+import Snarky.Circuit.Kimchi (Type1, Type2)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 
@@ -72,14 +72,16 @@ class
   getWhichBranch :: Unit -> m (F f)
 
   -- | OCaml: `Req.Proof_state` (`wrap_main.ml:267`). Returns the combined
-  -- | `mpv` unfinalized proofs (Type2-shifted scalars) and the digest
-  -- | `messages_for_next_step_proof` field.
+  -- | `mpv` unfinalized proofs (`Type2 of Field.t` — a single raw field per
+  -- | deferred value, NOT pre-split) and the digest `messages_for_next_step_proof`
+  -- | field. The split into `(sDiv2, sOdd)` happens later via
+  -- | `splitFieldCircuit` in `pack_statement`.
   getWrapProofState
     :: Unit
     -> m
          ( WrapPrevProofState
              mpv
-             (Type2 (SplitField (F f) Boolean))
+             (Type2 (F f))
              (F f)
              Boolean
          )
