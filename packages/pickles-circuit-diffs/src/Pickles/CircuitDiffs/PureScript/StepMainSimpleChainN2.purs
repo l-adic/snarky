@@ -18,10 +18,17 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
+import Data.Vector (Vector)
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBase)
-import Pickles.Step.Main (RuleOutput, compileStepMain)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Types (StepField)
+import Snarky.Backend.Compile (compile)
+import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
+import Type.Proxy (Proxy(..))
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -70,5 +77,7 @@ simpleChainN2Rule appState = do
     }
 
 compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
-compileStepMainSimpleChainN2 params =
-  compileStepMain @2 @67 simpleChainN2Rule params dummyWrapSg
+compileStepMainSimpleChainN2 params = unsafePerformEffect $
+  compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    (\_ -> stepMain @2 @67 simpleChainN2Rule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    Kimchi.initialState
