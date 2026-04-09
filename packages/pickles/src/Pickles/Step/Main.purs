@@ -16,7 +16,6 @@ module Pickles.Step.Main
   -- * Generic step_main
   , StepMainSrsData
   , stepMain
-  , compileStepMain
   ) where
 
 import Prelude
@@ -27,8 +26,6 @@ import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Effect (Effect)
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
@@ -38,15 +35,11 @@ import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (CircuitBuilderState)
-import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
-import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
-import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), curveParams, endoScalar)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
@@ -546,30 +539,3 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
 
   pure outputV
 
--------------------------------------------------------------------------------
--- | Compile step_main
--- |
--- | Uses `compile` with `m = Effect`. The Effect-based StepWitnessM instance
--- | (from Pickles.Step.Advice) throws if any advice method is called — but
--- | during compilation, `exists` in `CircuitBuilderT` ignores the AsProverT
--- | argument entirely, so the throw never fires. `unsafePerformEffect` is safe
--- | here because the compilation is deterministic and pure-in-effect.
--------------------------------------------------------------------------------
-
-compileStepMain
-  :: forall @n pad unfsTotal digestPlusUnfs @outputSize
-   . Reflectable n Int
-  => Reflectable pad Int
-  => Add pad n MaxProofsVerified
-  => Mul n 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs n outputSize
-  => Reflectable outputSize Int
-  => (forall t. CircuitM StepField (KimchiConstraint StepField) t Effect => FVar StepField -> Snarky (KimchiConstraint StepField) t Effect (RuleOutput n StepField))
-  -> StepMainSrsData
-  -> AffinePoint StepField
-  -> CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
-compileStepMain rule srsData dummySg = unsafePerformEffect $
-  compile (Proxy @Unit) (Proxy @(Vector outputSize (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @n @outputSize rule srsData dummySg)
-    Kimchi.initialState

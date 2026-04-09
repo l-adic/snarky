@@ -30,7 +30,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify.Types (toStepDeferredValues)
-import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBpChallenges, getOpeningProof, getStepAccs, getStepIOFields, getUnfinalizedProofs)
+import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM, getEvalsLegacy, getMessagesLegacy, getOldBpChallenges, getOpeningProofLegacy, getStepAccsLegacy, getStepIOFields, getUnfinalizedProofs)
 import Pickles.Wrap.FinalizeOtherProof (pow2PowMul, wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
@@ -89,7 +89,7 @@ type WrapParams f =
 wrapCircuit
   :: forall @mpv @n @ds _l3 t m
    . CircuitM Pallas.ScalarField (KimchiConstraint Pallas.ScalarField) t m
-  => WrapWitnessM mpv ds WrapIPARounds m Pallas.ScalarField
+  => WrapSubCircuitWitnessM mpv ds WrapIPARounds m Pallas.ScalarField
   => Reflectable mpv Int
   => Reflectable ds Int
   => Reflectable n Int
@@ -104,20 +104,15 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
   UnChecked publicInput <- exists $ lift $ do
     fs <- getStepIOFields @mpv @ds @WrapIPARounds @m @Pallas.ScalarField unit
     pure $ UnChecked $ fieldsToValue @_ @(StepPublicInput n ds WrapIPARounds (F Pallas.ScalarField) Boolean) (map unwrap fs)
-  evalsAll <- exists $ lift $ getEvals @mpv @ds @WrapIPARounds unit
-  messages <- exists $ lift $ getMessages @mpv @ds @WrapIPARounds unit
-  openingProof <- exists $ lift $ getOpeningProof @mpv @ds @WrapIPARounds unit
+  evalsAll <- exists $ lift $ getEvalsLegacy @mpv @ds @WrapIPARounds unit
+  messages <- exists $ lift $ getMessagesLegacy @mpv @ds @WrapIPARounds unit
+  openingProof <- exists $ lift $ getOpeningProofLegacy @mpv @ds @WrapIPARounds unit
   -- UnChecked: OCaml's exists allocates raw fields without bit-range checks.
-  -- The SizedF 128 scalar challenges inside UnfinalizedProof and oldBpChallenges
-  -- would otherwise generate ~382 constraints each (unpack + assert high bits zero).
-  -- The actual range checking happens later in the FOP via squeezeScalar.
   UnChecked unfinalizedProofs <- exists $ lift $ UnChecked <$> getUnfinalizedProofs @mpv @ds @WrapIPARounds @_ @Pallas.ScalarField unit
-  _sgOld <- exists $ lift $ getStepAccs @mpv @ds @WrapIPARounds unit
+  _sgOld <- exists $ lift $ getStepAccsLegacy @mpv @ds @WrapIPARounds unit
   UnChecked oldBpChallenges <- exists $ lift $ UnChecked <$> getOldBpChallenges @mpv @ds @WrapIPARounds unit
 
   -- 2. Finalize each of mpv previous proofs
-  -- OCaml: Vector.mapn [unfinalized_proofs; old_bp_chals; evals; wrap_domains]
-  --        ~f:(fun [...] -> finalize_other_proof ...)
   let
     fopParams =
       { domain:
@@ -137,17 +132,15 @@ wrapCircuit params wrapStmt = label "wrap-circuit" do
     { finalized, expandedChallenges } <-
       wrapFinalizeOtherProofCircuit fopParams wrapVanishingPoly
         { unfinalized, witness, prevChallenges: prevChallenges :< Vector.nil }
-    -- Assert finalized || not shouldFinalize
     finalizedOrNotRequired <- or_ finalized (not_ unfinalized.shouldFinalize)
     assert_ finalizedOrNotRequired
     pure expandedChallenges
 
-  -- 3. IVP + assertions (wrap_main.ml:78-135)
+  -- 3. IVP + assertions
   let
     constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
     fullIvpInput =
       { publicInput
-      -- TODO: pass real sgOld once oracle/transcript computation includes them
       , sgOld: Vector.nil
       , sgOldMask: Vector.nil
       , deferredValues: toStepDeferredValues wrapStmt.proofState.deferredValues

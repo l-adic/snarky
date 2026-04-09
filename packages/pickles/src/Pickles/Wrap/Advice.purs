@@ -1,30 +1,51 @@
 -- | Advisory monad for the Wrap circuit's private witness data.
 -- |
--- | In OCaml Pickles (requests.ml), the Wrap circuit uses 8 request types
--- | to obtain private data via snarky's exists/handler mechanism.
+-- | In OCaml Pickles (`mina/src/lib/crypto/pickles/wrap_main.ml`), the Wrap
+-- | circuit allocates its private witness via 8 `Req.*` requests. Each method
+-- | here corresponds to one OCaml `exists ~request:Req.*` call, in the same
+-- | source order so the resulting constraint system has the same allocation
+-- | layout.
 -- |
--- | Parameters:
--- | - `mpv`: max_proofs_verified (always 2 in Pickles). Determines the size of
--- |          vectors for unfinalized proofs, evals, step accumulators, etc.
--- | - `ds`: Step IPA rounds (determines lr vector size in opening proof)
--- | - `dw`: Wrap IPA rounds (determines bulletproof challenge dimension in unfinalized proof)
--- | - `m`: Base monad (Effect for compilation, ProverM for proving)
--- | - `f`: Circuit field (Pallas.ScalarField for Wrap)
+-- | Request inventory (in OCaml `exists` order):
 -- |
--- | NOT YET IMPLEMENTED:
--- |   Req.Which_branch    Selects which step proof branch is being verified.
--- |   Req.Wrap_domain_indices  Domain size selection per proof.
+-- |   1. Req.Which_branch         — single Field selecting the active branch
+-- |   2. Req.Proof_state          — combined `mpv` unfinalized proofs +
+-- |                                 messages_for_next_step_proof
+-- |   3. Req.Step_accs            — Vector of `mpv` step accumulators (curve points)
+-- |   4. Req.Old_bulletproof_challenges
+-- |                               — heterogeneous bp-chals grouped by slot
+-- |                                 (`Max_widths_by_slot.maxes`)
+-- |   5. Req.Evals                — Vector of `mpv` `StepAllEvals`
+-- |   6. Req.Wrap_domain_indices  — Vector of `mpv` Field indices
+-- |   7. Req.Openings_proof       — single `WrapProofOpening` (Type1 scalars)
+-- |   8. Req.Messages             — single `WrapProofMessages`
 -- |
--- | Reference: mina/src/lib/pickles/requests.ml (Wrap module)
--- |            mina/src/lib/pickles/wrap_main.ml
+-- | The wrap statement (`Wrap.Statement.In_circuit.t`) is NOT a request — it
+-- | enters as the public input via `~input_typ` in OCaml. The PureScript
+-- | `wrapMain` accepts it as a `WrapInputVar` parameter.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/wrap_main.ml lines 138–578
 module Pickles.Wrap.Advice
-  ( class WrapWitnessM
-  , getStepIOFields
-  , getEvals
-  , getMessages
-  , getOpeningProof
-  , getUnfinalizedProofs
+  ( -- The new advice class used by `Pickles.Wrap.Main.wrapMain`.
+    class WrapWitnessM
+  , getWhichBranch
+  , getWrapProofState
   , getStepAccs
+  , getOldBulletproofChallenges
+  , getEvals
+  , getWrapDomainIndices
+  , getOpeningProof
+  , getMessages
+  -- Legacy advice class used by the deprecated `Pickles.Wrap.Circuit`
+  -- sub-circuit and the test fixtures it powers (`createWrapProofContext`,
+  -- `WrapE2E`). Phase 7 decides whether to retire or revive this surface.
+  , class WrapSubCircuitWitnessM
+  , getStepIOFields
+  , getEvalsLegacy
+  , getMessagesLegacy
+  , getOpeningProofLegacy
+  , getUnfinalizedProofs
+  , getStepAccsLegacy
   , getOldBpChallenges
   ) where
 
@@ -35,39 +56,129 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Types (StepAllEvals, StepIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
-import Snarky.Curves.Class (class PrimeField)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 
 -- | Advisory monad for the Wrap circuit.
 -- |
--- | Provides private witness data via `exists $ lift $ getXxx unit`.
--- | The Wrap circuit verifies one Step proof but finalizes `mpv` previous
--- | Wrap proofs (padded with dummies when fewer are real).
-class Monad m <= WrapWitnessM (mpv :: Int) (ds :: Int) (dw :: Int) m f where
-  -- | Step I/O as flat field elements (for publicInputCommit in IVP).
-  -- | OCaml: Req.Proof_state (step statement portion)
-  getStepIOFields :: Unit -> m (Array (F f))
+-- | Parameters:
+-- | - `branches`: number of step circuit variants (one_hot length)
+-- | - `mpv`: max_proofs_verified (always 2 in Pickles); determines the size
+-- |          of the unfinalized-proofs / step-accs / evals / wrap-domain
+-- |          vectors.
+-- | - `slot0Width`, `slot1Width`: per-slot widths of `Max_widths_by_slot`,
+-- |          determining the shape of `Req.Old_bulletproof_challenges`.
+-- | - `g`: commitment curve of the Step proof being verified (= `VestaG`)
+-- | - `f`: base field of `g` — uniquely determined via `WeierstrassCurve f g`
+-- |        (= `Vesta.BaseField` = `WrapField`)
+-- | - `m`: base monad (Effect for compilation, WrapProverM for proving)
+class
+  ( Monad m
+  , WeierstrassCurve f g
+  ) <=
+  WrapWitnessM (branches :: Int) (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) g f m
+  | g -> f where
+  -- | OCaml: `Req.Which_branch` (`wrap_main.ml:223`).
+  getWhichBranch :: Unit -> m (F f)
 
-  -- | Polynomial evaluations for each of `mpv` finalize calls.
-  -- | OCaml: Req.Evals (Vector mpv)
-  getEvals :: Unit -> m (Vector mpv (ProofWitness (F f)))
+  -- | OCaml: `Req.Proof_state` (`wrap_main.ml:267`). Returns the combined
+  -- | `mpv` unfinalized proofs (`Type2 of Field.t` — a single raw field per
+  -- | deferred value, NOT pre-split) and the digest `messages_for_next_step_proof`
+  -- | field. The split into `(sDiv2, sOdd)` happens later via
+  -- | `splitFieldCircuit` in `pack_statement`.
+  getWrapProofState
+    :: Unit
+    -> m
+         ( WrapPrevProofState
+             mpv
+             (Type2 (F f))
+             (F f)
+             Boolean
+         )
 
-  -- | Protocol commitments for IVP verification.
-  -- | OCaml: Req.Messages
+  -- | OCaml: `Req.Step_accs` (`wrap_main.ml:369`). Vector of `mpv` step
+  -- | accumulators (commitment-curve affine points).
+  getStepAccs :: Unit -> m (Vector mpv (WeierstrassAffinePoint g (F f)))
+
+  -- | OCaml: `Req.Old_bulletproof_challenges` (`wrap_main.ml:400`). Stored as
+  -- | a pair of per-slot vectors mirroring `Max_widths_by_slot.maxes`.
+  getOldBulletproofChallenges
+    :: Unit
+    -> m (WrapOldBpChals slot0Width slot1Width (F f))
+
+  -- | OCaml: `Req.Evals` (`wrap_main.ml:415`). Vector of `mpv`
+  -- | `StepAllEvals`, one per previous wrap proof.
+  getEvals :: Unit -> m (Vector mpv (StepAllEvals (F f)))
+
+  -- | OCaml: `Req.Wrap_domain_indices` (`wrap_main.ml:423`). Vector of `mpv`
+  -- | indices into `Wrap_verifier.all_possible_domains`.
+  getWrapDomainIndices :: Unit -> m (Vector mpv (F f))
+
+  -- | OCaml: `Req.Openings_proof` (`wrap_main.ml:531`). The full bulletproof
+  -- | opening transported through Type1 shifted-value coercion.
+  getOpeningProof
+    :: Unit
+    -> m
+         ( WrapProofOpening
+             StepIPARounds
+             (WeierstrassAffinePoint g (F f))
+             (Type1 (F f))
+         )
+
+  -- | OCaml: `Req.Messages` (`wrap_main.ml:540`). Protocol commitments for
+  -- | the IVP step.
   getMessages
+    :: Unit
+    -> m
+         ( WrapProofMessages
+             (WeierstrassAffinePoint g (F f))
+         )
+
+-- | Compilation instance: never invoked, exists only to satisfy the constraint
+-- | during `compile` (where the base monad is `Effect`). If any method here
+-- | actually fires it indicates a bug — the throw makes that obvious.
+instance
+  ( WeierstrassCurve f g
+  , Reflectable branches Int
+  , Reflectable mpv Int
+  , Reflectable slot0Width Int
+  , Reflectable slot1Width Int
+  ) =>
+  WrapWitnessM branches mpv slot0Width slot1Width g f Effect where
+  getWhichBranch _ = throw "impossible! getWhichBranch called during compilation"
+  getWrapProofState _ = throw "impossible! getWrapProofState called during compilation"
+  getStepAccs _ = throw "impossible! getStepAccs called during compilation"
+  getOldBulletproofChallenges _ = throw "impossible! getOldBulletproofChallenges called during compilation"
+  getEvals _ = throw "impossible! getEvals called during compilation"
+  getWrapDomainIndices _ = throw "impossible! getWrapDomainIndices called during compilation"
+  getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
+  getMessages _ = throw "impossible! getMessages called during compilation"
+
+-------------------------------------------------------------------------------
+-- Legacy WrapSubCircuitWitnessM — used by the deprecated `wrapCircuit`
+-- sub-circuit and the test fixtures around it. Kept compiling so the
+-- pickles test suite still builds.
+-------------------------------------------------------------------------------
+
+-- | Legacy advice class for the small `wrapCircuit` sub-circuit. Methods
+-- | match what the original (pre-refactor) `Pickles.Wrap.Advice` class
+-- | exposed; method names are suffixed `Legacy` where they collide with the
+-- | new `WrapWitnessM` to avoid ambiguous resolution.
+class Monad m <= WrapSubCircuitWitnessM (mpv :: Int) (ds :: Int) (dw :: Int) m f where
+  getStepIOFields :: Unit -> m (Array (F f))
+  getEvalsLegacy :: Unit -> m (Vector mpv (ProofWitness (F f)))
+  getMessagesLegacy
     :: Unit
     -> m
          { wComm :: Vector 15 (AffinePoint (F f))
          , zComm :: AffinePoint (F f)
          , tComm :: Vector 7 (AffinePoint (F f))
          }
-
-  -- | Full opening proof for IVP verification.
-  -- | OCaml: Req.Openings_proof
-  getOpeningProof
+  getOpeningProofLegacy
     :: Unit
     -> m
          { delta :: AffinePoint (F f)
@@ -76,26 +187,15 @@ class Monad m <= WrapWitnessM (mpv :: Int) (ds :: Int) (dw :: Int) m f where
          , z1 :: Type1 (F f)
          , z2 :: Type1 (F f)
          }
-
-  -- | Unfinalized proofs for each of `mpv` finalize calls.
-  -- | OCaml: Req.Proof_state (unfinalized_proofs, Vector mpv)
   getUnfinalizedProofs :: Unit -> m (Vector mpv (UnfinalizedProof dw (F f) (Type2 (F f)) Boolean))
-
-  -- | Previous step accumulators (sg points) for IVP.
-  -- | OCaml: Req.Step_accs (Vector mpv)
-  getStepAccs :: Unit -> m (Vector mpv (AffinePoint (F f)))
-
-  -- | Old bulletproof challenges from previous wrap proofs.
-  -- | OCaml: Req.Old_bulletproof_challenges (Vector mpv (Vector dw f))
+  getStepAccsLegacy :: Unit -> m (Vector mpv (AffinePoint (F f)))
   getOldBpChallenges :: Unit -> m (Vector mpv (Vector dw (F f)))
 
--- | Compilation instance: never called, exists only to satisfy the constraint
--- | during `compile` which uses Effect as the base monad.
-instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapWitnessM mpv ds dw Effect f where
+instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapSubCircuitWitnessM mpv ds dw Effect f where
   getStepIOFields _ = throw "impossible! getStepIOFields called during compilation"
-  getEvals _ = throw "impossible! getEvals called during compilation"
-  getMessages _ = throw "impossible! getMessages called during compilation"
-  getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
+  getEvalsLegacy _ = throw "impossible! getEvalsLegacy called during compilation"
+  getMessagesLegacy _ = throw "impossible! getMessagesLegacy called during compilation"
+  getOpeningProofLegacy _ = throw "impossible! getOpeningProofLegacy called during compilation"
   getUnfinalizedProofs _ = throw "impossible! getUnfinalizedProofs called during compilation"
-  getStepAccs _ = throw "impossible! getStepAccs called during compilation"
+  getStepAccsLegacy _ = throw "impossible! getStepAccsLegacy called during compilation"
   getOldBpChallenges _ = throw "impossible! getOldBpChallenges called during compilation"

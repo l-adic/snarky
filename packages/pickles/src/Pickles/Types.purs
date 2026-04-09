@@ -26,13 +26,18 @@ module Pickles.Types
   , StepProofState(..)
   , StepPerProofWitness(..)
   , PerProofUnfinalized(..)
+  , WrapPrevProofState(..)
+  , WrapOldBpChals(..)
+  , WrapStatementPacked(..)
   ) where
 
 import Prelude
 
+import Data.Foldable (traverse_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple.Nested (Tuple10, Tuple2, Tuple3, Tuple5, Tuple7, tuple10, tuple2, tuple3, tuple5, tuple7, uncurry10, uncurry2, uncurry3, uncurry5, uncurry7)
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Verify.Types (UnfinalizedProof, WrapDeferredValues)
 import Prim.Int (class Compare)
@@ -308,10 +313,15 @@ instance (CheckedType f c var) => CheckedType f c (WrapProofMessages var) where
 
 -- | Wrap proof opening: bulletproof opening data allocated in the per-proof witness.
 -- |
--- | OCaml hlist order: lr (Vector d {l, r}), z1, z2, delta, sg.
+-- | OCaml hlist order: lr (Vector n {l, r}), z1, z2, delta, sg.
 -- | Reference: kimchi_types.ml opening_proof
-newtype WrapProofOpening pt sf = WrapProofOpening
-  { lr :: Vector 15 { l :: pt, r :: pt }
+-- |
+-- | The `n` parameter is the IPA rounds count. For openings VERIFYING a step
+-- | proof inside the wrap circuit, `n = StepIPARounds = 16`. For openings
+-- | VERIFYING a wrap proof inside the step circuit, `n = WrapIPARounds = 15`.
+newtype WrapProofOpening :: Int -> Type -> Type -> Type
+newtype WrapProofOpening n pt sf = WrapProofOpening
+  { lr :: Vector n { l :: pt, r :: pt }
   , z1 :: sf
   , z2 :: sf
   , delta :: pt
@@ -321,66 +331,71 @@ newtype WrapProofOpening pt sf = WrapProofOpening
 instance
   ( CircuitType f a avar
   , CircuitType f b bvar
+  , Reflectable n Int
   ) =>
-  CircuitType f (WrapProofOpening a b) (WrapProofOpening avar bvar) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a))
+  CircuitType f (WrapProofOpening n a b) (WrapProofOpening n avar bvar) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple5 (Vector n { l :: a, r :: a }) b b a a))
   valueToFields (WrapProofOpening r) = genericValueToFields (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
   fieldsToValue fs =
     let
-      tup :: Tuple5 (Vector 15 { l :: a, r :: a }) b b a a
+      tup :: Tuple5 (Vector n { l :: a, r :: a }) b b a a
       tup = genericFieldsToValue fs
     in
       uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
-  varToFields (WrapProofOpening r) = genericVarToFields @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
+  varToFields (WrapProofOpening r) = genericVarToFields @(Tuple5 (Vector n { l :: a, r :: a }) b b a a) (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
   fieldsToVar fs =
     let
-      tup :: Tuple5 (Vector 15 { l :: avar, r :: avar }) bvar bvar avar avar
-      tup = genericFieldsToVar @(Tuple5 (Vector 15 { l :: a, r :: a }) b b a a) fs
+      tup :: Tuple5 (Vector n { l :: avar, r :: avar }) bvar bvar avar avar
+      tup = genericFieldsToVar @(Tuple5 (Vector n { l :: a, r :: a }) b b a a) fs
     in
       uncurry5 (\lr z1 z2 delta sg -> WrapProofOpening { lr, z1, z2, delta, sg }) tup
 
 instance
   ( CheckedType f c avar
   , CheckedType f c bvar
+  , Reflectable n Int
   ) =>
-  CheckedType f c (WrapProofOpening avar bvar) where
+  CheckedType f c (WrapProofOpening n avar bvar) where
   check (WrapProofOpening r) = check (tuple5 r.lr r.z1 r.z2 r.delta r.sg)
 
 -- | Combined wrap proof: messages + opening, in OCaml's `Wrap_proof.Checked.t` order.
 -- |
 -- | Reference: wrap_proof.ml — `{ messages; opening }` allocated via
 -- | `of_hlistable` which gives field order (messages first, then opening).
-newtype WrapProof pt sf = WrapProof
+newtype WrapProof :: Int -> Type -> Type -> Type
+newtype WrapProof n pt sf = WrapProof
   { messages :: WrapProofMessages pt
-  , opening :: WrapProofOpening pt sf
+  , opening :: WrapProofOpening n pt sf
   }
 
 instance
   ( CircuitType f a avar
   , CircuitType f b bvar
+  , Reflectable n Int
   ) =>
-  CircuitType f (WrapProof a b) (WrapProof avar bvar) where
-  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)))
+  CircuitType f (WrapProof n a b) (WrapProof n avar bvar) where
+  sizeInFields pf _ = genericSizeInFields pf (Proxy @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)))
   valueToFields (WrapProof r) = genericValueToFields (tuple2 r.messages r.opening)
   fieldsToValue fs =
     let
-      tup :: Tuple2 (WrapProofMessages a) (WrapProofOpening a b)
+      tup :: Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)
       tup = genericFieldsToValue fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
-  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)) (tuple2 r.messages r.opening)
+  varToFields (WrapProof r) = genericVarToFields @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)) (tuple2 r.messages r.opening)
   fieldsToVar fs =
     let
-      tup :: Tuple2 (WrapProofMessages avar) (WrapProofOpening avar bvar)
-      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages a) (WrapProofOpening a b)) fs
+      tup :: Tuple2 (WrapProofMessages avar) (WrapProofOpening n avar bvar)
+      tup = genericFieldsToVar @(Tuple2 (WrapProofMessages a) (WrapProofOpening n a b)) fs
     in
       uncurry2 (\messages opening -> WrapProof { messages, opening }) tup
 
 instance
   ( CheckedType f c avar
   , CheckedType f c bvar
+  , Reflectable n Int
   ) =>
-  CheckedType f c (WrapProof avar bvar) where
+  CheckedType f c (WrapProof n avar bvar) where
   check (WrapProof r) = check (tuple2 r.messages r.opening)
 
 -- | All polynomial evaluations for the wrap proof being verified.
@@ -592,7 +607,7 @@ instance
 -- |
 -- | Reference: per_proof_witness.ml, step_main.ml
 newtype StepPerProofWitness (n :: Int) f sf b = StepPerProofWitness
-  { wrapProof :: WrapProof (WeierstrassAffinePoint PallasG f) sf
+  { wrapProof :: WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG f) sf
   , proofState :: StepProofState f b
   , prevEvals :: StepAllEvals f
   , prevChallenges :: Vector n (UnChecked (Vector StepIPARounds f))
@@ -605,7 +620,7 @@ newtype StepPerProofWitness (n :: Int) f sf b = StepPerProofWitness
 -- |   - b:  boolean type
 type StepPerProofWitnessTuple n x sf b =
   Tuple5
-    (WrapProof (WeierstrassAffinePoint PallasG x) sf)
+    (WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG x) sf)
     (StepProofState x b)
     (StepAllEvals x)
     (Vector n (UnChecked (Vector StepIPARounds x)))
@@ -648,7 +663,7 @@ instance
         tup
 
 instance
-  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
   , CheckedType StepField (KimchiConstraint StepField) (StepProofState (FVar StepField) (BoolVar StepField))
   , CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
   , Reflectable n Int
@@ -774,3 +789,278 @@ instance
         (tuple10 r.combinedInnerProduct r.b r.zetaToSrsLength r.zetaToDomainSize r.perm r.spongeDigest r.beta r.gamma r.alpha r.zeta)
         (tuple3 r.xi r.bulletproofChallenges r.shouldFinalize)
     )
+
+-------------------------------------------------------------------------------
+-- | Wrap circuit witness allocation types (used by Pickles.Wrap.Advice)
+-------------------------------------------------------------------------------
+
+-- | The combined wrap-circuit `Req.Proof_state` allocation: `mpv`
+-- | unfinalized proofs (Type2-shifted scalars) + `messages_for_next_step_proof`.
+-- |
+-- | OCaml's `wrap_typ` over `Types.Step.Proof_state` puts `unfinalized_proofs`
+-- | first (a Vector of length `mpv`) and `messages_for_next_step_proof` second.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/composition_types/composition_types.ml
+-- | (`Types.Step.Proof_state.wrap_typ`) and `wrap_main.ml:267` exists call.
+newtype WrapPrevProofState (mpv :: Int) sf f b = WrapPrevProofState
+  { unfinalizedProofs :: Vector mpv (PerProofUnfinalized WrapIPARounds sf f b)
+  , messagesForNextStepProof :: f
+  }
+
+instance
+  ( CircuitType f sf sfvar
+  , CircuitType f b bvar
+  , FieldSizeInBits f m
+  , Reflectable mpv Int
+  ) =>
+  CircuitType f
+    (WrapPrevProofState mpv sf (F f) b)
+    (WrapPrevProofState mpv sfvar (FVar f) bvar) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f)))
+  valueToFields (WrapPrevProofState r) = genericValueToFields
+    (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+  fieldsToValue fs =
+    let
+      tup :: Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f)
+      tup = genericFieldsToValue fs
+    in
+      uncurry2
+        ( \unfinalizedProofs messagesForNextStepProof ->
+            WrapPrevProofState { unfinalizedProofs, messagesForNextStepProof }
+        )
+        tup
+  varToFields (WrapPrevProofState r) = genericVarToFields
+    @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f))
+    (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+  fieldsToVar fs =
+    let
+      tup :: Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sfvar (FVar f) bvar)) (FVar f)
+      tup = genericFieldsToVar
+        @(Tuple2 (Vector mpv (PerProofUnfinalized WrapIPARounds sf (F f) b)) (F f))
+        fs
+    in
+      uncurry2
+        ( \unfinalizedProofs messagesForNextStepProof ->
+            WrapPrevProofState { unfinalizedProofs, messagesForNextStepProof }
+        )
+        tup
+
+instance
+  ( CheckedType f c (PerProofUnfinalized WrapIPARounds sfvar fvar bvar)
+  , CheckedType f c fvar
+  ) =>
+  CheckedType f c (WrapPrevProofState mpv sfvar fvar bvar) where
+  check (WrapPrevProofState r) = check (tuple2 r.unfinalizedProofs r.messagesForNextStepProof)
+
+-- | Old bulletproof challenges grouped by slot. The wrap circuit's
+-- | `Req.Old_bulletproof_challenges` allocates a heterogeneous list over
+-- | `Max_widths_by_slot.maxes`; for the configurations we currently dump,
+-- | both slots are present but their widths can differ.
+-- |
+-- | OCaml's H1.Wrap_typ iterates head-to-tail over the maxes list, so slot 0
+-- | is allocated first and slot 1 second.
+-- |
+-- | Type parameters:
+-- | - `slot0Width`: number of bulletproof-challenge vectors in slot 0
+-- | - `slot1Width`: number of bulletproof-challenge vectors in slot 1
+-- | - `f`: field element type (`F f` or `FVar f`)
+-- |
+-- | Reference: wrap_main.ml:372-404 (`Req.Old_bulletproof_challenges`).
+newtype WrapOldBpChals (slot0Width :: Int) (slot1Width :: Int) f = WrapOldBpChals
+  { slot0 :: Vector slot0Width (Vector WrapIPARounds f)
+  , slot1 :: Vector slot1Width (Vector WrapIPARounds f)
+  }
+
+instance
+  ( CircuitType f a var
+  , Reflectable slot0Width Int
+  , Reflectable slot1Width Int
+  ) =>
+  CircuitType f (WrapOldBpChals slot0Width slot1Width a) (WrapOldBpChals slot0Width slot1Width var) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))))
+  valueToFields (WrapOldBpChals r) = genericValueToFields (tuple2 r.slot0 r.slot1)
+  fieldsToValue fs =
+    let
+      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))
+      tup = genericFieldsToValue fs
+    in
+      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
+  varToFields (WrapOldBpChals r) = genericVarToFields
+    @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
+    (tuple2 r.slot0 r.slot1)
+  fieldsToVar fs =
+    let
+      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds var)) (Vector slot1Width (Vector WrapIPARounds var))
+      tup = genericFieldsToVar
+        @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
+        fs
+    in
+      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
+
+instance
+  ( CheckedType f c var
+  ) =>
+  CheckedType f c (WrapOldBpChals slot0Width slot1Width var) where
+  check (WrapOldBpChals r) = check (tuple2 r.slot0 r.slot1)
+
+-------------------------------------------------------------------------------
+-- | Wrap statement public input (allocation-side representation)
+-- |
+-- | This is the type that the wrap circuit's `compile` allocates as the
+-- | public input for `wrapMain`. It mirrors the OCaml
+-- | `Wrap.Statement.In_circuit` allocation pattern from
+-- | `composition_types.ml:776-831` (`In_circuit.to_data`):
+-- |
+-- |   [ fp                       (* 5: cip, b, ztSrs, ztDom, perm  *)
+-- |   ; challenge                (* 2: beta, gamma                 *)
+-- |   ; scalar_challenge         (* 3: alpha, zeta, xi             *)
+-- |   ; digest                   (* 3: sponge, msg_wrap, msg_step  *)
+-- |   ; bulletproof_challenges   (* d: 16 in production            *)
+-- |   ; index                    (* 1: branch_data                 *)
+-- |   ]
+-- |
+-- | The challenge fields are wrapped in `UnChecked (SizedF 128 f)` because
+-- | OCaml's `Spec.wrap_packed_typ` allocates them via plain `Field.typ`
+-- | (no bit-range check at allocation). The bit-size invariant is
+-- | re-established later by the consumer that needs it (e.g.,
+-- | `Scalar_challenge.to_field_checked` does the bit check inline at
+-- | endo-expansion time). This mirrors the existing `PerProofUnfinalized`
+-- | pattern in this module — see Step.Main.unpackUnfinalized for the
+-- | corresponding `coerce` discipline.
+-- |
+-- | The 5 fp fields stay as `sf` (= `Type1 (FVar f)` in circuit) because
+-- | their `CheckedType` instance models OCaml's `Other_field.check`
+-- | (forbidden_shifted_values check). The digests and branch_data are
+-- | plain `f` because OCaml allocates them as plain `Field.typ`.
+newtype WrapStatementPacked :: Int -> Type -> Type -> Type -> Type
+newtype WrapStatementPacked d sf f b = WrapStatementPacked
+  { -- 5 Type1 fp fields, in OCaml `to_data` order:
+    -- combined_inner_product, b, zetaToSrsLength, zetaToDomainSize, perm
+    fpFields :: Vector 5 sf
+  -- 2 raw challenges: beta, gamma
+  , challenges :: Vector 2 (UnChecked (SizedF 128 f))
+  -- 3 scalar challenges: alpha, zeta, xi
+  , scalarChallenges :: Vector 3 (UnChecked (SizedF 128 f))
+  -- 3 digests: sponge_digest, msg_for_next_wrap, msg_for_next_step
+  , digests :: Vector 3 f
+  -- d bulletproof challenges
+  , bulletproofChallenges :: Vector d (UnChecked (SizedF 128 f))
+  -- 1 packed branch_data field
+  , branchData :: f
+  -- 8 constant feature_flags slots. OCaml's `Spec.T.Constant` in
+  -- `wrap_packed_typ` still allocates the underlying `Boolean.typ` field
+  -- (with the check skipped, see spec.ml:485-494). For `Features.Full.none`
+  -- all 8 are constant `false`. The wrap_main body never reads them.
+  , featureFlags :: Vector 8 f
+  -- 2 lookup-parameters slots. OCaml's `Lookup_parameters.opt_spec` is
+  -- `Spec.T.Opt { inner = Struct [Scalar Challenge]; flag = use; ... }`.
+  -- For `lookup.use = No`, `Opt.constant_layout_typ` (opt.ml:118) still
+  -- allocates `tuple2 Boolean.typ inner_typ` — that's 1 boolean flag
+  -- field plus 1 scalar challenge field, both unconstrained. The wrap
+  -- circuit never reads them.
+  , lookupOptFlag :: f
+  , lookupOptScalarChallenge :: f
+  }
+
+-- | Tuple shape mirroring `to_data`. The CircuitType instance delegates
+-- | through this tuple, which gives the OCaml hlist field order. The
+-- | feature_flags + lookup tail is grouped into a `Tuple3` so the whole
+-- | thing fits in `Tuple7`.
+type WrapStatementPackedTuple d sf x =
+  Tuple7
+    (Vector 5 sf)
+    (Vector 2 (UnChecked (SizedF 128 x)))
+    (Vector 3 (UnChecked (SizedF 128 x)))
+    (Vector 3 x)
+    (Vector d (UnChecked (SizedF 128 x)))
+    x
+    (Tuple3 (Vector 8 x) x x)
+
+instance
+  ( CircuitType f sf sfvar
+  , FieldSizeInBits f m
+  , Reflectable d Int
+  ) =>
+  CircuitType f
+    (WrapStatementPacked d sf (F f) Boolean)
+    (WrapStatementPacked d sfvar (FVar f) (BoolVar f)) where
+  sizeInFields pf _ = genericSizeInFields pf
+    (Proxy @(WrapStatementPackedTuple d sf (F f)))
+  valueToFields (WrapStatementPacked r) = genericValueToFields
+    ( tuple7 r.fpFields r.challenges r.scalarChallenges r.digests r.bulletproofChallenges r.branchData
+        (tuple3 r.featureFlags r.lookupOptFlag r.lookupOptScalarChallenge)
+    )
+  fieldsToValue fs =
+    let
+      tup :: WrapStatementPackedTuple d sf (F f)
+      tup = genericFieldsToValue fs
+    in
+      uncurry7
+        ( \fpFields challenges scalarChallenges digests bulletproofChallenges branchData tail3 ->
+            uncurry3
+              ( \featureFlags lookupOptFlag lookupOptScalarChallenge ->
+                  WrapStatementPacked
+                    { fpFields
+                    , challenges
+                    , scalarChallenges
+                    , digests
+                    , bulletproofChallenges
+                    , branchData
+                    , featureFlags
+                    , lookupOptFlag
+                    , lookupOptScalarChallenge
+                    }
+              )
+              tail3
+        )
+        tup
+  varToFields (WrapStatementPacked r) = genericVarToFields
+    @(WrapStatementPackedTuple d sf (F f))
+    ( tuple7 r.fpFields r.challenges r.scalarChallenges r.digests r.bulletproofChallenges r.branchData
+        (tuple3 r.featureFlags r.lookupOptFlag r.lookupOptScalarChallenge)
+    )
+  fieldsToVar fs =
+    let
+      tup :: WrapStatementPackedTuple d sfvar (FVar f)
+      tup = genericFieldsToVar @(WrapStatementPackedTuple d sf (F f)) fs
+    in
+      uncurry7
+        ( \fpFields challenges scalarChallenges digests bulletproofChallenges branchData tail3 ->
+            uncurry3
+              ( \featureFlags lookupOptFlag lookupOptScalarChallenge ->
+                  WrapStatementPacked
+                    { fpFields
+                    , challenges
+                    , scalarChallenges
+                    , digests
+                    , bulletproofChallenges
+                    , branchData
+                    , featureFlags
+                    , lookupOptFlag
+                    , lookupOptScalarChallenge
+                    }
+              )
+              tail3
+        )
+        tup
+
+instance
+  ( CheckedType f c sfvar
+  , CheckedType f c fvar
+  ) =>
+  CheckedType f c (WrapStatementPacked d sfvar fvar bvar) where
+  check (WrapStatementPacked r) =
+    -- Only the fp fields get a non-trivial check (Type1's
+    -- forbidden_shifted_values, mirroring OCaml's Other_field.check).
+    -- Challenges are UnChecked → no-op. Digests, branchData, featureFlags,
+    -- and lookupOpt fields are plain f → no-op. So this `check` reduces to
+    -- just the 5 fp checks.
+    --
+    -- IMPORTANT: emit the checks in REVERSE order. OCaml's `Vector.map`
+    -- processes `f x :: map xs ~f` right-to-left (because `::` evaluates
+    -- right-to-left), so `Other_field.check` runs on `perm` first and
+    -- `combined_inner_product` last. The `Vector.reverse` here matches
+    -- that evaluation order so PI-variable copy-cycles line up with OCaml.
+    traverse_ check (Vector.reverse r.fpFields)

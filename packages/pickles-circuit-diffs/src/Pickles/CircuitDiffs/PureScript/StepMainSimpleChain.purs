@@ -13,18 +13,25 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Vector (Vector)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBase)
-import Pickles.Step.Main (RuleOutput, compileStepMain)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Types (StepField)
+import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Constraint.Kimchi (KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainParams =
   { lagrangeComms :: Array (LagrangeBase StepField)
@@ -67,5 +74,7 @@ simpleChainRule appState = do
     }
 
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
-compileStepMainSimpleChain params =
-  compileStepMain @1 @34 simpleChainRule params dummyWrapSg
+compileStepMainSimpleChain params = unsafePerformEffect $
+  compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+    (\_ -> stepMain @1 @34 simpleChainRule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    Kimchi.initialState

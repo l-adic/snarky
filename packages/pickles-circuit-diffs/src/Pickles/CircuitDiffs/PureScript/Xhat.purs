@@ -7,7 +7,7 @@ module Pickles.CircuitDiffs.PureScript.Xhat
 import Prelude
 
 import Data.Fin (getFinite)
-import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (tuple3, tuple6)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
@@ -36,32 +36,27 @@ parseXhatInput inputs =
     at = unsafeIdx inputs
     splitField i = Type2 (SplitField { sDiv2: at i, sOdd: coerce (at (i + 1)) })
     perProofTuple =
-      Tuple
+      tuple6
         ( splitField 0 :< splitField 2 :< splitField 4
             :< splitField 6
             :< splitField 8
             :< Vector.nil
         )
-        ( Tuple (at 10)
-            ( Tuple (asSizedF128 (at 11) :< asSizedF128 (at 12) :< Vector.nil)
-                ( Tuple
-                    ( asSizedF128 (at 13) :< asSizedF128 (at 14)
-                        :< asSizedF128 (at 15)
-                        :< Vector.nil
-                    )
-                    ( Tuple
-                        ( (Vector.generate \j -> asSizedF128 (at (16 + getFinite j)))
-                            :: Vector 15 (SizedF 128 (FVar WrapField))
-                        )
-                        (coerce (at 31) :: BoolVar WrapField)
-                    )
-                )
-            )
+        (at 10)
+        (asSizedF128 (at 11) :< asSizedF128 (at 12) :< Vector.nil)
+        ( asSizedF128 (at 13) :< asSizedF128 (at 14)
+            :< asSizedF128 (at 15)
+            :< Vector.nil
         )
+        ( (Vector.generate \j -> asSizedF128 (at (16 + getFinite j)))
+            :: Vector 15 (SizedF 128 (FVar WrapField))
+        )
+        (coerce (at 31) :: BoolVar WrapField)
     stmtTuple =
-      Tuple
+      tuple3
         (perProofTuple :< Vector.nil)
-        (Tuple (at 32) (at 33 :< Vector.nil))
+        (at 32)
+        (at 33 :< Vector.nil)
   in
     fromPackedTuple stmtTuple
 

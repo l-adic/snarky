@@ -93,9 +93,6 @@ spec :: TestConfig StepField (KimchiGate StepField) (AuxState StepField) -> Spec
 spec cfg = describe "Pickles.Step.Circuit" do
   it "Step circuit is satisfiable with dummy proofs (base case, n=0)" do
     let
-      -- n=0 advice: all vectors empty, dummy VK
-      dummyPt = { x: F zero, y: F zero } :: AffinePoint (F StepField)
-
       -- Pallas generator (on-curve, satisfies the WeierstrassAffinePoint check)
       pallasGenPt :: WeierstrassAffinePoint PallasG (F StepField)
       pallasGenPt = WeierstrassAffinePoint $ coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
