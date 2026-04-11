@@ -10,6 +10,7 @@ module Pickles.Types
   , StepIPARounds
   , WrapIPARounds
   , MaxProofsVerified
+  , PaddedLength
   , StepCommitmentCurve
   , WrapCommitmentCurve
   , StepInput
@@ -67,9 +68,36 @@ type StepIPARounds = 16
 -- | IPA rounds in a Wrap proof (= log2 of Pallas SRS size = Rounds.Wrap = 15).
 type WrapIPARounds = 15
 
--- | Maximum number of previous proofs verified per step (always 2 in Pickles).
--- | Reference: mina/src/lib/pickles/common/nat.ml (N2)
+-- | Maximum number of previous proofs verified per step. In Pickles
+-- | this is the **per-compile-circuit** `max_proofs_verified` parameter
+-- | — OCaml supports N0, N1, or N2 per circuit (see `pickles.ml`
+-- | compile sites and `wrap_main.ml`'s locally-abstract type). The
+-- | current PS port still hardcodes the 2 case, but this alias exists
+-- | as the handle that will become an `mpv` type variable when
+-- | `wrap_main` is polymorphized.
+-- |
+-- | DO NOT confuse with `PaddedLength` below — they're numerically
+-- | equal in the N2 instantiation but semantically distinct.
+-- |
+-- | Reference: mina/src/lib/pickles/common/nat.ml (N0 | N1 | N2)
 type MaxProofsVerified = 2
+
+-- | Universal `Wrap_hack.Padded_length`. Defined in
+-- | `wrap_hack.ml:24` as `module Padded_length = Nat.N2` — a
+-- | compile-time constant of 2, unrelated to any particular circuit's
+-- | `max_proofs_verified`. Used as the padding target for each slot's
+-- | bp-challenge vector (`Wrap_hack.Checked.pad_challenges`), for the
+-- | wrap proof's `sg` list in `Step_main`'s `sgOld`, and as the ceiling
+-- | on `Proofs_verified.Prefix_mask` length (`proofs_verified.ml:70`).
+-- |
+-- | The pre-computed `dummyPaddingSpongeStates` table has exactly
+-- | `PaddedLength + 1 = 3` entries (for absorbing 0, 1, or 2 dummies).
+-- |
+-- | This is a UNIVERSAL constant across Pickles — it does **not**
+-- | vary with `max_proofs_verified`.
+-- |
+-- | Reference: mina/src/lib/pickles/wrap_hack.ml:24
+type PaddedLength = 2
 
 -- | Step proofs commit on Vesta (scalar f = Fp = StepField).
 type StepCommitmentCurve = Vesta.G

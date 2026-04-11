@@ -32,7 +32,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
@@ -259,7 +259,7 @@ buildVerifyOneInput
   :: forall @n pad
    . Reflectable n Int
   => Reflectable pad Int
-  => Add pad n MaxProofsVerified
+  => Add pad n PaddedLength
   => PerProofWitness n
   -> FVar StepField
   -> BoolVar StepField
@@ -274,16 +274,16 @@ buildVerifyOneInput
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
   let
-    -- sgOld: pad prevSgs to MaxProofsVerified (Wrap_hack.Padded_length).
-    -- extend_front puts `pad` dummies at the front, where pad + n = MaxProofsVerified.
+    -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
+    -- extend_front puts `pad` dummies at the front, where pad + n = PaddedLength.
     sgPadding :: Vector pad (AffinePoint (FVar StepField))
     sgPadding = Vector.replicate dummySg
 
-    sgOld :: Vector MaxProofsVerified (AffinePoint (FVar StepField))
+    sgOld :: Vector PaddedLength (AffinePoint (FVar StepField))
     sgOld = Vector.append sgPadding (map unwrapPt pw.prevSgs)
 
     -- proofMask: drop the front `pad` elements of [mask0, mask1] to keep the last `n`.
-    fullMasks :: Vector MaxProofsVerified (BoolVar StepField)
+    fullMasks :: Vector PaddedLength (BoolVar StepField)
     fullMasks = pw.branchData.mask0 :< pw.branchData.mask1 :< Vector.nil
 
     proofMask :: Vector n (BoolVar StepField)
@@ -388,7 +388,7 @@ stepMain
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
   => Reflectable n Int
   => Reflectable pad Int
-  => Add pad n MaxProofsVerified
+  => Add pad n PaddedLength
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
