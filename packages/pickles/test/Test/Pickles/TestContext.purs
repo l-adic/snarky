@@ -25,9 +25,6 @@ module Test.Pickles.TestContext
   , WrapAdvice
   , WrapProverM(..)
   , runWrapProverM
-  , WrapMainAdvice
-  , WrapMainProverM(..)
-  , runWrapMainProverM
   , computePublicEval
   , createStepProofContext
   , createTestContext'
@@ -118,7 +115,7 @@ import Pickles.Types (MaxProofsVerified, StepAllEvals, StepField, StepIPARounds,
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
-import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM, class WrapWitnessM, getStepIOFields)
+import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM, getStepIOFields)
 import Pickles.Wrap.Circuit (StepPublicInput, WrapInput, WrapInputVar, WrapParams, wrapCircuit)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import RandomOracle.Sponge (Sponge)
@@ -144,7 +141,7 @@ import Snarky.Constraint.Kimchi as KimchiConstraint
 import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
 import Snarky.Curves.Class (class HasEndo, class PrimeField, EndoBase(..), EndoScalar(..), curveParams, endoBase, endoScalar, fromBigInt, fromInt, generator, pow, toAffine, toBigInt)
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
@@ -296,63 +293,6 @@ instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeFiel
   getUnfinalizedProofs _ = WrapProverM $ map _.unfinalizedProofs ask
   getStepAccsLegacy _ = WrapProverM $ map _.stepAccs ask
   getOldBpChallenges _ = WrapProverM $ map _.oldBpChallenges ask
-
--------------------------------------------------------------------------------
--- | WrapMainProverM: prove-time advisory monad for the new `wrapMain` flow
--- |
--- | Sibling to `WrapProverM` (which serves the deprecated `wrapCircuit`
--- | sub-circuit). Implements the new `WrapWitnessM` class with one record
--- | field per `Req.*` request.
--- |
--- | The actual proof-side wiring (filling in the WrapMainAdvice from a real
--- | StepProofContext) is Phase 7 work; right now this exists so that
--- | (a) the test infrastructure compiles, and
--- | (b) the prover-side path is named for future reference.
--------------------------------------------------------------------------------
-
-type WrapMainAdvice (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) f =
-  { whichBranch :: F f
-  , wrapProofState :: WrapPrevProofState mpv (Type2 (F f)) (F f) Boolean
-  , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F f))
-  , oldBpChals :: WrapOldBpChals slot0Width slot1Width (F f)
-  , evals :: Vector mpv (StepAllEvals (F f))
-  , wrapDomainIndices :: Vector mpv (F f)
-  , openingProof :: WrapProofOpening StepIPARounds (WeierstrassAffinePoint VestaG (F f)) (Type1 (F f))
-  , messages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F f))
-  }
-
-newtype WrapMainProverM (branches :: Int) (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) f a =
-  WrapMainProverM (ReaderT (WrapMainAdvice mpv slot0Width slot1Width f) Effect a)
-
-derive instance Newtype (WrapMainProverM branches mpv slot0Width slot1Width f a) _
-derive newtype instance Functor (WrapMainProverM branches mpv slot0Width slot1Width f)
-derive newtype instance Apply (WrapMainProverM branches mpv slot0Width slot1Width f)
-derive newtype instance Applicative (WrapMainProverM branches mpv slot0Width slot1Width f)
-derive newtype instance Bind (WrapMainProverM branches mpv slot0Width slot1Width f)
-derive newtype instance Monad (WrapMainProverM branches mpv slot0Width slot1Width f)
-
-runWrapMainProverM
-  :: forall branches mpv slot0Width slot1Width f a
-   . WrapMainAdvice mpv slot0Width slot1Width f
-  -> WrapMainProverM branches mpv slot0Width slot1Width f a
-  -> Effect a
-runWrapMainProverM advice (WrapMainProverM m) = runReaderT m advice
-
-instance
-  ( Reflectable branches Int
-  , Reflectable mpv Int
-  , Reflectable slot0Width Int
-  , Reflectable slot1Width Int
-  ) =>
-  WrapWitnessM branches mpv slot0Width slot1Width VestaG WrapField (WrapMainProverM branches mpv slot0Width slot1Width WrapField) where
-  getWhichBranch _ = WrapMainProverM $ map _.whichBranch ask
-  getWrapProofState _ = WrapMainProverM $ map _.wrapProofState ask
-  getStepAccs _ = WrapMainProverM $ map _.stepAccs ask
-  getOldBulletproofChallenges _ = WrapMainProverM $ map _.oldBpChals ask
-  getEvals _ = WrapMainProverM $ map _.evals ask
-  getWrapDomainIndices _ = WrapMainProverM $ map _.wrapDomainIndices ask
-  getOpeningProof _ = WrapMainProverM $ map _.openingProof ask
-  getMessages _ = WrapMainProverM $ map _.messages ask
 
 -------------------------------------------------------------------------------
 -- | Schnorr circuit setup
