@@ -43,7 +43,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.ProofFFI as ProofFFI
+import Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapProofContext, buildStepIVPInput, buildStepIVPParams, computePublicEval, mkStepIpaContext, mkWrapIpaContext, stepEndo, toVectorOrThrow, unsafeFqToFp, zkRows)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied, satisfied_)
 import Test.Spec (SpecT, describe, it)

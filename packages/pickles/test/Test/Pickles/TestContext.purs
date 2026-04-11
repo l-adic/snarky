@@ -147,8 +147,8 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Test.Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
-import Test.Pickles.ProofFFI as ProofFFI
+import Pickles.ProofFFI (class ProofFFI, OraclesResult, Proof, createProof, proofOracles)
+import Pickles.ProofFFI as ProofFFI
 import Test.QuickCheck.Gen (randomSampleOne)
 import Type.Proxy (Proxy(..))
 

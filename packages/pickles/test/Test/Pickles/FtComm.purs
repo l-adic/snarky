@@ -20,7 +20,7 @@ import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Curves.Class (pow)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Test.Pickles.ProofFFI as ProofFFI
+import Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext)
 import Test.Snarky.Circuit.Utils (TestConfig, TestInput(..), circuitTest', satisfied_)
 import Test.Spec (SpecT, describe, it)

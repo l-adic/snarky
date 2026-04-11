@@ -27,7 +27,7 @@ import Snarky.Circuit.DSL (toField)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, pow)
 import Snarky.Curves.Vesta as Vesta
 import Test.Pickles.Linearization (buildFFIInput)
-import Test.Pickles.ProofFFI as ProofFFI
+import Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, computePublicEval, toVectorOrThrow, zkRows)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)

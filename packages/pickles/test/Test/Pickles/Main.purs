@@ -17,6 +17,9 @@ import Test.Pickles.IPA as IPA
 import Test.Pickles.Linearization as Linearization
 import Test.Pickles.MultiscaleKnown as MultiscaleKnown
 import Test.Pickles.Permutation as Permutation
+import Test.Pickles.Prove.Pure.BulletproofB as BulletproofB
+import Test.Pickles.Prove.Pure.EvalsOfSplit as EvalsOfSplit
+import Test.Pickles.Prove.Pure.Step as ProveStep
 import Test.Pickles.PublicInputCommitment as PublicInputCommitment
 import Test.Pickles.Step as Step
 import Test.Pickles.Step.Circuit as StepCircuit
@@ -55,7 +58,10 @@ main = runSpecAndExitProcess'
       StepCircuit.realDataSpec kimchiTestConfig
       FqSpongeTranscript.spec kimchiTestConfig
       PublicInputCommitment.spec kimchiTestConfig
+      ProveStep.spec
     mapSpec nat do
+      EvalsOfSplit.spec
+      BulletproofB.spec
       DummyWiring.spec
       MultiscaleKnown.spec kimchiTestConfig
       Commitments.spec kimchiTestConfig

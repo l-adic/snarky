@@ -26,7 +26,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
-import Test.Pickles.ProofFFI as ProofFFI
+import Pickles.ProofFFI as ProofFFI
 import Test.Pickles.TestContext (InductiveTestContext)
 import Test.Pickles.TestContext as E2E
 import Test.QuickCheck (arbitrary)

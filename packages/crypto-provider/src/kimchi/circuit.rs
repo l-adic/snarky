@@ -395,13 +395,24 @@ mod generic {
     }
 
     /// Run the verifier's Fiat-Shamir oracle computation.
-    /// Returns 15 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+    /// Returns 16 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
     ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-    ///                     fq_digest, alpha_chal, zeta_chal, v_chal]
+    ///                     fq_digest, alpha_chal, zeta_chal, v_chal, u_chal]
+    ///
+    /// `prev_challenges` injects the recursive proofs' `(sg, expanded
+    /// bp challenges)` pairs that the verifier's Fiat-Shamir transcript
+    /// absorbs before the current proof's commitments (kimchi
+    /// `verifier.rs:147,275`). Non-recursive callers pass an empty vec.
+    /// Matches OCaml `Tock.Oracles.create` / `Tick.Oracles.create`
+    /// which take a `Challenge_polynomial.t list` as their second
+    /// argument (see `mina/src/lib/crypto/pickles/step.ml:304-317`).
+    /// Each tuple becomes one `RecursionChallenge<G>`, wrapped in a
+    /// non-chunked `PolyComm { chunks: vec![sg] }`.
     pub fn proof_oracles<G, EFqSponge, EFrSponge>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
+        prev_challenges: Vec<(G, Vec<G::ScalarField>)>,
     ) -> Result<Vec<G::ScalarField>>
     where
         G: KimchiCurve,
@@ -410,8 +421,30 @@ mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         VerifierIndex<G, OpeningProof<G>>: Clone,
     {
+        // Kimchi reads prev_challenges from `ProverProof::prev_challenges`
+        // inside the `oracles` method, so we clone the proof and swap
+        // in the caller-supplied list. A non-recursive call passes an
+        // empty `Vec`, which matches kimchi's `Vec::new()` default on
+        // `ProverProof::create`.
+        let proof_for_oracles = if prev_challenges.is_empty() {
+            None
+        } else {
+            let recursion_challenges: Vec<kimchi::proof::RecursionChallenge<G>> = prev_challenges
+                .into_iter()
+                .map(|(sg, chals)| kimchi::proof::RecursionChallenge {
+                    chals,
+                    comm: poly_commitment::commitment::PolyComm { chunks: vec![sg] },
+                })
+                .collect();
+            let mut cloned = proof.clone();
+            cloned.prev_challenges = recursion_challenges;
+            Some(cloned)
+        };
+        let proof_ref: &ProverProof<G, OpeningProof<G>> =
+            proof_for_oracles.as_ref().unwrap_or(proof);
+
         let oracles_result =
-            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof_ref, public_input)?;
 
         // public_evals[0] = evaluation at zeta, public_evals[1] = evaluation at zeta*omega
         // Each is a Vec because of chunking, but for non-chunked we just take [0]
@@ -433,14 +466,52 @@ mod generic {
             oracles_result.oracles.v,
             oracles_result.oracles.u,
             oracles_result.combined_inner_product,
-            proof.ft_eval1,
+            proof_ref.ft_eval1,
             public_eval_zeta,
             public_eval_zeta_omega,
             oracles_result.digest, // fq_digest: Fq-sponge state before Fr-sponge
             oracles_result.oracles.alpha_chal.0, // raw 128-bit alpha challenge
             oracles_result.oracles.zeta_chal.0, // raw 128-bit zeta challenge
             oracles_result.oracles.v_chal.0, // raw 128-bit polyscale challenge
+            oracles_result.oracles.u_chal.0, // raw 128-bit evalscale challenge
         ])
+    }
+
+    /// Extract the raw opening prechallenges (128-bit scalar challenges
+    /// from the IPA round loop, pre-endo-expansion).
+    ///
+    /// Matches OCaml `O.opening_prechallenges` (plonk_dlog_oracles.ml:82-83),
+    /// which is used by step/wrap provers to unpack
+    /// `Bulletproof_challenge.t` values from the proof. Each returned
+    /// field element is the `.0` of a `ScalarChallenge` — it holds a
+    /// 128-bit value embedded in the full field.
+    pub fn proof_opening_prechallenges<G, EFqSponge, EFrSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<Vec<G::ScalarField>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
+
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+
+        // `prechallenges` internally squeezes one `challenge_fq` (the
+        // IPA `u` point challenge) before the L/R loop, matching the
+        // verifier's Fiat-Shamir transcript. Each returned
+        // `ScalarChallenge.0` is the raw 128-bit value embedded in
+        // `G::ScalarField`.
+        let prechals = proof.proof.prechallenges(&mut fq_sponge);
+        Ok(prechals.into_iter().map(|sc| sc.0).collect())
     }
 
     /// Result of bulletproof challenge computation, including intermediate state.
@@ -1872,39 +1943,73 @@ pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasF
 }
 
 /// Run Fiat-Shamir oracle computation on a Vesta proof (Pallas/Fp circuits).
-/// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+/// Returns 16 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 ///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-///                     fq_digest, alpha_chal, zeta_chal]
+///                     fq_digest, alpha_chal, zeta_chal, v_chal, u_chal]
+///
+/// `prev_sg_xs`, `prev_sg_ys`, and `prev_challenges` are three parallel
+/// arrays (one entry per previous proof) carrying the recursive
+/// `Challenge_polynomial.t` data: the prior proof's `sg` commitment
+/// coordinates (in this curve's base field) and its expanded
+/// bulletproof challenges (in this curve's scalar field). Non-recursive
+/// callers pass empty arrays.
 #[napi]
 pub fn pallas_proof_oracles(
     verifier_index: &PallasVerifierIndexExternal,
     proof: &VestaProofExternal,
     public_input: Vec<&VestaFieldExternal>,
+    prev_sg_xs: Vec<&PallasFieldExternal>,
+    prev_sg_ys: Vec<&PallasFieldExternal>,
+    prev_challenges: Vec<Vec<&VestaFieldExternal>>,
 ) -> Result<Vec<VestaFieldExternal>> {
     let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let prev: Vec<(VestaGroup, Vec<VestaScalarField>)> = prev_sg_xs
+        .iter()
+        .zip(prev_sg_ys.iter())
+        .zip(prev_challenges.iter())
+        .map(|((x, y), chals)| {
+            let sg: VestaGroup = VestaGroup::of_coordinates(***x, ***y);
+            let chals_expanded: Vec<VestaScalarField> = chals.iter().map(|c| ***c).collect();
+            (sg, chals_expanded)
+        })
+        .collect();
     let result = generic::proof_oracles::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
         &**verifier_index,
         &**proof,
         &public,
+        prev,
     )?;
     Ok(result.into_iter().map(External::new).collect())
 }
 
 /// Run Fiat-Shamir oracle computation on a Pallas proof (Vesta/Fq circuits).
-/// Returns 14 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
-///                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-///                     fq_digest, alpha_chal, zeta_chal]
+/// See `pallas_proof_oracles` for the return shape and `prev_*`
+/// argument semantics.
 #[napi]
 pub fn vesta_proof_oracles(
     verifier_index: &VestaVerifierIndexExternal,
     proof: &PallasProofExternal,
     public_input: Vec<&PallasFieldExternal>,
+    prev_sg_xs: Vec<&VestaFieldExternal>,
+    prev_sg_ys: Vec<&VestaFieldExternal>,
+    prev_challenges: Vec<Vec<&PallasFieldExternal>>,
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let prev: Vec<(PallasGroup, Vec<PallasScalarField>)> = prev_sg_xs
+        .iter()
+        .zip(prev_sg_ys.iter())
+        .zip(prev_challenges.iter())
+        .map(|((x, y), chals)| {
+            let sg: PallasGroup = PallasGroup::of_coordinates(***x, ***y);
+            let chals_expanded: Vec<PallasScalarField> = chals.iter().map(|c| ***c).collect();
+            (sg, chals_expanded)
+        })
+        .collect();
     let result = generic::proof_oracles::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
         &**verifier_index,
         &**proof,
         &public,
+        prev,
     )?;
     Ok(result.into_iter().map(External::new).collect())
 }
@@ -1936,6 +2041,42 @@ pub fn vesta_proof_bulletproof_challenges(
 ) -> Result<Vec<PallasFieldExternal>> {
     let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
     let result = generic::proof_bulletproof_challenges::<
+        PallasGroup,
+        PallasBaseSponge,
+        PallasScalarSponge,
+    >(&**verifier_index, &**proof, &public)?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Extract raw opening prechallenges from a Vesta proof (Pallas/Fp circuits).
+/// Returns d values (the raw 128-bit ScalarChallenges, pre-endo-expansion).
+/// Matches OCaml `O.opening_prechallenges`.
+#[napi]
+pub fn pallas_proof_opening_prechallenges(
+    verifier_index: &PallasVerifierIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<Vec<VestaFieldExternal>> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_opening_prechallenges::<
+        VestaGroup,
+        VestaBaseSponge,
+        VestaScalarSponge,
+    >(&**verifier_index, &**proof, &public)?;
+    Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Extract raw opening prechallenges from a Pallas proof (Vesta/Fq circuits).
+/// Returns d values (the raw 128-bit ScalarChallenges, pre-endo-expansion).
+/// Matches OCaml `O.opening_prechallenges`.
+#[napi]
+pub fn vesta_proof_opening_prechallenges(
+    verifier_index: &VestaVerifierIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<Vec<PallasFieldExternal>> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::proof_opening_prechallenges::<
         PallasGroup,
         PallasBaseSponge,
         PallasScalarSponge,

@@ -7,16 +7,20 @@
 module Pickles.Step.MessageHash
   ( hashMessagesForNextStepProof
   , hashMessagesForNextStepProofOpt
+  , hashMessagesForNextStepProofPure
   ) where
 
 import Prelude
 
+import Data.Array as Array
 import Data.Foldable (foldM, for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (initialSpongeCircuit)
-import Poseidon (class PoseidonField)
+import Pickles.VerificationKey (StepVK)
+import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
 import Snarky.Circuit.RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
@@ -143,3 +147,67 @@ hashMessagesForNextStepProofOpt { vkComms, appState, proofs } = do
     pure msg
 
   pure { digest, spongeAfterIndex }
+
+-- | Pure prover-side version of OCaml `Common.hash_messages_for_next_step_proof`
+-- | (`mina/src/lib/crypto/pickles/common.ml:45-52`).
+-- |
+-- | Absorbs the VK commitment coordinates + app_state fields + per-proof
+-- | `(sg, expanded bp_challenges)` pairs into a single Poseidon digest
+-- | over the step field.
+-- |
+-- | Caller is responsible for **expanding** the raw bulletproof challenges
+-- | to full step-field elements before passing them in — this matches the
+-- | `Reduced_messages_for_next_proof_over_same_field.Step.prepare` step
+-- | (`reduced_messages_for_next_proof_over_same_field.ml:32-43`), which
+-- | maps `Ipa.Step.compute_challenges` over each vector.
+-- |
+-- | Field absorption order (matches OCaml
+-- | `side_loaded_verification_key.index_to_field_elements` → `to_field_elements`):
+-- |
+-- | 1. `stepVk.sigmaComm` (7 × 2 = 14 fields)
+-- | 2. `stepVk.coefficientsComm` (15 × 2 = 30 fields)
+-- | 3. `genericComm, psmComm, completeAddComm, mulComm, emulComm,
+-- |    endomulScalarComm` (6 × 2 = 12 fields)
+-- | 4. `appState` (user-provided field elements)
+-- | 5. For each previous proof: `sg.x, sg.y` then all expanded `bpChallenges`
+-- |
+-- | For `num_chunks = 1` (standard Mina) each VK commitment is a single
+-- | curve point. When chunked support lands, this signature will need
+-- | updating.
+hashMessagesForNextStepProofPure
+  :: forall n d f
+   . PoseidonField f
+  => { stepVk :: StepVK f
+     , appState :: Array f
+     , proofs ::
+         Vector n
+           { sg :: AffinePoint f
+           , expandedBpChallenges :: Vector d f
+           }
+     }
+  -> f
+hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
+  let
+    ptFields :: AffinePoint f -> Array f
+    ptFields pt = [ pt.x, pt.y ]
+
+    vkFields :: Array f
+    vkFields =
+      Array.concatMap ptFields (Array.fromFoldable stepVk.sigmaComm)
+        <> Array.concatMap ptFields (Array.fromFoldable stepVk.coefficientsComm)
+        <> ptFields stepVk.genericComm
+        <> ptFields stepVk.psmComm
+        <> ptFields stepVk.completeAddComm
+        <> ptFields stepVk.mulComm
+        <> ptFields stepVk.emulComm
+        <> ptFields stepVk.endomulScalarComm
+
+    proofFields :: Array f
+    proofFields = Array.concatMap
+      ( \p ->
+          ptFields p.sg
+            <> Vector.toUnfoldable p.expandedBpChallenges
+      )
+      (Array.fromFoldable proofs)
+  in
+    hash (vkFields <> appState <> proofFields)

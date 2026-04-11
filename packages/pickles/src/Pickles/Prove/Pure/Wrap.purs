@@ -1,0 +1,13 @@
+-- | Wrap-prover orchestration. Reserved for a future PS port of
+-- | `mina/src/lib/crypto/pickles/wrap.ml`.
+-- |
+-- | Currently empty — the step-prover side
+-- | (`Pickles.Prove.Pure.Step`) is the only prover in this tree.
+-- | When wrap.ml lands, this module will contain:
+-- |
+-- | * `combinedInnerProductWrap` — already field-polymorphic in
+-- |   `Pickles.Prove.Pure.Common.combinedInnerProductBatch`; this
+-- |   module will expose a wrap-prover-specific wrapper.
+-- | * `wrapProve` — the top-level wrap-prover entry point, mirroring
+-- |   OCaml `Wrap.wrap`.
+module Pickles.Prove.Pure.Wrap where

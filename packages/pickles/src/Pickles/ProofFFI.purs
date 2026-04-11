@@ -1,5 +1,10 @@
--- | Test-only FFI bindings for proof creation and oracle computation.
-module Test.Pickles.ProofFFI
+-- | FFI bindings for proof creation, oracle computation, and other
+-- | kimchi proof-systems operations.
+-- |
+-- | This module was originally `Test.Pickles.ProofFFI` — lifted into
+-- | `packages/pickles/src/` so the prover library (`Pickles.Prove.*`)
+-- | can consume `proofOracles`, `createProof`, etc. directly.
+module Pickles.ProofFFI
   ( class ProofFFI
   , proverIndexShifts
   , createProof
@@ -8,6 +13,7 @@ module Test.Pickles.ProofFFI
   , proofSigmaEvals
   , proofCoefficientEvals
   , proofOracles
+  , proofOpeningPrechallenges
   , proofBulletproofChallenges
   , verifyOpeningProof
   , computeB0
@@ -15,6 +21,8 @@ module Test.Pickles.ProofFFI
   , domainGenerator
   , proofIpaRounds
   -- Functions not in typeclass (use different field than circuit field f)
+  , pallasProofOracles
+  , vestaProofOracles
   , pallasSpongeCheckpointBeforeChallenges
   , vestaSpongeCheckpointBeforeChallenges
   , pallasProofOpeningLr
@@ -98,6 +106,7 @@ type OraclesResult f =
   , alphaChal :: SizedF 128 f -- raw 128-bit alpha challenge (pre-endo-expansion)
   , zetaChal :: SizedF 128 f -- raw 128-bit zeta challenge (pre-endo-expansion)
   , vChal :: SizedF 128 f -- raw 128-bit polyscale challenge (pre-endo-expansion)
+  , uChal :: SizedF 128 f -- raw 128-bit evalscale challenge (pre-endo-expansion)
   }
 
 -- | Sponge checkpoint for debugging/testing challenge extraction.
@@ -122,7 +131,21 @@ class ProofFFI f g | f -> g where
   proofZEvals :: Proof g f -> PointEval f
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
   proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
+  -- | Non-recursive variant of `{pallas,vesta}ProofOracles` — passes
+  -- | `prevChallenges: []` behind the scenes. Use this from
+  -- | curve-polymorphic code that only handles standalone proofs (e.g.
+  -- | the test harness). For recursive proofs, call the direct
+  -- | `pallasProofOracles` / `vestaProofOracles` foreign imports with
+  -- | the real `prevChallenges` list — the class method can't express
+  -- | them polymorphically because the sg-coord field type differs per
+  -- | curve instance.
   proofOracles :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> OraclesResult f
+  -- | Raw 128-bit scalar challenges from the IPA round loop
+  -- | (`O.opening_prechallenges` in OCaml). Each field element embeds
+  -- | a 128-bit value pre-endo-expansion; consumers feed them through
+  -- | `Scalar_challenge.to_field` to recover full-field bulletproof
+  -- | challenges.
+  proofOpeningPrechallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
   proofBulletproofChallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
   verifyOpeningProof :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
@@ -152,11 +175,52 @@ foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 
 foreign import pallasProofCoefficientEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
 foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
 
-foreign import pallasProofOracles :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> OraclesResult Pallas.BaseField
-foreign import vestaProofOracles :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> OraclesResult Vesta.BaseField
+-- | `prevChallenges` carries the recursive `Challenge_polynomial.t`
+-- | data that kimchi's Fiat-Shamir transcript absorbs before the
+-- | current proof's commitments. Each entry has the prior proof's
+-- | `sg` commitment (a single curve point) and its **expanded**
+-- | bulletproof challenges in the current proof's scalar field.
+-- | Non-recursive callers pass `[]`.
+-- |
+-- | For `pallasProofOracles` (Vesta-committed proofs = step proofs):
+-- | the commitment is a Vesta point with coordinates in the Vesta
+-- | base field (`Pallas.ScalarField`), and the challenges are in the
+-- | Vesta scalar field (`Pallas.BaseField`).
+foreign import pallasProofOracles
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> { proof :: Proof Vesta.G Pallas.BaseField
+     , publicInput :: Array Pallas.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Pallas.ScalarField
+           , sgY :: Pallas.ScalarField
+           , challenges :: Array Pallas.BaseField
+           }
+     }
+  -> OraclesResult Pallas.BaseField
+
+-- | For `vestaProofOracles` (Pallas-committed proofs = wrap proofs):
+-- | the commitment is a Pallas point with coordinates in the Pallas
+-- | base field (`Vesta.ScalarField`), and the challenges are in the
+-- | Pallas scalar field (`Vesta.BaseField`).
+foreign import vestaProofOracles
+  :: VerifierIndex Pallas.G Vesta.BaseField
+  -> { proof :: Proof Pallas.G Vesta.BaseField
+     , publicInput :: Array Vesta.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Vesta.ScalarField
+           , sgY :: Vesta.ScalarField
+           , challenges :: Array Vesta.BaseField
+           }
+     }
+  -> OraclesResult Vesta.BaseField
 
 foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
 foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
+
+foreign import pallasProofOpeningPrechallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
+foreign import vestaProofOpeningPrechallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
 
 foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
@@ -301,7 +365,9 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   proofZEvals = pallasProofZEvals
   proofSigmaEvals = pallasProofSigmaEvals
   proofCoefficientEvals = pallasProofCoefficientEvals
-  proofOracles = pallasProofOracles
+  proofOracles vk { proof, publicInput } =
+    pallasProofOracles vk { proof, publicInput, prevChallenges: [] }
+  proofOpeningPrechallenges = pallasProofOpeningPrechallenges
   proofBulletproofChallenges = pallasProofBulletproofChallenges
   verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
@@ -316,7 +382,9 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   proofZEvals = vestaProofZEvals
   proofSigmaEvals = vestaProofSigmaEvals
   proofCoefficientEvals = vestaProofCoefficientEvals
-  proofOracles = vestaProofOracles
+  proofOracles vk { proof, publicInput } =
+    vestaProofOracles vk { proof, publicInput, prevChallenges: [] }
+  proofOpeningPrechallenges = vestaProofOpeningPrechallenges
   proofBulletproofChallenges = vestaProofBulletproofChallenges
   verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial

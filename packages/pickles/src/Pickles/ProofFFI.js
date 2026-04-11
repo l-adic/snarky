@@ -58,50 +58,54 @@ export const vestaProofCoefficientEvals = (proof) =>
   pairEvals(crypto.vestaProofCoefficientEvals(proof));
 
 // Proof oracles (Fiat-Shamir)
-// Returns 15 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
+// Returns 16 values: [alpha, beta, gamma, zeta, ft_eval0, v, u,
 //                     combined_inner_product, ft_eval1, public_eval_zeta, public_eval_zeta_omega,
-//                     fq_digest, alpha_chal, zeta_chal, v_chal]
-export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.pallasProofOracles(verifierIndex, proof, publicInput);
-  return {
-    alpha: flat[0],
-    beta: flat[1],
-    gamma: flat[2],
-    zeta: flat[3],
-    ftEval0: flat[4],
-    v: flat[5],
-    u: flat[6],
-    combinedInnerProduct: flat[7],
-    ftEval1: flat[8],
-    publicEvalZeta: flat[9],
-    publicEvalZetaOmega: flat[10],
-    fqDigest: flat[11],
-    alphaChal: flat[12],
-    zetaChal: flat[13],
-    vChal: flat[14]
-  };
+//                     fq_digest, alpha_chal, zeta_chal, v_chal, u_chal]
+//
+// `prevChallenges` is an array of `{ sgX, sgY, challenges }` records
+// (one per previous proof); we split into the three parallel arrays
+// that the napi binding expects.
+const unpackOracles = (flat) => ({
+  alpha: flat[0],
+  beta: flat[1],
+  gamma: flat[2],
+  zeta: flat[3],
+  ftEval0: flat[4],
+  v: flat[5],
+  u: flat[6],
+  combinedInnerProduct: flat[7],
+  ftEval1: flat[8],
+  publicEvalZeta: flat[9],
+  publicEvalZetaOmega: flat[10],
+  fqDigest: flat[11],
+  alphaChal: flat[12],
+  zetaChal: flat[13],
+  vChal: flat[14],
+  uChal: flat[15]
+});
+
+export const pallasProofOracles = (verifierIndex) => ({ proof, publicInput, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const prevChals = prevChallenges.map(p => p.challenges);
+  const flat = crypto.pallasProofOracles(verifierIndex, proof, publicInput, prevSgXs, prevSgYs, prevChals);
+  return unpackOracles(flat);
 };
 
-export const vestaProofOracles = (verifierIndex) => ({ proof, publicInput }) => {
-  const flat = crypto.vestaProofOracles(verifierIndex, proof, publicInput);
-  return {
-    alpha: flat[0],
-    beta: flat[1],
-    gamma: flat[2],
-    zeta: flat[3],
-    ftEval0: flat[4],
-    v: flat[5],
-    u: flat[6],
-    combinedInnerProduct: flat[7],
-    ftEval1: flat[8],
-    publicEvalZeta: flat[9],
-    publicEvalZetaOmega: flat[10],
-    fqDigest: flat[11],
-    alphaChal: flat[12],
-    zetaChal: flat[13],
-    vChal: flat[14]
-  };
+export const vestaProofOracles = (verifierIndex) => ({ proof, publicInput, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const prevChals = prevChallenges.map(p => p.challenges);
+  const flat = crypto.vestaProofOracles(verifierIndex, proof, publicInput, prevSgXs, prevSgYs, prevChals);
+  return unpackOracles(flat);
 };
+
+// Opening prechallenges (raw 128-bit ScalarChallenges from the IPA round loop)
+export const pallasProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasProofOpeningPrechallenges(verifierIndex, proof, publicInput);
+
+export const vestaProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaProofOpeningPrechallenges(verifierIndex, proof, publicInput);
 
 // Bulletproof challenges (IPA)
 export const pallasProofBulletproofChallenges = (verifierIndex) => ({ proof, publicInput }) =>
