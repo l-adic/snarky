@@ -226,8 +226,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       pure { xHat, beta, gamma, alphaChal, zetaChal, digest }
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
-  liftSnarky $ label "ivp_assert_plonk" $
-    assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
+  liftSnarky do
+    let expected = toPlonkMinimal input.deferredValues.plonk
+    label "ivp_assert_plonk_beta" $ assertEq beta expected.beta
+    label "ivp_assert_plonk_gamma" $ assertEq gamma expected.gamma
+    label "ivp_assert_plonk_alpha" $ assertEq alphaChal expected.alpha
+    label "ivp_assert_plonk_zeta" $ assertEq zetaChal expected.zeta
 
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm

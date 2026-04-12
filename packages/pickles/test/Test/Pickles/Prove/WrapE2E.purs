@@ -22,7 +22,10 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException, try) as Exc
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
+import Data.Foldable (for_)
 import Pickles.Linearization (pallas) as Linearization
+import Pickles.Sponge as Pickles.Sponge
+import RandomOracle.Sponge as RandomOracle.Sponge
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI as ProofFFI
@@ -509,6 +512,32 @@ spec = describe "Pickles.Prove.WrapE2E" do
       case result of
         Left _ -> pure unit
         Right _ -> pure unit
+
+  -- Diagnostic: check index digest matches FFI
+  it "L3.5: step VK index digest matches FFI" \{ step0 } -> do
+    let
+      comms = extractStepVKComms step0
+      -- Hash in IVP order: sigma(6), sigmaLast, coeff(15), index(6)
+      sigma6 = Vector.take @6 comms.sigmaComm
+      sigmaLast = Vector.index comms.sigmaComm (unsafeFinite @7 6)
+      pts = (Vector.toUnfoldable sigma6 :: Array _)
+        <> [sigmaLast]
+        <> (Vector.toUnfoldable comms.coefficientsComm :: Array _)
+        <> [ comms.genericComm, comms.psmComm, comms.completeAddComm
+           , comms.mulComm, comms.emulComm, comms.endomulScalarComm ]
+      -- Hash via Poseidon sponge (same as IVP does)
+      digest = Pickles.Sponge.evalPureSpongeM
+        (RandomOracle.Sponge.create (RandomOracle.Sponge.initialState :: Vector 3 WrapField))
+        do
+          for_ pts \pt -> do
+            Pickles.Sponge.absorb pt.x
+            Pickles.Sponge.absorb pt.y
+          Pickles.Sponge.squeeze
+      -- Compare with FFI digest
+      ffiDigest = ProofFFI.pallasVerifierIndexDigest step0.verifierIndex
+    -- Cross-field: ffiDigest is Fp-typed but should be the same integer as our Fq digest
+    liftEffect $ when (toBigInt digest /= toBigInt ffiDigest) $
+      Exc.throw $ "Index digest mismatch: PS=" <> show (toBigInt digest) <> " FFI=" <> show (toBigInt ffiDigest)
 
   -- Layer 4: real everything + verify the wrap proof
   it "L4: wrap proof verifies" \{ step0 } -> do
