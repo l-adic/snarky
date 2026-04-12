@@ -48,9 +48,10 @@ import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots, Slots2)
 import Prim.Int (class Add)
-import Snarky.Backend.Compile (SolverT, compile, makeSolver, runSolverT)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
+import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (Variable)
 import Snarky.Circuit.DSL (F(..))
@@ -453,7 +454,7 @@ wrapProve onError ctx = do
            (WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver (Proxy @(KimchiConstraint WrapField))
+      makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint WrapField))
         (wrapMain @branches @slot0Width @slot1Width ctx.wrapMainConfig)
 
   eRes <- runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
@@ -482,14 +483,19 @@ wrapProve onError ctx = do
             { endo, constraintSystem, crs: ctx.crs }
 
         verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
-        proof = createProof { proverIndex, witness }
+        csSatisfied = verifyProverIndex @WrapField @PallasG
+          { proverIndex, witness, publicInputs }
       in
-        pure
-          { proverIndex
-          , verifierIndex
-          , constraintSystem
-          , witness
-          , publicInputs
-          , proof
-          , assignments
-          }
+        if not csSatisfied then
+          onError (error "wrapProve: constraint system not satisfied")
+        else
+          let proof = createProof { proverIndex, witness }
+          in pure
+            { proverIndex
+            , verifierIndex
+            , constraintSystem
+            , witness
+            , publicInputs
+            , proof
+            , assignments
+            }

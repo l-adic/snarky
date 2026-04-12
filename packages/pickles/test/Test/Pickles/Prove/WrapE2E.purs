@@ -29,6 +29,7 @@ import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Wrap (WrapAdvice, WrapProveContext, BuildWrapAdviceInput, buildWrapAdvice, wrapProve)
 import Pickles.Verify.Types as Pickles.Verify.Types
+import Snarky.Backend.Kimchi.Class (verifyProverIndex)
 import Pickles.PublicInputCommit (mkConstLagrangeBase)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
@@ -134,8 +135,34 @@ buildAllEvals ctx =
   , indexEvals: ProofFFI.proofIndexEvals ctx.proof
   }
 
+-- | Compute omega power for unnormalized_lagrange_basis lookups.
+-- | Maps `(zkRows :: Boolean, offset :: Int)` to the appropriate omega
+-- | power, matching OCaml's plonk_checks.ml:311-330.
+-- | With zkRows=3, the cases are: (false,0)→1, (false,1)→omega,
+-- | (false,-1)→omega^(-1), (false,-2)→omega^(-2), (false,-3)/(true,0)→omega^(-3),
+-- | (true,-1)→omega^(-4).
+mkOmegaForLagrange :: Int -> StepField -> { zkRows :: Boolean, offset :: Int } -> StepField
+mkOmegaForLagrange _domainLog2 omega { zkRows: zk, offset } =
+  let
+    omInv = recip omega
+    omInv2 = omInv * omInv
+    omToZkPlus1 = omInv2
+    omToZk = omToZkPlus1 * omInv
+    omToZkMinus1 = omToZk * omInv
+  in case zk, offset of
+    false, 0 -> one
+    false, 1 -> omega
+    false, (-1) -> omInv
+    false, (-2) -> omToZkPlus1
+    false, (-3) -> omToZk
+    true, 0 -> omToZk
+    true, (-1) -> omToZkMinus1
+    _, _ -> one
+
 buildDeferredValuesInput :: StepProofContext -> WrapDeferredValuesInput 0
 buildDeferredValuesInput ctx =
+  let omega = domainGenerator ctx.domainLog2
+  in
   { proof: ctx.proof
   , verifierIndex: ctx.verifierIndex
   , publicInput: ctx.publicInputs
@@ -144,16 +171,20 @@ buildDeferredValuesInput ctx =
   , domainLog2: ctx.domainLog2
   , zkRows
   , srsLengthLog2: 16
-  , generator: domainGenerator ctx.domainLog2
+  , generator: omega
   , shifts: domainShifts ctx.domainLog2
-  , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
-      { domainLog2: ctx.domainLog2, zkRows, pt: ctx.oracles.zeta }
-  , omegaForLagrange: \_ -> one
+  -- No lookups (Features.Full.none) → vanishesOnZk = one
+  -- (OCaml plonk_checks.ml:299-303: joint_combiner = None → F.one)
+  , vanishesOnZk: one
+  , omegaForLagrange: mkOmegaForLagrange ctx.domainLog2 omega
   , endo: stepEndoScalar
   , linearizationPoly: Linearization.pallas
   , prevSgs: Vector.nil
   , prevChallenges: Vector.nil
-  , proofsVerifiedMask: false :< false :< Vector.nil
+  -- stepWidths=[1] → maskVal0=true (>=1 proof), maskVal1=false (not >=2).
+  -- packBranchDataWrap uses mask[0]+2*mask[1]; circuit uses maskVal1+2*maskVal0.
+  -- So mask[0]=maskVal1=false, mask[1]=maskVal0=true.
+  , proofsVerifiedMask: false :< true :< Vector.nil
   }
 
 -- | Step VK in StepField coordinates for hashMessagesForNextStepProofPure.
@@ -291,9 +322,15 @@ buildRealAdvice ctx =
     -- Real evals (slot 0) + dummy evals (slot 1)
     realEvals = coerceAllEvalsToWrap (buildAllEvals ctx)
 
-    -- Dummy sg from Pickles.Dummy (base case: no real previous sg)
+    -- Dummy sg: Proof.dummy uses Dummy.Ipa.Step.sg (Vesta point, Fq coords)
+    -- for messages_for_next_wrap_proof.challenge_polynomial_commitment.
+    -- NOT Dummy.Ipa.Wrap.sg (Pallas point, Fp coords) — that's for
+    -- messages_for_next_step_proof. See proof.ml:156 vs proof.ml:170.
+    pallasSrs = PallasImpl.pallasCrsCreate (2 `Int.pow` 15)
+    vestaSrs = VestaImpl.vestaCrsCreate (2 `Int.pow` 16)
+    dummySgRaw = (Dummy.computeDummySgValues pallasSrs vestaSrs).ipa.step.sg
     dummySg :: WeierstrassAffinePoint VestaG (F WrapField)
-    dummySg = WeierstrassAffinePoint { x: F zero, y: F zero }
+    dummySg = WeierstrassAffinePoint { x: F dummySgRaw.x, y: F dummySgRaw.y }
 
     -- Old bp challenges: use correct dummies from Pickles.Dummy
     dummyBpChals :: Vector WrapIPARounds (F WrapField)
@@ -494,6 +531,9 @@ spec = describe "Pickles.Prove.WrapE2E" do
         , advice
         }
     result <- liftEffect $ wrapProve (\e -> Exc.throw (show e)) ctx
-    let verified = ProofFFI.verifyOpeningProof result.verifierIndex
+    let csSatisfied = verifyProverIndex
+          { proverIndex: result.proverIndex, witness: result.witness, publicInputs: result.publicInputs }
+    liftEffect $ when (not csSatisfied) $ Exc.throw "Wrap constraint system not satisfied"
+    let proofVerified = ProofFFI.verifyOpeningProof result.verifierIndex
           { proof: result.proof, publicInput: result.publicInputs }
-    liftEffect $ when (not verified) $ Exc.throw "Wrap proof failed to verify"
+    liftEffect $ when (not proofVerified) $ Exc.throw "Wrap proof failed to verify"

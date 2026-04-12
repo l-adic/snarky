@@ -644,5 +644,5 @@ wrapMain config (WrapStatementPacked stmtR) = do
       , sg: openingProof.sg
       }
 
-  wrapVerify ivpParams fullIvpInput verifyInput
+  label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 

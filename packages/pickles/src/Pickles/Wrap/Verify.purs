@@ -34,7 +34,7 @@ import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWr
 import Pickles.Wrap.OtherField as WrapOtherField
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_)
+import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEq, assertEqual_, assert_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -81,7 +81,7 @@ wrapVerify ivpParams ivpInput verifyInput = do
     incrementallyVerifyProof @VestaG WrapOtherField.ipaScalarOps ivpParams ivpInput Nothing
 
   -- Assertion 1: bulletproof_success (wrap_main.ml:116)
-  assert_ output.success
+  label "ivp-assert-bp-success" $ assert_ output.success
 
   -- Assertion 2: messages_for_next_wrap_proof hash (wrap_main.ml:117-125)
   -- Pre-computed sponge state: index (2-n) in dummy_messages_for_next_wrap_proof_sponge_states.
@@ -90,16 +90,16 @@ wrapVerify ivpParams ivpInput verifyInput = do
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
     paddingState = Vector.index states (reflectFinite @n)
     msgHashSponge = spongeFromConstants { state: paddingState.state, spongeState: paddingState.spongeState }
-  computedDigest <- evalSpongeM msgHashSponge $
+  computedDigest <- label "ivp-hash-msg-for-next-wrap" $ evalSpongeM msgHashSponge $
     hashMessagesForNextWrapProofCircuit'
       { sg: verifyInput.sg
       , allChallenges: verifyInput.newBpChallenges
       }
-  assertEqual_ verifyInput.messagesForNextWrapProofDigest computedDigest
+  label "ivp-assert-msg-wrap-hash" $ assertEqual_ verifyInput.messagesForNextWrapProofDigest computedDigest
 
   -- Assertion 3: sponge_digest (wrap_main.ml:126-128)
-  assertEqual_ verifyInput.spongeDigestBeforeEvaluations output.spongeDigestBeforeEvaluations
+  label "ivp-assert-sponge-digest" $ assertEqual_ verifyInput.spongeDigestBeforeEvaluations output.spongeDigestBeforeEvaluations
 
   -- Assertion 4: bp_challenges match (wrap_main.ml:129-135)
-  for_ (Vector.zip verifyInput.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
+  label "ivp-assert-bp-challenges" $ for_ (Vector.zip verifyInput.bulletproofChallenges output.bulletproofChallenges) \(Tuple c1 c2) ->
     assertEq c1 c2
