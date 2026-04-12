@@ -28,6 +28,7 @@ import Pickles.Sponge as Pickles.Sponge
 import RandomOracle.Sponge as RandomOracle.Sponge
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
+import Pickles.PackedStatement as Pickles.PackedStatement
 import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Wrap (WrapAdvice, WrapProveContext, BuildWrapAdviceInput, buildWrapAdvice, wrapProve)
@@ -41,8 +42,10 @@ import Pickles.Wrap.Main (WrapMainConfig)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import Pickles.Wrap.Slots (Slots2, slots2)
 import Safe.Coerce (coerce)
+import Data.Array as Array
 import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), const_)
-import Snarky.Circuit.Types (fieldsToValue)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue, sizeInFields)
+import Type.Proxy (Proxy(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..))
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
@@ -513,8 +516,20 @@ spec = describe "Pickles.Prove.WrapE2E" do
         Left _ -> pure unit
         Right _ -> pure unit
 
+  -- Diagnostic: check packed step public input matches step proof's public input
+  it "L3.5a: packed step public input field count matches step proof" \{ step0 } -> do
+    let
+      -- Step proof's public input coerced to WrapField
+      stepPubFields = map (\fp -> fromBigInt (toBigInt fp) :: WrapField) step0.publicInputs
+      nStepFields = Array.length stepPubFields
+      -- Count fields in PackedStepPublicInput 2 WrapIPARounds
+      nPackedFields = sizeInFields (Proxy :: Proxy WrapField)
+        (Proxy :: Proxy (Pickles.PackedStatement.PackedStepPublicInput 2 WrapIPARounds (F WrapField) Boolean))
+    liftEffect $ when (nStepFields /= nPackedFields) $
+      Exc.throw $ "Field count mismatch: step=" <> show nStepFields <> " packed=" <> show nPackedFields
+
   -- Diagnostic: check index digest matches FFI
-  it "L3.5: step VK index digest matches FFI" \{ step0 } -> do
+  it "L3.5b: step VK index digest matches FFI" \{ step0 } -> do
     let
       comms = extractStepVKComms step0
       -- Hash in IVP order: sigma(6), sigmaLast, coeff(15), index(6)
