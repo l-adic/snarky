@@ -29,14 +29,15 @@ module Test.Pickles.PadSlotsHK
 
 import Prelude
 
-import Data.Const (Const(..))
-import Data.Functor.Product (Product, product)
+import Data.Const (Const)
+import Data.Functor.Product (Product)
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Types (PaddedLength)
+import Pickles.Wrap.Slots (NoSlots, Slots1, Slots2, noSlots, slots1, slots2)
 import Prim.Int (class Add)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (shouldEqual)
@@ -106,62 +107,55 @@ padSlotDummy dummy slot =
 
 spec :: Spec Unit
 spec = describe "PadSlotsHK (Product/Const slot list)" do
-  it "mpv=0: Const Unit nil produces empty vectors" do
+  -- Each test exercises both the type synonym layer (NoSlots / Slots1
+  -- / Slots2 from Pickles.Wrap.Slots) and the underlying class
+  -- machinery. The synonyms are the production-facing API; the
+  -- class resolves against the underlying Product/Const shapes
+  -- because type synonyms are transparent at instance resolution.
+
+  it "NoSlots (mpv=0): produces empty vectors" do
     let
       widths :: Vector 0 Int
-      widths = slotWidthsOf (Proxy :: Proxy (Const Unit))
+      widths = slotWidthsOf (Proxy :: Proxy NoSlots)
 
       padded :: Vector 0 (Vector PaddedLength Int)
-      padded = padAllSlots 99 (Const unit :: Const Unit Int)
+      padded = padAllSlots 99 (noSlots :: NoSlots Int)
     toArr widths `shouldEqual` []
     map toArr (toArr padded) `shouldEqual` []
 
-  it "mpv=1, slotWidth=0: one slot of width 0" do
+  it "Slots1 0: one slot of width 0" do
     let
-      slot :: Vector 0 Int
-      slot = Vector.nil
-
-      tup :: Product (Vector 0) (Const Unit) Int
-      tup = product slot (Const unit)
+      tup :: Slots1 0 Int
+      tup = slots1 Vector.nil
 
       widths :: Vector 1 Int
-      widths = slotWidthsOf (Proxy :: Proxy (Product (Vector 0) (Const Unit)))
+      widths = slotWidthsOf (Proxy :: Proxy (Slots1 0))
 
       padded :: Vector 1 (Vector PaddedLength Int)
       padded = padAllSlots 99 tup
     toArr widths `shouldEqual` [ 0 ]
     map toArr (toArr padded) `shouldEqual` [ [ 99, 99 ] ]
 
-  it "mpv=1, slotWidth=1: one slot of width 1" do
+  it "Slots1 1: one slot with one real entry" do
     let
-      slot :: Vector 1 Int
-      slot = 42 :< Vector.nil
-
-      tup :: Product (Vector 1) (Const Unit) Int
-      tup = product slot (Const unit)
+      tup :: Slots1 1 Int
+      tup = slots1 (42 :< Vector.nil)
 
       widths :: Vector 1 Int
-      widths = slotWidthsOf (Proxy :: Proxy (Product (Vector 1) (Const Unit)))
+      widths = slotWidthsOf (Proxy :: Proxy (Slots1 1))
 
       padded :: Vector 1 (Vector PaddedLength Int)
       padded = padAllSlots 99 tup
     toArr widths `shouldEqual` [ 1 ]
     map toArr (toArr padded) `shouldEqual` [ [ 99, 42 ] ]
 
-  it "mpv=2, slot widths (0, 1)" do
+  it "Slots2 0 1: two slots of different widths" do
     let
-      slot0 :: Vector 0 Int
-      slot0 = Vector.nil
-
-      slot1 :: Vector 1 Int
-      slot1 = 7 :< Vector.nil
-
-      tup :: Product (Vector 0) (Product (Vector 1) (Const Unit)) Int
-      tup = product slot0 (product slot1 (Const unit))
+      tup :: Slots2 0 1 Int
+      tup = slots2 Vector.nil (7 :< Vector.nil)
 
       widths :: Vector 2 Int
-      widths = slotWidthsOf
-        (Proxy :: Proxy (Product (Vector 0) (Product (Vector 1) (Const Unit))))
+      widths = slotWidthsOf (Proxy :: Proxy (Slots2 0 1))
 
       padded :: Vector 2 (Vector PaddedLength Int)
       padded = padAllSlots 99 tup
@@ -169,20 +163,13 @@ spec = describe "PadSlotsHK (Product/Const slot list)" do
     map toArr (toArr padded) `shouldEqual`
       [ [ 99, 99 ], [ 99, 7 ] ]
 
-  it "mpv=2, slot widths (2, 2)" do
+  it "Slots2 2 2: two full-width slots" do
     let
-      slot0 :: Vector 2 Int
-      slot0 = 1 :< 2 :< Vector.nil
-
-      slot1 :: Vector 2 Int
-      slot1 = 3 :< 4 :< Vector.nil
-
-      tup :: Product (Vector 2) (Product (Vector 2) (Const Unit)) Int
-      tup = product slot0 (product slot1 (Const unit))
+      tup :: Slots2 2 2 Int
+      tup = slots2 (1 :< 2 :< Vector.nil) (3 :< 4 :< Vector.nil)
 
       widths :: Vector 2 Int
-      widths = slotWidthsOf
-        (Proxy :: Proxy (Product (Vector 2) (Product (Vector 2) (Const Unit))))
+      widths = slotWidthsOf (Proxy :: Proxy (Slots2 2 2))
 
       padded :: Vector 2 (Vector PaddedLength Int)
       padded = padAllSlots 99 tup
