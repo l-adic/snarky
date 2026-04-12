@@ -43,9 +43,10 @@ import Data.Vector as Vector
 import Effect.Exception (Error, error)
 import Partial.Unsafe (unsafePartial)
 import Pickles.ProofFFI (Proof, createProof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2)
-import Pickles.Types (MaxProofsVerified, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapOldBpChals, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
+import Pickles.Wrap.Slots (class PadSlots, Slots2)
 import Prim.Int (class Add)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver, runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
@@ -70,19 +71,19 @@ import Type.Proxy (Proxy(..))
 -- |
 -- | Type parameters mirror `WrapWitnessM`:
 -- |
--- | * `mpv` — max_proofs_verified (= 2 in Pickles).
--- | * `slot0Width`, `slot1Width` — per-slot widths of
--- |   `Max_widths_by_slot.maxes`, driving the old-bp-challenges shape.
+-- | * `mpv` — max_proofs_verified (varies per compile: N0, N1, or N2).
+-- | * `slots` — the slot-list shape, a `Type -> Type` from
+-- |   `Pickles.Wrap.Slots` (`NoSlots`, `Slots1 w`, or `Slots2 w0 w1`).
 -- |
 -- | The commitment curve is pinned to `VestaG` (the Step proof's
 -- | commitment curve) and the field to `WrapField` (= `Vesta.BaseField`
 -- | = the native field of the wrap circuit).
-type WrapAdvice (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) =
+type WrapAdvice (mpv :: Int) (slots :: Type -> Type) =
   { whichBranch :: F WrapField
   , wrapProofState ::
       WrapPrevProofState mpv (Type2 (F WrapField)) (F WrapField) Boolean
   , stepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
-  , oldBpChals :: WrapOldBpChals slot0Width slot1Width (F WrapField)
+  , oldBpChals :: slots (Vector WrapIPARounds (F WrapField))
   , evals :: Vector mpv (StepAllEvals (F WrapField))
   , wrapDomainIndices :: Vector mpv (F WrapField)
   , openingProof ::
@@ -103,32 +104,30 @@ type WrapAdvice (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) =
 newtype WrapProverT
   :: Int
   -> Int
-  -> Int
-  -> Int
+  -> (Type -> Type)
   -> (Type -> Type)
   -> Type
   -> Type
 newtype WrapProverT
   branches
   mpv
-  slot0Width
-  slot1Width
+  slots
   m
-  a = WrapProverT (ReaderT (WrapAdvice mpv slot0Width slot1Width) m a)
+  a = WrapProverT (ReaderT (WrapAdvice mpv slots) m a)
 
-derive instance Newtype (WrapProverT branches mpv slot0Width slot1Width m a) _
-derive newtype instance Functor m => Functor (WrapProverT branches mpv slot0Width slot1Width m)
-derive newtype instance Apply m => Apply (WrapProverT branches mpv slot0Width slot1Width m)
-derive newtype instance Applicative m => Applicative (WrapProverT branches mpv slot0Width slot1Width m)
-derive newtype instance Bind m => Bind (WrapProverT branches mpv slot0Width slot1Width m)
-derive newtype instance Monad m => Monad (WrapProverT branches mpv slot0Width slot1Width m)
+derive instance Newtype (WrapProverT branches mpv slots m a) _
+derive newtype instance Functor m => Functor (WrapProverT branches mpv slots m)
+derive newtype instance Apply m => Apply (WrapProverT branches mpv slots m)
+derive newtype instance Applicative m => Applicative (WrapProverT branches mpv slots m)
+derive newtype instance Bind m => Bind (WrapProverT branches mpv slots m)
+derive newtype instance Monad m => Monad (WrapProverT branches mpv slots m)
 
 -- | Supply the advice record and run the prover computation in the
 -- | base monad.
 runWrapProverT
-  :: forall branches mpv slot0Width slot1Width m a
-   . WrapAdvice mpv slot0Width slot1Width
-  -> WrapProverT branches mpv slot0Width slot1Width m a
+  :: forall branches mpv slots m a
+   . WrapAdvice mpv slots
+  -> WrapProverT branches mpv slots m a
   -> m a
 runWrapProverT advice (WrapProverT m) = runReaderT m advice
 
@@ -139,17 +138,15 @@ instance
   ( Monad m
   , Reflectable branches Int
   , Reflectable mpv Int
-  , Reflectable slot0Width Int
-  , Reflectable slot1Width Int
+  , PadSlots slots mpv
   ) =>
   WrapWitnessM
     branches
     mpv
-    slot0Width
-    slot1Width
+    slots
     VestaG
     WrapField
-    (WrapProverT branches mpv slot0Width slot1Width m) where
+    (WrapProverT branches mpv slots m) where
   getWhichBranch _ = WrapProverT $ map _.whichBranch ask
   getWrapProofState _ = WrapProverT $ map _.wrapProofState ask
   getStepAccs _ = WrapProverT $ map _.stepAccs ask
@@ -198,7 +195,7 @@ instance
 -- | Input record for `buildWrapAdvice`. Every field has a direct
 -- | correspondence to how OCaml's `wrap.ml` assembles the same data
 -- | for the wrap circuit handler.
-type BuildWrapAdviceInput (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) =
+type BuildWrapAdviceInput (mpv :: Int) (slots :: Type -> Type) =
   { -- | The step proof being wrapped (kimchi in-memory form).
     stepProof :: Proof Vesta.G StepField
 
@@ -230,9 +227,11 @@ type BuildWrapAdviceInput (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) =
   -- | supply dummy sgs.
   , prevStepAccs :: Vector mpv (WeierstrassAffinePoint VestaG (F WrapField))
 
-  -- | Heterogeneous prev wrap bp challenges, grouped by
-  -- | `Max_widths_by_slot.maxes`.
-  , prevOldBpChals :: WrapOldBpChals slot0Width slot1Width (F WrapField)
+  -- | Heterogeneous prev wrap bp challenges, in `slots`-shaped form
+  -- | (one of `NoSlots`, `Slots1 w`, `Slots2 w0 w1` from
+  -- | `Pickles.Wrap.Slots`). Constructed via the smart constructors
+  -- | `noSlots` / `slots1` / `slots2`.
+  , prevOldBpChals :: slots (Vector WrapIPARounds (F WrapField))
 
   -- | Prev wrap proofs' polynomial evaluations (`StepAllEvals` per
   -- | proof, wrap-field scalars). OCaml's `prev_evals`.
@@ -254,9 +253,9 @@ mkVestaPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
 -- | deterministic `pallas*` helpers exposed as non-effectful in
 -- | `Pickles.ProofFFI`.
 buildWrapAdvice
-  :: forall mpv slot0Width slot1Width
-   . BuildWrapAdviceInput mpv slot0Width slot1Width
-  -> WrapAdvice mpv slot0Width slot1Width
+  :: forall mpv slots
+   . BuildWrapAdviceInput mpv slots
+  -> WrapAdvice mpv slots
 buildWrapAdvice input =
   let
     -- ===== Req.Messages (step.ml commitments → wrap witness). =====
@@ -370,12 +369,12 @@ buildWrapAdvice input =
 -- |   `assembleWrapMainInput`). Drives both the compile-time shape
 -- |   check (via `CircuitType`) and the solver input.
 -- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
-type WrapProveContext branches slot0Width slot1Width =
+type WrapProveContext (branches :: Int) (slot0Width :: Int) (slot1Width :: Int) =
   { wrapMainConfig :: WrapMainConfig branches
   , crs :: CRS PallasG
   , publicInput ::
       WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
-  , advice :: WrapAdvice MaxProofsVerified slot0Width slot1Width
+  , advice :: WrapAdvice 2 (Slots2 slot0Width slot1Width)
   }
 
 -- | Artifacts produced by `wrapProve`.
@@ -404,8 +403,8 @@ wrapProve
   => Reflectable slot1Width Int
   => Reflectable pad0 Int
   => Reflectable pad1 Int
-  => Add pad0 slot0Width MaxProofsVerified
-  => Add pad1 slot1Width MaxProofsVerified
+  => Add pad0 slot0Width PaddedLength
+  => Add pad1 slot1Width PaddedLength
   => Add 1 branchesPred branches
   => Monad m
   => (Error -> m WrapProveResult)
@@ -419,11 +418,11 @@ wrapProve onError ctx = do
   -- walks the circuit shape without evaluating `exists` aux bodies.
   --
   -- The explicit annotation on the `compile` result pins
-  -- `WrapProverT`'s four phantom parameters, which is what lets
+  -- `WrapProverT`'s phantom parameters, which is what lets
   -- instance resolution find our `WrapWitnessM` instance.
   let
     compileAction
-      :: WrapProverT branches MaxProofsVerified slot0Width slot1Width m
+      :: WrapProverT branches 2 (Slots2 slot0Width slot1Width) m
            (CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
     compileAction =
       compile
@@ -450,7 +449,7 @@ wrapProve onError ctx = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           (WrapProverT branches MaxProofsVerified slot0Width slot1Width m)
+           (WrapProverT branches 2 (Slots2 slot0Width slot1Width) m)
            (WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =

@@ -381,10 +381,12 @@
           "dependencies": [
             "arrays",
             "bifunctors",
+            "const",
             "curves",
             "either",
             "exceptions",
             "foldable-traversable",
+            "functors",
             "identity",
             "js-bigints",
             "lists",

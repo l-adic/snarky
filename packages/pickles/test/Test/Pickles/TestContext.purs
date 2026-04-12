@@ -59,6 +59,7 @@ module Test.Pickles.TestContext
   , stepEndo
   , wrapEndo
   , type1ToType2SF
+  , convertUnfinalized
   , module Pickles.Types
   , toVectorOrThrow
   ) where

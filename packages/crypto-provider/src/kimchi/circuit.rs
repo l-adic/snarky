@@ -345,6 +345,32 @@ mod generic {
         result
     }
 
+    /// Extract index (selector) polynomial evaluations from a proof.
+    /// Returns 12 values: 6 selectors × 2 points (zeta, zeta*omega).
+    /// Order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+    pub fn proof_index_evals<G: KimchiCurve>(
+        proof: &ProverProof<G, OpeningProof<G>>,
+    ) -> Vec<G::ScalarField>
+    where
+        G::BaseField: PrimeField,
+    {
+        let e = &proof.evals;
+        vec![
+            e.generic_selector.zeta[0],
+            e.generic_selector.zeta_omega[0],
+            e.poseidon_selector.zeta[0],
+            e.poseidon_selector.zeta_omega[0],
+            e.complete_add_selector.zeta[0],
+            e.complete_add_selector.zeta_omega[0],
+            e.mul_selector.zeta[0],
+            e.mul_selector.zeta_omega[0],
+            e.emul_selector.zeta[0],
+            e.emul_selector.zeta_omega[0],
+            e.endomul_scalar_selector.zeta[0],
+            e.endomul_scalar_selector.zeta_omega[0],
+        ]
+    }
+
     /// Helper: compute oracles result from verifier index and proof.
     /// Returns (verifier_index reference, oracles_result).
     fn compute_oracles<G, EFqSponge, EFrSponge>(
@@ -1937,6 +1963,28 @@ pub fn pallas_proof_coefficient_evals(proof: &VestaProofExternal) -> Vec<VestaFi
 #[napi]
 pub fn vesta_proof_coefficient_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
     generic::proof_coefficient_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract index (selector) polynomial evaluations from a Vesta proof (Pallas/Fp circuits).
+/// Returns 12 values: 6 selectors × 2 points (zeta, zeta*omega).
+/// Order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+#[napi]
+pub fn pallas_proof_index_evals(proof: &VestaProofExternal) -> Vec<VestaFieldExternal> {
+    generic::proof_index_evals(&**proof)
+        .into_iter()
+        .map(External::new)
+        .collect()
+}
+
+/// Extract index (selector) polynomial evaluations from a Pallas proof (Vesta/Fq circuits).
+/// Returns 12 values: 6 selectors × 2 points (zeta, zeta*omega).
+/// Order: generic, poseidon, complete_add, mul, emul, endomul_scalar.
+#[napi]
+pub fn vesta_proof_index_evals(proof: &PallasProofExternal) -> Vec<PallasFieldExternal> {
+    generic::proof_index_evals(&**proof)
         .into_iter()
         .map(External::new)
         .collect()

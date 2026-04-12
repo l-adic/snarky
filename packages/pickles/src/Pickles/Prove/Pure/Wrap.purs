@@ -79,12 +79,8 @@ type WrapDeferredValuesInput n =
 
   -- ===== Polynomial evaluations from the step proof (recombined). =====
   --
-  -- Caller builds this from `proof{Z,Witness,Coefficient,Sigma}Evals`
-  -- and oracle public evals. `indexEvals` are set to zeros in the
-  -- smoke test (no FFI getter yet) — that propagates into `ftEval0`
-  -- and the combined inner product, so the smoke test is silent on
-  -- cryptographic correctness. The production wrap prover will need
-  -- an FFI call for index evaluations; see FOLLOW-UPS.md.
+  -- Caller builds this from `proof{Z,Witness,Coefficient,Sigma,Index}Evals`
+  -- and oracle public evals.
   , allEvals :: AllEvals StepField
   , pEval0Chunks :: Array StepField
 

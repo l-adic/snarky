@@ -12,6 +12,7 @@ module Pickles.ProofFFI
   , proofZEvals
   , proofSigmaEvals
   , proofCoefficientEvals
+  , proofIndexEvals
   , proofOracles
   , proofOpeningPrechallenges
   , proofBulletproofChallenges
@@ -131,6 +132,7 @@ class ProofFFI f g | f -> g where
   proofZEvals :: Proof g f -> PointEval f
   proofSigmaEvals :: Proof g f -> Vector 6 (PointEval f)
   proofCoefficientEvals :: Proof g f -> Vector 15 (PointEval f)
+  proofIndexEvals :: Proof g f -> Vector 6 (PointEval f)
   -- | Non-recursive variant of `{pallas,vesta}ProofOracles` — passes
   -- | `prevChallenges: []` behind the scenes. Use this from
   -- | curve-polymorphic code that only handles standalone proofs (e.g.
@@ -174,6 +176,9 @@ foreign import vestaProofSigmaEvals :: Proof Pallas.G Vesta.BaseField -> Vector 
 
 foreign import pallasProofCoefficientEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
 foreign import vestaProofCoefficientEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)
+
+foreign import pallasProofIndexEvals :: Proof Vesta.G Pallas.BaseField -> Vector 6 (PointEval Pallas.BaseField)
+foreign import vestaProofIndexEvals :: Proof Pallas.G Vesta.BaseField -> Vector 6 (PointEval Vesta.BaseField)
 
 -- | `prevChallenges` carries the recursive `Challenge_polynomial.t`
 -- | data that kimchi's Fiat-Shamir transcript absorbs before the
@@ -365,6 +370,7 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   proofZEvals = pallasProofZEvals
   proofSigmaEvals = pallasProofSigmaEvals
   proofCoefficientEvals = pallasProofCoefficientEvals
+  proofIndexEvals = pallasProofIndexEvals
   proofOracles vk { proof, publicInput } =
     pallasProofOracles vk { proof, publicInput, prevChallenges: [] }
   proofOpeningPrechallenges = pallasProofOpeningPrechallenges
@@ -382,6 +388,7 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   proofZEvals = vestaProofZEvals
   proofSigmaEvals = vestaProofSigmaEvals
   proofCoefficientEvals = vestaProofCoefficientEvals
+  proofIndexEvals = vestaProofIndexEvals
   proofOracles vk { proof, publicInput } =
     vestaProofOracles vk { proof, publicInput, prevChallenges: [] }
   proofOpeningPrechallenges = vestaProofOpeningPrechallenges

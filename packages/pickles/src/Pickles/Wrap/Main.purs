@@ -33,8 +33,10 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Fin (Finite, unsafeFinite)
 import Data.Foldable (foldl)
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
@@ -48,7 +50,8 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import RandomOracle.Sponge (Sponge)
-import Pickles.Types (MaxProofsVerified, PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapOldBpChals(..), WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
+import Pickles.Wrap.Slots (Slots2)
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
@@ -332,7 +335,11 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 wrapMain
   :: forall @branches @slot0Width @slot1Width pad0 pad1 _branchesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => WrapWitnessM branches MaxProofsVerified slot0Width slot1Width VestaG WrapField m
+  -- Slots pinned to `Slots2 slot0Width slot1Width` at this refactor
+  -- stage — wrapMain is still mpv=2 only. A follow-up pass will
+  -- polymorphize the body so the class + type synonym story covers
+  -- NoSlots / Slots1 / Slots2 uniformly.
+  => WrapWitnessM branches 2 (Slots2 slot0Width slot1Width) VestaG WrapField m
   => Reflectable branches Int
   => Reflectable slot0Width Int
   => Reflectable slot1Width Int
@@ -386,7 +393,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $ lift $
-    getWhichBranch @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getWhichBranch @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
 
   -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
   --    (wrap_main.ml:228-256)
@@ -428,7 +435,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
   WrapPrevProofState pps <- label "proof-state" $ exists $ lift $
-    getWrapProofState @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getWrapProofState @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
@@ -450,20 +457,29 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 5. Req.Step_accs (wrap_main.ml:367-371)
   stepAccs <- label "step-accs" $ exists $ lift $
-    getStepAccs @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getStepAccs @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
   let stepAccsAffine = map unwrapPt stepAccs
 
-  -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404)
-  WrapOldBpChals oldBp <- label "old-bp-chals" $ exists $ lift $
-    getOldBulletproofChallenges @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+  -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
+  -- Returns a `Slots2 slot0Width slot1Width`-shaped value (i.e.
+  -- `Product (Vector slot0Width) (Product (Vector slot1Width)
+  -- (Const Unit))`). We destructure via `Data.Newtype.unwrap` to get
+  -- the underlying `Tuple`s and extract the two slot vectors
+  -- positionally.
+  slotsValue <- label "old-bp-chals" $ exists $ lift $
+    getOldBulletproofChallenges @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+  let
+    Tuple slot0Chals rest0 = unwrap slotsValue
+    Tuple slot1Chals _ = unwrap rest0
+    oldBp = { slot0: slot0Chals, slot1: slot1Chals }
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $ lift $
-    getEvals @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getEvals @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
 
   -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $ lift $
-    getWrapDomainIndices @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getWrapDomainIndices @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
 
   -- 9. FOP loop (wrap_main.ml:435-487).
   --
@@ -490,20 +506,20 @@ wrapMain config (WrapStatementPacked stmtR) = do
     -- Project the per-slot `PerProofUnfinalized` + `StepAllEvals` (and
     -- pad the per-slot chals). These are non-monadic lets so they
     -- don't emit constraints; the helper consumes the prepared views.
-    unfView0 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @MaxProofsVerified 0))
-    unfView1 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @MaxProofsVerified 1))
-    witness0 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @MaxProofsVerified 0))
-    witness1 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @MaxProofsVerified 1))
+    unfView0 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @2 0))
+    unfView1 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @2 1))
+    witness0 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @2 0))
+    witness1 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @2 1))
     paddedChals0 = padWrapChallenges oldBp.slot0
     paddedChals1 = padWrapChallenges oldBp.slot1
 
   -- Pseudo domains — right-to-left (slot 1 before slot 0), matching
   -- OCaml's `Vector.map` evaluation order for `wrap_domains`.
   which1 <- label "block3-wrap-domain-1" $
-    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @MaxProofsVerified 1))
+    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @2 1))
   domain1 <- Pseudo.toDomain @16 domainConfig which1 config.allPossibleDomainLog2s
   which0 <- label "block3-wrap-domain-0" $
-    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @MaxProofsVerified 0))
+    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @2 0))
   domain0 <- Pseudo.toDomain @16 domainConfig which0 config.allPossibleDomainLog2s
 
   -- FOP bodies — left-to-right (slot 0 before slot 1), matching the
@@ -523,10 +539,10 @@ wrapMain config (WrapStatementPacked stmtR) = do
     state0 = Vector.index states (unsafeFinite @3 spongeIdx0)
     state1 = Vector.index states (unsafeFinite @3 spongeIdx1)
   msgForWrap1 <- hashOneSlotMessage 1 state1
-    (Vector.index stepAccsAffine (unsafeFinite @MaxProofsVerified 1))
+    (Vector.index stepAccsAffine (unsafeFinite @2 1))
     oldBp.slot1
   msgForWrap0 <- hashOneSlotMessage 0 state0
-    (Vector.index stepAccsAffine (unsafeFinite @MaxProofsVerified 0))
+    (Vector.index stepAccsAffine (unsafeFinite @2 0))
     oldBp.slot0
 
   label "block4-assert-msg-step" $
@@ -534,7 +550,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 11. Req.Openings_proof (wrap_main.ml:506-532)
   WrapProofOpening openingProofRec <- label "openings-proof" $ exists $ lift $
-    getOpeningProof @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getOpeningProof @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
   let
     openingProof =
       { lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) openingProofRec.lr
@@ -546,7 +562,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 12. Req.Messages (wrap_main.ml:533-541)
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
-    getMessages @branches @MaxProofsVerified @slot0Width @slot1Width @VestaG unit
+    getMessages @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
   let
     messages =
       { wComm: map unwrapPt messagesRec.wComm
@@ -562,7 +578,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
   splitProofs <- label "block5-split-field" $
     traverse splitPerProofUnfinalized prevUnfinalized
   let
-    publicInput :: PackedStepPublicInput MaxProofsVerified WrapIPARounds (FVar WrapField) (BoolVar WrapField)
+    publicInput :: PackedStepPublicInput 2 WrapIPARounds (FVar WrapField) (BoolVar WrapField)
     publicInput = PackedStepPublicInput
       { proofState:
           { unfinalizedProofs: splitProofs
@@ -602,8 +618,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
       }
     fullIvpInput =
       { publicInput
-      , sgOld: Vector.index stepAccsAffine (unsafeFinite @MaxProofsVerified 0)
-          :< Vector.index stepAccsAffine (unsafeFinite @MaxProofsVerified 1)
+      , sgOld: Vector.index stepAccsAffine (unsafeFinite @2 0)
+          :< Vector.index stepAccsAffine (unsafeFinite @2 1)
           :< Vector.nil
       , sgOldMask: boolToField maskVal1 :< boolToField maskVal0 :< Vector.nil
       , sigmaCommLast: chosenSigmaCommLast

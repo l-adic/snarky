@@ -34,6 +34,7 @@ import Test.Pickles.StepE2E as StepE2E
 import Test.Pickles.TestContext (createInductiveTestContext)
 import Test.Pickles.Wrap.FinalizeOtherProof as WrapFinalizeOtherProof
 import Test.Pickles.Wrap.SubCircuits as WrapSubCircuits
+import Test.Pickles.Prove.WrapE2E as ProveWrapE2E
 import Test.Pickles.WrapE2E as WrapE2E
 import Test.Snarky.Circuit.Utils (TestConfig)
 import Test.Spec (beforeAll, mapSpec)
@@ -63,6 +64,7 @@ main = runSpecAndExitProcess'
       PublicInputCommitment.spec kimchiTestConfig
       ProveStep.spec
       ProveWrap.spec
+      ProveWrapE2E.spec
     mapSpec nat do
       EvalsOfSplit.spec
       BulletproofB.spec

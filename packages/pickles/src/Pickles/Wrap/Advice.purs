@@ -56,8 +56,9 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
 import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Wrap.Slots (class PadSlots)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
 import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
@@ -75,13 +76,26 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 -- | - `g`: commitment curve of the Step proof being verified (= `VestaG`)
 -- | - `f`: base field of `g` — uniquely determined via `WeierstrassCurve f g`
 -- |        (= `Vesta.BaseField` = `WrapField`)
--- | - `m`: base monad (Effect for compilation, WrapProverM for proving)
+-- | - `slots`: the slot-list shape, a higher-kinded type constructor
+-- |        (`Type -> Type`) from `Pickles.Wrap.Slots`. Concretely one of
+-- |        `NoSlots`, `Slots1 w`, or `Slots2 w0 w1` per library use.
+-- |        The class method `getOldBulletproofChallenges` returns a
+-- |        `slots`-shaped structure that inducts over in `wrapMain`.
+-- | - `m`: base monad (Effect for compilation, WrapProverT for proving)
 class
   ( Monad m
   , WeierstrassCurve f g
   ) <=
-  WrapWitnessM (branches :: Int) (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) g f m
-  | g -> f where
+  WrapWitnessM
+    (branches :: Int)
+    (mpv :: Int)
+    (slots :: Type -> Type)
+    g
+    f
+    m
+    | g -> f
+    , slots -> mpv
+  where
   -- | OCaml: `Req.Which_branch` (`wrap_main.ml:223`).
   getWhichBranch :: Unit -> m (F f)
 
@@ -104,11 +118,20 @@ class
   -- | accumulators (commitment-curve affine points).
   getStepAccs :: Unit -> m (Vector mpv (WeierstrassAffinePoint g (F f)))
 
-  -- | OCaml: `Req.Old_bulletproof_challenges` (`wrap_main.ml:400`). Stored as
-  -- | a pair of per-slot vectors mirroring `Max_widths_by_slot.maxes`.
+  -- | OCaml: `Req.Old_bulletproof_challenges` (`wrap_main.ml:400`). Returns
+  -- | a `slots`-shaped structure: `NoSlots` (empty), `Slots1 w` (one slot),
+  -- | or `Slots2 w0 w1` (two slots), mirroring OCaml's
+  -- | `Max_widths_by_slot.maxes`. The `PadSlots` class provides the
+  -- | structural traversal that consumes this value.
+  -- |
+  -- | The inner element type is `F f` (the value form); `exists` in
+  -- | `wrap_main` converts this to the var form
+  -- | `slots (Vector WrapIPARounds (FVar f))` via the `CircuitType`
+  -- | instances for `Product` and `Const Unit` defined in
+  -- | `Snarky.Circuit.Types`.
   getOldBulletproofChallenges
     :: Unit
-    -> m (WrapOldBpChals slot0Width slot1Width (F f))
+    -> m (slots (Vector WrapIPARounds (F f)))
 
   -- | OCaml: `Req.Evals` (`wrap_main.ml:415`). Vector of `mpv`
   -- | `StepAllEvals`, one per previous wrap proof.
@@ -145,10 +168,9 @@ instance
   ( WeierstrassCurve f g
   , Reflectable branches Int
   , Reflectable mpv Int
-  , Reflectable slot0Width Int
-  , Reflectable slot1Width Int
+  , PadSlots slots mpv
   ) =>
-  WrapWitnessM branches mpv slot0Width slot1Width g f Effect where
+  WrapWitnessM branches mpv slots g f Effect where
   getWhichBranch _ = throw "impossible! getWhichBranch called during compilation"
   getWrapProofState _ = throw "impossible! getWrapProofState called during compilation"
   getStepAccs _ = throw "impossible! getStepAccs called during compilation"

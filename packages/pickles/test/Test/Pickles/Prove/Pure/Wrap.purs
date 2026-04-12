@@ -21,10 +21,10 @@
 -- |   `HasEndo` / `Shifted` dispatch for the step field inside
 -- |   `Common.derivePlonk` / `Common.ftEval0`).
 -- |
--- | Silent on semantic correctness. `indexEvals` are zero (no FFI
--- | getter yet) and `prevChallenges` are empty (`n = 0`), so
--- | `combined_inner_product` and `ft_eval0` do not match any OCaml
--- | fixture. Tracking that against a real fixture is follow-up work.
+-- | Silent on semantic correctness. `prevChallenges` are empty
+-- | (`n = 0`), so `combined_inner_product` and `ft_eval0` do not
+-- | match any OCaml fixture. Tracking that against a real fixture
+-- | is follow-up work.
 module Test.Pickles.Prove.Pure.Wrap
   ( spec
   ) where
@@ -37,7 +37,7 @@ import Effect.Aff (Aff)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, proofCoefficientEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals)
+import Pickles.ProofFFI (OraclesResult, Proof, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (StepField, WrapField, WrapStatementPacked(..))
@@ -54,15 +54,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- Helpers
 --------------------------------------------------------------------------------
 
-zeroBareEval :: forall f. Semiring f => { zeta :: f, omegaTimesZeta :: f }
-zeroBareEval = { zeta: zero, omegaTimesZeta: zero }
-
 -- | Build `AllEvals StepField` for a real step proof.
--- |
--- | `indexEvals` are zero because `ProofFFI` has no direct getter for
--- | index-polynomial evaluations; they feed only pure PS code inside
--- | `Common.ftEval0`, so zero values exercise every line without
--- | masking a length assertion.
 realStepAllEvals
   :: Proof Vesta.G StepField
   -> OraclesResult StepField
@@ -77,7 +69,7 @@ realStepAllEvals proof oracles =
   , witnessEvals: proofWitnessEvals proof
   , coeffEvals: proofCoefficientEvals proof
   , sigmaEvals: proofSigmaEvals proof
-  , indexEvals: Vector.replicate zeroBareEval
+  , indexEvals: proofIndexEvals proof
   }
 
 stepEndoScalar :: StepField
