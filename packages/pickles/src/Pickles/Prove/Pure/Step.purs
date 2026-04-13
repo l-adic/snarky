@@ -478,6 +478,8 @@ type ExpandProofOutput =
   , perProofWitness ::
       StepPerProofWitness
         1
+        StepIPARounds
+        WrapIPARounds
         (F StepField)
         (Type2 (SplitField (F StepField) Boolean))
         Boolean
@@ -820,7 +822,7 @@ expandProof input =
           , domainLog2: F _deferredStep.branchData.domainLog2
           }
 
-    stepProofState :: StepProofState (F StepField) Boolean
+    stepProofState :: StepProofState StepIPARounds (F StepField) Boolean
     stepProofState = StepProofState
       { fopState: FopProofState
           { combinedInnerProduct: fromShifted _deferredStep.combinedInnerProduct
@@ -842,6 +844,8 @@ expandProof input =
     perProofWitnessAssembled
       :: StepPerProofWitness
            1
+           StepIPARounds
+           WrapIPARounds
            (F StepField)
            (Type2 (SplitField (F StepField) Boolean))
            Boolean

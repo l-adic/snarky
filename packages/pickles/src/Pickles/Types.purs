@@ -586,39 +586,45 @@ instance (CheckedType f c var) => CheckedType f c (FopProofState d var) where
 -- | branchData (mask0, mask1, domLog2 with endoscalar check) at the end.
 -- |
 -- | Reference: composition_types.ml `Wrap.Proof_state` allocation
-newtype StepProofState f b = StepProofState
-  { fopState :: FopProofState StepIPARounds f
+-- | `d` parameter is the step IPA round count (structurally always
+-- | `StepIPARounds` for the Pasta cycle; kept polymorphic here to mirror
+-- | OCaml `Proof_state.t`'s `'bulletproof_challenges` type parameter,
+-- | so `Pickles.Prove.Step` and friends can stay polymorphic in `ds`
+-- | and only concretize at the top-level binding).
+newtype StepProofState (d :: Int) f b = StepProofState
+  { fopState :: FopProofState d f
   , branchData :: BranchData f b
   }
 
 instance
   ( FieldSizeInBits f m
+  , Reflectable d Int
   ) =>
-  CircuitType f (StepProofState (F f) Boolean) (StepProofState (FVar f) (BoolVar f)) where
+  CircuitType f (StepProofState d (F f) Boolean) (StepProofState d (FVar f) (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)))
+    (Proxy @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)))
   valueToFields (StepProofState r) = genericValueToFields (tuple2 r.fopState r.branchData)
   fieldsToValue fs =
     let
-      tup :: Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)
+      tup :: Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)
       tup = genericFieldsToValue fs
     in
       uncurry2 (\fopState branchData -> StepProofState { fopState, branchData }) tup
   varToFields (StepProofState r) = genericVarToFields
-    @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean))
+    @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean))
     (tuple2 r.fopState r.branchData)
   fieldsToVar fs =
     let
-      tup :: Tuple2 (FopProofState StepIPARounds (FVar f)) (BranchData (FVar f) (BoolVar f))
-      tup = genericFieldsToVar @(Tuple2 (FopProofState StepIPARounds (F f)) (BranchData (F f) Boolean)) fs
+      tup :: Tuple2 (FopProofState d (FVar f)) (BranchData (FVar f) (BoolVar f))
+      tup = genericFieldsToVar @(Tuple2 (FopProofState d (F f)) (BranchData (F f) Boolean)) fs
     in
       uncurry2 (\fopState branchData -> StepProofState { fopState, branchData }) tup
 
 instance
-  ( CheckedType f (KimchiConstraint f) (FopProofState StepIPARounds (FVar f))
+  ( CheckedType f (KimchiConstraint f) (FopProofState d (FVar f))
   , CheckedType f (KimchiConstraint f) (BranchData (FVar f) (BoolVar f))
   ) =>
-  CheckedType f (KimchiConstraint f) (StepProofState (FVar f) (BoolVar f)) where
+  CheckedType f (KimchiConstraint f) (StepProofState d (FVar f) (BoolVar f)) where
   check (StepProofState r) = check (tuple2 r.fopState r.branchData)
 
 -- | Composed per-proof witness: the OCaml `Per_proof_witness.No_app_state.t`.
@@ -634,41 +640,59 @@ instance
 -- |   `exists (Prev_typ.f prev_proof_typs) ~request:Req.Proof_with_datas`
 -- |
 -- | Reference: per_proof_witness.ml, step_main.ml
-newtype StepPerProofWitness (n :: Int) f sf b = StepPerProofWitness
-  { wrapProof :: WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG f) sf
-  , proofState :: StepProofState f b
+-- |
+-- | Type parameters:
+-- |   - `n`  : max_proofs_verified (= the outer Vector length)
+-- |   - `ds` : step-side IPA round count (= `Tick.Rounds.n` = `StepIPARounds`
+-- |            structurally). Parameterizes the inner `StepProofState`'s
+-- |            `FopProofState` and the `prevChallenges` vector length.
+-- |   - `dw` : wrap-side IPA round count (= `Tock.Rounds.n` = `WrapIPARounds`
+-- |            structurally). Parameterizes the inner `WrapProof`'s
+-- |            opening proof length.
+-- |
+-- | Both `ds` and `dw` are kept polymorphic to mirror OCaml's
+-- | `Per_proof_witness.t`, which takes the bulletproof-challenges vector
+-- | type as a separate parameter (see `composition_types.ml:188`). The
+-- | Pasta protocol constants only appear at top-level bindings that
+-- | instantiate the type.
+newtype StepPerProofWitness (n :: Int) (ds :: Int) (dw :: Int) f sf b = StepPerProofWitness
+  { wrapProof :: WrapProof dw (WeierstrassAffinePoint PallasG f) sf
+  , proofState :: StepProofState ds f b
   , prevEvals :: StepAllEvals f
-  , prevChallenges :: Vector n (UnChecked (Vector StepIPARounds f))
+  , prevChallenges :: Vector n (UnChecked (Vector ds f))
   , prevSgs :: Vector n (WeierstrassAffinePoint PallasG f)
   }
 
 -- | Tuple shape for StepPerProofWitness, parameterized by:
--- |   - x:  field element type (F f or FVar f)
--- |   - sf: shifted-f type
--- |   - b:  boolean type
-type StepPerProofWitnessTuple n x sf b =
+-- |   - n / ds / dw : vector lengths (propagated from the newtype)
+-- |   - x           : field element type (F f or FVar f)
+-- |   - sf          : shifted-f type
+-- |   - b           : boolean type
+type StepPerProofWitnessTuple n ds dw x sf b =
   Tuple5
-    (WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG x) sf)
-    (StepProofState x b)
+    (WrapProof dw (WeierstrassAffinePoint PallasG x) sf)
+    (StepProofState ds x b)
     (StepAllEvals x)
-    (Vector n (UnChecked (Vector StepIPARounds x)))
+    (Vector n (UnChecked (Vector ds x)))
     (Vector n (WeierstrassAffinePoint PallasG x))
 
 instance
   ( FieldSizeInBits f m
   , CircuitType f sf sfvar
   , Reflectable n Int
+  , Reflectable ds Int
+  , Reflectable dw Int
   ) =>
   CircuitType f
-    (StepPerProofWitness n (F f) sf Boolean)
-    (StepPerProofWitness n (FVar f) sfvar (BoolVar f)) where
+    (StepPerProofWitness n ds dw (F f) sf Boolean)
+    (StepPerProofWitness n ds dw (FVar f) sfvar (BoolVar f)) where
   sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(StepPerProofWitnessTuple n (F f) sf Boolean))
+    (Proxy @(StepPerProofWitnessTuple n ds dw (F f) sf Boolean))
   valueToFields (StepPerProofWitness r) = genericValueToFields
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToValue fs =
     let
-      tup :: StepPerProofWitnessTuple n (F f) sf Boolean
+      tup :: StepPerProofWitnessTuple n ds dw (F f) sf Boolean
       tup = genericFieldsToValue fs
     in
       uncurry5
@@ -677,12 +701,12 @@ instance
         )
         tup
   varToFields (StepPerProofWitness r) = genericVarToFields
-    @(StepPerProofWitnessTuple n (F f) sf Boolean)
+    @(StepPerProofWitnessTuple n ds dw (F f) sf Boolean)
     (tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs)
   fieldsToVar fs =
     let
-      tup :: StepPerProofWitnessTuple n (FVar f) sfvar (BoolVar f)
-      tup = genericFieldsToVar @(StepPerProofWitnessTuple n (F f) sf Boolean) fs
+      tup :: StepPerProofWitnessTuple n ds dw (FVar f) sfvar (BoolVar f)
+      tup = genericFieldsToVar @(StepPerProofWitnessTuple n ds dw (F f) sf Boolean) fs
     in
       uncurry5
         ( \wrapProof proofState prevEvals prevChallenges prevSgs ->
@@ -691,15 +715,16 @@ instance
         tup
 
 instance
-  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof WrapIPARounds (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
-  , CheckedType StepField (KimchiConstraint StepField) (StepProofState (FVar StepField) (BoolVar StepField))
+  ( CheckedType StepField (KimchiConstraint StepField) (WrapProof dw (WeierstrassAffinePoint PallasG (FVar StepField)) sfvar)
+  , CheckedType StepField (KimchiConstraint StepField) (StepProofState ds (FVar StepField) (BoolVar StepField))
   , CheckedType StepField (KimchiConstraint StepField) (StepAllEvals (FVar StepField))
   , Reflectable n Int
+  , Reflectable ds Int
   ) =>
-  CheckedType StepField (KimchiConstraint StepField) (StepPerProofWitness n (FVar StepField) sfvar (BoolVar StepField)) where
+  CheckedType StepField (KimchiConstraint StepField) (StepPerProofWitness n ds dw (FVar StepField) sfvar (BoolVar StepField)) where
   check (StepPerProofWitness r) =
     let
-      tup :: StepPerProofWitnessTuple n (FVar StepField) sfvar (BoolVar StepField)
+      tup :: StepPerProofWitnessTuple n ds dw (FVar StepField) sfvar (BoolVar StepField)
       tup = tuple5 r.wrapProof r.proofState r.prevEvals r.prevChallenges r.prevSgs
     in
       check tup

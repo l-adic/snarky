@@ -195,6 +195,8 @@ class
          ( Vector n
              ( StepPerProofWitness
                  n
+                 ds
+                 dw
                  (F f)
                  (Type2 (SplitField (F f) Boolean))
                  Boolean

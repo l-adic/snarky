@@ -152,7 +152,7 @@ allocatePerProofWitness
   :: forall @n t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => StepPerProofWitness n (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  => StepPerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
   -> Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
 allocatePerProofWitness (StepPerProofWitness ppw) = do
   let
