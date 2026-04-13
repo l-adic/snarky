@@ -276,7 +276,7 @@ mod generic {
             witness,
             &[], // no runtime tables
             prover_index,
-            &mut rand::rngs::OsRng,
+            &mut crate::kimchi::deterministic_rng::make_rng(),
         )
         .map_err(|e| {
             Error::new(

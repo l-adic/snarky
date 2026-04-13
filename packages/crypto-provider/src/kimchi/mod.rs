@@ -5,6 +5,7 @@
 // circuits satisfy the Rust Kimchi gate equations.
 
 pub mod circuit;
+pub mod deterministic_rng;
 pub mod domain;
 pub mod poseidon;
 pub mod test_linearization;
