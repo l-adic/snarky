@@ -34,7 +34,7 @@ import Effect.Exception (throwException, try) as Exc
 import Partial.Unsafe (unsafePartial)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Wrap (WrapAdvice, WrapProveContext, WrapProverT, runWrapProverT, wrapProve)
-import Pickles.PublicInputCommit (mkConstLagrangeBase)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
 import Pickles.Wrap.Advice (getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.Main (WrapMainConfig)
@@ -247,15 +247,15 @@ zeroWrapProveContext =
   let
     lagrangeSrs = VestaImpl.vestaCrsCreate (2 `Int.pow` 16)
     proofCrs = PallasImpl.pallasCrsCreate (2 `Int.pow` 16)
-    lagrangeComms = map mkConstLagrangeBase
-      ((coerce $ ProofFFI.pallasSrsLagrangeCommitments lagrangeSrs 16 177) :: Array (AffinePoint (F WrapField)))
+    lagrangeAt = mkConstLagrangeBaseLookup \i ->
+      (coerce (ProofFFI.pallasSrsLagrangeCommitmentAt lagrangeSrs 16 i)) :: AffinePoint (F WrapField)
     blindingH = (coerce $ ProofFFI.pallasSrsBlindingGenerator lagrangeSrs) :: AffinePoint (F WrapField)
     config :: WrapMainConfig 1
     config =
       { stepWidths: 0 :< Vector.nil
       , domainLog2s: 16 :< Vector.nil
       , stepKeys: dummyStepVK :< Vector.nil
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil

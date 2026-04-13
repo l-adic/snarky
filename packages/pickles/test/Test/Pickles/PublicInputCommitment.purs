@@ -177,7 +177,17 @@ spec cfg =
         => Vector nPublic (FVar StepCircuitField)
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
+        publicInputCommit
+          { curveParams: curveParams (Proxy @Vesta.G)
+          -- Local in-test lookup: index into the pre-fetched `ctx.lagrangeComms`
+          -- array. This is a unit test that wants to compare against the same
+          -- VK-bound bases the Rust `pallasPublicComm` ground truth consumes, so
+          -- the array is the authoritative source here.
+          , lagrangeAt: \i -> unsafePartial fromJust (Array.index ctx.lagrangeComms i)
+          , blindingH: ctx.blindingH
+          , correctionMode: InCircuitCorrections
+          }
+          inputs
 
       gen = Vector.generator (Proxy @nPublic) fpRangeGen
 
@@ -212,7 +222,17 @@ spec cfg =
         => StepFullXhatVar
         -> Snarky (KimchiConstraint StepCircuitField) t Identity (AffinePoint (FVar StepCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Vesta.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
+        publicInputCommit
+          { curveParams: curveParams (Proxy @Vesta.G)
+          -- Local in-test lookup: index into the pre-fetched `ctx.lagrangeComms`
+          -- array. This is a unit test that wants to compare against the same
+          -- VK-bound bases the Rust `pallasPublicComm` ground truth consumes, so
+          -- the array is the authoritative source here.
+          , lagrangeAt: \i -> unsafePartial fromJust (Array.index ctx.lagrangeComms i)
+          , blindingH: ctx.blindingH
+          , correctionMode: InCircuitCorrections
+          }
+          inputs
 
       rustFn :: StepFullXhat -> AffinePoint (F StepCircuitField)
       rustFn tup = unsafePartial $
@@ -266,7 +286,13 @@ spec cfg =
         => Vector nPublic (FVar WrapCircuitField)
         -> Snarky (KimchiConstraint WrapCircuitField) t Identity (AffinePoint (FVar WrapCircuitField))
       circuit inputs =
-        publicInputCommit { curveParams: curveParams (Proxy @Pallas.G), lagrangeComms: ctx.lagrangeComms, blindingH: ctx.blindingH, correctionMode: InCircuitCorrections } inputs
+        publicInputCommit
+          { curveParams: curveParams (Proxy @Pallas.G)
+          , lagrangeAt: \i -> unsafePartial fromJust (Array.index ctx.lagrangeComms i)
+          , blindingH: ctx.blindingH
+          , correctionMode: InCircuitCorrections
+          }
+          inputs
 
       gen = Vector.generator (Proxy @nPublic) (arbitrary :: Gen (F WrapCircuitField))
 

@@ -58,10 +58,9 @@ stepSchnorrCircuit input = do
   let
     pallasGen :: AffinePoint (F StepField)
     pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
-    numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
     params = Record.merge Dummy.dummyFinalizeOtherProofParams
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms: map mkConstLagrangeBase (Array.replicate numPublic pallasGen)
+      , lagrangeAt: \_ -> mkConstLagrangeBase pallasGen
       , blindingH: pallasGen
       , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
       , correctionMode: PureCorrections

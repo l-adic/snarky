@@ -17,7 +17,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyVestaPt, unsafeIdx, wrapEndo)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Types (WrapField)
 import Pickles.Verify (incrementallyVerifyProof)
@@ -34,7 +34,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type IvpWrapParams =
-  { lagrangeComms :: Array (LagrangeBase WrapField)
+  { lagrangeAt :: LagrangeBaseLookup WrapField
   , blindingH :: AffinePoint (F WrapField)
   }
 
@@ -137,13 +137,13 @@ ivpWrapCircuit
   => IvpWrapParams
   -> IvpWrapInput pi
   -> Snarky (KimchiConstraint WrapField) t m Unit
-ivpWrapCircuit { lagrangeComms, blindingH } input = do
+ivpWrapCircuit { lagrangeAt, blindingH } input = do
   let
     constDummyPt = let { x: F x', y: F y' } = dummyVestaPt in { x: const_ x', y: const_ y' }
 
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo

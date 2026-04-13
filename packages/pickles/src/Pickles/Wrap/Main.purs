@@ -47,7 +47,7 @@ import Pickles.PackedStatement (PackedStepPublicInput(..))
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import RandomOracle.Sponge (Sponge)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
@@ -105,7 +105,7 @@ type WrapMainConfig branches =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK (FVar WrapField))
-  , lagrangeComms :: Array (LagrangeBase WrapField)
+  , lagrangeAt :: LagrangeBaseLookup WrapField
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   }
@@ -604,12 +604,17 @@ wrapMain config (WrapStatementPacked stmtR) = do
           bbRest
       in
         { x: finalX, y: finalY }
-    maskedLagrangeComms = map
-      (\lb -> { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools })
-      config.lagrangeComms
+    -- OCaml `lagrange_with_correction` masks each base by `which_branch`
+    -- (step_verifier.ml:435) — we compose `maskByBools` into the underlying
+    -- lookup so every `publicInputCommit` leaf that fetches at index `i`
+    -- gets a branch-masked version of that base.
+    maskedLagrangeAt :: LagrangeBaseLookup WrapField
+    maskedLagrangeAt i =
+      let lb = config.lagrangeAt i
+      in { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools }
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeComms: maskedLagrangeComms
+      , lagrangeAt: maskedLagrangeAt
       , blindingH: config.blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo

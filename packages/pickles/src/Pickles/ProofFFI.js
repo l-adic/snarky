@@ -337,6 +337,18 @@ export const vestaSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => {
   return result;
 };
 
+// Index-based lagrange commitment lookup (OCaml-parity for
+// `Kimchi_bindings.Protocol.SRS.Fq/Fp.lagrange_commitment`).
+export const pallasSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
+  const flat = crypto.pallasSrsLagrangeCommitmentAt(srs, domainLog2, i);
+  return { x: flat[0], y: flat[1] };
+};
+
+export const vestaSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
+  const flat = crypto.vestaSrsLagrangeCommitmentAt(srs, domainLog2, i);
+  return { x: flat[0], y: flat[1] };
+};
+
 // Blinding generator H directly from SRS
 export const pallasSrsBlindingGenerator = (srs) => {
   const flat = crypto.pallasSrsBlindingGenerator(srs);
@@ -452,3 +464,20 @@ export const pallasProofCommitments = (proof) => {
   for (let i = 32; i < flat.length; i += 2) tComm.push({ x: flat[i], y: flat[i+1] });
   return { wComm, zComm, tComm };
 };
+
+// Construct a Pallas-committed kimchi proof from flat component data.
+// PureScript-side uses `vestaMakeWireProof` in ProofFFI.purs — see that
+// binding for the full field layout.
+export const vestaMakeWireProof = (components) =>
+  crypto.vestaMakeWireProof(
+    components.wComm,
+    components.zComm,
+    components.tComm,
+    components.lr,
+    components.delta,
+    components.sg,
+    components.z1,
+    components.z2,
+    components.evals,
+    components.ftEval1
+  );

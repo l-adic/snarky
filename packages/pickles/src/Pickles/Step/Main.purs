@@ -28,13 +28,12 @@ import Data.Array as Array
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Partial.Unsafe (unsafePartial)
-import Type.Proxy (Proxy(..))
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
@@ -74,8 +73,13 @@ type RuleOutput n f =
 -------------------------------------------------------------------------------
 
 type StepMainSrsData =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
+  -- | log2 of the step circuit's evaluation domain (OCaml: basic.step_domains.h,
+  -- | threaded as Types_map.For_step.step_domains into finalize_other_proof
+  -- | where it's used for domain_for_compiled). For simple_chain: 16.
+  -- | See dump_circuit_impl.ml:3723.
+  , fopDomainLog2 :: Int
   }
 
 -------------------------------------------------------------------------------
@@ -389,7 +393,7 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @n @pad @outputSize
+  :: forall @n pad @outputSize
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
@@ -404,7 +408,7 @@ stepMain
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
-stepMain rule { lagrangeComms, blindingH } dummySg = do
+stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 
   -- 1. exists: app_state via Req.App_state
   appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds @PallasG unit
@@ -460,21 +464,22 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
-    domainLog2 = 16
+    -- Wrap proof's domain log2 (OCaml: basic.wrap_domains.h, threaded
+    -- through Types_map.For_step.t into step_verifier.verify_one).
     fopParams =
       { domain:
-          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
+          { generator: const_ (LinFFI.domainGenerator @StepField fopDomainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @StepField fopDomainLog2)
           }
-      , domainLog2
-      , srsLengthLog2: 16
+      , domainLog2: fopDomainLog2
+      , srsLengthLog2: fopDomainLog2
       , endo: stepEndoVal
       , linearizationPoly: Linearization.pallas
       }
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       , endo: stepEndoVal
@@ -584,7 +589,7 @@ stepMainPadded
 stepMainPadded rule srsData dummySg = do
   -- Run the circuit body to get the raw components (n real proofs)
   -- We inline the same logic as stepMain but produce padded output.
-  unpadded <- stepMain @n @pad @outputSize rule srsData dummySg
+  unpadded <- stepMain @n @outputSize rule srsData dummySg
 
   -- The unpadded output is [unfs(n*32) | digest(1) | msgs(n)].
   -- Convert to Array, split, pad with dummies at front, reassemble.

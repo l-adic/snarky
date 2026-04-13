@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
@@ -46,7 +46,7 @@ import Type.Proxy (Proxy(..))
 -- |   267:     messages_for_next_step_proof
 
 type StepVerifyParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -56,7 +56,7 @@ stepVerifyCircuit
   => StepVerifyParams
   -> Vector 268 (FVar StepField)
   -> Snarky (KimchiConstraint StepField) t m Unit
-stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
+stepVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
@@ -137,7 +137,7 @@ stepVerifyCircuit { lagrangeComms, blindingH } inputs = do
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       , endo: stepEndo

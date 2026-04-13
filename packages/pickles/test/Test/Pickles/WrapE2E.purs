@@ -17,9 +17,11 @@ import Prelude
 
 import Data.Array.NonEmpty as NEA
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Pickles.Types (MaxProofsVerified, StepIPARounds, WrapIPARounds)
 import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM)
 import Pickles.Wrap.Circuit (WrapInputVar, wrapCircuit)
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS) as VestaImpl
 import Snarky.Circuit.DSL (class CircuitM, Snarky)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi.Types (AuxState)
@@ -35,8 +37,9 @@ import Test.Spec (SpecT, describe, it)
 -- | Test that the Wrap circuit is satisfiable with real Step proof data.
 wrapCircuitSatisfiableTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
 wrapCircuitSatisfiableTest cfg ctx = do
+  vestaSrs <- liftEffect VestaImpl.createCRS
   let
-    params = buildWrapCircuitParams ctx
+    params = buildWrapCircuitParams vestaSrs ctx
     circuitInput = buildWrapCircuitInput ctx
     witnessData = buildWrapProverWitness ctx
 

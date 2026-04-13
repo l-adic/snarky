@@ -15,7 +15,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField)
@@ -43,7 +43,7 @@ type IvpStepPublicInput =
     )
 
 type IvpStepParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -140,7 +140,7 @@ ivpStepCircuit
   => IvpStepParams
   -> IvpStepInput pi
   -> Snarky (KimchiConstraint StepField) t m Unit
-ivpStepCircuit { lagrangeComms, blindingH } input = do
+ivpStepCircuit { lagrangeAt, blindingH } input = do
   let
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummyWrapSg.x, y: const_ dummyWrapSg.y }
@@ -149,7 +149,7 @@ ivpStepCircuit { lagrangeComms, blindingH } input = do
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       , endo: stepEndo

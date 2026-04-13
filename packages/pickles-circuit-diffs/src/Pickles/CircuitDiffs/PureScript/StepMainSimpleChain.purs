@@ -20,7 +20,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
-import Pickles.PublicInputCommit (LagrangeBase)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -34,7 +34,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -76,5 +76,10 @@ simpleChainRule appState = do
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
 compileStepMainSimpleChain params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @1 @34 simpleChainRule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml:3723
+    -- `step_domains = Pow_2_roots_of_unity 16`, passed through
+    -- Types_map.For_step.t.step_domains into finalize_other_proof).
+    (\_ -> stepMain @1 @34 simpleChainRule
+      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
+      dummyWrapSg)
     Kimchi.initialState

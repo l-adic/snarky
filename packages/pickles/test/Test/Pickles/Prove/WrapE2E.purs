@@ -34,9 +34,9 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Wrap (WrapAdvice, WrapProveContext, BuildWrapAdviceInput, buildWrapAdvice, wrapProve)
 import Pickles.Verify.Types as Pickles.Verify.Types
 import Snarky.Backend.Kimchi.Class (verifyProverIndex)
-import Pickles.PublicInputCommit (mkConstLagrangeBase)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
-import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
+import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Main (WrapMainConfig)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
@@ -47,14 +47,40 @@ import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), const_)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue, sizeInFields)
 import Type.Proxy (Proxy(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
-import Snarky.Circuit.Kimchi (Type1(..), Type2(..))
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), fromShifted)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine, toBigInt)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, generator, toAffine, toBigInt)
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Test.Pickles.TestContext (InductiveTestContext, StepProofContext, WrapSchnorrStepIOVal, convertUnfinalized, wrapEndo, zkRows)
+import Control.Monad.Trans.Class (lift) as MT
+import Data.Tuple (Tuple(..))
+import Pickles.Step.Advice (class StepWitnessM)
+import Pickles.Step.Circuit (WrapStatementPublicInput)
+import Pickles.Step.Main (RuleOutput, stepMainPadded)
+import Pickles.Dummy (dummyStepAdvice)
+import Pickles.ProofFFI (proofOracles)
+import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Compile (SolverT, compile, makeSolver, makeSolver', runSolverT)
+import Snarky.Backend.Prover (emptyProverState)
+import Snarky.Backend.Compile as Snarky.Backend.Compile
+import Snarky.Backend.Prover as Snarky.Backend.Prover
+import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
+import Snarky.Backend.Kimchi.Class (createCRS, createProverIndex, createVerifierIndex)
+import Snarky.Circuit.DSL (class CircuitM, Snarky, assertAny_, equals_, exists, not_)
+import Snarky.Circuit.CVar (add_) as CVar
+import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
+import Snarky.Constraint.Kimchi as Kimchi
+import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Curves.Class (EndoBase(..), endoBase)
+import Snarky.Curves.Pasta (PallasG)
+import Data.Newtype (un)
+import Data.Array (concatMap)
+import Pickles.Linearization.FFI (proverIndexDomainLog2)
+import Pickles.ProofFFI (createProof)
+import Test.Pickles.TestContext (InductiveTestContext, StepAdvice, StepProofContext, StepProverM, WrapSchnorrStepIOVal, computeStepIvpTranscript, convertUnfinalized, runStepProverM, wrapEndo, zkRows)
 import Test.Spec (SpecT, describe, it)
 
 --------------------------------------------------------------------------------
@@ -106,14 +132,20 @@ buildWrapMainConfig :: StepProofContext -> WrapMainConfig 1
 buildWrapMainConfig ctx =
   let
     lagrangeSrs = VestaImpl.vestaCrsCreate (2 `Int.pow` 16)
-    lagrangeComms = map mkConstLagrangeBase
-      ((coerce $ ProofFFI.pallasSrsLagrangeCommitments lagrangeSrs 16 177) :: Array (AffinePoint (F WrapField)))
+    -- Index-based lookup closes over the SRS and lets the wrap circuit's
+    -- x_hat walk fetch bases on demand — matches OCaml
+    -- `step_verifier.ml`'s `lagrange_commitment srs i` closure and removes
+    -- the need to pre-size a `numPublic` buffer. Must use the step proof's
+    -- own domain log2 (`ctx.domainLog2`) so the Lagrange basis matches the
+    -- domain the step proof was committed in.
+    lagrangeAt = mkConstLagrangeBaseLookup \i ->
+      (coerce (ProofFFI.pallasSrsLagrangeCommitmentAt lagrangeSrs ctx.domainLog2 i)) :: AffinePoint (F WrapField)
     blindingH = (coerce $ ProofFFI.pallasSrsBlindingGenerator lagrangeSrs) :: AffinePoint (F WrapField)
   in
     { stepWidths: 1 :< Vector.nil
     , domainLog2s: ctx.domainLog2 :< Vector.nil
     , stepKeys: stepVkForCircuit (extractStepVKComms ctx) :< Vector.nil
-    , lagrangeComms
+    , lagrangeAt
     , blindingH
     , allPossibleDomainLog2s:
         unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
@@ -442,8 +474,287 @@ zeroAdvice =
     }
 
 --------------------------------------------------------------------------------
--- Spec
+-- Padded step proof creator (67-field public input)
+--
+-- Mirrors OCaml's pickles.ml:647 which compiles the step circuit with
+-- `Max_proofs_verified = N2` so the step proof has Padded_length proofs
+-- worth of public input fields (1 real + 1 dummy, 67 total for n=1).
 --------------------------------------------------------------------------------
+
+-- | Inline simple chain rule: verifies that `appState = prev + 1` or appState = 0.
+-- | For the base case where appState = 0, the rule allocates prev = 0 and accepts.
+paddedSimpleChainRule
+  :: forall t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => FVar StepField
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 1 StepField)
+paddedSimpleChainRule appState = do
+  prev <- exists $ MT.lift $ pure (F zero :: F StepField)
+  isBaseCase <- equals_ (const_ zero) appState
+  let proofMustVerify = not_ isBaseCase
+  selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
+  assertAny_ [ selfCorrect, isBaseCase ]
+  pure
+    { prevPublicInputs: prev :< Vector.nil
+    , proofMustVerify: proofMustVerify :< Vector.nil
+    }
+
+-- | Create a padded step proof with 67-field public input, matching
+-- | OCaml's production Pickles step compilation (Max_proofs_verified = N2).
+-- | Uses stepMainPadded @1 with a trivial simple-chain rule, solved with
+-- | StepProverM + a self-consistent advice whose `publicUnfinalizedProofs`
+-- | plonk/digest are derived from a pure-PS replay of the step circuit's
+-- | IVP sponge transcript, so `ivp_assert_plonk_*` holds during proving.
+createPaddedStepProofContext :: Aff StepProofContext
+createPaddedStepProofContext = do
+  -- Lagrange SRS for IVP public input commitment (mislabeled types: takes CRS PallasG)
+  lagrangeSrs <- liftEffect PallasImpl.createCRS
+  -- Proof CRS for step proof creation (VestaG curve)
+  proofCrs <- liftEffect $ createCRS @StepField
+  let
+    -- Step (FOP) domain log2 = 16 (OCaml dump_circuit_impl.ml:3723 step_domains).
+    fopDomainLog2 = 16
+    -- Lagrange basis domain log2: the wrap proof domain (14 for N1).
+    wrapDomainLog2 = 14
+    -- Lookup closure: fetches lagrange commitments by index on demand from
+    -- the cached Pallas SRS. Matches OCaml `step_verifier.ml:360-368`'s
+    -- `lagrange_commitment ~domain srs i` closure shape, so callers never
+    -- need to decide a `numPublic` count.
+    stepSrsData =
+      { lagrangeAt:
+          mkConstLagrangeBaseLookup \i ->
+            (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt lagrangeSrs wrapDomainLog2 i))
+              :: AffinePoint (F StepField)
+      , blindingH: (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs) :: AffinePoint (F StepField)
+      , fopDomainLog2
+      }
+    dummyWrapSgStep :: AffinePoint StepField
+    dummyWrapSgStep = { x: zero, y: zero }
+
+    -- Build the advice that will drive the step solver. Starts from the
+    -- pure-dummy `dummyStepAdvice` and overrides
+    -- `publicUnfinalizedProofs[0]`'s plonk challenges and sponge digest
+    -- with values obtained by replaying the step circuit's IVP sponge
+    -- transcript in pure PS over the exact inputs the circuit will see.
+    --
+    -- The step circuit uses `advice.fopProofStates[i]` (Type1) to build
+    -- the in-circuit wrap statement that's committed to x_hat, and
+    -- `advice.publicUnfinalizedProofs[i]` (Type2) for the IVP sponge
+    -- assertion. Those two fields are independent, so patching only the
+    -- Type2 side to match the transcript keeps packStatement stable.
+    advice =
+      let
+        advice0 = dummyStepAdvice
+        fopState0 = Vector.index advice0.fopProofStates (unsafeFinite @1 0)
+        fopDv = fopState0.deferredValues
+        fopP = fopDv.plonk
+        -- The step circuit supplies its FopProofState `combinedInnerProduct`,
+        -- `b`, `perm`, `zetaToSrsLength`, `zetaToDomainSize` fields as raw
+        -- field elements (bare `f`, not `Type1 f`) via
+        -- `fromShifted dv.<field>` in `StepProverM.getStepPerProofWitnesses`
+        -- (`TestContext.purs:282-286`). `allocatePerProofWitness` then wraps
+        -- those raw scalars in `Type1` before `packStatement`, so the Vec5
+        -- of shifted scalars that `publicInputCommit` sees holds the
+        -- unshifted (2·t + c) value, not the advice's Type1-wrapped t.
+        unshiftT1 :: Type1 (F StepField) -> F StepField
+        unshiftT1 = fromShifted
+        -- `Branch_data.pack` (composition_types.ml:201) packs as
+        -- `4 * domain_log2 + mask[0] + 2 * mask[1]`. The step prover's
+        -- `getStepPerProofWitnesses` hardcodes `mask0=false, mask1=true,
+        -- domainLog2=16`, so the circuit packs this value as
+        -- `4*16 + 0 + 2*1 = 66`. We mirror it here so the x_hat input
+        -- the pure transcript commits to matches what the circuit packs.
+        branchMask0 :: Int
+        branchMask0 = 0
+        branchMask1 :: Int
+        branchMask1 = 1
+        branchDomainLog2 :: Int
+        branchDomainLog2 = 16
+        dummyBranchData :: SizedF 10 (F StepField)
+        dummyBranchData = SizedF.wrapF $ unsafePartial $ fromJust
+          $ SizedF.fromField @10
+            ( fromInt (4 * branchDomainLog2 + branchMask0 + 2 * branchMask1)
+                :: StepField
+            )
+
+        VerificationKey vkRec = advice0.wrapVerifierIndex
+        unwrapVkF (WeierstrassAffinePoint pt) = pt
+        sigma7F = map unwrapVkF vkRec.sigma
+
+        -- Drop the `F` wrapper on curve-point coordinates so the advice's
+        -- `AffinePoint (F StepField)` becomes `AffinePoint StepField` —
+        -- the plain shape `hashMessagesForNextStepProofPure` consumes.
+        unwrapFpt :: AffinePoint (F StepField) -> AffinePoint StepField
+        unwrapFpt = coerce
+
+        sigma7 :: Vector 7 (AffinePoint StepField)
+        sigma7 = map unwrapFpt sigma7F
+
+        -- Reshape the advice's VK commitments into `StepVK StepField`
+        -- (bare, not `F`-wrapped). The 6 index commitments correspond to
+        -- generic/psm/complete_add/mul/emul/endomul_scalar in that order.
+        stepVkFromAdvice :: StepVK StepField
+        stepVkFromAdvice =
+          let
+            coeff15 = map (unwrapFpt <<< unwrapVkF) vkRec.coeff
+            idx6 = map (unwrapFpt <<< unwrapVkF) vkRec.index
+            at i = Vector.index idx6 (unsafeFinite @6 i)
+          in
+            { sigmaComm: sigma7
+            , coefficientsComm: coeff15
+            , genericComm: at 0
+            , psmComm: at 1
+            , completeAddComm: at 2
+            , mulComm: at 3
+            , emulComm: at 4
+            , endomulScalarComm: at 5
+            }
+
+        -- Expanded step IPA challenges for the one "real" slot. For
+        -- `dummyStepAdvice` these are `map F dummyIpaChallenges.stepExpanded`.
+        expandedStepChals :: Vector StepIPARounds StepField
+        expandedStepChals =
+          map (\(F x) -> x)
+            (Vector.index advice0.prevChallenges (unsafeFinite @1 0))
+
+        realPrevSg :: AffinePoint StepField
+        realPrevSg = unwrapFpt
+          (Vector.index advice0.sgOld (unsafeFinite @1 0) :: AffinePoint (F StepField))
+
+        -- Pure analog of `hashMessagesForNextStepProofOpt` (step_main.ml
+        -- `Step_verifier.hash_messages_for_next_step_proof_opt`). For a
+        -- base case where `proofMask = [true]` the opt_sponge is
+        -- equivalent to a regular sponge absorbing the one real proof,
+        -- matching `hashMessagesForNextStepProofPure`.
+        msgStep :: StepField
+        msgStep = hashMessagesForNextStepProofPure
+          { stepVk: stepVkFromAdvice
+          , appState: [ zero :: StepField ]
+          , proofs:
+              ( { sg: realPrevSg
+                , expandedBpChallenges: expandedStepChals
+                }
+              ) :< Vector.nil
+          }
+        -- `WrapStatementPublicInput` is the same nested-Tuple shape as
+        -- `packStatement`'s return, so both the legacy and new step
+        -- circuits commit x_hat over values in this layout.
+        dummyPublicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
+        dummyPublicInput = Tuple
+          ( unshiftT1 fopDv.combinedInnerProduct
+              :< unshiftT1 fopDv.b
+              :< unshiftT1 fopP.zetaToSrsLength
+              :< unshiftT1 fopP.zetaToDomainSize
+              :< unshiftT1 fopP.perm
+              :< Vector.nil
+          )
+          ( Tuple (fopP.beta :< fopP.gamma :< Vector.nil)
+              ( Tuple (fopP.alpha :< fopP.zeta :< fopDv.xi :< Vector.nil)
+                  ( Tuple
+                      -- [sponge_digest, msg_for_next_wrap, msg_for_next_step]
+                      -- mirroring packStatement (Verify.purs:357). msgWrap
+                      -- comes from advice (all-zero in the dummy); msgStep
+                      -- is the Poseidon hash computed above.
+                      ( fopState0.spongeDigestBeforeEvaluations
+                          :< Vector.index advice0.messagesForNextWrapProof (unsafeFinite @1 0)
+                          :< F msgStep
+                          :< Vector.nil
+                      )
+                      (Tuple fopDv.bulletproofChallenges dummyBranchData)
+                  )
+              )
+          )
+        -- The step circuit pads `advice.sgOld` (length n=1) to
+        -- `Wrap_hack.Padded_length.n = 2` by prepending `dummyWrapSgStep`
+        -- at the front (see `stepMain.purs:283-293`). Replicate exactly
+        -- that for the transcript so the pure sponge absorbs the same
+        -- two points.
+        sgOldPadded :: Vector 2 (AffinePoint StepField)
+        sgOldPadded = dummyWrapSgStep :< realPrevSg :< Vector.nil
+        transcript = computeStepIvpTranscript
+          { vk:
+              { sigma: Vector.take @6 sigma7F
+              , sigmaLast: Vector.last sigma7F
+              , coeff: map unwrapVkF vkRec.coeff
+              , index: map unwrapVkF vkRec.index
+              }
+          , sgOld: sgOldPadded
+          , publicInput: dummyPublicInput
+          , wComm: (Vector.index advice0.messages (unsafeFinite @1 0)).wComm
+          , zComm: (Vector.index advice0.messages (unsafeFinite @1 0)).zComm
+          , tComm: (Vector.index advice0.messages (unsafeFinite @1 0)).tComm
+          , lagrangeAt: stepSrsData.lagrangeAt
+          , blindingH: stepSrsData.blindingH
+          }
+        origPUP = Vector.index advice0.publicUnfinalizedProofs (unsafeFinite @1 0)
+        PerProofUnfinalized origPUPr = origPUP
+        patchedPUP = PerProofUnfinalized $ origPUPr
+          { beta = UnChecked (SizedF.wrapF transcript.beta)
+          , gamma = UnChecked (SizedF.wrapF transcript.gamma)
+          , alpha = UnChecked (SizedF.wrapF transcript.alphaChal)
+          , zeta = UnChecked (SizedF.wrapF transcript.zetaChal)
+          , spongeDigest = F transcript.digest
+          }
+      in
+        advice0 { publicUnfinalizedProofs = patchedPUP :< Vector.nil }
+
+    circuit
+      :: forall t m
+       . CircuitM StepField (KimchiConstraint StepField) t m
+      => StepWitnessM 1 StepIPARounds WrapIPARounds PallasG StepField m
+      => Unit
+      -> Snarky (KimchiConstraint StepField) t m (Vector 67 (FVar StepField))
+    circuit _ = stepMainPadded @1 @1 @34 paddedSimpleChainRule stepSrsData dummyWrapSgStep
+
+  builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
+    <- liftEffect $ compile
+      (Proxy @Unit)
+      (Proxy @(Vector 67 (F StepField)))
+      (Proxy @(KimchiConstraint StepField))
+      circuit
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+
+  let
+    solverCircuit
+      :: forall t
+       . CircuitM StepField (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField)
+      => Unit
+      -> Snarky (KimchiConstraint StepField) t (StepProverM 1 StepIPARounds WrapIPARounds StepField) (Vector 67 (FVar StepField))
+    solverCircuit = circuit
+
+    rawSolver
+      :: SolverT StepField (KimchiConstraint StepField)
+           (StepProverM 1 StepIPARounds WrapIPARounds StepField)
+           Unit
+           (Vector 67 (F StepField))
+    rawSolver = makeSolver'
+      (emptyProverState { debug = true })
+      (Proxy @(KimchiConstraint StepField))
+      solverCircuit
+
+  eRes <- liftEffect $ runStepProverM advice (runSolverT rawSolver unit)
+  case eRes of
+    Left e -> liftEffect $ Exc.throw ("Padded step solver: " <> show e)
+    Right (Tuple _ assignments) -> do
+      let
+        kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+        { constraintSystem, constraints } = makeConstraintSystem @StepField
+          { constraints: kimchiRows
+          , publicInputs: builtState.publicInputs
+          , unionFind: (un AuxState builtState.aux).wireState.unionFind
+          }
+        { witness, publicInputs } = makeWitness
+          { assignments
+          , constraints: map _.variables constraints
+          , publicInputs: builtState.publicInputs
+          }
+        endo = let EndoBase e = endoBase @StepField @WrapField in e
+        proverIndex = createProverIndex @StepField @VestaG { endo, constraintSystem, crs: proofCrs }
+        verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+        proof = createProof { proverIndex, witness }
+        oracles = proofOracles verifierIndex { proof, publicInput: publicInputs }
+        domainLog2 = proverIndexDomainLog2 proverIndex
+      pure { proverIndex, verifierIndex, witness, publicInputs, domainLog2, proof, oracles }
 
 spec :: SpecT Aff InductiveTestContext Aff Unit
 spec = describe "Pickles.Prove.WrapE2E" do
@@ -516,17 +827,15 @@ spec = describe "Pickles.Prove.WrapE2E" do
         Left _ -> pure unit
         Right _ -> pure unit
 
-  -- Diagnostic: check packed step public input matches step proof's public input
-  it "L3.5a: packed step public input field count matches step proof" \{ step0 } -> do
+  -- Diagnostic: check padded step public input has exactly 67 fields
+  it "L3.5a: padded step public input field count matches wrap circuit's packed statement" \_ -> do
+    paddedStep <- createPaddedStepProofContext
     let
-      -- Step proof's public input coerced to WrapField
-      stepPubFields = map (\fp -> fromBigInt (toBigInt fp) :: WrapField) step0.publicInputs
-      nStepFields = Array.length stepPubFields
-      -- Count fields in PackedStepPublicInput 2 WrapIPARounds
+      nStepFields = Array.length paddedStep.publicInputs
       nPackedFields = sizeInFields (Proxy :: Proxy WrapField)
         (Proxy :: Proxy (Pickles.PackedStatement.PackedStepPublicInput 2 WrapIPARounds (F WrapField) Boolean))
     liftEffect $ when (nStepFields /= nPackedFields) $
-      Exc.throw $ "Field count mismatch: step=" <> show nStepFields <> " packed=" <> show nPackedFields
+      Exc.throw $ "Field count mismatch: padded step=" <> show nStepFields <> " wrap packed=" <> show nPackedFields
 
   -- Diagnostic: check index digest matches FFI
   it "L3.5b: step VK index digest matches FFI" \{ step0 } -> do
@@ -554,30 +863,32 @@ spec = describe "Pickles.Prove.WrapE2E" do
     liftEffect $ when (toBigInt digest /= toBigInt ffiDigest) $
       Exc.throw $ "Index digest mismatch: PS=" <> show (toBigInt digest) <> " FFI=" <> show (toBigInt ffiDigest)
 
-  -- Layer 4: real everything + verify the wrap proof
-  it "L4: wrap proof verifies" \{ step0 } -> do
+  -- Layer 4: real everything + verify the wrap proof.
+  -- Uses a PADDED step proof (67 public input fields) from stepMainPadded,
+  -- matching OCaml's Pickles.compile which hardcodes Max_proofs_verified = N2.
+  -- The shared `step0` from createInductiveTestContext has only 34 fields
+  -- (legacy stepCircuit, n=1) which is incompatible with the wrap circuit's IVP.
+  it "L4: wrap proof verifies" \_ -> do
+    paddedStep <- createPaddedStepProofContext
     let
-      deferredOutput = wrapComputeDeferredValues (buildDeferredValuesInput step0)
-      stepDigest = computeStepDigest step0
-      wrapDigest = computeWrapDigest step0
+      deferredOutput = wrapComputeDeferredValues (buildDeferredValuesInput paddedStep)
+      stepDigest = computeStepDigest paddedStep
+      wrapDigest = computeWrapDigest paddedStep
       publicInput = assembleWrapMainInput
         { deferredValues: deferredOutput
         , messagesForNextStepProofDigest: stepDigest
         , messagesForNextWrapProofDigest: wrapDigest
         }
-      advice = buildWrapAdvice (buildRealAdvice step0)
+      advice = buildWrapAdvice (buildRealAdvice paddedStep)
       proofCrs = PallasImpl.pallasCrsCreate (2 `Int.pow` 16)
       ctx :: WrapProveContext 1 1 1
       ctx =
-        { wrapMainConfig: buildWrapMainConfig step0
+        { wrapMainConfig: buildWrapMainConfig paddedStep
         , crs: proofCrs
         , publicInput
         , advice
         }
     result <- liftEffect $ wrapProve (\e -> Exc.throw (show e)) ctx
-    let csSatisfied = verifyProverIndex
-          { proverIndex: result.proverIndex, witness: result.witness, publicInputs: result.publicInputs }
-    liftEffect $ when (not csSatisfied) $ Exc.throw "Wrap constraint system not satisfied"
     let proofVerified = ProofFFI.verifyOpeningProof result.verifierIndex
           { proof: result.proof, publicInput: result.publicInputs }
     liftEffect $ when (not proofVerified) $ Exc.throw "Wrap proof failed to verify"

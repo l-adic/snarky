@@ -25,7 +25,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 compileWrapMainN2 :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainN2 { lagrangeComms, blindingH } =
+compileWrapMainN2 { lagrangeAt, blindingH } =
   let
     { x: F dummyX, y: F dummyY } = dummyVestaPt
 
@@ -47,7 +47,7 @@ compileWrapMainN2 { lagrangeComms, blindingH } =
       { stepWidths: 0 :< 2 :< Vector.nil
       , domainLog2s: 16 :< 16 :< Vector.nil
       , stepKeys: dummyVK :< dummyVK :< Vector.nil
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil

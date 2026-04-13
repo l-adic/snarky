@@ -16,6 +16,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Console (log)
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS) as VestaImpl
 import Effect.Exception.Unsafe (unsafeThrow)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
@@ -400,8 +401,9 @@ buildStepPublicInput ctx = fieldsToValue @Pallas.ScalarField
 -- | checkBulletproof in a single circuit and verifies satisfiability.
 incrementallyVerifyProofTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
 incrementallyVerifyProofTest cfg ctx = do
+  vestaSrs <- liftEffect VestaImpl.createCRS
   let
-    params = buildWrapCircuitParams ctx
+    params = buildWrapCircuitParams vestaSrs ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles
@@ -514,8 +516,9 @@ incrementallyVerifyProofTest cfg ctx = do
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
 verifyTest :: TestConfig Pallas.ScalarField (KimchiGate Pallas.ScalarField) (AuxState Pallas.ScalarField) -> StepProofContext -> Aff Unit
 verifyTest cfg ctx = do
+  vestaSrs <- liftEffect VestaImpl.createCRS
   let
-    params = buildWrapCircuitParams ctx
+    params = buildWrapCircuitParams vestaSrs ctx
     commitments = ProofFFI.pallasProofCommitments ctx.proof
 
     -- Compute deferred values from oracles

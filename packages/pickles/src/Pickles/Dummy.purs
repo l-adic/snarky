@@ -50,7 +50,7 @@ import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
-import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds)
+import Pickles.Types (PerProofUnfinalized(..), StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
@@ -59,15 +59,15 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
-import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, UnChecked(..), coerceViaBits, const_, fromBits)
+import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine, toBigInt) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), toShifted)
+import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -793,6 +793,8 @@ dummyStepAdvice
      , wrapVerifierIndex :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
      , sgOld :: Vector 1 (AffinePoint (F StepField))
      , sgOldMask :: Vector 1 (FVar StepField)
+     , appState :: F StepField
+     , publicUnfinalizedProofs :: Vector 1 (PerProofUnfinalized WrapIPARounds (Type2 (SplitField (F StepField) Boolean)) (F StepField) Boolean)
      }
 dummyStepAdvice =
   let
@@ -810,8 +812,25 @@ dummyStepAdvice =
     z2 = toShifted (F r.proofZ2)
   in
     { stepInputFields: []
-    , evals: dummyProofWitness :< Vector.nil
-    , prevChallenges: (Vector.generate \_ -> F zero) :< Vector.nil
+    -- Correct Ro-derived dummy evals (matches OCaml Dummy.evals at dummy.ml:7).
+    -- Wraps each bare StepField in F to produce AllEvals (F StepField).
+    , evals:
+        let
+          wrapPE :: PointEval StepField -> PointEval (F StepField)
+          wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
+          wrapAE :: AllEvals StepField -> AllEvals (F StepField)
+          wrapAE ae =
+            { ftEval1: F ae.ftEval1
+            , publicEvals: wrapPE ae.publicEvals
+            , zEvals: wrapPE ae.zEvals
+            , indexEvals: map wrapPE ae.indexEvals
+            , witnessEvals: map wrapPE ae.witnessEvals
+            , coeffEvals: map wrapPE ae.coeffEvals
+            , sigmaEvals: map wrapPE ae.sigmaEvals
+            }
+        in { allEvals: wrapAE r.stepDummyPrevEvals } :< Vector.nil
+    -- Ro-derived dummy step challenges expanded (matches OCaml Dummy.Ipa.Step.challenges_computed).
+    , prevChallenges: map F dummyIpaChallenges.stepExpanded :< Vector.nil
     , messages:
         { wComm: Vector.generate \_ -> g0
         , zComm: g0
@@ -837,6 +856,40 @@ dummyStepAdvice =
             }
     , sgOld: g0 :< Vector.nil
     , sgOldMask: (const_ one) :< Vector.nil
+    , appState: F zero
+    -- | Public input unfinalized proof with WrapIPARounds (15) bp challenges.
+    -- | Uses wrapDummyUnfinalizedProof which has the correct Wrap IPA challenges
+    -- | from Dummy.Ipa.Wrap (15 entries), NOT the Step IPA challenges (16 entries).
+    -- | Reference: unfinalized.ml:99 (Dummy.Ipa.Wrap.challenges)
+    , publicUnfinalizedProofs:
+        let
+          du = wrapDummyUnfinalizedProof
+          dv = du.deferredValues
+          -- Cross-field: Type2 (F WrapField) → Type2 (SplitField (F StepField) Boolean)
+          t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
+          t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+          -- Cross-field: SizedF 128 (F WrapField) → SizedF 128 (F StepField)
+          chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+          chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
+          -- Cross-field: F WrapField → F StepField
+          F digestWrap = du.spongeDigestBeforeEvaluations
+          digestStep = F (Curves.fromBigInt (Curves.toBigInt digestWrap) :: StepField)
+        in
+          PerProofUnfinalized
+            { combinedInnerProduct: t2toT2sf dv.combinedInnerProduct
+            , b: t2toT2sf dv.b
+            , zetaToSrsLength: t2toT2sf dv.plonk.zetaToSrsLength
+            , zetaToDomainSize: t2toT2sf dv.plonk.zetaToDomainSize
+            , perm: t2toT2sf dv.plonk.perm
+            , spongeDigest: digestStep
+            , beta: UnChecked (chalToStep dv.plonk.beta)
+            , gamma: UnChecked (chalToStep dv.plonk.gamma)
+            , alpha: UnChecked (chalToStep dv.plonk.alpha)
+            , zeta: UnChecked (chalToStep dv.plonk.zeta)
+            , xi: UnChecked (chalToStep dv.xi)
+            , bulletproofChallenges: map (UnChecked <<< chalToStep) dv.bulletproofChallenges
+            , shouldFinalize: false
+            } :< Vector.nil
     }
 
 -- | Zero-valued proof witness for use in base case bootstrapping.

@@ -16,6 +16,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import JS.BigInt as BigInt
 import Pickles.IPA (BCorrectInput, IpaFinalCheckInput, bCorrect, ipaFinalCheckCircuit)
 import Pickles.IPA as IPA
@@ -544,13 +545,14 @@ bCorrectCircuitTest cfg ctx = do
 
 -- | Full incrementallyVerifyProof circuit test for Fp circuit verifying a Wrap (Pallas) proof.
 incrementallyVerifyProofTest :: TestConfig Vesta.ScalarField (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField) -> WrapProofContext -> Aff Unit
-incrementallyVerifyProofTest cfg ctx =
-  reifyType (Array.length ctx.publicInputs) go
+incrementallyVerifyProofTest cfg ctx = do
+  pallasSrs <- liftEffect PallasImpl.createCRS
+  reifyType (Array.length ctx.publicInputs) (go pallasSrs)
   where
-  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
-  go _ =
+  go :: forall nPublic. Reflectable nPublic Int => _ -> Proxy nPublic -> Aff Unit
+  go pallasSrs _ =
     let
-      params = buildStepIVPParams ctx
+      params = buildStepIVPParams pallasSrs ctx
       circuitInput = buildStepIVPInput @nPublic ctx
 
       circuit
@@ -579,13 +581,14 @@ incrementallyVerifyProofTest cfg ctx =
 -- | Full verify circuit test for Fp circuit verifying a Wrap (Pallas) proof.
 -- | Wraps incrementallyVerifyProof with digest and challenge assertions.
 verifyTest :: TestConfig Vesta.ScalarField (KimchiGate Vesta.ScalarField) (AuxState Vesta.ScalarField) -> WrapProofContext -> Aff Unit
-verifyTest cfg ctx =
-  reifyType (Array.length ctx.publicInputs) go
+verifyTest cfg ctx = do
+  pallasSrs <- liftEffect PallasImpl.createCRS
+  reifyType (Array.length ctx.publicInputs) (go pallasSrs)
   where
-  go :: forall nPublic. Reflectable nPublic Int => Proxy nPublic -> Aff Unit
-  go _ =
+  go :: forall nPublic. Reflectable nPublic Int => _ -> Proxy nPublic -> Aff Unit
+  go pallasSrs _ =
     let
-      params = buildStepIVPParams ctx
+      params = buildStepIVPParams pallasSrs ctx
       circuitInput = buildStepIVPInput @nPublic ctx
 
       -- Claimed sponge digest: coerce from Pallas.ScalarField (Fq) to Vesta.ScalarField (Fp)

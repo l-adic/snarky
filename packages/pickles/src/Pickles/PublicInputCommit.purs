@@ -11,8 +11,12 @@
 -- | This mirrors OCaml's `Spec.pack` which tags each field element as
 -- | `Field` (full width) or `Packed_bits(x, n)` for the MSM.
 -- |
--- | Lagrange bases are consumed left-to-right in RowList (alphabetical) order,
--- | matching CircuitType's field ordering for consistent allocation.
+-- | Lagrange bases are fetched by index left-to-right in RowList (alphabetical)
+-- | order, matching CircuitType's field ordering. The walk threads an `Int`
+-- | counter through each instance and calls a user-supplied
+-- | `LagrangeBaseLookup` closure whenever it needs a new base — the same
+-- | shape as OCaml `step_verifier.ml`'s `lagrange_commitment srs i`, so
+-- | there is no pre-sized array to get wrong.
 module Pickles.PublicInputCommit
   ( class PublicInputCommit
   , class RPublicInputCommit
@@ -29,7 +33,9 @@ module Pickles.PublicInputCommit
   , rScalarMuls
   , publicInputCommit
   , LagrangeBase
+  , LagrangeBaseLookup
   , mkConstLagrangeBase
+  , mkConstLagrangeBaseLookup
   ) where
 
 import Prelude
@@ -175,14 +181,32 @@ type LagrangeBase f =
   , maskPt :: AffinePoint (F f) -> AffinePoint (FVar f)
   }
 
+-- | Index-based lookup over lagrange bases, mirroring OCaml
+-- | `step_verifier.ml`'s `lagrange_commitment srs i` closure. The walk
+-- | in `publicInputCommit` fetches bases on demand by index instead of
+-- | consuming a pre-sized array, which removes the need for a "numPublic"
+-- | parameter at call sites.
+type LagrangeBaseLookup f = Int -> LagrangeBase f
+
 -- | Construct a LagrangeBase where both constant and circuit are the same value.
 mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
 mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt, maskPt: constPt }
 
--- | Intermediate result from walking the structure.
+-- | Build a lookup closure from a function returning the constant `i`-th
+-- | lagrange commitment. The most common shape at call sites: wrap an FFI
+-- | `*SrsLagrangeCommitmentAt srs domainLog2` partial application.
+mkConstLagrangeBaseLookup
+  :: forall f
+   . PrimeField f
+  => (Int -> AffinePoint (F f))
+  -> LagrangeBaseLookup f
+mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
+
+-- | Intermediate result from walking the structure. The `nextIdx` field is
+-- | the first lagrange-base index the caller has *not yet* consumed.
 type ScalarMulResult f =
   { results :: Array (MsmTerm f)
-  , rest :: Array (LagrangeBase f)
+  , nextIdx :: Int
   }
 
 -------------------------------------------------------------------------------
@@ -192,17 +216,17 @@ type ScalarMulResult f =
 -- | Per-field-width public input commitment.
 -- |
 -- | Walks a structured public input type, performing scalar multiplications
--- | with optimal bit width per leaf field type.
--- |
--- | Lagrange bases are consumed left-to-right in RowList (alphabetical) order,
--- | matching CircuitType field ordering.
+-- | with optimal bit width per leaf field type. Each leaf fetches the base
+-- | it needs by calling `lookup idx`, where `idx` is the current walk
+-- | position (threaded through the instances).
 class PublicInputCommit a f where
   scalarMuls
     :: forall t m
      . CircuitM f (KimchiConstraint f) t m
     => CurveParams f
     -> a
-    -> Array (LagrangeBase f)
+    -> LagrangeBaseLookup f
+    -> Int
     -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 
 -------------------------------------------------------------------------------
@@ -211,15 +235,15 @@ class PublicInputCommit a f where
 
 -- | Full field element: 255 bits → 51 chunks, sDiv2Bits = 254
 instance (FieldSizeInBits f 255) => PublicInputCommit (FVar f) f where
-  scalarMuls = scalarMulLeaf @51 @254
+  scalarMuls params scalar lookup idx = scalarMulLeaf @51 @254 params scalar lookup idx
 
 -- | 128-bit challenge: 130 bits → 26 chunks, sDiv2Bits = 127
 instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 128 (FVar f)) f where
-  scalarMuls params sized bases = scalarMulLeaf @26 @127 params (toField sized) bases
+  scalarMuls params sized lookup idx = scalarMulLeaf @26 @127 params (toField sized) lookup idx
 
 -- | 10-bit branch data: 10 bits → 2 chunks, sDiv2Bits = 9
 instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 10 (FVar f)) f where
-  scalarMuls params sized bases = scalarMulLeaf @2 @9 params (toField sized) bases
+  scalarMuls params sized lookup idx = scalarMulLeaf @2 @9 params (toField sized) lookup idx
 
 -- | Boolean: Cond_add — conditionally add Lagrange point.
 -- | Matches OCaml's `Cond_add(b, lagrange(i))` for 1-bit values.
@@ -227,33 +251,32 @@ instance (FieldSizeInBits f 255) => PublicInputCommit (SizedF 10 (FVar f)) f whe
 -- | matching OCaml which calls assert_(Constraint.boolean b) during
 -- | List.map terms construction, BEFORE correction sum and fold.
 instance PublicInputCommit (BoolVar f) f where
-  scalarMuls _ bool bases = do
-    -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
+  scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
-    let { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
-    pure { results: [ CondAdd bool (head.maskPt head.constant) ], rest: tail }
+    let base = lookup idx
+    pure { results: [ CondAdd bool (base.maskPt base.constant) ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
-  scalarMuls params (Type1 fv) bases = scalarMulLeaf @51 @254 params fv bases
+  scalarMuls params (Type1 fv) lookup idx = scalarMulLeaf @51 @254 params fv lookup idx
 
 -- | Shifted scalar (SplitField): sDiv2 (full width, 255 bits → 51 chunks) + sOdd (Cond_add).
 -- | sDiv2 = (s - sOdd) / 2 can be up to 254 bits for full-width shifted scalars
 -- | (combinedInnerProduct, b, perm, zetaToSrsLength, zetaToDomainSize).
 -- | Alphabetical field order (sDiv2 < sOdd) matches CircuitType's Generic instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField (FVar f) (BoolVar f)) f where
-  scalarMuls params (SplitField { sDiv2, sOdd }) bases = do
-    { results: r1, rest: rest1 } <- scalarMulLeaf @51 @254 params sDiv2 bases
-    -- Generate boolean constraint for sOdd during walk, matching OCaml's
-    -- assert_(Constraint.boolean b) in terms construction
-    -- WHY?? If we have a BoolVar, presumably this constraint has already been added through check?
+  scalarMuls params (SplitField { sDiv2, sOdd }) lookup idx = do
+    { results: r1, nextIdx: idx1 } <- scalarMulLeaf @51 @254 params sDiv2 lookup idx
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
-    let { head: oddBase, tail: rest2 } = unsafePartial $ fromJust $ Array.uncons rest1
-    pure { results: r1 <> [ CondAdd sOdd (oddBase.maskPt oddBase.constant) ], rest: rest2 }
+    let oddBase = lookup idx1
+    pure
+      { results: r1 <> [ CondAdd sOdd (oddBase.maskPt oddBase.constant) ]
+      , nextIdx: idx1 + 1
+      }
 
 -- | Type2-wrapped SplitField: delegates to bare SplitField instance.
 instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (SplitField (FVar f) (BoolVar f))) f where
-  scalarMuls params (Type2 sf) bases = scalarMuls params sf bases
+  scalarMuls params (Type2 sf) lookup idx = scalarMuls params sf lookup idx
 
 -------------------------------------------------------------------------------
 -- | Structural instances
@@ -262,14 +285,14 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (Type2 (Spli
 -- | Tuple: process first component, then second.
 -- | Used for circuit public inputs = (circuitInput, circuitOutput).
 instance (PublicInputCommit a f, PublicInputCommit b f) => PublicInputCommit (Tuple a b) f where
-  scalarMuls params (Tuple a b) bases = do
-    { results: r1, rest: rest1 } <- scalarMuls params a bases
-    { results: r2, rest: rest2 } <- scalarMuls params b rest1
-    pure { results: r1 <> r2, rest: rest2 }
+  scalarMuls params (Tuple a b) lookup idx = do
+    { results: r1, nextIdx: idx1 } <- scalarMuls params a lookup idx
+    { results: r2, nextIdx: idx2 } <- scalarMuls params b lookup idx1
+    pure { results: r1 <> r2, nextIdx: idx2 }
 
 -- | Unit: contributes no fields.
 instance PublicInputCommit Unit f where
-  scalarMuls _ _ bases = pure { results: [], rest: bases }
+  scalarMuls _ _ _ idx = pure { results: [], nextIdx: idx }
 
 -- | Vector: process each element sequentially
 instance
@@ -277,13 +300,13 @@ instance
   , Reflectable n Int
   ) =>
   PublicInputCommit (Vector n a) f where
-  scalarMuls params vec bases =
+  scalarMuls params vec lookup idx =
     foldM
       ( \acc elem -> do
-          { results, rest } <- scalarMuls params elem acc.rest
-          pure { results: acc.results <> results, rest }
+          { results, nextIdx } <- scalarMuls params elem lookup acc.nextIdx
+          pure { results: acc.results <> results, nextIdx }
       )
-      { results: [], rest: bases }
+      { results: [], nextIdx: idx }
       vec
 
 -- | Record: via RowList (alphabetical field order)
@@ -292,7 +315,7 @@ instance
   , RPublicInputCommit rl f r
   ) =>
   PublicInputCommit (Record r) f where
-  scalarMuls params rec bases = rScalarMuls @rl params rec bases
+  scalarMuls params rec lookup idx = rScalarMuls @rl params rec lookup idx
 
 -------------------------------------------------------------------------------
 -- | RowList walker
@@ -304,11 +327,12 @@ class RPublicInputCommit (rl :: RL.RowList Type) f (r :: Row Type) | rl -> r whe
      . CircuitM f (KimchiConstraint f) t m
     => CurveParams f
     -> Record r
-    -> Array (LagrangeBase f)
+    -> LagrangeBaseLookup f
+    -> Int
     -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
 
 instance RPublicInputCommit RL.Nil f () where
-  rScalarMuls _ _ bases = pure { results: [], rest: bases }
+  rScalarMuls _ _ _ idx = pure { results: [], nextIdx: idx }
 
 instance
   ( IsSymbol s
@@ -318,11 +342,11 @@ instance
   , RPublicInputCommit tail f rest
   ) =>
   RPublicInputCommit (RL.Cons s a tail) f r where
-  rScalarMuls params rec bases = do
+  rScalarMuls params rec lookup idx = do
     let field = Record.get (Proxy @s) rec
-    { results: r1, rest: rest1 } <- scalarMuls params field bases
-    { results: r2, rest: rest2 } <- rScalarMuls @tail params (Record.delete (Proxy @s) rec) rest1
-    pure { results: r1 <> r2, rest: rest2 }
+    { results: r1, nextIdx: idx1 } <- scalarMuls params field lookup idx
+    { results: r2, nextIdx: idx2 } <- rScalarMuls @tail params (Record.delete (Proxy @s) rec) lookup idx1
+    pure { results: r1 <> r2, nextIdx: idx2 }
 
 -------------------------------------------------------------------------------
 -- | Top-level commitment function
@@ -341,7 +365,7 @@ publicInputCommit
   => PrimeField f
   => CircuitM f (KimchiConstraint f) t m
   => { curveParams :: CurveParams f
-     , lagrangeComms :: Array (LagrangeBase f)
+     , lagrangeAt :: LagrangeBaseLookup f
      , blindingH :: AffinePoint (F f)
      , correctionMode :: CorrectionMode
      | r
@@ -349,7 +373,7 @@ publicInputCommit
   -> a
   -> Snarky (KimchiConstraint f) t m (AffinePoint (FVar f))
 publicInputCommit params input = label "public-input-commit" do
-  { results } <- scalarMuls params.curveParams input params.lagrangeComms
+  { results } <- scalarMuls params.curveParams input params.lagrangeAt 0
   case NEA.fromArray results of
     Nothing -> pure (constPt params.blindingH)
     Just results' -> unsafePartial do
@@ -429,7 +453,8 @@ publicInputCommit params input = label "public-input-commit" do
 -------------------------------------------------------------------------------
 
 -- | Single scalar mul with shift correction.
--- | Consumes one Lagrange base from the array.
+-- | Fetches one Lagrange base via `lookup idx` and increments the walk
+-- | counter by one.
 -- |
 -- | Uses @nChunks to control the bit width: bitsUsed = 5 * nChunks.
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
@@ -446,22 +471,23 @@ scalarMulLeaf
   => PrimeField f
   => CurveParams f
   -> FVar f
-  -> Array (LagrangeBase f)
+  -> LagrangeBaseLookup f
+  -> Int
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-scalarMulLeaf params scalar bases =
+scalarMulLeaf params scalar lookup idx =
   let
-    { head, tail } = unsafePartial $ fromJust $ Array.uncons bases
+    base = lookup idx
     actualShift = reflectType (Proxy @bitsUsed)
     -- Correction uses the CONSTANT base (pure arithmetic, no circuit cost).
     -- Negated to match OCaml: correction = negate([2^shift] * base)
-    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params head.constant actualShift
+    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params base.constant actualShift
     -- scaleFast2' uses the CIRCUIT base (may be non-constant from domain masking).
     -- This matches OCaml where lagrange_with_correction masks by which_branch.
-    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits head.circuit scalar)
+    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
   in
     pure
       { results: [ AddWithCorrection { scaleMul, correction } ]
-      , rest: tail
+      , nextIdx: idx + 1
       }
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)

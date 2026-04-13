@@ -22,6 +22,7 @@ import Effect.Class (liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyFinalizeOtherProofParams)
 import Pickles.PublicInputCommit (CorrectionMode(..), mkConstLagrangeBase)
+import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, StepInput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapIPARounds)
@@ -77,10 +78,9 @@ testCircuit input = do
     -- n=0: loop body never runs, IVP params just need to type-check
     pallasGen :: AffinePoint (F StepField)
     pallasGen = coerce (unsafePartial fromJust $ toAffine (generator :: PallasG) :: AffinePoint StepField)
-    numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
     params = Record.merge dummyFinalizeOtherProofParams
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms: map mkConstLagrangeBase (Array.replicate numPublic pallasGen)
+      , lagrangeAt: \_ -> mkConstLagrangeBase pallasGen
       , blindingH: pallasGen
       , groupMapParams: Kimchi.groupMapParams (Proxy @PallasG)
       , correctionMode: PureCorrections
@@ -111,6 +111,8 @@ spec cfg = describe "Pickles.Step.Circuit" do
             }
         , sgOld: nil
         , sgOldMask: Vector.nil
+        , appState: F zero
+        , publicUnfinalizedProofs: nil
         }
 
       input :: StepTestInput
@@ -145,10 +147,11 @@ realDataSpec cfg =
   describe "Pickles.Step.Circuit (real data)" do
     it "Step circuit verifies real Wrap proof (Step → Wrap → Step)" \{ step0, wrap0 } -> do
       schnorrInput <- liftEffect $ randomSampleOne $ genValidSignature (Proxy @PallasG) (Proxy @4)
+      pallasSrs <- liftEffect PallasImpl.createCRS
       let
         challengeDigest = computeStepChallengeDigest step0
         sgEvals = computeStepSgEvals step0
-        params = Record.merge (buildStepFinalizeParams step0) (buildStepIVPParams wrap0)
+        params = Record.merge (buildStepFinalizeParams step0) (buildStepIVPParams pallasSrs wrap0)
         fopInput = buildStepFinalizeInput
           { prevChallengeDigest: challengeDigest
           , sgPointEvals: sgEvals

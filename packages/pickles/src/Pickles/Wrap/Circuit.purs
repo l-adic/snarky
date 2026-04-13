@@ -27,7 +27,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PublicInputCommit (CorrectionMode, LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode, LagrangeBaseLookup)
 import Pickles.Types (StepStatement, WrapIPARounds, WrapStatement)
 import Pickles.Verify.Types (toStepDeferredValues)
 import Pickles.Wrap.Advice (class WrapSubCircuitWitnessM, getEvalsLegacy, getMessagesLegacy, getOldBpChallenges, getOpeningProofLegacy, getStepAccsLegacy, getStepIOFields, getUnfinalizedProofs)
@@ -59,7 +59,7 @@ type WrapParams :: Type -> Type
 type WrapParams f =
   { -- IVP params
     curveParams :: CurveParams f
-  , lagrangeComms :: Array (LagrangeBase f)
+  , lagrangeAt :: LagrangeBaseLookup f
   , blindingH :: AffinePoint (F f)
   , sigmaCommLast :: AffinePoint (F f)
   , columnComms ::

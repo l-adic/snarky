@@ -2531,6 +2531,92 @@ pub fn vesta_srs_lagrange_commitments(
 }
 
 // ============================================================================
+// Index-based lagrange commitment lookup (OCaml-parity)
+// ============================================================================
+//
+// OCaml pickles fetches lagrange bases by index on demand (see
+// `step_verifier.ml:360-368`, `public_input_commitment_dynamic`). Kimchi's
+// `SRS::get_lagrange_basis(domain)` computes and caches the full basis the
+// first time it is called, and subsequent accesses are O(1) vec lookups, so
+// there is no cost advantage to the batched `*_srs_lagrange_commitments`
+// APIs above over per-index access other than marshaling amortization.
+//
+// Exposing an index-based lookup lets PureScript callers avoid pre-sizing a
+// `numPublic` buffer: the `publicInputCommit` walk asks for the commitments
+// it needs as it visits the public-input structure, matching OCaml's
+// `lagrange_commitment srs i` closure.
+
+fn srs_lagrange_commitment_at_impl<G>(
+    srs: &SRS<G>,
+    domain_log2: u32,
+    i: u32,
+) -> Result<(G::BaseField, G::BaseField)>
+where
+    G: kimchi::curve::KimchiCurve + CommitmentCurve,
+    G::BaseField: PrimeField,
+{
+    use ark_poly::Radix2EvaluationDomain as D;
+    let domain_size = 1usize << domain_log2;
+    let domain = D::<G::ScalarField>::new(domain_size).ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            format!("domain 2^{domain_log2} not supported by SRS"),
+        )
+    })?;
+    let basis = srs.get_lagrange_basis(domain);
+    let comm = basis.get(i as usize).ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            format!(
+                "lagrange commitment index {i} out of range (domain size {domain_size})"
+            ),
+        )
+    })?;
+    let pt = comm.chunks.first().ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            format!("lagrange commitment {i} has no chunks"),
+        )
+    })?;
+    pt.to_coordinates().ok_or_else(|| {
+        Error::new(
+            Status::GenericFailure,
+            format!("lagrange commitment {i} is the point at infinity"),
+        )
+    })
+}
+
+/// Fetch the `i`-th lagrange commitment from a Vesta SRS (for Pallas/Step
+/// circuits verifying Vesta-committed = step proofs). Returns `[x, y]` in
+/// `Pallas::ScalarField = Vesta::BaseField = Fq`.
+///
+/// PureScript analog of OCaml `Kimchi_bindings.Protocol.SRS.Fq.lagrange_commitment`.
+#[napi]
+pub fn pallas_srs_lagrange_commitment_at(
+    srs: &VestaCRSExternal,
+    domain_log2: u32,
+    i: u32,
+) -> Result<Vec<PallasFieldExternal>> {
+    let (x, y) = srs_lagrange_commitment_at_impl::<VestaGroup>(&**srs, domain_log2, i)?;
+    Ok(vec![External::new(x), External::new(y)])
+}
+
+/// Fetch the `i`-th lagrange commitment from a Pallas SRS (for Vesta/Wrap
+/// circuits verifying Pallas-committed = wrap proofs). Returns `[x, y]` in
+/// `Vesta::ScalarField = Pallas::BaseField = Fp`.
+///
+/// PureScript analog of OCaml `Kimchi_bindings.Protocol.SRS.Fp.lagrange_commitment`.
+#[napi]
+pub fn vesta_srs_lagrange_commitment_at(
+    srs: &PallasCRSExternal,
+    domain_log2: u32,
+    i: u32,
+) -> Result<Vec<VestaFieldExternal>> {
+    let (x, y) = srs_lagrange_commitment_at_impl::<PallasGroup>(&**srs, domain_log2, i)?;
+    Ok(vec![External::new(x), External::new(y)])
+}
+
+// ============================================================================
 // SRS blinding generator
 // ============================================================================
 
@@ -2927,4 +3013,270 @@ pub fn vesta_srs_b_poly_commitment(
     } else {
         Err(Error::new(Status::GenericFailure, "point at infinity"))
     }
+}
+
+// ============================================================================
+// Wire-proof constructors (port of OCaml `Wrap_wire_proof.to_kimchi_proof`)
+// ============================================================================
+//
+// OCaml's `Proof.dummy` at `mina/src/lib/crypto/pickles/proof.ml:115-208`
+// constructs a base-case wrap proof from a plain OCaml record via
+// `Wrap_wire_proof.of_kimchi_proof` / `to_kimchi_proof` (wrap_wire_proof.ml).
+// That conversion is pure data: OCaml commitments and openings get copied
+// field-by-field into the kimchi `ProverProof` struct with no cryptography.
+//
+// In PureScript, `Proof g f` is `External<ProverProof<G, OpeningProof<G>>>`
+// with no constructor exposed. These two functions plug that gap: they take
+// flat component arrays (the same fields OCaml's `Wrap_wire_proof.t` tracks)
+// and assemble a `ProverProof`. Used by `Pickles.Proof.Dummy` to build the
+// PureScript analog of `Proof.dummy`.
+
+/// Construct a Pallas-committed kimchi `ProverProof` from flat component data.
+///
+/// This is the PureScript analog of OCaml `Wrap_wire_proof.to_kimchi_proof`
+/// (wrap_wire_proof.ml:202-210) specialized to the wrap proof shape used by
+/// `Proof.dummy` (proof.ml:115-208): non-chunked commitments, single-segment
+/// evaluations, IPA-15 rounds, no lookup features, no prev_challenges.
+///
+/// # Field types (Pallas-committed / wrap proof)
+/// Pallas points have coordinates in Pallas.BaseField = Fp = `VestaScalarField`
+/// = `VestaFieldExternal`. The proof's scalar field is Pallas.ScalarField = Fq
+/// = `PallasScalarField` = `PallasFieldExternal`.
+///
+/// # Argument layout
+/// - `w_comm`: 30 Fp coords = 15 points (x0,y0, x1,y1, ...)
+/// - `z_comm`: 2 Fp coords = 1 point
+/// - `t_comm`: 14 Fp coords = 7 points (the 7 quotient chunks)
+/// - `lr`: 60 Fp coords = 15 `(l, r)` pairs (15 bulletproof rounds), layout
+///   `l0.x, l0.y, r0.x, r0.y, l1.x, l1.y, ...`
+/// - `delta`: 2 Fp coords
+/// - `sg`: 2 Fp coords (challenge_polynomial_commitment)
+/// - `z1`, `z2`: Fq scalars
+/// - `evals`: 86 Fq scalars = 43 `(zeta, zeta_omega)` pairs in this order
+///   (matching OCaml `wrap_wire_proof.ml` Evaluations.to_kimchi):
+///     w[0..14] | coefficients[0..14] | z | s[0..5]
+///     | generic_selector | poseidon_selector | complete_add_selector
+///     | mul_selector | emul_selector | endomul_scalar_selector
+/// - `ft_eval1`: Fq scalar
+///
+/// Naming convention: `vesta_*` operates on Pallas-committed (wrap) proofs
+/// because the sponge field is `Vesta.BaseField` = Fq. See existing
+/// `vesta_proof_oracles` / `vesta_proof_commitments` for the same pattern.
+#[napi]
+pub fn vesta_make_wire_proof(
+    w_comm: Vec<&VestaFieldExternal>,
+    z_comm: Vec<&VestaFieldExternal>,
+    t_comm: Vec<&VestaFieldExternal>,
+    lr: Vec<&VestaFieldExternal>,
+    delta: Vec<&VestaFieldExternal>,
+    sg: Vec<&VestaFieldExternal>,
+    z1: &PallasFieldExternal,
+    z2: &PallasFieldExternal,
+    evals: Vec<&PallasFieldExternal>,
+    ft_eval1: &PallasFieldExternal,
+) -> Result<PallasProofExternal> {
+    use kimchi::proof::{PointEvaluations, ProofEvaluations, ProverCommitments};
+    use poly_commitment::commitment::PolyComm;
+    use poly_commitment::ipa::OpeningProof;
+
+    fn pt(field: &str, coords: &[&VestaFieldExternal], i: usize) -> Result<PallasGroup> {
+        let x = ***coords.get(2 * i).ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("{field}: missing x at index {i}"),
+            )
+        })?;
+        let y = ***coords.get(2 * i + 1).ok_or_else(|| {
+            Error::new(
+                Status::GenericFailure,
+                format!("{field}: missing y at index {i}"),
+            )
+        })?;
+        Ok(ark_ec::short_weierstrass::Affine {
+            x,
+            y,
+            infinity: false,
+        })
+    }
+
+    // -------------------- commitments --------------------
+    if w_comm.len() != 30 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "w_comm: expected 30 coords (15 points × 2), got {}",
+                w_comm.len()
+            ),
+        ));
+    }
+    let mut w_comm_vec: Vec<PolyComm<PallasGroup>> = Vec::with_capacity(COLUMNS);
+    for i in 0..COLUMNS {
+        let pnt = pt("w_comm", &w_comm, i)?;
+        w_comm_vec.push(PolyComm { chunks: vec![pnt] });
+    }
+    let w_comm_arr: [PolyComm<PallasGroup>; COLUMNS] = w_comm_vec
+        .try_into()
+        .map_err(|_| Error::new(Status::GenericFailure, "w_comm length"))?;
+
+    if z_comm.len() != 2 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!("z_comm: expected 2 coords, got {}", z_comm.len()),
+        ));
+    }
+    let z_comm_poly = PolyComm {
+        chunks: vec![pt("z_comm", &z_comm, 0)?],
+    };
+
+    if t_comm.len() != 14 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "t_comm: expected 14 coords (7 points × 2), got {}",
+                t_comm.len()
+            ),
+        ));
+    }
+    let mut t_chunks: Vec<PallasGroup> = Vec::with_capacity(7);
+    for i in 0..7 {
+        t_chunks.push(pt("t_comm", &t_comm, i)?);
+    }
+    let t_comm_poly = PolyComm { chunks: t_chunks };
+
+    let commitments = ProverCommitments {
+        w_comm: w_comm_arr,
+        z_comm: z_comm_poly,
+        t_comm: t_comm_poly,
+        lookup: None,
+    };
+
+    // -------------------- opening proof --------------------
+    // WrapIPARounds = 15
+    const WRAP_IPA_ROUNDS: usize = 15;
+    if lr.len() != 4 * WRAP_IPA_ROUNDS {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "lr: expected {} coords ({} pairs × 2 points × 2 coords), got {}",
+                4 * WRAP_IPA_ROUNDS,
+                WRAP_IPA_ROUNDS,
+                lr.len()
+            ),
+        ));
+    }
+    let mut lr_vec: Vec<(PallasGroup, PallasGroup)> = Vec::with_capacity(WRAP_IPA_ROUNDS);
+    for i in 0..WRAP_IPA_ROUNDS {
+        // Layout within each pair: l.x, l.y, r.x, r.y
+        let l = pt("lr.l", &lr, 2 * i)?;
+        let r = pt("lr.r", &lr, 2 * i + 1)?;
+        lr_vec.push((l, r));
+    }
+
+    if delta.len() != 2 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "delta: expected 2 coords",
+        ));
+    }
+    if sg.len() != 2 {
+        return Err(Error::new(
+            Status::GenericFailure,
+            "sg: expected 2 coords",
+        ));
+    }
+
+    let opening = OpeningProof::<PallasGroup> {
+        lr: lr_vec,
+        delta: pt("delta", &delta, 0)?,
+        z1: **z1,
+        z2: **z2,
+        sg: pt("sg", &sg, 0)?,
+    };
+
+    // -------------------- evaluations --------------------
+    // 43 PointEvaluations pairs × 2 scalars = 86 total. Count:
+    //   w[15] + coefficients[15] + z[1] + s[6] + 6 selectors = 43 pairs
+    const EVALS_EXPECTED: usize = 86;
+    if evals.len() != EVALS_EXPECTED {
+        return Err(Error::new(
+            Status::GenericFailure,
+            format!(
+                "evals: expected {} scalars (43 pairs × 2), got {}",
+                EVALS_EXPECTED,
+                evals.len()
+            ),
+        ));
+    }
+    let scalars: Vec<PallasScalarField> = evals.iter().map(|f| ***f).collect();
+    let mut iter = scalars.into_iter();
+    let mut take_pe = || -> PointEvaluations<Vec<PallasScalarField>> {
+        let zeta = vec![iter.next().expect("evals zeta")];
+        let zeta_omega = vec![iter.next().expect("evals zeta_omega")];
+        PointEvaluations { zeta, zeta_omega }
+    };
+
+    let w_evals: Vec<_> = (0..COLUMNS).map(|_| take_pe()).collect();
+    let w_arr: [_; COLUMNS] = w_evals
+        .try_into()
+        .map_err(|_| Error::new(Status::GenericFailure, "w evals len"))?;
+
+    let coeff_evals: Vec<_> = (0..COLUMNS).map(|_| take_pe()).collect();
+    let coeff_arr: [_; COLUMNS] = coeff_evals
+        .try_into()
+        .map_err(|_| Error::new(Status::GenericFailure, "coeff evals len"))?;
+
+    let z_eval = take_pe();
+
+    let s_evals: Vec<_> = (0..(PERMUTS - 1)).map(|_| take_pe()).collect();
+    let s_arr: [_; PERMUTS - 1] = s_evals
+        .try_into()
+        .map_err(|_| Error::new(Status::GenericFailure, "s evals len"))?;
+
+    let generic_selector = take_pe();
+    let poseidon_selector = take_pe();
+    let complete_add_selector = take_pe();
+    let mul_selector = take_pe();
+    let emul_selector = take_pe();
+    let endomul_scalar_selector = take_pe();
+    drop(take_pe);
+    debug_assert!(iter.next().is_none());
+
+    let evals_proof = ProofEvaluations {
+        public: None,
+        w: w_arr,
+        z: z_eval,
+        s: s_arr,
+        coefficients: coeff_arr,
+        generic_selector,
+        poseidon_selector,
+        complete_add_selector,
+        mul_selector,
+        emul_selector,
+        endomul_scalar_selector,
+        range_check0_selector: None,
+        range_check1_selector: None,
+        foreign_field_add_selector: None,
+        foreign_field_mul_selector: None,
+        xor_selector: None,
+        rot_selector: None,
+        lookup_aggregation: None,
+        lookup_table: None,
+        lookup_sorted: [None, None, None, None, None],
+        runtime_lookup_table: None,
+        runtime_lookup_table_selector: None,
+        xor_lookup_selector: None,
+        lookup_gate_lookup_selector: None,
+        range_check_lookup_selector: None,
+        foreign_field_mul_lookup_selector: None,
+    };
+
+    let proof = ProverProof::<PallasGroup, OpeningProof<PallasGroup>> {
+        commitments,
+        proof: opening,
+        evals: evals_proof,
+        ft_eval1: **ft_eval1,
+        prev_challenges: Vec::new(),
+    };
+
+    Ok(External::new(proof))
 }

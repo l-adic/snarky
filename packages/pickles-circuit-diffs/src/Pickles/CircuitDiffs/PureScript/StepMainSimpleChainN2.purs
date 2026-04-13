@@ -21,7 +21,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
-import Pickles.PublicInputCommit (LagrangeBase)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -35,7 +35,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainN2Params =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -79,5 +79,9 @@ simpleChainN2Rule appState = do
 compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
 compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @2 @67 simpleChainN2Rule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
+    -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
+    (\_ -> stepMain @2 @67 simpleChainN2Rule
+      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
+      dummyWrapSg)
     Kimchi.initialState

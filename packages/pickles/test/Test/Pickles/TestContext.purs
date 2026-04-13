@@ -60,6 +60,8 @@ module Test.Pickles.TestContext
   , wrapEndo
   , type1ToType2SF
   , convertUnfinalized
+  , computeStepIvpTranscript
+  , buildBaseCaseUnfinalizedProof
   , module Pickles.Types
   , toVectorOrThrow
   ) where
@@ -106,13 +108,14 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, emptyPrevChallengeDigest, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase, mkConstLagrangeBase, publicInputCommit)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkConstLagrangeBase, mkConstLagrangeBaseLookup, publicInputCommit)
 import Pickles.Sponge (initialSponge, runPureSpongeM)
 import Pickles.Sponge as Pickles.Sponge
 import Pickles.Step.Advice (class StepWitnessM, getStepInputFields)
 import Pickles.Step.Circuit (AppCircuitInput, AppCircuitOutput, WrapStatementPublicInput, stepCircuit)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofInput, FinalizeOtherProofParams)
-import Pickles.Types (MaxProofsVerified, StepAllEvals, StepField, StepIPARounds, StepInput, StepStatement, VerificationKey(..), WrapField, WrapIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Types (BranchData(..), FopProofState(..), MaxProofsVerified, PerProofUnfinalized(..), StepAllEvals(..), StepField, StepIPARounds, StepInput, StepPerProofWitness(..), StepProofState(..), StepStatement, VerificationKey(..), WrapField, WrapIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (PointEval(..)) as Types
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams)
 import Pickles.Verify.FqSpongeTranscript (FqSpongeInput, spongeTranscriptPure)
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof, expandPlonkMinimal)
@@ -128,10 +131,11 @@ import Snarky.Backend.Compile (Solver, SolverT, compile, compilePure, makeSolver
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createCRS, createProverIndex, createVerifierIndex, crsCreate, crsSize, verifyProverIndex)
 import Snarky.Backend.Kimchi.Impl.Pallas (createCRS) as PallasImpl
+import Snarky.Backend.Kimchi.Impl.Vesta (createCRS) as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (EvaluationError, Variable)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), any_, assert_, coerceViaBits, const_, equals_, exists, false_, fieldsToValue, sizeInFields, toField, true_, valueToFields, wrapF)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (class Shifted, SplitField(..), Type1(..), Type2, fromShifted, toFieldPure, toShifted)
 import Snarky.Circuit.Kimchi (groupMapParams) as Kimchi
@@ -211,6 +215,18 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) f =
   , wrapVerifierIndex :: VerificationKey (WeierstrassAffinePoint PallasG (F f))
   , sgOld :: Vector n (AffinePoint (F f))
   , sgOldMask :: Vector n (FVar f)
+  , appState :: F f
+  -- | Public input unfinalized proofs (dw = WrapIPARounds = 15 bp challenges).
+  -- | Distinct from fopProofStates which have ds = StepIPARounds = 16 bp challenges.
+  -- | In OCaml: Req.Unfinalized_proofs (step_main.ml:358-366).
+  , publicUnfinalizedProofs ::
+      Vector n
+        ( PerProofUnfinalized
+            dw
+            (Type2 (SplitField (F f) Boolean))
+            (F f)
+            Boolean
+        )
   }
 
 -- | Prove-time monad: provides real proof witness data via ReaderT.
@@ -226,7 +242,7 @@ derive newtype instance Monad (StepProverM n ds dw f)
 runStepProverM :: forall n ds dw f a. StepAdvice n ds dw f -> StepProverM n ds dw f a -> Effect a
 runStepProverM privateData (StepProverM m) = runReaderT m privateData
 
-instance StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField (StepProverM n StepIPARounds WrapIPARounds StepField) where
+instance Reflectable n Int => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField (StepProverM n StepIPARounds WrapIPARounds StepField) where
   getStepInputFields _ = StepProverM $ map _.stepInputFields ask
   getProofWitnesses _ = StepProverM $ map _.evals ask
   getPrevChallenges _ = StepProverM $ map _.prevChallenges ask
@@ -236,13 +252,67 @@ instance StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField (StepProve
   getMessagesForNextWrapProof _ = StepProverM $ map _.messagesForNextWrapProof ask
   getWrapVerifierIndex _ = StepProverM $ map _.wrapVerifierIndex ask
   getSgOld _ = StepProverM $ map _.sgOld ask
-  -- Composed advice methods used by Pickles.Step.Main.stepMain.
-  -- Not yet wired into the existing prover witness data — stepMain has
-  -- its own compilation-only path, and these would need real values
-  -- for proving (TODO: extend StepAdvice to provide them).
-  getStepAppState _ = StepProverM $ liftEffect $ throw "StepProverM: getStepAppState not yet implemented"
-  getStepPerProofWitnesses _ = StepProverM $ liftEffect $ throw "StepProverM: getStepPerProofWitnesses not yet implemented"
-  getStepUnfinalizedProofs _ = StepProverM $ liftEffect $ throw "StepProverM: getStepUnfinalizedProofs not yet implemented"
+  getStepAppState _ = StepProverM $ map _.appState ask
+  getStepPerProofWitnesses _ = StepProverM $ do
+    adv <- ask
+    pure $ Vector.generate \i ->
+      let
+        pw = Vector.index adv.evals i
+        fop = Vector.index adv.fopProofStates i
+        opening = Vector.index adv.openingProofs i
+        msgs = Vector.index adv.messages i
+        dv = fop.deferredValues
+      in StepPerProofWitness
+        { wrapProof: WrapProof
+            { opening: WrapProofOpening
+                { lr: map (\r -> { l: WeierstrassAffinePoint r.l, r: WeierstrassAffinePoint r.r }) opening.lr
+                , z1: opening.z1
+                , z2: opening.z2
+                , delta: WeierstrassAffinePoint opening.delta
+                , sg: WeierstrassAffinePoint opening.sg
+                }
+            , messages: WrapProofMessages
+                { wComm: map WeierstrassAffinePoint msgs.wComm
+                , zComm: WeierstrassAffinePoint msgs.zComm
+                , tComm: map WeierstrassAffinePoint msgs.tComm
+                }
+            }
+        , proofState: StepProofState
+            { fopState: FopProofState
+                { combinedInnerProduct: fromShifted dv.combinedInnerProduct
+                , b: fromShifted dv.b
+                , zetaToSrsLength: fromShifted dv.plonk.zetaToSrsLength
+                , zetaToDomainSize: fromShifted dv.plonk.zetaToDomainSize
+                , perm: fromShifted dv.plonk.perm
+                , spongeDigest: fop.spongeDigestBeforeEvaluations
+                , beta: UnChecked dv.plonk.beta
+                , gamma: UnChecked dv.plonk.gamma
+                , alpha: UnChecked dv.plonk.alpha
+                , zeta: UnChecked dv.plonk.zeta
+                , xi: UnChecked dv.xi
+                , bulletproofChallenges: map UnChecked dv.bulletproofChallenges
+                }
+            , branchData: BranchData
+                -- Must match stepMain's fopDomainLog2 (16 for simple_chain,
+                -- from OCaml dump_circuit_impl.ml:3723 step_domains).
+                { domainLog2: F (fromInt 16 :: StepField)
+                , mask0: false
+                , mask1: true
+                }
+            }
+        , prevEvals: StepAllEvals
+            { publicEvals: Types.PointEval pw.allEvals.publicEvals
+            , witnessEvals: map Types.PointEval pw.allEvals.witnessEvals
+            , coeffEvals: map Types.PointEval pw.allEvals.coeffEvals
+            , zEvals: Types.PointEval pw.allEvals.zEvals
+            , sigmaEvals: map Types.PointEval pw.allEvals.sigmaEvals
+            , indexEvals: map Types.PointEval pw.allEvals.indexEvals
+            , ftEval1: pw.allEvals.ftEval1
+            }
+        , prevChallenges: map UnChecked adv.prevChallenges
+        , prevSgs: map WeierstrassAffinePoint adv.sgOld
+        }
+  getStepUnfinalizedProofs _ = StepProverM $ map _.publicUnfinalizedProofs ask
 
 -------------------------------------------------------------------------------
 -- | WrapProverM: prove-time advisory monad for the Wrap circuit
@@ -553,10 +623,11 @@ createStepProofContext stepCase = do
       stepSrs <- liftEffect $ PallasImpl.createCRS
       let
         wrapDomainLog2 = reflectType (Proxy @WrapIPARounds)
-        numPublic = sizeInFields (Proxy @StepField) (Proxy @(WrapStatementPublicInput StepIPARounds (F StepField)))
         baseCaseIvpParams =
           { curveParams: curveParams (Proxy @Pallas.G)
-          , lagrangeComms: map mkConstLagrangeBase ((coerce (ProofFFI.vestaSrsLagrangeCommitments stepSrs wrapDomainLog2 numPublic)) :: Array (AffinePoint (F StepField)))
+          , lagrangeAt:
+              mkConstLagrangeBaseLookup \i ->
+                (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt stepSrs wrapDomainLog2 i)) :: AffinePoint (F StepField)
           , blindingH: (coerce (ProofFFI.vestaSrsBlindingGenerator stepSrs)) :: AffinePoint (F StepField)
           , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)
           , correctionMode: PureCorrections
@@ -565,7 +636,8 @@ createStepProofContext stepCase = do
       pure $ Tuple false (Record.merge Dummy.dummyFinalizeOtherProofParams baseCaseIvpParams)
     InductiveCase stepCtx wrapCtx -> do
       Console.info "creating Step proof for Inductive Step"
-      pure $ Tuple true (Record.merge (buildStepFinalizeParams stepCtx) (buildStepIVPParams wrapCtx))
+      stepSrs <- liftEffect $ PallasImpl.createCRS
+      pure $ Tuple true (Record.merge (buildStepFinalizeParams stepCtx) (buildStepIVPParams stepSrs wrapCtx))
 
   let
     -- Circuit polymorphic in m: compiled with Unit input, StepInput enters via advisory monad.
@@ -638,12 +710,11 @@ createStepProofContext stepCase = do
               , index: map unwrapVk vk.index
               }
           , sgOld: Vector.nil
-          , sgOldMask: Vector.nil
           , publicInput: dummyPublicInput
           , wComm: (Vector.index advice.messages (unsafeFinite @1 0)).wComm
           , zComm: (Vector.index advice.messages (unsafeFinite @1 0)).zComm
           , tComm: (Vector.index advice.messages (unsafeFinite @1 0)).tComm
-          , lagrangeComms: params.lagrangeComms
+          , lagrangeAt: params.lagrangeAt
           , blindingH: params.blindingH
           }
         -- Build self-consistent unfinalized proof with transcript-derived plonk
@@ -835,10 +906,13 @@ wrapEndo = let EndoScalar e = endoScalar @Pallas.BaseField @Pallas.ScalarField i
 -- | Build WrapCircuitParams from a StepProofContext
 -------------------------------------------------------------------------------
 
-buildWrapCircuitParams :: StepProofContext -> WrapParams Pallas.ScalarField
-buildWrapCircuitParams ctx =
+-- | Takes the cached Vesta CRS (= `pallasCrsLoadFromCache` = "the one CRS")
+-- | so the lagrange lookup can fetch bases from the same SRS the verifier
+-- | index was built against. Matches OCaml's `step_verifier.ml:360-368` shape:
+-- | the lookup is just `lagrange_commitment ~domain srs i`, no pre-sizing.
+buildWrapCircuitParams :: CRS Vesta.G -> StepProofContext -> WrapParams Pallas.ScalarField
+buildWrapCircuitParams vestaSrs ctx =
   let
-    numPublic = Array.length ctx.publicInputs
     columnCommsRaw = ProofFFI.pallasVerifierIndexColumnComms ctx.verifierIndex
 
     indexComms :: Vector 6 (AffinePoint Pallas.ScalarField)
@@ -851,7 +925,10 @@ buildWrapCircuitParams ctx =
     sigmaComms = unsafePartial fromJust $ Vector.toVector $ Array.drop 21 columnCommsRaw
   in
     { curveParams: curveParams (Proxy @Vesta.G)
-    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.pallasLagrangeCommitments ctx.verifierIndex numPublic))
+    , lagrangeAt:
+        mkConstLagrangeBaseLookup \i ->
+          (coerce (ProofFFI.pallasSrsLagrangeCommitmentAt vestaSrs ctx.domainLog2 i))
+            :: AffinePoint (F Pallas.ScalarField)
     , blindingH: coerce $ ProofFFI.pallasProverIndexBlindingGenerator ctx.verifierIndex
     , sigmaCommLast: coerce $ ProofFFI.pallasSigmaCommLast ctx.verifierIndex
     , columnComms:
@@ -1343,8 +1420,11 @@ buildWrapProverWitness ctx =
 createWrapProofContext :: StepProofContext -> Aff WrapProofContext
 createWrapProofContext stepCtx = do
   Console.debug "[createWrapProofContext]"
+  -- Load the cached Vesta CRS for the lagrange-base lookup in the wrap
+  -- circuit's x_hat (for step proof's public input). Single canonical CRS.
+  vestaSrsForLagrange <- liftEffect VestaImpl.createCRS
   let
-    params = buildWrapCircuitParams stepCtx
+    params = buildWrapCircuitParams vestaSrsForLagrange stepCtx
     input = buildWrapCircuitInput stepCtx
     witnessData = buildWrapProverWitness stepCtx
 
@@ -1375,7 +1455,13 @@ createWrapProofContext stepCtx = do
     circuit
     KimchiConstraint.initialState
 
-  Console.debug "Creating CRS for Wrap circuit"
+  -- Wrap proofs use a size-2^15 CRS so the kimchi prover's IPA loop runs
+  -- exactly `Tock.Rounds.n = WrapIPARounds = 15` rounds. The basepoints of
+  -- `crsCreate @WrapField` are derived deterministically from the same
+  -- seed kimchi uses for its SRS cache, so they are a prefix of the
+  -- cached 2^16 Pallas SRS — lagrange bases produced at overlap sizes
+  -- still agree with the cached-SRS ones.
+  Console.debug "Creating size-2^15 Pallas CRS for Wrap circuit"
   let crs = crsCreate @WrapField (pow2 15)
   Console.info $ "Created CRS of size " <> show (crsSize crs) <> " for Wrap circuit"
   createTestContext'
@@ -1742,12 +1828,12 @@ computeStepSgEvals stepCtx =
 -- | Compute x_hat (public input commitment) in pure mode by evaluating the
 -- | publicInputCommit circuit on concrete values via makeSolver.
 computeXhatPure
-  :: { lagrangeComms :: Array (LagrangeBase StepField)
+  :: { lagrangeAt :: LagrangeBaseLookup StepField
      , blindingH :: AffinePoint (F StepField)
      }
   -> WrapStatementPublicInput StepIPARounds (F StepField)
   -> AffinePoint (F StepField)
-computeXhatPure { lagrangeComms, blindingH } publicInput =
+computeXhatPure { lagrangeAt, blindingH } publicInput =
   let
     xhatCircuit
       :: forall t
@@ -1756,7 +1842,7 @@ computeXhatPure { lagrangeComms, blindingH } publicInput =
       -> Snarky (KimchiConstraint StepField) t Identity (AffinePoint (FVar StepField))
     xhatCircuit = publicInputCommit
       { curveParams: curveParams (Proxy @Pallas.G)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       }
@@ -1798,20 +1884,24 @@ computeIndexDigestPure vk =
 -- |
 -- | This is the pure equivalent of OCaml's Oracles.create applied to the
 -- | Wrap proof data that the Step circuit verifies.
+-- |
+-- | Polymorphic in `sgOldN` — the legacy step circuit's base case uses 0
+-- | (no previous proofs); `stepMainPadded` uses
+-- | `Wrap_hack.Padded_length.n = 2`.
 computeStepIvpTranscript
-  :: { vk ::
+  :: forall sgOldN
+   . { vk ::
          { sigma :: Vector 6 (AffinePoint (F StepField))
          , sigmaLast :: AffinePoint (F StepField)
          , coeff :: Vector 15 (AffinePoint (F StepField))
          , index :: Vector 6 (AffinePoint (F StepField))
          }
-     , sgOld :: Vector 0 (AffinePoint StepField)
-     , sgOldMask :: Vector 0 (FVar StepField)
+     , sgOld :: Vector sgOldN (AffinePoint StepField)
      , publicInput :: WrapStatementPublicInput StepIPARounds (F StepField)
      , wComm :: Vector 15 (AffinePoint (F StepField))
      , zComm :: AffinePoint (F StepField)
      , tComm :: Vector 7 (AffinePoint (F StepField))
-     , lagrangeComms :: Array (LagrangeBase StepField)
+     , lagrangeAt :: LagrangeBaseLookup StepField
      , blindingH :: AffinePoint (F StepField)
      }
   -> { beta :: SizedF 128 StepField
@@ -1820,12 +1910,12 @@ computeStepIvpTranscript
      , zetaChal :: SizedF 128 StepField
      , digest :: StepField
      }
-computeStepIvpTranscript { vk, sgOld, publicInput, wComm, zComm, tComm, lagrangeComms, blindingH } =
+computeStepIvpTranscript { vk, sgOld, publicInput, wComm, zComm, tComm, lagrangeAt, blindingH } =
   let
     indexDigest = computeIndexDigestPure vk
 
     -- Compute x_hat via makeSolver on publicInputCommit
-    xHat = computeXhatPure { lagrangeComms, blindingH } publicInput
+    xHat = computeXhatPure { lagrangeAt, blindingH } publicInput
 
     -- Run the Fq-sponge transcript in Step mode (regular sponge, absorb index_digest + sgOld before x_hat)
     transcriptInput =
@@ -2061,6 +2151,8 @@ buildStepProverWitness stepCtx wrapCtx =
     , wrapVerifierIndex: buildStepIVPVkInput wrapCtx
     , sgOld: (coerce $ ProofFFI.vestaProofOpeningSg wrapCtx.proof) :< Vector.nil
     , sgOldMask: (const_ one) :< Vector.nil
+    , appState: F zero
+    , publicUnfinalizedProofs: (Dummy.dummyStepAdvice).publicUnfinalizedProofs
     }
 
 -------------------------------------------------------------------------------
@@ -2071,13 +2163,18 @@ buildStepProverWitness stepCtx wrapCtx =
 -- | Only contains true environment data (SRS lagrange commitments, blinding generator).
 -- | VK data (columnComms, sigmaCommLast) is NOT here — it goes in the input
 -- | as circuit variables, matching OCaml's exists ~request:(Req.Wrap_index).
-buildStepIVPParams :: WrapProofContext -> IncrementallyVerifyProofParams StepField ()
-buildStepIVPParams ctx =
-  let
-    numPublic = Array.length ctx.publicInputs
-  in
+-- | Takes the cached Pallas CRS so the lagrange lookup can fetch bases by
+-- | index from the same SRS the wrap verifier index was built against.
+-- | Matches OCaml's `step_verifier.ml:360-368` — `lagrange_commitment ~domain
+-- | srs i`, no pre-sizing.
+buildStepIVPParams
+  :: CRS Pallas.G -> WrapProofContext -> IncrementallyVerifyProofParams StepField ()
+buildStepIVPParams pallasSrs ctx =
     { curveParams: curveParams (Proxy @Pallas.G)
-    , lagrangeComms: map mkConstLagrangeBase (coerce (ProofFFI.vestaLagrangeCommitments ctx.verifierIndex numPublic))
+    , lagrangeAt:
+        mkConstLagrangeBaseLookup \i ->
+          (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt pallasSrs ctx.domainLog2 i))
+            :: AffinePoint (F StepField)
     , blindingH: coerce $ ProofFFI.vestaProverIndexBlindingGenerator ctx.verifierIndex
     , endo: stepEndo
     , groupMapParams: Kimchi.groupMapParams (Proxy @Pallas.G)

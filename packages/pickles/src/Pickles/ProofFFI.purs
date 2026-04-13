@@ -54,6 +54,8 @@ module Pickles.ProofFFI
   , vestaLagrangeCommitments
   , pallasSrsLagrangeCommitments
   , vestaSrsLagrangeCommitments
+  , pallasSrsLagrangeCommitmentAt
+  , vestaSrsLagrangeCommitmentAt
   , pallasSrsBlindingGenerator
   , vestaSrsBlindingGenerator
   , pallasProofCommitments
@@ -68,6 +70,7 @@ module Pickles.ProofFFI
   , vestaVerifierIndexColumnComms
   , pallasChallengePolyCommitment
   , vestaChallengePolyCommitment
+  , vestaMakeWireProof
   , ProofCommitments
   , Proof
   , OraclesResult
@@ -221,6 +224,36 @@ foreign import vestaProofOracles
      }
   -> OraclesResult Vesta.BaseField
 
+-- | Construct a Pallas-committed `Proof` (wrap proof) from flat component
+-- | data. PureScript analog of OCaml `Wrap_wire_proof.to_kimchi_proof`
+-- | (wrap_wire_proof.ml:202-210), used by `Pickles.Proof.Dummy` to build
+-- | the PS equivalent of `Proof.dummy` (proof.ml:115-208).
+-- |
+-- | Field layout (all non-chunked, WrapIPARounds = 15):
+-- | - `wComm`: 30 Fp coords = 15 × (x,y)   (Pallas base field = Vesta.ScalarField)
+-- | - `zComm`: 2 Fp coords = 1 point
+-- | - `tComm`: 14 Fp coords = 7 quotient-poly chunks
+-- | - `lr`: 60 Fp coords = 15 × (l.x, l.y, r.x, r.y)
+-- | - `delta`, `sg`: 2 Fp coords each
+-- | - `z1`, `z2`, `ftEval1`: Fq scalars (Pallas scalar field = Vesta.BaseField)
+-- | - `evals`: 88 Fq scalars = 44 × (zeta, zetaOmega) in the OCaml order:
+-- |     `w[15] | coefficients[15] | z | s[6] | generic_selector
+-- |      | poseidon_selector | complete_add_selector | mul_selector
+-- |      | emul_selector | endomul_scalar_selector`
+foreign import vestaMakeWireProof
+  :: { wComm :: Array Vesta.ScalarField
+     , zComm :: Array Vesta.ScalarField
+     , tComm :: Array Vesta.ScalarField
+     , lr :: Array Vesta.ScalarField
+     , delta :: Array Vesta.ScalarField
+     , sg :: Array Vesta.ScalarField
+     , z1 :: Pallas.ScalarField
+     , z2 :: Pallas.ScalarField
+     , evals :: Array Pallas.ScalarField
+     , ftEval1 :: Pallas.ScalarField
+     }
+  -> Proof Pallas.G Vesta.BaseField
+
 foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
 foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
 
@@ -310,6 +343,17 @@ foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseFiel
 -- Lagrange commitments directly from SRS (no verifier index needed)
 foreign import pallasSrsLagrangeCommitments :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
 foreign import vestaSrsLagrangeCommitments :: CRS Pallas.G -> Int -> Int -> Array (AffinePoint Vesta.ScalarField)
+
+-- | Fetch a single lagrange commitment by index from an SRS. PureScript
+-- | analog of OCaml `Kimchi_bindings.Protocol.SRS.Fq.lagrange_commitment`
+-- | (used in `step_verifier.ml:360-368`). Kimchi caches the full basis on
+-- | first access, so per-index calls are O(1) after warmup. Lets callers
+-- | avoid pre-sizing a `numPublic` buffer.
+foreign import pallasSrsLagrangeCommitmentAt
+  :: CRS Vesta.G -> Int -> Int -> AffinePoint Pallas.ScalarField
+
+foreign import vestaSrsLagrangeCommitmentAt
+  :: CRS Pallas.G -> Int -> Int -> AffinePoint Vesta.ScalarField
 
 -- Blinding generator H directly from SRS
 foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.ScalarField
