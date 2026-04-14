@@ -40,7 +40,7 @@ import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Wrap.Slots (Slots2)
-import Pickles.ProofFFI (vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasProverIndexDomainLog2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Trace as Trace
 import Pickles.Types (StepField, WrapField)
@@ -119,11 +119,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- `dump_circuit_impl.ml:3718-3719`: wrap proof's eval domain = 14.
       wrapDomainLog2 = 14
 
-      -- Step circuit's own kimchi domain log2 for Simple_chain
-      -- (`dump_circuit_impl.ml:3721-3723`): 16. Used to size the
-      -- wrap's lagrange base lookup over the step VK.
-      stepDomainLog2 = 16
-
       srsData =
         { lagrangeAt:
             mkConstLagrangeBaseLookup \i ->
@@ -195,6 +190,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- circuit-variable form for `wrapMain.config.stepKeys`. The wrap
     -- compile itself produces a real `VerifierIndex PallasG WrapField`
     -- that we feed back into the step advice for oracle computation.
+    --
+    -- `stepDomainLog2` is read DYNAMICALLY from the compiled step prover
+    -- index (= `Fix_domains.domains` output for the Simple_chain
+    -- inductive rule). Previous versions hardcoded 16 (matching the
+    -- synthetic `dump_circuit_impl.ml` test config), which didn't match
+    -- production's actual ~14. Reading it from the prover index means
+    -- this file never has to guess — whatever the compile actually
+    -- produced flows through to the wrap compile's `stepKeys` domain.
+    let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
     let
       wrapCtx :: WP.WrapCompileContext 1
       wrapCtx =

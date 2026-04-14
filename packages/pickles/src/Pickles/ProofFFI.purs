@@ -45,6 +45,8 @@ module Pickles.ProofFFI
   , pallasDebugVerify
   , vestaDebugVerify
   , pallasVerifierIndexMaxPolySize
+  , pallasProverIndexDomainLog2
+  , vestaProverIndexDomainLog2
   , vestaVerifierIndexMaxPolySize
   , pallasVerifierIndexDigest
   , vestaVerifierIndexDigest
@@ -327,6 +329,16 @@ foreign import vestaDebugVerify :: VerifierIndex Pallas.G Vesta.BaseField -> { p
 -- Max polynomial size from verifier index
 foreign import pallasVerifierIndexMaxPolySize :: VerifierIndex Vesta.G Pallas.BaseField -> Int
 foreign import vestaVerifierIndexMaxPolySize :: VerifierIndex Pallas.G Vesta.BaseField -> Int
+
+-- | Domain log2 size from a prover index. This is the `log_size_of_group` of
+-- | the `d1` evaluation domain, i.e. the kimchi compile domain — what
+-- | `Fix_domains.domains` returned for the circuit that was compiled.
+-- |
+-- | For step-circuit prover indices (Vesta commitments, Pallas.BaseField = Fp),
+-- | use `pallasProverIndexDomainLog2`. For wrap-circuit prover indices
+-- | (Pallas commitments, Vesta.BaseField = Fq), use `vestaProverIndexDomainLog2`.
+foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
+foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
 
 -- Fq-sponge transcript helpers
 -- VK digest: returns Fq element (Pallas.ScalarField)

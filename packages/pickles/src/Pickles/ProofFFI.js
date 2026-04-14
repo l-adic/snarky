@@ -284,6 +284,16 @@ export const pallasVerifierIndexMaxPolySize = (verifierIndex) =>
 export const vestaVerifierIndexMaxPolySize = (verifierIndex) =>
   crypto.vestaVerifierIndexMaxPolySize(verifierIndex);
 
+// Domain log2 size (d1.log_size_of_group) from a prover index — i.e. the
+// actual kimchi compile domain returned by Fix_domains.domains for this
+// circuit. Use this instead of hardcoded domain constants when the caller
+// needs to match the compiled circuit's size.
+export const pallasProverIndexDomainLog2 = (proverIndex) =>
+  crypto.pallasProverIndexDomainLog2(proverIndex);
+
+export const vestaProverIndexDomainLog2 = (proverIndex) =>
+  crypto.vestaProverIndexDomainLog2(proverIndex);
+
 // Verifier index digest (Fq element)
 export const pallasVerifierIndexDigest = (verifierIndex) =>
   crypto.pallasVerifierIndexDigest(verifierIndex);

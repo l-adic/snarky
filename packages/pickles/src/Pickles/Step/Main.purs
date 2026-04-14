@@ -472,7 +472,7 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
           , shifts: map const_ (LinFFI.domainShifts @StepField fopDomainLog2)
           }
       , domainLog2: fopDomainLog2
-      , srsLengthLog2: fopDomainLog2
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , endo: stepEndoVal
       , linearizationPoly: Linearization.pallas
       }

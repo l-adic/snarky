@@ -260,10 +260,13 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Step 9: pow2_pows via Field.square
   -- OCaml computes pow2_pows eagerly for zeta and zetaw (generates Square
   -- constraints even though the values may not all be used directly).
+  -- Uses srsLengthLog2 (= Common.Max_degree.step_log2 = StepIPARounds = 16),
+  -- not domainLog2: matches OCaml `let n = Int.ceil_log2 Max_degree.step in
+  -- pow2_pow plonk.zeta n` in step_verifier.ml.
   -- TODO -- even if this is a no-op, void is not the right answer here
   ---------------------------------------------------------------------------
-  void $ pow2PowSquare zeta params.domainLog2
-  void $ pow2PowSquare zetaw params.domainLog2
+  void $ pow2PowSquare zeta params.srsLengthLog2
+  void $ pow2PowSquare zetaw params.srsLengthLog2
 
   ---------------------------------------------------------------------------
   -- Steps 10+11a: PlonK env + ft_eval0
