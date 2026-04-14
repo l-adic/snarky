@@ -36,6 +36,7 @@ import Prelude
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Maybe (fromJust)
+import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
@@ -58,7 +59,6 @@ import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, unwrapF, wrapF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2, toFieldPure, toShifted)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (fromShifted)
 
 --------------------------------------------------------------------------------
 -- expandDeferred
@@ -824,12 +824,17 @@ expandProof input =
 
     stepProofState :: StepProofState StepIPARounds (F StepField) Boolean
     stepProofState = StepProofState
+      -- The 5 fp slots store the **shifted inner** form (matching
+      -- OCaml's `Per_proof_witness.proof_state.deferred_values.plonk`
+      -- at the var level). See the longer note at the parallel site in
+      -- `Pickles.Prove.Step.getStepPerProofWitnesses` for why we do
+      -- NOT call `fromShifted` here.
       { fopState: FopProofState
-          { combinedInnerProduct: fromShifted _deferredStep.combinedInnerProduct
-          , b: fromShifted _deferredStep.b
-          , zetaToSrsLength: fromShifted stepPlonkDerived.zetaToSrsLength
-          , zetaToDomainSize: fromShifted stepPlonkDerived.zetaToDomainSize
-          , perm: fromShifted stepPlonkDerived.perm
+          { combinedInnerProduct: unwrap _deferredStep.combinedInnerProduct
+          , b: unwrap _deferredStep.b
+          , zetaToSrsLength: unwrap stepPlonkDerived.zetaToSrsLength
+          , zetaToDomainSize: unwrap stepPlonkDerived.zetaToDomainSize
+          , perm: unwrap stepPlonkDerived.perm
           , spongeDigest: F input.spongeDigestBeforeEvaluations
           , beta: UnChecked stepPlonkDerived.beta
           , gamma: UnChecked stepPlonkDerived.gamma

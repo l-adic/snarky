@@ -23,6 +23,7 @@ import Prelude
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype)
 import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for)
@@ -44,6 +45,7 @@ import Type.Proxy (Proxy(..))
 
 newtype Type1 f = Type1 f
 
+derive instance Newtype (Type1 f) _
 derive instance Functor Type1
 derive instance Eq f => Eq (Type1 f)
 derive instance Generic (Type1 f) _

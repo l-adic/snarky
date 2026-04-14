@@ -53,7 +53,7 @@ import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Map (Map)
-import Data.Newtype (class Newtype, un)
+import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -267,12 +267,28 @@ instance
                   }
               }
           , proofState: StepProofState
+              -- The 5 fp slots store the **shifted inner** form of each
+              -- `Type1 (F StepField)` advice value, matching OCaml's
+              -- `Per_proof_witness.proof_state.deferred_values.plonk` at
+              -- the var level (`field_var Shifted_value.Type1.t` with
+              -- `field_var = Impls.Step.Field.t`). PS's
+              -- `fopShiftOps.unshift = fromShiftedType1Circuit` then
+              -- reconstructs `2*t + c` from this stored form when FOP
+              -- needs the unshifted value, and `scalarMulLeaf` feeds
+              -- the stored form directly to `scaleFast2'` (which has
+              -- Type2-ish internal semantics `[s + 2^n] * g`) to match
+              -- OCaml's MSM input at `step_verifier.ml:1260-1264`.
+              -- A prior `fromShifted` call here was silently unshifting
+              -- the value, which was latent because FOP's assertions
+              -- are gated on `proof_must_verify` (bypassed for the
+              -- base case) but surfaced at the unconditional
+              -- `ivp_assert_plonk_beta` assertion.
               { fopState: FopProofState
-                  { combinedInnerProduct: fromShifted dv.combinedInnerProduct
-                  , b: fromShifted dv.b
-                  , zetaToSrsLength: fromShifted p.zetaToSrsLength
-                  , zetaToDomainSize: fromShifted p.zetaToDomainSize
-                  , perm: fromShifted p.perm
+                  { combinedInnerProduct: unwrap dv.combinedInnerProduct
+                  , b: unwrap dv.b
+                  , zetaToSrsLength: unwrap p.zetaToSrsLength
+                  , zetaToDomainSize: unwrap p.zetaToDomainSize
+                  , perm: unwrap p.perm
                   , spongeDigest: fop.spongeDigestBeforeEvaluations
                   , beta: UnChecked p.beta
                   , gamma: UnChecked p.gamma
