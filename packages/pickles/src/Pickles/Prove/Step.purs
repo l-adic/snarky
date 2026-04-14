@@ -33,6 +33,7 @@ module Pickles.Prove.Step
   , BuildStepAdviceWithOraclesInput
   , buildStepAdviceWithOracles
   , extractWrapVKCommsAdvice
+  , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
   , StepProveContext

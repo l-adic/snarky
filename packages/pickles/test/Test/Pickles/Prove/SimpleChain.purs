@@ -36,12 +36,18 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Dummy (computeDummySgValues) as Dummy
-import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Wrap.Slots (Slots2)
 import Pickles.ProofFFI (pallasProverIndexDomainLog2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Data.Maybe (Maybe(..))
+import Node.Encoding (Encoding(..)) as Enc
+import Node.FS.Sync (writeTextFile) as FS
+import Node.Process as Process
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Snarky.Backend.Kimchi.Class (constraintSystemToJson) as Kimchi
+import Snarky.Curves.Pasta (PallasG)
 import Pickles.Trace as Trace
 import Pickles.Types (StepField, WrapField)
 import Safe.Coerce (coerce)
@@ -217,6 +223,47 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- shape is made concrete.
     let n1ZeroAdvice = (zeroWrapAdvice :: WrapAdvice 2 (Slots2 0 1))
     wrapCR <- liftEffect $ wrapCompile wrapCtx n1ZeroAdvice
+
+    -- === TRACE: compiled wrap VK commitments ===
+    -- Mirrors OCaml `compile.ml` `compile.wrapVK.*` emission. Diffing
+    -- these against OCaml isolates whether the wrap VK divergence is
+    -- in the wrap compile itself (= constraint shape / circuit content
+    -- differs) or downstream in the extract/hash path.
+    -- Wrap VK commitments are Pallas points → coordinates in StepField (Fp).
+    -- Diagnostic: shape of PS wrap CS for direct comparison with OCaml.
+    liftEffect $ Trace.int "compile.wrapCS.gate_count" (Array.length wrapCR.constraints)
+    liftEffect $ Trace.int "compile.wrapCS.public_input_size" (Array.length wrapCR.builtState.publicInputs)
+
+    -- Optional JSON dump of the production wrap CS, gated on the
+    -- PICKLES_WRAP_CS_DUMP env var. Mirrors the matching OCaml-side
+    -- dump in `compile.ml` so we can do a byte-for-byte JSON diff.
+    wrapDumpEnv <- liftEffect $ Process.lookupEnv "PICKLES_WRAP_CS_DUMP"
+    case wrapDumpEnv of
+      Nothing -> pure unit
+      Just path -> liftEffect do
+        let json = Kimchi.constraintSystemToJson @WrapField @PallasG wrapCR.constraintSystem
+        FS.writeTextFile Enc.UTF8 path json
+
+    let wrapVkComms = extractWrapVKForStepHash wrapCR.verifierIndex
+    liftEffect do
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable wrapVkComms.sigmaComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.wrapVK.sigma." <> show i <> ".x") pt.x
+        Trace.field ("compile.wrapVK.sigma." <> show i <> ".y") pt.y
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable wrapVkComms.coefficientsComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.wrapVK.coeff." <> show i <> ".x") pt.x
+        Trace.field ("compile.wrapVK.coeff." <> show i <> ".y") pt.y
+      Trace.field "compile.wrapVK.generic.x" wrapVkComms.genericComm.x
+      Trace.field "compile.wrapVK.generic.y" wrapVkComms.genericComm.y
+      Trace.field "compile.wrapVK.psm.x" wrapVkComms.psmComm.x
+      Trace.field "compile.wrapVK.psm.y" wrapVkComms.psmComm.y
+      Trace.field "compile.wrapVK.complete_add.x" wrapVkComms.completeAddComm.x
+      Trace.field "compile.wrapVK.complete_add.y" wrapVkComms.completeAddComm.y
+      Trace.field "compile.wrapVK.mul.x" wrapVkComms.mulComm.x
+      Trace.field "compile.wrapVK.mul.y" wrapVkComms.mulComm.y
+      Trace.field "compile.wrapVK.emul.x" wrapVkComms.emulComm.x
+      Trace.field "compile.wrapVK.emul.y" wrapVkComms.emulComm.y
+      Trace.field "compile.wrapVK.endomul_scalar.x" wrapVkComms.endomulScalarComm.x
+      Trace.field "compile.wrapVK.endomul_scalar.y" wrapVkComms.endomulScalarComm.y
 
     -- ===== Phase 3: build real advice with oracles over the real wrap VK =====
     -- OCaml's `step.ml:expand_proof` runs `Tock.Oracles.create` on the

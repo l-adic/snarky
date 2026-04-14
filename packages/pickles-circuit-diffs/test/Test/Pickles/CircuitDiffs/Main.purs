@@ -463,7 +463,20 @@ spec =
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
         exactMatch "wrap_verify_circuit" (fromCompiledCircuit $ compileWrapVerify wrapSrsData)
         exactMatch "wrap_verify_n2_circuit" (fromCompiledCircuit $ compileWrapVerifyN2 wrapSrsData)
-        exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapSrsData)
+        let
+          -- wrap_main_circuit fixture uses domainLog2 = 14 to match the
+          -- production Simple_chain N1 wrap compile (verified via OCaml
+          -- `compile.wrap_domains.h.log2` trace). The matching change in
+          -- dump_circuit_impl.ml passes ~domain_log2:14 to
+          -- Wrap_main_for_dump.build, and the PS WrapMain.purs config
+          -- pins domainLog2s = 14. The lagrange closure here has to
+          -- return commitments at domain size 2^14 to match.
+          wrapMainSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+        exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapMainSrsData)
         exactMatch "wrap_main_n2_circuit" (fromCompiledCircuit $ compileWrapMainN2 wrapSrsData)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15

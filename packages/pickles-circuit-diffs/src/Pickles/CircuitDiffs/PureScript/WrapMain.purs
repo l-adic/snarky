@@ -44,8 +44,13 @@ compileWrapMainN1 { lagrangeAt, blindingH } =
 
     config :: WrapMainConfig 1
     config =
+      -- domainLog2 = 14 mirrors production Simple_chain N1 (verified
+      -- via OCaml `compile.wrap_domains.h.log2` trace). This is the
+      -- step proof's eval domain that the wrap circuit's lagrange
+      -- base lookup is parameterized by. The matching OCaml fixture
+      -- in dump_circuit_impl.ml was likewise updated to ~domain_log2:14.
       { stepWidths: 1 :< Vector.nil
-      , domainLog2s: 16 :< Vector.nil
+      , domainLog2s: 14 :< Vector.nil
       , stepKeys: dummyVK :< Vector.nil
       , lagrangeAt
       , blindingH
