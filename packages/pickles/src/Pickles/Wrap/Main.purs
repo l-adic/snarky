@@ -430,23 +430,29 @@ wrapMain config (WrapStatementPacked stmtR) = do
   label "block1-branch-data-assert" do
     let
       four = fromInt 4 :: WrapField
-      mpvLen = reflectType (Proxy @mpv)
-      -- Pack the mpv-bit `maskVals` into a single field with slot 0
-      -- as the HIGH bit and slot N-1 as the LOW bit. For mpv=2 this
-      -- yields `maskVal1 + 2*maskVal0`, matching the old hand-unrolled
-      -- form and OCaml's `Branch_data.wrap_packed_typ` exactly.
+      -- OCaml's `Branch_data.Checked.Wrap.pack` always packs to
+      -- `Nat.N2.n = 2` bits via `Vector.extend_front_exn ... Boolean.false_`,
+      -- regardless of the actual `mpv`. So the bit width is FIXED at 2
+      -- (the global Pickles cap), with `mask_i` going to bit `1 - i`.
+      -- For mpv=1: `pack [false, mask_0] = 2*mask_0` (q_c = 2).
+      -- For mpv=2: `pack [mask_1, mask_0] = mask_1 + 2*mask_0`
+      --   (matches the old hand-unrolled `maskVal1 + 2*maskVal0`).
+      branchDataMaskWidth = 2
       packedMask :: FVar WrapField
       packedMask = foldl
         ( \acc (Tuple slotIdx m) ->
             let
-              bitIdx = mpvLen - 1 - slotIdx
+              bitIdx = branchDataMaskWidth - 1 - slotIdx
               scaled = CVar.scale_ (fromInt (Int.pow 2 bitIdx) :: WrapField)
                 (coerce m :: FVar WrapField)
             in
               add_ acc scaled
         )
         (const_ zero)
-        (Array.zip (Array.range 0 (mpvLen - 1)) (Vector.toUnfoldable maskVals))
+        (Array.zip
+            (Array.range 0 (Vector.length maskVals - 1))
+            (Vector.toUnfoldable maskVals)
+        )
     let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
     -- The wrap statement's branch_data is a single packed field (4*log2 + mask),

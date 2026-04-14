@@ -950,11 +950,27 @@ buildStepAdviceWithOracles input = do
     Trace.field ("tock_pi." <> show i) v
 
   let
+    -- Mirror OCaml `step.ml:359-372`: oracles takes a length-2
+    -- `Wrap_hack.pad_accumulator` of `{commitment; challenges}`
+    -- pairs. For the Simple_chain N1 base case both entries are the
+    -- same dummy because `Proof.dummy.statement.messages_for_next_*`
+    -- is itself populated with the dummy values:
+    --   commitment = Dummy.Ipa.Wrap.sg (= input.wrapSg)
+    --   challenges = compute_challenges Dummy.Ipa.Wrap.challenges
+    --              = Dummy.Ipa.Wrap.challenges_computed
+    --              = dummyIpaChallenges.wrapExpanded
+    -- After `pad_accumulator` (= front-pad to Padded_length=2 with the
+    -- same dummy entry), both array slots are the same record.
+    dummyChalEntry =
+      { sgX: input.wrapSg.x
+      , sgY: input.wrapSg.y
+      , challenges: Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
+      }
     oracles :: ProofFFI.OraclesResult WrapField
     oracles = vestaProofOracles input.wrapVK
       { proof: dummyWrapProof
       , publicInput: tockPublicInput
-      , prevChallenges: []
+      , prevChallenges: [ dummyChalEntry, dummyChalEntry ]
       }
 
   -- === TRACE Stage 5: oracle outputs ===
