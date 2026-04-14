@@ -19,6 +19,8 @@ module Pickles.Verify
 
 import Prelude
 
+import Data.Array ((..))
+import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
@@ -26,8 +28,10 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
+import Pickles.Trace as Trace
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
 import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBaseLookup, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
@@ -40,8 +44,9 @@ import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, assertEq, const_, if_, label)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, if_, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -131,6 +136,32 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `f'`: scalar field of commitment curve
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
+-- | DEBUG: emit a solve-time trace of a circuit variable's assigned value.
+-- |
+-- | Uses `exists` to allocate a throw-away variable whose witness computation
+-- | runs `readCVar`. At solve time this reads the variable's assigned value
+-- | and emits a `[label] VALUE` line via `unsafePerformEffect` → Trace.fieldF.
+-- | The allocated var is unused and its only constraint is the no-op `check`
+-- | for `FVar`, so adding these calls does NOT change the constraint system
+-- | shape.
+-- |
+-- | `unsafePerformEffect` is used to avoid propagating a `MonadEffect m`
+-- | constraint through the entire IVP/step/wrap call chain. This is
+-- | purely for debugging.
+ivpTrace
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => String
+  -> FVar f
+  -> Snarky c t m Unit
+ivpTrace labelStr v = do
+  _ <- exists do
+    val <- readCVar v
+    let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+    pure val
+  pure unit
+
 incrementallyVerifyProof
   :: forall publicInput sgOldN totalBases d f f' @g sf t m _l3 _l4 r
    . PrimeField f
@@ -198,18 +229,31 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
       -- Matches step_verifier.ml:528-530
+      liftSnarky $ ivpTrace "ivp.trace.index_digest" indexDigest
       labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
-      labelM "ivp_absorb_sg_old" $ for_ input.sgOld \pt -> do
-        labelM "ivp_sg_x" $ Sponge.absorb pt.x
-        labelM "ivp_sg_y" $ Sponge.absorb pt.y
+      labelM "ivp_absorb_sg_old" do
+        let sgOldArr = (Vector.toUnfoldable input.sgOld :: Array _)
+        liftSnarky $ for_ (Array.zip (0 .. (Array.length sgOldArr - 1)) sgOldArr) \(Tuple i pt) -> do
+          ivpTrace ("ivp.trace.sg_old." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.sg_old." <> show i <> ".y") pt.y
+        for_ input.sgOld \pt -> do
+          labelM "ivp_sg_x" $ Sponge.absorb pt.x
+          labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      liftSnarky $ ivpTrace "ivp.trace.xhat.x" xHat.x
+      liftSnarky $ ivpTrace "ivp.trace.xhat.y" xHat.y
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
       -- step_verifier.ml:551-568
       Sponge.absorbPoint xHat
+      let wCommArr = (Vector.toUnfoldable input.wComm :: Array _)
+      liftSnarky $ for_ (Array.zip (0 .. (Array.length wCommArr - 1)) wCommArr) \(Tuple i pt) -> do
+        ivpTrace ("ivp.trace.w_comm." <> show i <> ".x") pt.x
+        ivpTrace ("ivp.trace.w_comm." <> show i <> ".y") pt.y
       for_ input.wComm Sponge.absorbPoint
       -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
       beta <- Sponge.squeezeScalarChallenge endoParams
+      liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
       -- z_comm: receive
       Sponge.absorbPoint input.zComm

@@ -57,7 +57,9 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
+import Effect.Unsafe (unsafePerformEffect)
+import Pickles.Trace as Trace
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, exists, if_, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
@@ -254,6 +256,11 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
+    _ <- exists do
+      val <- readCVar (coerce bool :: FVar f)
+      let _ = unsafePerformEffect $
+            Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
+      pure val
     pure { results: [ CondAdd bool (base.maskPt base.constant) ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
@@ -474,21 +481,24 @@ scalarMulLeaf
   -> LagrangeBaseLookup f
   -> Int
   -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-scalarMulLeaf params scalar lookup idx =
+scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx
     actualShift = reflectType (Proxy @bitsUsed)
-    -- Correction uses the CONSTANT base (pure arithmetic, no circuit cost).
-    -- Negated to match OCaml: correction = negate([2^shift] * base)
     correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params base.constant actualShift
-    -- scaleFast2' uses the CIRCUIT base (may be non-constant from domain masking).
-    -- This matches OCaml where lagrange_with_correction masks by which_branch.
     scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
-  in
-    pure
-      { results: [ AddWithCorrection { scaleMul, correction } ]
-      , nextIdx: idx + 1
-      }
+  -- DEBUG: solve-time trace of this leaf's scalar input. Lets the
+  -- Simple_chain trace-diff compare the exact values PS's MSM sees at
+  -- each lagrange position against OCaml's.
+  _ <- exists do
+    val <- readCVar scalar
+    let _ = unsafePerformEffect $
+          Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
+    pure val
+  pure
+    { results: [ AddWithCorrection { scaleMul, correction } ]
+    , nextIdx: idx + 1
+    }
 
 constPt :: forall f. PrimeField f => AffinePoint (F f) -> AffinePoint (FVar f)
 constPt { x: F x', y: F y' } = { x: const_ x', y: const_ y' }
