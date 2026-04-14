@@ -1006,12 +1006,32 @@ buildStepAdviceWithOracles input = do
     wrapSgF = coerce input.wrapSg
 
     -- Simple_chain FOP proof state — plonk0 + prev_evals from hardcoded
-    -- post-compile fixture (not module-init Ro state), so ivp assertions
-    -- in the step circuit see values consistent with what OCaml emits.
+    -- post-compile fixture. We then override the four plonk challenges
+    -- (alpha/beta/gamma/zeta) + spongeDigest with oracle-derived values
+    -- so the in-circuit IVP's `ivp_assert_plonk_*` assertions pass.
+    --
+    -- Mirrors OCaml `step.ml:582-598` where `Per_proof.deferred_values`
+    -- uses oracle plonk values (plonk0 is shadowed at step.ml:389 to
+    -- point at the oracle-derived record, not the prev statement's
+    -- Ro-random plonk). We do the equivalent override here.
+    simpleChainFopBase
+      :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+    simpleChainFopBase = simpleChainStepDummyFopProofState
+      { proofsVerified: input.mostRecentWidth }
+
     simpleChainFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    simpleChainFop = simpleChainStepDummyFopProofState
-      { proofsVerified: input.mostRecentWidth }
+    simpleChainFop = simpleChainFopBase
+      { deferredValues = simpleChainFopBase.deferredValues
+          { plonk = simpleChainFopBase.deferredValues.plonk
+              { alpha = chalToStep oracles.alphaChal
+              , beta = chalToStep oracles.beta
+              , gamma = chalToStep oracles.gamma
+              , zeta = chalToStep oracles.zetaChal
+              }
+          }
+      , spongeDigestBeforeEvaluations = digestStep
+      }
 
   pure $ base
     { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
