@@ -255,23 +255,33 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       beta <- Sponge.squeezeScalarChallenge endoParams
       liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
+      liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
       -- z_comm: receive
+      liftSnarky $ ivpTrace "ivp.trace.zcomm.x" input.zComm.x
+      liftSnarky $ ivpTrace "ivp.trace.zcomm.y" input.zComm.y
       Sponge.absorbPoint input.zComm
       -- alpha: squeeze_scalar (constrain_low_bits:false)
       alphaChal <- Sponge.squeezeScalar endoParams
+      liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
       -- t_comm: receive
+      liftSnarky $ for_ (Array.zip (0 .. (Vector.length input.tComm - 1)) (Vector.toUnfoldable input.tComm :: Array _)) \(Tuple i pt) -> do
+        ivpTrace ("ivp.trace.tcomm." <> show i <> ".x") pt.x
+        ivpTrace ("ivp.trace.tcomm." <> show i <> ".y") pt.y
       for_ input.tComm Sponge.absorbPoint
       -- zeta: squeeze_scalar (constrain_low_bits:false)
       zetaChal <- Sponge.squeezeScalar endoParams
+      liftSnarky $ ivpTrace "ivp.trace.zeta_squeezed" (SizedF.toField zetaChal)
       -- Copy sponge before squeezing digest (step_verifier.ml:559)
       spongeBeforeEvals <- Sponge.getSponge
       digest <- Sponge.squeeze
+      liftSnarky $ ivpTrace "ivp.trace.digest" digest
       Sponge.putSponge spongeBeforeEvals
       pure { xHat, beta, gamma, alphaChal, zetaChal, digest }
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky do
     let expected = toPlonkMinimal input.deferredValues.plonk
+    ivpTrace "ivp.trace.xi" (SizedF.toField input.deferredValues.xi)
     label "ivp_assert_plonk_beta" $ assertEq beta expected.beta
     label "ivp_assert_plonk_gamma" $ assertEq gamma expected.gamma
     label "ivp_assert_plonk_alpha" $ assertEq alphaChal expected.alpha

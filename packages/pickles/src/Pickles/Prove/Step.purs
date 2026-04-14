@@ -60,6 +60,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (Error, error)
+import Effect.Unsafe (unsafePerformEffect)
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
 import Data.Maybe (fromJust)
 import Pickles.Trace as Trace
 import Partial.Unsafe (unsafePartial)
@@ -87,7 +90,7 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2, fromShifted, toShifted)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
@@ -96,7 +99,7 @@ import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
@@ -1015,6 +1018,7 @@ buildStepAdviceWithOracles input = do
           , gamma = UnChecked (chalToStep oracles.gamma)
           , zeta = UnChecked (chalToStep oracles.zetaChal)
           , spongeDigest = digestStep
+          , xi = UnChecked (chalToStep oracles.vChal)
           }
       )
 
@@ -1150,9 +1154,16 @@ stepCompile ctx rule advice = do
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       }
 
+    -- EXPERIMENT: use endoBase (= Pallas.endo_base = Step_inner_curve.base)
+    -- to match what `EndoMul.purs` uses in both the circuit builder and
+    -- the debug-mode eval. Previous value was `endoScalar @StepField` (=
+    -- Vesta.endo_scalar = Wrap_inner_curve.scalar), which differs from the
+    -- circuit builder's constant and caused Rust's EndoMul gate check to
+    -- fail at row 6471 once Simple_chain started exercising dense challenge
+    -- bits (specifically `b3 = 1`, which makes `xq2 = endo * xt` endo-sensitive).
     endo :: StepField
     endo =
-      let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+      let EndoBase e = (endoBase :: EndoBase StepField) in e
 
     proverIndex =
       createProverIndex @StepField @VestaG
@@ -1214,8 +1225,9 @@ stepSolveAndProve onError ctx rule compileResult advice = do
         csSatisfied = verifyProverIndex @StepField @VestaG
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
       in
-        if not csSatisfied then
-          onError (error "stepProve: constraint system not satisfied")
+        if not csSatisfied then do
+          let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
+          onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
         else
           let proof = createProof { proverIndex: compileResult.proverIndex, witness }
           in pure
@@ -1228,6 +1240,36 @@ stepSolveAndProve onError ctx rule compileResult advice = do
             , proof
             , assignments
             }
+
+-- | Build a row→label_stack text dump from a compiled constraint list and
+-- | write it to /tmp/ps_step_row_labels.txt. Called when the kimchi
+-- | prover-index verification fails so the user can look up the failing
+-- | row reported on stderr (as "Custom { row: N, err: ... }") and find
+-- | the `label`/`labelM` call site that produced the constraint.
+-- |
+-- | The output format is one line per starting row:
+-- |    "<row_start>..<row_end>\t<label>/<label>/.../<label>"
+-- | Each labeled constraint may expand to multiple Kimchi rows (e.g. an
+-- | EndoMul gate = 32 rows); the row range covers all of them.
+dumpRowLabels
+  :: Array (Labeled (KimchiGate StepField))
+  -> Effect Unit
+dumpRowLabels cs = do
+  let
+    { out } = Array.foldl
+      ( \{ row, out } lc ->
+          let
+            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow StepField))
+            endRow = row + nRows - 1
+            path = Array.intercalate "/" lc.context
+            line = show row <> ".." <> show endRow <> "\t" <> path
+          in
+            { row: row + nRows, out: out <> [ line ] }
+      )
+      { row: 0, out: [] }
+      cs
+  FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
+    (Array.intercalate "\n" out <> "\n")
 
 -- | Run the step prover end-to-end: `stepCompile` then `stepSolveAndProve`.
 -- | Kept for backward compatibility / single-call convenience; new code
