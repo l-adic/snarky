@@ -21,7 +21,7 @@ module Pickles.Wrap.MessageHash
 
 import Prelude
 
-import Data.Foldable (for_)
+import Data.Foldable (class Foldable, for_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -121,16 +121,22 @@ hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } 
 -- | [old_bulletproof_challenges (flattened), sg.x, sg.y]
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
+-- | The outer container is taken as a `Foldable`, so this works for both
+-- | `Vector n` (used by `wrapVerify`) and `Array` (used by per-slot
+-- | hashing in `wrapMain`, where the runtime slot widths erase the
+-- | type-level length). The inner `Vector d` keeps its type-level
+-- | length because every slot's bp-challenge stack is the same width
+-- | (= `WrapIPARounds`).
 hashMessagesForNextWrapProofCircuit'
-  :: forall n d f t m
+  :: forall outer d f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable n Int
+  => Foldable outer
   => Reflectable d Int
   => { sg :: AffinePoint (FVar f)
-     , allChallenges :: Vector n (Vector d (FVar f))
+     , allChallenges :: outer (Vector d (FVar f))
      }
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
 hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do

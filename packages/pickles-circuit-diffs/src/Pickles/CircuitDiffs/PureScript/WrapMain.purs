@@ -17,6 +17,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Types (WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
+import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -60,5 +61,5 @@ compileWrapMainN1 { lagrangeAt, blindingH } =
   in
     unsafePerformEffect $
       compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @1 @0 @1 config stmt)
+        (\stmt -> wrapMain @1 @(Slots2 0 1) config stmt)
         Kimchi.initialState

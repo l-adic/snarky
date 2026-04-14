@@ -54,12 +54,15 @@ import Effect.Exception (Error, error)
 import Partial.Unsafe (unsafePartial)
 import Pickles.ProofFFI (Proof, createProof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
-import Pickles.Wrap.Slots (class PadSlots, Slots2, slots2)
-import Prim.Int (class Add)
+import Pickles.Wrap.Slots (class PadSlots, replicateSlots)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
+import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, UnChecked(..), const_)
+import Snarky.Circuit.Types (class CircuitType)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Prover (emptyProverState)
@@ -67,7 +70,6 @@ import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), const_)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toShifted)
 import Snarky.Backend.Builder (CircuitBuilderState)
@@ -384,12 +386,12 @@ buildWrapAdvice input =
 -- |   `assembleWrapMainInput`). Drives both the compile-time shape
 -- |   check (via `CircuitType`) and the solver input.
 -- | * `advice` — the `WrapAdvice` record from `buildWrapAdvice`.
-type WrapProveContext (branches :: Int) (slot0Width :: Int) (slot1Width :: Int) =
+type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   { wrapMainConfig :: WrapMainConfig branches
   , crs :: CRS PallasG
   , publicInput ::
       WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
-  , advice :: WrapAdvice 2 (Slots2 slot0Width slot1Width)
+  , advice :: WrapAdvice mpv slots
   }
 
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
@@ -435,31 +437,36 @@ type WrapProveResult =
 -- | `runWrapProverT` for instance resolution but its values are
 -- | never inspected during compile — callers can pass a placeholder.
 wrapCompile
-  :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
+  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
-  => Reflectable slot0Width Int
-  => Reflectable slot1Width Int
-  => Reflectable pad0 Int
-  => Reflectable pad1 Int
-  => Add pad0 slot0Width PaddedLength
-  => Add pad1 slot1Width PaddedLength
+  => Reflectable mpv Int
   => Add 1 branchesPred branches
+  => Add 1 mpvPred mpv
+  => Compare mpv 3 LT
+  => Add mpv 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpv
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
   => WrapCompileContext branches
-  -> WrapAdvice 2 (Slots2 slot0Width slot1Width)
+  -> WrapAdvice mpv slots
   -> m WrapCompileResult
 wrapCompile ctx advice = do
   let
     compileAction
-      :: WrapProverT branches 2 (Slots2 slot0Width slot1Width) m
+      :: WrapProverT branches mpv slots m
            (CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
     compileAction =
       compile
         (Proxy @(WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
         (Proxy @Unit)
         (Proxy @(KimchiConstraint WrapField))
-        (wrapMain @branches @slot0Width @slot1Width ctx.wrapMainConfig)
+        (wrapMain @branches @slots ctx.wrapMainConfig)
         (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
 
   builtState <- runWrapProverT advice compileAction
@@ -494,31 +501,36 @@ wrapCompile ctx advice = do
 -- | `WrapCompileResult` + the real advice + public input, runs the
 -- | solver, and creates the kimchi proof.
 wrapSolveAndProve
-  :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
+  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
-  => Reflectable slot0Width Int
-  => Reflectable slot1Width Int
-  => Reflectable pad0 Int
-  => Reflectable pad1 Int
-  => Add pad0 slot0Width PaddedLength
-  => Add pad1 slot1Width PaddedLength
+  => Reflectable mpv Int
   => Add 1 branchesPred branches
+  => Add 1 mpvPred mpv
+  => Compare mpv 3 LT
+  => Add mpv 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpv
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
   => (Error -> m WrapProveResult)
-  -> WrapProveContext branches slot0Width slot1Width
+  -> WrapProveContext branches mpv slots
   -> WrapCompileResult
   -> m WrapProveResult
 wrapSolveAndProve onError ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
-           (WrapProverT branches 2 (Slots2 slot0Width slot1Width) m)
+           (WrapProverT branches mpv slots m)
            (WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
       makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint WrapField))
-        (wrapMain @branches @slot0Width @slot1Width ctx.wrapMainConfig)
+        (wrapMain @branches @slots ctx.wrapMainConfig)
 
   eRes <- runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
 
@@ -551,25 +563,30 @@ wrapSolveAndProve onError ctx compileResult = do
 
 -- | End-to-end wrap prover: `wrapCompile` then `wrapSolveAndProve`.
 wrapProve
-  :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
+  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
-  => Reflectable slot0Width Int
-  => Reflectable slot1Width Int
-  => Reflectable pad0 Int
-  => Reflectable pad1 Int
-  => Add pad0 slot0Width PaddedLength
-  => Add pad1 slot1Width PaddedLength
+  => Reflectable mpv Int
   => Add 1 branchesPred branches
+  => Add 1 mpvPred mpv
+  => Compare mpv 3 LT
+  => Add mpv 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpv
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Monad m
   => (Error -> m WrapProveResult)
-  -> WrapProveContext branches slot0Width slot1Width
+  -> WrapProveContext branches mpv slots
   -> m WrapProveResult
 wrapProve onError ctx = do
-  compileResult <- wrapCompile
+  compileResult <- wrapCompile @branches @slots
     { wrapMainConfig: ctx.wrapMainConfig, crs: ctx.crs }
     ctx.advice
-  wrapSolveAndProve onError ctx compileResult
+  wrapSolveAndProve @branches @slots onError ctx compileResult
 
 --------------------------------------------------------------------------------
 -- Wrap VK extraction helpers for Simple_chain driver
@@ -679,18 +696,21 @@ buildWrapMainConfigN1 vestaSrs stepVK domainLog2 =
       unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
   }
 
--- | Baseline zero-valued `WrapAdvice 2 (Slots2 slot0Width slot1Width)` for the compile
--- | phase. `wrapCompile` threads the advice to `runWrapProverT` only
--- | for type-class instance resolution; the values are never read
--- | during circuit shape walking. Callers hand this in to
--- | `wrapCompile` when they don't yet have real advice (e.g. when
--- | they need the compiled wrap VK BEFORE the step solver runs so
--- | they can feed it to `buildStepAdviceWithOracles`).
+-- | Baseline zero-valued `WrapAdvice mpv slots` for the compile phase.
+-- | `wrapCompile` threads the advice to `runWrapProverT` only for
+-- | type-class instance resolution; the values are never read during
+-- | circuit shape walking. Callers hand this in to `wrapCompile` when
+-- | they don't yet have real advice (e.g. when they need the compiled
+-- | wrap VK BEFORE the step solver runs so they can feed it to
+-- | `buildStepAdviceWithOracles`).
+-- |
+-- | Polymorphic in the slot shape via `PadSlots.replicateSlots`, which
+-- | builds a `slots`-shaped value of zero bp-challenge stacks.
 zeroWrapAdvice
-  :: forall slot0Width slot1Width
-   . Reflectable slot0Width Int
-  => Reflectable slot1Width Int
-  => WrapAdvice 2 (Slots2 slot0Width slot1Width)
+  :: forall mpv slots
+   . Reflectable mpv Int
+  => PadSlots slots mpv
+  => WrapAdvice mpv slots
 zeroWrapAdvice =
   let
     zeroF :: F WrapField
@@ -739,13 +759,15 @@ zeroWrapAdvice =
       , shouldFinalize: false
       }
 
-    -- Polymorphic in the slot widths — the concrete Slots2 instantiation
-    -- is pinned by the caller at the top-level binding (e.g. SimpleChain
-    -- uses `Slots2 0 1` for N1 with `Max_widths_by_slot = [N0; N1]`).
-    zeroSlots :: Slots2 slot0Width slot1Width (Vector WrapIPARounds (F WrapField))
-    zeroSlots = slots2
-      (Vector.replicate (Vector.replicate zeroF))
-      (Vector.replicate (Vector.replicate zeroF))
+    -- Polymorphic in the slot shape via `PadSlots.replicateSlots`,
+    -- which broadcasts the seed `Vector WrapIPARounds (F WrapField)`
+    -- (= a single bp-challenge stack of zeros) into the slots-shaped
+    -- structure.
+    zeroChalStack :: Vector WrapIPARounds (F WrapField)
+    zeroChalStack = Vector.replicate zeroF
+
+    zeroSlots :: slots (Vector WrapIPARounds (F WrapField))
+    zeroSlots = replicateSlots zeroChalStack
 
     zeroOpening
       :: WrapProofOpening

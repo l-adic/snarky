@@ -1,8 +1,12 @@
 -- | Wrap main circuit — the SNARK function for wrapping any step proof.
 -- |
 -- | Parameterized by:
--- | - @branches: number of step circuit variants (N1 or N2)
--- | - @slot0Width, @slot1Width: per-slot widths of `Max_widths_by_slot.maxes`
+-- | - @branches: number of step circuit variants
+-- | - @slots: per-slot widths of `Max_widths_by_slot.maxes`, encoded
+-- |   as one of `NoSlots` (mpv=0), `Slots1 w` (mpv=1), or
+-- |   `Slots2 w0 w1` (mpv=2) from `Pickles.Wrap.Slots`. The `mpv`
+-- |   parameter is derived from `slots` via the `slots -> mpv`
+-- |   functional dependency on `PadSlots`.
 -- |
 -- | The circuit, in OCaml exists order (matching `wrap_main.ml`):
 -- |   1. Req.Which_branch     — single field
@@ -31,9 +35,12 @@ module Pickles.Wrap.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Fin (Finite, unsafeFinite)
-import Data.Foldable (foldl)
-import Data.Newtype (unwrap)
+import Data.Array as Array
+import Data.Fin (Finite, getFinite, unsafeFinite)
+import Data.Foldable (foldM, foldl)
+import Data.Int as Int
+import Data.Maybe (fromJust)
+import Partial.Unsafe (unsafePartial)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -51,18 +58,20 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import RandomOracle.Sponge (Sponge)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
+import Prim.Ordering (LT)
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Verify (wrapVerify)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -185,27 +194,6 @@ stepAllEvalsToProofWitness (StepAllEvals r) =
         }
     }
 
--- | OCaml `Wrap_hack.Checked.pad_challenges`: prepend
--- | `(PaddedLength - slotWidth)` dummy challenge vectors so the result
--- | has `Vector PaddedLength ...` shape, ready for the FOP loop. The
--- | target length is the universal `Wrap_hack.Padded_length = 2`, not
--- | this circuit's `max_proofs_verified`.
-padWrapChallenges
-  :: forall slotWidth pad
-   . Reflectable pad Int
-  => Add pad slotWidth PaddedLength
-  => Vector slotWidth (Vector WrapIPARounds (FVar WrapField))
-  -> Vector PaddedLength (Vector WrapIPARounds (FVar WrapField))
-padWrapChallenges chals =
-  let
-    dummy :: Vector WrapIPARounds (FVar WrapField)
-    dummy = map const_ dummyIpaChallenges.wrapExpanded
-
-    padding :: Vector pad (Vector WrapIPARounds (FVar WrapField))
-    padding = Vector.replicate dummy
-  in
-    Vector.append padding chals
-
 -------------------------------------------------------------------------------
 -- | Per-slot FOP body (post-Pseudo-domain).
 -- |
@@ -270,13 +258,12 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
 -------------------------------------------------------------------------------
 
 hashOneSlotMessage
-  :: forall slotWidth t m
+  :: forall t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  => Reflectable slotWidth Int
   => Int -- slotIdx, for labels only
-  -> Sponge WrapField -- precomputed sponge state for `PaddedLength - slotWidth` dummies
+  -> Sponge WrapField -- precomputed sponge state for the slot's pad count
   -> AffinePoint (FVar WrapField) -- step accumulator sg for this slot
-  -> Vector slotWidth (Vector WrapIPARounds (FVar WrapField)) -- raw (unpadded) chals
+  -> Array (Vector WrapIPARounds (FVar WrapField)) -- raw (unpadded) chals
   -> Snarky (KimchiConstraint WrapField) t m (FVar WrapField)
 hashOneSlotMessage slotIdx spongeState sg allChallenges =
   label ("block4-msg-hash-" <> show slotIdx)
@@ -333,21 +320,36 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slot0Width @slot1Width pad0 pad1 _branchesPred t m
+  :: forall @branches @slots mpv _branchesPred _mpvPred totalBases _totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
-  -- Slots pinned to `Slots2 slot0Width slot1Width` at this refactor
-  -- stage — wrapMain is still mpv=2 only. A follow-up pass will
-  -- polymorphize the body so the class + type synonym story covers
-  -- NoSlots / Slots1 / Slots2 uniformly.
-  => WrapWitnessM branches 2 (Slots2 slot0Width slot1Width) VestaG WrapField m
+  -- `slots` carries the per-slot widths; `mpv` is derived via the
+  -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
+  -- supported today: `NoSlots` (mpv=0), `Slots1 w` (mpv=1),
+  -- `Slots2 w0 w1` (mpv=2). The `Compare mpv 3 LT` constraint
+  -- propagates into `wrapVerify`; today's pickles caps `mpv` at 2.
+  => PadSlots slots mpv
+  => WrapWitnessM branches mpv slots VestaG WrapField m
+  -- `exists` on the result of `getOldBulletproofChallenges` needs
+  -- both `CircuitType` and `CheckedType` instances for the `slots`
+  -- shape. They exist for concrete `Slots1` / `Slots2` via the
+  -- `Product` / `Const Unit` instances in `Snarky.Circuit.Types`
+  -- — we just need to thread the constraints through the
+  -- polymorphic header.
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => Reflectable branches Int
-  => Reflectable slot0Width Int
-  => Reflectable slot1Width Int
-  => Reflectable pad0 Int
-  => Reflectable pad1 Int
-  => Add pad0 slot0Width PaddedLength
-  => Add pad1 slot1Width PaddedLength
+  => Reflectable mpv Int
   => Add 1 _branchesPred branches
+  => Add 1 _mpvPred mpv
+  => Compare mpv 3 LT
+  -- Forwarded to `wrapVerify` (which needs `Add sgOldN 45 totalBases`
+  -- and `Add 1 _ totalBases`). With `sgOldN = mpv`, these collapse to
+  -- the constraints below.
+  => Add mpv 45 totalBases
+  => Add 1 _totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit
@@ -393,7 +395,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 1. Req.Which_branch  (wrap_main.ml:223)
   whichBranchField <- label "which-branch" $ exists $ lift $
-    getWhichBranch @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getWhichBranch @branches @mpv @slots @VestaG unit
 
   -- 2. In-circuit derivation: one-hot vector, ones_vector, branch_data assert
   --    (wrap_main.ml:228-256)
@@ -404,12 +406,22 @@ wrapMain config (WrapStatementPacked stmtR) = do
     Pseudo.choose whichBranch config.stepWidths
       (\w -> const_ (fromInt w))
 
-  { maskVal0, maskVal1 } <- label "block1-ones-vector" do
-    eq0 <- equals_ firstZero (const_ zero)
-    v0 <- and_ true_ (not_ eq0)
-    eq1 <- equals_ firstZero (const_ one)
-    v1 <- and_ v0 (not_ eq1)
-    pure { maskVal0: v0, maskVal1: v1 }
+  -- One-hot ones vector: `mask_i = previousMask && (firstZero != i)`,
+  -- starting from `previousMask = true`. Returns a `Vector mpv` of the
+  -- per-slot mask booleans in slot order. For mpv=2 this matches the
+  -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
+  -- (slot index = vector index).
+  maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector" do
+    let mpvLen = reflectType (Proxy @mpv)
+    Tuple _ resultArr <- foldM
+      ( \(Tuple prevV acc) i -> do
+          eq <- equals_ firstZero (const_ (fromInt i))
+          v <- and_ prevV (not_ eq)
+          pure (Tuple v (Array.snoc acc v))
+      )
+      (Tuple true_ [])
+      (Array.range 0 (mpvLen - 1))
+    pure $ unsafePartial $ fromJust $ Vector.toVector @mpv resultArr
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s
@@ -417,16 +429,24 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   label "block1-branch-data-assert" do
     let
-      two = fromInt 2 :: WrapField
       four = fromInt 4 :: WrapField
-
-      maskVal0Field :: FVar WrapField
-      maskVal0Field = coerce maskVal0
-
-      maskVal1Field :: FVar WrapField
-      maskVal1Field = coerce maskVal1
-    let twoTimesMask0 = CVar.scale_ two maskVal0Field
-    let packedMask = add_ maskVal1Field twoTimesMask0
+      mpvLen = reflectType (Proxy @mpv)
+      -- Pack the mpv-bit `maskVals` into a single field with slot 0
+      -- as the HIGH bit and slot N-1 as the LOW bit. For mpv=2 this
+      -- yields `maskVal1 + 2*maskVal0`, matching the old hand-unrolled
+      -- form and OCaml's `Branch_data.wrap_packed_typ` exactly.
+      packedMask :: FVar WrapField
+      packedMask = foldl
+        ( \acc (Tuple slotIdx m) ->
+            let
+              bitIdx = mpvLen - 1 - slotIdx
+              scaled = CVar.scale_ (fromInt (Int.pow 2 bitIdx) :: WrapField)
+                (coerce m :: FVar WrapField)
+            in
+              add_ acc scaled
+        )
+        (const_ zero)
+        (Array.zip (Array.range 0 (mpvLen - 1)) (Vector.toUnfoldable maskVals))
     let fourTimesDom = CVar.scale_ four domainLog2
     let packedBranchData = add_ packedMask fourTimesDom
     -- The wrap statement's branch_data is a single packed field (4*log2 + mask),
@@ -435,7 +455,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 3. Req.Proof_state (wrap_main.ml:257-267)
   WrapPrevProofState pps <- label "proof-state" $ exists $ lift $
-    getWrapProofState @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getWrapProofState @branches @mpv @slots @VestaG unit
   let
     prevUnfinalized = pps.unfinalizedProofs
     prevMsgForNextStep = pps.messagesForNextStepProof
@@ -457,35 +477,38 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 5. Req.Step_accs (wrap_main.ml:367-371)
   stepAccs <- label "step-accs" $ exists $ lift $
-    getStepAccs @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getStepAccs @branches @mpv @slots @VestaG unit
   let stepAccsAffine = map unwrapPt stepAccs
 
   -- 6. Req.Old_bulletproof_challenges (wrap_main.ml:372-404).
-  -- Returns a `Slots2 slot0Width slot1Width`-shaped value (i.e.
-  -- `Product (Vector slot0Width) (Product (Vector slot1Width)
-  -- (Const Unit))`). We destructure via `Data.Newtype.unwrap` to get
-  -- the underlying `Tuple`s and extract the two slot vectors
-  -- positionally.
+  -- Returns a `slots`-shaped value (one of `NoSlots`, `Slots1 w`,
+  -- `Slots2 w0 w1`). The `PadSlots` class projects this into a
+  -- uniform `Vector mpv (Vector PaddedLength a)`, prepending the
+  -- right number of dummy bp-challenge stacks per slot to mirror
+  -- OCaml's `Wrap_hack.Checked.pad_challenges`.
   slotsValue <- label "old-bp-chals" $ exists $ lift $
-    getOldBulletproofChallenges @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getOldBulletproofChallenges @branches @mpv @slots @VestaG unit
   let
-    Tuple slot0Chals rest0 = unwrap slotsValue
-    Tuple slot1Chals _ = unwrap rest0
-    oldBp = { slot0: slot0Chals, slot1: slot1Chals }
+    dummyChallenge :: Vector WrapIPARounds (FVar WrapField)
+    dummyChallenge = map const_ dummyIpaChallenges.wrapExpanded
+
+    paddedChalsAll
+      :: Vector mpv (Vector PaddedLength (Vector WrapIPARounds (FVar WrapField)))
+    paddedChalsAll = padAllSlots dummyChallenge slotsValue
 
   -- 7. Req.Evals (wrap_main.ml:405-415)
   rawEvals <- label "evals" $ exists $ lift $
-    getEvals @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getEvals @branches @mpv @slots @VestaG unit
 
   -- 8. Req.Wrap_domain_indices (wrap_main.ml:418-424)
   wrapDomainIndices <- label "wrap-domain-indices" $ exists $ lift $
-    getWrapDomainIndices @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getWrapDomainIndices @branches @mpv @slots @VestaG unit
 
   -- 9. FOP loop (wrap_main.ml:435-487).
   --
   -- OCaml's ordering, reflected exactly:
-  --   Pseudo domains first (right-to-left: slot 1, slot 0)
-  --   then FOP bodies    (left-to-right: slot 0, slot 1)
+  --   Pseudo domains first (right-to-left: slot N-1 down to slot 0)
+  --   then FOP bodies    (left-to-right: slot 0 up to slot N-1)
   --
   -- `processOneSlotFopBody` encapsulates ONLY the post-Pseudo FOP
   -- portion (`wrapFinalizeOtherProofCircuit` + `assertAny_`). The
@@ -503,54 +526,98 @@ wrapMain config (WrapStatementPacked stmtR) = do
       , linearizationPoly: Linearization.vesta
       }
 
-    -- Project the per-slot `PerProofUnfinalized` + `StepAllEvals` (and
-    -- pad the per-slot chals). These are non-monadic lets so they
-    -- don't emit constraints; the helper consumes the prepared views.
-    unfView0 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @2 0))
-    unfView1 = unpackUnfinalized (Vector.index prevUnfinalized (unsafeFinite @2 1))
-    witness0 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @2 0))
-    witness1 = stepAllEvalsToProofWitness (Vector.index rawEvals (unsafeFinite @2 1))
-    paddedChals0 = padWrapChallenges oldBp.slot0
-    paddedChals1 = padWrapChallenges oldBp.slot1
+    -- Per-slot views projected uniformly. These are pure lets; the
+    -- helpers consume the prepared views inside the monadic loops
+    -- below, so emission order is determined by the traversals.
+    unfViews :: Vector mpv UnfinalizedView
+    unfViews = map unpackUnfinalized prevUnfinalized
 
-  -- Pseudo domains — right-to-left (slot 1 before slot 0), matching
-  -- OCaml's `Vector.map` evaluation order for `wrap_domains`.
-  which1 <- label "block3-wrap-domain-1" $
-    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @2 1))
-  domain1 <- Pseudo.toDomain @16 domainConfig which1 config.allPossibleDomainLog2s
-  which0 <- label "block3-wrap-domain-0" $
-    Pseudo.oneHotVector @3 (Vector.index wrapDomainIndices (unsafeFinite @2 0))
-  domain0 <- Pseudo.toDomain @16 domainConfig which0 config.allPossibleDomainLog2s
+    witnesses :: Vector mpv (ProofWitness (FVar WrapField))
+    witnesses = map stepAllEvalsToProofWitness rawEvals
 
-  -- FOP bodies — left-to-right (slot 0 before slot 1), matching the
-  -- original hand-unrolled order.
-  expandedChals0 <- processOneSlotFopBody fopBaseParams 0 domain0 unfView0 witness0 paddedChals0
-  expandedChals1 <- processOneSlotFopBody fopBaseParams 1 domain1 unfView1 witness1 paddedChals1
+  -- Pseudo domains — right-to-left, matching OCaml's `Vector.map`
+  -- evaluation order. We traverse the reversed `wrapDomainIndices`
+  -- and reverse the result so the resulting `Vector mpv (PlonkDomain
+  -- ...)` is back in slot order. The label index reflects the slot
+  -- index (post-reverse), so slot N-1 is emitted first.
+  domains <- do
+    let
+      revIdxs :: Vector mpv Int
+      revIdxs = Vector.reverse (Vector.generate @mpv getFinite)
+      revWdis = Vector.reverse wrapDomainIndices
+      revInputs = Vector.zip revIdxs revWdis
+    revDomains <- traverse
+      ( \(Tuple slotIdx wdi) -> do
+          which <- label ("block3-wrap-domain-" <> show slotIdx) $
+            Pseudo.oneHotVector @3 wdi
+          Pseudo.toDomain @16 domainConfig which config.allPossibleDomainLog2s
+      )
+      revInputs
+    pure (Vector.reverse revDomains)
+
+  -- FOP bodies — left-to-right (slot 0 first), matching the original
+  -- hand-unrolled order. We traverse a `Vector mpv` of slot indices
+  -- and look each piece up via `Vector.index` to keep the body
+  -- record-flat instead of nesting Tuples.
+  expandedChalsAll <-
+    let
+      idxs :: Vector mpv (Finite mpv)
+      idxs = Vector.generate @mpv identity
+    in
+      traverse
+        ( \fi -> do
+            let
+              slotIdx = getFinite fi
+              dom = Vector.index domains fi
+              unf = Vector.index unfViews fi
+              wit = Vector.index witnesses fi
+              chals = Vector.index paddedChalsAll fi
+            processOneSlotFopBody fopBaseParams slotIdx dom unf wit chals
+        )
+        idxs
 
   -- 10. Message hash loop (wrap_main.ml:489-505) — right-to-left.
-  -- The dummyPaddingSpongeStates table holds pre-absorbed sponge states for
-  -- (Padded_length - real_count) dummy challenge vectors per slot. Indexing
-  -- by the slot's REAL width gives the sponge state ready to absorb the real
-  -- challenges.
+  -- The dummyPaddingSpongeStates table holds pre-absorbed sponge states
+  -- indexed by the slot's REAL width: index w = sponge after absorbing
+  -- `(PaddedLength - w)` dummies offline. Each per-slot hash absorbs
+  -- only the unpadded real challenges, so total in-circuit Poseidon
+  -- gates per slot = w × roundsPerVector.
   let
     states = dummyPaddingSpongeStates dummyIpaChallenges.wrapExpanded
-    spongeIdx0 = reflectType (Proxy @slot0Width)
-    spongeIdx1 = reflectType (Proxy @slot1Width)
-    state0 = Vector.index states (unsafeFinite @3 spongeIdx0)
-    state1 = Vector.index states (unsafeFinite @3 spongeIdx1)
-  msgForWrap1 <- hashOneSlotMessage 1 state1
-    (Vector.index stepAccsAffine (unsafeFinite @2 1))
-    oldBp.slot1
-  msgForWrap0 <- hashOneSlotMessage 0 state0
-    (Vector.index stepAccsAffine (unsafeFinite @2 0))
-    oldBp.slot0
+    paddedLenInt = reflectType (Proxy @PaddedLength)
+    slotWidths = slotWidthsOf (Proxy :: Proxy slots)
+    perSlotSponge = map (\w -> Vector.index states (unsafeFinite @3 w)) slotWidths
+    -- Real (unpadded) challenges per slot: drop the leading padding
+    -- entries from each padded vector. Returns `Array` because the
+    -- runtime slot width erases the type-level length.
+    perSlotReal :: Vector mpv (Array (Vector WrapIPARounds (FVar WrapField)))
+    perSlotReal = Vector.zipWith
+      (\w padded -> Array.drop (paddedLenInt - w) (Vector.toUnfoldable padded))
+      slotWidths
+      paddedChalsAll
+  msgsForWrap <- do
+    let
+      idxs :: Vector mpv (Finite mpv)
+      idxs = Vector.generate @mpv identity
+      revIdxs = Vector.reverse idxs
+    revMsgs <- traverse
+      ( \fi -> do
+          let
+            slotIdx = getFinite fi
+            state = Vector.index perSlotSponge fi
+            sg = Vector.index stepAccsAffine fi
+            chals = Vector.index perSlotReal fi
+          hashOneSlotMessage slotIdx state sg chals
+      )
+      revIdxs
+    pure (Vector.reverse revMsgs)
 
   label "block4-assert-msg-step" $
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
 
   -- 11. Req.Openings_proof (wrap_main.ml:506-532)
   WrapProofOpening openingProofRec <- label "openings-proof" $ exists $ lift $
-    getOpeningProof @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getOpeningProof @branches @mpv @slots @VestaG unit
   let
     openingProof =
       { lr: map (\r -> { l: unwrapPt r.l, r: unwrapPt r.r }) openingProofRec.lr
@@ -562,7 +629,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- 12. Req.Messages (wrap_main.ml:533-541)
   WrapProofMessages messagesRec <- label "messages" $ exists $ lift $
-    getMessages @branches @2 @(Slots2 slot0Width slot1Width) @VestaG unit
+    getMessages @branches @mpv @slots @VestaG unit
   let
     messages =
       { wComm: map unwrapPt messagesRec.wComm
@@ -578,13 +645,13 @@ wrapMain config (WrapStatementPacked stmtR) = do
   splitProofs <- label "block5-split-field" $
     traverse splitPerProofUnfinalized prevUnfinalized
   let
-    publicInput :: PackedStepPublicInput 2 WrapIPARounds (FVar WrapField) (BoolVar WrapField)
+    publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)
     publicInput = PackedStepPublicInput
       { proofState:
           { unfinalizedProofs: splitProofs
           , messagesForNextStepProof: prevMsgForNextStep
           }
-      , messagesForNextWrapProof: msgForWrap0 :< msgForWrap1 :< Vector.nil
+      , messagesForNextWrapProof: msgsForWrap
       }
 
   -- 14. Block 6: wrapVerify (IVP + 4 assertions)
@@ -623,10 +690,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
       }
     fullIvpInput =
       { publicInput
-      , sgOld: Vector.index stepAccsAffine (unsafeFinite @2 0)
-          :< Vector.index stepAccsAffine (unsafeFinite @2 1)
-          :< Vector.nil
-      , sgOldMask: boolToField maskVal1 :< boolToField maskVal0 :< Vector.nil
+      , sgOld: stepAccsAffine
+      , sgOldMask: Vector.reverse (map boolToField maskVals)
       , sigmaCommLast: chosenSigmaCommLast
       , columnComms: chosenColumnComms
       , deferredValues:
@@ -645,7 +710,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
       { spongeDigestBeforeEvaluations: stmt.spongeDigestBeforeEvaluations
       , messagesForNextWrapProofDigest: stmt.messagesForNextWrapProofDigest
       , bulletproofChallenges: stmt.bulletproofChallenges
-      , newBpChallenges: expandedChals0 :< expandedChals1 :< Vector.nil
+      , newBpChallenges: expandedChalsAll
       , sg: openingProof.sg
       }
 

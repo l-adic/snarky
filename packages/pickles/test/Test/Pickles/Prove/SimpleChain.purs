@@ -39,7 +39,7 @@ import Pickles.Dummy (computeDummySgValues) as Dummy
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.Wrap.Slots (Slots1)
 import Pickles.ProofFFI (pallasProverIndexDomainLog2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Data.Maybe (Maybe(..))
 import Node.Encoding (Encoding(..)) as Enc
@@ -213,16 +213,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         }
 
-    -- Simple_chain N1's wrap_main has `Max_widths_by_slot = [N0; N1]`
-    -- per `dump_circuit_impl.ml`'s `[[0]; [1]]` padded-vector argument
-    -- to `Wrap_main.wrap_main`. That's `slot0Width = 0` (empty) and
-    -- `slot1Width = 1`. The `pickles-circuit-diffs` fixture test
-    -- `compileWrapMainN1` pins the same `@1 @0 @1` instantiation.
-    -- Library-level `zeroWrapAdvice` is polymorphic in the slot widths;
-    -- this is the only place in the whole pipeline where the N1 slot
-    -- shape is made concrete.
-    let n1ZeroAdvice = (zeroWrapAdvice :: WrapAdvice 2 (Slots2 0 1))
-    wrapCR <- liftEffect $ wrapCompile wrapCtx n1ZeroAdvice
+    -- OCaml `dump_simple_chain.ml:55` calls `Pickles.compile_promise`
+    -- with `~max_proofs_verified:(module Nat.N1)`, which makes the
+    -- production wrap circuit `mpv = 1`. The single slot has width 1
+    -- (the rule verifies one previous self-proof). That's
+    -- `Slots1 1` — one slot of width 1. PS's wrapMain is now
+    -- polymorphic in the slot shape via `PadSlots`, so we just pin
+    -- the slots type at the call site here.
+    let n1ZeroAdvice = (zeroWrapAdvice :: WrapAdvice 1 (Slots1 1))
+    wrapCR <- liftEffect $ wrapCompile @1 @(Slots1 1) wrapCtx n1ZeroAdvice
 
     -- === TRACE: compiled wrap VK commitments ===
     -- Mirrors OCaml `compile.ml` `compile.wrapVK.*` emission. Diffing

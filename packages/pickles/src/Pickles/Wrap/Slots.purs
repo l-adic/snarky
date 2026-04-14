@@ -52,6 +52,7 @@ module Pickles.Wrap.Slots
   , class PadSlots
   , slotWidthsOf
   , padAllSlots
+  , replicateSlots
   ) where
 
 import Prelude
@@ -140,12 +141,27 @@ class PadSlots (slots :: Type -> Type) (mpv :: Int) | slots -> mpv where
     -> slots a
     -> Vector mpv (Vector PaddedLength a)
 
+  -- | Build a `slots a` populated with `seed` in every per-slot vector
+  -- | position. The shape (per-slot widths) is determined by the
+  -- | instance — the seed value is broadcast.
+  -- |
+  -- | Used by `zeroWrapAdvice` to construct an mpv-polymorphic
+  -- | placeholder for the `oldBpChals` field of `WrapAdvice`. Mirrors
+  -- | the structural layout of `padAllSlots` but skips the per-slot
+  -- | dummy padding (the result is the unpadded `slots a`, not a
+  -- | padded `Vector mpv (Vector PaddedLength a)`).
+  replicateSlots
+    :: forall a
+     . a
+    -> slots a
+
 -- Nil case: empty slot list (`NoSlots`), mpv=0. The `a` is truly
 -- phantom here — the method signature quantifies over it at the
 -- method level, and `Const Unit a` ignores `a` by definition.
 instance PadSlots NoSlots 0 where
   slotWidthsOf _ = Vector.nil
   padAllSlots _ _ = Vector.nil
+  replicateSlots _ = noSlots
 
 -- Cons case: head slot of width `w`, tail `rest :: Type -> Type`
 -- (either another `Product (Vector w') rest'` or `NoSlots`). The
@@ -167,6 +183,8 @@ instance
       Tuple headSlot restSlot = unwrap p
     in
       padSlotDummy dummy headSlot :< padAllSlots dummy restSlot
+  replicateSlots seed =
+    product (Vector.replicate seed) (replicateSlots seed)
 
 -- | Pad a single slot's vector to `PaddedLength` by prepending
 -- | `(PaddedLength - w)` copies of the dummy. The `Add pad w
