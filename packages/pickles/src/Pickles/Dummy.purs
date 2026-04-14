@@ -13,6 +13,7 @@ module Pickles.Dummy
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
   , stepDummyFopProofState
+  , simpleChainStepDummyFopProofState
   , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyFinalizeOtherProofParams
@@ -47,6 +48,7 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Types (PerProofUnfinalized(..), StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds)
@@ -550,6 +552,19 @@ wrapDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
+-- | Input bundle for `stepDummyUnfinalizedProofFromInputs` — the
+-- | caller supplies the Ro-derived plonk challenges and prev_evals so
+-- | we can plug in either `roComputeResult` values (for the legacy
+-- | `stepDummyFopProofState`) or Simple_chain post-compile values
+-- | (for the Simple_chain base case).
+type StepDummyInputs =
+  { stepDummyAlpha :: SizedF 128 StepField
+  , stepDummyBeta :: SizedF 128 StepField
+  , stepDummyGamma :: SizedF 128 StepField
+  , stepDummyZeta :: SizedF 128 StepField
+  , stepDummyPrevEvals :: AllEvals StepField
+  }
+
 -- | Shared computation for Step dummy unfinalized proofs.
 -- | The `d` parameter and bp challenges vary between:
 -- | - Public input side (WrapIPARounds = 15, Wrap IPA challenges)
@@ -561,17 +576,44 @@ stepDummyUnfinalizedProofWith
   => { domainLog2 :: Int, mostRecentWidth :: Int }
   -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
+stepDummyUnfinalizedProofWith cfg bpChals =
   let
     r = roComputeResult
-    evals = r.stepDummyPrevEvals
+    inputs :: StepDummyInputs
+    inputs =
+      { stepDummyAlpha: r.stepDummyAlpha
+      , stepDummyBeta: r.stepDummyBeta
+      , stepDummyGamma: r.stepDummyGamma
+      , stepDummyZeta: r.stepDummyZeta
+      , stepDummyPrevEvals: r.stepDummyPrevEvals
+      }
+  in
+    stepDummyUnfinalizedProofFromInputs inputs cfg bpChals
+
+-- | Like `stepDummyUnfinalizedProofWith` but the plonk challenges and
+-- | prev_evals are supplied by the caller instead of read from
+-- | `roComputeResult`. Used by `simpleChainStepDummyFopProofState` to
+-- | plug in the hardcoded Simple_chain base-case fixture values that
+-- | correspond to the post-compile Ro state (see
+-- | `Pickles.Dummy.SimpleChain` for the discrepancy rationale).
+stepDummyUnfinalizedProofFromInputs
+  :: forall d sf
+   . Shifted (F StepField) sf
+  => StepDummyInputs
+  -> { domainLog2 :: Int, mostRecentWidth :: Int }
+  -> Vector d (SizedF 128 (F StepField))
+  -> UnfinalizedProof d (F StepField) sf Boolean
+stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpChals =
+  let
+    r = roComputeResult
+    evals = inputs.stepDummyPrevEvals
     Curves.EndoScalar stepEndo = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
 
     -- Expand plonk challenges
-    alphaExpanded = toFieldPure r.stepDummyAlpha stepEndo
-    betaExpanded = SizedF.toField r.stepDummyBeta :: StepField
-    gammaExpanded = SizedF.toField r.stepDummyGamma :: StepField
-    zetaExpanded = toFieldPure r.stepDummyZeta stepEndo
+    alphaExpanded = toFieldPure inputs.stepDummyAlpha stepEndo
+    betaExpanded = SizedF.toField inputs.stepDummyBeta :: StepField
+    gammaExpanded = SizedF.toField inputs.stepDummyGamma :: StepField
+    zetaExpanded = toFieldPure inputs.stepDummyZeta stepEndo
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
@@ -697,10 +739,10 @@ stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
   in
     { deferredValues:
         { plonk:
-            { alpha: SizedF.wrapF r.stepDummyAlpha
-            , beta: SizedF.wrapF r.stepDummyBeta
-            , gamma: SizedF.wrapF r.stepDummyGamma
-            , zeta: SizedF.wrapF r.stepDummyZeta
+            { alpha: SizedF.wrapF inputs.stepDummyAlpha
+            , beta: SizedF.wrapF inputs.stepDummyBeta
+            , gamma: SizedF.wrapF inputs.stepDummyGamma
+            , zeta: SizedF.wrapF inputs.stepDummyZeta
             , perm: toShifted (F perm)
             , zetaToSrsLength: toShifted (F zetaToSrsLength)
             , zetaToDomainSize: toShifted (F zetaToDomainSize)
@@ -766,6 +808,41 @@ stepDummyFopProofState { proofsVerified } =
   in
     -- most_recent_width = proofs_verified for Proof.dummy
     stepDummyUnfinalizedProofWith
+      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
+      , mostRecentWidth: proofsVerified
+      }
+      bpChals
+
+-- | Simple_chain-specific dummy FOP proof state.
+-- |
+-- | Same as `stepDummyFopProofState` but sources the `plonk` challenges
+-- | and `prev_evals` from `Pickles.Dummy.SimpleChain` (hardcoded from the
+-- | post-compile Ro state that Simple_chain observes at runtime) rather
+-- | than from the legacy module-init `roComputeResult` values.
+-- |
+-- | Use this for the Simple_chain base case; the plain
+-- | `stepDummyFopProofState` remains the default for all other callers.
+simpleChainStepDummyFopProofState
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { proofsVerified :: Int }
+  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+simpleChainStepDummyFopProofState { proofsVerified } =
+  let
+    r = roComputeResult
+    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bpChals = map SizedF.wrapF r.stepChalRaw
+
+    inputs :: StepDummyInputs
+    inputs =
+      { stepDummyAlpha: simpleChainDummyPlonk.alpha
+      , stepDummyBeta: simpleChainDummyPlonk.beta
+      , stepDummyGamma: simpleChainDummyPlonk.gamma
+      , stepDummyZeta: simpleChainDummyPlonk.zeta
+      , stepDummyPrevEvals: simpleChainDummyPrevEvals
+      }
+  in
+    stepDummyUnfinalizedProofFromInputs inputs
       { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
       , mostRecentWidth: proofsVerified
       }

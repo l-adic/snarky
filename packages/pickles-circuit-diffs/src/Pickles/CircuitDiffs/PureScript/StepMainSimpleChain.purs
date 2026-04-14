@@ -76,10 +76,13 @@ simpleChainRule appState = do
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
 compileStepMainSimpleChain params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml:3723
-    -- `step_domains = Pow_2_roots_of_unity 16`, passed through
-    -- Types_map.For_step.t.step_domains into finalize_other_proof).
+    -- Step domain log2 = 14: matches OCaml's production `Fix_domains.domains`
+    -- output for the Simple_chain N1 inductive rule (small circuit; ceil_log2
+    -- of the constraint row count). The earlier value of 16 was a synthetic
+    -- mismatch that didn't validate the production compile path. Both this
+    -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
+    -- exercises the same compile config Pickles.compile_promise produces.
     (\_ -> stepMain @1 @34 simpleChainRule
-      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
+      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
       dummyWrapSg)
     Kimchi.initialState

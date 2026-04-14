@@ -8,17 +8,21 @@ module Pickles.Step.MessageHash
   ( hashMessagesForNextStepProof
   , hashMessagesForNextStepProofOpt
   , hashMessagesForNextStepProofPure
+  , hashMessagesForNextStepProofPureTraced
   ) where
 
 import Prelude
 
 import Data.Array as Array
 import Data.Foldable (foldM, for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (initialSpongeCircuit)
+import Pickles.Trace as Trace
 import Pickles.VerificationKey (StepVK)
 import Poseidon (class PoseidonField, hash)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, label)
@@ -211,3 +215,74 @@ hashMessagesForNextStepProofPure { stepVk, appState, proofs } =
       (Array.fromFoldable proofs)
   in
     hash (vkFields <> appState <> proofFields)
+
+-- | Traced variant of `hashMessagesForNextStepProofPure`.
+-- |
+-- | Computes the same digest but additionally emits one trace line per
+-- | input field element (in hashing order) with dot-separated semantic
+-- | labels under the `msgForNextStep.*` prefix. The final digest is
+-- | emitted as `msgForNextStep.final_digest`.
+-- |
+-- | Intended for byte-identical diffing against OCaml's
+-- | `Common.hash_messages_for_next_step_proof` via a matching trace
+-- | helper. Trace labels:
+-- |
+-- |   msgForNextStep.vk.sigma.{0..6}.{x,y}
+-- |   msgForNextStep.vk.coeff.{0..14}.{x,y}
+-- |   msgForNextStep.vk.generic.{x,y}
+-- |   msgForNextStep.vk.psm.{x,y}
+-- |   msgForNextStep.vk.complete_add.{x,y}
+-- |   msgForNextStep.vk.mul.{x,y}
+-- |   msgForNextStep.vk.emul.{x,y}
+-- |   msgForNextStep.vk.endomul_scalar.{x,y}
+-- |   msgForNextStep.app_state.{0..}
+-- |   msgForNextStep.prev.{i}.sg.{x,y}
+-- |   msgForNextStep.prev.{i}.bp_chal.{0..15}
+-- |   msgForNextStep.final_digest
+hashMessagesForNextStepProofPureTraced
+  :: forall n d f
+   . PoseidonField f
+  => PrimeField f
+  => { stepVk :: StepVK f
+     , appState :: Array f
+     , proofs ::
+         Vector n
+           { sg :: AffinePoint f
+           , expandedBpChallenges :: Vector d f
+           }
+     }
+  -> Effect f
+hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
+  -- sigma_comm: 7 points
+  forWithIndex_ (Array.fromFoldable stepVk.sigmaComm) \i pt -> do
+    Trace.field ("msgForNextStep.vk.sigma." <> show i <> ".x") pt.x
+    Trace.field ("msgForNextStep.vk.sigma." <> show i <> ".y") pt.y
+  -- coefficients_comm: 15 points
+  forWithIndex_ (Array.fromFoldable stepVk.coefficientsComm) \i pt -> do
+    Trace.field ("msgForNextStep.vk.coeff." <> show i <> ".x") pt.x
+    Trace.field ("msgForNextStep.vk.coeff." <> show i <> ".y") pt.y
+  -- 6 individual index comms
+  Trace.field "msgForNextStep.vk.generic.x" stepVk.genericComm.x
+  Trace.field "msgForNextStep.vk.generic.y" stepVk.genericComm.y
+  Trace.field "msgForNextStep.vk.psm.x" stepVk.psmComm.x
+  Trace.field "msgForNextStep.vk.psm.y" stepVk.psmComm.y
+  Trace.field "msgForNextStep.vk.complete_add.x" stepVk.completeAddComm.x
+  Trace.field "msgForNextStep.vk.complete_add.y" stepVk.completeAddComm.y
+  Trace.field "msgForNextStep.vk.mul.x" stepVk.mulComm.x
+  Trace.field "msgForNextStep.vk.mul.y" stepVk.mulComm.y
+  Trace.field "msgForNextStep.vk.emul.x" stepVk.emulComm.x
+  Trace.field "msgForNextStep.vk.emul.y" stepVk.emulComm.y
+  Trace.field "msgForNextStep.vk.endomul_scalar.x" stepVk.endomulScalarComm.x
+  Trace.field "msgForNextStep.vk.endomul_scalar.y" stepVk.endomulScalarComm.y
+  -- app_state fields
+  forWithIndex_ appState \i v ->
+    Trace.field ("msgForNextStep.app_state." <> show i) v
+  -- per-proof sg + bp_challenges
+  forWithIndex_ (Array.fromFoldable proofs) \i p -> do
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") p.sg.x
+    Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") p.sg.y
+    forWithIndex_ (Vector.toUnfoldable p.expandedBpChallenges :: Array f) \j c ->
+      Trace.field ("msgForNextStep.prev." <> show i <> ".bp_chal." <> show j) c
+  let digest = hashMessagesForNextStepProofPure inp
+  Trace.field "msgForNextStep.final_digest" digest
+  pure digest

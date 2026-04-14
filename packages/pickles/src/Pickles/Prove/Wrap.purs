@@ -24,42 +24,56 @@ module Pickles.Prove.Wrap
   , BuildWrapAdviceInput
   , buildWrapAdvice
   , WrapProveContext
+  , WrapCompileContext
+  , WrapCompileResult
   , WrapProveResult
+  , wrapCompile
+  , wrapSolveAndProve
   , wrapProve
+  , extractStepVKComms
+  , stepVkForCircuit
+  , buildWrapMainConfigN1
+  , zeroWrapAdvice
   ) where
 
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
+import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Fin (unsafeFinite)
 import Data.Map (Map)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Exception (Error, error)
 import Partial.Unsafe (unsafePartial)
-import Pickles.ProofFFI (Proof, createProof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2)
-import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.ProofFFI (Proof, createProof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
-import Pickles.Wrap.Slots (class PadSlots, Slots2)
+import Pickles.Wrap.Slots (class PadSlots, Slots2, slots2)
 import Prim.Int (class Add)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (F(..))
-import Snarky.Circuit.Kimchi (Type1, Type2, toShifted)
+import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), const_)
+import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
+import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toShifted)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState(..), toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
@@ -378,6 +392,25 @@ type WrapProveContext (branches :: Int) (slot0Width :: Int) (slot1Width :: Int) 
   , advice :: WrapAdvice 2 (Slots2 slot0Width slot1Width)
   }
 
+-- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
+-- | without the solver-only fields (`publicInput`, `advice`).
+type WrapCompileContext (branches :: Int) =
+  { wrapMainConfig :: WrapMainConfig branches
+  , crs :: CRS PallasG
+  }
+
+-- | Artifacts produced by `wrapCompile`. The prover / verifier index
+-- | are created here so callers that split compile from solve can
+-- | feed the `verifierIndex` into downstream logic (e.g. the step
+-- | prover's `buildStepAdviceWithOracles`) before the solver runs.
+type WrapCompileResult =
+  { proverIndex :: ProverIndex PallasG WrapField
+  , verifierIndex :: VerifierIndex PallasG WrapField
+  , constraintSystem :: ConstraintSystem WrapField
+  , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
+  , constraints :: Array (KimchiRow WrapField)
+  }
+
 -- | Artifacts produced by `wrapProve`.
 -- |
 -- | Mirrors `TestContext'` shape so downstream code that previously
@@ -396,7 +429,71 @@ type WrapProveResult =
 -- | Run the wrap prover end-to-end. The monad `m` is constrained
 -- | only by what `compile` / `runSolverT` need + what `throwError`
 -- | needs to surface solver failures: `MonadThrow Error m`.
-wrapProve
+-- | Compile phase of the wrap prover. Walks `wrapMain`'s circuit
+-- | shape under `WrapProverT`, produces the constraint system +
+-- | prover/verifier index. The `advice` argument is threaded to
+-- | `runWrapProverT` for instance resolution but its values are
+-- | never inspected during compile — callers can pass a placeholder.
+wrapCompile
+  :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
+   . CircuitGateConstructor WrapField PallasG
+  => Reflectable branches Int
+  => Reflectable slot0Width Int
+  => Reflectable slot1Width Int
+  => Reflectable pad0 Int
+  => Reflectable pad1 Int
+  => Add pad0 slot0Width PaddedLength
+  => Add pad1 slot1Width PaddedLength
+  => Add 1 branchesPred branches
+  => Monad m
+  => WrapCompileContext branches
+  -> WrapAdvice 2 (Slots2 slot0Width slot1Width)
+  -> m WrapCompileResult
+wrapCompile ctx advice = do
+  let
+    compileAction
+      :: WrapProverT branches 2 (Slots2 slot0Width slot1Width) m
+           (CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
+    compileAction =
+      compile
+        (Proxy @(WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
+        (Proxy @Unit)
+        (Proxy @(KimchiConstraint WrapField))
+        (wrapMain @branches @slot0Width @slot1Width ctx.wrapMainConfig)
+        (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
+
+  builtState <- runWrapProverT advice compileAction
+
+  let
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    { constraintSystem, constraints } = makeConstraintSystem @WrapField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      }
+
+    endo :: WrapField
+    endo =
+      let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+
+    proverIndex =
+      createProverIndex @WrapField @PallasG
+        { endo, constraintSystem, crs: ctx.crs }
+
+    verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
+
+  pure
+    { proverIndex
+    , verifierIndex
+    , constraintSystem
+    , builtState
+    , constraints
+    }
+
+-- | Solve phase of the wrap prover. Takes a previously compiled
+-- | `WrapCompileResult` + the real advice + public input, runs the
+-- | solver, and creates the kimchi proof.
+wrapSolveAndProve
   :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
@@ -410,43 +507,9 @@ wrapProve
   => Monad m
   => (Error -> m WrapProveResult)
   -> WrapProveContext branches slot0Width slot1Width
+  -> WrapCompileResult
   -> m WrapProveResult
-wrapProve onError ctx = do
-  -- ===== compile =====
-  -- `compile` is monad-polymorphic; we run it in the same
-  -- `WrapProverT` stack the solver uses so instance resolution lines
-  -- up. The advice methods are never actually invoked here — compile
-  -- walks the circuit shape without evaluating `exists` aux bodies.
-  --
-  -- The explicit annotation on the `compile` result pins
-  -- `WrapProverT`'s phantom parameters, which is what lets
-  -- instance resolution find our `WrapWitnessM` instance.
-  let
-    compileAction
-      :: WrapProverT branches 2 (Slots2 slot0Width slot1Width) m
-           (CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
-    compileAction =
-      compile
-        (Proxy @(WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean))
-        (Proxy @Unit)
-        (Proxy @(KimchiConstraint WrapField))
-        (wrapMain @branches @slot0Width @slot1Width ctx.wrapMainConfig)
-        (Kimchi.initialState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField))
-
-  builtState <- runWrapProverT ctx.advice compileAction
-
-  let
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystem @WrapField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      }
-
-  -- ===== solve (populates assignments via advice methods) =====
-  -- Pin the solver's monad with an explicit type signature: the same
-  -- `WrapProverT` stack we used for compile, so the compiler can
-  -- discharge the `WrapWitnessM` constraint via our instance.
+wrapSolveAndProve onError ctx compileResult = do
   let
     rawSolver
       :: SolverT WrapField (KimchiConstraint WrapField)
@@ -465,37 +528,254 @@ wrapProve onError ctx = do
       let
         { witness, publicInputs } = makeWitness
           { assignments
-          , constraints: map _.variables constraints
-          , publicInputs: builtState.publicInputs
+          , constraints: map _.variables compileResult.constraints
+          , publicInputs: compileResult.builtState.publicInputs
           }
 
-        -- Production endo choice: `endoScalar @f' @f`. For wrap
-        -- circuit f = WrapField, f' = StepField — the memory note
-        -- on endo coefficients spells out why `endoBase` works for
-        -- constraint satisfaction only but `endoScalar` is required
-        -- for verifiable proofs.
-        endo :: WrapField
-        endo =
-          let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
-
-        proverIndex =
-          createProverIndex @WrapField @PallasG
-            { endo, constraintSystem, crs: ctx.crs }
-
-        verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
         csSatisfied = verifyProverIndex @WrapField @PallasG
-          { proverIndex, witness, publicInputs }
+          { proverIndex: compileResult.proverIndex, witness, publicInputs }
       in
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
         else
-          let proof = createProof { proverIndex, witness }
+          let proof = createProof { proverIndex: compileResult.proverIndex, witness }
           in pure
-            { proverIndex
-            , verifierIndex
-            , constraintSystem
+            { proverIndex: compileResult.proverIndex
+            , verifierIndex: compileResult.verifierIndex
+            , constraintSystem: compileResult.constraintSystem
             , witness
             , publicInputs
             , proof
             , assignments
             }
+
+-- | End-to-end wrap prover: `wrapCompile` then `wrapSolveAndProve`.
+wrapProve
+  :: forall branches slot0Width slot1Width pad0 pad1 branchesPred m
+   . CircuitGateConstructor WrapField PallasG
+  => Reflectable branches Int
+  => Reflectable slot0Width Int
+  => Reflectable slot1Width Int
+  => Reflectable pad0 Int
+  => Reflectable pad1 Int
+  => Add pad0 slot0Width PaddedLength
+  => Add pad1 slot1Width PaddedLength
+  => Add 1 branchesPred branches
+  => Monad m
+  => (Error -> m WrapProveResult)
+  -> WrapProveContext branches slot0Width slot1Width
+  -> m WrapProveResult
+wrapProve onError ctx = do
+  compileResult <- wrapCompile
+    { wrapMainConfig: ctx.wrapMainConfig, crs: ctx.crs }
+    ctx.advice
+  wrapSolveAndProve onError ctx compileResult
+
+--------------------------------------------------------------------------------
+-- Wrap VK extraction helpers for Simple_chain driver
+--
+-- These helpers let the Simple_chain test (and anything else with the
+-- same shape) build a `WrapMainConfig 1` from a compiled step
+-- `VerifierIndex` + a Vesta SRS, without hand-wiring all the
+-- lagrange-base / blinding / domain plumbing. They also expose a
+-- baseline `zeroWrapAdvice` for `wrapCompile`'s advice slot (compile
+-- doesn't inspect values, just the type shape).
+--
+-- References:
+--   `git show 1f9611e3:packages/pickles/test/Test/Pickles/Prove/WrapE2E.purs`
+--     lines 56-113 (old `extractStepVKComms` / `stepVkForCircuit` /
+--     `buildWrapMainConfig` helpers, ported here with updated lagrange
+--     lookup shape).
+--   `packages/pickles/src/Pickles/Wrap/Main.purs:104-111`
+--     (current `WrapMainConfig` record shape).
+--------------------------------------------------------------------------------
+
+-- | Extract the step-side (Vesta curve) VK commitments from a compiled
+-- | step verifier index, in the `StepVK WrapField` shape `wrapMain`
+-- | embeds in its config (as circuit variables via `stepVkForCircuit`).
+-- |
+-- | The 27 column commitments are returned in `to_batch` order by the
+-- | FFI: `index (6) + coefficient (15) + sigma (6)`. The 7th sigma
+-- | comes from a separate FFI call. Pallas column comms are Vesta
+-- | points with coordinates in `Vesta.BaseField = WrapField`.
+extractStepVKComms
+  :: VerifierIndex VestaG StepField
+  -> StepVK WrapField
+extractStepVKComms vk =
+  let
+    raw :: Array (AffinePoint WrapField)
+    raw = pallasVerifierIndexColumnComms vk
+
+    idx6 :: Vector 6 (AffinePoint WrapField)
+    idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
+
+    coeff15 :: Vector 15 (AffinePoint WrapField)
+    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15 $
+      Array.take 15 $ Array.drop 6 raw
+
+    sig6 :: Vector 6 (AffinePoint WrapField)
+    sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
+
+    sigLast :: AffinePoint WrapField
+    sigLast = pallasSigmaCommLast vk
+  in
+    { sigmaComm: Vector.snoc sig6 sigLast
+    , coefficientsComm: coeff15
+    , genericComm: Vector.index idx6 (unsafeFinite @6 0)
+    , psmComm: Vector.index idx6 (unsafeFinite @6 1)
+    , completeAddComm: Vector.index idx6 (unsafeFinite @6 2)
+    , mulComm: Vector.index idx6 (unsafeFinite @6 3)
+    , emulComm: Vector.index idx6 (unsafeFinite @6 4)
+    , endomulScalarComm: Vector.index idx6 (unsafeFinite @6 5)
+    }
+
+-- | Lift a constant `StepVK WrapField` into a `StepVK (FVar WrapField)`
+-- | by `const_`-ing each coordinate. Used by `buildWrapMainConfigN1`
+-- | because `wrapMain`'s config carries step-key commitments as circuit
+-- | variables so the in-circuit `chooseKey` can scale them by a boolean.
+stepVkForCircuit :: StepVK WrapField -> StepVK (FVar WrapField)
+stepVkForCircuit vk =
+  let
+    cp :: AffinePoint WrapField -> AffinePoint (FVar WrapField)
+    cp pt = { x: const_ pt.x, y: const_ pt.y }
+  in
+    { sigmaComm: map cp vk.sigmaComm
+    , coefficientsComm: map cp vk.coefficientsComm
+    , genericComm: cp vk.genericComm
+    , psmComm: cp vk.psmComm
+    , completeAddComm: cp vk.completeAddComm
+    , mulComm: cp vk.mulComm
+    , emulComm: cp vk.emulComm
+    , endomulScalarComm: cp vk.endomulScalarComm
+    }
+
+-- | Build a `WrapMainConfig 1` for a single-branch Simple_chain-style
+-- | compile. Takes the compiled step verifier index, the Vesta
+-- | (step-side) SRS used for the lagrange base lookup, and the step
+-- | circuit's own domain log2 (= 16 for Simple_chain per
+-- | `dump_circuit_impl.ml:3721-3723`).
+-- |
+-- | The lagrange closure calls `pallasSrsLagrangeCommitmentAt` on
+-- | demand — kimchi caches the full basis after the first call, so
+-- | per-index access is amortized O(1). The blinding `H` point comes
+-- | from the same Vesta SRS. `allPossibleDomainLog2s` is hardcoded to
+-- | `{13, 14, 15}` matching OCaml's `Wrap_verifier.all_possible_domains`
+-- | for `proofs_verified ∈ {0,1,2}`.
+buildWrapMainConfigN1
+  :: CRS VestaG
+  -> VerifierIndex VestaG StepField
+  -> Int
+  -> WrapMainConfig 1
+buildWrapMainConfigN1 vestaSrs stepVK domainLog2 =
+  { stepWidths: 1 :< Vector.nil
+  , domainLog2s: domainLog2 :< Vector.nil
+  , stepKeys: stepVkForCircuit (extractStepVKComms stepVK) :< Vector.nil
+  , lagrangeAt:
+      mkConstLagrangeBaseLookup \i ->
+        (coerce (pallasSrsLagrangeCommitmentAt vestaSrs domainLog2 i))
+          :: AffinePoint (F WrapField)
+  , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
+  , allPossibleDomainLog2s:
+      unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+  }
+
+-- | Baseline zero-valued `WrapAdvice 2 (Slots2 slot0Width slot1Width)` for the compile
+-- | phase. `wrapCompile` threads the advice to `runWrapProverT` only
+-- | for type-class instance resolution; the values are never read
+-- | during circuit shape walking. Callers hand this in to
+-- | `wrapCompile` when they don't yet have real advice (e.g. when
+-- | they need the compiled wrap VK BEFORE the step solver runs so
+-- | they can feed it to `buildStepAdviceWithOracles`).
+zeroWrapAdvice
+  :: forall slot0Width slot1Width
+   . Reflectable slot0Width Int
+  => Reflectable slot1Width Int
+  => WrapAdvice 2 (Slots2 slot0Width slot1Width)
+zeroWrapAdvice =
+  let
+    zeroF :: F WrapField
+    zeroF = F zero
+
+    zeroType1 :: Type1 (F WrapField)
+    zeroType1 = Type1 zeroF
+
+    zeroType2 :: Type2 (F WrapField)
+    zeroType2 = Type2 zeroF
+
+    zeroUncheckedSized128 :: UnChecked (SizedF 128 (F WrapField))
+    zeroUncheckedSized128 = UnChecked (unsafePartial (unsafeFromField zeroF))
+
+    zeroWeierstrass :: WeierstrassAffinePoint VestaG (F WrapField)
+    zeroWeierstrass = WeierstrassAffinePoint { x: zeroF, y: zeroF }
+
+    zeroPointEval :: PointEval (F WrapField)
+    zeroPointEval = PointEval { zeta: zeroF, omegaTimesZeta: zeroF }
+
+    zeroStepAllEvals :: StepAllEvals (F WrapField)
+    zeroStepAllEvals = StepAllEvals
+      { publicEvals: zeroPointEval
+      , witnessEvals: Vector.replicate zeroPointEval
+      , coeffEvals: Vector.replicate zeroPointEval
+      , zEvals: zeroPointEval
+      , sigmaEvals: Vector.replicate zeroPointEval
+      , indexEvals: Vector.replicate zeroPointEval
+      , ftEval1: zeroF
+      }
+
+    zeroPerProof :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean
+    zeroPerProof = PerProofUnfinalized
+      { combinedInnerProduct: zeroType2
+      , b: zeroType2
+      , zetaToSrsLength: zeroType2
+      , zetaToDomainSize: zeroType2
+      , perm: zeroType2
+      , spongeDigest: zeroF
+      , beta: zeroUncheckedSized128
+      , gamma: zeroUncheckedSized128
+      , alpha: zeroUncheckedSized128
+      , zeta: zeroUncheckedSized128
+      , xi: zeroUncheckedSized128
+      , bulletproofChallenges: Vector.replicate zeroUncheckedSized128
+      , shouldFinalize: false
+      }
+
+    -- Polymorphic in the slot widths — the concrete Slots2 instantiation
+    -- is pinned by the caller at the top-level binding (e.g. SimpleChain
+    -- uses `Slots2 0 1` for N1 with `Max_widths_by_slot = [N0; N1]`).
+    zeroSlots :: Slots2 slot0Width slot1Width (Vector WrapIPARounds (F WrapField))
+    zeroSlots = slots2
+      (Vector.replicate (Vector.replicate zeroF))
+      (Vector.replicate (Vector.replicate zeroF))
+
+    zeroOpening
+      :: WrapProofOpening
+           StepIPARounds
+           (WeierstrassAffinePoint VestaG (F WrapField))
+           (Type1 (F WrapField))
+    zeroOpening = WrapProofOpening
+      { lr: Vector.replicate { l: zeroWeierstrass, r: zeroWeierstrass }
+      , z1: zeroType1
+      , z2: zeroType1
+      , delta: zeroWeierstrass
+      , sg: zeroWeierstrass
+      }
+
+    zeroMessages :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
+    zeroMessages = WrapProofMessages
+      { wComm: Vector.replicate zeroWeierstrass
+      , zComm: zeroWeierstrass
+      , tComm: Vector.replicate zeroWeierstrass
+      }
+  in
+    { whichBranch: zeroF
+    , wrapProofState: WrapPrevProofState
+        { unfinalizedProofs: Vector.replicate zeroPerProof
+        , messagesForNextStepProof: zeroF
+        }
+    , stepAccs: Vector.replicate zeroWeierstrass
+    , oldBpChals: zeroSlots
+    , evals: Vector.replicate zeroStepAllEvals
+    , wrapDomainIndices: Vector.replicate zeroF
+    , openingProof: zeroOpening
+    , messages: zeroMessages
+    }
