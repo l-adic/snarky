@@ -27,6 +27,7 @@ import Data.Foldable (foldM)
 import Data.Array as Array
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.FoldableWithIndex (forWithIndex_)
 import Partial.Unsafe (unsafePartial)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
@@ -37,6 +38,7 @@ import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
+import Pickles.Verify (ivpTrace)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
@@ -512,6 +514,30 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
 
+    -- === TRACE: outer hash inputs (NEW step proof's msgForNextStep) ===
+    -- Compares to OCaml `step_main_outer.*` traces. PI[32] is the
+    -- digest of these inputs; every divergence in PI[32] is a diff
+    -- in one of these.
+    let sigmaArr = (Vector.toUnfoldable vk.sigma :: Array _)
+    forWithIndex_ sigmaArr \i pt -> do
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
+    let { x: slX, y: slY } = unwrapPt vk.sigmaLast
+    ivpTrace "step_main_outer.vk.sigma_last.x" slX
+    ivpTrace "step_main_outer.vk.sigma_last.y" slY
+    let coeffArr = (Vector.toUnfoldable vk.coeff :: Array _)
+    forWithIndex_ coeffArr \i pt -> do
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
+    let indexArr = (Vector.toUnfoldable vk.index :: Array _)
+    forWithIndex_ indexArr \i pt -> do
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
+    ivpTrace "step_main_outer.app_state" appState
+
     -- sponge_after_index: absorb VK
     spongeAfterIndex <- do
       let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar StepField)
@@ -525,6 +551,12 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 
     -- For each proof: absorb sg + expanded bp_challenges
     let proofData = (Vector.toUnfoldable $ Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results) :: Array _
+    forWithIndex_ proofData \i { sg: sgPt, expandedChals } -> do
+      let pt = unwrapPt sgPt
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.y") pt.y
+      forWithIndex_ (Vector.toUnfoldable expandedChals :: Array _) \j c ->
+        ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show j) c
     sAfterProofs <- foldM
       ( \s { sg: sgPt, expandedChals } -> do
           let pt = unwrapPt sgPt
@@ -537,6 +569,7 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 
     -- Squeeze
     { result: digest } <- Sponge.squeeze sAfterProofs
+    ivpTrace "step_main_outer.digest" digest
     pure digest
 
   -- 10. Build output: n × 32 (unfinalized) + 1 (step msg) + n (wrap msgs)

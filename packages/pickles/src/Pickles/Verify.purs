@@ -13,6 +13,7 @@ module Pickles.Verify
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , ivpTrace
   , packStatement
   , verify
   ) where

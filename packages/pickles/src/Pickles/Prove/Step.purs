@@ -1298,12 +1298,45 @@ buildStepAdviceWithOracles input = do
     wrapSgF :: AffinePoint (F StepField)
     wrapSgF = coerce input.wrapSg
 
+    -- OCaml `step.ml:498-501,522-525` overrides
+    -- `wrap_proof.opening.challenge_polynomial_commitment` for the
+    -- prior proof when `must_verify = false`:
+    --
+    --     let challenge_polynomial_commitment =
+    --       if not must_verify
+    --         then Ipa.Wrap.compute_sg new_bulletproof_challenges
+    --         else proof.openings.proof.challenge_polynomial_commitment
+    --     in
+    --     ...
+    --     wrap_proof = { opening = { proof.openings.proof with
+    --                                challenge_polynomial_commitment };
+    --                    messages = proof.messages }
+    --
+    -- For the Simple_chain base case (must_verify = false), this means
+    -- the dummy proof's literal `g0` sg is REPLACED with the freshly
+    -- computed sg from the new bp_chals. step_main.ml:556-582 then
+    -- hashes this overridden value into the new step proof's
+    -- `messages_for_next_step_proof` (= PI[32]).
+    --
+    -- PS's `expandProof` already computes the correct
+    -- `challengePolynomialCommitment` (Pure/Step.purs:649-655). We
+    -- thread it through the dummy `openingProofs.sg` here so the
+    -- in-circuit `outer hash` reads the correct value via
+    -- `getStepPerProofWitnesses → wrapProof.opening.sg`.
+    overriddenSg :: AffinePoint (F StepField)
+    overriddenSg = coerce expandProofResult.sg
+
+    overriddenOpenings = map
+      (\op -> op { sg = overriddenSg })
+      base.openingProofs
+
   pure $ base
     { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
     , publicUnfinalizedProofs = Vector.replicate expandedUnfinalized
     , fopProofStates = Vector.replicate simpleChainFop
     , sgOld = Vector.replicate wrapSgF
     , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
+    , openingProofs = overriddenOpenings
     }
 
 --------------------------------------------------------------------------------

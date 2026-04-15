@@ -44,7 +44,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasProofCommitments, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -564,6 +564,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- and against what PS's PackedStepPublicInput would serialize to.
       for_ (Array.mapWithIndex Tuple result.publicInputs) \(Tuple i x) ->
         Trace.field ("wrap.dbg.step_pi." <> show i) x
+      -- Trace step proof's w_comm. The wrap circuit's IVP absorbs
+      -- these into its sponge; if they don't match the OCaml trace
+      -- (`ivp.trace.wrap.w_comm.*`), then PS's step prover produced
+      -- a different witness than OCaml's despite identical PI.
+      let stepCommits = ProofFFI.pallasProofCommitments result.proof
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable stepCommits.wComm :: Array _)) \(Tuple i pt) -> do
+        Trace.field ("wrap.dbg.step_proof.w_comm." <> show i <> ".x") pt.x
+        Trace.field ("wrap.dbg.step_proof.w_comm." <> show i <> ".y") pt.y
 
     wrapResult <- liftEffect $
       wrapSolveAndProve @1 @(Slots1 1)
