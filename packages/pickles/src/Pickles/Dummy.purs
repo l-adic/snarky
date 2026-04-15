@@ -51,24 +51,22 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
-import Pickles.Types (PerProofUnfinalized(..), StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge as PureSponge
-import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, UnChecked(..), coerceViaBits, const_, fromBits)
-import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
+import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine, toBigInt) as Curves
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), fromShifted, toShifted)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (class Shifted, Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------

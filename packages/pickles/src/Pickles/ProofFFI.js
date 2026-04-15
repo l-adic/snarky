@@ -129,6 +129,14 @@ export const pallasProofBulletproofChallenges = (verifierIndex) => ({ proof, pub
 export const vestaProofBulletproofChallenges = (verifierIndex) => ({ proof, publicInput }) =>
   crypto.vestaProofBulletproofChallenges(verifierIndex, proof, publicInput);
 
+// Compute kimchi's `u_t` scalar (post-CIP-absorb, pre-group_map). Used for
+// byte-diffing against the wrap circuit's in-circuit sponge state.
+export const pallasComputeUT = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.pallasComputeUT(verifierIndex, proof, publicInput);
+
+export const vestaComputeUT = (verifierIndex) => ({ proof, publicInput }) =>
+  crypto.vestaComputeUT(verifierIndex, proof, publicInput);
+
 // Verify opening proof
 export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) =>
   crypto.pallasVerifyOpeningProof(verifierIndex, proof, publicInput);

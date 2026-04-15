@@ -31,6 +31,7 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Tuple (Tuple(..))
+import Data.Fin (unsafeFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -44,7 +45,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (computeB0, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofBulletproofChallenges, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -393,6 +394,13 @@ spec = describe "Pickles.Prove.SimpleChain" do
             }
       for_ (Array.mapWithIndex Tuple kimchiPrechals) \(Tuple i c) ->
         Trace.field ("kimchi.prechal." <> show i) c
+      -- Dump kimchi's `u_t` scalar (post-CIP-absorb, pre-group_map) for
+      -- PS step proof. Compare to PS wrap circuit `ipa.dbg.u_t` to test
+      -- whether the sponge state diverges AT the CIP absorb / u squeeze.
+      let kimchiUT = ProofFFI.pallasComputeUT
+            stepCR.verifierIndex
+            { proof: result.proof, publicInput: result.publicInputs }
+      Trace.field "kimchi.u_t" kimchiUT
 
     -- ===== Phase 5: wrap-prove the step proof =====
     -- Mirrors OCaml `wrap.ml:279` `Wrap.wrap` orchestration for the
@@ -615,6 +623,23 @@ spec = describe "Pickles.Prove.SimpleChain" do
       Trace.field "wrap.dbg.oracles_gamma"
         (SizedF.toField stepOracles.gamma :: StepField)
       Trace.field "wrap.dbg.oracles_fq_digest" stepOracles.fqDigest
+      -- Ground-truth CIP kimchi computes for PS's step proof. Compare
+      -- to PS wrap circuit's `ipa.dbg.cip_absorb.0` (= Type1-shifted
+      -- form of `stmt.combinedInnerProduct`). Differences here prove
+      -- PS's `wrapComputeDeferredValues` is producing the wrong CIP.
+      Trace.field "kimchi.cip" stepOracles.combinedInnerProduct
+      -- Ground-truth sponge state after absorbing CIP and before u_t
+      -- squeeze. Compare to PS wrap's `ipa.dbg.sponge_post.s{0,1,2}`.
+      -- Divergence here means PS's circuit-sponge absorb differs from
+      -- kimchi's native Poseidon absorb for the same CIP value.
+      let kimchiCheckpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges
+            stepCR.verifierIndex
+            { proof: result.proof, publicInput: result.publicInputs }
+      Trace.field "kimchi.sponge_post.s0" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 0))
+      Trace.field "kimchi.sponge_post.s1" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 1))
+      Trace.field "kimchi.sponge_post.s2" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 2))
+      Trace.string "kimchi.sponge_post.mode" kimchiCheckpoint.spongeMode
+      Trace.int "kimchi.sponge_post.mode_count" kimchiCheckpoint.modeCount
       Trace.field "wrap.dbg.kimchi_vk_digest"
         (ProofFFI.pallasVerifierIndexDigest stepCR.verifierIndex)
       -- Trace each element of result.publicInputs for direct comparison

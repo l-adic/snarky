@@ -613,6 +613,36 @@ mod generic {
         })
     }
 
+    /// Compute the `u_t` scalar that the native kimchi verifier squeezes
+    /// from the Fq sponge AFTER absorbing shift_scalar(combined_inner_product)
+    /// and BEFORE calling `group_map` to derive the `u` curve point.
+    ///
+    /// This is the ground truth for PureScript's `ipa.dbg.u_t` — the scalar
+    /// the wrap circuit's in-circuit sponge should squeeze at the same
+    /// point in the transcript. If they differ, the sponge state before
+    /// this squeeze (i.e., the CIP absorb path or anything upstream) is
+    /// inconsistent between the native and circuit verifiers.
+    pub fn compute_u_t<G, EFqSponge, EFrSponge>(
+        verifier_index: &VerifierIndex<G, OpeningProof<G>>,
+        proof: &ProverProof<G, OpeningProof<G>>,
+        public_input: &[G::ScalarField],
+    ) -> Result<G::BaseField>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let oracles_result =
+            compute_oracles::<G, EFqSponge, EFrSponge>(verifier_index, proof, public_input)?;
+        let mut fq_sponge = oracles_result.fq_sponge;
+        fq_sponge.absorb_fr(&[poly_commitment::commitment::shift_scalar::<G>(
+            oracles_result.combined_inner_product,
+        )]);
+        Ok(fq_sponge.challenge_fq())
+    }
+
     /// Extract bulletproof challenges from a proof.
     /// These are the IPA challenges after applying the endomorphism.
     /// Returns d values where d = domain_log2 (number of IPA rounds).
@@ -2084,6 +2114,40 @@ pub fn vesta_proof_oracles(
         prev,
     )?;
     Ok(result.into_iter().map(External::new).collect())
+}
+
+/// Compute kimchi's `u_t` scalar (post-CIP-absorb, pre-group_map) for a
+/// Vesta proof. Used as ground truth to diff against PureScript's wrap
+/// circuit `ipa.dbg.u_t` trace.
+#[napi]
+pub fn pallas_compute_u_t(
+    verifier_index: &PallasVerifierIndexExternal,
+    proof: &VestaProofExternal,
+    public_input: Vec<&VestaFieldExternal>,
+) -> Result<PallasFieldExternal> {
+    let public: Vec<VestaScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::compute_u_t::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(External::new(result))
+}
+
+/// Compute kimchi's `u_t` scalar for a Pallas proof.
+#[napi]
+pub fn vesta_compute_u_t(
+    verifier_index: &VestaVerifierIndexExternal,
+    proof: &PallasProofExternal,
+    public_input: Vec<&PallasFieldExternal>,
+) -> Result<VestaFieldExternal> {
+    let public: Vec<PallasScalarField> = public_input.iter().map(|f| ***f).collect();
+    let result = generic::compute_u_t::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+    )?;
+    Ok(External::new(result))
 }
 
 /// Extract bulletproof challenges from a Vesta proof (Pallas/Fp circuits).

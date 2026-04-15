@@ -45,6 +45,8 @@ module Pickles.ProofFFI
   , vestaCombinedPolynomialCommitment
   , pallasDebugVerify
   , vestaDebugVerify
+  , pallasComputeUT
+  , vestaComputeUT
   , pallasVerifierIndexMaxPolySize
   , pallasProverIndexDomainLog2
   , vestaProverIndexDomainLog2
@@ -293,6 +295,13 @@ foreign import vestaProofOpeningPrechallenges
 
 foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
+
+-- NOTE: `u_t` is the sponge output AFTER absorbing shifted CIP and BEFORE
+-- `group_map`. It is squeezed in the commitment curve's BASE field (=
+-- the OTHER scalar field in the 2-cycle): for a Vesta proof it's Fq =
+-- `Pallas.ScalarField`; for a Pallas proof it's Fp = `Vesta.ScalarField`.
+foreign import pallasComputeUT :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Pallas.ScalarField
+foreign import vestaComputeUT :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Vesta.ScalarField
 
 foreign import pallasPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField

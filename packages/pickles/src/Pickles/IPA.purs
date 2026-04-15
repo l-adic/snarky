@@ -46,7 +46,7 @@ module Pickles.IPA
 
 import Prelude
 
-import Data.Fin (getFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Array as Array
 import Data.Foldable (fold, foldM, for_, product)
 import Data.Maybe (Maybe(..))
@@ -57,7 +57,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
+import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
 import Pickles.Trace as Trace
 import Effect.Unsafe (unsafePerformEffect)
 import Snarky.Circuit.DSL (exists, readCVar) as SDSL
@@ -648,16 +648,58 @@ checkBulletproof
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases baseMasks input = do
+  let
+    ivpTrace' labelStr v = do
+      _ <- SDSL.exists do
+        val <- SDSL.readCVar v
+        let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+        pure val
+      pure unit
+  -- DIAG: dump the sponge STATE entering check_bulletproof (pre-CIP-
+  -- absorb). Compare to what kimchi's native Fq sponge state would be
+  -- at the same point for PS's step proof.
+  pre <- getSponge
+  liftSnarky do
+    ivpTrace' "ipa.dbg.sponge_pre.s0" (Vector.index pre.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.sponge_pre.s1" (Vector.index pre.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.sponge_pre.s2" (Vector.index pre.state (unsafeFinite @3 2))
+
   -- 1. Absorb shift_scalar(CIP) into sponge
   -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
     let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
+    -- DIAG: dump each field element absorbed as the shifted CIP. For
+    -- wrap (Type1), this is a single Fq value. Compare to
+    -- `kimchi.cip` (the raw CIP before shift) and
+    -- `shift_scalar::<Vesta>(cip)` which kimchi absorbs.
+    liftSnarky do
+      for_ (Array.mapWithIndex Tuple cipFields) \(Tuple i f) ->
+        ivpTrace' ("ipa.dbg.cip_absorb." <> show i) f
     for_ cipFields absorb
+
+  -- DIAG: dump sponge state after CIP absorb
+  post <- getSponge
+  liftSnarky do
+    ivpTrace' "ipa.dbg.sponge_post.s0" (Vector.index post.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.sponge_post.s1" (Vector.index post.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.sponge_post.s2" (Vector.index post.state (unsafeFinite @3 2))
 
   -- 2. Derive u via group_map (squeeze BEFORE combine_poly, matching OCaml)
   -- OCaml: let u = let t = Sponge.squeeze_field sponge in group_map t
   u <- labelM "ipa_group_map" $ do
     t <- squeeze
+    -- DIAG: dump the scalar `t` squeezed from the sponge AFTER absorbing
+    -- shifted CIP, BEFORE group_map. Compare to kimchi's `u_t` for
+    -- PS's step proof.
+    liftSnarky $ do
+      let
+        ivpTraceUT labelStr v = do
+          _ <- SDSL.exists do
+            val <- SDSL.readCVar v
+            let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+            pure val
+          pure unit
+      ivpTraceUT "ipa.dbg.u_t" t
     liftSnarky $ groupMapCircuit params.groupMapParams t
 
   -- 3. Compute combined polynomial via Horner (AFTER u, matching OCaml)
