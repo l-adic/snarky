@@ -37,7 +37,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldM, foldl, for_)
 import Data.Int as Int
 import Data.Maybe (fromJust)
 import Partial.Unsafe (unsafePartial)
@@ -61,6 +61,7 @@ import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), Step
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
 import Prim.Ordering (LT)
 import Pickles.VerificationKey (StepVK, chooseKey)
+import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
@@ -73,7 +74,8 @@ import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
 import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Kimchi (SplitField, Type1, Type2(..), groupMapParams)
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
@@ -618,6 +620,12 @@ wrapMain config (WrapStatementPacked stmtR) = do
       revIdxs
     pure (Vector.reverse revMsgs)
 
+  -- DIAG: dump msgsForWrap[0] at solve time so we can compare to
+  -- OCaml's expand_proof.msgForNextWrap expected value.
+  let { head: m0, tail: _ } = Vector.uncons msgsForWrap
+  ivpTrace "wrap.dbg.msgsForWrap.0" m0
+  ivpTrace "wrap.dbg.prevMsgForNextStep" prevMsgForNextStep
+
   label "block4-assert-msg-step" $
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
 
@@ -650,6 +658,33 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- — the format the wrap verifier consumes for x_hat MSM.
   splitProofs <- label "block5-split-field" $
     traverse splitPerProofUnfinalized prevUnfinalized
+
+  -- DIAG: dump every walked field of splitProofs[0] so we can diff
+  -- against OCaml's equivalent at wrap.ml pack_statement input point.
+  -- The MSM walks these exact values, so any one that differs from
+  -- OCaml localizes the remaining xhat divergence.
+  let { head: sp0, tail: _ } = Vector.uncons splitProofs
+  let unType2Split (Type2 sf) = sf
+  let cipSF = unType2Split sp0.deferredValues.combinedInnerProduct
+  let bSF = unType2Split sp0.deferredValues.b
+  let permSF = unType2Split sp0.deferredValues.plonk.perm
+  let ztSrsSF = unType2Split sp0.deferredValues.plonk.zetaToSrsLength
+  let ztDomSF = unType2Split sp0.deferredValues.plonk.zetaToDomainSize
+  ivpTrace "wrap.dbg.unf0.cip.sDiv2" (case cipSF of SplitField r -> r.sDiv2)
+  ivpTrace "wrap.dbg.unf0.b.sDiv2" (case bSF of SplitField r -> r.sDiv2)
+  ivpTrace "wrap.dbg.unf0.perm.sDiv2" (case permSF of SplitField r -> r.sDiv2)
+  ivpTrace "wrap.dbg.unf0.ztSrs.sDiv2" (case ztSrsSF of SplitField r -> r.sDiv2)
+  ivpTrace "wrap.dbg.unf0.ztDom.sDiv2" (case ztDomSF of SplitField r -> r.sDiv2)
+  ivpTrace "wrap.dbg.unf0.spongeDigest" sp0.spongeDigestBeforeEvaluations
+  ivpTrace "wrap.dbg.unf0.alpha" (SizedF.toField sp0.deferredValues.plonk.alpha)
+  ivpTrace "wrap.dbg.unf0.beta" (SizedF.toField sp0.deferredValues.plonk.beta)
+  ivpTrace "wrap.dbg.unf0.gamma" (SizedF.toField sp0.deferredValues.plonk.gamma)
+  ivpTrace "wrap.dbg.unf0.zeta" (SizedF.toField sp0.deferredValues.plonk.zeta)
+  ivpTrace "wrap.dbg.unf0.xi" (SizedF.toField sp0.deferredValues.xi)
+  let bpcArr = Vector.toUnfoldable sp0.deferredValues.bulletproofChallenges :: Array (SizedF 128 (FVar WrapField))
+  for_ (Array.mapWithIndex Tuple bpcArr) \(Tuple i c) ->
+    ivpTrace ("wrap.dbg.unf0.bpc." <> show i) (SizedF.toField c)
+
   let
     publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)
     publicInput = PackedStepPublicInput

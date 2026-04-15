@@ -248,13 +248,27 @@ roComputeResult = flip evalState mkRo do
       , sigmaEvals: wrapSigmaEvals
       }
 
-  -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
-  bRaw <- tock -- tock 90
-  cipRaw <- tock -- tock 91
+  -- Phase 4: proof.ml:dummy openings z_1, z_2 (OCaml evaluates the
+  -- `{ lr = ...; z_1 = Ro.tock (); z_2 = Ro.tock (); ... }` record
+  -- RIGHT-TO-LEFT, so z_2 is pulled first at position 90, then z_1
+  -- at position 91. `Proof.dummy` is forced BEFORE
+  -- `Unfinalized.Constant.dummy` in `compile_promise` / dump_simple_chain,
+  -- so z_1/z_2 come first in the Ro stream after Dummy.evals.
+  --
+  -- Verified empirically: traces `expand_proof.dummy_proof.z1/z2`
+  -- (from `proof.openings.proof.z_{1,2}` at expand_proof time in OCaml)
+  -- match these positions byte-for-byte with the right field
+  -- assignments below.
+  proofZ2 <- tock -- tock 90
+  proofZ1 <- tock -- tock 91
 
-  -- Phase 4b: proof.ml:dummy openings z1/z2 (right-to-left: z2 first)
-  proofZ2 <- tock -- tock 92
-  proofZ1 <- tock -- tock 93
+  -- Phase 4b: Unfinalized.Constant.dummy's b and combined_inner_product
+  -- (OCaml `unfinalized.ml:97-100`: `combined_inner_product = Shifted_value (tock ())`
+  -- then `b = Shifted_value (tock ())`). Record evaluated right-to-left
+  -- in OCaml so `b` pulls first at position 92, `cipRaw` at position 93.
+  -- These feed `wrapDummyUnfinalizedProof.{b, combinedInnerProduct}`.
+  bRaw <- tock -- tock 92
+  cipRaw <- tock -- tock 93
 
   -- Phase 5: Step dummy plonk challenges from proof.ml:dummy.
   -- OCaml evaluates record fields right-to-left, so within

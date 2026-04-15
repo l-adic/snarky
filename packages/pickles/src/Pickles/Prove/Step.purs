@@ -1058,6 +1058,20 @@ buildStepAdviceWithOracles input = do
       (Curves.toAffine (Curves.generator :: Pallas.G) :: _ (AffinePoint StepField))
   Trace.field "expand_proof.dummy_proof.lr.0.l.x" g0.x
   Trace.field "expand_proof.dummy_proof.lr.0.l.y" g0.y
+  -- Trace raw z1/z2 (Ro-derived Tock.Field values used by Proof.dummy
+  -- openings). These get split into SplitField (sDiv2, sOdd) when
+  -- allocated inside the step circuit, and their encoding is the
+  -- leading candidate for the (col=0, row=201) witness divergence
+  -- localized by the kimchi witness dump.
+  Trace.field "expand_proof.dummy_proof.z1" roComputeResult.proofZ1
+  Trace.field "expand_proof.dummy_proof.z2" roComputeResult.proofZ2
+  -- Trace bRaw/cipRaw from the SAME roComputeResult. If PS's Ro
+  -- schedule is off by 2 (e.g., puts bRaw/cipRaw at pos 90/91 when
+  -- OCaml has them elsewhere), the values we see here should match
+  -- something on OCaml's side (possibly z_1/z_2 themselves, if PS is
+  -- pulling them from OCaml's z_1/z_2 positions).
+  Trace.field "expand_proof.dummy_proof.bRaw" roComputeResult.bRaw
+  Trace.field "expand_proof.dummy_proof.cipRaw" roComputeResult.cipRaw
   -- Trace dummy proof evals — these flow into kimchi's combined_inner_product.
   -- If they differ from OCaml, the kimchi-internal cip will diverge.
   let _wrapDummyEvals = roComputeResult.wrapDummyEvals

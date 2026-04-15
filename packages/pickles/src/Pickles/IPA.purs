@@ -47,6 +47,7 @@ module Pickles.IPA
 import Prelude
 
 import Data.Fin (getFinite)
+import Data.Array as Array
 import Data.Foldable (fold, foldM, for_, product)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
@@ -57,9 +58,13 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
+import Pickles.Trace as Trace
+import Effect.Unsafe (unsafePerformEffect)
+import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -449,10 +454,41 @@ ipaFinalCheckCircuit
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
+  let
+    -- Local copy of Pickles.Verify.ivpTrace — can't import from Verify
+    -- due to cycle (Verify imports IPA). Semantics identical.
+    ivpTrace labelStr v = do
+      _ <- SDSL.exists do
+        val <- SDSL.readCVar v
+        let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+        pure val
+      pure unit
+  -- DIAG: dump IPA inputs at solve time. These are the values the wrap
+  -- circuit reads from the step proof's opening via Req.Openings_proof
+  -- + deferredValues — if any differs from OCaml, localizes the bug.
+  liftSnarky do
+    ivpTrace "ipa.dbg.sg.x" input.sg.x
+    ivpTrace "ipa.dbg.sg.y" input.sg.y
+    ivpTrace "ipa.dbg.delta.x" input.delta.x
+    ivpTrace "ipa.dbg.delta.y" input.delta.y
+    ivpTrace "ipa.dbg.cp.x" input.combinedPolynomial.x
+    ivpTrace "ipa.dbg.cp.y" input.combinedPolynomial.y
+    ivpTrace "ipa.dbg.u.x" input.u.x
+    ivpTrace "ipa.dbg.u.y" input.u.y
+
   -- 1. Extract 128-bit scalar challenges from L/R pairs
   -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
     extractScalarChallenges params input.lr
+
+  -- DIAG: dump the 128-bit prechallenges the wrap circuit derived
+  -- from bullet_reduce. These are endo-expanded later. Compare to
+  -- `pallasProofOpeningPrechallenges` (kimchi's ground truth) to
+  -- detect any L/R absorption ordering / squeeze bug.
+  liftSnarky do
+    let scArr = Vector.toUnfoldable scalarChallenges :: Array (SizedF 128 (FVar f))
+    for_ (Array.mapWithIndex Tuple scArr) \(Tuple i sc) ->
+      ivpTrace ("ipa.dbg.prechal." <> show i) (SizedF.toField sc)
 
   -- 2. Compute lr_prod from L/R pairs and challenges
   -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions
@@ -484,6 +520,12 @@ ipaFinalCheckCircuit scalarOps params input = do
     absorbPoint input.delta
     squeezeScalar params
 
+  -- DIAG: dump Q + c at this point
+  liftSnarky do
+    ivpTrace "ipa.dbg.q.x" q.x
+    ivpTrace "ipa.dbg.q.y" q.y
+    ivpTrace "ipa.dbg.c" (SizedF.toField c)
+
   success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
     cQ <- label "ipa_endo_q" $ endo q c
@@ -496,6 +538,12 @@ ipaFinalCheckCircuit scalarOps params input = do
     z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.z1
     z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.z2
     { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
+
+    -- DIAG: dump LHS + RHS at the final equation
+    ivpTrace "ipa.dbg.lhs.x" lhs.x
+    ivpTrace "ipa.dbg.lhs.y" lhs.y
+    ivpTrace "ipa.dbg.rhs.x" rhs.x
+    ivpTrace "ipa.dbg.rhs.y" rhs.y
 
     -- 9. Check LHS == RHS
     xEqual <- equals_ lhs.x rhs.x

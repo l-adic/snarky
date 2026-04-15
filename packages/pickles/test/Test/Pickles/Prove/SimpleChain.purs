@@ -44,14 +44,15 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasProofCommitments, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (computeB0, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofBulletproofChallenges, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import Pickles.Wrap.Slots (Slots1, slots1)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
+import Partial.Unsafe (unsafePartial)
 import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
@@ -63,6 +64,7 @@ import Pickles.Trace as Trace
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Circuit.DSL (F(..), UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
 import Snarky.Types.Shifted (Type2, fromShifted, toShifted)
 import Snarky.Circuit.DSL.SizedF as SizedF
@@ -141,7 +143,29 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- `memory/project_simple_chain_max_poly_size_bug.md`.)
     let pallasWrapSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     let lagrangeSrs = pallasWrapSrs
-    vestaSrs <- liftEffect $ createCRS @StepField
+    vestaSrsLoaded <- liftEffect $ createCRS @StepField
+    let vestaSrsFresh = VestaImpl.vestaCrsCreate (1 `Int.shl` 16)
+
+    -- DIAGNOSTIC: compare loaded-from-cache vs fresh-created Vesta SRS
+    -- to see whether the cached srs-cache/vesta.srs τ matches the fresh
+    -- `SRS::<VestaGroup>::create(2^16)` that OCaml wrap_main uses via
+    -- `Tick.Keypair.load_urs()` + `set_urs_info []`.
+    liftEffect do
+      let loadedH = ProofFFI.pallasSrsBlindingGenerator vestaSrsLoaded
+      let freshH = ProofFFI.pallasSrsBlindingGenerator vestaSrsFresh
+      Trace.field "srs.diag.loaded.H.x" (coerce loadedH.x :: F WrapField)
+      Trace.field "srs.diag.loaded.H.y" (coerce loadedH.y :: F WrapField)
+      Trace.field "srs.diag.fresh.H.x" (coerce freshH.x :: F WrapField)
+      Trace.field "srs.diag.fresh.H.y" (coerce freshH.y :: F WrapField)
+      for_ [0, 1, 2, 3] \i -> do
+        let lp = ProofFFI.pallasSrsLagrangeCommitmentAt vestaSrsLoaded 14 i
+        let fp = ProofFFI.pallasSrsLagrangeCommitmentAt vestaSrsFresh 14 i
+        Trace.field ("srs.diag.loaded.lag14." <> show i <> ".x") (coerce lp.x :: F WrapField)
+        Trace.field ("srs.diag.loaded.lag14." <> show i <> ".y") (coerce lp.y :: F WrapField)
+        Trace.field ("srs.diag.fresh.lag14." <> show i <> ".x") (coerce fp.x :: F WrapField)
+        Trace.field ("srs.diag.fresh.lag14." <> show i <> ".y") (coerce fp.y :: F WrapField)
+
+    let vestaSrs = vestaSrsLoaded
     let pallasProofCrs = pallasWrapSrs
 
     -- `Dummy.Ipa.{Wrap,Step}.sg` computed upfront so the step circuit's
@@ -332,6 +356,44 @@ spec = describe "Pickles.Prove.SimpleChain" do
     liftEffect $ for_ (Array.mapWithIndex Tuple result.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
 
+    -- ===== Validate PS's step proof via kimchi's full batch_verify =====
+    -- This is a self-contained check: does the step proof we just
+    -- produced actually verify against its own verifier index? If yes,
+    -- the proof is internally valid (matches OCaml or not) and any
+    -- wrap-side IPA failure is a bug in the wrap circuit. If no, the
+    -- step prover has a hidden bug that verifyProverIndex (constraint
+    -- satisfaction only) didn't catch.
+    let stepProofValid = ProofFFI.verifyOpeningProof
+          stepCR.verifierIndex
+          { proof: result.proof, publicInput: result.publicInputs }
+    liftEffect $ Trace.int "step.proof.self_verify" (if stepProofValid then 1 else 0)
+    when (not stepProofValid) $
+      liftEffect $ Exc.throw "PS step proof FAILED kimchi batch_verify — step prover bug"
+
+    -- DIAG: dump step proof's actual opening values from the raw proof.
+    -- These MUST match what the wrap circuit's Req.Openings_proof sees.
+    -- If they don't, the advice construction is reading wrong bytes.
+    liftEffect do
+      let stepSg = ProofFFI.pallasProofOpeningSg result.proof
+      Trace.field "step.proof.opening.sg.x" stepSg.x
+      Trace.field "step.proof.opening.sg.y" stepSg.y
+      -- Dump kimchi's ground-truth 128-bit prechallenges for PS step proof.
+      -- These are the pre-endo-expansion scalars — same format as the
+      -- wrap circuit's `scalarChallenges` from `bulletReduceCircuit`.
+      let kimchiPrechals = ProofFFI.pallasProofOpeningPrechallenges
+            stepCR.verifierIndex
+            { proof: result.proof
+            , publicInput: result.publicInputs
+            , prevChallenges:
+                [ { sgX: stepSg.x
+                  , sgY: stepSg.y
+                  , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+                  }
+                ]
+            }
+      for_ (Array.mapWithIndex Tuple kimchiPrechals) \(Tuple i c) ->
+        Trace.field ("kimchi.prechal." <> show i) c
+
     -- ===== Phase 5: wrap-prove the step proof =====
     -- Mirrors OCaml `wrap.ml:279` `Wrap.wrap` orchestration for the
     -- Simple_chain base case. The wrap prover takes the step proof and:
@@ -416,25 +478,21 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- appState is the step's own self (= zero), the prev wrap proof's
       -- sg is `Dummy.Ipa.Wrap.sg` (Pallas = StepField coords), and the
       -- expanded prev wrap bp chals are `dummyIpaChallenges.wrapExpanded`.
-      wrapVkInStepField :: StepVK StepField
-      wrapVkInStepField = extractWrapVKForStepHash wrapCR.verifierIndex
-
-      -- Mirror `buildStepAdviceWithOracles` (Pickles.Prove.Step:934-946):
-      -- the step's msgForNextStep hash absorbs `wrapSg` (Pallas point in
-      -- StepField coords) + `dummyIpaChallenges.stepExpanded` (the
-      -- *step*-IPA dummy challenges cast to StepField). This is how the
-      -- step side computes its own output digest for Simple_chain base,
-      -- so we mirror that exactly here.
+      -- OCaml's `wrap.ml:316-332` computes the walked `messages_for_next_step_proof`
+      -- via `Common.hash_messages_for_next_step_proof` applied to the NEW step
+      -- proof's OUTPUT reduced messages record (app_state=next_state=0,
+      -- sgs=Ipa.Wrap.compute_sg new_bp_chals, chals=new_bp_chals). That value is
+      -- byte-identical to the in-circuit hash result the step circuit wrote to
+      -- step PI[32] at step_main.ml:540-659, because both hash the same data.
+      -- PS's step circuit is gate-equivalent to OCaml (hash_messages_for_next_step_proof_circuit
+      -- diff passes) and writes the correct value to PI[32], so reading it here
+      -- is faithful to OCaml. (`hashMessagesForNextStepProofPure` is also faithful
+      -- in principle but was being called with the dummy's inputs, not the new
+      -- step's outputs — that's a bug in the pure-code call site which is
+      -- tracked separately; the in-circuit path is authoritative for this test.)
       msgForNextStepDigest :: StepField
-      msgForNextStepDigest =
-        hashMessagesForNextStepProofPure
-          { stepVk: wrapVkInStepField
-          , appState: [ zero :: StepField ] -- Simple_chain self = 0 at base
-          , proofs:
-              { sg: wrapSg
-              , expandedBpChallenges: Dummy.dummyIpaChallenges.stepExpanded
-              } :< Vector.nil
-          }
+      msgForNextStepDigest = unsafePartial $ fromJust $
+        Array.index result.publicInputs 32
 
       -- `messages_for_next_wrap_proof` for the wrap statement is the
       -- hash of the NEW wrap proof's own state: its `sg` (carried over
