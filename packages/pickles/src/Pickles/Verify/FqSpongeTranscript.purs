@@ -35,12 +35,15 @@ import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Data.Fin (unsafeFinite)
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
 import Pickles.Sponge as Sponge
+import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, true_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, SizedF, exists, readCVar, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -168,8 +171,33 @@ spongeTranscriptOptCircuit params sgOldMask input = do
   putSponge result.regularSponge
   -- Copy sponge before squeezing digest (step_verifier.ml:559)
   spongeBeforeEvals <- getSponge
+  -- DIAG: dump the snapshot state we're about to restore to.
+  Sponge.liftSnarky do
+    let
+      dumpS labelStr v = do
+        _ <- exists do
+          val <- readCVar v
+          let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+          pure val
+        pure unit
+    dumpS "ivp.trace.wrap.snapshot.s0" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 0))
+    dumpS "ivp.trace.wrap.snapshot.s1" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 1))
+    dumpS "ivp.trace.wrap.snapshot.s2" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 2))
   digest <- Sponge.squeeze
   putSponge spongeBeforeEvals
+  -- DIAG: dump the sponge state AFTER `putSponge`. Must match snapshot.
+  restored <- getSponge
+  Sponge.liftSnarky do
+    let
+      dumpR labelStr v = do
+        _ <- exists do
+          val <- readCVar v
+          let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+          pure val
+        pure unit
+    dumpR "ivp.trace.wrap.restored.s0" (Vector.index restored.state (unsafeFinite @3 0))
+    dumpR "ivp.trace.wrap.restored.s1" (Vector.index restored.state (unsafeFinite @3 1))
+    dumpR "ivp.trace.wrap.restored.s2" (Vector.index restored.state (unsafeFinite @3 2))
   pure { beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest }
 
 -------------------------------------------------------------------------------
