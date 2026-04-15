@@ -44,7 +44,7 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, proofOpeningPrechallenges, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -421,6 +421,19 @@ type ExpandProofInput n nwp =
   , wrapVerifierIndex :: VerifierIndex PallasG WrapField
   , wrapProof :: Proof PallasG WrapField
   , tockPublicInput :: Array WrapField
+  -- | OCaml `step.ml:304-317` builds the `Tock.Oracles.create_with_public_evals`
+  -- | argument list as `Challenge_polynomial.t list` from `sgs` (Tock.Curve
+  -- | = Pallas affine points with `BaseField = StepField` coords) and
+  -- | `prev_challenges` (Tock.Field = WrapField expanded prev wrap-IPA
+  -- | challenges). For Simple_chain N1 base case this is two copies of
+  -- | the dummy entry (after `Wrap_hack.pad_accumulator` to
+  -- | `Padded_length=2`).
+  , wrapOraclesPrevChallenges ::
+      Array
+        { sgX :: StepField
+        , sgY :: StepField
+        , challenges :: Array WrapField
+        }
 
   -- ===== New bulletproof challenges + b =====
   , wrapDomainLog2 :: Int
@@ -582,21 +595,16 @@ expandProof input =
     -- ===== Wrap-proof oracles (Tock/Pallas FFI). =====
     --
     -- Runs kimchi's Fiat-Shamir oracle computation on the wrap proof.
-    -- Matches OCaml step.ml:298-343.
-    --
-    -- TODO(recursive-prev-challenges): OCaml's `O.create` takes a
-    -- `Challenge_polynomial.t list` (step.ml:304-317) built from
-    -- `stepPrevSgsPadded` and expanded wrap-field prev bp challenges.
-    -- For a base-case / non-recursive VK (where
-    -- `verifier_index.prev_challenges = 0`) an empty list is correct
-    -- and produces the same transcript kimchi computed at
-    -- proof-creation time. Once we exercise an inductive test, thread
-    -- the real list through here by populating `prevChallenges`.
+    -- Matches OCaml step.ml:298-343. The `prevChallenges` field is
+    -- the `Challenge_polynomial.t list` OCaml constructs at line
+    -- 304-317 from `Wrap_hack.pad_accumulator` of (sg, expanded
+    -- wrap-IPA challenges) pairs — caller supplies it via
+    -- `wrapOraclesPrevChallenges`.
     oraclesResult :: OraclesResult WrapField
     oraclesResult = vestaProofOracles input.wrapVerifierIndex
       { proof: input.wrapProof
       , publicInput: input.tockPublicInput
-      , prevChallenges: []
+      , prevChallenges: input.wrapOraclesPrevChallenges
       }
 
     -- ===== New bulletproof challenges + b (step.ml:359-379). =====
@@ -607,9 +615,10 @@ expandProof input =
     -- contract guarantees the 128-bit bound, so `unsafeFromField` is
     -- safe here.
     rawPrechalsArray :: Array WrapField
-    rawPrechalsArray = proofOpeningPrechallenges input.wrapVerifierIndex
+    rawPrechalsArray = vestaProofOpeningPrechallenges input.wrapVerifierIndex
       { proof: input.wrapProof
       , publicInput: input.tockPublicInput
+      , prevChallenges: input.wrapOraclesPrevChallenges
       }
 
     rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
@@ -728,12 +737,28 @@ expandProof input =
     wrapCip :: WrapField
     wrapCip = combinedInnerProductBatch wrapCipInput
 
+    -- OCaml `step.ml:583-589` restores the raw 128-bit alpha/beta/
+    -- gamma/zeta from `plonk0` AFTER `Type2.derive_plonk` (which
+    -- modifies them). The raw values are what get stored in the
+    -- final `Unfinalized.Constant.t` and matched against the
+    -- in-circuit sponge squeezes by the wrap verifier's
+    -- `ivp_assert_plonk_*` assertions. Without this override, the
+    -- `derive_plonk`-mutated values would diverge from the sponge
+    -- output and break the equality checks.
+    wrapPlonkWithRawChals :: PlonkInCircuit (F WrapField) (Type2 (F WrapField))
+    wrapPlonkWithRawChals = wrapPlonkDerived
+      { alpha = wrapPlonkMinimal.alpha
+      , beta = wrapPlonkMinimal.beta
+      , gamma = wrapPlonkMinimal.gamma
+      , zeta = wrapPlonkMinimal.zeta
+      }
+
     -- Assemble the `DeferredValues` + `Unfinalized` records.
     wrapUnfinalized
       :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
     wrapUnfinalized =
       { deferredValues:
-          { plonk: wrapPlonkDerived
+          { plonk: wrapPlonkWithRawChals
           , combinedInnerProduct: toShifted (F wrapCip)
           , xi: wrapF oraclesResult.vChal
           , bulletproofChallenges: map wrapF rawPrechalsVec

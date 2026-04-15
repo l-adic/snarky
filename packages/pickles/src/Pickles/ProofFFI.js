@@ -108,11 +108,19 @@ export const vestaProofOracles = (verifierIndex) => ({ proof, publicInput, prevC
 };
 
 // Opening prechallenges (raw 128-bit ScalarChallenges from the IPA round loop)
-export const pallasProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.pallasProofOpeningPrechallenges(verifierIndex, proof, publicInput);
+export const pallasProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const prevChals = prevChallenges.map(p => p.challenges);
+  return crypto.pallasProofOpeningPrechallenges(verifierIndex, proof, publicInput, prevSgXs, prevSgYs, prevChals);
+};
 
-export const vestaProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.vestaProofOpeningPrechallenges(verifierIndex, proof, publicInput);
+export const vestaProofOpeningPrechallenges = (verifierIndex) => ({ proof, publicInput, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const prevChals = prevChallenges.map(p => p.challenges);
+  return crypto.vestaProofOpeningPrechallenges(verifierIndex, proof, publicInput, prevSgXs, prevSgYs, prevChals);
+};
 
 // Bulletproof challenges (IPA)
 export const pallasProofBulletproofChallenges = (verifierIndex) => ({ proof, publicInput }) =>

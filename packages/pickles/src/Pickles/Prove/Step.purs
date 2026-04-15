@@ -63,23 +63,28 @@ import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Pickles.Trace as Trace
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
 import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Linearization (pallas, vesta) as Linearization
+import Pickles.Linearization.FFI (PointEval) as LFFI
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.Linearization.FFI (PointEval) as LFFI
-import Pickles.ProofFFI (Proof, createProof, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms)
+import Pickles.ProofFFI (Proof, createProof, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
+import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Step.Advice (class StepWitnessM)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Verify.Types (BranchData) as VT
 import Pickles.VerificationKey (StepVK)
-import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.CVar (Variable)
@@ -985,6 +990,20 @@ buildStepAdviceWithOracles input = do
       , sgY: input.wrapSg.y
       , challenges: Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
       }
+  -- === TRACE: chal_polys passed to vestaProofOracles ===
+  -- Mirrors OCaml step.ml's `expand_proof.chal_polys.*` trace so we
+  -- can compare what each side actually feeds the FFI.
+  Trace.field "expand_proof.chal_polys.0.comm.x" dummyChalEntry.sgX
+  Trace.field "expand_proof.chal_polys.0.comm.y" dummyChalEntry.sgY
+  case Array.head dummyChalEntry.challenges of
+    Just c -> Trace.field "expand_proof.chal_polys.0.chal.0" c
+    Nothing -> pure unit
+  Trace.field "expand_proof.chal_polys.1.comm.x" dummyChalEntry.sgX
+  Trace.field "expand_proof.chal_polys.1.comm.y" dummyChalEntry.sgY
+  case Array.head dummyChalEntry.challenges of
+    Just c -> Trace.field "expand_proof.chal_polys.1.chal.0" c
+    Nothing -> pure unit
+  let
     oracles :: ProofFFI.OraclesResult WrapField
     oracles = vestaProofOracles input.wrapVK
       { proof: dummyWrapProof
@@ -998,44 +1017,290 @@ buildStepAdviceWithOracles input = do
   Trace.field "expand_proof.oracles.alpha_chal" (SizedF.toField oracles.alphaChal)
   Trace.field "expand_proof.oracles.zeta_chal" (SizedF.toField oracles.zetaChal)
   Trace.field "expand_proof.oracles.fq_digest" oracles.fqDigest
+  -- The kimchi-internal combined_inner_product, as returned by the FFI's
+  -- proof.oracles call. This is the value absorbed into the sponge before
+  -- prechallenges extraction. If it matches OCaml's `expand_proof.deferred`
+  -- value AND the prechals still differ, the bug is downstream of CIP.
+  Trace.field "expand_proof.oracles.cip_kimchi" oracles.combinedInnerProduct
+
+  -- Trace raw opening prechallenges directly via FFI with the same
+  -- prev_challenges as the oracles call, so we can compare to OCaml's
+  -- `O.opening_prechallenges o` byte-for-byte.
+  let
+    rawPrechalsForTrace :: Array WrapField
+    rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
+      { proof: dummyWrapProof
+      , publicInput: tockPublicInput
+      , prevChallenges: [ dummyChalEntry, dummyChalEntry ]
+      }
+    -- Same FFI call but with EMPTY prev_challenges. If the prev_challenges
+    -- arg is being threaded correctly, this should give DIFFERENT values
+    -- from `rawPrechalsForTrace`. If they're identical, the binding is
+    -- broken (FFI ignores the arg).
+    rawPrechalsEmpty :: Array WrapField
+    rawPrechalsEmpty = vestaProofOpeningPrechallenges input.wrapVK
+      { proof: dummyWrapProof
+      , publicInput: tockPublicInput
+      , prevChallenges: []
+      }
+  for_ (Array.mapWithIndex Tuple rawPrechalsForTrace) \(Tuple i v) ->
+    Trace.field ("expand_proof.bp_prechal." <> show i) v
+  for_ (Array.mapWithIndex Tuple rawPrechalsEmpty) \(Tuple i v) ->
+    Trace.field ("expand_proof.bp_prechal_empty." <> show i) v
+  -- Trace the Pallas generator (= g0 used as every lr point in
+  -- dummyWrapProof). OCaml emits the matching lr.0.l.x/y at the same
+  -- logical point in step.ml. If these coordinates differ, the IPA
+  -- prechallenges loop diverges even with identical sponge state — and
+  -- the divergence is a g0/generator mismatch, not a sponge bug.
+  let
+    g0 :: AffinePoint StepField
+    g0 = unsafePartial fromJust
+      (Curves.toAffine (Curves.generator :: Pallas.G) :: _ (AffinePoint StepField))
+  Trace.field "expand_proof.dummy_proof.lr.0.l.x" g0.x
+  Trace.field "expand_proof.dummy_proof.lr.0.l.y" g0.y
+  -- Trace dummy proof evals — these flow into kimchi's combined_inner_product.
+  -- If they differ from OCaml, the kimchi-internal cip will diverge.
+  let _wrapDummyEvals = roComputeResult.wrapDummyEvals
+  Trace.field "expand_proof.dummy_proof.ft_eval1" _wrapDummyEvals.ftEval1
+  Trace.field "expand_proof.dummy_proof.evals.z.zeta"
+    _wrapDummyEvals.zEvals.zeta
+  Trace.field "expand_proof.dummy_proof.evals.z.zeta_omega"
+    _wrapDummyEvals.zEvals.omegaTimesZeta
+  let _genericEval = Vector.head _wrapDummyEvals.indexEvals
+  Trace.field "expand_proof.dummy_proof.evals.gen.zeta" _genericEval.zeta
+  Trace.field "expand_proof.dummy_proof.evals.gen.zeta_omega"
+    _genericEval.omegaTimesZeta
 
   let
     -- Cross-field coerce `SizedF 128 WrapField` to `SizedF 128 StepField`
     chalToStep :: SizedF 128 WrapField -> SizedF 128 (F StepField)
     chalToStep s = SizedF.wrapF (coerceViaBits s)
 
-    digestStep :: F StepField
-    digestStep =
-      F (Curves.fromBigInt (Curves.toBigInt oracles.fqDigest) :: StepField)
+    -- ====================================================================
+    -- Build `ExpandProofInput` and call `Pickles.Prove.Pure.Step.expandProof`
+    -- (the PS port of OCaml `step.ml:122-602 expand_proof`). Its
+    -- `unfinalized` output is the byte-faithful `Unfinalized.Constant.t`
+    -- the step circuit packs into the per-prev-proof slot of its public
+    -- input — replacing the ad-hoc per-field overrides this function
+    -- used to do.
+    -- ====================================================================
 
-    override
-      :: PerProofUnfinalized WrapIPARounds (Type2 (SplitField (F StepField) Boolean)) (F StepField) Boolean
-      -> PerProofUnfinalized WrapIPARounds (Type2 (SplitField (F StepField) Boolean)) (F StepField) Boolean
-    override (PerProofUnfinalized r) = PerProofUnfinalized
-      ( r
-          { alpha = UnChecked (chalToStep oracles.alphaChal)
-          , beta = UnChecked (chalToStep oracles.beta)
-          , gamma = UnChecked (chalToStep oracles.gamma)
-          , zeta = UnChecked (chalToStep oracles.zetaChal)
-          , spongeDigest = digestStep
-          , xi = UnChecked (chalToStep oracles.vChal)
+    -- Wrap-side endo scalar (= Pallas.endoScalar in Fq, used to expand
+    -- raw 128-bit wrap-field challenges into full Fq field elements).
+    wrapEndoScalar :: WrapField
+    wrapEndoScalar =
+      let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+
+    -- Step-side endo scalar (= Vesta.endoScalar in Fp, used by
+    -- expandDeferred for step-field challenge expansion).
+    stepEndoScalarF :: StepField
+    stepEndoScalarF =
+      let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+
+    -- Raw 128-bit step-IPA dummy bp_challenges (16 entries) wrapped as
+    -- `SizedF 128 (F StepField)`. Source: `roComputeResult.stepChalRaw`.
+    dummyStepBpChalsRaw :: Vector StepIPARounds (SizedF 128 (F StepField))
+    dummyStepBpChalsRaw = map SizedF.wrapF roComputeResult.stepChalRaw
+
+    -- Raw 128-bit wrap-IPA dummy bp_challenges (15 entries) wrapped as
+    -- `SizedF 128 (F WrapField)`. Source: `roComputeResult.wrapChalRaw`.
+    -- These feed `wrapAllEvals.witnessEvals` etc. only indirectly — the
+    -- main consumer is `expandProof`'s wrap-side oldBulletproofChallenges
+    -- (via wrapPaddedPrevChallenges).
+
+    -- Dummy plonk0 (raw 128-bit alpha/beta/gamma/zeta) for the prev wrap
+    -- proof, in step field. Source: `simpleChainDummyPlonk` fixture
+    -- (post-compile Ro state).
+    plonkMinimalStep :: PlonkMinimal (F StepField)
+    plonkMinimalStep =
+      { alpha: SizedF.wrapF simpleChainDummyPlonk.alpha
+      , beta: SizedF.wrapF simpleChainDummyPlonk.beta
+      , gamma: SizedF.wrapF simpleChainDummyPlonk.gamma
+      , zeta: SizedF.wrapF simpleChainDummyPlonk.zeta
+      }
+
+    -- BranchData for the prev wrap proof. domain_log2 = wrap proof's
+    -- evaluation domain (= input.wrapDomainLog2 = 14 for Simple_chain).
+    -- proofs_verified mask = [false, true] for N1 base case.
+    branchDataStep :: VT.BranchData StepField Boolean
+    branchDataStep =
+      { domainLog2: (Curves.fromInt input.wrapDomainLog2 :: StepField)
+      , proofsVerifiedMask:
+          false :< true :< Vector.nil
+      }
+
+    -- Step-field expand_deferred inputs (mirroring OCaml step.ml:160-235).
+    -- domainLog2 here is the WRAP proof's domain (since we're verifying a
+    -- wrap proof). srsLengthLog2 = Tick.Rounds.n = 16 = StepIPARounds.
+    -- generator/shifts/vanishesOnZk derive from that domainLog2.
+    stepFopGenerator :: StepField
+    stepFopGenerator = domainGenerator input.wrapDomainLog2
+
+    stepFopShifts :: Vector 7 StepField
+    stepFopShifts = domainShifts input.wrapDomainLog2
+
+    -- zeta expanded via stepEndo (matches OCaml step.ml:170 `let zeta =
+    -- to_field plonk0.zeta` with `~endo:Endo.Wrap_inner_curve.scalar`).
+    zetaExpandedStep :: StepField
+    zetaExpandedStep =
+      toFieldPure (SizedF.unwrapF plonkMinimalStep.zeta) stepEndoScalarF
+
+    stepFopVanishesOnZk :: StepField
+    stepFopVanishesOnZk =
+      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
+        { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: zetaExpandedStep }
+
+    -- ===== Wrap-side (Tock) inputs to expandProof's wrap-field block =====
+
+    -- Wrap proof's polynomial evaluations from the dummy wrap proof, in
+    -- WrapField. OCaml step.ml:484 `proof.openings.evals`.
+    wrapAllEvalsW :: AllEvals WrapField
+    wrapAllEvalsW =
+      { ftEval1: oracles.ftEval1
+      , publicEvals:
+          { zeta: oracles.publicEvalZeta
+          , omegaTimesZeta: oracles.publicEvalZetaOmega
           }
-      )
+      , zEvals: proofZEvals dummyWrapProof
+      , witnessEvals: proofWitnessEvals dummyWrapProof
+      , coeffEvals: proofCoefficientEvals dummyWrapProof
+      , sigmaEvals: proofSigmaEvals dummyWrapProof
+      , indexEvals: proofIndexEvals dummyWrapProof
+      }
 
-    wrapSgF :: AffinePoint (F StepField)
-    wrapSgF = coerce input.wrapSg
+    wrapShiftsW :: Vector 7 WrapField
+    wrapShiftsW = domainShifts input.wrapDomainLog2
 
-    -- Simple_chain FOP proof state — plonk0 + prev_evals from hardcoded
-    -- post-compile fixture (not module-init Ro state), so ivp assertions
-    -- in the step circuit see values consistent with what OCaml emits.
+    wrapVanishesOnZkW :: WrapField
+    wrapVanishesOnZkW =
+      (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
+        { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: oracles.zeta }
+
+    -- Step's prev_evals — the dummy Simple_chain pre-compile evals
+    -- (`simpleChainDummyPrevEvals`) wrapped in the `StepAllEvals` newtype.
+    dummyStepAllEvalsF :: StepAllEvals (F StepField)
+    dummyStepAllEvalsF =
+      let pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+      in StepAllEvals
+        { ftEval1: F simpleChainDummyPrevEvals.ftEval1
+        , publicEvals: pe simpleChainDummyPrevEvals.publicEvals
+        , zEvals: pe simpleChainDummyPrevEvals.zEvals
+        , witnessEvals: map pe simpleChainDummyPrevEvals.witnessEvals
+        , coeffEvals: map pe simpleChainDummyPrevEvals.coeffEvals
+        , sigmaEvals: map pe simpleChainDummyPrevEvals.sigmaEvals
+        , indexEvals: map pe simpleChainDummyPrevEvals.indexEvals
+        }
+
+    -- expandProof input record. mpv=1 means n=1 (one prev proof slot)
+    -- and nwp=2 (Wrap_hack.Padded_length.n = 2, the wrap-side hash
+    -- padded length).
+    expandProofInputRec :: PureStep.ExpandProofInput 1 2
+    expandProofInputRec =
+      { mustVerify: false -- base case: prev proof is dummy, not really verified
+      , zkRows: 3
+      , srsLengthLog2: 16 -- Common.Max_degree.step_log2 = Tick.Rounds.n
+      , allEvals: simpleChainDummyPrevEvals
+      , pEval0Chunks: [ simpleChainDummyPrevEvals.publicEvals.zeta ]
+      , oldBulletproofChallenges: dummyStepBpChalsRaw :< Vector.nil
+      , plonkMinimal: plonkMinimalStep
+      , rawBulletproofChallenges: dummyStepBpChalsRaw
+      , branchData: branchDataStep
+      , spongeDigestBeforeEvaluations: zero
+      , stepDomainLog2: input.wrapDomainLog2
+      , stepGenerator: stepFopGenerator
+      , stepShifts: stepFopShifts
+      , stepVanishesOnZk: stepFopVanishesOnZk
+      , stepOmegaForLagrange: \_ -> one
+      , endo: stepEndoScalarF
+      , linearizationPoly: Linearization.pallas
+      , dlogIndex: extractWrapVKForStepHash input.wrapVK
+      , appStateFields: [ case input.prevAppState of F x -> x ]
+      , stepPrevSgs: input.wrapSg :< Vector.nil
+      , wrapChallengePolynomialCommitment: input.stepSg
+      , wrapPaddedPrevChallenges: wrapPadded
+      , wrapVerifierIndex: input.wrapVK
+      , wrapProof: dummyWrapProof
+      , tockPublicInput: tockPublicInput
+      , wrapOraclesPrevChallenges: [ dummyChalEntry, dummyChalEntry ]
+      , wrapDomainLog2: input.wrapDomainLog2
+      , wrapEndo: wrapEndoScalar
+      , wrapAllEvals: wrapAllEvalsW
+      , wrapPEval0Chunks: [ oracles.publicEvalZeta ]
+      , wrapShifts: wrapShiftsW
+      , wrapZkRows: 3
+      , wrapSrsLengthLog2: 15 -- Common.Max_degree.wrap_log2 = Tock.Rounds.n
+      , wrapVanishesOnZk: wrapVanishesOnZkW
+      , wrapOmegaForLagrange: \_ -> one
+      , wrapLinearizationPoly: Linearization.vesta
+      , stepProofPrevEvals: dummyStepAllEvalsF
+      , stepPrevChallenges: map F stepExpanded :< Vector.nil
+      , stepPrevSgsPadded: input.wrapSg :< Vector.nil
+      }
+
+    expandProofResult :: PureStep.ExpandProofOutput
+    expandProofResult = PureStep.expandProof expandProofInputRec
+
+    -- ===== Convert wrapUnfinalized → publicUnfinalizedProofs slot. =====
+    -- expandProof.unfinalized has type
+    --   `UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean`
+    -- and publicUnfinalizedProofs needs
+    --   `PerProofUnfinalized WrapIPARounds (Type2 (SplitField (F StepField) Boolean)) (F StepField) Boolean`.
+    --
+    -- For each Type2 (F WrapField) field, cross-field encode as
+    -- Type2 (SplitField (F StepField) Boolean) via the Shifted instance
+    -- at `Snarky.Types.Shifted.purs:353`:
+    --   `toShifted (fromShifted t :: F WrapField) :: Type2 (SplitField (F StepField) Boolean)`
+    --
+    -- For SizedF 128 wrap challenges, `coerceViaBits` cross-field maps
+    -- the bit pattern. For the sponge digest, BigInt round-trip.
+    wrapToStepType2
+      :: Type2 (F WrapField)
+      -> Type2 (SplitField (F StepField) Boolean)
+    wrapToStepType2 t = toShifted (fromShifted t :: F WrapField)
+
+    expandedUnfinalized
+      :: PerProofUnfinalized WrapIPARounds
+           (Type2 (SplitField (F StepField) Boolean))
+           (F StepField)
+           Boolean
+    expandedUnfinalized =
+      let
+        u = expandProofResult.unfinalized
+        dv = u.deferredValues
+        p = dv.plonk
+      in
+        PerProofUnfinalized
+          { combinedInnerProduct: wrapToStepType2 dv.combinedInnerProduct
+          , b: wrapToStepType2 dv.b
+          , zetaToSrsLength: wrapToStepType2 p.zetaToSrsLength
+          , zetaToDomainSize: wrapToStepType2 p.zetaToDomainSize
+          , perm: wrapToStepType2 p.perm
+          , spongeDigest: F (Curves.fromBigInt (Curves.toBigInt (case u.spongeDigestBeforeEvaluations of F x -> x)) :: StepField)
+          , beta: UnChecked (chalToStep (SizedF.unwrapF p.beta))
+          , gamma: UnChecked (chalToStep (SizedF.unwrapF p.gamma))
+          , alpha: UnChecked (chalToStep (SizedF.unwrapF p.alpha))
+          , zeta: UnChecked (chalToStep (SizedF.unwrapF p.zeta))
+          , xi: UnChecked (chalToStep (SizedF.unwrapF dv.xi))
+          , bulletproofChallenges:
+              map (\sf -> UnChecked (chalToStep (SizedF.unwrapF sf))) dv.bulletproofChallenges
+          , shouldFinalize: u.shouldFinalize
+          }
+
+    -- Simple_chain FOP proof state (Per_proof_witness.proof_state.deferred_values
+    -- side, ds=16). Currently kept as the existing fixture; will be
+    -- replaced by `expandProofResult.perProofWitness.proofState.fopState`
+    -- in a follow-up once that path is verified.
     simpleChainFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
     simpleChainFop = simpleChainStepDummyFopProofState
       { proofsVerified: input.mostRecentWidth }
 
+    wrapSgF :: AffinePoint (F StepField)
+    wrapSgF = coerce input.wrapSg
+
   pure $ base
     { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
-    , publicUnfinalizedProofs = map override base.publicUnfinalizedProofs
+    , publicUnfinalizedProofs = Vector.replicate expandedUnfinalized
     , fopProofStates = Vector.replicate simpleChainFop
     , sgOld = Vector.replicate wrapSgF
     , messagesForNextWrapProof = Vector.replicate msgWrapHashStep

@@ -29,33 +29,45 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (for_)
+import Data.Int.Bits as Int
 import Data.Tuple (Tuple(..))
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exc
-import Pickles.Dummy (computeDummySgValues) as Dummy
+import Effect.Exception (throw, throwException) as Exc
+import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges) as Dummy
+import Pickles.Linearization (pallas) as Linearization
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.PlonkChecks (AllEvals)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, zeroWrapAdvice)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.Wrap.Slots (Slots1)
-import Pickles.ProofFFI (pallasProverIndexDomainLog2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (OraclesResult)
+import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
+import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
+import Pickles.VerificationKey (StepVK)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
+import Pickles.Wrap.Slots (Slots1, slots1)
 import Data.Maybe (Maybe(..))
 import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Snarky.Backend.Kimchi.Class (constraintSystemToJson) as Kimchi
-import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Pickles.Trace as Trace
-import Pickles.Types (StepField, WrapField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..), assertAny_, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (F(..), UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
+import Snarky.Types.Shifted (Type2, fromShifted, toShifted)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Spec (SpecT, describe, it)
 import Control.Monad.Trans.Class (lift) as MT
 
@@ -103,12 +115,34 @@ spec = describe "Pickles.Prove.SimpleChain" do
     liftEffect $ Trace.string "simple_chain.begin" "base_case"
 
     -- ===== SRS + context setup =====
-    -- OCaml's Simple_chain loads the Pallas (wrap-side) SRS for the
-    -- lagrange basis lookup and the Vesta (step-side) SRS for the
-    -- actual step proof creation. Mirror that here.
-    lagrangeSrs <- liftEffect PallasImpl.createCRS
+    -- OCaml's Simple_chain uses two SRSes at distinct depths:
+    --
+    --   * Tick (Vesta) SRS at depth 2^Common.Max_degree.step_log2 = 2^16
+    --     for step prover/lagrange basis.
+    --   * Tock (Pallas) SRS at depth 2^Common.Max_degree.wrap_log2 = 2^15
+    --     for wrap prover/lagrange basis.
+    --
+    -- The depths are hardcoded per curve in OCaml at
+    -- `mina/src/lib/crypto/kimchi_backend/pasta/basic/kimchi_pasta_basic.ml:6,10`
+    -- via `Rounds.{Wrap,Step} = Nat.{N15,N16}` and ultimately bottom out at
+    -- `Inputs.Urs.create degree` =
+    -- `Kimchi_bindings.Protocol.SRS.Fq.create depth` = Rust
+    -- `caml_fq_srs_create` = `SRS::<PallasGroup>::create(depth)`.
+    --
+    -- PS exposes the *same* Rust call as `pallasCrsCreate`, so the
+    -- OCaml-faithful path is to call it directly with depth 2^15 for
+    -- the Pallas side (instead of `pallasCrsLoadFromCache` which serves
+    -- the depth-2^16 step SRS). The wrap VK's `max_poly_size` field is
+    -- read from `srs.g.len()` inside kimchi `ProverIndex::create`, so
+    -- using a depth-2^15 SRS here is the only way to make the wrap VK
+    -- agree with OCaml's `max_poly_size = 32768`. (The field is NOT in
+    -- `verifier_index.digest()`, so an `index_digest` match is not
+    -- sufficient evidence the SRSes agree — see
+    -- `memory/project_simple_chain_max_poly_size_bug.md`.)
+    let pallasWrapSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
+    let lagrangeSrs = pallasWrapSrs
     vestaSrs <- liftEffect $ createCRS @StepField
-    pallasProofCrs <- liftEffect PallasImpl.createCRS
+    let pallasProofCrs = pallasWrapSrs
 
     -- `Dummy.Ipa.{Wrap,Step}.sg` computed upfront so the step circuit's
     -- compile-time `const_`-wrapped dummy_sg (at `Pickles.Step.Main:465`)
@@ -297,5 +331,247 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- and emits `step.proof.public_input.{i}` per element.
     liftEffect $ for_ (Array.mapWithIndex Tuple result.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
+
+    -- ===== Phase 5: wrap-prove the step proof =====
+    -- Mirrors OCaml `wrap.ml:279` `Wrap.wrap` orchestration for the
+    -- Simple_chain base case. The wrap prover takes the step proof and:
+    --  1. runs Fp-sponge oracles on it to derive the wrap statement's
+    --     deferred_values,
+    --  2. packs them + the two messages digests into the wrap_main public
+    --     input (via `assembleWrapMainInput`),
+    --  3. builds `WrapAdvice` from the step proof + dummy previous-proof
+    --     data (base case = no real prev wrap proofs),
+    --  4. runs `wrapSolveAndProve` against the already-compiled wrap
+    --     circuit (`wrapCR`).
+    --
+    -- All the step-field parameters (endo, generator, shifts, etc.) come
+    -- from the step prover index's actual domain_log2 (read dynamically
+    -- as `stepDomainLog2` above), so this path doesn't hardcode values
+    -- that would diverge from OCaml if the step circuit changes.
+
+    let
+      stepOracles :: OraclesResult StepField
+      stepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
+        { proof: result.proof
+        , publicInput: result.publicInputs
+        -- Simple_chain N1 base case: the step proof verifies one prev
+        -- wrap proof which is the dummy. Its Fp-scalar bulletproof
+        -- challenges are `dummyIpaChallenges.stepExpanded`, and its sg
+        -- is the dummy Vesta sg from `computeDummySgValues.ipa.step.sg`
+        -- (base field = Fq = WrapField coords).
+        , prevChallenges:
+            [ { sgX: stepSg.x
+              , sgY: stepSg.y
+              , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+              }
+            ]
+        }
+
+      stepAllEvals :: AllEvals StepField
+      stepAllEvals =
+        { ftEval1: stepOracles.ftEval1
+        , publicEvals:
+            { zeta: stepOracles.publicEvalZeta
+            , omegaTimesZeta: stepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals result.proof
+        , indexEvals: ProofFFI.proofIndexEvals result.proof
+        }
+
+      stepEndoScalar :: StepField
+      stepEndoScalar =
+        let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+
+      wrapDvInput :: WrapDeferredValuesInput 1
+      wrapDvInput =
+        { proof: result.proof
+        , verifierIndex: stepCR.verifierIndex
+        , publicInput: result.publicInputs
+        , allEvals: stepAllEvals
+        , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+        , domainLog2: stepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator stepDomainLog2 :: StepField)
+        , shifts: (domainShifts stepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: stepDomainLog2, zkRows: 3, pt: stepOracles.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: stepSg :< Vector.nil
+        , prevChallenges: Dummy.dummyIpaChallenges.stepExpanded :< Vector.nil
+        -- Simple_chain N1: single-slot mask = [mask0=false, mask1=true].
+        , proofsVerifiedMask: false :< true :< Vector.nil
+        }
+
+      wrapDv = wrapComputeDeferredValues wrapDvInput
+
+      -- `messages_for_next_step_proof` for the wrap statement comes from
+      -- recomputing the step-side hash over the wrap VK + app_state +
+      -- prev_wrap_sgs + expanded prev_wrap_bp_chals. For the base case,
+      -- appState is the step's own self (= zero), the prev wrap proof's
+      -- sg is `Dummy.Ipa.Wrap.sg` (Pallas = StepField coords), and the
+      -- expanded prev wrap bp chals are `dummyIpaChallenges.wrapExpanded`.
+      wrapVkInStepField :: StepVK StepField
+      wrapVkInStepField = extractWrapVKForStepHash wrapCR.verifierIndex
+
+      -- Mirror `buildStepAdviceWithOracles` (Pickles.Prove.Step:934-946):
+      -- the step's msgForNextStep hash absorbs `wrapSg` (Pallas point in
+      -- StepField coords) + `dummyIpaChallenges.stepExpanded` (the
+      -- *step*-IPA dummy challenges cast to StepField). This is how the
+      -- step side computes its own output digest for Simple_chain base,
+      -- so we mirror that exactly here.
+      msgForNextStepDigest :: StepField
+      msgForNextStepDigest =
+        hashMessagesForNextStepProofPure
+          { stepVk: wrapVkInStepField
+          , appState: [ zero :: StepField ] -- Simple_chain self = 0 at base
+          , proofs:
+              { sg: wrapSg
+              , expandedBpChallenges: Dummy.dummyIpaChallenges.stepExpanded
+              } :< Vector.nil
+          }
+
+      -- `messages_for_next_wrap_proof` for the wrap statement is the
+      -- hash of the NEW wrap proof's own state: its `sg` (carried over
+      -- from the step proof's opening, per OCaml `wrap.ml:541-556`) and
+      -- its old bulletproof challenges padded to Padded_length=2.
+      --
+      -- For Simple_chain N1 base case both slots of the padded-length-2
+      -- challenge array are the same dummy wrap challenges.
+      wrapProofSg :: AffinePoint WrapField
+      wrapProofSg = ProofFFI.pallasProofOpeningSg result.proof
+
+      msgForNextWrapDigest :: WrapField
+      msgForNextWrapDigest =
+        hashMessagesForNextWrapProof
+          { sg: wrapProofSg
+          , expandedChallenges:
+              map (fromBigInt <<< toBigInt)
+                Dummy.dummyIpaChallenges.wrapExpanded :: Vector WrapIPARounds WrapField
+          , dummyChallenges:
+              map (fromBigInt <<< toBigInt)
+                Dummy.dummyIpaChallenges.wrapExpanded :: Vector WrapIPARounds WrapField
+          }
+
+      wrapPublicInput = assembleWrapMainInput
+        { deferredValues: wrapDv
+        , messagesForNextStepProofDigest: msgForNextStepDigest
+        , messagesForNextWrapProofDigest: msgForNextWrapDigest
+        }
+
+      -- ===== Build WrapAdvice for base case =====
+      --
+      -- CRITICAL: `prevUnfinalizedProofs[0]` in the wrap advice must
+      -- represent the SAME values that the step circuit packed into the
+      -- step proof's public_input. We get those directly from
+      -- `realAdvice.publicUnfinalizedProofs` (which is what the step
+      -- circuit wrote at solve time), converting each Type2-SplitField-
+      -- StepField field to Type2-WrapField via cross-field `Shifted`:
+      --
+      --   `fromShifted :: Type2 (SplitField (F StepField) Boolean) -> F WrapField`
+      --     — instance at Shifted.purs:353, recovers the ORIGINAL wrap-field
+      --     value the step circuit cross-field-coerced from.
+      --
+      --   `toShifted :: F WrapField -> Type2 (F WrapField)`
+      --     — instance at Shifted.purs:389, repackages as same-field Type2
+      --     for `BuildWrapAdviceInput`. wrap_main's `splitPerProofUnfinalized`
+      --     re-splits these to `Type2 (SplitField (F WrapField) Boolean)`
+      --     which feeds into the in-circuit `publicInputCommit` MSM.
+      PerProofUnfinalized stepUnfRec = Vector.head realAdvice.publicUnfinalizedProofs
+
+      stepPerProof
+        :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
+             (F WrapField) Boolean
+      stepPerProof = PerProofUnfinalized
+        { combinedInnerProduct: toShifted (fromShifted stepUnfRec.combinedInnerProduct :: F WrapField)
+        , b: toShifted (fromShifted stepUnfRec.b :: F WrapField)
+        , zetaToSrsLength: toShifted (fromShifted stepUnfRec.zetaToSrsLength :: F WrapField)
+        , zetaToDomainSize: toShifted (fromShifted stepUnfRec.zetaToDomainSize :: F WrapField)
+        , perm: toShifted (fromShifted stepUnfRec.perm :: F WrapField)
+        , spongeDigest: F (fromBigInt (toBigInt (case stepUnfRec.spongeDigest of F x -> x)) :: WrapField)
+        , beta: UnChecked (coerceViaBits (case stepUnfRec.beta of UnChecked v -> v))
+        , gamma: UnChecked (coerceViaBits (case stepUnfRec.gamma of UnChecked v -> v))
+        , alpha: UnChecked (coerceViaBits (case stepUnfRec.alpha of UnChecked v -> v))
+        , zeta: UnChecked (coerceViaBits (case stepUnfRec.zeta of UnChecked v -> v))
+        , xi: UnChecked (coerceViaBits (case stepUnfRec.xi of UnChecked v -> v))
+        , bulletproofChallenges:
+            map (\(UnChecked v) -> UnChecked (coerceViaBits v)) stepUnfRec.bulletproofChallenges
+        , shouldFinalize: stepUnfRec.shouldFinalize
+        }
+
+      dummyStepAccPoint :: WeierstrassAffinePoint VestaG (F WrapField)
+      dummyStepAccPoint = WeierstrassAffinePoint
+        { x: F stepSg.x, y: F stepSg.y }
+
+      dummyWrapBpChals :: Vector WrapIPARounds (F WrapField)
+      dummyWrapBpChals =
+        map (F <<< fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
+
+      dummyStepAllEvalsW :: StepAllEvals (F WrapField)
+      dummyStepAllEvalsW =
+        let zpe = PointEval { zeta: F zero, omegaTimesZeta: F zero }
+        in StepAllEvals
+          { publicEvals: zpe
+          , witnessEvals: Vector.replicate zpe
+          , coeffEvals: Vector.replicate zpe
+          , zEvals: zpe
+          , sigmaEvals: Vector.replicate zpe
+          , indexEvals: Vector.replicate zpe
+          , ftEval1: F zero
+          }
+
+      wrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
+      wrapAdviceInput =
+        { stepProof: result.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: stepPerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt msgForNextStepDigest) :: WrapField)
+        , prevStepAccs: dummyStepAccPoint :< Vector.nil
+        , prevOldBpChals: slots1 (dummyWrapBpChals :< Vector.nil)
+        , prevEvals: dummyStepAllEvalsW :< Vector.nil
+        , prevWrapDomainIndices: F zero :< Vector.nil
+        }
+
+      wrapAdvice :: WrapAdvice 1 (Slots1 1)
+      wrapAdvice = buildWrapAdvice wrapAdviceInput
+
+      wrapProveCtx =
+        { wrapMainConfig: wrapCtx.wrapMainConfig
+        , crs: pallasProofCrs
+        , publicInput: wrapPublicInput
+        , advice: wrapAdvice
+        }
+
+    -- Diagnostic: dump what kimchi's pallasProofOracles computed for beta
+    -- directly from the step proof + prev_challenges. This is the RHS
+    -- the wrap IVP's in-circuit sponge is expected to match.
+    liftEffect do
+      Trace.field "wrap.dbg.oracles_beta"
+        (SizedF.toField stepOracles.beta :: StepField)
+      Trace.field "wrap.dbg.oracles_gamma"
+        (SizedF.toField stepOracles.gamma :: StepField)
+      Trace.field "wrap.dbg.oracles_fq_digest" stepOracles.fqDigest
+      Trace.field "wrap.dbg.kimchi_vk_digest"
+        (ProofFFI.pallasVerifierIndexDigest stepCR.verifierIndex)
+      -- Trace each element of result.publicInputs for direct comparison
+      -- with OCaml's step.proof.public_input.* (which already matches),
+      -- and against what PS's PackedStepPublicInput would serialize to.
+      for_ (Array.mapWithIndex Tuple result.publicInputs) \(Tuple i x) ->
+        Trace.field ("wrap.dbg.step_pi." <> show i) x
+
+    wrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots1 1)
+        (\e -> Exc.throwException e)
+        wrapProveCtx
+        wrapCR
+
+    liftEffect $ Trace.int "wrap.proof.public_input_count"
+      (Array.length wrapResult.publicInputs)
 
     liftEffect $ Trace.string "simple_chain.end" "base_case_verified"

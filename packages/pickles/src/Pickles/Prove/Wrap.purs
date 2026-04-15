@@ -76,7 +76,7 @@ import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Snarky.Curves.Class (EndoBase(..), endoBase)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
@@ -479,9 +479,17 @@ wrapCompile ctx advice = do
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       }
 
+    -- The wrap prover index's `cs.endo` field must be the WRAP curve's
+    -- endo_base (= Vesta.endo_base = Wrap_inner_curve.base), NOT the
+    -- endo_scalar that earlier (untested) commits had set. Trace evidence
+    -- (`KIMCHI_STUBS_DEBUG: index.endo`) at the dummy-wrap-proof oracle
+    -- call confirms OCaml uses `Vesta.endo_base()` here. See
+    -- `memory/project_simple_chain_max_poly_size_bug.md` and the parallel
+    -- step-side fix in `Pickles.Prove.Step.purs:1429-1431` (commit
+    -- `20674463`) — same root cause, opposite curve.
     endo :: WrapField
     endo =
-      let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+      let EndoBase e = (endoBase :: EndoBase WrapField) in e
 
     proverIndex =
       createProverIndex @WrapField @PallasG

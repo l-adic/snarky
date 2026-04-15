@@ -14,7 +14,6 @@ module Pickles.ProofFFI
   , proofCoefficientEvals
   , proofIndexEvals
   , proofOracles
-  , proofOpeningPrechallenges
   , proofBulletproofChallenges
   , verifyOpeningProof
   , computeB0
@@ -38,6 +37,8 @@ module Pickles.ProofFFI
   , vestaProofOpeningZ1
   , pallasProofOpeningZ2
   , vestaProofOpeningZ2
+  , pallasProofOpeningPrechallenges
+  , vestaProofOpeningPrechallenges
   , pallasProverIndexBlindingGenerator
   , vestaProverIndexBlindingGenerator
   , pallasCombinedPolynomialCommitment
@@ -152,7 +153,13 @@ class ProofFFI f g | f -> g where
   -- | a 128-bit value pre-endo-expansion; consumers feed them through
   -- | `Scalar_challenge.to_field` to recover full-field bulletproof
   -- | challenges.
-  proofOpeningPrechallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
+  -- NOTE: `proofOpeningPrechallenges` was previously a class method but
+  -- with the addition of the `prevChallenges` argument (whose `sgX`/`sgY`
+  -- field type depends on the curve's BaseField, not the scalar field
+  -- `f`), the type can't be expressed cleanly with the existing fundep.
+  -- Callers use the curve-specific foreign imports
+  -- `pallasProofOpeningPrechallenges` / `vestaProofOpeningPrechallenges`
+  -- directly.
   proofBulletproofChallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
   verifyOpeningProof :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f
@@ -259,8 +266,30 @@ foreign import vestaMakeWireProof
 foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
 foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
 
-foreign import pallasProofOpeningPrechallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
-foreign import vestaProofOpeningPrechallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField
+foreign import pallasProofOpeningPrechallenges
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> { proof :: Proof Vesta.G Pallas.BaseField
+     , publicInput :: Array Pallas.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Pallas.ScalarField
+           , sgY :: Pallas.ScalarField
+           , challenges :: Array Pallas.BaseField
+           }
+     }
+  -> Array Pallas.BaseField
+foreign import vestaProofOpeningPrechallenges
+  :: VerifierIndex Pallas.G Vesta.BaseField
+  -> { proof :: Proof Pallas.G Vesta.BaseField
+     , publicInput :: Array Vesta.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Vesta.ScalarField
+           , sgY :: Vesta.ScalarField
+           , challenges :: Array Vesta.BaseField
+           }
+     }
+  -> Array Vesta.BaseField
 
 foreign import pallasVerifyOpeningProof :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Boolean
 foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Boolean
@@ -429,7 +458,6 @@ instance ProofFFI Pallas.BaseField Vesta.G where
   proofIndexEvals = pallasProofIndexEvals
   proofOracles vk { proof, publicInput } =
     pallasProofOracles vk { proof, publicInput, prevChallenges: [] }
-  proofOpeningPrechallenges = pallasProofOpeningPrechallenges
   proofBulletproofChallenges = pallasProofBulletproofChallenges
   verifyOpeningProof = pallasVerifyOpeningProof
   permutationVanishingPolynomial = pallasPermutationVanishingPolynomial
@@ -447,7 +475,6 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   proofIndexEvals = vestaProofIndexEvals
   proofOracles vk { proof, publicInput } =
     vestaProofOracles vk { proof, publicInput, prevChallenges: [] }
-  proofOpeningPrechallenges = vestaProofOpeningPrechallenges
   proofBulletproofChallenges = vestaProofBulletproofChallenges
   verifyOpeningProof = vestaVerifyOpeningProof
   permutationVanishingPolynomial = vestaPermutationVanishingPolynomial

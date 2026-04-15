@@ -40,7 +40,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOracles, proofOpeningPrechallenges)
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallenges, pallasProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked(..))
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
@@ -322,9 +322,10 @@ wrapComputeDeferredValues input =
     -- `SizedF 128` and feed through `computeBpChalsAndB`, which endo-
     -- expands them and evaluates `b_poly(zeta) + r·b_poly(zetaw)`.
     rawPrechalsArray :: Array StepField
-    rawPrechalsArray = proofOpeningPrechallenges input.verifierIndex
+    rawPrechalsArray = pallasProofOpeningPrechallenges input.verifierIndex
       { proof: input.proof
       , publicInput: input.publicInput
+      , prevChallenges: prevChallengeList
       }
 
     rawPrechalsVec :: Vector StepIPARounds (SizedF 128 StepField)

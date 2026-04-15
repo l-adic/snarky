@@ -220,11 +220,32 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   { xHat, beta, gamma, alphaChal, zetaChal, digest } <-
     if params.useOptSponge then do
       -- Wrap path: compute x_hat first, then OptSponge for all absorptions
+      -- Trace the inputs to the OptSponge so we can diff them byte-for-byte
+      -- against OCaml's wrap_verifier IVP. Same labels as the step path,
+      -- so both runs populate the same keys (wrap run overwrites step run
+      -- within the same file).
+      liftSnarky $ ivpTrace "ivp.trace.wrap.index_digest" indexDigest
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.x" xHat.x
+      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.y" xHat.y
+      liftSnarky do
+        let sgOldArr = (Vector.toUnfoldable input.sgOld :: Array _)
+        for_ (Array.zip (0 .. (Array.length sgOldArr - 1)) sgOldArr) \(Tuple i pt) -> do
+          ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
+        let wCommArr = (Vector.toUnfoldable input.wComm :: Array _)
+        for_ (Array.zip (0 .. (Array.length wCommArr - 1)) wCommArr) \(Tuple i pt) -> do
+          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
+        ivpTrace "ivp.trace.wrap.zcomm.x" input.zComm.x
+        ivpTrace "ivp.trace.wrap.zcomm.y" input.zComm.y
       let
         spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
+      liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
+      liftSnarky $ ivpTrace "ivp.trace.wrap.gamma_squeezed" (SizedF.toField result.gamma)
+      liftSnarky $ ivpTrace "ivp.trace.wrap.digest" result.digest
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
@@ -282,6 +303,14 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   liftSnarky do
     let expected = toPlonkMinimal input.deferredValues.plonk
     ivpTrace "ivp.trace.xi" (SizedF.toField input.deferredValues.xi)
+    -- Trace the advice (`beta_used`) right next to the assertion so the
+    -- trace-diff workflow can compare it byte-for-byte against OCaml's
+    -- `wrap_verifier.ml` `plonk.beta` at the same site. The OCaml-side
+    -- companion lives in mina/.../wrap_verifier.ml under the same label.
+    -- Note: `useOptSponge=true` is the wrap-side path, so this trace
+    -- only matters for the wrap IVP (which is what we're debugging).
+    when params.useOptSponge $
+      ivpTrace "ivp.trace.wrap.beta_used" (SizedF.toField expected.beta)
     label "ivp_assert_plonk_beta" $ assertEq beta expected.beta
     label "ivp_assert_plonk_gamma" $ assertEq gamma expected.gamma
     label "ivp_assert_plonk_alpha" $ assertEq alphaChal expected.alpha
