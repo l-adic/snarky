@@ -8,6 +8,8 @@ module Pickles.ProofFFI
   ( class ProofFFI
   , proverIndexShifts
   , createProof
+  , pallasCreateProofWithPrev
+  , vestaCreateProofWithPrev
   , proofWitnessEvals
   , proofZEvals
   , proofSigmaEvals
@@ -178,6 +180,30 @@ foreign import vestaProverIndexShifts :: ProverIndex Pallas.G Vesta.BaseField ->
 
 foreign import pallasCreateProof :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField, witness :: Vector 15 (Array Pallas.BaseField) } -> Proof Vesta.G Pallas.BaseField
 foreign import vestaCreateProof :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField, witness :: Vector 15 (Array Vesta.BaseField) } -> Proof Pallas.G Vesta.BaseField
+
+foreign import pallasCreateProofWithPrev
+  :: { proverIndex :: ProverIndex Vesta.G Pallas.BaseField
+     , witness :: Vector 15 (Array Pallas.BaseField)
+     , prevChallenges ::
+         Array
+           { sgX :: Pallas.ScalarField
+           , sgY :: Pallas.ScalarField
+           , challenges :: Array Pallas.BaseField
+           }
+     }
+  -> Proof Vesta.G Pallas.BaseField
+
+foreign import vestaCreateProofWithPrev
+  :: { proverIndex :: ProverIndex Pallas.G Vesta.BaseField
+     , witness :: Vector 15 (Array Vesta.BaseField)
+     , prevChallenges ::
+         Array
+           { sgX :: Vesta.ScalarField
+           , sgY :: Vesta.ScalarField
+           , challenges :: Array Vesta.BaseField
+           }
+     }
+  -> Proof Pallas.G Vesta.BaseField
 
 foreign import pallasProofWitnessEvals :: Proof Vesta.G Pallas.BaseField -> Vector 15 (PointEval Pallas.BaseField)
 foreign import vestaProofWitnessEvals :: Proof Pallas.G Vesta.BaseField -> Vector 15 (PointEval Vesta.BaseField)

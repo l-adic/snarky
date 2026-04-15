@@ -1,5 +1,6 @@
 module Snarky.Backend.Kimchi
   ( makeConstraintSystem
+  , makeConstraintSystemWithPrevChallenges
   , makeGateData
   , makePublicInputRows
   , makeWitness
@@ -23,7 +24,7 @@ import Data.UnionFind (UnionFindData, find)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, circuitGateNew, constraintSystemCreate, constraintSystemCreateWithPrevChallenges)
 import Snarky.Backend.Kimchi.Types (ConstraintSystem, Gate, Wire, gateWiresNewFromWires, wireNew)
 import Snarky.Circuit.DSL (Variable)
 import Snarky.Constraint.Kimchi.Types (GateKind(..), KimchiRow)
@@ -177,6 +178,44 @@ makeConstraintSystem arg =
     gd = makeGateData @f arg
   in
     { constraintSystem: constraintSystemCreate @f gd.gates gd.publicInputSize
+    , constraints: gd.constraints
+    , gates: gd.gates
+    , publicInputSize: gd.publicInputSize
+    }
+
+-- | Variant of `makeConstraintSystem` that declares a non-zero
+-- | `prev_challenges` count (= number of inductive hypotheses this
+-- | circuit verifies recursively at the kimchi layer, injected via
+-- | `ProverProof::create_recursive` during proving). Mirrors OCaml's
+-- | `Kimchi_bindings.Protocol.Constraint_system.create` which takes
+-- | the count as part of the gate vector.
+makeConstraintSystemWithPrevChallenges
+  :: forall @f g
+   . CircuitGateConstructor f g
+  => PrimeField f
+  => { constraints :: Array (KimchiRow f)
+     , publicInputs :: Array Variable
+     , unionFind :: UnionFindData Variable
+     , prevChallengesCount :: Int
+     }
+  -> { constraintSystem :: ConstraintSystem f
+     , constraints :: Array (KimchiRow f)
+     , gates :: Array (Gate f)
+     , publicInputSize :: Int
+     }
+makeConstraintSystemWithPrevChallenges arg =
+  let
+    gd = makeGateData @f
+      { constraints: arg.constraints
+      , publicInputs: arg.publicInputs
+      , unionFind: arg.unionFind
+      }
+  in
+    { constraintSystem:
+        constraintSystemCreateWithPrevChallenges @f
+          gd.gates
+          gd.publicInputSize
+          arg.prevChallengesCount
     , constraints: gd.constraints
     , gates: gd.gates
     , publicInputSize: gd.publicInputSize

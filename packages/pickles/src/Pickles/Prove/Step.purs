@@ -54,7 +54,7 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Map (Map)
 import Data.Newtype (class Newtype, un, unwrap)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -74,7 +74,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofFFI (Proof, createProof, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.ProofWitness (ProofWitness)
@@ -97,7 +97,7 @@ import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2, fromShifted, toShifted)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
-import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
@@ -181,6 +181,17 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) =
   -- | + the active branch's proofs-verified mask; here we receive it
   -- | pre-computed so the advice stays purely data.
   , branchData :: Vector n StepBranchData
+  -- | Kimchi-level `prev_challenges` threaded to
+  -- | `ProverProof::create_recursive`. This is the SAME-CURVE recursion
+  -- | data (prior Vesta step proof's IPA sg + expanded challenges),
+  -- | NOT the cross-curve wrap data that the step circuit verifies.
+  -- | Empty for callers that use the non-recursive path.
+  , kimchiPrevChallenges ::
+      Array
+        { sgX :: WrapField
+        , sgY :: WrapField
+        , challenges :: Array StepField
+        }
   }
 
 --------------------------------------------------------------------------------
@@ -525,6 +536,7 @@ buildStepAdvice input =
     , appState: input.appState
     , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
     , branchData: Vector.replicate dummyBranch
+    , kimchiPrevChallenges: []
     }
 
 --------------------------------------------------------------------------------
@@ -1351,6 +1363,18 @@ buildStepAdviceWithOracles input = do
     , sgOld = Vector.replicate wrapSgF
     , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
     , openingProofs = overriddenOpenings
+    -- Kimchi recursion hypothesis: prior step proof's IPA sg +
+    -- expanded bp challenges. For the Simple_chain base case both
+    -- come from `Dummy.Ipa.Step.*` (= `input.stepSg` +
+    -- `dummyIpaChallenges.stepExpanded`). OCaml does the same at
+    -- `step.ml:expand_proof` where it stashes `(chals, sg)` into
+    -- `~message` for `caml_pasta_fp_plonk_proof_create`.
+    , kimchiPrevChallenges =
+        [ { sgX: input.stepSg.x
+          , sgY: input.stepSg.y
+          , challenges: Vector.toUnfoldable dummyIpaChallenges.stepExpanded
+          }
+        ]
     }
 
 --------------------------------------------------------------------------------
@@ -1460,10 +1484,16 @@ stepCompile ctx rule advice = do
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystem @StepField
+    -- Step circuit verifies `n` previous proofs at the kimchi layer
+    -- (= OCaml `Compile.step_main ~prev_challenges:n`). Declare it on
+    -- the CS so `verifier_index.prev_challenges` matches the length
+    -- of `ProverProof.prev_challenges` produced by
+    -- `pallasCreateProofWithPrev`.
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @n)
       }
 
     -- EXPERIMENT: use endoBase (= Pallas.endo_base = Step_inner_curve.base)
@@ -1541,7 +1571,11 @@ stepSolveAndProve onError ctx rule compileResult advice = do
           let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
           onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
         else
-          let proof = createProof { proverIndex: compileResult.proverIndex, witness }
+          let proof = pallasCreateProofWithPrev
+                { proverIndex: compileResult.proverIndex
+                , witness
+                , prevChallenges: advice.kimchiPrevChallenges
+                }
           in pure
             { proverIndex: compileResult.proverIndex
             , verifierIndex: compileResult.verifierIndex

@@ -25,6 +25,21 @@ export const pallasCreateProof = ({ proverIndex, witness }) =>
 export const vestaCreateProof = ({ proverIndex, witness }) =>
   crypto.vestaCreateProof(proverIndex, witness);
 
+// Proof creation (recursive case, with previous-proof accumulators)
+export const pallasCreateProofWithPrev = ({ proverIndex, witness, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const chalsList = prevChallenges.map(p => p.challenges);
+  return crypto.pallasCreateProofWithPrev(proverIndex, witness, prevSgXs, prevSgYs, chalsList);
+};
+
+export const vestaCreateProofWithPrev = ({ proverIndex, witness, prevChallenges }) => {
+  const prevSgXs = prevChallenges.map(p => p.sgX);
+  const prevSgYs = prevChallenges.map(p => p.sgY);
+  const chalsList = prevChallenges.map(p => p.challenges);
+  return crypto.vestaCreateProofWithPrev(proverIndex, witness, prevSgXs, prevSgYs, chalsList);
+};
+
 // Proof evaluations - witness
 export const pallasProofWitnessEvals = (proof) =>
   pairEvals(crypto.pallasProofWitnessEvals(proof));

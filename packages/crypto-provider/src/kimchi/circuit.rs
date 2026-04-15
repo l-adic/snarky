@@ -108,6 +108,27 @@ mod generic {
             })
     }
 
+    /// Same as `constraint_system_create` but declares a non-zero
+    /// `prev_challenges` count. Matches OCaml's kimchi-stubs
+    /// `caml_pasta_fp_plonk_index_create ~prev_challenges:N` used when
+    /// compiling the inductive step circuit (`create_recursive`).
+    pub fn constraint_system_create_with_prev<F: PrimeField>(
+        gates: Vec<CircuitGate<F>>,
+        public_inputs_count: usize,
+        prev_challenges_count: usize,
+    ) -> Result<ConstraintSystem<F>> {
+        ConstraintSystem::create(gates)
+            .public(public_inputs_count)
+            .prev_challenges(prev_challenges_count)
+            .build()
+            .map_err(|e| {
+                Error::new(
+                    Status::GenericFailure,
+                    format!("Failed to create constraint system: {e}"),
+                )
+            })
+    }
+
     pub fn constraint_system_to_json<F: PrimeField>(cs: &ConstraintSystem<F>) -> Result<String>
     where
         CircuitGate<F>: serde::Serialize,
@@ -276,6 +297,43 @@ mod generic {
             witness,
             &[], // no runtime tables
             prover_index,
+            &mut crate::kimchi::deterministic_rng::make_rng(),
+        )
+        .map_err(|e| {
+            Error::new(
+                Status::GenericFailure,
+                format!("Proof creation failed: {e:?}"),
+            )
+        })
+    }
+
+    /// Run the Kimchi prover with recursion challenges (inductive case).
+    /// `prev_challenges` is the list of `RecursionChallenge { chals, comm }`
+    /// entries that kimchi's `create_recursive` absorbs into the Fq-sponge
+    /// at the start of the transcript. For Pickles base case proofs the
+    /// single entry contains the dummy wrap proof's sg + expanded bp chals.
+    /// Matches OCaml kimchi-stubs `caml_pasta_fp_plonk_proof_create` which
+    /// passes this via the `~message` argument.
+    pub fn create_proof_with_prev<G, EFqSponge, EFrSponge>(
+        prover_index: &ProverIndex<G, OpeningProof<G>>,
+        witness: [Vec<G::ScalarField>; COLUMNS],
+        prev_challenges: Vec<kimchi::proof::RecursionChallenge<G>>,
+    ) -> Result<ProverProof<G, OpeningProof<G>>>
+    where
+        G: KimchiCurve,
+        G::BaseField: PrimeField,
+        EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
+        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
+        kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
+    {
+        let group_map = <G as CommitmentCurve>::Map::setup();
+        ProverProof::create_recursive::<EFqSponge, EFrSponge, _>(
+            &group_map,
+            witness,
+            &[], // no runtime tables
+            prover_index,
+            prev_challenges,
+            None,
             &mut crate::kimchi::deterministic_rng::make_rng(),
         )
         .map_err(|e| {
@@ -1609,6 +1667,44 @@ pub fn vesta_constraint_system_create(
 }
 
 #[napi]
+pub fn pallas_constraint_system_create_with_prev_challenges(
+    gates: Vec<&PallasCircuitGateExternal>,
+    public_inputs_count: u32,
+    prev_challenges_count: u32,
+) -> Result<PallasConstraintSystemExternal> {
+    let internal_gates: Vec<CircuitGate<PallasScalarField>> = gates
+        .into_iter()
+        .map(|gate_ext| (**gate_ext).clone())
+        .collect();
+
+    let cs = generic::constraint_system_create_with_prev(
+        internal_gates,
+        public_inputs_count as usize,
+        prev_challenges_count as usize,
+    )?;
+    Ok(External::new(cs))
+}
+
+#[napi]
+pub fn vesta_constraint_system_create_with_prev_challenges(
+    gates: Vec<&VestaCircuitGateExternal>,
+    public_inputs_count: u32,
+    prev_challenges_count: u32,
+) -> Result<VestaConstraintSystemExternal> {
+    let internal_gates: Vec<CircuitGate<VestaScalarField>> = gates
+        .into_iter()
+        .map(|gate_ext| (**gate_ext).clone())
+        .collect();
+
+    let cs = generic::constraint_system_create_with_prev(
+        internal_gates,
+        public_inputs_count as usize,
+        prev_challenges_count as usize,
+    )?;
+    Ok(External::new(cs))
+}
+
+#[napi]
 pub fn pallas_constraint_system_to_json(cs: &PallasConstraintSystemExternal) -> Result<String> {
     generic::constraint_system_to_json(&**cs)
 }
@@ -1941,6 +2037,102 @@ pub fn vesta_create_proof(
     )?;
     Ok(External::new(proof))
 }
+
+/// Create a proof with recursion challenges (Vesta prover index / Pallas-Fp circuits).
+///
+/// Same parallel-array prev_* shape as `pallas_proof_oracles`. Empty
+/// arrays degrade to non-recursive `create_proof`. Wraps kimchi's
+/// `ProverProof::create_recursive` — the inductive-case path OCaml's
+/// `caml_pasta_fp_plonk_proof_create` uses via `~message`.
+#[napi]
+pub fn pallas_create_proof_with_prev(
+    prover_index: &VestaProverIndexExternal,
+    witness_columns: Vec<Vec<&VestaFieldExternal>>,
+    prev_sg_xs: Vec<&PallasFieldExternal>,
+    prev_sg_ys: Vec<&PallasFieldExternal>,
+    prev_challenges: Vec<Vec<&VestaFieldExternal>>,
+) -> Result<VestaProofExternal> {
+    use kimchi::proof::RecursionChallenge;
+    use poly_commitment::commitment::PolyComm;
+    let witness: [Vec<VestaScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    if prev_sg_xs.is_empty() {
+        let proof = generic::create_proof::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+            &**prover_index,
+            witness,
+        )?;
+        return Ok(External::new(proof));
+    }
+    let prev: Vec<RecursionChallenge<VestaGroup>> = prev_sg_xs
+        .iter()
+        .zip(prev_sg_ys.iter())
+        .zip(prev_challenges.iter())
+        .map(|((x, y), chals)| {
+            let sg = VestaGroup::of_coordinates(***x, ***y);
+            let chals_expanded: Vec<VestaScalarField> = chals.iter().map(|c| ***c).collect();
+            RecursionChallenge {
+                chals: chals_expanded,
+                comm: PolyComm::<VestaGroup> { chunks: vec![sg] },
+            }
+        })
+        .collect();
+    let proof = generic::create_proof_with_prev::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        &**prover_index,
+        witness,
+        prev,
+    )?;
+    Ok(External::new(proof))
+}
+
+/// Create a proof with recursion challenges (Pallas prover index / Vesta-Fq circuits).
+#[napi]
+pub fn vesta_create_proof_with_prev(
+    prover_index: &PallasProverIndexExternal,
+    witness_columns: Vec<Vec<&PallasFieldExternal>>,
+    prev_sg_xs: Vec<&VestaFieldExternal>,
+    prev_sg_ys: Vec<&VestaFieldExternal>,
+    prev_challenges: Vec<Vec<&PallasFieldExternal>>,
+) -> Result<PallasProofExternal> {
+    use kimchi::proof::RecursionChallenge;
+    use poly_commitment::commitment::PolyComm;
+    let witness: [Vec<PallasScalarField>; COLUMNS] = std::array::from_fn(|i| {
+        witness_columns[i]
+            .iter()
+            .map(|field_ext| ***field_ext)
+            .collect()
+    });
+    if prev_sg_xs.is_empty() {
+        let proof = generic::create_proof::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+            &**prover_index,
+            witness,
+        )?;
+        return Ok(External::new(proof));
+    }
+    let prev: Vec<RecursionChallenge<PallasGroup>> = prev_sg_xs
+        .iter()
+        .zip(prev_sg_ys.iter())
+        .zip(prev_challenges.iter())
+        .map(|((x, y), chals)| {
+            let sg = PallasGroup::of_coordinates(***x, ***y);
+            let chals_expanded: Vec<PallasScalarField> = chals.iter().map(|c| ***c).collect();
+            RecursionChallenge {
+                chals: chals_expanded,
+                comm: PolyComm::<PallasGroup> { chunks: vec![sg] },
+            }
+        })
+        .collect();
+    let proof = generic::create_proof_with_prev::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
+        &**prover_index,
+        witness,
+        prev,
+    )?;
+    Ok(External::new(proof))
+}
+
 
 /// Extract witness evaluations from a Vesta proof (Pallas/Fp circuits).
 /// Returns 30 values: 15 columns x 2 points (zeta, zeta*omega).

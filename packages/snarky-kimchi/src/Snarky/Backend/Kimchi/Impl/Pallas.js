@@ -32,6 +32,14 @@ export function pallasConstraintSystemCreate(gates) {
     };
 }
 
+export function pallasConstraintSystemCreateWithPrevChallenges(gates) {
+    return function(publicInputsCount) {
+        return function(prevChallengesCount) {
+            return napi.pallasConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount);
+        };
+    };
+}
+
 
 export function pallasCrsLoadFromCache() {
     return napi.pallasCrsLoadFromCache();
