@@ -69,7 +69,7 @@ import Data.Maybe (Maybe(..), fromJust)
 import Pickles.Trace as Trace
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
+import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, stepDummyUnfinalizedProofFromInputs, wrapDummyUnfinalizedProof)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -916,6 +916,20 @@ type BuildStepAdviceWithOraclesInput =
   -- | IVP on the wrap proof diverge from the advice-computed deferred
   -- | values, triggering `ivp_assert_plonk_beta` at the wrap verifier.
   , wrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  -- | The wrap proof's stored deferred_values, packed into
+  -- | `fopProofStates[0]` in the step advice. This gets read by the step
+  -- | circuit's `packStatement` to reconstruct the wrap proof's public
+  -- | input for the IVP xhat commitment. MUST match what
+  -- | `wrap_proof.publicInputs` actually contains (=
+  -- | wrap_proof.statement.proof_state.deferred_values serialized).
+  -- |
+  -- | Base case: `simpleChainStepDummyFopProofState { proofsVerified }`
+  -- | (the dummy wrap proof's stored deferred values, matching OCaml's
+  -- | wrap.ml computation on dummy step proof).
+  -- | Inductive: constructed from the real `wrapDv` produced by
+  -- | `wrapComputeDeferredValues` during wrap proving.
+  , fopState ::
+      UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -1276,14 +1290,36 @@ buildStepAdviceWithOracles input = do
           , shouldFinalize: u.shouldFinalize
           }
 
-    -- Simple_chain FOP proof state (Per_proof_witness.proof_state.deferred_values
-    -- side, ds=16). Currently kept as the existing fixture; will be
-    -- replaced by `expandProofResult.perProofWitness.proofState.fopState`
-    -- in a follow-up once that path is verified.
+    -- Simple_chain FOP proof state = wrap_b0's stored deferred values
+    -- (= wrap_b0.statement.proof_state.deferred_values reserialized).
+    -- Caller supplies via `input.fopState`: for base case pass the
+    -- dummy-derived UnfinalizedProof (= simpleChainStepDummyFopProofState);
+    -- for inductive pass the freshly-computed wrapDv values.
+    -- This field gets packed into the STEP circuit's reconstruction of
+    -- wrap_b0's public input via `packStatement`, so it MUST match what
+    -- wrap_b0.publicInputs actually contains — otherwise xhat diverges
+    -- and the IVP beta assertion fails.
     simpleChainFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    simpleChainFop = simpleChainStepDummyFopProofState
-      { proofsVerified: input.mostRecentWidth }
+    simpleChainFop = input.fopState
+
+  -- DIAG: dump simpleChainFop fields so we can compare against tock_pi
+  -- which is the ACTUAL wrap_b0 public input. If simpleChainFop differs
+  -- from tock_pi at specific positions, fopProofStates is the bug.
+  let
+    t1Inner :: Type1 (F StepField) -> F StepField
+    t1Inner (Type1 x) = x
+  Trace.fieldF "diag.simpleChainFop.plonk.beta" (SizedF.toField simpleChainFop.deferredValues.plonk.beta)
+  Trace.fieldF "diag.simpleChainFop.plonk.gamma" (SizedF.toField simpleChainFop.deferredValues.plonk.gamma)
+  Trace.fieldF "diag.simpleChainFop.plonk.alpha" (SizedF.toField simpleChainFop.deferredValues.plonk.alpha)
+  Trace.fieldF "diag.simpleChainFop.plonk.zeta" (SizedF.toField simpleChainFop.deferredValues.plonk.zeta)
+  Trace.fieldF "diag.simpleChainFop.xi" (SizedF.toField simpleChainFop.deferredValues.xi)
+  Trace.fieldF "diag.simpleChainFop.spongeDigest" simpleChainFop.spongeDigestBeforeEvaluations
+  Trace.fieldF "diag.simpleChainFop.cip.shifted" (t1Inner simpleChainFop.deferredValues.combinedInnerProduct)
+  Trace.fieldF "diag.simpleChainFop.b.shifted" (t1Inner simpleChainFop.deferredValues.b)
+  Trace.fieldF "diag.simpleChainFop.perm.shifted" (t1Inner simpleChainFop.deferredValues.plonk.perm)
+
+  let
 
     wrapSgF :: AffinePoint (F StepField)
     wrapSgF = coerce input.wrapSg

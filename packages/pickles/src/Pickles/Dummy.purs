@@ -14,6 +14,7 @@ module Pickles.Dummy
   , stepDummyUnfinalizedProof
   , stepDummyFopProofState
   , simpleChainStepDummyFopProofState
+  , stepDummyUnfinalizedProofFromInputs
   , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyFinalizeOtherProofParams

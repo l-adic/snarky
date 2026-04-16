@@ -39,7 +39,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException) as Exc
-import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, roComputeResult) as Dummy
+import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState) as Dummy
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
@@ -380,6 +380,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           Dummy.dummyIpaChallenges.wrapExpanded
             :< Dummy.dummyIpaChallenges.wrapExpanded
             :< Vector.nil
+      , fopState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 1 }
       }
 
     -- ===== Phase 4: run the step solver =====
@@ -903,19 +904,30 @@ spec = describe "Pickles.Prove.SimpleChain" do
         in
           dummyEntry :< realEntry :< Vector.nil
 
-      -- wrapOwnPaddedBpChals for step_b1: semantically this is
-      -- wrap_b0.statement.messages_for_next_step_proof.old_bulletproof_challenges
-      -- (padded, expanded). In OCaml wrap.ml:474-475, wrap_b0's
-      -- messages_for_next_step_proof is COPIED from step_b0.statement
-      -- (its prev_statement). step_b0.statement.messages_for_next_step_proof
-      -- .old_bulletproof_challenges stores the BP chals of the proofs that
-      -- step_b0 verified = [dummy wrap proof's bp chals] (size 1 for N1).
-      -- Padded via Wrap_hack to PaddedLength=2 = [dummy, dummy].
-      -- So for Simple_chain b1 both slots are dummy wrap chals — same as b0.
+      -- wrapOwnPaddedBpChals feeds hash_messages_for_next_wrap_proof per
+      -- OCaml step.ml:330-336: the hash uses old_bulletproof_challenges =
+      -- `prev_challenges` (step.ml:241-243) = `Vector.map
+      -- Ipa.Wrap.compute_challenges statement.proof_state.messages_for_next_wrap_proof
+      -- .old_bulletproof_challenges` where statement = wrap_b0.statement.
+      -- wrap.ml:463-465 set that field to `Vector.map
+      -- prev_statement.proof_state.unfinalized_proofs
+      -- ~f:(fun t -> t.deferred_values.bulletproof_challenges)` where
+      -- prev_statement = step_b0.statement for the base case. Then
+      -- hash_messages_for_next_wrap_proof at wrap_hack.ml:46-59 calls
+      -- pad_challenges (Vector.extend_front_exn to PaddedLength=2 with
+      -- Dummy.Ipa.Wrap.challenges_computed as dummy).
+      --
+      -- So the padded Vector for Simple_chain N1 b1 is:
+      --   [Dummy.Ipa.Wrap.challenges_computed        -- padding slot
+      --   , step_b0.unfinalized[0].bp_chals expanded -- real slot
+      --   ]
+      -- where expanded = Ipa.Wrap.compute_challenges = expansion via
+      -- Pallas.endo_scalar. PS already computes this as msgForNextWrapRealChals
+      -- at line 582-589 (Vector WrapIPARounds WrapField).
       b1WrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
       b1WrapOwnPaddedBpChals =
         Dummy.dummyIpaChallenges.wrapExpanded
-          :< Dummy.dummyIpaChallenges.wrapExpanded
+          :< msgForNextWrapRealChals
           :< Vector.nil
 
     { advice: b1Advice } <- liftEffect $ buildStepAdviceWithOracles
@@ -941,6 +953,24 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations
       , mustVerify: true
       , wrapOwnPaddedBpChals: b1WrapOwnPaddedBpChals
+      -- b1 fopState: from the freshly-computed wrapDv (= what wrap_b0's
+      -- statement stores in its deferred_values). This MUST match what
+      -- wrap_b0.publicInputs contains so the step circuit's packStatement
+      -- reconstructs the same public input → same xhat → IVP beta matches.
+      , fopState:
+          { deferredValues:
+              { plonk: wrapDv.plonk
+              , combinedInnerProduct: wrapDv.combinedInnerProduct
+              , xi: wrapDv.xi
+              , bulletproofChallenges:
+                  -- wrapDv.bulletproofPrechallenges has 16 StepIPARounds; UnfinalizedProof
+                  -- StepIPARounds wants the same. Raw 128-bit SizedF values.
+                  wrapDv.bulletproofPrechallenges
+              , b: wrapDv.b
+              }
+          , shouldFinalize: false
+          , spongeDigestBeforeEvaluations: F wrapDv.spongeDigestBeforeEvaluations
+          }
       }
 
     b1Result <- liftEffect $
