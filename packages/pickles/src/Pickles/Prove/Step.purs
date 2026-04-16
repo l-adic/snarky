@@ -96,7 +96,7 @@ import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Types.Shifted (SplitField, Type1(..), Type2, fromShifted, toShifted)
+import Snarky.Types.Shifted (SplitField, Type1(..), Type2(..), fromShifted, toShifted)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
@@ -1174,6 +1174,32 @@ buildStepAdviceWithOracles input = do
     expandProofResult :: PureStep.ExpandProofOutput
     expandProofResult = PureStep.expandProof expandProofInputRec
 
+  -- === TRACE Stage 2: expand_proof.deferred.* (step-field Type1 deferred values) ===
+  let
+    dStep = expandProofResult.deferredStep
+    type1Inner :: forall a. Type1 a -> a
+    type1Inner (Type1 x) = x
+  Trace.fieldF "expand_proof.deferred.combined_inner_product" (type1Inner dStep.combinedInnerProduct)
+  Trace.fieldF "expand_proof.deferred.b" (type1Inner dStep.b)
+  Trace.fieldF "expand_proof.deferred.xi" (F (toFieldPure (SizedF.unwrapF dStep.xi) stepEndoScalarF) :: F StepField)
+  Trace.fieldF "expand_proof.deferred.plonk.perm" (type1Inner dStep.plonk.perm)
+  Trace.fieldF "expand_proof.deferred.plonk.zetaToSrsLength" (type1Inner dStep.plonk.zetaToSrsLength)
+  Trace.fieldF "expand_proof.deferred.plonk.zetaToDomainSize" (type1Inner dStep.plonk.zetaToDomainSize)
+  Trace.field "expand_proof.deferred.branch_data.domain_log2" dStep.branchData.domainLog2
+
+  -- === TRACE: wrap-field unfinalized deferred values (from expandProof) ===
+  let
+    wDv = expandProofResult.unfinalized.deferredValues
+    type2InnerF :: Type2 (F WrapField) -> F WrapField
+    type2InnerF (Type2 x) = x
+  Trace.fieldF "expand_proof.wrap_deferred.combined_inner_product" (type2InnerF wDv.combinedInnerProduct)
+  Trace.fieldF "expand_proof.wrap_deferred.b" (type2InnerF wDv.b)
+  Trace.fieldF "expand_proof.wrap_deferred.plonk.perm" (type2InnerF wDv.plonk.perm)
+  Trace.fieldF "expand_proof.wrap_deferred.plonk.beta" (SizedF.toField wDv.plonk.beta)
+  Trace.fieldF "expand_proof.wrap_deferred.plonk.gamma" (SizedF.toField wDv.plonk.gamma)
+  Trace.fieldF "expand_proof.wrap_deferred.sponge_digest" expandProofResult.unfinalized.spongeDigestBeforeEvaluations
+
+  let
     -- ===== Convert wrapUnfinalized → publicUnfinalizedProofs slot. =====
     -- expandProof.unfinalized has type
     --   `UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean`

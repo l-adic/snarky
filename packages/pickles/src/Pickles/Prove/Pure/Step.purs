@@ -484,6 +484,9 @@ type ExpandProofOutput =
         (F WrapField)
         (Type2 (F WrapField))
         Boolean
+  -- | Step-field Type1 deferred values from `expandDeferred`.
+  -- | Exposed for diagnostic tracing (`expand_proof.deferred.*` labels).
+  , deferredStep :: ExpandDeferredOutput StepIPARounds
   -- | Public input polynomial evaluation at (zeta, zeta·omega). In
   -- | OCaml (step.ml:319) these are `Tock.Field.t` values from the
   -- | wrap oracles (= `WrapField`).
@@ -889,6 +892,7 @@ expandProof input =
   in
     { sg: challengePolynomialCommitment
     , unfinalized: wrapUnfinalized
+    , deferredStep: _deferredStep
     , xHat:
         { zeta: oraclesResult.publicEvalZeta
         , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
