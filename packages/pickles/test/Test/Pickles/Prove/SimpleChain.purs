@@ -51,7 +51,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -669,6 +669,27 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- via `Ro.tock ()` = WrapField (Tock/Fq) values.
       -- PS mirror: `Dummy.roComputeResult.wrapDummyEvals` is built from
       -- the same tock() sequence and is typed as `AllEvals WrapField`.
+      de_debug = Dummy.roComputeResult.wrapDummyEvals
+
+      -- CRUCIAL FIX: publicEvals for the wrap advice must come from running
+      -- vestaProofOracles on the DUMMY WRAP proof (what step.ml:402 does
+      -- via `let x_hat = O.(p_eval_1 o, p_eval_2 o)`), NOT from Dummy.evals'
+      -- own fresh Ro.tock() pulls. OCaml combines these at step.ml:1023-1036:
+      -- the `evals` field comes from Dummy.evals (Ro.tock), but `public_input`
+      -- uses the oracle x_hats. The oracle input here mirrors what the step
+      -- prover internally passes to vestaProofOracles when verifying the
+      -- dummy wrap proof in base case.
+      dummyWrapXhat :: { zeta :: WrapField, omegaTimesZeta :: WrapField }
+      dummyWrapXhat =
+        let
+          toFFI r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
+          o = ProofFFI.vestaProofOracles wrapCR.verifierIndex
+            { proof: dummyWrapProof
+            , publicInput: baseCaseWrapPI
+            , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
+            }
+        in { zeta: o.publicEvalZeta, omegaTimesZeta: o.publicEvalZetaOmega }
+
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
@@ -676,7 +697,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
           pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         in StepAllEvals
           { ftEval1: F de.ftEval1
-          , publicEvals: pe de.publicEvals
+          , publicEvals: PointEval
+              { zeta: F dummyWrapXhat.zeta
+              , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
+              }
           , zEvals: pe de.zEvals
           , witnessEvals: map pe de.witnessEvals
           , coeffEvals: map pe de.coeffEvals
@@ -726,6 +750,28 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     -- DIAG: wrapDv.plonk.beta should match OCaml b1 plonk0.beta = 41619386...
     liftEffect $ Trace.field "diag.wrapDv.plonk.beta" (SizedF.toField wrapDv.plonk.beta)
+
+    -- DIAG: dump wrapDummyEvals.indexEvals (the 6 selector evals that get
+    -- absorbed at FOP step4_sponge's abs_ie_0..5). Row 445 divergence is at
+    -- abs_ie_1/poseidon — these values determine what gets absorbed there.
+    liftEffect do
+      Trace.field "diag.wrapDummyEvals.ftEval1" de_debug.ftEval1
+      Trace.field "diag.wrapDummyEvals.publicEvals.zeta" de_debug.publicEvals.zeta
+      Trace.field "diag.wrapDummyEvals.publicEvals.omegaTimesZeta" de_debug.publicEvals.omegaTimesZeta
+      Trace.field "diag.wrapDummyEvals.zEvals.zeta" de_debug.zEvals.zeta
+      Trace.field "diag.wrapDummyEvals.zEvals.omegaTimesZeta" de_debug.zEvals.omegaTimesZeta
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable de_debug.indexEvals :: Array _)) \(Tuple i pe) -> do
+        Trace.field ("diag.wrapDummyEvals.indexEvals." <> show i <> ".zeta") pe.zeta
+        Trace.field ("diag.wrapDummyEvals.indexEvals." <> show i <> ".omegaTimesZeta") pe.omegaTimesZeta
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable de_debug.witnessEvals :: Array _)) \(Tuple i pe) -> do
+        Trace.field ("diag.wrapDummyEvals.witnessEvals." <> show i <> ".zeta") pe.zeta
+        Trace.field ("diag.wrapDummyEvals.witnessEvals." <> show i <> ".omegaTimesZeta") pe.omegaTimesZeta
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable de_debug.coeffEvals :: Array _)) \(Tuple i pe) -> do
+        Trace.field ("diag.wrapDummyEvals.coeffEvals." <> show i <> ".zeta") pe.zeta
+        Trace.field ("diag.wrapDummyEvals.coeffEvals." <> show i <> ".omegaTimesZeta") pe.omegaTimesZeta
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable de_debug.sigmaEvals :: Array _)) \(Tuple i pe) -> do
+        Trace.field ("diag.wrapDummyEvals.sigmaEvals." <> show i <> ".zeta") pe.zeta
+        Trace.field ("diag.wrapDummyEvals.sigmaEvals." <> show i <> ".omegaTimesZeta") pe.omegaTimesZeta
 
     -- Diagnostic: dump what kimchi's pallasProofOracles computed for beta
     -- directly from the step proof + prev_challenges. This is the RHS

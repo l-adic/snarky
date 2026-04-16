@@ -20,12 +20,12 @@ module Pickles.Wrap.FinalizeOtherProof
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (for, traverse_)
+import Data.Traversable (for, traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
@@ -35,11 +35,11 @@ import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
+import Pickles.PlonkChecks (absorbPointEval, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
+import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
@@ -150,17 +150,29 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- squeeze_challenge for r (constrain_low_bits:true).
   ---------------------------------------------------------------------------
   { xi, r, xiCorrect } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
-    absorb unfinalized.spongeDigestBeforeEvaluations
+    labelM "abs_sd" $ absorb unfinalized.spongeDigestBeforeEvaluations
     -- Challenge digest: separate plain sponge over all prev challenges
     challengeDigest <- liftSnarky $ label "step4_challengeDigest" $ evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
       traverse_ (traverse_ absorb) prevChallenges
       squeeze
-    absorb challengeDigest
-    absorbAllEvals allEvals
+    labelM "abs_cd" $ absorb challengeDigest
+    labelM "abs_fte" $ absorb allEvals.ftEval1
+    labelM "abs_pe_z" $ absorb allEvals.publicEvals.zeta
+    labelM "abs_pe_zw" $ absorb allEvals.publicEvals.omegaTimesZeta
+    labelM "abs_ze_z" $ absorb allEvals.zEvals.zeta
+    labelM "abs_ze_zw" $ absorb allEvals.zEvals.omegaTimesZeta
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ie_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @6 identity) allEvals.indexEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_we_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @15 identity) allEvals.witnessEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ce_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @15 identity) allEvals.coeffEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_se_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @6 identity) allEvals.sigmaEvals)
     -- xi: squeeze_scalar (constrain_low_bits:false)
-    xiActual <- squeezeScalar { endo: endoVar }
+    xiActual <- labelM "sq_xi" $ squeezeScalar { endo: endoVar }
     -- r: squeeze_challenge (constrain_low_bits:true)
-    rActual <- squeezeScalarChallenge { endo: endoVar }
+    rActual <- labelM "sq_r" $ squeezeScalarChallenge { endo: endoVar }
     liftSnarky $ label "step4_expand" do
       xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
       xi' <- toField @8 deferred.xi endoVar
