@@ -51,7 +51,9 @@ import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -835,35 +837,50 @@ dummyWrapTockPublicInput input =
       <> featureFlags
       <> lookupSlots
 
--- | Inputs for `buildStepAdviceWithOracles`. Extends `BuildStepAdviceInput`
--- | with the caller-supplied compiled wrap VK and the previous-proof
--- | app state (= OCaml's `s_neg_one` for the Simple_chain base case).
+-- | Inputs for `buildStepAdviceWithOracles`.
+-- |
+-- | Generalized to support both base case (dummy wrap proof) and
+-- | inductive case (real wrap proof from a previous iteration).
+-- | The caller provides the wrap proof, its public input, and the
+-- | padded accumulator — the builder treats them uniformly.
 type BuildStepAdviceWithOraclesInput =
   { appState :: F StepField
   , prevAppState :: F StepField
   , mostRecentWidth :: Int
   , wrapDomainLog2 :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
-  -- | `Dummy.Ipa.Wrap.sg` — Ro-derived Pallas point (Fp coords =
-  -- | StepField) from `computeDummySgValues.ipa.wrap.sg`. Used as
-  -- | both `advice.sgOld` entries and as the previous proofs'
-  -- | `challenge_polynomial_commitment` inside the
-  -- | `hashMessagesForNextStepProof` computation.
+  -- | Previous wrap proof's sg (Pallas point, Fp coords = StepField).
+  -- | Base case: `Dummy.Ipa.Wrap.sg`. Inductive: real wrap proof's sg.
   , wrapSg :: AffinePoint StepField
-  -- | `Dummy.Ipa.Step.sg` — Ro-derived Vesta point (Fq coords =
-  -- | WrapField) from `computeDummySgValues.ipa.step.sg`. Used as
-  -- | the `sg` argument of `hashMessagesForNextWrapProofPureGeneral`.
+  -- | Previous step proof's sg (Vesta point, Fq coords = WrapField).
+  -- | Base case: `Dummy.Ipa.Step.sg`. Inductive: real step proof's
+  -- | opening sg from the prior iteration.
   , stepSg :: AffinePoint WrapField
+  -- | The wrap proof to run oracles on. Base case: `Proof.dummy`.
+  -- | Inductive: the real wrap proof from the previous iteration.
+  , wrapProof :: Proof PallasG WrapField
+  -- | Public input of `wrapProof` (serialized wrap statement).
+  -- | Base case: `dummyWrapTockPublicInput`. Inductive: the real
+  -- | wrap prover's `publicInputs` output. Array because its length
+  -- | depends on the circuit configuration and is only known at the
+  -- | FFI boundary.
+  , wrapPublicInput :: Array WrapField
+  -- | Padded accumulator for the oracles call. Wrap_hack.Padded_length = 2.
+  -- | Each entry holds sg + expanded bp challenges. Base case: both entries
+  -- | are `(Dummy.Ipa.Wrap.sg, dummyIpaChallenges.wrapExpanded)`.
+  -- | Inductive: front-padded with dummy, real entry at the end.
+  , prevChalPolys ::
+      Vector PaddedLength
+        { sg :: AffinePoint StepField
+        , challenges :: Vector WrapIPARounds WrapField
+        }
   }
 
--- | Build a `StepAdvice n StepIPARounds WrapIPARounds` that is
--- | byte-identical to `buildStepAdvice` EXCEPT for:
--- | * `wrapVerifierIndex` — extracted from the real compiled wrap VK
--- | * `publicUnfinalizedProofs[i].plonk.{alpha,beta,gamma,zeta}` and
--- |   `.spongeDigest` — set to the outputs of running
--- |   `vestaProofOracles` over the real wrap VK and the dummy wrap
--- |   proof + `dummyWrapTockPublicInput`. (All n slots get the same
--- |   override since we feed the same dummy proof for all.)
+-- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
+-- | wrap proof (dummy for base case, real for inductive). Runs
+-- | `vestaProofOracles` on `input.wrapProof` + `input.wrapPublicInput`,
+-- | then feeds the result through `expandProof` to compute the full
+-- | advice record.
 buildStepAdviceWithOracles
   :: forall n
    . Reflectable n Int
@@ -975,58 +992,25 @@ buildStepAdviceWithOracles input = do
   Trace.field "expand_proof.msgForNextStep" msgStepDigestStepField
   Trace.field "expand_proof.msgForNextWrap" msgWrapHash
 
-  let
-    tockPublicInput :: Array WrapField
-    tockPublicInput = dummyWrapTockPublicInput
-      { mostRecentWidth: input.mostRecentWidth
-      , wrapDomainLog2: input.wrapDomainLog2
-      , wrapVK: input.wrapVK
-      , prevAppState: input.prevAppState
-      , wrapSg: input.wrapSg
-      , stepSg: input.stepSg
-      , msgWrapDigest: msgWrapHash
-      }
-
-  -- === TRACE Stage 4: full tock_public_input, index-by-index ===
-  for_ (Array.mapWithIndex Tuple tockPublicInput) \(Tuple i v) ->
+  -- === TRACE Stage 4: full tock_public_input (= wrapPublicInput), index-by-index ===
+  for_ (Array.mapWithIndex Tuple input.wrapPublicInput) \(Tuple i v) ->
     Trace.field ("tock_pi." <> show i) v
 
-  let
-    -- Mirror OCaml `step.ml:359-372`: oracles takes a length-2
-    -- `Wrap_hack.pad_accumulator` of `{commitment; challenges}`
-    -- pairs. For the Simple_chain N1 base case both entries are the
-    -- same dummy because `Proof.dummy.statement.messages_for_next_*`
-    -- is itself populated with the dummy values:
-    --   commitment = Dummy.Ipa.Wrap.sg (= input.wrapSg)
-    --   challenges = compute_challenges Dummy.Ipa.Wrap.challenges
-    --              = Dummy.Ipa.Wrap.challenges_computed
-    --              = dummyIpaChallenges.wrapExpanded
-    -- After `pad_accumulator` (= front-pad to Padded_length=2 with the
-    -- same dummy entry), both array slots are the same record.
-    dummyChalEntry =
-      { sgX: input.wrapSg.x
-      , sgY: input.wrapSg.y
-      , challenges: Vector.toUnfoldable dummyIpaChallenges.wrapExpanded
-      }
   -- === TRACE: chal_polys passed to vestaProofOracles ===
-  -- Mirrors OCaml step.ml's `expand_proof.chal_polys.*` trace so we
-  -- can compare what each side actually feeds the FFI.
-  Trace.field "expand_proof.chal_polys.0.comm.x" dummyChalEntry.sgX
-  Trace.field "expand_proof.chal_polys.0.comm.y" dummyChalEntry.sgY
-  case Array.head dummyChalEntry.challenges of
-    Just c -> Trace.field "expand_proof.chal_polys.0.chal.0" c
-    Nothing -> pure unit
-  Trace.field "expand_proof.chal_polys.1.comm.x" dummyChalEntry.sgX
-  Trace.field "expand_proof.chal_polys.1.comm.y" dummyChalEntry.sgY
-  case Array.head dummyChalEntry.challenges of
-    Just c -> Trace.field "expand_proof.chal_polys.1.chal.0" c
-    Nothing -> pure unit
+  forWithIndex_ input.prevChalPolys \fi entry -> do
+    let i = getFinite fi
+    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.x") entry.sg.x
+    Trace.field ("expand_proof.chal_polys." <> show i <> ".comm.y") entry.sg.y
+    Trace.field ("expand_proof.chal_polys." <> show i <> ".chal.0") (Vector.head entry.challenges)
+
   let
+    toFFIChalPoly r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
+
     oracles :: ProofFFI.OraclesResult WrapField
     oracles = vestaProofOracles input.wrapVK
-      { proof: dummyWrapProof
-      , publicInput: tockPublicInput
-      , prevChallenges: [ dummyChalEntry, dummyChalEntry ]
+      { proof: input.wrapProof
+      , publicInput: input.wrapPublicInput
+      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
       }
 
   -- === TRACE Stage 5: oracle outputs ===
@@ -1041,67 +1025,16 @@ buildStepAdviceWithOracles input = do
   -- value AND the prechals still differ, the bug is downstream of CIP.
   Trace.field "expand_proof.oracles.cip_kimchi" oracles.combinedInnerProduct
 
-  -- Trace raw opening prechallenges directly via FFI with the same
-  -- prev_challenges as the oracles call, so we can compare to OCaml's
-  -- `O.opening_prechallenges o` byte-for-byte.
+  -- Trace raw opening prechallenges from the wrap proof.
   let
     rawPrechalsForTrace :: Array WrapField
     rawPrechalsForTrace = vestaProofOpeningPrechallenges input.wrapVK
-      { proof: dummyWrapProof
-      , publicInput: tockPublicInput
-      , prevChallenges: [ dummyChalEntry, dummyChalEntry ]
-      }
-    -- Same FFI call but with EMPTY prev_challenges. If the prev_challenges
-    -- arg is being threaded correctly, this should give DIFFERENT values
-    -- from `rawPrechalsForTrace`. If they're identical, the binding is
-    -- broken (FFI ignores the arg).
-    rawPrechalsEmpty :: Array WrapField
-    rawPrechalsEmpty = vestaProofOpeningPrechallenges input.wrapVK
-      { proof: dummyWrapProof
-      , publicInput: tockPublicInput
-      , prevChallenges: []
+      { proof: input.wrapProof
+      , publicInput: input.wrapPublicInput
+      , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
       }
   for_ (Array.mapWithIndex Tuple rawPrechalsForTrace) \(Tuple i v) ->
     Trace.field ("expand_proof.bp_prechal." <> show i) v
-  for_ (Array.mapWithIndex Tuple rawPrechalsEmpty) \(Tuple i v) ->
-    Trace.field ("expand_proof.bp_prechal_empty." <> show i) v
-  -- Trace the Pallas generator (= g0 used as every lr point in
-  -- dummyWrapProof). OCaml emits the matching lr.0.l.x/y at the same
-  -- logical point in step.ml. If these coordinates differ, the IPA
-  -- prechallenges loop diverges even with identical sponge state — and
-  -- the divergence is a g0/generator mismatch, not a sponge bug.
-  let
-    g0 :: AffinePoint StepField
-    g0 = unsafePartial fromJust
-      (Curves.toAffine (Curves.generator :: Pallas.G) :: _ (AffinePoint StepField))
-  Trace.field "expand_proof.dummy_proof.lr.0.l.x" g0.x
-  Trace.field "expand_proof.dummy_proof.lr.0.l.y" g0.y
-  -- Trace raw z1/z2 (Ro-derived Tock.Field values used by Proof.dummy
-  -- openings). These get split into SplitField (sDiv2, sOdd) when
-  -- allocated inside the step circuit, and their encoding is the
-  -- leading candidate for the (col=0, row=201) witness divergence
-  -- localized by the kimchi witness dump.
-  Trace.field "expand_proof.dummy_proof.z1" roComputeResult.proofZ1
-  Trace.field "expand_proof.dummy_proof.z2" roComputeResult.proofZ2
-  -- Trace bRaw/cipRaw from the SAME roComputeResult. If PS's Ro
-  -- schedule is off by 2 (e.g., puts bRaw/cipRaw at pos 90/91 when
-  -- OCaml has them elsewhere), the values we see here should match
-  -- something on OCaml's side (possibly z_1/z_2 themselves, if PS is
-  -- pulling them from OCaml's z_1/z_2 positions).
-  Trace.field "expand_proof.dummy_proof.bRaw" roComputeResult.bRaw
-  Trace.field "expand_proof.dummy_proof.cipRaw" roComputeResult.cipRaw
-  -- Trace dummy proof evals — these flow into kimchi's combined_inner_product.
-  -- If they differ from OCaml, the kimchi-internal cip will diverge.
-  let _wrapDummyEvals = roComputeResult.wrapDummyEvals
-  Trace.field "expand_proof.dummy_proof.ft_eval1" _wrapDummyEvals.ftEval1
-  Trace.field "expand_proof.dummy_proof.evals.z.zeta"
-    _wrapDummyEvals.zEvals.zeta
-  Trace.field "expand_proof.dummy_proof.evals.z.zeta_omega"
-    _wrapDummyEvals.zEvals.omegaTimesZeta
-  let _genericEval = Vector.head _wrapDummyEvals.indexEvals
-  Trace.field "expand_proof.dummy_proof.evals.gen.zeta" _genericEval.zeta
-  Trace.field "expand_proof.dummy_proof.evals.gen.zeta_omega"
-    _genericEval.omegaTimesZeta
 
   let
     -- Cross-field coerce `SizedF 128 WrapField` to `SizedF 128 StepField`
@@ -1193,11 +1126,11 @@ buildStepAdviceWithOracles input = do
           { zeta: oracles.publicEvalZeta
           , omegaTimesZeta: oracles.publicEvalZetaOmega
           }
-      , zEvals: proofZEvals dummyWrapProof
-      , witnessEvals: proofWitnessEvals dummyWrapProof
-      , coeffEvals: proofCoefficientEvals dummyWrapProof
-      , sigmaEvals: proofSigmaEvals dummyWrapProof
-      , indexEvals: proofIndexEvals dummyWrapProof
+      , zEvals: proofZEvals input.wrapProof
+      , witnessEvals: proofWitnessEvals input.wrapProof
+      , coeffEvals: proofCoefficientEvals input.wrapProof
+      , sigmaEvals: proofSigmaEvals input.wrapProof
+      , indexEvals: proofIndexEvals input.wrapProof
       }
 
     wrapShiftsW :: Vector 7 WrapField
@@ -1251,9 +1184,9 @@ buildStepAdviceWithOracles input = do
       , wrapChallengePolynomialCommitment: input.stepSg
       , wrapPaddedPrevChallenges: wrapPadded
       , wrapVerifierIndex: input.wrapVK
-      , wrapProof: dummyWrapProof
-      , tockPublicInput: tockPublicInput
-      , wrapOraclesPrevChallenges: [ dummyChalEntry, dummyChalEntry ]
+      , wrapProof: input.wrapProof
+      , tockPublicInput: input.wrapPublicInput
+      , wrapOraclesPrevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
       , wrapDomainLog2: input.wrapDomainLog2
       , wrapEndo: wrapEndoScalar
       , wrapAllEvals: wrapAllEvalsW

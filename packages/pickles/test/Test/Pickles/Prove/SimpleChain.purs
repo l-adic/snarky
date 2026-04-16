@@ -38,6 +38,9 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException) as Exc
 import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges) as Dummy
+import Pickles.Proof.Dummy (dummyWrapProof)
+import Pickles.Prove.Step (dummyWrapTockPublicInput)
+import Pickles.Types (PaddedLength)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -50,7 +53,7 @@ import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.VerificationKey (StepVK)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof, hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Data.Maybe (Maybe(..), fromJust)
 import Partial.Unsafe (unsafePartial)
@@ -334,6 +337,24 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- `wrapSg` and `stepSg` are already computed at the top of the
     -- spec (line ~113) so the step circuit's compile-time `dummy_sg`
     -- constant matches.
+    let
+      baseCaseDummyChalPoly =
+        { sg: wrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+      baseCaseWrapPI = dummyWrapTockPublicInput
+        { mostRecentWidth: 1
+        , wrapDomainLog2
+        , wrapVK: wrapCR.verifierIndex
+        , prevAppState: F (negate one)
+        , wrapSg
+        , stepSg
+        , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
+            { sg: stepSg
+            , paddedChallenges:
+                Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Vector.nil
+            }
+        }
     realAdvice <- liftEffect $ buildStepAdviceWithOracles
       { appState: F zero
       , prevAppState: F (negate one) -- OCaml `s_neg_one`
@@ -342,6 +363,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapVK: wrapCR.verifierIndex
       , wrapSg
       , stepSg
+      , wrapProof: dummyWrapProof
+      , wrapPublicInput: baseCaseWrapPI
+      , prevChalPolys:
+          baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
+            :: Vector PaddedLength _
       }
 
     -- ===== Phase 4: run the step solver =====
