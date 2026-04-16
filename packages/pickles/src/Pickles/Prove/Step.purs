@@ -76,7 +76,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.ProofWitness (ProofWitness)
@@ -989,6 +989,7 @@ buildStepAdviceWithOracles input = do
       , prevChallenges: map toFFIChalPoly (Vector.toUnfoldable input.prevChalPolys :: Array _)
       }
 
+  Trace.field "expand_proof.wrap_vk_digest" (vestaVerifierIndexDigest input.wrapVK)
   -- === TRACE Stage 5: oracle outputs ===
   Trace.field "expand_proof.oracles.beta" (SizedF.toField oracles.beta)
   Trace.field "expand_proof.oracles.gamma" (SizedF.toField oracles.gamma)
@@ -1189,6 +1190,9 @@ buildStepAdviceWithOracles input = do
   Trace.fieldF "expand_proof.deferred.plonk.zetaToSrsLength" (type1Inner dStep.plonk.zetaToSrsLength)
   Trace.fieldF "expand_proof.deferred.plonk.zetaToDomainSize" (type1Inner dStep.plonk.zetaToDomainSize)
   Trace.field "expand_proof.deferred.branch_data.domain_log2" dStep.branchData.domainLog2
+  -- Trace the raw prechallenges from expandProof's internal oracles call
+  for_ (Array.mapWithIndex Tuple expandProofResult.rawPrechallenges) \(Tuple i v) ->
+    Trace.field ("expand_proof.internal_bp_prechal." <> show i) v
 
   -- === TRACE: wrap-field unfinalized deferred values (from expandProof) ===
   let

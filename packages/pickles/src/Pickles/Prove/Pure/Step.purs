@@ -490,6 +490,7 @@ type ExpandProofOutput =
   -- | Public input polynomial evaluation at (zeta, zeta·omega). In
   -- | OCaml (step.ml:319) these are `Tock.Field.t` values from the
   -- | wrap oracles (= `WrapField`).
+  , rawPrechallenges :: Array WrapField
   , xHat :: { zeta :: WrapField, omegaTimesZeta :: WrapField }
   , perProofWitness ::
       StepPerProofWitness
@@ -893,6 +894,7 @@ expandProof input =
     { sg: challengePolynomialCommitment
     , unfinalized: wrapUnfinalized
     , deferredStep: _deferredStep
+    , rawPrechallenges: rawPrechalsArray
     , xHat:
         { zeta: oraclesResult.publicEvalZeta
         , omegaTimesZeta: oraclesResult.publicEvalZetaOmega
