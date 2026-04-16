@@ -49,7 +49,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofOpeningSg, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -747,8 +747,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
         wrapProveCtx
         wrapCR
 
-    liftEffect $ Trace.int "wrap.proof.public_input_count"
-      (Array.length wrapResult.publicInputs)
+    liftEffect do
+      Trace.int "wrap.proof.public_input_count" (Array.length wrapResult.publicInputs)
+      let wSg = ProofFFI.vestaProofOpeningSg wrapResult.proof
+      Trace.field "wrap.proof.opening.sg.x" wSg.x
+      Trace.field "wrap.proof.opening.sg.y" wSg.y
 
     liftEffect $ Trace.string "simple_chain.end" "base_case_verified"
 
