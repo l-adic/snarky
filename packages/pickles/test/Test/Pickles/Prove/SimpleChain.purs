@@ -381,6 +381,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
             :< Dummy.dummyIpaChallenges.wrapExpanded
             :< Vector.nil
       , fopState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 1 }
+      -- b0: advice.evals mirrors the compile-time placeholder
+      -- (= Ro-derived r.stepDummyPrevEvals) so the step_b0 witness stays
+      -- byte-identical to OCaml. Verified empirically: changing to
+      -- simpleChainDummyPrevEvals here diverges step_b0 at row 0 despite
+      -- both being nominally "dummy prev_evals".
+      , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
       }
 
     -- ===== Phase 4: run the step solver =====
@@ -953,6 +959,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations
       , mustVerify: true
       , wrapOwnPaddedBpChals: b1WrapOwnPaddedBpChals
+      -- b1 stepAdvicePrevEvals: the step FOP recomputes wrap_b0's deferred
+      -- values from these evals and asserts they match fopState. For
+      -- byte-correctness we need wrap_b0.prev_evals = step_b0.openings.evals
+      -- + step_b0's x_hat (per wrap.ml:583-591). b1WrapPrevEvals is exactly
+      -- this.
+      , stepAdvicePrevEvals: b1WrapPrevEvals
       -- b1 fopState: from the freshly-computed wrapDv (= what wrap_b0's
       -- statement stores in its deferred_values). This MUST match what
       -- wrap_b0.publicInputs contains so the step circuit's packStatement

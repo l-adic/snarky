@@ -930,6 +930,19 @@ type BuildStepAdviceWithOraclesInput =
   -- | `wrapComputeDeferredValues` during wrap proving.
   , fopState ::
       UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+  -- | Step advice's `evals[i]` field value (= per_proof_witness.ml:81-86
+  -- | `prev_proof_evals = Plonk_types.All_evals.In_circuit.t`). These are
+  -- | the evaluations the step FOP reads to recompute claimed deferred
+  -- | values and check against advice's `fopState`.
+  -- |
+  -- | Distinct from `wrapPrevEvals` input (which feeds `expandProof` for
+  -- | the step-side deferred computation — a separate path). For b0 this
+  -- | must equal `r.stepDummyPrevEvals` (what the compile-time placeholder
+  -- | uses, matching OCaml's runtime dummy wrap proof's prev_evals). For
+  -- | b1 this must be wrap_b0's actual `prev_evals` field (= step_b0's
+  -- | openings + x_hat) so the FOP's recompute matches the fopState
+  -- | claims.
+  , stepAdvicePrevEvals :: AllEvals StepField
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -1415,6 +1428,24 @@ buildStepAdviceWithOracles input = do
           Vector.toVector @7 (map mkPallasAffine wrapCommits.tComm)
       }
 
+  let
+    wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
+    wrapPE' pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
+
+    evalsForAdvice :: ProofWitness (F StepField)
+    evalsForAdvice =
+      let ae = input.stepAdvicePrevEvals
+      in { allEvals:
+             { ftEval1: F ae.ftEval1
+             , publicEvals: wrapPE' ae.publicEvals
+             , zEvals: wrapPE' ae.zEvals
+             , indexEvals: map wrapPE' ae.indexEvals
+             , witnessEvals: map wrapPE' ae.witnessEvals
+             , coeffEvals: map wrapPE' ae.coeffEvals
+             , sigmaEvals: map wrapPE' ae.sigmaEvals
+             }
+         }
+
   pure
     { advice: base
         { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
@@ -1424,6 +1455,7 @@ buildStepAdviceWithOracles input = do
         , messages = Vector.replicate realWrapMessages
         , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
         , openingProofs = overriddenOpenings
+        , evals = Vector.replicate evalsForAdvice
         , kimchiPrevChallenges =
             Vector.replicate
               { sgX: input.stepSg.x
