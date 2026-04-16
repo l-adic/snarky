@@ -43,6 +43,7 @@ import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
+import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Trace as Trace
@@ -569,6 +570,12 @@ wrapSolveAndProve onError ctx compileResult = do
 
         csSatisfied = verifyProverIndex @WrapField @PallasG
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
+        _traceWitness = unsafePerformEffect do
+          let col0 = Vector.index witness (unsafeFinite @15 0)
+          for_ (Array.mapWithIndex Tuple (Array.take 50 col0)) \(Tuple i v) ->
+            Trace.field ("wrap.witness.col0." <> show i) v
+          for_ (Array.mapWithIndex Tuple publicInputs) \(Tuple i v) ->
+            Trace.field ("wrap.witness.pi." <> show i) v
       in
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
