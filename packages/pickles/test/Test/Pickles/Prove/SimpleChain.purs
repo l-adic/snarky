@@ -637,28 +637,48 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , shouldFinalize: stepUnfRec.shouldFinalize
         }
 
+      -- OCaml Req.Step_accs = messages_for_next_wrap_proof.challenge_polynomial_commitment.
+      -- For the base case, `messages_for_next_wrap_proof` comes from the dummy
+      -- step statement, so this is the dummy step sg (Vesta point). Its coords
+      -- are in Vesta's base field = Fq = WrapField.
+      -- This must match wrapDvInput.prevSgs (= stepSg = dummySgValues.ipa.step.sg)
+      -- so the wrap IVP sponge and pallasProofOracles absorb the same prev
+      -- challenge polys (which determines plonk.beta via ivp_assert_plonk_beta).
       dummyStepAccPoint :: WeierstrassAffinePoint VestaG (F WrapField)
       dummyStepAccPoint = WeierstrassAffinePoint
         { x: F stepSg.x, y: F stepSg.y }
 
+      -- OCaml Req.Old_bulletproof_challenges returns Challenges_vector.Prepared.t
+      -- = Tock.Field (= Fq = WrapField) vectors of size Wrap_bp_vec = 15,
+      -- expanded via Ipa.Wrap.compute_challenges (Pallas.endo_scalar).
+      -- For base case, messages_for_next_wrap_proof[0].old_bulletproof_challenges
+      -- stores the bp chals of the prev wrap proof the step verified. For
+      -- Simple_chain N1 base case that is the dummy wrap proof, and
+      -- `dummyIpaChallenges.wrapExpanded` is exactly those chals expanded via
+      -- the wrap endo. Different from wrapDvInput.prevChallenges (which is
+      -- stepExpanded, size 16, step's natural field) because that feeds the
+      -- STEP verifier's kimchi oracles, not the wrap IVP sponge.
       dummyWrapBpChals :: Vector WrapIPARounds (F WrapField)
       dummyWrapBpChals =
         map (F <<< fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
 
-      -- Ro-derived dummy evals matching OCaml's Proof.dummy.prev_evals
+      -- OCaml's Proof.dummy.prev_evals is Tick.Field (StepField) evals,
+      -- coerced to Tock.Field (WrapField) by the framework (same bytes,
+      -- different field interpretation). Use simpleChainDummyPrevEvals
+      -- (StepField) cross-field coerced to WrapField.
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
-          de = Dummy.roComputeResult.wrapDummyEvals
-          pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+          xf x = F (fromBigInt (toBigInt x) :: WrapField)
+          pe pe' = PointEval { zeta: xf pe'.zeta, omegaTimesZeta: xf pe'.omegaTimesZeta }
         in StepAllEvals
-          { ftEval1: F de.ftEval1
-          , publicEvals: pe de.publicEvals
-          , zEvals: pe de.zEvals
-          , witnessEvals: map pe de.witnessEvals
-          , coeffEvals: map pe de.coeffEvals
-          , sigmaEvals: map pe de.sigmaEvals
-          , indexEvals: map pe de.indexEvals
+          { ftEval1: xf simpleChainDummyPrevEvals.ftEval1
+          , publicEvals: pe simpleChainDummyPrevEvals.publicEvals
+          , zEvals: pe simpleChainDummyPrevEvals.zEvals
+          , witnessEvals: map pe simpleChainDummyPrevEvals.witnessEvals
+          , coeffEvals: map pe simpleChainDummyPrevEvals.coeffEvals
+          , sigmaEvals: map pe simpleChainDummyPrevEvals.sigmaEvals
+          , indexEvals: map pe simpleChainDummyPrevEvals.indexEvals
           }
 
       wrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
