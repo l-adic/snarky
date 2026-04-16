@@ -40,7 +40,8 @@ import Effect.Exception (throw, throwException) as Exc
 import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges) as Dummy
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
-import Pickles.Types (PaddedLength)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Types (PaddedLength, StepField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -62,7 +63,7 @@ import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Snarky.Backend.Kimchi.Class (constraintSystemToJson) as Kimchi
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
 import Snarky.Curves.Class as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -368,6 +369,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , prevChalPolys:
           baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
             :: Vector PaddedLength _
+      , wrapPlonkRaw: simpleChainDummyPlonk
+      , wrapPrevEvals: simpleChainDummyPrevEvals
+      , wrapBranchData:
+          { domainLog2: fromInt wrapDomainLog2 :: StepField
+          , proofsVerifiedMask: false :< true :< Vector.nil
+          }
+      , wrapSpongeDigest: zero
+      , mustVerify: false
       }
 
     -- ===== Phase 4: run the step solver =====

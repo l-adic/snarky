@@ -874,6 +874,29 @@ type BuildStepAdviceWithOraclesInput =
         { sg :: AffinePoint StepField
         , challenges :: Vector WrapIPARounds WrapField
         }
+  -- | Raw 128-bit plonk challenges from the wrap proof's statement.
+  -- | Base case: `simpleChainDummyPlonk`. Inductive: extracted from
+  -- | the real wrap proof's deferred values.
+  , wrapPlonkRaw ::
+      { alpha :: SizedF 128 StepField
+      , beta :: SizedF 128 StepField
+      , gamma :: SizedF 128 StepField
+      , zeta :: SizedF 128 StepField
+      }
+  -- | Step-field polynomial evaluations from the wrap proof.
+  -- | Base case: `simpleChainDummyPrevEvals`. Inductive: extracted
+  -- | from the real wrap proof.
+  , wrapPrevEvals :: AllEvals StepField
+  -- | Branch data from the wrap proof's statement.
+  -- | Base case: `{ domainLog2: wrapDomainLog2, proofsVerifiedMask: [false, true] }`.
+  -- | Inductive: from the real wrap statement.
+  , wrapBranchData :: VT.BranchData StepField Boolean
+  -- | Sponge digest before evaluations from the wrap proof's statement.
+  -- | Base case: zero. Inductive: from the real wrap statement.
+  , wrapSpongeDigest :: StepField
+  -- | Whether the step circuit must verify the previous proof (= not base case).
+  -- | Controls `challenge_polynomial_commitment` override in expandProof.
+  , mustVerify :: Boolean
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -895,55 +918,11 @@ buildStepAdviceWithOracles input = do
       , wrapDomainLog2: input.wrapDomainLog2
       }
 
-    -- === TRACE Stage 1: Ro-derived dummy plonk0 (from simpleChainStepDummyFopProofState) ===
-    -- These mirror OCaml's `t.statement.proof_state.deferred_values.plonk`
-    -- fields (alpha.inner, beta, gamma, zeta.inner) — the 128-bit scalar
-    -- challenges embedded in the step-field type.
-    -- Switched from `stepDummyFopProofState` (which uses module-init
-    -- Ro state) to `simpleChainStepDummyFopProofState` (which uses
-    -- post-compile hardcoded fixture values) to match OCaml's
-    -- `expand_proof.plonk0` values for the Simple_chain base case.
-    traceFop =
-      (simpleChainStepDummyFopProofState { proofsVerified: input.mostRecentWidth }
-          :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-      )
-    tracePlonk = traceFop.deferredValues.plonk
-    traceDV = traceFop.deferredValues
-
-  Trace.fieldF "expand_proof.plonk0.alpha.raw" (SizedF.toField tracePlonk.alpha)
-  Trace.fieldF "expand_proof.plonk0.beta" (SizedF.toField tracePlonk.beta)
-  Trace.fieldF "expand_proof.plonk0.gamma" (SizedF.toField tracePlonk.gamma)
-  Trace.fieldF "expand_proof.plonk0.zeta.raw" (SizedF.toField tracePlonk.zeta)
-
-  -- === TRACE Stage 2: expand_deferred outputs ===
-  -- OCaml's `step.ml` emits the INNER stored Type1 value via
-  -- `Shifted_value.Type1.Shifted_value cip` unwrapping — i.e., the
-  -- stored `t` where the original (unshifted) value is `2*t + c`. We
-  -- match by reaching through the `Type1` newtype directly rather
-  -- than calling `fromShifted` (which would reconstruct the original
-  -- unshifted value).
-  let
-    type1Inner :: Type1 (F StepField) -> F StepField
-    type1Inner (Type1 x) = x
-
-    -- xi: OCaml emits `sc dvc.xi` = expanded Fq scalar via
-    -- `Endo.Wrap_inner_curve.scalar`. PS mirrors via toFieldPure over
-    -- the Vesta endo scalar.
-    EndoScalar stepEndoScalar =
-      (endoScalar :: EndoScalar Vesta.ScalarField)
-    xiExpanded :: StepField
-    xiExpanded = toFieldPure (SizedF.unwrapF traceDV.xi) stepEndoScalar
-  Trace.fieldF "expand_proof.deferred.combined_inner_product"
-    (type1Inner traceDV.combinedInnerProduct)
-  Trace.fieldF "expand_proof.deferred.b" (type1Inner traceDV.b)
-  Trace.field "expand_proof.deferred.xi" xiExpanded
-  Trace.fieldF "expand_proof.deferred.plonk.perm" (type1Inner tracePlonk.perm)
-  Trace.fieldF "expand_proof.deferred.plonk.zetaToSrsLength"
-    (type1Inner tracePlonk.zetaToSrsLength)
-  Trace.fieldF "expand_proof.deferred.plonk.zetaToDomainSize"
-    (type1Inner tracePlonk.zetaToDomainSize)
-  Trace.int "expand_proof.deferred.branch_data.domain_log2"
-    input.wrapDomainLog2
+  -- === TRACE Stage 1: plonk0 raw challenges ===
+  Trace.field "expand_proof.plonk0.alpha.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.alpha :: SizedF 128 (F StepField)))
+  Trace.field "expand_proof.plonk0.beta" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.beta :: SizedF 128 (F StepField)))
+  Trace.field "expand_proof.plonk0.gamma" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.gamma :: SizedF 128 (F StepField)))
+  Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.zeta :: SizedF 128 (F StepField)))
 
   let
     -- Compute `hashMessagesForNextWrapProof` ONCE and thread it to
@@ -1073,26 +1052,16 @@ buildStepAdviceWithOracles input = do
     -- main consumer is `expandProof`'s wrap-side oldBulletproofChallenges
     -- (via wrapPaddedPrevChallenges).
 
-    -- Dummy plonk0 (raw 128-bit alpha/beta/gamma/zeta) for the prev wrap
-    -- proof, in step field. Source: `simpleChainDummyPlonk` fixture
-    -- (post-compile Ro state).
     plonkMinimalStep :: PlonkMinimal (F StepField)
     plonkMinimalStep =
-      { alpha: SizedF.wrapF simpleChainDummyPlonk.alpha
-      , beta: SizedF.wrapF simpleChainDummyPlonk.beta
-      , gamma: SizedF.wrapF simpleChainDummyPlonk.gamma
-      , zeta: SizedF.wrapF simpleChainDummyPlonk.zeta
+      { alpha: SizedF.wrapF input.wrapPlonkRaw.alpha
+      , beta: SizedF.wrapF input.wrapPlonkRaw.beta
+      , gamma: SizedF.wrapF input.wrapPlonkRaw.gamma
+      , zeta: SizedF.wrapF input.wrapPlonkRaw.zeta
       }
 
-    -- BranchData for the prev wrap proof. domain_log2 = wrap proof's
-    -- evaluation domain (= input.wrapDomainLog2 = 14 for Simple_chain).
-    -- proofs_verified mask = [false, true] for N1 base case.
     branchDataStep :: VT.BranchData StepField Boolean
-    branchDataStep =
-      { domainLog2: (Curves.fromInt input.wrapDomainLog2 :: StepField)
-      , proofsVerifiedMask:
-          false :< true :< Vector.nil
-      }
+    branchDataStep = input.wrapBranchData
 
     -- Step-field expand_deferred inputs (mirroring OCaml step.ml:160-235).
     -- domainLog2 here is the WRAP proof's domain (since we're verifying a
@@ -1141,36 +1110,33 @@ buildStepAdviceWithOracles input = do
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
         { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: oracles.zeta }
 
-    -- Step's prev_evals — the dummy Simple_chain pre-compile evals
-    -- (`simpleChainDummyPrevEvals`) wrapped in the `StepAllEvals` newtype.
-    dummyStepAllEvalsF :: StepAllEvals (F StepField)
-    dummyStepAllEvalsF =
-      let pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+    wrapPrevEvalsF :: StepAllEvals (F StepField)
+    wrapPrevEvalsF =
+      let
+        pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+        ae = input.wrapPrevEvals
       in StepAllEvals
-        { ftEval1: F simpleChainDummyPrevEvals.ftEval1
-        , publicEvals: pe simpleChainDummyPrevEvals.publicEvals
-        , zEvals: pe simpleChainDummyPrevEvals.zEvals
-        , witnessEvals: map pe simpleChainDummyPrevEvals.witnessEvals
-        , coeffEvals: map pe simpleChainDummyPrevEvals.coeffEvals
-        , sigmaEvals: map pe simpleChainDummyPrevEvals.sigmaEvals
-        , indexEvals: map pe simpleChainDummyPrevEvals.indexEvals
+        { ftEval1: F ae.ftEval1
+        , publicEvals: pe ae.publicEvals
+        , zEvals: pe ae.zEvals
+        , witnessEvals: map pe ae.witnessEvals
+        , coeffEvals: map pe ae.coeffEvals
+        , sigmaEvals: map pe ae.sigmaEvals
+        , indexEvals: map pe ae.indexEvals
         }
 
-    -- expandProof input record. mpv=1 means n=1 (one prev proof slot)
-    -- and nwp=2 (Wrap_hack.Padded_length.n = 2, the wrap-side hash
-    -- padded length).
     expandProofInputRec :: PureStep.ExpandProofInput 1 2
     expandProofInputRec =
-      { mustVerify: false -- base case: prev proof is dummy, not really verified
+      { mustVerify: input.mustVerify
       , zkRows: 3
       , srsLengthLog2: 16 -- Common.Max_degree.step_log2 = Tick.Rounds.n
-      , allEvals: simpleChainDummyPrevEvals
-      , pEval0Chunks: [ simpleChainDummyPrevEvals.publicEvals.zeta ]
+      , allEvals: input.wrapPrevEvals
+      , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
       , oldBulletproofChallenges: dummyStepBpChalsRaw :< Vector.nil
       , plonkMinimal: plonkMinimalStep
       , rawBulletproofChallenges: dummyStepBpChalsRaw
       , branchData: branchDataStep
-      , spongeDigestBeforeEvaluations: zero
+      , spongeDigestBeforeEvaluations: input.wrapSpongeDigest
       , stepDomainLog2: input.wrapDomainLog2
       , stepGenerator: stepFopGenerator
       , stepShifts: stepFopShifts
@@ -1197,7 +1163,7 @@ buildStepAdviceWithOracles input = do
       , wrapVanishesOnZk: wrapVanishesOnZkW
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
-      , stepProofPrevEvals: dummyStepAllEvalsF
+      , stepProofPrevEvals: wrapPrevEvalsF
       , stepPrevChallenges: map F stepExpanded :< Vector.nil
       , stepPrevSgsPadded: input.wrapSg :< Vector.nil
       }
