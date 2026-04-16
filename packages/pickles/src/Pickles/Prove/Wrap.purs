@@ -42,7 +42,10 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
+import Data.FoldableWithIndex (forWithIndex_)
+import Effect.Unsafe (unsafePerformEffect)
+import Pickles.Trace as Trace
 import Data.Map (Map)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un)
@@ -570,7 +573,14 @@ wrapSolveAndProve onError ctx compileResult = do
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
         else
-          let proof = vestaCreateProofWithPrev
+          let _ = unsafePerformEffect do
+                forWithIndex_ ctx.kimchiPrevChallenges \fi r -> do
+                  let i = getFinite fi
+                  Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.x") r.sgX
+                  Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.y") r.sgY
+                  forWithIndex_ r.challenges \fj c ->
+                    Trace.field ("wrap.create_proof.accum." <> show i <> ".chal." <> show (getFinite fj)) c
+              proof = vestaCreateProofWithPrev
                 { proverIndex: compileResult.proverIndex
                 , witness
                 , prevChallenges:
