@@ -39,7 +39,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException) as Exc
-import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges) as Dummy
+import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, roComputeResult) as Dummy
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
@@ -645,17 +645,20 @@ spec = describe "Pickles.Prove.SimpleChain" do
       dummyWrapBpChals =
         map (F <<< fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
 
-      dummyStepAllEvalsW :: StepAllEvals (F WrapField)
-      dummyStepAllEvalsW =
-        let zpe = PointEval { zeta: F zero, omegaTimesZeta: F zero }
+      -- Ro-derived dummy evals matching OCaml's Proof.dummy.prev_evals
+      realPrevEvalsW :: StepAllEvals (F WrapField)
+      realPrevEvalsW =
+        let
+          de = Dummy.roComputeResult.wrapDummyEvals
+          pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         in StepAllEvals
-          { publicEvals: zpe
-          , witnessEvals: Vector.replicate zpe
-          , coeffEvals: Vector.replicate zpe
-          , zEvals: zpe
-          , sigmaEvals: Vector.replicate zpe
-          , indexEvals: Vector.replicate zpe
-          , ftEval1: F zero
+          { ftEval1: F de.ftEval1
+          , publicEvals: pe de.publicEvals
+          , zEvals: pe de.zEvals
+          , witnessEvals: map pe de.witnessEvals
+          , coeffEvals: map pe de.coeffEvals
+          , sigmaEvals: map pe de.sigmaEvals
+          , indexEvals: map pe de.indexEvals
           }
 
       wrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
@@ -667,8 +670,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
             F (fromBigInt (toBigInt msgForNextStepDigest) :: WrapField)
         , prevStepAccs: dummyStepAccPoint :< Vector.nil
         , prevOldBpChals: slots1 (dummyWrapBpChals :< Vector.nil)
-        , prevEvals: dummyStepAllEvalsW :< Vector.nil
-        , prevWrapDomainIndices: F zero :< Vector.nil
+        , prevEvals: realPrevEvalsW :< Vector.nil
+        , prevWrapDomainIndices: F (fromInt 1 :: WrapField) :< Vector.nil
         }
 
       wrapAdvice :: WrapAdvice 1 (Slots1 1)
