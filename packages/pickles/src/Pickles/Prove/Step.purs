@@ -76,7 +76,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.ProofWitness (ProofWitness)
@@ -1320,12 +1320,31 @@ buildStepAdviceWithOracles input = do
       (\op -> op { sg = overriddenSg })
       base.openingProofs
 
+  let
+    -- Extract wrap proof's actual commitments. For b0 (dummy wrap) these
+    -- are all g0 (matching the placeholder `buildStepAdvice` provides).
+    -- For b1 (real wrap_b0) these are the REAL commitments — without this
+    -- override the step IVP sponge absorbs g0 placeholders and derives a
+    -- bogus beta that diverges from the advice's plonk.beta. The base-case
+    -- assertion masks this via `assert_any_ [finalized, not should_finalize]`
+    -- with mustVerify=false; for b1 (mustVerify=true) the assertion fires.
+    wrapCommits = vestaProofCommitments input.wrapProof
+    mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
+    mkPallasAffine pt = { x: F pt.x, y: F pt.y }
+    realWrapMessages =
+      { wComm: map mkPallasAffine wrapCommits.wComm
+      , zComm: mkPallasAffine wrapCommits.zComm
+      , tComm: unsafePartial $ fromJust $
+          Vector.toVector @7 (map mkPallasAffine wrapCommits.tComm)
+      }
+
   pure
     { advice: base
         { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
         , publicUnfinalizedProofs = Vector.replicate expandedUnfinalized
         , fopProofStates = Vector.replicate simpleChainFop
         , sgOld = Vector.replicate wrapSgF
+        , messages = Vector.replicate realWrapMessages
         , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
         , openingProofs = overriddenOpenings
         , kimchiPrevChallenges =
