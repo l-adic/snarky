@@ -364,7 +364,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , prevChalPolys:
           baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
             :: Vector PaddedLength _
-      , wrapPlonkRaw: simpleChainDummyPlonk
+
       , wrapPrevEvals: simpleChainDummyPrevEvals
       , wrapBranchData:
           { domainLog2: fromInt wrapDomainLog2 :: StepField
@@ -774,16 +774,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , indexEvals: ProofFFI.proofIndexEvals result.proof
         }
 
-      -- wrapPlonkRaw for b1: the 128-bit raw plonk challenges from
-      -- the b0 wrap statement. These are the step-field scalar challenges
-      -- computed by wrapComputeDeferredValues.
-      b1WrapPlonkRaw =
-        { alpha: SizedF.unwrapF wrapDv.plonk.alpha
-        , beta: SizedF.unwrapF wrapDv.plonk.beta
-        , gamma: SizedF.unwrapF wrapDv.plonk.gamma
-        , zeta: SizedF.unwrapF wrapDv.plonk.zeta
-        }
-
       -- prevChalPolys for b1's oracles: padded accumulator.
       -- Slot 0 (padding): dummy
       -- Slot 1 (real): sg from b0 wrap statement's
@@ -815,7 +805,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapProof: wrapResult.proof
       , wrapPublicInput: wrapResult.publicInputs
       , prevChalPolys: b1PrevChalPolys
-      , wrapPlonkRaw: b1WrapPlonkRaw
+
       , wrapPrevEvals: b1WrapPrevEvals
       , wrapBranchData: wrapDv.branchData
       , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations

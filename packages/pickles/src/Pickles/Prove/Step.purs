@@ -874,15 +874,6 @@ type BuildStepAdviceWithOraclesInput =
         { sg :: AffinePoint StepField
         , challenges :: Vector WrapIPARounds WrapField
         }
-  -- | Raw 128-bit plonk challenges from the wrap proof's statement.
-  -- | Base case: `simpleChainDummyPlonk`. Inductive: extracted from
-  -- | the real wrap proof's deferred values.
-  , wrapPlonkRaw ::
-      { alpha :: SizedF 128 StepField
-      , beta :: SizedF 128 StepField
-      , gamma :: SizedF 128 StepField
-      , zeta :: SizedF 128 StepField
-      }
   -- | Step-field polynomial evaluations from the wrap proof.
   -- | Base case: `simpleChainDummyPrevEvals`. Inductive: extracted
   -- | from the real wrap proof.
@@ -917,12 +908,6 @@ buildStepAdviceWithOracles input = do
       , mostRecentWidth: input.mostRecentWidth
       , wrapDomainLog2: input.wrapDomainLog2
       }
-
-  -- === TRACE Stage 1: plonk0 raw challenges ===
-  Trace.field "expand_proof.plonk0.alpha.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.alpha :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.beta" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.beta :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.gamma" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.gamma :: SizedF 128 (F StepField)))
-  Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField (SizedF.wrapF input.wrapPlonkRaw.zeta :: SizedF 128 (F StepField)))
 
   let
     -- Compute `hashMessagesForNextWrapProof` ONCE and thread it to
@@ -997,6 +982,11 @@ buildStepAdviceWithOracles input = do
   Trace.field "expand_proof.oracles.gamma" (SizedF.toField oracles.gamma)
   Trace.field "expand_proof.oracles.alpha_chal" (SizedF.toField oracles.alphaChal)
   Trace.field "expand_proof.oracles.zeta_chal" (SizedF.toField oracles.zetaChal)
+  -- === TRACE: plonk0 raw challenges (from wrap oracles) ===
+  Trace.field "expand_proof.plonk0.alpha.raw" (SizedF.toField oracles.alphaChal)
+  Trace.field "expand_proof.plonk0.beta" (SizedF.toField oracles.beta)
+  Trace.field "expand_proof.plonk0.gamma" (SizedF.toField oracles.gamma)
+  Trace.field "expand_proof.plonk0.zeta.raw" (SizedF.toField oracles.zetaChal)
   Trace.field "expand_proof.oracles.fq_digest" oracles.fqDigest
   -- The kimchi-internal combined_inner_product, as returned by the FFI's
   -- proof.oracles call. This is the value absorbed into the sponge before
@@ -1052,12 +1042,15 @@ buildStepAdviceWithOracles input = do
     -- main consumer is `expandProof`'s wrap-side oldBulletproofChallenges
     -- (via wrapPaddedPrevChallenges).
 
+    -- plonk0 from the wrap proof's oracles (matching OCaml step.ml:
+    -- `let plonk0 = { alpha = scalar_chal O.alpha; beta = O.beta;
+    -- gamma = O.gamma; zeta = scalar_chal O.zeta }`).
     plonkMinimalStep :: PlonkMinimal (F StepField)
     plonkMinimalStep =
-      { alpha: SizedF.wrapF input.wrapPlonkRaw.alpha
-      , beta: SizedF.wrapF input.wrapPlonkRaw.beta
-      , gamma: SizedF.wrapF input.wrapPlonkRaw.gamma
-      , zeta: SizedF.wrapF input.wrapPlonkRaw.zeta
+      { alpha: chalToStep oracles.alphaChal
+      , beta: chalToStep oracles.beta
+      , gamma: chalToStep oracles.gamma
+      , zeta: chalToStep oracles.zetaChal
       }
 
     branchDataStep :: VT.BranchData StepField Boolean
