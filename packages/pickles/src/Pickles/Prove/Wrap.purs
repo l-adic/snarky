@@ -42,6 +42,8 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -570,12 +572,22 @@ wrapSolveAndProve onError ctx compileResult = do
 
         csSatisfied = verifyProverIndex @WrapField @PallasG
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
-        _traceWitness = unsafePerformEffect do
-          let col0 = Vector.index witness (unsafeFinite @15 0)
-          for_ (Array.mapWithIndex Tuple (Array.take 50 col0)) \(Tuple i v) ->
-            Trace.field ("wrap.witness.col0." <> show i) v
-          for_ (Array.mapWithIndex Tuple publicInputs) \(Tuple i v) ->
-            Trace.field ("wrap.witness.pi." <> show i) v
+        _dumpRowLabels = unsafePerformEffect do
+          let
+            { out } = Array.foldl
+              ( \{ row, out } lc ->
+                  let
+                    nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow WrapField))
+                    endRow = row + nRows - 1
+                    path = Array.intercalate "/" lc.context
+                    line = show row <> ".." <> show endRow <> "\t" <> path
+                  in
+                    { row: row + nRows, out: out <> [ line ] }
+              )
+              { row: 0, out: [] }
+              compileResult.builtState.constraints
+          FS.writeTextFile UTF8 "/tmp/ps_wrap_row_labels.txt"
+            (Array.intercalate "\n" out <> "\n")
       in
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
