@@ -29,6 +29,8 @@ import Prelude
 
 import Data.Array as Array
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
+import Data.Fin (getFinite)
 import Data.Int.Bits as Int
 import Data.Tuple (Tuple(..))
 import Data.Fin (unsafeFinite)
@@ -49,7 +51,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofOpeningSg, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -749,9 +751,23 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     liftEffect do
       Trace.int "wrap.proof.public_input_count" (Array.length wrapResult.publicInputs)
+      -- Wrap proof opening values
       let wSg = ProofFFI.vestaProofOpeningSg wrapResult.proof
       Trace.field "wrap.proof.opening.sg.x" wSg.x
       Trace.field "wrap.proof.opening.sg.y" wSg.y
+      let wDelta = ProofFFI.vestaProofOpeningDelta wrapResult.proof
+      Trace.field "wrap.proof.opening.delta.x" wDelta.x
+      Trace.field "wrap.proof.opening.delta.y" wDelta.y
+      Trace.field "wrap.proof.opening.z1" (ProofFFI.vestaProofOpeningZ1 wrapResult.proof)
+      Trace.field "wrap.proof.opening.z2" (ProofFFI.vestaProofOpeningZ2 wrapResult.proof)
+      -- Wrap proof commitments
+      let wComms = ProofFFI.vestaProofCommitments wrapResult.proof
+      forWithIndex_ wComms.wComm \fi pt -> do
+        let i = getFinite fi
+        Trace.field ("wrap.proof.w_comm." <> show i <> ".x") pt.x
+        Trace.field ("wrap.proof.w_comm." <> show i <> ".y") pt.y
+      Trace.field "wrap.proof.z_comm.x" wComms.zComm.x
+      Trace.field "wrap.proof.z_comm.y" wComms.zComm.y
 
     liftEffect $ Trace.string "simple_chain.end" "base_case_verified"
 
