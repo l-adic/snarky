@@ -326,6 +326,21 @@ mod generic {
         EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         kimchi::verifier_index::VerifierIndex<G, OpeningProof<G>>: Clone,
     {
+        if let Ok(path) = std::env::var("KIMCHI_WITNESS_DUMP") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
+                let n_rows = witness[0].len();
+                for row in 0..n_rows {
+                    for (col, column) in witness.iter().enumerate() {
+                        writeln!(f, "{}\t{}\t{}", row, col, column[row]).ok();
+                    }
+                }
+            }
+        }
         let group_map = <G as CommitmentCurve>::Map::setup();
         ProverProof::create_recursive::<EFqSponge, EFrSponge, _>(
             &group_map,
