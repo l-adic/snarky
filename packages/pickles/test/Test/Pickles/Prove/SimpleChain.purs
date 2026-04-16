@@ -101,14 +101,9 @@ import Control.Monad.Trans.Class (lift) as MT
 -- | assertion passes regardless of `prev`. OCaml's handler supplies
 -- | `-1` via `Req.Prev_input`; PureScript can use `0` (the value
 -- | doesn't affect the circuit output when `is_base_case = true`).
-simpleChainRule :: StepRule 1
-simpleChainRule self = do
-  -- OCaml `dump_simple_chain.ml:88-95` handler returns
-  -- `s_neg_one = Tick.Field.(negate one)`. Match that so the
-  -- in-circuit `hashMessagesForNextStepProofOpt` sponge absorbs
-  -- `-1` for the prev app_state field, matching what
-  -- `dummyWrapTockPublicInput` serializes into the FFI public input.
-  prev <- exists $ MT.lift $ pure (F (negate one) :: F StepField)
+simpleChainRule :: F StepField -> StepRule 1
+simpleChainRule prevAppState self = do
+  prev <- exists $ MT.lift $ pure prevAppState
   isBaseCase <- equals_ (const_ zero) self
   let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
@@ -226,7 +221,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile @1 @34 ctx simpleChainRule placeholderAdvice
+      stepCompile @1 @34 ctx (simpleChainRule (F (negate one))) placeholderAdvice
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -384,7 +379,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       stepSolveAndProve @1 @34
         (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
-        simpleChainRule
+        (simpleChainRule (F (negate one)))
         stepCR
         realAdvice
 
@@ -743,3 +738,103 @@ spec = describe "Pickles.Prove.SimpleChain" do
       (Array.length wrapResult.publicInputs)
 
     liftEffect $ Trace.string "simple_chain.end" "base_case_verified"
+
+    -- =====================================================================
+    -- INDUCTIVE CASE (b1): step proof with self=1, prev=0, verifying
+    -- the real wrap proof b0 just produced above.
+    -- =====================================================================
+
+    let
+      -- The b0 step proof's opening sg (Vesta point, WrapField coords).
+      -- For b1, this is the wrap statement's
+      -- `challenge_polynomial_commitment` (since must_verify=true).
+      b0StepSg :: AffinePoint WrapField
+      b0StepSg = ProofFFI.pallasProofOpeningSg result.proof
+
+      -- wrapSg for b1: from b0 wrap statement's
+      -- messages_for_next_step_proof.challenge_polynomial_commitments.
+      -- For Simple_chain base case (must_verify=false), the step circuit
+      -- overrode sg to Ipa.Wrap.compute_sg(new_bp_chals) = Dummy.Ipa.Wrap.sg.
+      -- So b1's wrapSg is the same as b0's.
+      b1WrapSg :: AffinePoint StepField
+      b1WrapSg = wrapSg
+
+      -- wrapPrevEvals for b1 = b0 step proof's polynomial evaluations.
+      b1WrapPrevEvals :: AllEvals StepField
+      b1WrapPrevEvals =
+        { ftEval1: stepOracles.ftEval1
+        , publicEvals:
+            { zeta: stepOracles.publicEvalZeta
+            , omegaTimesZeta: stepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals result.proof
+        , indexEvals: ProofFFI.proofIndexEvals result.proof
+        }
+
+      -- wrapPlonkRaw for b1: the 128-bit raw plonk challenges from
+      -- the b0 wrap statement. These are the step-field scalar challenges
+      -- computed by wrapComputeDeferredValues.
+      b1WrapPlonkRaw =
+        { alpha: SizedF.unwrapF wrapDv.plonk.alpha
+        , beta: SizedF.unwrapF wrapDv.plonk.beta
+        , gamma: SizedF.unwrapF wrapDv.plonk.gamma
+        , zeta: SizedF.unwrapF wrapDv.plonk.zeta
+        }
+
+      -- prevChalPolys for b1's oracles: padded accumulator.
+      -- Slot 0 (padding): dummy
+      -- Slot 1 (real): sg from b0 wrap statement's
+      --   messages_for_next_step_proof.challenge_polynomial_commitments
+      --   = Dummy.Ipa.Wrap.sg (for base case), paired with expanded
+      --   old_bulletproof_challenges from b0 wrap statement.
+      b1PrevChalPolys =
+        let
+          -- The expanded old_bp_chals from b0 wrap statement =
+          -- expand(step.unf[0].deferred.bp_chals, Pallas.endo_scalar).
+          -- For base case, step.unf[0].deferred.bp_chals = Dummy.Ipa.Step.challenges.
+          -- We already computed these as msgForNextWrapRealChals.
+          realEntry =
+            { sg: b1WrapSg
+            , challenges: msgForNextWrapRealChals
+            }
+          dummyEntry = baseCaseDummyChalPoly
+        in
+          dummyEntry :< realEntry :< Vector.nil
+
+    b1Advice <- liftEffect $ buildStepAdviceWithOracles
+      { appState: F one
+      , prevAppState: F zero
+      , mostRecentWidth: 1
+      , wrapDomainLog2
+      , wrapVK: wrapCR.verifierIndex
+      , wrapSg: b1WrapSg
+      , stepSg: b0StepSg
+      , wrapProof: wrapResult.proof
+      , wrapPublicInput: wrapResult.publicInputs
+      , prevChalPolys: b1PrevChalPolys
+      , wrapPlonkRaw: b1WrapPlonkRaw
+      , wrapPrevEvals: b1WrapPrevEvals
+      , wrapBranchData: wrapDv.branchData
+      , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations
+      , mustVerify: true
+      }
+
+    b1Result <- liftEffect $
+      stepSolveAndProve @1 @34
+        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
+        ctx
+        (simpleChainRule (F zero))
+        stepCR
+        b1Advice
+
+    let b1StepProofValid = ProofFFI.verifyOpeningProof
+          stepCR.verifierIndex
+          { proof: b1Result.proof, publicInput: b1Result.publicInputs }
+    liftEffect $ Trace.int "b1.step.proof.self_verify" (if b1StepProofValid then 1 else 0)
+    when (not b1StepProofValid) $
+      liftEffect $ Exc.throw "b1 step proof FAILED self-verify"
+
+    liftEffect $ Trace.string "simple_chain.end" "inductive_case_verified"
