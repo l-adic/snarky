@@ -67,6 +67,7 @@ wrapVerify
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
+  => Reflectable sgOldN Int
   => Compare n 3 LT
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases

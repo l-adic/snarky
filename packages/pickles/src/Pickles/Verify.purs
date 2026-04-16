@@ -20,10 +20,9 @@ module Pickles.Verify
 
 import Prelude
 
-import Data.Array ((..))
-import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
@@ -176,6 +175,7 @@ incrementallyVerifyProof
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
+  => Reflectable sgOldN Int
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases
   => Add 1 _l4 totalBases
@@ -230,12 +230,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.x" xHat.x
       liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.y" xHat.y
       liftSnarky do
-        let sgOldArr = (Vector.toUnfoldable input.sgOld :: Array _)
-        for_ (Array.zip (0 .. (Array.length sgOldArr - 1)) sgOldArr) \(Tuple i pt) -> do
+        forWithIndex_ input.sgOld \fi pt -> do
+          let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
-        let wCommArr = (Vector.toUnfoldable input.wComm :: Array _)
-        for_ (Array.zip (0 .. (Array.length wCommArr - 1)) wCommArr) \(Tuple i pt) -> do
+        forWithIndex_ input.wComm \fi pt -> do
+          let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
         ivpTrace "ivp.trace.wrap.zcomm.x" input.zComm.x
@@ -254,8 +254,8 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       liftSnarky $ ivpTrace "ivp.trace.index_digest" indexDigest
       labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
       labelM "ivp_absorb_sg_old" do
-        let sgOldArr = (Vector.toUnfoldable input.sgOld :: Array _)
-        liftSnarky $ for_ (Array.zip (0 .. (Array.length sgOldArr - 1)) sgOldArr) \(Tuple i pt) -> do
+        liftSnarky $ forWithIndex_ input.sgOld \fi pt -> do
+          let i = getFinite fi
           ivpTrace ("ivp.trace.sg_old." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.sg_old." <> show i <> ".y") pt.y
         for_ input.sgOld \pt -> do
@@ -268,8 +268,8 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
       -- step_verifier.ml:551-568
       Sponge.absorbPoint xHat
-      let wCommArr = (Vector.toUnfoldable input.wComm :: Array _)
-      liftSnarky $ for_ (Array.zip (0 .. (Array.length wCommArr - 1)) wCommArr) \(Tuple i pt) -> do
+      liftSnarky $ forWithIndex_ input.wComm \fi pt -> do
+        let i = getFinite fi
         ivpTrace ("ivp.trace.w_comm." <> show i <> ".x") pt.x
         ivpTrace ("ivp.trace.w_comm." <> show i <> ".y") pt.y
       for_ input.wComm Sponge.absorbPoint
@@ -286,7 +286,8 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
       alphaChal <- Sponge.squeezeScalar endoParams
       liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
       -- t_comm: receive
-      liftSnarky $ for_ (Array.zip (0 .. (Vector.length input.tComm - 1)) (Vector.toUnfoldable input.tComm :: Array _)) \(Tuple i pt) -> do
+      liftSnarky $ forWithIndex_ input.tComm \fi pt -> do
+        let i = getFinite fi
         ivpTrace ("ivp.trace.tcomm." <> show i <> ".x") pt.x
         ivpTrace ("ivp.trace.tcomm." <> show i <> ".y") pt.y
       for_ input.tComm Sponge.absorbPoint
@@ -472,6 +473,7 @@ verify
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
+  => Reflectable sgOldN Int
   => Add 1 _l2 7
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases

@@ -49,6 +49,7 @@ import Prelude
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Array as Array
 import Data.Foldable (fold, foldM, for_, product)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
@@ -486,9 +487,8 @@ ipaFinalCheckCircuit scalarOps params input = do
   -- `pallasProofOpeningPrechallenges` (kimchi's ground truth) to
   -- detect any L/R absorption ordering / squeeze bug.
   liftSnarky do
-    let scArr = Vector.toUnfoldable scalarChallenges :: Array (SizedF 128 (FVar f))
-    for_ (Array.mapWithIndex Tuple scArr) \(Tuple i sc) ->
-      ivpTrace ("ipa.dbg.prechal." <> show i) (SizedF.toField sc)
+    forWithIndex_ scalarChallenges \fi sc ->
+      ivpTrace ("ipa.dbg.prechal." <> show (getFinite fi)) (SizedF.toField sc)
 
   -- 2. Compute lr_prod from L/R pairs and challenges
   -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions

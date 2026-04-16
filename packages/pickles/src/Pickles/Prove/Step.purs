@@ -145,8 +145,7 @@ type StepBranchData =
 -- | = `Pallas.BaseField`) — both are structural for any step circuit
 -- | in the Pasta cycle.
 type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) =
-  { stepInputFields :: Array (F StepField)
-  , evals :: Vector n (ProofWitness (F StepField))
+  { evals :: Vector n (ProofWitness (F StepField))
   , prevChallenges :: Vector n (Vector ds (F StepField))
   , messages ::
       Vector n
@@ -185,12 +184,15 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) =
   -- | `ProverProof::create_recursive`. This is the SAME-CURVE recursion
   -- | data (prior Vesta step proof's IPA sg + expanded challenges),
   -- | NOT the cross-curve wrap data that the step circuit verifies.
-  -- | Empty for callers that use the non-recursive path.
+  -- | One entry per prev proof (= `n` = max_proofs_verified at the
+  -- | kimchi layer); each entry holds a full `StepIPARounds`-length
+  -- | expanded challenge vector. Converted to `Array` only at the FFI
+  -- | boundary in `stepSolveAndProve`.
   , kimchiPrevChallenges ::
-      Array
+      Vector n
         { sgX :: WrapField
         , sgY :: WrapField
-        , challenges :: Array StepField
+        , challenges :: Vector ds StepField
         }
   }
 
@@ -247,7 +249,7 @@ instance
     PallasG
     StepField
     (StepProverT n ds dw m) where
-  getStepInputFields _ = StepProverT $ map _.stepInputFields ask
+
   getProofWitnesses _ = StepProverT $ map _.evals ask
   getPrevChallenges _ = StepProverT $ map _.prevChallenges ask
   getMessages _ = StepProverT $ map _.messages ask
@@ -509,8 +511,7 @@ buildStepAdvice input =
       , mask1: true
       }
   in
-    { stepInputFields: []
-    , evals: Vector.replicate dummyProofWitness
+    { evals: Vector.replicate dummyProofWitness
     , prevChallenges: Vector.replicate (map F dummyIpaChallenges.stepExpanded)
     , messages: Vector.replicate
         { wComm: Vector.generate (\_ -> g0)
@@ -536,7 +537,12 @@ buildStepAdvice input =
     , appState: input.appState
     , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
     , branchData: Vector.replicate dummyBranch
-    , kimchiPrevChallenges: []
+    , kimchiPrevChallenges:
+        Vector.replicate
+          { sgX: zero
+          , sgY: zero
+          , challenges: Vector.replicate zero
+          }
     }
 
 --------------------------------------------------------------------------------
@@ -1364,17 +1370,17 @@ buildStepAdviceWithOracles input = do
     , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
     , openingProofs = overriddenOpenings
     -- Kimchi recursion hypothesis: prior step proof's IPA sg +
-    -- expanded bp challenges. For the Simple_chain base case both
-    -- come from `Dummy.Ipa.Step.*` (= `input.stepSg` +
-    -- `dummyIpaChallenges.stepExpanded`). OCaml does the same at
+    -- expanded bp challenges. For the Simple_chain base case every
+    -- slot carries the same `Dummy.Ipa.Step.*` pair (= `input.stepSg`
+    -- + `dummyIpaChallenges.stepExpanded`). OCaml does the same at
     -- `step.ml:expand_proof` where it stashes `(chals, sg)` into
     -- `~message` for `caml_pasta_fp_plonk_proof_create`.
     , kimchiPrevChallenges =
-        [ { sgX: input.stepSg.x
+        Vector.replicate
+          { sgX: input.stepSg.x
           , sgY: input.stepSg.y
-          , challenges: Vector.toUnfoldable dummyIpaChallenges.stepExpanded
+          , challenges: dummyIpaChallenges.stepExpanded
           }
-        ]
     }
 
 --------------------------------------------------------------------------------
@@ -1574,7 +1580,15 @@ stepSolveAndProve onError ctx rule compileResult advice = do
           let proof = pallasCreateProofWithPrev
                 { proverIndex: compileResult.proverIndex
                 , witness
-                , prevChallenges: advice.kimchiPrevChallenges
+                , prevChallenges:
+                    map
+                      ( \r ->
+                          { sgX: r.sgX
+                          , sgY: r.sgY
+                          , challenges: Vector.toUnfoldable r.challenges
+                          }
+                      )
+                      (Vector.toUnfoldable advice.kimchiPrevChallenges :: Array _)
                 }
           in pure
             { proverIndex: compileResult.proverIndex

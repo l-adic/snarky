@@ -38,6 +38,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldM, foldl, for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (fromJust)
 import Partial.Unsafe (unsafePartial)
@@ -681,9 +682,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
   ivpTrace "wrap.dbg.unf0.gamma" (SizedF.toField sp0.deferredValues.plonk.gamma)
   ivpTrace "wrap.dbg.unf0.zeta" (SizedF.toField sp0.deferredValues.plonk.zeta)
   ivpTrace "wrap.dbg.unf0.xi" (SizedF.toField sp0.deferredValues.xi)
-  let bpcArr = Vector.toUnfoldable sp0.deferredValues.bulletproofChallenges :: Array (SizedF 128 (FVar WrapField))
-  for_ (Array.mapWithIndex Tuple bpcArr) \(Tuple i c) ->
-    ivpTrace ("wrap.dbg.unf0.bpc." <> show i) (SizedF.toField c)
+  forWithIndex_ sp0.deferredValues.bulletproofChallenges \fi c ->
+    ivpTrace ("wrap.dbg.unf0.bpc." <> show (getFinite fi)) (SizedF.toField c)
 
   let
     publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)

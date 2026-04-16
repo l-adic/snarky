@@ -25,10 +25,10 @@ import JS.BigInt (fromInt)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.CVar (sub_)
+import Data.Foldable (foldl)
+import Snarky.Circuit.CVar (add_, sub_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)
-import Snarky.Circuit.DSL.Field (sum_)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class PrimeField, fromBigInt)
@@ -60,7 +60,7 @@ oneHotVector index = label "one-hot-vector" do
 
     asFields :: Vector n (FVar f)
     asFields = map coerce v
-  assertNonZero_ (sum_ (Vector.toUnfoldable asFields))
+  assertNonZero_ (foldl add_ (const_ zero) asFields)
   pure v
 
 -- | Mask-select: compute ∑ bits[i] * xs[i].
@@ -89,7 +89,7 @@ mask bits xs = label "pseudo-mask" do
   termsRev <- traverse (\(Tuple b x) -> mul_ (boolToField b) x) $
     Vector.reverse (Vector.zip bits xs)
   let terms = Vector.reverse termsRev
-  pure $ sum_ (Vector.toUnfoldable terms)
+  pure $ foldl add_ (const_ zero) terms
 
 -- | Choose a value from a vector using a one-hot selector.
 -- |

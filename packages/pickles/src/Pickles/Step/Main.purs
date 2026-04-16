@@ -23,6 +23,7 @@ module Pickles.Step.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.Array as Array
 import Data.Maybe (fromJust)
@@ -518,21 +519,21 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
     -- Compares to OCaml `step_main_outer.*` traces. PI[32] is the
     -- digest of these inputs; every divergence in PI[32] is a diff
     -- in one of these.
-    let sigmaArr = (Vector.toUnfoldable vk.sigma :: Array _)
-    forWithIndex_ sigmaArr \i pt -> do
+    forWithIndex_ vk.sigma \fi pt -> do
+      let i = getFinite fi
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
     let { x: slX, y: slY } = unwrapPt vk.sigmaLast
     ivpTrace "step_main_outer.vk.sigma_last.x" slX
     ivpTrace "step_main_outer.vk.sigma_last.y" slY
-    let coeffArr = (Vector.toUnfoldable vk.coeff :: Array _)
-    forWithIndex_ coeffArr \i pt -> do
+    forWithIndex_ vk.coeff \fi pt -> do
+      let i = getFinite fi
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
-    let indexArr = (Vector.toUnfoldable vk.index :: Array _)
-    forWithIndex_ indexArr \i pt -> do
+    forWithIndex_ vk.index \fi pt -> do
+      let i = getFinite fi
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
@@ -550,13 +551,14 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
     s1 <- Sponge.absorb appState spongeAfterIndex
 
     -- For each proof: absorb sg + expanded bp_challenges
-    let proofData = (Vector.toUnfoldable $ Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results) :: Array _
-    forWithIndex_ proofData \i { sg: sgPt, expandedChals } -> do
+    let proofData = Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results
+    forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
+      let i = getFinite fi
       let pt = unwrapPt sgPt
       ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
       ivpTrace ("step_main_outer.proof." <> show i <> ".sg.y") pt.y
-      forWithIndex_ (Vector.toUnfoldable expandedChals :: Array _) \j c ->
-        ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show j) c
+      forWithIndex_ expandedChals \fj c ->
+        ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show (getFinite fj)) c
     sAfterProofs <- foldM
       ( \s { sg: sgPt, expandedChals } -> do
           let pt = unwrapPt sgPt

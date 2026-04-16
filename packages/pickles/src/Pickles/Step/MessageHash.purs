@@ -14,8 +14,10 @@ module Pickles.Step.MessageHash
 import Prelude
 
 import Data.Array as Array
+import Data.Fin (getFinite)
 import Data.Foldable (foldM, for_)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -243,6 +245,8 @@ hashMessagesForNextStepProofPureTraced
   :: forall n d f
    . PoseidonField f
   => PrimeField f
+  => Reflectable n Int
+  => Reflectable d Int
   => { stepVk :: StepVK f
      , appState :: Array f
      , proofs ::
@@ -281,8 +285,8 @@ hashMessagesForNextStepProofPureTraced inp@{ stepVk, appState, proofs } = do
   forWithIndex_ (Array.fromFoldable proofs) \i p -> do
     Trace.field ("msgForNextStep.prev." <> show i <> ".sg.x") p.sg.x
     Trace.field ("msgForNextStep.prev." <> show i <> ".sg.y") p.sg.y
-    forWithIndex_ (Vector.toUnfoldable p.expandedBpChallenges :: Array f) \j c ->
-      Trace.field ("msgForNextStep.prev." <> show i <> ".bp_chal." <> show j) c
+    forWithIndex_ p.expandedBpChallenges \fj c ->
+      Trace.field ("msgForNextStep.prev." <> show i <> ".bp_chal." <> show (getFinite fj)) c
   let digest = hashMessagesForNextStepProofPure inp
   Trace.field "msgForNextStep.final_digest" digest
   pure digest
