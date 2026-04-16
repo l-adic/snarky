@@ -908,7 +908,10 @@ buildStepAdviceWithOracles
   :: forall n
    . Reflectable n Int
   => BuildStepAdviceWithOraclesInput
-  -> Effect (StepAdvice n StepIPARounds WrapIPARounds)
+  -> Effect
+       { advice :: StepAdvice n StepIPARounds WrapIPARounds
+       , challengePolynomialCommitment :: AffinePoint StepField
+       }
 buildStepAdviceWithOracles input = do
   let
     base :: StepAdvice n StepIPARounds WrapIPARounds
@@ -1290,25 +1293,22 @@ buildStepAdviceWithOracles input = do
       (\op -> op { sg = overriddenSg })
       base.openingProofs
 
-  pure $ base
-    { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
-    , publicUnfinalizedProofs = Vector.replicate expandedUnfinalized
-    , fopProofStates = Vector.replicate simpleChainFop
-    , sgOld = Vector.replicate wrapSgF
-    , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
-    , openingProofs = overriddenOpenings
-    -- Kimchi recursion hypothesis: prior step proof's IPA sg +
-    -- expanded bp challenges. For the Simple_chain base case every
-    -- slot carries the same `Dummy.Ipa.Step.*` pair (= `input.stepSg`
-    -- + `dummyIpaChallenges.stepExpanded`). OCaml does the same at
-    -- `step.ml:expand_proof` where it stashes `(chals, sg)` into
-    -- `~message` for `caml_pasta_fp_plonk_proof_create`.
-    , kimchiPrevChallenges =
-        Vector.replicate
-          { sgX: input.stepSg.x
-          , sgY: input.stepSg.y
-          , challenges: dummyIpaChallenges.stepExpanded
-          }
+  pure
+    { advice: base
+        { wrapVerifierIndex = extractWrapVKCommsAdvice input.wrapVK
+        , publicUnfinalizedProofs = Vector.replicate expandedUnfinalized
+        , fopProofStates = Vector.replicate simpleChainFop
+        , sgOld = Vector.replicate wrapSgF
+        , messagesForNextWrapProof = Vector.replicate msgWrapHashStep
+        , openingProofs = overriddenOpenings
+        , kimchiPrevChallenges =
+            Vector.replicate
+              { sgX: input.stepSg.x
+              , sgY: input.stepSg.y
+              , challenges: dummyIpaChallenges.stepExpanded
+              }
+        }
+    , challengePolynomialCommitment: expandProofResult.sg
     }
 
 --------------------------------------------------------------------------------

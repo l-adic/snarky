@@ -351,7 +351,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Vector.nil
             }
         }
-    realAdvice <- liftEffect $ buildStepAdviceWithOracles
+    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
       { appState: F zero
       , prevAppState: F (negate one) -- OCaml `s_neg_one`
       , mostRecentWidth: 1
@@ -766,11 +766,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
       -- wrapSg for b1: from b0 wrap statement's
       -- messages_for_next_step_proof.challenge_polynomial_commitments.
-      -- For Simple_chain base case (must_verify=false), the step circuit
-      -- overrode sg to Ipa.Wrap.compute_sg(new_bp_chals) = Dummy.Ipa.Wrap.sg.
-      -- So b1's wrapSg is the same as b0's.
+      -- For base case (must_verify=false), the step circuit overrode sg
+      -- to Ipa.Wrap.compute_sg(new_bp_chals) = b0ChalPolyComm (NOT
+      -- Dummy.Ipa.Wrap.sg — compute_sg over the base case's new bp_chals
+      -- gives a fresh point).
       b1WrapSg :: AffinePoint StepField
-      b1WrapSg = wrapSg
+      b1WrapSg = b0ChalPolyComm
 
       -- wrapPrevEvals for b1 = b0 step proof's polynomial evaluations.
       b1WrapPrevEvals :: AllEvals StepField
@@ -795,19 +796,18 @@ spec = describe "Pickles.Prove.SimpleChain" do
       --   old_bulletproof_challenges from b0 wrap statement.
       b1PrevChalPolys =
         let
-          -- The expanded old_bp_chals from b0 wrap statement =
-          -- expand(step.unf[0].deferred.bp_chals, Pallas.endo_scalar).
-          -- For base case, step.unf[0].deferred.bp_chals = Dummy.Ipa.Step.challenges.
-          -- We already computed these as msgForNextWrapRealChals.
+          -- Real slot: sg = b0's expandProof-computed challenge_polynomial_commitment
+          -- (= Ipa.Wrap.compute_sg(new_bp_chals)), NOT Dummy.Ipa.Wrap.sg.
+          -- challenges = expand(step.unf[0].deferred.bp_chals, Pallas.endo_scalar)
           realEntry =
-            { sg: b1WrapSg
+            { sg: b0ChalPolyComm
             , challenges: msgForNextWrapRealChals
             }
           dummyEntry = baseCaseDummyChalPoly
         in
           dummyEntry :< realEntry :< Vector.nil
 
-    b1Advice <- liftEffect $ buildStepAdviceWithOracles
+    { advice: b1Advice } <- liftEffect $ buildStepAdviceWithOracles
       { appState: F one
       , prevAppState: F zero
       , mostRecentWidth: 1
