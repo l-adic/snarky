@@ -681,6 +681,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: wrapPublicInput
         , advice: wrapAdvice
+        , kimchiPrevChallenges:
+            let dummyAccEntry =
+                  { sgX: wrapSg.x
+                  , sgY: wrapSg.y
+                  , challenges: map (fromBigInt <<< toBigInt)
+                      Dummy.dummyIpaChallenges.wrapExpanded
+                  }
+            in dummyAccEntry :< dummyAccEntry :< Vector.nil
         }
 
     -- Diagnostic: dump what kimchi's pallasProofOracles computed for beta

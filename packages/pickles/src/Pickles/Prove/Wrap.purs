@@ -46,15 +46,15 @@ import Data.Fin (unsafeFinite)
 import Data.Map (Map)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Exception (Error, error)
 import Partial.Unsafe (unsafePartial)
-import Pickles.ProofFFI (Proof, createProof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -66,7 +66,7 @@ import Snarky.Circuit.Types (class CircuitType)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Prover (emptyProverState)
-import Snarky.Backend.Kimchi (makeConstraintSystem, makeWitness)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Circuit.CVar (Variable)
@@ -392,6 +392,17 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   , publicInput ::
       WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
   , advice :: WrapAdvice mpv slots
+  -- | Kimchi-level `prev_challenges` for `ProverProof::create_recursive`.
+  -- | Padded to `PaddedLength = 2` entries (via `Wrap_hack.pad_accumulator`).
+  -- | Each entry holds sg (Pallas point, StepField coords) + expanded
+  -- | challenges (WrapIPARounds = 15, in WrapField). Converted to Array
+  -- | at the FFI boundary.
+  , kimchiPrevChallenges ::
+      Vector PaddedLength
+        { sgX :: StepField
+        , sgY :: StepField
+        , challenges :: Vector WrapIPARounds WrapField
+        }
   }
 
 -- | Ambient data `wrapCompile` needs — a subset of `WrapProveContext`
@@ -473,10 +484,11 @@ wrapCompile ctx advice = do
 
   let
     kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystem @WrapField
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @WrapField
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @mpv)
       }
 
     -- The wrap prover index's `cs.endo` field must be the WRAP curve's
@@ -558,7 +570,19 @@ wrapSolveAndProve onError ctx compileResult = do
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
         else
-          let proof = createProof { proverIndex: compileResult.proverIndex, witness }
+          let proof = vestaCreateProofWithPrev
+                { proverIndex: compileResult.proverIndex
+                , witness
+                , prevChallenges:
+                    map
+                      ( \r ->
+                          { sgX: r.sgX
+                          , sgY: r.sgY
+                          , challenges: Vector.toUnfoldable r.challenges
+                          }
+                      )
+                      (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
+                }
           in pure
             { proverIndex: compileResult.proverIndex
             , verifierIndex: compileResult.verifierIndex
