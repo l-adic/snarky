@@ -387,6 +387,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- simpleChainDummyPrevEvals here diverges step_b0 at row 0 despite
       -- both being nominally "dummy prev_evals".
       , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
+      -- b0: kimchi prev_challenges.challenges for prev = dummy wrap.
+      -- Per proof.ml:143, dummy wrap's deferred_values.bulletproof_challenges
+      -- = Dummy.Ipa.Step.challenges. Expanded via Ipa.Step.compute_challenges
+      -- = `dummyIpaChallenges.stepExpanded` in PS.
+      , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
       }
 
     -- ===== Phase 4: run the step solver =====
@@ -983,6 +988,17 @@ spec = describe "Pickles.Prove.SimpleChain" do
           , shouldFinalize: false
           , spongeDigestBeforeEvaluations: F wrapDv.spongeDigestBeforeEvaluations
           }
+      -- b1: kimchi prev_challenges.challenges per OCaml step.ml:913-920 +
+      -- reduced_messages_for_next_proof_over_same_field.ml:41:
+      -- expand `wrap_b0.statement.proof_state.deferred_values.bulletproof_challenges`
+      -- via `Ipa.Step.compute_challenges` (= step endo_scalar, Vesta.ScalarField).
+      -- In PS `wrapDv.bulletproofPrechallenges :: Vector StepIPARounds
+      -- (SizedF 128 (F StepField))` are the raw values; expand via
+      -- `toFieldPure` with step endo.
+      , kimchiPrevChallengesExpanded:
+          map
+            (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+            wrapDv.bulletproofPrechallenges
       }
 
     b1Result <- liftEffect $

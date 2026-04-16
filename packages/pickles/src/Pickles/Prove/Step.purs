@@ -942,6 +942,22 @@ type BuildStepAdviceWithOraclesInput =
   -- | openings + x_hat) so the FOP's recompute matches the fopState
   -- | claims.
   , stepAdvicePrevEvals :: AllEvals StepField
+  -- | Expanded step-field bp challenges for the single entry of
+  -- | `advice.kimchiPrevChallenges` (= kimchi-level prev_challenges fed to
+  -- | `pallasCreateProofWithPrev` / stored in `ProverProof.prev_challenges`).
+  -- |
+  -- | Per OCaml step.ml:913-920, each entry's `challenges` is
+  -- | `Ipa.Step.compute_challenges` applied to the prev proof's
+  -- | `statement.proof_state.deferred_values.bulletproof_challenges`:
+  -- |
+  -- | * Base case (step verifies dummy wrap): prev = dummy wrap proof,
+  -- |   its `deferred_values.bulletproof_challenges = Dummy.Ipa.Step.challenges`
+  -- |   (proof.ml:143). Expanded = `dummyIpaChallenges.stepExpanded`.
+  -- | * Inductive (step verifies wrap_b0): prev = wrap_b0,
+  -- |   its `deferred_values.bulletproof_challenges` = `wrapDv.bulletproofPrechallenges`.
+  -- |   Expanded = `toFieldPure <$> wrapDv.bulletproofPrechallenges` via
+  -- |   step endo scalar.
+  , kimchiPrevChallengesExpanded :: Vector StepIPARounds StepField
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -1459,7 +1475,7 @@ buildStepAdviceWithOracles input = do
             Vector.replicate
               { sgX: input.stepSg.x
               , sgY: input.stepSg.y
-              , challenges: dummyIpaChallenges.stepExpanded
+              , challenges: input.kimchiPrevChallengesExpanded
               }
         }
     , challengePolynomialCommitment: expandProofResult.sg
