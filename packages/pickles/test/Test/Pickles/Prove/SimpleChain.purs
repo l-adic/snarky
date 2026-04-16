@@ -838,6 +838,16 @@ spec = describe "Pickles.Prove.SimpleChain" do
         wrapProveCtx
         wrapCR
 
+    -- Self-verify wrap_b0 proof against its own VK. If the proof doesn't
+    -- verify here, neither the next step circuit nor the batch verifier
+    -- will accept it. Mirrors step proof self-verify at line ~420.
+    let wrapProofValid = ProofFFI.verifyOpeningProof
+          wrapCR.verifierIndex
+          { proof: wrapResult.proof, publicInput: wrapResult.publicInputs }
+    liftEffect $ Trace.int "wrap.proof.self_verify" (if wrapProofValid then 1 else 0)
+    when (not wrapProofValid) $
+      liftEffect $ Exc.throw "PS wrap proof FAILED kimchi batch_verify — wrap prover bug"
+
     liftEffect do
       Trace.int "wrap.proof.public_input_count" (Array.length wrapResult.publicInputs)
       -- Wrap proof opening values
