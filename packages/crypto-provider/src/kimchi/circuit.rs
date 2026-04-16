@@ -2125,6 +2125,25 @@ pub fn vesta_create_proof_with_prev(
             }
         })
         .collect();
+    // DIAG: dump full witness hash + all prev entries for byte-identity check
+    {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        for (col_idx, col) in witness.iter().enumerate() {
+            for (row_idx, val) in col.iter().enumerate() {
+                format!("{}", val).hash(&mut h);
+                if col_idx == 0 && row_idx < 5 {
+                    eprintln!("[vesta_proof] w[0][{}] = {}", row_idx, val);
+                }
+            }
+            eprintln!("[vesta_proof] col {} len = {}", col_idx, col.len());
+        }
+        eprintln!("[vesta_proof] witness_hash = {}", h.finish());
+        for (i, rc) in prev.iter().enumerate() {
+            eprintln!("[vesta_proof] prev[{}].comm = {:?}, chals[0] = {}", i, rc.comm, rc.chals[0]);
+        }
+    }
     let proof = generic::create_proof_with_prev::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
         &**prover_index,
         witness,
