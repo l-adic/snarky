@@ -662,23 +662,26 @@ spec = describe "Pickles.Prove.SimpleChain" do
       dummyWrapBpChals =
         map (F <<< fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
 
-      -- OCaml's Proof.dummy.prev_evals is Tick.Field (StepField) evals,
-      -- coerced to Tock.Field (WrapField) by the framework (same bytes,
-      -- different field interpretation). Use simpleChainDummyPrevEvals
-      -- (StepField) cross-field coerced to WrapField.
+      -- OCaml Req.Evals returns `prev_evals` = evals extracted from each
+      -- prev wrap proof's `openings.evals + ft_eval1` (step.ml:987-995).
+      -- For the base case, the prev wrap proof IS the dummy wrap proof,
+      -- whose `openings.evals` = `Dummy.evals` (dummy.ml:7-20) generated
+      -- via `Ro.tock ()` = WrapField (Tock/Fq) values.
+      -- PS mirror: `Dummy.roComputeResult.wrapDummyEvals` is built from
+      -- the same tock() sequence and is typed as `AllEvals WrapField`.
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
-          xf x = F (fromBigInt (toBigInt x) :: WrapField)
-          pe pe' = PointEval { zeta: xf pe'.zeta, omegaTimesZeta: xf pe'.omegaTimesZeta }
+          de = Dummy.roComputeResult.wrapDummyEvals
+          pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         in StepAllEvals
-          { ftEval1: xf simpleChainDummyPrevEvals.ftEval1
-          , publicEvals: pe simpleChainDummyPrevEvals.publicEvals
-          , zEvals: pe simpleChainDummyPrevEvals.zEvals
-          , witnessEvals: map pe simpleChainDummyPrevEvals.witnessEvals
-          , coeffEvals: map pe simpleChainDummyPrevEvals.coeffEvals
-          , sigmaEvals: map pe simpleChainDummyPrevEvals.sigmaEvals
-          , indexEvals: map pe simpleChainDummyPrevEvals.indexEvals
+          { ftEval1: F de.ftEval1
+          , publicEvals: pe de.publicEvals
+          , zEvals: pe de.zEvals
+          , witnessEvals: map pe de.witnessEvals
+          , coeffEvals: map pe de.coeffEvals
+          , sigmaEvals: map pe de.sigmaEvals
+          , indexEvals: map pe de.indexEvals
           }
 
       wrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
