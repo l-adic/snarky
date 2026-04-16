@@ -69,8 +69,7 @@ import Data.Maybe (Maybe(..), fromJust)
 import Pickles.Trace as Trace
 import Partial.Unsafe (unsafePartial)
 import Safe.Coerce (coerce)
-import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, stepDummyUnfinalizedProofFromInputs, wrapDummyUnfinalizedProof)
-import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
