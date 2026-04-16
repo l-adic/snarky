@@ -488,7 +488,7 @@ wrapCompile ctx advice = do
       { constraints: kimchiRows
       , publicInputs: builtState.publicInputs
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @mpv)
+      , prevChallengesCount: reflectType (Proxy @PaddedLength)
       }
 
     -- The wrap prover index's `cs.endo` field must be the WRAP curve's
