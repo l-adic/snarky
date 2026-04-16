@@ -686,11 +686,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
                 , challenges: map (fromBigInt <<< toBigInt)
                     Dummy.dummyIpaChallenges.wrapExpanded
                 }
-              -- Real slot: Dummy.Ipa.Wrap.sg + expand(step.unf[0].deferred.bp_chals)
-              -- = expand(Dummy.Ipa.Step.challenges, Pallas.endo_scalar)
+              -- Real slot: b0's computed challenge_polynomial_commitment
+              -- (= Ipa.Wrap.compute_sg(new_bp_chals)) + expand(step.unf[0].deferred.bp_chals)
               realEntry =
-                { sgX: wrapSg.x
-                , sgY: wrapSg.y
+                { sgX: b0ChalPolyComm.x
+                , sgY: b0ChalPolyComm.y
                 , challenges: msgForNextWrapRealChals
                 }
             in padEntry :< realEntry :< Vector.nil
