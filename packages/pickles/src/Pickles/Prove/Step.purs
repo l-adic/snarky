@@ -76,7 +76,7 @@ import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningPrechallenges, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.ProofWitness (ProofWitness)
@@ -1352,8 +1352,49 @@ buildStepAdviceWithOracles input = do
     overriddenSg :: AffinePoint (F StepField)
     overriddenSg = coerce expandProofResult.sg
 
+    -- Extract real opening proof fields from the wrap proof. For b0 with
+    -- dummy wrap proof these are all g0 (matching buildStepAdvice's
+    -- placeholders). For b1 these are the real opening data that the step
+    -- IVP's IPA check requires to derive correct bp challenges.
+    -- (The base case masked this divergence via mustVerify=false gating
+    -- the step8_assert_bp assertion.)
+    mkPt :: AffinePoint StepField -> AffinePoint (F StepField)
+    mkPt pt = { x: F pt.x, y: F pt.y }
+
+    realDelta :: AffinePoint (F StepField)
+    realDelta = mkPt (vestaProofOpeningDelta input.wrapProof)
+
+    realLr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }
+    realLr = unsafePartial $ fromJust $
+      Vector.toVector @WrapIPARounds
+        (map (\p -> { l: mkPt p.l, r: mkPt p.r })
+          (vestaProofOpeningLr input.wrapProof))
+
+    -- z1, z2: `Tock.Field.t` (= WrapField = Fq) values from the wrap
+    -- proof's kimchi opening. OCaml wrap_proof.ml:34-59 stores these
+    -- in-circuit as `Impls.Step.Other_field.t Shifted_value.Type2.t`,
+    -- where the Type2 conversion uses `Shift.create (module Tock.Field)`
+    -- and `of_field (module Tock.Field) ~shift x` — an algebraic
+    -- `(x - shift) / 2` computed in Tock.Field (Fq).
+    --
+    -- PS instance at `Snarky.Types.Shifted.purs:270` implements the
+    -- same algebraic conversion: `(s - shift) / 2` with shift=2^255 in
+    -- Fq, then stores (sDiv2 in Fp, sOdd bit) as SplitField. Wrap that
+    -- result in `Type2` per the instance at line 353.
+    realZ1 :: Type2 (SplitField (F StepField) Boolean)
+    realZ1 = toShifted (F (vestaProofOpeningZ1 input.wrapProof) :: F WrapField)
+
+    realZ2 :: Type2 (SplitField (F StepField) Boolean)
+    realZ2 = toShifted (F (vestaProofOpeningZ2 input.wrapProof) :: F WrapField)
+
     overriddenOpenings = map
-      (\op -> op { sg = overriddenSg })
+      (\op -> op
+        { sg = overriddenSg
+        , delta = realDelta
+        , lr = realLr
+        , z1 = realZ1
+        , z2 = realZ2
+        })
       base.openingProofs
 
   let
