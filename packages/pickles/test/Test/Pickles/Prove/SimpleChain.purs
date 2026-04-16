@@ -60,7 +60,10 @@ import Node.Process as Process
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Snarky.Backend.Kimchi.Class (constraintSystemToJson) as Kimchi
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Curves.Class as Curves
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Pickles.Trace as Trace
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
@@ -512,18 +515,49 @@ spec = describe "Pickles.Prove.SimpleChain" do
       wrapProofSg :: AffinePoint WrapField
       wrapProofSg = ProofFFI.pallasProofOpeningSg result.proof
 
+      -- Wrap-hack padding slot: OCaml's `Wrap_hack.pad_challenges`
+      -- prepends `Dummy.Ipa.Wrap.challenges_computed` = expanded wrap
+      -- dummy raw chals. PS mirror: `dummyIpaChallenges.wrapExpanded`.
+      msgForNextWrapDummyChals :: Vector WrapIPARounds WrapField
+      msgForNextWrapDummyChals =
+        map (fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
+
+      -- Real slot (base case): OCaml's wrap prover reads
+      -- `step_statement.proof_state.unfinalized_proofs[0].deferred_values.bulletproof_challenges`
+      -- (the 128-bit raw prechals the step circuit stored) and prepares
+      -- them via `Ipa.Wrap.compute_challenges` = expand via
+      -- `Endo.Step_inner_curve.scalar = Pallas.endo_scalar` into WrapField.
+      -- The wrap IVP's FOP reads the SAME raw prechals and expands them
+      -- via `scalar_to_field` which uses the same endo. These are the
+      -- values being hashed — NOT `dummyIpaChallenges.wrapExpanded`,
+      -- which is derived from `Dummy.Ipa.Wrap.challenges` (a different
+      -- Ro-derived vector used for Wrap_hack PADDING only).
+      PerProofUnfinalized stepUnfRec0 =
+        Vector.head realAdvice.publicUnfinalizedProofs
+
+      msgForNextWrapWrapEndo :: WrapField
+      msgForNextWrapWrapEndo =
+        let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField
+        in e
+
+      msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
+      msgForNextWrapRealChals =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF.SizedF 128 WrapField)
+                msgForNextWrapWrapEndo
+          )
+          stepUnfRec0.bulletproofChallenges
+
       msgForNextWrapDigest :: WrapField
       msgForNextWrapDigest =
         hashMessagesForNextWrapProof
           { sg: wrapProofSg
-          , expandedChallenges:
-              map (fromBigInt <<< toBigInt)
-                Dummy.dummyIpaChallenges.wrapExpanded :: Vector WrapIPARounds WrapField
-          , dummyChallenges:
-              map (fromBigInt <<< toBigInt)
-                Dummy.dummyIpaChallenges.wrapExpanded :: Vector WrapIPARounds WrapField
+          , expandedChallenges: msgForNextWrapRealChals
+          , dummyChallenges: msgForNextWrapDummyChals
           }
 
+    let
       wrapPublicInput = assembleWrapMainInput
         { deferredValues: wrapDv
         , messagesForNextStepProofDigest: msgForNextStepDigest
