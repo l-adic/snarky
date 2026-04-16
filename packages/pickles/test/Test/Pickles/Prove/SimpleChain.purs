@@ -51,7 +51,7 @@ import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, 
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -375,6 +375,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
           }
       , wrapSpongeDigest: zero
       , mustVerify: false
+      , wrapOwnPaddedBpChals:
+          -- Base case: dummy wrap proof has dummy bp chals in both slots.
+          Dummy.dummyIpaChallenges.wrapExpanded
+            :< Dummy.dummyIpaChallenges.wrapExpanded
+            :< Vector.nil
       }
 
     -- ===== Phase 4: run the step solver =====
@@ -898,6 +903,21 @@ spec = describe "Pickles.Prove.SimpleChain" do
         in
           dummyEntry :< realEntry :< Vector.nil
 
+      -- wrapOwnPaddedBpChals for step_b1: semantically this is
+      -- wrap_b0.statement.messages_for_next_step_proof.old_bulletproof_challenges
+      -- (padded, expanded). In OCaml wrap.ml:474-475, wrap_b0's
+      -- messages_for_next_step_proof is COPIED from step_b0.statement
+      -- (its prev_statement). step_b0.statement.messages_for_next_step_proof
+      -- .old_bulletproof_challenges stores the BP chals of the proofs that
+      -- step_b0 verified = [dummy wrap proof's bp chals] (size 1 for N1).
+      -- Padded via Wrap_hack to PaddedLength=2 = [dummy, dummy].
+      -- So for Simple_chain b1 both slots are dummy wrap chals — same as b0.
+      b1WrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+      b1WrapOwnPaddedBpChals =
+        Dummy.dummyIpaChallenges.wrapExpanded
+          :< Dummy.dummyIpaChallenges.wrapExpanded
+          :< Vector.nil
+
     { advice: b1Advice } <- liftEffect $ buildStepAdviceWithOracles
       { appState: F one
       , prevAppState: F zero
@@ -920,6 +940,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapBranchData: wrapDv.branchData
       , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations
       , mustVerify: true
+      , wrapOwnPaddedBpChals: b1WrapOwnPaddedBpChals
       }
 
     b1Result <- liftEffect $

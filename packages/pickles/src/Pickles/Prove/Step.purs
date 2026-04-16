@@ -897,6 +897,25 @@ type BuildStepAdviceWithOraclesInput =
   -- | Whether the step circuit must verify the previous proof (= not base case).
   -- | Controls `challenge_polynomial_commitment` override in expandProof.
   , mustVerify :: Boolean
+  -- | Padded bp_challenges from the wrap proof's OWN IPA (the challenges
+  -- | produced during wrap proving, to be verified by the step verifier).
+  -- |
+  -- | Semantically: wrap_proof.statement.messages_for_next_step_proof
+  -- |   .old_bulletproof_challenges (padded via Wrap_hack.pad_challenges to
+  -- |   PaddedLength = 2, expanded via Ipa.Wrap.compute_challenges).
+  -- |
+  -- | Base case: both slots are `dummyIpaChallenges.wrapExpanded` (since
+  -- | the dummy wrap proof has dummy bp chals).
+  -- | Inductive: slot 0 = dummy (padding), slot 1 = the REAL wrap proof's
+  -- | new bp chals obtained via `vestaProofOpeningPrechallenges` expanded
+  -- | via Pallas.endo_scalar.
+  -- |
+  -- | Used by `expandProof` for (a) computing the wrap CIP (CIP batch
+  -- | equation depends on these bp_polys) and (b) hashing
+  -- | messages_for_next_wrap_proof. Getting this wrong makes the in-circuit
+  -- | IVP on the wrap proof diverge from the advice-computed deferred
+  -- | values, triggering `ivp_assert_plonk_beta` at the wrap verifier.
+  , wrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -928,8 +947,12 @@ buildStepAdviceWithOracles input = do
     wrapExpanded :: Vector WrapIPARounds WrapField
     wrapExpanded = dummyIpaChallenges.wrapExpanded
 
+    -- Previously hardcoded to [dummy, dummy] — correct for base case but
+    -- wrong for inductive (where slot 1 should be the real wrap proof's
+    -- own new bp chals). Now threaded through from the caller so they
+    -- pass the right values per case. See input field docs.
     wrapPadded :: Vector 2 (Vector WrapIPARounds WrapField)
-    wrapPadded = wrapExpanded :< wrapExpanded :< Vector.nil
+    wrapPadded = input.wrapOwnPaddedBpChals
 
     msgWrapHash :: WrapField
     msgWrapHash = hashMessagesForNextWrapProofPureGeneral
