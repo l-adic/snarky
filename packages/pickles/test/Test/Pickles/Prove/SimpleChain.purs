@@ -365,6 +365,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
             :: Vector PaddedLength _
 
+      , wrapPlonkRaw: simpleChainDummyPlonk
       , wrapPrevEvals: simpleChainDummyPrevEvals
       , wrapBranchData:
           { domainLog2: fromInt wrapDomainLog2 :: StepField
@@ -677,14 +678,26 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , publicInput: wrapPublicInput
         , advice: wrapAdvice
         , kimchiPrevChallenges:
-            let dummyAccEntry =
-                  { sgX: wrapSg.x
-                  , sgY: wrapSg.y
-                  , challenges: map (fromBigInt <<< toBigInt)
-                      Dummy.dummyIpaChallenges.wrapExpanded
-                  }
-            in dummyAccEntry :< dummyAccEntry :< Vector.nil
+            let
+              -- Padding slot: Dummy.Ipa.Wrap.sg + Dummy.Ipa.Wrap.challenges_computed
+              padEntry =
+                { sgX: wrapSg.x
+                , sgY: wrapSg.y
+                , challenges: map (fromBigInt <<< toBigInt)
+                    Dummy.dummyIpaChallenges.wrapExpanded
+                }
+              -- Real slot: Dummy.Ipa.Wrap.sg + expand(step.unf[0].deferred.bp_chals)
+              -- = expand(Dummy.Ipa.Step.challenges, Pallas.endo_scalar)
+              realEntry =
+                { sgX: wrapSg.x
+                , sgY: wrapSg.y
+                , challenges: msgForNextWrapRealChals
+                }
+            in padEntry :< realEntry :< Vector.nil
         }
+
+    -- DIAG: wrapDv.plonk.beta should match OCaml b1 plonk0.beta = 41619386...
+    liftEffect $ Trace.field "diag.wrapDv.plonk.beta" (SizedF.toField wrapDv.plonk.beta)
 
     -- Diagnostic: dump what kimchi's pallasProofOracles computed for beta
     -- directly from the step proof + prev_challenges. This is the RHS
@@ -806,6 +819,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapPublicInput: wrapResult.publicInputs
       , prevChalPolys: b1PrevChalPolys
 
+      , wrapPlonkRaw:
+          { alpha: SizedF.unwrapF wrapDv.plonk.alpha
+          , beta: SizedF.unwrapF wrapDv.plonk.beta
+          , gamma: SizedF.unwrapF wrapDv.plonk.gamma
+          , zeta: SizedF.unwrapF wrapDv.plonk.zeta
+          }
       , wrapPrevEvals: b1WrapPrevEvals
       , wrapBranchData: wrapDv.branchData
       , wrapSpongeDigest: wrapDv.spongeDigestBeforeEvaluations
