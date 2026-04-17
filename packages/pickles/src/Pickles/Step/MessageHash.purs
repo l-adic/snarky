@@ -115,7 +115,7 @@ hashMessagesForNextStepProofOpt
          , coeff :: Vector 15 (AffinePoint (FVar f))
          , index :: Vector 6 (AffinePoint (FVar f))
          }
-     , appState :: FVar f
+     , appStateFields :: Array (FVar f)
      , proofs ::
          Vector n
            { sg :: AffinePoint (FVar f)
@@ -124,7 +124,7 @@ hashMessagesForNextStepProofOpt
            }
      }
   -> Snarky (KimchiConstraint f) t m { digest :: FVar f, spongeAfterIndex :: Sponge (FVar f) }
-hashMessagesForNextStepProofOpt { vkComms, appState, proofs } = do
+hashMessagesForNextStepProofOpt { vkComms, appStateFields, proofs } = do
   let
     absorbPt s { x, y } = do
       s1 <- Sponge.absorb x s
@@ -140,7 +140,7 @@ hashMessagesForNextStepProofOpt { vkComms, appState, proofs } = do
 
   -- 2. Copy sponge_after_index, absorb app_state with regular sponge
   digest <- label "msg_hash" do
-    s1 <- label "msg_hash_absorb_app" $ Sponge.absorb appState spongeAfterIndex
+    s1 <- label "msg_hash_absorb_app" $ foldM (flip Sponge.absorb) spongeAfterIndex appStateFields
 
     -- 3. Switch to opt_sponge for masked sg + bp_challenges (one per proof)
     Tuple msg _ <- label "msg_hash_opt" $ OptSponge.runOptSpongeFromSponge s1 do

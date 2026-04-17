@@ -14,8 +14,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Vector (Vector)
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -28,9 +27,7 @@ import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
@@ -63,7 +60,7 @@ simpleChainN2Rule
    . CircuitM StepField (KimchiConstraint StepField) t m
   => SimpleChainN2Advice m
   => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 StepField)
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 (FVar StepField) Unit)
 simpleChainN2Rule appState = do
   prev1 <- exists $ lift $ getSimpleChainN2Prev1 unit
   prev2 <- exists $ lift $ getSimpleChainN2Prev2 unit
@@ -74,6 +71,7 @@ simpleChainN2Rule appState = do
   pure
     { prevPublicInputs: prev1 :< prev2 :< Vector.nil
     , proofMustVerify: proofMustVerify :< proofMustVerify :< Vector.nil
+    , publicOutput: unit
     }
 
 compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
@@ -81,7 +79,7 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    ( \_ -> stepMain @2 @67 simpleChainN2Rule
+    ( \_ -> stepMain @2 @67 @(F StepField) @(FVar StepField) @Unit @Unit simpleChainN2Rule
         { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
         dummyWrapSg
     )

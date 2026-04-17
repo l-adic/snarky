@@ -50,12 +50,11 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite)
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -72,7 +71,6 @@ import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofWitness (ProofWitness)
@@ -95,8 +93,10 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (class CircuitM, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
+import Snarky.Circuit.Types (class CircuitType, valueToFields)
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
@@ -105,7 +105,6 @@ import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar)
 import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
@@ -145,7 +144,7 @@ type StepBranchData =
 -- | commitment curve) and the field to `StepField` (= `Vesta.ScalarField`
 -- | = `Pallas.BaseField`) — both are structural for any step circuit
 -- | in the Pasta cycle.
-type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) =
+type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) inputVal =
   { evals :: Vector n (ProofWitness (F StepField))
   , prevChallenges :: Vector n (Vector ds (F StepField))
   , messages ::
@@ -168,7 +167,7 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) =
   , wrapVerifierIndex ::
       VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
   , sgOld :: Vector n (AffinePoint (F StepField))
-  , appState :: F StepField
+  , publicInput :: inputVal
   , publicUnfinalizedProofs ::
       Vector n
         ( PerProofUnfinalized
@@ -206,25 +205,26 @@ newtype StepProverT
   :: Int
   -> Int
   -> Int
+  -> Type
   -> (Type -> Type)
   -> Type
   -> Type
-newtype StepProverT n ds dw m a =
-  StepProverT (ReaderT (StepAdvice n ds dw) m a)
+newtype StepProverT n ds dw inputVal m a =
+  StepProverT (ReaderT (StepAdvice n ds dw inputVal) m a)
 
-derive instance Newtype (StepProverT n ds dw m a) _
-derive newtype instance Functor m => Functor (StepProverT n ds dw m)
-derive newtype instance Apply m => Apply (StepProverT n ds dw m)
-derive newtype instance Applicative m => Applicative (StepProverT n ds dw m)
-derive newtype instance Bind m => Bind (StepProverT n ds dw m)
-derive newtype instance Monad m => Monad (StepProverT n ds dw m)
+derive instance Newtype (StepProverT n ds dw inputVal m a) _
+derive newtype instance Functor m => Functor (StepProverT n ds dw inputVal m)
+derive newtype instance Apply m => Apply (StepProverT n ds dw inputVal m)
+derive newtype instance Applicative m => Applicative (StepProverT n ds dw inputVal m)
+derive newtype instance Bind m => Bind (StepProverT n ds dw inputVal m)
+derive newtype instance Monad m => Monad (StepProverT n ds dw inputVal m)
 
 -- | Supply the advice record and run the prover computation in the
 -- | base monad.
 runStepProverT
-  :: forall n ds dw m a
-   . StepAdvice n ds dw
-  -> StepProverT n ds dw m a
+  :: forall n ds dw inputVal m a
+   . StepAdvice n ds dw inputVal
+  -> StepProverT n ds dw inputVal m a
   -> m a
 runStepProverT advice (StepProverT m) = runReaderT m advice
 
@@ -249,7 +249,8 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT n ds dw m) where
+    (StepProverT n ds dw inputVal m)
+    inputVal where
 
   getProofWitnesses _ = StepProverT $ map _.evals ask
   getPrevChallenges _ = StepProverT $ map _.prevChallenges ask
@@ -259,7 +260,7 @@ instance
   getMessagesForNextWrapProof _ = StepProverT $ map _.messagesForNextWrapProof ask
   getWrapVerifierIndex _ = StepProverT $ map _.wrapVerifierIndex ask
   getSgOld _ = StepProverT $ map _.sgOld ask
-  getStepAppState _ = StepProverT $ map _.appState ask
+  getStepPublicInput _ = StepProverT $ map _.publicInput ask
   getStepUnfinalizedProofs _ = StepProverT $ map _.publicUnfinalizedProofs ask
   getStepPerProofWitnesses _ = StepProverT $ do
     adv <- ask
@@ -366,11 +367,12 @@ instance
 
 -- | Inputs `buildStepAdvice` needs from the caller. Everything else
 -- | is protocol-constant dummy data derived from `Pickles.Dummy`.
-type BuildStepAdviceInput =
-  { -- | Value bound to the step circuit's app_state public input
-    -- | (OCaml `Req.App_state`). For Simple_chain base case this is
-    -- | `F zero` (self = 0).
-    appState :: F StepField
+type BuildStepAdviceInput inputVal =
+  { -- | Value bound to the step circuit's public input (OCaml
+    -- | `Req.App_state`). Polymorphic in `inputVal` so rules with
+    -- | Input-mode typ other than `Field.typ` can bind multi-field
+    -- | records. For Simple_chain base case this is `F zero` (self = 0).
+    publicInput :: inputVal
 
   -- | `most_recent_width` parameter the OCaml `Proof.dummy` call
   -- | would pass. For Simple_chain at N1 this is 1. Drives the
@@ -397,10 +399,10 @@ type BuildStepAdviceInput =
 -- | values are reused across slots — OCaml does the equivalent via
 -- | `Vector.init Max_proofs_verified.n` in `step.ml:704-735`.
 buildStepAdvice
-  :: forall n
+  :: forall n inputVal
    . Reflectable n Int
-  => BuildStepAdviceInput
-  -> StepAdvice n StepIPARounds WrapIPARounds
+  => BuildStepAdviceInput inputVal
+  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
 buildStepAdvice input =
   let
     -- Pallas generator (= OCaml `Tock.Curve.one`). Reused for every
@@ -537,7 +539,7 @@ buildStepAdvice input =
           , index: Vector.generate (const g0w)
           }
     , sgOld: Vector.replicate g0
-    , appState: input.appState
+    , publicInput: input.publicInput
     , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
     , branchData: Vector.replicate dummyBranch
     , kimchiPrevChallenges:
@@ -682,10 +684,12 @@ extractWrapVKForStepHash vk =
 -- | 3 scalar challenges, 3 digests, `StepIPARounds` bp challenges,
 -- | packed branch data, 8 feature flags, 2 lookup slots.
 dummyWrapTockPublicInput
-  :: { mostRecentWidth :: Int
+  :: forall inputVal input
+   . CircuitType StepField inputVal input
+  => { mostRecentWidth :: Int
      , wrapDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
-     , prevAppState :: F StepField
+     , prevPublicInput :: inputVal
      -- | `Dummy.Ipa.Wrap.sg` — Ro-derived Pallas point from
      -- | `computeDummySgValues.ipa.wrap.sg`. Used for the previous
      -- | proofs' `challenge_polynomial_commitments` in
@@ -793,7 +797,7 @@ dummyWrapTockPublicInput input =
     msgStepDigestStepField :: StepField
     msgStepDigestStepField = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep
-      , appState: [ case input.prevAppState of F x -> x ]
+      , appState: valueToFields @StepField @inputVal input.prevPublicInput
       , proofs: prevProofs
       }
 
@@ -848,9 +852,9 @@ dummyWrapTockPublicInput input =
 -- | inductive case (real wrap proof from a previous iteration).
 -- | The caller provides the wrap proof, its public input, and the
 -- | padded accumulator — the builder treats them uniformly.
-type BuildStepAdviceWithOraclesInput =
-  { appState :: F StepField
-  , prevAppState :: F StepField
+type BuildStepAdviceWithOraclesInput inputVal =
+  { publicInput :: inputVal
+  , prevPublicInput :: inputVal
   , mostRecentWidth :: Int
   , wrapDomainLog2 :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
@@ -987,29 +991,24 @@ type BuildStepAdviceWithOraclesInput =
 -- | then feeds the result through `expandProof` to compute the full
 -- | advice record.
 buildStepAdviceWithOracles
-  :: forall n
+  :: forall n inputVal input
    . Reflectable n Int
-  => BuildStepAdviceWithOraclesInput
+  => CircuitType StepField inputVal input
+  => BuildStepAdviceWithOraclesInput inputVal
   -> Effect
-       { advice :: StepAdvice n StepIPARounds WrapIPARounds
+       { advice :: StepAdvice n StepIPARounds WrapIPARounds inputVal
        , challengePolynomialCommitment :: AffinePoint StepField
        }
 buildStepAdviceWithOracles input = do
   let
-    base :: StepAdvice n StepIPARounds WrapIPARounds
+    base :: StepAdvice n StepIPARounds WrapIPARounds inputVal
     base = buildStepAdvice
-      { appState: input.appState
+      { publicInput: input.publicInput
       , mostRecentWidth: input.mostRecentWidth
       , wrapDomainLog2: input.wrapDomainLog2
       }
 
   let
-    -- Compute `hashMessagesForNextWrapProof` ONCE and thread it to
-    -- both the advice slot and `dummyWrapTockPublicInput`'s
-    -- `digests[1]` field.
-    wrapExpanded :: Vector WrapIPARounds WrapField
-    wrapExpanded = dummyIpaChallenges.wrapExpanded
-
     -- Previously hardcoded to [dummy, dummy] — correct for base case but
     -- wrong for inductive (where slot 1 should be the real wrap proof's
     -- own new bp chals). Now threaded through from the caller so they
@@ -1047,7 +1046,7 @@ buildStepAdviceWithOracles input = do
   -- exactly which input diverges.
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
     { stepVk: wrapVkStep
-    , appState: [ case input.prevAppState of F x -> x ]
+    , appState: valueToFields @StepField @inputVal input.prevPublicInput
     , proofs: prevProofsForHash
     }
 
@@ -1239,7 +1238,7 @@ buildStepAdviceWithOracles input = do
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
-      , appStateFields: [ case input.prevAppState of F x -> x ]
+      , appStateFields: valueToFields @StepField @inputVal input.prevPublicInput
       , stepPrevSgs: input.wrapSg :< Vector.nil
       , wrapChallengePolynomialCommitment: input.stepSg
       , wrapPaddedPrevChallenges: wrapPadded
@@ -1531,12 +1530,21 @@ buildStepAdviceWithOracles input = do
 -- | Mirrors OCaml's `Inductive_rule.main` signature at
 -- | `mina/src/lib/crypto/pickles/inductive_rule.ml` + the usage site
 -- | in `step_main.ml:278-283`.
-type StepRule (n :: Int) =
+-- |
+-- | The `output` type parameter is the rule's `public_output` (mirroring
+-- | OCaml's `Inductive_rule.t.public_output`). For Input-mode rules
+-- | (`~public_input:(Input _)`) callers use `output = Unit`. For
+-- | Output-mode rules the computed value flows back via the rule's
+-- | returned `RuleOutput`.
+type StepRule (n :: Int) inputVal input outputVal output =
   forall t m'
    . CircuitM StepField (KimchiConstraint StepField) t m'
-  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m'
-  => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n StepField)
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m' inputVal
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => input
+  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n input output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1592,7 +1600,7 @@ type StepProveResult (outputSize :: Int) =
 -- | a placeholder advice here (e.g. one built with synthetic wrap VK
 -- | commitments) and supply the real advice to the solve phase.
 stepCompile
-  :: forall @n @outputSize pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1601,22 +1609,25 @@ stepCompile
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => StepProveContext
-  -> StepRule n
-  -> StepAdvice n StepIPARounds WrapIPARounds
+  -> StepRule n inputVal input outputVal output
+  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m StepCompileResult
 stepCompile ctx rule advice = do
   let
     compileAction
-      :: StepProverT n StepIPARounds WrapIPARounds m
+      :: StepProverT n StepIPARounds WrapIPARounds inputVal m
            (CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
     compileAction =
       compile
         (Proxy @Unit)
         (Proxy @(Vector outputSize (F StepField)))
         (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize rule ctx.srsData ctx.dummySg)
+        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output rule ctx.srsData ctx.dummySg)
         (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   builtState <- runStepProverT advice compileAction
@@ -1664,7 +1675,7 @@ stepCompile ctx rule advice = do
 -- | `StepCompileResult` and the real advice, runs the witness solver,
 -- | checks constraint satisfaction, and creates the kimchi proof.
 stepSolveAndProve
-  :: forall @n @outputSize pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1673,23 +1684,26 @@ stepSolveAndProve
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
   -> StepProveContext
-  -> StepRule n
+  -> StepRule n inputVal input outputVal output
   -> StepCompileResult
-  -> StepAdvice n StepIPARounds WrapIPARounds
+  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m (StepProveResult outputSize)
 stepSolveAndProve onError ctx rule compileResult advice = do
   let
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
-           (StepProverT n StepIPARounds WrapIPARounds m)
+           (StepProverT n StepIPARounds WrapIPARounds inputVal m)
            Unit
            (Vector outputSize (F StepField))
     rawSolver =
       makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize rule ctx.srsData ctx.dummySg)
+        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output rule ctx.srsData ctx.dummySg)
 
   eRes <- runStepProverT advice (runSolverT rawSolver unit)
 
@@ -1776,7 +1790,7 @@ dumpRowLabels cs = do
 -- |   `mina/src/lib/crypto/pickles/step.ml:800-852` — OCaml step prover
 -- |   `mina/src/lib/crypto/pickles/step_main.ml:237-594` — the circuit body
 stepProve
-  :: forall @n @outputSize pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1785,12 +1799,15 @@ stepProve
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
   -> StepProveContext
-  -> StepRule n
-  -> StepAdvice n StepIPARounds WrapIPARounds
+  -> StepRule n inputVal input outputVal output
+  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m (StepProveResult outputSize)
 stepProve onError ctx rule advice = do
-  compileResult <- stepCompile @n @outputSize ctx rule advice
-  stepSolveAndProve @n @outputSize onError ctx rule compileResult advice
+  compileResult <- stepCompile @n @outputSize @inputVal @input @outputVal @output ctx rule advice
+  stepSolveAndProve @n @outputSize @inputVal @input @outputVal @output onError ctx rule compileResult advice

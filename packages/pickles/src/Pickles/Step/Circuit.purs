@@ -265,11 +265,11 @@ buildWrapPublicInput { fopState, messagesForNextWrapProof, messagesForNextStepPr
 -- | **For base case (Step0):** All `mustVerify = false`, `isBaseCase = true`,
 -- | assertions pass trivially. Pass dummy data via advisory monad.
 stepCircuit
-  :: forall n _ds @ds _dw dw input prevInput output aux t m r
+  :: forall n _ds @ds _dw dw input prevInput output aux inputVal t m r
    . Add 1 _ds ds
   => Add 1 _dw dw
   => CircuitM Vesta.ScalarField (KimchiConstraint Vesta.ScalarField) t m
-  => StepWitnessM n ds dw PallasG Vesta.ScalarField m
+  => StepWitnessM n ds dw PallasG Vesta.ScalarField m inputVal
   => Reflectable n Int
   => Reflectable ds Int
   => Reflectable dw Int

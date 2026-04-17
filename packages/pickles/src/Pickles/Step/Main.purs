@@ -37,13 +37,15 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
+import Snarky.Circuit.DSL.Monad (class CheckedType)
+import Snarky.Circuit.Types (class CircuitType, varToFields)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
@@ -66,9 +68,19 @@ import Type.Proxy (Proxy(..))
 -- |
 -- | Reference: `SimpleChainAdvice` in StepMainSimpleChain.purs for the
 -- | N1 rule, `SimpleChainN2Advice` for N2.
-type RuleOutput n f =
-  { prevPublicInputs :: Vector n (FVar f)
-  , proofMustVerify :: Vector n (BoolVar f)
+-- | The `input` type parameter is the rule's `public_input` circuit var
+-- | (OCaml `Inductive_rule.t.public_input`). For Input-mode rules with a
+-- | single `Field.typ` this is `FVar f`; for multi-field inputs (records,
+-- | vectors) it's the corresponding `CircuitType` var shape.
+-- | The `output` type parameter is the rule's `public_output` (OCaml
+-- | `Inductive_rule.t.public_output`). For the common Input-mode case
+-- | (`~public_input:(Input _)`) the rule has no output and callers use
+-- | `output = Unit`. For Output-mode rules the computed output flows
+-- | through `publicOutput` back to the caller.
+type RuleOutput n input output =
+  { prevPublicInputs :: Vector n input
+  , proofMustVerify :: Vector n (BoolVar StepField)
+  , publicOutput :: output
   }
 
 -------------------------------------------------------------------------------
@@ -274,7 +286,7 @@ buildVerifyOneInput
   => Reflectable pad Int
   => Add pad n PaddedLength
   => PerProofWitness n
-  -> FVar StepField
+  -> Array (FVar StepField) -- prev proof's public input, pre-flattened
   -> BoolVar StepField
   -> UnfinalizedProof
   -> FVar StepField
@@ -285,7 +297,7 @@ buildVerifyOneInput
      }
   -> AffinePoint (FVar StepField) -- dummySg for padding
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
-buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
+buildVerifyOneInput pw appStateFields mustVerify unfinalized msgWrap vkComms dummySg =
   let
     -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
     -- extend_front puts `pad` dummies at the front, where pad + n = PaddedLength.
@@ -302,7 +314,7 @@ buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
     proofMask :: Vector n (BoolVar StepField)
     proofMask = Vector.drop @pad fullMasks
   in
-    { appState
+    { appStateFields
     , wComm: map unwrapPt pw.wComm
     , zComm: unwrapPt pw.zComm
     , tComm: map unwrapPt pw.tComm
@@ -396,28 +408,51 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @n pad @outputSize
+  :: forall @n pad @outputSize @inputVal @input @outputVal @output
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m inputVal
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
-  => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n input output))
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 
-  -- 1. exists: app_state via Req.App_state
-  appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds @PallasG unit
+  -- 1. exists: public input via Req.App_state. The `input` var type is
+  --    determined by the rule; its `CircuitType` instance dictates the
+  --    field-count and ordering consumed by the outer/inner sponges.
+  let
+    requestInput :: m inputVal
+    requestInput = getStepPublicInput @n @StepIPARounds @WrapIPARounds @PallasG unit
+  (publicInput :: input) <- exists $ lift requestInput
 
-  -- 2. rule_main
-  { prevPublicInputs, proofMustVerify } <- label "rule_main" $ rule appState
+  -- 2. rule_main — returns the rule's computed `public_output`. Flatten
+  --    both sides into the sponge input below; mode selection comes out
+  --    of the `CircuitType Unit Unit` instance which yields `[]`.
+  --    Reference: `mina/src/lib/crypto/pickles/step_main.ml:566-573`:
+  --      | Input _ -> app_state
+  --      | Output _ -> ret_var
+  --      | Input_and_output _ -> (app_state, ret_var)
+  --    With our uniform `varToFields inputVar <> varToFields outputVar`,
+  --    Input-mode output is `Unit` → `[]`, Output-mode input is `Unit`
+  --    → `[]`, so each mode yields the OCaml-correct field list.
+  { prevPublicInputs, proofMustVerify, publicOutput } <-
+    label "rule_main" $ rule publicInput
+
+  let
+    publicInputFields = varToFields @StepField @inputVal publicInput
+    publicOutputFields = varToFields @StepField @outputVal publicOutput
+    hashAppFields = publicInputFields <> publicOutputFields
 
   -- 3. exists: VK via Req.Wrap_index. The VerificationKey CircuitType
   --    instance allocates sigma(7), coeff(15), index(6) in OCaml hlist order.
@@ -495,8 +530,9 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
     rs <- Vector.generateA @n \i -> do
       let
         pw = proofWitnesses !! i
+        prevInput = prevPublicInputs !! i
         input = buildVerifyOneInput @n pw
-          (prevPublicInputs !! i)
+          (varToFields @StepField @inputVal prevInput)
           (proofMustVerify !! i)
           (unfinalizedProofs !! i)
           (msgsWrap !! i)
@@ -537,7 +573,8 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
-    ivpTrace "step_main_outer.app_state" appState
+    forWithIndex_ hashAppFields \i f ->
+      ivpTrace ("step_main_outer.app_state." <> show i) f
 
     -- sponge_after_index: absorb VK
     spongeAfterIndex <- do
@@ -547,8 +584,12 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
       s3 <- foldM absorbPt s2 vk.coeff
       foldM absorbPt s3 vk.index
 
-    -- Absorb app_state
-    s1 <- Sponge.absorb appState spongeAfterIndex
+    -- Absorb app_state fields (one absorb per field; for a single-FVar
+    -- input this is the same single-field absorb the old code did).
+    -- For Output / Input_and_output modes `hashAppFields` includes the
+    -- output fields after the input fields, mirroring OCaml's
+    -- `to_field_elements (app_state, ret_var)` in step_main.ml:566-573.
+    s1 <- foldM (flip Sponge.absorb) spongeAfterIndex hashAppFields
 
     -- For each proof: absorb sg + expanded bp_challenges
     let proofData = Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results
@@ -597,12 +638,15 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 -- |
 -- | Reference: step_main.ml:584-586, pickles.ml:476 (Max_proofs_verified = N2)
 stepMainPadded
-  :: forall @n @pad @outputSize
+  :: forall @n @pad @outputSize @inputVal @input @outputVal @output
        unfsTotal digestPlusUnfs
        padUnfsTotal paddedUnfsTotal paddedDigestPlusUnfs paddedOutputSize
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m inputVal
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable n Int
   => Reflectable pad Int
   => Add pad n PaddedLength
@@ -617,14 +661,14 @@ stepMainPadded
   => Add paddedUnfsTotal 1 paddedDigestPlusUnfs
   => Add paddedDigestPlusUnfs PaddedLength paddedOutputSize
   => Reflectable paddedOutputSize Int
-  => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n input output))
   -> StepMainSrsData
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector paddedOutputSize (FVar StepField))
 stepMainPadded rule srsData dummySg = do
   -- Run the circuit body to get the raw components (n real proofs)
   -- We inline the same logic as stepMain but produce padded output.
-  unpadded <- stepMain @n @outputSize rule srsData dummySg
+  unpadded <- stepMain @n @outputSize @inputVal @input @outputVal @output rule srsData dummySg
 
   -- The unpadded output is [unfs(n*32) | digest(1) | msgs(n)].
   -- Convert to Array, split, pad with dummies at front, reassemble.

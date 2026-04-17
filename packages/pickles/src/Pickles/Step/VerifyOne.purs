@@ -34,8 +34,11 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | Input to verify_one. All fields from Per_proof_witness + unfinalized + extras.
 -- | Specialized to StepField (Vesta scalar field = Fp).
 type VerifyOneInput n d tickD sf fv bv =
-  { -- Per_proof_witness.app_state
-    appState :: fv
+  { -- Per_proof_witness.app_state (flattened via CircuitType upstream).
+    -- For Input-mode rules with a single `FVar f` this is `[x]`; for
+    -- multi-field inputs it's the full field-list produced by the
+    -- input type's `varToFields`.
+    appStateFields :: Array fv
   -- Per_proof_witness.wrap_proof
   , wComm :: Vector 15 (AffinePoint fv)
   , zComm :: AffinePoint fv
@@ -167,7 +170,7 @@ verifyOne fopParams input ivpParams = do
   { digest: messagesForNextStepProof, spongeAfterIndex } <-
     hashMessagesForNextStepProofOpt
       { vkComms: input.vkComms
-      , appState: input.appState
+      , appStateFields: input.appStateFields
       , proofs: msgHashProofs
       }
 

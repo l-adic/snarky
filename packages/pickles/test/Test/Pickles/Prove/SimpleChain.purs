@@ -72,7 +72,7 @@ import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (F(..), UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
@@ -103,7 +103,7 @@ import Test.Spec (SpecT, describe, it)
 -- | assertion passes regardless of `prev`. OCaml's handler supplies
 -- | `-1` via `Req.Prev_input`; PureScript can use `0` (the value
 -- | doesn't affect the circuit output when `is_base_case = true`).
-simpleChainRule :: F StepField -> StepRule 1
+simpleChainRule :: F StepField -> StepRule 1 (F StepField) (FVar StepField) Unit Unit
 simpleChainRule prevAppState self = do
   prev <- exists $ MT.lift $ pure prevAppState
   isBaseCase <- equals_ (const_ zero) self
@@ -113,6 +113,7 @@ simpleChainRule prevAppState self = do
   pure
     { prevPublicInputs: prev :< Vector.nil
     , proofMustVerify: proofMustVerify :< Vector.nil
+    , publicOutput: unit
     }
 
 spec :: SpecT Aff Unit Aff Unit
@@ -217,7 +218,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- synthetic all-g0-VK advice here. The REAL advice (with oracles
       -- over the compiled wrap VK) is built below for the solver.
       placeholderAdvice = buildStepAdvice
-        { appState: F zero
+        { publicInput: F zero
         , mostRecentWidth: 1
         , wrapDomainLog2
         }
@@ -225,7 +226,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile @1 @34 ctx (simpleChainRule (F (negate one))) placeholderAdvice
+      stepCompile @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit ctx (simpleChainRule (F (negate one))) placeholderAdvice
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -344,7 +345,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         { mostRecentWidth: 1
         , wrapDomainLog2
         , wrapVK: wrapCR.verifierIndex
-        , prevAppState: F (negate one)
+        , prevPublicInput: F (negate one)
         , wrapSg
         , stepSg
         , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
@@ -356,8 +357,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
             }
         }
     { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
-      { appState: F zero
-      , prevAppState: F (negate one) -- OCaml `s_neg_one`
+      { publicInput: F zero
+      , prevPublicInput: F (negate one) -- OCaml `s_neg_one`
       , mostRecentWidth: 1
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -399,7 +400,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     -- ===== Phase 4: run the step solver =====
     result <- liftEffect $
-      stepSolveAndProve @1 @34
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
         (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
@@ -968,8 +969,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< Vector.nil
 
     { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
-      { appState: F one
-      , prevAppState: F zero
+      { publicInput: F one
+      , prevPublicInput: F zero
       , mostRecentWidth: 1
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -1035,7 +1036,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b1Result <- liftEffect $
-      stepSolveAndProve @1 @34
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
         (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F zero))
@@ -1360,8 +1361,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< Vector.nil
 
     { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
-      { appState: F (fromInt 2 :: StepField)
-      , prevAppState: F one
+      { publicInput: F (fromInt 2 :: StepField)
+      , prevPublicInput: F one
       , mostRecentWidth: 1
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -1410,7 +1411,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b2Result <- liftEffect $
-      stepSolveAndProve @1 @34
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
         (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F one))
@@ -1677,8 +1678,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< Vector.nil
 
     { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
-      { appState: F (fromInt 3 :: StepField)
-      , prevAppState: F (fromInt 2 :: StepField)
+      { publicInput: F (fromInt 3 :: StepField)
+      , prevPublicInput: F (fromInt 2 :: StepField)
       , mostRecentWidth: 1
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -1724,7 +1725,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b3Result <- liftEffect $
-      stepSolveAndProve @1 @34
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
         (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))

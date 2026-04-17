@@ -67,7 +67,7 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
     mask1 = at (proofStateBase + 27)
 
     input =
-      { appState: at 0
+      { appStateFields: [ at 0 ]
       , wComm: (Vector.generate \j -> readPt (o + 2 * getFinite j)) :: Vector 15 _
       , zComm: readPt (o + 30)
       , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _

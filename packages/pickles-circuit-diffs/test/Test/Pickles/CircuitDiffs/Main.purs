@@ -41,11 +41,13 @@ import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWr
 import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap)
+import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
+import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
@@ -476,8 +478,24 @@ spec =
                 coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
+        -- N=1 Input mode (Simple_chain). step_widths=[1], padded=[[0];[1]].
         exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapMainSrsData)
+        -- N=2 Input mode (Simple_chain_n2). step_widths=[0;2], padded=[[0;2];[0;2]].
         exactMatch "wrap_main_n2_circuit" (fromCompiledCircuit $ compileWrapMainN2 wrapSrsData)
+        -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
+        -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
+        -- the wrap verify-one-of-step path with a step proof whose own
+        -- public input is just the msgForNextStep digest (no unfinalized
+        -- proofs, no msg_wrap entries). Uses domain_log2=13 (step domain
+        -- for the N=0 step circuit is 2^9, wrap domain is 2^13 per OCaml
+        -- dump_add_one_return's `compile.wrap_domains.h.log2` trace).
+        let
+          wrapMainAddOneReturnSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 13 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+        exactMatch "wrap_main_add_one_return_circuit" (fromCompiledCircuit $ compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -531,6 +549,7 @@ spec =
                 (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
+        -- N=1, Input mode. Public input layout is input field only.
         exactMatch "step_main_simple_chain_circuit" (fromCompiledCircuit $ compileStepMainSimpleChain stepMainSrsData)
         let
           stepMainN2SrsData =
@@ -538,7 +557,14 @@ spec =
                 (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
+        -- N=2, Input mode. Two prev proofs verified by verify_one.
         exactMatch "step_main_simple_chain_n2_circuit" (fromCompiledCircuit $ compileStepMainSimpleChainN2 stepMainN2SrsData)
+        -- N=0, Input_and_output mode — Add_one_return. No recursion,
+        -- no verify_one; the hash_messages_for_next_step_proof absorbs
+        -- BOTH input and output fields (OCaml step_main.ml:566-573
+        -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
+        -- This is the only N=0 circuit-diff fixture in the suite.
+        exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

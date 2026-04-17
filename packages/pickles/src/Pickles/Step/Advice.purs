@@ -68,7 +68,7 @@ module Pickles.Step.Advice
   -- Composed advice methods used by Pickles.Step.Main.stepMain.
   -- These mirror OCaml's `Req.App_state`, `Req.Proof_with_datas`,
   -- and `Req.Unfinalized_proofs`.
-  , getStepAppState
+  , getStepPublicInput
   , getStepPerProofWitnesses
   , getStepUnfinalizedProofs
   ) where
@@ -106,8 +106,8 @@ class
   ( Monad m
   , WeierstrassCurve f g
   ) <=
-  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m
-  | g -> f where
+  StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m inputVal
+  | g -> f, m -> inputVal where
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
@@ -174,9 +174,13 @@ class
   -- | OCaml: per_proof_witness.ml:91 prev_challenge_polynomial_commitments
   getSgOld :: Unit -> m (Vector n (AffinePoint (F f)))
 
-  -- | App state (the rule's public input). Singleton.
-  -- | OCaml: Req.App_state in step_main.ml:275.
-  getStepAppState :: Unit -> m (F f)
+  -- | The rule's public input. For OCaml Input-mode rules this is the
+  -- | application-specific `a_var` passed via `exists Req.App_state`
+  -- | (step_main.ml:275). For single-field inputs `inputVal = F f`; for
+  -- | multi-field inputs `inputVal` is a record/vector of field values.
+  -- | The circuit-side `input` var type is paired with `inputVal` through
+  -- | the `CircuitType` constraint at the `stepMain` call site.
+  getStepPublicInput :: Unit -> m inputVal
 
   -- | The composed per-proof witness Vector — ONE allocation matching
   -- | OCaml's `exists (Prev_typ.f prev_proof_typs) ~request:Req.Proof_with_datas`.
@@ -216,7 +220,7 @@ instance
   ( WeierstrassCurve f g
   , Reflectable n Int
   ) =>
-  StepWitnessM n ds dw g f Effect where
+  StepWitnessM n ds dw g f Effect inputVal where
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
@@ -225,6 +229,6 @@ instance
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
   getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
   getSgOld _ = throw "impossible! getSgOld called during compilation"
-  getStepAppState _ = throw "impossible! getStepAppState called during compilation"
+  getStepPublicInput _ = throw "impossible! getStepPublicInput called during compilation"
   getStepPerProofWitnesses _ = throw "impossible! getStepPerProofWitnesses called during compilation"
   getStepUnfinalizedProofs _ = throw "impossible! getStepUnfinalizedProofs called during compilation"
