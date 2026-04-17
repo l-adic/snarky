@@ -13,26 +13,30 @@ module Pickles.Verify
   , IncrementallyVerifyProofInput
   , IncrementallyVerifyProofOutput
   , incrementallyVerifyProof
+  , ivpTrace
   , packStatement
   , verify
   ) where
 
 import Prelude
 
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.FtComm (ftComm)
 import Pickles.IPA (CheckBulletproofInput, checkBulletproof)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBase, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode, LagrangeBaseLookup, publicInputCommit)
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
+import Pickles.Trace as Trace
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
@@ -40,8 +44,9 @@ import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, assertEq, const_, if_, label)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, if_, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve)
@@ -60,7 +65,7 @@ import Snarky.Data.EllipticCurve (AffinePoint, CurveParams)
 type IncrementallyVerifyProofParams :: Type -> Row Type -> Type
 type IncrementallyVerifyProofParams f r =
   { curveParams :: CurveParams f
-  , lagrangeComms :: Array (LagrangeBase f)
+  , lagrangeAt :: LagrangeBaseLookup f
   , blindingH :: AffinePoint (F f)
   , endo :: f -- ^ EndoScalar constant for challenge expansion
   , groupMapParams :: GroupMapParams f
@@ -131,6 +136,32 @@ type IncrementallyVerifyProofOutput d f =
 -- | - `f'`: scalar field of commitment curve
 -- | - `g`: commitment curve group
 -- | - `sf`: shifted scalar type (Type1 or Type2)
+-- | DEBUG: emit a solve-time trace of a circuit variable's assigned value.
+-- |
+-- | Uses `exists` to allocate a throw-away variable whose witness computation
+-- | runs `readCVar`. At solve time this reads the variable's assigned value
+-- | and emits a `[label] VALUE` line via `unsafePerformEffect` → Trace.fieldF.
+-- | The allocated var is unused and its only constraint is the no-op `check`
+-- | for `FVar`, so adding these calls does NOT change the constraint system
+-- | shape.
+-- |
+-- | `unsafePerformEffect` is used to avoid propagating a `MonadEffect m`
+-- | constraint through the entire IVP/step/wrap call chain. This is
+-- | purely for debugging.
+ivpTrace
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => String
+  -> FVar f
+  -> Snarky c t m Unit
+ivpTrace labelStr v = do
+  _ <- exists do
+    val <- readCVar v
+    let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+    pure val
+  pure unit
+
 incrementallyVerifyProof
   :: forall publicInput sgOldN totalBases d f f' @g sf t m _l3 _l4 r
    . PrimeField f
@@ -144,6 +175,7 @@ incrementallyVerifyProof
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
+  => Reflectable sgOldN Int
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases
   => Add 1 _l4 totalBases
@@ -189,45 +221,102 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   { xHat, beta, gamma, alphaChal, zetaChal, digest } <-
     if params.useOptSponge then do
       -- Wrap path: compute x_hat first, then OptSponge for all absorptions
+      -- Trace the inputs to the OptSponge so we can diff them byte-for-byte
+      -- against OCaml's wrap_verifier IVP. Same labels as the step path,
+      -- so both runs populate the same keys (wrap run overwrites step run
+      -- within the same file).
+      liftSnarky $ ivpTrace "ivp.trace.wrap.index_digest" indexDigest
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.x" xHat.x
+      liftSnarky $ ivpTrace "ivp.trace.wrap.xhat.y" xHat.y
+      liftSnarky do
+        forWithIndex_ input.sgOld \fi pt -> do
+          let i = getFinite fi
+          ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.wrap.sg_old." <> show i <> ".y") pt.y
+        forWithIndex_ input.wComm \fi pt -> do
+          let i = getFinite fi
+          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
+        ivpTrace "ivp.trace.wrap.zcomm.x" input.zComm.x
+        ivpTrace "ivp.trace.wrap.zcomm.y" input.zComm.y
       let
         spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
+      liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
+      liftSnarky $ ivpTrace "ivp.trace.wrap.gamma_squeezed" (SizedF.toField result.gamma)
+      liftSnarky $ ivpTrace "ivp.trace.wrap.digest" result.digest
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
       -- Matches step_verifier.ml:528-530
+      liftSnarky $ ivpTrace "ivp.trace.index_digest" indexDigest
       labelM "ivp_absorb_index_digest" $ Sponge.absorb indexDigest
-      labelM "ivp_absorb_sg_old" $ for_ input.sgOld \pt -> do
-        labelM "ivp_sg_x" $ Sponge.absorb pt.x
-        labelM "ivp_sg_y" $ Sponge.absorb pt.y
+      labelM "ivp_absorb_sg_old" do
+        liftSnarky $ forWithIndex_ input.sgOld \fi pt -> do
+          let i = getFinite fi
+          ivpTrace ("ivp.trace.sg_old." <> show i <> ".x") pt.x
+          ivpTrace ("ivp.trace.sg_old." <> show i <> ".y") pt.y
+        for_ input.sgOld \pt -> do
+          labelM "ivp_sg_x" $ Sponge.absorb pt.x
+          labelM "ivp_sg_y" $ Sponge.absorb pt.y
       -- Compute x_hat
       xHat <- liftSnarky $ label "ivp_xhat" $ publicInputCommit params input.publicInput
+      liftSnarky $ ivpTrace "ivp.trace.xhat.x" xHat.x
+      liftSnarky $ ivpTrace "ivp.trace.xhat.y" xHat.y
       -- Continue sponge transcript: absorb x_hat, w_comm, squeeze beta/gamma, etc.
       -- step_verifier.ml:551-568
       Sponge.absorbPoint xHat
+      liftSnarky $ forWithIndex_ input.wComm \fi pt -> do
+        let i = getFinite fi
+        ivpTrace ("ivp.trace.w_comm." <> show i <> ".x") pt.x
+        ivpTrace ("ivp.trace.w_comm." <> show i <> ".y") pt.y
       for_ input.wComm Sponge.absorbPoint
       -- beta/gamma: squeeze_challenge (constrain_low_bits:true)
       beta <- Sponge.squeezeScalarChallenge endoParams
+      liftSnarky $ ivpTrace "ivp.trace.beta_squeezed" (SizedF.toField beta)
       gamma <- Sponge.squeezeScalarChallenge endoParams
+      liftSnarky $ ivpTrace "ivp.trace.gamma_squeezed" (SizedF.toField gamma)
       -- z_comm: receive
+      liftSnarky $ ivpTrace "ivp.trace.zcomm.x" input.zComm.x
+      liftSnarky $ ivpTrace "ivp.trace.zcomm.y" input.zComm.y
       Sponge.absorbPoint input.zComm
       -- alpha: squeeze_scalar (constrain_low_bits:false)
       alphaChal <- Sponge.squeezeScalar endoParams
+      liftSnarky $ ivpTrace "ivp.trace.alpha_squeezed" (SizedF.toField alphaChal)
       -- t_comm: receive
+      liftSnarky $ forWithIndex_ input.tComm \fi pt -> do
+        let i = getFinite fi
+        ivpTrace ("ivp.trace.tcomm." <> show i <> ".x") pt.x
+        ivpTrace ("ivp.trace.tcomm." <> show i <> ".y") pt.y
       for_ input.tComm Sponge.absorbPoint
       -- zeta: squeeze_scalar (constrain_low_bits:false)
       zetaChal <- Sponge.squeezeScalar endoParams
+      liftSnarky $ ivpTrace "ivp.trace.zeta_squeezed" (SizedF.toField zetaChal)
       -- Copy sponge before squeezing digest (step_verifier.ml:559)
       spongeBeforeEvals <- Sponge.getSponge
       digest <- Sponge.squeeze
+      liftSnarky $ ivpTrace "ivp.trace.digest" digest
       Sponge.putSponge spongeBeforeEvals
       pure { xHat, beta, gamma, alphaChal, zetaChal, digest }
 
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
-  liftSnarky $ label "ivp_assert_plonk" $
-    assertEq { beta, gamma, alpha: alphaChal, zeta: zetaChal } (toPlonkMinimal input.deferredValues.plonk)
+  liftSnarky do
+    let expected = toPlonkMinimal input.deferredValues.plonk
+    ivpTrace "ivp.trace.xi" (SizedF.toField input.deferredValues.xi)
+    -- Trace the advice (`beta_used`) right next to the assertion so the
+    -- trace-diff workflow can compare it byte-for-byte against OCaml's
+    -- `wrap_verifier.ml` `plonk.beta` at the same site. The OCaml-side
+    -- companion lives in mina/.../wrap_verifier.ml under the same label.
+    -- Note: `useOptSponge=true` is the wrap-side path, so this trace
+    -- only matters for the wrap IVP (which is what we're debugging).
+    when params.useOptSponge $
+      ivpTrace "ivp.trace.wrap.beta_used" (SizedF.toField expected.beta)
+    label "ivp_assert_plonk_beta" $ assertEq beta expected.beta
+    label "ivp_assert_plonk_gamma" $ assertEq gamma expected.gamma
+    label "ivp_assert_plonk_alpha" $ assertEq alphaChal expected.alpha
+    label "ivp_assert_plonk_zeta" $ assertEq zetaChal expected.zeta
 
   -- 4. Compute ft_comm
   ftCommResult <- liftSnarky $ label "ivp_ftcomm" $ ftComm
@@ -384,6 +473,7 @@ verify
   => CircuitM f (KimchiConstraint f) t m
   => PublicInputCommit publicInput f
   => Reflectable d Int
+  => Reflectable sgOldN Int
   => Add 1 _l2 7
   => Add 1 _l3 d
   => Add sgOldN 45 totalBases

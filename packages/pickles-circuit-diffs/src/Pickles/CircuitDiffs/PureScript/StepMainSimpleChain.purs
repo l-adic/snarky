@@ -20,7 +20,7 @@ import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
-import Pickles.PublicInputCommit (LagrangeBase)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -34,7 +34,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -76,5 +76,14 @@ simpleChainRule appState = do
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
 compileStepMainSimpleChain params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @1 @34 simpleChainRule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    -- Step domain log2 = 14: matches OCaml's production `Fix_domains.domains`
+    -- output for the Simple_chain N1 inductive rule (small circuit; ceil_log2
+    -- of the constraint row count). The earlier value of 16 was a synthetic
+    -- mismatch that didn't validate the production compile path. Both this
+    -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
+    -- exercises the same compile config Pickles.compile_promise produces.
+    ( \_ -> stepMain @1 @34 simpleChainRule
+        { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
+        dummyWrapSg
+    )
     Kimchi.initialState

@@ -56,7 +56,7 @@
 -- |   are not yet part of our circuit.
 module Pickles.Step.Advice
   ( class StepWitnessM
-  , getStepInputFields
+
   , getProofWitnesses
   , getPrevChallenges
   , getMessages
@@ -108,13 +108,6 @@ class
   ) <=
   StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m
   | g -> f where
-  -- | Step circuit input as flat field elements (for private witness allocation).
-  -- | In OCaml, the Step input (app_state, unfinalized_proofs, etc.) enters as
-  -- | private witness via Req.App_state and Req.Unfinalized_proofs. The caller
-  -- | reconstructs the structural type via `fieldsToValue`.
-  -- | OCaml: Req.App_state + Req.Unfinalized_proofs
-  getStepInputFields :: Unit -> m (Array (F f))
-
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))
@@ -195,6 +188,8 @@ class
          ( Vector n
              ( StepPerProofWitness
                  n
+                 ds
+                 dw
                  (F f)
                  (Type2 (SplitField (F f) Boolean))
                  Boolean
@@ -222,7 +217,6 @@ instance
   , Reflectable n Int
   ) =>
   StepWitnessM n ds dw g f Effect where
-  getStepInputFields _ = throw "impossible! getStepInputFields called during compilation"
   getProofWitnesses _ = throw "impossible! getProofWitnesses called during compilation"
   getPrevChallenges _ = throw "impossible! getPrevChallenges called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"

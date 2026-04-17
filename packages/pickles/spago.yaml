@@ -32,20 +32,7 @@ package:
   test:
     main: Test.Pickles.Main
     dependencies:
-      - aff
-      - console
       - effect
-      - either
-      - exceptions
-      - identity
-      - newtype
-      - ordered-collections
-      - partial
-      - quickcheck
-      - schnorr
-      - snarky-curves
-      - snarky-kimchi
-      - snarky-test-utils
+      - prelude
       - spec
       - spec-node
-      - transformers

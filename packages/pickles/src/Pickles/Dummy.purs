@@ -13,9 +13,9 @@ module Pickles.Dummy
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
   , stepDummyFopProofState
+  , simpleChainStepDummyFopProofState
   , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
-  , dummyStepAdvice
   , dummyFinalizeOtherProofParams
   , roComputeResult
   , Ro
@@ -36,6 +36,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -50,24 +51,22 @@ import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
-import Pickles.Types (StepField, StepIPARounds, VerificationKey(..), WrapField, WrapIPARounds)
+import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge as PureSponge
-import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, generator, pow, toAffine) as Curves
+import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (class Shifted, SplitField, Type1, Type2(..), toShifted)
+import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Types.Shifted (class Shifted, Type2(..), toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -247,13 +246,27 @@ roComputeResult = flip evalState mkRo do
       , sigmaEvals: wrapSigmaEvals
       }
 
-  -- Phase 4: b and combinedInnerProduct (OCaml record: b evaluated before CIP)
-  bRaw <- tock -- tock 90
-  cipRaw <- tock -- tock 91
+  -- Phase 4: proof.ml:dummy openings z_1, z_2 (OCaml evaluates the
+  -- `{ lr = ...; z_1 = Ro.tock (); z_2 = Ro.tock (); ... }` record
+  -- RIGHT-TO-LEFT, so z_2 is pulled first at position 90, then z_1
+  -- at position 91. `Proof.dummy` is forced BEFORE
+  -- `Unfinalized.Constant.dummy` in `compile_promise` / dump_simple_chain,
+  -- so z_1/z_2 come first in the Ro stream after Dummy.evals.
+  --
+  -- Verified empirically: traces `expand_proof.dummy_proof.z1/z2`
+  -- (from `proof.openings.proof.z_{1,2}` at expand_proof time in OCaml)
+  -- match these positions byte-for-byte with the right field
+  -- assignments below.
+  proofZ2 <- tock -- tock 90
+  proofZ1 <- tock -- tock 91
 
-  -- Phase 4b: proof.ml:dummy openings z1/z2 (right-to-left: z2 first)
-  proofZ2 <- tock -- tock 92
-  proofZ1 <- tock -- tock 93
+  -- Phase 4b: Unfinalized.Constant.dummy's b and combined_inner_product
+  -- (OCaml `unfinalized.ml:97-100`: `combined_inner_product = Shifted_value (tock ())`
+  -- then `b = Shifted_value (tock ())`). Record evaluated right-to-left
+  -- in OCaml so `b` pulls first at position 92, `cipRaw` at position 93.
+  -- These feed `wrapDummyUnfinalizedProof.{b, combinedInnerProduct}`.
+  bRaw <- tock -- tock 92
+  cipRaw <- tock -- tock 93
 
   -- Phase 5: Step dummy plonk challenges from proof.ml:dummy.
   -- OCaml evaluates record fields right-to-left, so within
@@ -551,6 +564,19 @@ wrapDummyUnfinalizedProof =
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
+-- | Input bundle for `stepDummyUnfinalizedProofFromInputs` — the
+-- | caller supplies the Ro-derived plonk challenges and prev_evals so
+-- | we can plug in either `roComputeResult` values (for the legacy
+-- | `stepDummyFopProofState`) or Simple_chain post-compile values
+-- | (for the Simple_chain base case).
+type StepDummyInputs =
+  { stepDummyAlpha :: SizedF 128 StepField
+  , stepDummyBeta :: SizedF 128 StepField
+  , stepDummyGamma :: SizedF 128 StepField
+  , stepDummyZeta :: SizedF 128 StepField
+  , stepDummyPrevEvals :: AllEvals StepField
+  }
+
 -- | Shared computation for Step dummy unfinalized proofs.
 -- | The `d` parameter and bp challenges vary between:
 -- | - Public input side (WrapIPARounds = 15, Wrap IPA challenges)
@@ -562,17 +588,45 @@ stepDummyUnfinalizedProofWith
   => { domainLog2 :: Int, mostRecentWidth :: Int }
   -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
+stepDummyUnfinalizedProofWith cfg bpChals =
   let
     r = roComputeResult
-    evals = r.stepDummyPrevEvals
+
+    inputs :: StepDummyInputs
+    inputs =
+      { stepDummyAlpha: r.stepDummyAlpha
+      , stepDummyBeta: r.stepDummyBeta
+      , stepDummyGamma: r.stepDummyGamma
+      , stepDummyZeta: r.stepDummyZeta
+      , stepDummyPrevEvals: r.stepDummyPrevEvals
+      }
+  in
+    stepDummyUnfinalizedProofFromInputs inputs cfg bpChals
+
+-- | Like `stepDummyUnfinalizedProofWith` but the plonk challenges and
+-- | prev_evals are supplied by the caller instead of read from
+-- | `roComputeResult`. Used by `simpleChainStepDummyFopProofState` to
+-- | plug in the hardcoded Simple_chain base-case fixture values that
+-- | correspond to the post-compile Ro state (see
+-- | `Pickles.Dummy.SimpleChain` for the discrepancy rationale).
+stepDummyUnfinalizedProofFromInputs
+  :: forall d sf
+   . Shifted (F StepField) sf
+  => StepDummyInputs
+  -> { domainLog2 :: Int, mostRecentWidth :: Int }
+  -> Vector d (SizedF 128 (F StepField))
+  -> UnfinalizedProof d (F StepField) sf Boolean
+stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpChals =
+  let
+    r = roComputeResult
+    evals = inputs.stepDummyPrevEvals
     Curves.EndoScalar stepEndo = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
 
     -- Expand plonk challenges
-    alphaExpanded = toFieldPure r.stepDummyAlpha stepEndo
-    betaExpanded = SizedF.toField r.stepDummyBeta :: StepField
-    gammaExpanded = SizedF.toField r.stepDummyGamma :: StepField
-    zetaExpanded = toFieldPure r.stepDummyZeta stepEndo
+    alphaExpanded = toFieldPure inputs.stepDummyAlpha stepEndo
+    betaExpanded = SizedF.toField inputs.stepDummyBeta :: StepField
+    gammaExpanded = SizedF.toField inputs.stepDummyGamma :: StepField
+    zetaExpanded = toFieldPure inputs.stepDummyZeta stepEndo
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
@@ -698,10 +752,10 @@ stepDummyUnfinalizedProofWith { domainLog2, mostRecentWidth } bpChals =
   in
     { deferredValues:
         { plonk:
-            { alpha: SizedF.wrapF r.stepDummyAlpha
-            , beta: SizedF.wrapF r.stepDummyBeta
-            , gamma: SizedF.wrapF r.stepDummyGamma
-            , zeta: SizedF.wrapF r.stepDummyZeta
+            { alpha: SizedF.wrapF inputs.stepDummyAlpha
+            , beta: SizedF.wrapF inputs.stepDummyBeta
+            , gamma: SizedF.wrapF inputs.stepDummyGamma
+            , zeta: SizedF.wrapF inputs.stepDummyZeta
             , perm: toShifted (F perm)
             , zetaToSrsLength: toShifted (F zetaToSrsLength)
             , zetaToDomainSize: toShifted (F zetaToDomainSize)
@@ -772,72 +826,41 @@ stepDummyFopProofState { proofsVerified } =
       }
       bpChals
 
--- | Dummy Step advice for base case (n=1 previous proof slot, all dummy).
+-- | Simple_chain-specific dummy FOP proof state.
 -- |
--- | Uses deterministic values from OCaml's proof.ml:dummy:
--- | - Messages: all Pallas generator (Tock.Curve.one)
--- | - Opening proof: generator for delta/sg/lr, Ro.tock() for z1/z2
--- | - FOP proof state: stepDummyFopProofState (from expand_deferred, N16 bp challenges)
--- | - Evals: dummyProofWitness (all zeros)
--- | - Prev challenges: all zeros (base case)
+-- | Same as `stepDummyFopProofState` but sources the `plonk` challenges
+-- | and `prev_evals` from `Pickles.Dummy.SimpleChain` (hardcoded from the
+-- | post-compile Ro state that Simple_chain observes at runtime) rather
+-- | than from the legacy module-init `roComputeResult` values.
 -- |
--- | Reference: mina/src/lib/crypto/pickles/proof.ml:dummy
-dummyStepAdvice
-  :: { stepInputFields :: Array (F StepField)
-     , evals :: Vector 1 (ProofWitness (F StepField))
-     , prevChallenges :: Vector 1 (Vector StepIPARounds (F StepField))
-     , messages :: Vector 1 { wComm :: Vector 15 (AffinePoint (F StepField)), zComm :: AffinePoint (F StepField), tComm :: Vector 7 (AffinePoint (F StepField)) }
-     , openingProofs :: Vector 1 { delta :: AffinePoint (F StepField), sg :: AffinePoint (F StepField), lr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }, z1 :: Type2 (SplitField (F StepField) Boolean), z2 :: Type2 (SplitField (F StepField) Boolean) }
-     , fopProofStates :: Vector 1 (UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean)
-     , messagesForNextWrapProof :: Vector 1 (F StepField)
-     , wrapVerifierIndex :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
-     , sgOld :: Vector 1 (AffinePoint (F StepField))
-     , sgOldMask :: Vector 1 (FVar StepField)
-     }
-dummyStepAdvice =
+-- | Use this for the Simple_chain base case; the plain
+-- | `stepDummyFopProofState` remains the default for all other callers.
+simpleChainStepDummyFopProofState
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { proofsVerified :: Int }
+  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+simpleChainStepDummyFopProofState { proofsVerified } =
   let
-    -- Pallas generator point (= OCaml's Tock.Curve.one)
-    g0 :: AffinePoint (F StepField)
-    g0 = coerce (unsafePartial fromJust $ Curves.toAffine (Curves.generator :: Pallas.G) :: AffinePoint StepField)
-
-    -- z1/z2 from proof.ml:dummy openings (Ro.tock values wrapped as Type2 SplitField)
     r = roComputeResult
 
-    z1 :: Type2 (SplitField (F StepField) Boolean)
-    z1 = toShifted (F r.proofZ1)
+    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bpChals = map SizedF.wrapF r.stepChalRaw
 
-    z2 :: Type2 (SplitField (F StepField) Boolean)
-    z2 = toShifted (F r.proofZ2)
+    inputs :: StepDummyInputs
+    inputs =
+      { stepDummyAlpha: simpleChainDummyPlonk.alpha
+      , stepDummyBeta: simpleChainDummyPlonk.beta
+      , stepDummyGamma: simpleChainDummyPlonk.gamma
+      , stepDummyZeta: simpleChainDummyPlonk.zeta
+      , stepDummyPrevEvals: simpleChainDummyPrevEvals
+      }
   in
-    { stepInputFields: []
-    , evals: dummyProofWitness :< Vector.nil
-    , prevChallenges: (Vector.generate \_ -> F zero) :< Vector.nil
-    , messages:
-        { wComm: Vector.generate \_ -> g0
-        , zComm: g0
-        , tComm: Vector.generate \_ -> g0
-        } :< Vector.nil
-    , openingProofs:
-        { delta: g0
-        , sg: g0
-        , lr: Vector.generate \_ -> { l: g0, r: g0 }
-        , z1
-        , z2
-        } :< Vector.nil
-    , fopProofStates: stepDummyFopProofState { proofsVerified: 2 } :< Vector.nil
-    , messagesForNextWrapProof: F zero :< Vector.nil
-    , wrapVerifierIndex:
-        let
-          g0w = WeierstrassAffinePoint g0
-        in
-          VerificationKey
-            { sigma: Vector.generate (const g0w)
-            , coeff: Vector.generate (const g0w)
-            , index: Vector.generate (const g0w)
-            }
-    , sgOld: g0 :< Vector.nil
-    , sgOldMask: (const_ one) :< Vector.nil
-    }
+    stepDummyUnfinalizedProofFromInputs inputs
+      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
+      , mostRecentWidth: proofsVerified
+      }
+      bpChals
 
 -- | Zero-valued proof witness for use in base case bootstrapping.
 -- |

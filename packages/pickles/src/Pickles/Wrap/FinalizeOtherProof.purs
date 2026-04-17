@@ -20,12 +20,12 @@ module Pickles.Wrap.FinalizeOtherProof
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (for, traverse_)
+import Data.Traversable (for, traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
@@ -35,13 +35,14 @@ import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
-import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
+import Pickles.PlonkChecks (absorbPointEval, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalListUnmasked, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
+import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
+import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
@@ -149,23 +150,35 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- squeeze_scalar for xi (constrain_low_bits:false).
   -- squeeze_challenge for r (constrain_low_bits:true).
   ---------------------------------------------------------------------------
-  { xi, r, xiCorrect } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
-    absorb unfinalized.spongeDigestBeforeEvaluations
+  { xi, r, xiCorrect, xiRaw, rRaw } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
+    labelM "abs_sd" $ absorb unfinalized.spongeDigestBeforeEvaluations
     -- Challenge digest: separate plain sponge over all prev challenges
     challengeDigest <- liftSnarky $ label "step4_challengeDigest" $ evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
       traverse_ (traverse_ absorb) prevChallenges
       squeeze
-    absorb challengeDigest
-    absorbAllEvals allEvals
+    labelM "abs_cd" $ absorb challengeDigest
+    labelM "abs_fte" $ absorb allEvals.ftEval1
+    labelM "abs_pe_z" $ absorb allEvals.publicEvals.zeta
+    labelM "abs_pe_zw" $ absorb allEvals.publicEvals.omegaTimesZeta
+    labelM "abs_ze_z" $ absorb allEvals.zEvals.zeta
+    labelM "abs_ze_zw" $ absorb allEvals.zEvals.omegaTimesZeta
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ie_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @6 identity) allEvals.indexEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_we_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @15 identity) allEvals.witnessEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_ce_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @15 identity) allEvals.coeffEvals)
+    _ <- traverse (\(Tuple i pe) -> labelM ("abs_se_" <> show (getFinite i)) $ absorbPointEval pe)
+      (Vector.zip (Vector.generate @6 identity) allEvals.sigmaEvals)
     -- xi: squeeze_scalar (constrain_low_bits:false)
-    xiActual <- squeezeScalar { endo: endoVar }
+    xiActual <- labelM "sq_xi" $ squeezeScalar { endo: endoVar }
     -- r: squeeze_challenge (constrain_low_bits:true)
-    rActual <- squeezeScalarChallenge { endo: endoVar }
+    rActual <- labelM "sq_r" $ squeezeScalarChallenge { endo: endoVar }
     liftSnarky $ label "step4_expand" do
       xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
       xi' <- toField @8 deferred.xi endoVar
       r' <- toField @8 rActual endoVar
-      pure { xi: xi', r: r', xiCorrect: xiCorr }
+      pure { xi: xi', r: r', xiCorrect: xiCorr, xiRaw: SizedF.toField xiActual, rRaw: SizedF.toField rActual }
 
   ---------------------------------------------------------------------------
   -- Step 5: pow2_pows
@@ -191,11 +204,6 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
       , defaultVal: const_ zero
       }
 
-    -- Omega powers derived from params.domain.generator (matching OCaml plonk_checks.ml:248-265)
-    -- When generator is Const (standalone test), inv_/mul_ short-circuit to constants.
-    -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
-    gen = params.domain.generator
-
     w0 :: Vector 15 (FVar f)
     w0 = map _.zeta allEvals.witnessEvals
 
@@ -216,6 +224,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- When generator is Const, inv_/mul_/square_ short-circuit to constants.
   -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
   ---------------------------------------------------------------------------
+  let gen = params.domain.generator
   omegaM1 <- inv_ gen -- omega^-1 = one / gen
   omegaM2 <- mul_ omegaM1 omegaM1 -- omega^-2 (OCaml: let square x = x * x in plonk_checks)
   let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
@@ -378,6 +387,23 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Step 11: Combine all checks
   ---------------------------------------------------------------------------
   finalized <- label "step11_finalized" $ all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
+
+  -- DIAG: dump key field values for wrap FOP so we can identify which
+  -- FOP component (cip/b/perm/xi/r) mismatches vs its claim.
+  ivpTrace "wrap.fop.dbg.xi_expanded" xi
+  ivpTrace "wrap.fop.dbg.xi_claim_raw" (SizedF.toField deferred.xi)
+  ivpTrace "wrap.fop.dbg.xi_sponge_raw" xiRaw
+  ivpTrace "wrap.fop.dbg.r_sponge" r
+  ivpTrace "wrap.fop.dbg.r_sponge_raw" rRaw
+  ivpTrace "wrap.fop.dbg.cip_actual" actualCip
+  ivpTrace "wrap.fop.dbg.cip_expected" expectedCip
+  ivpTrace "wrap.fop.dbg.combineZeta" combineZeta
+  ivpTrace "wrap.fop.dbg.combineZetaw" combineZetaw
+  ivpTrace "wrap.fop.dbg.perm_actual" actualPerm
+  ivpTrace "wrap.fop.dbg.zeta" zeta
+  ivpTrace "wrap.fop.dbg.zetaw" zetaw
+  ivpTrace "wrap.fop.dbg.ftEval0" ftEval0
+  ivpTrace "wrap.fop.dbg.ftEval1_used" allEvals.ftEval1
 
   let challenges = deferred.bulletproofChallenges
 

@@ -17,6 +17,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Types (WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
+import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -25,7 +26,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 compileWrapMainN2 :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainN2 { lagrangeComms, blindingH } =
+compileWrapMainN2 { lagrangeAt, blindingH } =
   let
     { x: F dummyX, y: F dummyY } = dummyVestaPt
 
@@ -47,7 +48,7 @@ compileWrapMainN2 { lagrangeComms, blindingH } =
       { stepWidths: 0 :< 2 :< Vector.nil
       , domainLog2s: 16 :< 16 :< Vector.nil
       , stepKeys: dummyVK :< dummyVK :< Vector.nil
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
@@ -55,5 +56,5 @@ compileWrapMainN2 { lagrangeComms, blindingH } =
   in
     unsafePerformEffect $
       compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @2 @2 @2 config stmt)
+        (\stmt -> wrapMain @2 @(Slots2 2 2) config stmt)
         Kimchi.initialState

@@ -12,6 +12,7 @@ module Pickles.PlonkChecks
     AllEvals
   , extractEvalFields
   , absorbAllEvals
+  , absorbPointEval
   -- * PlonkChecks Circuit
   , PlonkChecksInput
   , PlonkChecksOutput

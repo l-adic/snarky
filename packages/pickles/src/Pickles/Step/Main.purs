@@ -16,23 +16,31 @@ module Pickles.Step.Main
   -- * Generic step_main
   , StepMainSrsData
   , stepMain
+  -- * Padded variant (production Pickles)
+  , stepMainPadded
   ) where
 
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
+import Data.Fin (getFinite)
 import Data.Foldable (foldM)
-import Data.Reflectable (class Reflectable)
+import Data.FoldableWithIndex (forWithIndex_)
+import Data.Maybe (fromJust)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), MaxProofsVerified, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
@@ -68,8 +76,13 @@ type RuleOutput n f =
 -------------------------------------------------------------------------------
 
 type StepMainSrsData =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
+  -- | log2 of the step circuit's evaluation domain (OCaml: basic.step_domains.h,
+  -- | threaded as Types_map.For_step.step_domains into finalize_other_proof
+  -- | where it's used for domain_for_compiled). For simple_chain: 16.
+  -- | See dump_circuit_impl.ml:3723.
+  , fopDomainLog2 :: Int
   }
 
 -------------------------------------------------------------------------------
@@ -142,7 +155,7 @@ allocatePerProofWitness
   :: forall @n t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Reflectable n Int
-  => StepPerProofWitness n (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
+  => StepPerProofWitness n StepIPARounds WrapIPARounds (FVar StepField) (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (BoolVar StepField)
   -> Snarky (KimchiConstraint StepField) t m (PerProofWitness n)
 allocatePerProofWitness (StepPerProofWitness ppw) = do
   let
@@ -259,7 +272,7 @@ buildVerifyOneInput
   :: forall @n pad
    . Reflectable n Int
   => Reflectable pad Int
-  => Add pad n MaxProofsVerified
+  => Add pad n PaddedLength
   => PerProofWitness n
   -> FVar StepField
   -> BoolVar StepField
@@ -274,16 +287,16 @@ buildVerifyOneInput
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
 buildVerifyOneInput pw appState mustVerify unfinalized msgWrap vkComms dummySg =
   let
-    -- sgOld: pad prevSgs to MaxProofsVerified (Wrap_hack.Padded_length).
-    -- extend_front puts `pad` dummies at the front, where pad + n = MaxProofsVerified.
+    -- sgOld: pad prevSgs to PaddedLength (Wrap_hack.Padded_length).
+    -- extend_front puts `pad` dummies at the front, where pad + n = PaddedLength.
     sgPadding :: Vector pad (AffinePoint (FVar StepField))
     sgPadding = Vector.replicate dummySg
 
-    sgOld :: Vector MaxProofsVerified (AffinePoint (FVar StepField))
+    sgOld :: Vector PaddedLength (AffinePoint (FVar StepField))
     sgOld = Vector.append sgPadding (map unwrapPt pw.prevSgs)
 
     -- proofMask: drop the front `pad` elements of [mask0, mask1] to keep the last `n`.
-    fullMasks :: Vector MaxProofsVerified (BoolVar StepField)
+    fullMasks :: Vector PaddedLength (BoolVar StepField)
     fullMasks = pw.branchData.mask0 :< pw.branchData.mask1 :< Vector.nil
 
     proofMask :: Vector n (BoolVar StepField)
@@ -383,12 +396,14 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @n pad unfsTotal digestPlusUnfs @outputSize t m
+  :: forall @n pad @outputSize
+       unfsTotal digestPlusUnfs
+       t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
   => Reflectable n Int
   => Reflectable pad Int
-  => Add pad n MaxProofsVerified
+  => Add pad n PaddedLength
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
@@ -396,7 +411,7 @@ stepMain
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
-stepMain rule { lagrangeComms, blindingH } dummySg = do
+stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 
   -- 1. exists: app_state via Req.App_state
   appState <- exists $ lift $ getStepAppState @n @StepIPARounds @WrapIPARounds @PallasG unit
@@ -452,21 +467,22 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
-    domainLog2 = 16
+    -- Wrap proof's domain log2 (OCaml: basic.wrap_domains.h, threaded
+    -- through Types_map.For_step.t into step_verifier.verify_one).
     fopParams =
       { domain:
-          { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
+          { generator: const_ (LinFFI.domainGenerator @StepField fopDomainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @StepField fopDomainLog2)
           }
-      , domainLog2
-      , srsLengthLog2: 16
+      , domainLog2: fopDomainLog2
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , endo: stepEndoVal
       , linearizationPoly: Linearization.pallas
       }
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       , endo: stepEndoVal
@@ -499,6 +515,30 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
 
+    -- === TRACE: outer hash inputs (NEW step proof's msgForNextStep) ===
+    -- Compares to OCaml `step_main_outer.*` traces. PI[32] is the
+    -- digest of these inputs; every divergence in PI[32] is a diff
+    -- in one of these.
+    forWithIndex_ vk.sigma \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
+    let { x: slX, y: slY } = unwrapPt vk.sigmaLast
+    ivpTrace "step_main_outer.vk.sigma_last.x" slX
+    ivpTrace "step_main_outer.vk.sigma_last.y" slY
+    forWithIndex_ vk.coeff \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
+    forWithIndex_ vk.index \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
+    ivpTrace "step_main_outer.app_state" appState
+
     -- sponge_after_index: absorb VK
     spongeAfterIndex <- do
       let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar StepField)
@@ -511,7 +551,14 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
     s1 <- Sponge.absorb appState spongeAfterIndex
 
     -- For each proof: absorb sg + expanded bp_challenges
-    let proofData = (Vector.toUnfoldable $ Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results) :: Array _
+    let proofData = Vector.zipWith (\pw r -> { sg: pw.sg, expandedChals: r.expandedChallenges }) proofWitnesses results
+    forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
+      let i = getFinite fi
+      let pt = unwrapPt sgPt
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.y") pt.y
+      forWithIndex_ expandedChals \fj c ->
+        ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show (getFinite fj)) c
     sAfterProofs <- foldM
       ( \s { sg: sgPt, expandedChals } -> do
           let pt = unwrapPt sgPt
@@ -524,6 +571,7 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
 
     -- Squeeze
     { result: digest } <- Sponge.squeeze sAfterProofs
+    ivpTrace "step_main_outer.digest" digest
     pure digest
 
   -- 10. Build output: n × 32 (unfinalized) + 1 (step msg) + n (wrap msgs)
@@ -538,4 +586,62 @@ stepMain rule { lagrangeComms, blindingH } dummySg = do
     outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
 
   pure outputV
+
+-- | Production variant of `stepMain` that pads the output to `PaddedLength`
+-- | (= N2), matching OCaml's `pickles.ml` which always compiles the step
+-- | circuit with `Max_proofs_verified = N2`.
+-- |
+-- | Dummies are prepended at the FRONT (matching OCaml's `extend_front`):
+-- |   unfinalized_proofs = [dummy_0..dummy_{pad-1}, real_0..real_{n-1}]
+-- |   messages_for_next_wrap_proof = [0..0, real_0..real_{n-1}]
+-- |
+-- | Reference: step_main.ml:584-586, pickles.ml:476 (Max_proofs_verified = N2)
+stepMainPadded
+  :: forall @n @pad @outputSize
+       unfsTotal digestPlusUnfs
+       padUnfsTotal paddedUnfsTotal paddedDigestPlusUnfs paddedOutputSize
+       t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m
+  => Reflectable n Int
+  => Reflectable pad Int
+  => Add pad n PaddedLength
+  -- n-sized output arithmetic (internal, for stepMain)
+  => Mul n 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs n outputSize
+  -- Padding arithmetic
+  => Mul pad 32 padUnfsTotal
+  => Add padUnfsTotal unfsTotal paddedUnfsTotal
+  -- PaddedLength-sized output arithmetic (actual output)
+  => Add paddedUnfsTotal 1 paddedDigestPlusUnfs
+  => Add paddedDigestPlusUnfs PaddedLength paddedOutputSize
+  => Reflectable paddedOutputSize Int
+  => (FVar StepField -> Snarky (KimchiConstraint StepField) t m (RuleOutput n StepField))
+  -> StepMainSrsData
+  -> AffinePoint StepField
+  -> Snarky (KimchiConstraint StepField) t m (Vector paddedOutputSize (FVar StepField))
+stepMainPadded rule srsData dummySg = do
+  -- Run the circuit body to get the raw components (n real proofs)
+  -- We inline the same logic as stepMain but produce padded output.
+  unpadded <- stepMain @n @outputSize rule srsData dummySg
+
+  -- The unpadded output is [unfs(n*32) | digest(1) | msgs(n)].
+  -- Convert to Array, split, pad with dummies at front, reassemble.
+  let
+    arr = Vector.toUnfoldable unpadded :: Array _
+    nReal = reflectType (Proxy :: Proxy n)
+
+    realUnfs = Array.take (nReal * 32) arr
+    digest = Array.take 1 (Array.drop (nReal * 32) arr)
+    realMsgs = Array.drop (nReal * 32 + 1) arr
+
+    dummyUnf = Array.replicate 32 (const_ zero :: FVar StepField)
+    padCount = reflectType (Proxy :: Proxy pad)
+    dummyUnfs = Array.concat (Array.replicate padCount dummyUnf)
+    dummyMsgs = Array.replicate padCount (const_ zero :: FVar StepField)
+
+    paddedArr = dummyUnfs <> realUnfs <> digest <> dummyMsgs <> realMsgs
+
+  pure (unsafePartial fromJust $ Vector.toVector @paddedOutputSize paddedArr)
 

@@ -155,23 +155,10 @@
         },
         "test": {
           "dependencies": [
-            "aff",
-            "console",
             "effect",
-            "either",
-            "exceptions",
-            "identity",
-            "newtype",
-            "ordered-collections",
-            "partial",
-            "quickcheck",
-            "schnorr",
-            "snarky-curves",
-            "snarky-kimchi",
-            "snarky-test-utils",
+            "prelude",
             "spec",
-            "spec-node",
-            "transformers"
+            "spec-node"
           ]
         }
       },
@@ -381,10 +368,12 @@
           "dependencies": [
             "arrays",
             "bifunctors",
+            "const",
             "curves",
             "either",
             "exceptions",
             "foldable-traversable",
+            "functors",
             "identity",
             "js-bigints",
             "lists",

@@ -13,6 +13,7 @@
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:45-59
 module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProof
+  , hashMessagesForNextWrapProofPureGeneral
   , hashMessagesForNextWrapProofCircuit
   , hashMessagesForNextWrapProofCircuit'
   , dummyPaddingSpongeStates
@@ -20,7 +21,7 @@ module Pickles.Wrap.MessageHash
 
 import Prelude
 
-import Data.Foldable (for_)
+import Data.Foldable (class Foldable, for_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -56,6 +57,32 @@ hashMessagesForNextWrapProof { sg, expandedChallenges, dummyChallenges } =
         <> [ sg.x, sg.y ]
   in
     hash fields
+
+-- | General pure version of OCaml `Wrap_hack.hash_messages_for_next_wrap_proof`
+-- | (`mina/src/lib/crypto/pickles/wrap_hack.ml:46-59`).
+-- |
+-- | Accepts the challenges **already padded** (caller is responsible for
+-- | prepending dummies to reach `Wrap_hack.Padded_length.n = 2`). Each inner
+-- | vector is an expanded wrap-field bp-challenge vector of length `d`.
+-- |
+-- | Serialization order matches OCaml `Messages_for_next_wrap_proof.to_field_elements`:
+-- | flatten all padded challenge vectors, then append `sg.x`, `sg.y`.
+hashMessagesForNextWrapProofPureGeneral
+  :: forall n d f
+   . PoseidonField f
+  => { sg :: AffinePoint f
+     , paddedChallenges :: Vector n (Vector d f)
+     }
+  -> f
+hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
+  let
+    outer :: Array (Vector d f)
+    outer = Vector.toUnfoldable paddedChallenges
+
+    flatChals :: Array f
+    flatChals = outer >>= (Vector.toUnfoldable :: Vector d f -> Array f)
+  in
+    hash (flatChals <> [ sg.x, sg.y ])
 
 -- | Circuit version: hash messages for next Wrap proof.
 -- |
@@ -94,16 +121,22 @@ hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } 
 -- | [old_bulletproof_challenges (flattened), sg.x, sg.y]
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
+-- | The outer container is taken as a `Foldable`, so this works for both
+-- | `Vector n` (used by `wrapVerify`) and `Array` (used by per-slot
+-- | hashing in `wrapMain`, where the runtime slot widths erase the
+-- | type-level length). The inner `Vector d` keeps its type-level
+-- | length because every slot's bp-challenge stack is the same width
+-- | (= `WrapIPARounds`).
 hashMessagesForNextWrapProofCircuit'
-  :: forall n d f t m
+  :: forall outer d f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable n Int
+  => Foldable outer
   => Reflectable d Int
   => { sg :: AffinePoint (FVar f)
-     , allChallenges :: Vector n (Vector d (FVar f))
+     , allChallenges :: outer (Vector d (FVar f))
      }
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
 hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do

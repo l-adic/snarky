@@ -12,7 +12,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx)
 import Pickles.PackedStatement (PackedStepPublicInput, fromPackedTuple)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
 import Pickles.Types (WrapField)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compilePure)
@@ -26,7 +26,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type XhatParams f =
-  { lagrangeComms :: Array (LagrangeBase f)
+  { lagrangeAt :: LagrangeBaseLookup f
   , blindingH :: AffinePoint (F f)
   }
 
@@ -67,10 +67,10 @@ xhatCircuit
   => XhatParams WrapField
   -> pi
   -> Snarky (KimchiConstraint WrapField) t m (AffinePoint (FVar WrapField))
-xhatCircuit { lagrangeComms, blindingH } publicInput =
+xhatCircuit { lagrangeAt, blindingH } publicInput =
   publicInputCommit
     { curveParams: curveParams (Proxy @VestaG)
-    , lagrangeComms
+    , lagrangeAt
     , blindingH
     , correctionMode: InCircuitCorrections
     }

@@ -43,7 +43,7 @@ import Data.Fin (unsafeFinite)
 import Data.Tuple.Nested (Tuple3, Tuple6, tuple3, tuple6, uncurry3, uncurry6)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Pickles.PublicInputCommit (class PublicInputCommit, LagrangeBase, ScalarMulResult, scalarMuls)
+import Pickles.PublicInputCommit (class PublicInputCommit, LagrangeBaseLookup, ScalarMulResult, scalarMuls)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (class CircuitM, class CircuitType, BoolVar, F, FVar, SizedF, Snarky, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
@@ -182,7 +182,8 @@ instance
      . CircuitM f (KimchiConstraint f) t m
     => CurveParams f
     -> PackedStepPublicInput n dw (FVar f) (BoolVar f)
-    -> Array (LagrangeBase f)
+    -> LagrangeBaseLookup f
+    -> Int
     -> Snarky (KimchiConstraint f) t m (ScalarMulResult f)
-  scalarMuls params x bases =
-    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) bases
+  scalarMuls params x lookup idx =
+    scalarMuls @(StmtTuple n dw (FVar f) (BoolVar f)) @f params (toPackedTuple x) lookup idx
