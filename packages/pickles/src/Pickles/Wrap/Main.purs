@@ -37,7 +37,7 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Foldable (foldM, foldl, for_)
+import Data.Foldable (foldM, foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (fromJust)

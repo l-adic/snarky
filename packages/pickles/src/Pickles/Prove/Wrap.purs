@@ -45,7 +45,6 @@ import Data.Either (Either(..))
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Trace as Trace

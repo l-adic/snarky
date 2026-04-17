@@ -42,6 +42,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
+import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
@@ -149,7 +150,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- squeeze_scalar for xi (constrain_low_bits:false).
   -- squeeze_challenge for r (constrain_low_bits:true).
   ---------------------------------------------------------------------------
-  { xi, r, xiCorrect } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
+  { xi, r, xiCorrect, xiRaw, rRaw } <- label "step4_sponge" $ evalSpongeM initialSpongeCircuit do
     labelM "abs_sd" $ absorb unfinalized.spongeDigestBeforeEvaluations
     -- Challenge digest: separate plain sponge over all prev challenges
     challengeDigest <- liftSnarky $ label "step4_challengeDigest" $ evalSpongeM (initialSpongeCircuit :: Sponge (FVar f)) do
@@ -177,7 +178,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
       xiCorr <- equals_ (SizedF.toField xiActual) (SizedF.toField deferred.xi)
       xi' <- toField @8 deferred.xi endoVar
       r' <- toField @8 rActual endoVar
-      pure { xi: xi', r: r', xiCorrect: xiCorr }
+      pure { xi: xi', r: r', xiCorrect: xiCorr, xiRaw: SizedF.toField xiActual, rRaw: SizedF.toField rActual }
 
   ---------------------------------------------------------------------------
   -- Step 5: pow2_pows
@@ -386,6 +387,23 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Step 11: Combine all checks
   ---------------------------------------------------------------------------
   finalized <- label "step11_finalized" $ all_ [ xiCorrect, bCorrect, cipCorrect, plonkOk ]
+
+  -- DIAG: dump key field values for wrap FOP so we can identify which
+  -- FOP component (cip/b/perm/xi/r) mismatches vs its claim.
+  ivpTrace "wrap.fop.dbg.xi_expanded" xi
+  ivpTrace "wrap.fop.dbg.xi_claim_raw" (SizedF.toField deferred.xi)
+  ivpTrace "wrap.fop.dbg.xi_sponge_raw" xiRaw
+  ivpTrace "wrap.fop.dbg.r_sponge" r
+  ivpTrace "wrap.fop.dbg.r_sponge_raw" rRaw
+  ivpTrace "wrap.fop.dbg.cip_actual" actualCip
+  ivpTrace "wrap.fop.dbg.cip_expected" expectedCip
+  ivpTrace "wrap.fop.dbg.combineZeta" combineZeta
+  ivpTrace "wrap.fop.dbg.combineZetaw" combineZetaw
+  ivpTrace "wrap.fop.dbg.perm_actual" actualPerm
+  ivpTrace "wrap.fop.dbg.zeta" zeta
+  ivpTrace "wrap.fop.dbg.zetaw" zetaw
+  ivpTrace "wrap.fop.dbg.ftEval0" ftEval0
+  ivpTrace "wrap.fop.dbg.ftEval1_used" allEvals.ftEval1
 
   let challenges = deferred.bulletproofChallenges
 
