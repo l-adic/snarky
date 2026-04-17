@@ -82,7 +82,8 @@ compileStepMainSimpleChain params = unsafePerformEffect $
     -- mismatch that didn't validate the production compile path. Both this
     -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
     -- exercises the same compile config Pickles.compile_promise produces.
-    (\_ -> stepMain @1 @34 simpleChainRule
-      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
-      dummyWrapSg)
+    ( \_ -> stepMain @1 @34 simpleChainRule
+        { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
+        dummyWrapSg
+    )
     Kimchi.initialState

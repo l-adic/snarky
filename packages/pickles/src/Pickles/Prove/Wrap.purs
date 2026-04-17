@@ -42,12 +42,8 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Node.Encoding (Encoding(..))
-import Node.FS.Sync as FS
 import Data.Fin (getFinite, unsafeFinite)
 import Data.FoldableWithIndex (forWithIndex_)
-import Effect.Unsafe (unsafePerformEffect)
-import Pickles.Trace as Trace
 import Data.Map (Map)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un)
@@ -56,9 +52,13 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Exception (Error, error)
+import Effect.Unsafe (unsafePerformEffect)
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Trace as Trace
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
@@ -66,18 +66,18 @@ import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
 import Pickles.Wrap.Slots (class PadSlots, replicateSlots)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, UnChecked(..), const_)
-import Snarky.Circuit.Types (class CircuitType)
 import Safe.Coerce (coerce)
+import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
-import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
+import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL (class CheckedType, F(..), FVar, UnChecked(..), const_)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.Kimchi (Type1(..), Type2(..), toShifted)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
@@ -591,35 +591,37 @@ wrapSolveAndProve onError ctx compileResult = do
         if not csSatisfied then
           onError (error "wrapProve: constraint system not satisfied")
         else
-          let _ = unsafePerformEffect do
-                forWithIndex_ ctx.kimchiPrevChallenges \fi r -> do
-                  let i = getFinite fi
-                  Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.x") r.sgX
-                  Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.y") r.sgY
-                  forWithIndex_ r.challenges \fj c ->
-                    Trace.field ("wrap.create_proof.accum." <> show i <> ".chal." <> show (getFinite fj)) c
-              proof = vestaCreateProofWithPrev
-                { proverIndex: compileResult.proverIndex
-                , witness
-                , prevChallenges:
-                    map
-                      ( \r ->
-                          { sgX: r.sgX
-                          , sgY: r.sgY
-                          , challenges: Vector.toUnfoldable r.challenges
-                          }
-                      )
-                      (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
-                }
-          in pure
-            { proverIndex: compileResult.proverIndex
-            , verifierIndex: compileResult.verifierIndex
-            , constraintSystem: compileResult.constraintSystem
-            , witness
-            , publicInputs
-            , proof
-            , assignments
-            }
+          let
+            _ = unsafePerformEffect do
+              forWithIndex_ ctx.kimchiPrevChallenges \fi r -> do
+                let i = getFinite fi
+                Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.x") r.sgX
+                Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.y") r.sgY
+                forWithIndex_ r.challenges \fj c ->
+                  Trace.field ("wrap.create_proof.accum." <> show i <> ".chal." <> show (getFinite fj)) c
+            proof = vestaCreateProofWithPrev
+              { proverIndex: compileResult.proverIndex
+              , witness
+              , prevChallenges:
+                  map
+                    ( \r ->
+                        { sgX: r.sgX
+                        , sgY: r.sgY
+                        , challenges: Vector.toUnfoldable r.challenges
+                        }
+                    )
+                    (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
+              }
+          in
+            pure
+              { proverIndex: compileResult.proverIndex
+              , verifierIndex: compileResult.verifierIndex
+              , constraintSystem: compileResult.constraintSystem
+              , witness
+              , publicInputs
+              , proof
+              , assignments
+              }
 
 -- | End-to-end wrap prover: `wrapCompile` then `wrapSolveAndProve`.
 wrapProve
@@ -687,8 +689,9 @@ extractStepVKComms vk =
     idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
 
     coeff15 :: Vector 15 (AffinePoint WrapField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15 $
-      Array.take 15 $ Array.drop 6 raw
+    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
+      $ Array.take 15
+      $ Array.drop 6 raw
 
     sig6 :: Vector 6 (AffinePoint WrapField)
     sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw

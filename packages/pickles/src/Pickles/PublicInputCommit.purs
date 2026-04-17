@@ -50,15 +50,15 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
+import Pickles.Trace as Trace
 import Prim.Int (class Add, class Mul)
 import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
-import Effect.Unsafe (unsafePerformEffect)
-import Pickles.Trace as Trace
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, exists, if_, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
@@ -258,8 +258,9 @@ instance PublicInputCommit (BoolVar f) f where
     let base = lookup idx
     _ <- exists do
       val <- readCVar (coerce bool :: FVar f)
-      let _ = unsafePerformEffect $
-            Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
+      let
+        _ = unsafePerformEffect $
+          Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
       pure val
     pure { results: [ CondAdd bool (base.maskPt base.constant) ], nextIdx: idx + 1 }
 
@@ -492,8 +493,9 @@ scalarMulLeaf params scalar lookup idx = do
   -- each lagrange position against OCaml's.
   _ <- exists do
     val <- readCVar scalar
-    let _ = unsafePerformEffect $
-          Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
+    let
+      _ = unsafePerformEffect $
+        Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
     pure val
   pure
     { results: [ AddWithCorrection { scaleMul, correction } ]

@@ -21,6 +21,7 @@ foreign import pallasConstraintSystemCreate :: Array (Gate Pallas.ScalarField) -
 
 foreign import pallasConstraintSystemCreateWithPrevChallenges
   :: Array (Gate Pallas.ScalarField) -> Int -> Int -> ConstraintSystem Pallas.ScalarField
+
 foreign import pallasConstraintSystemToJson :: ConstraintSystem Pallas.ScalarField -> String
 foreign import pallasGatesToJson :: Array (Gate Pallas.ScalarField) -> Int -> String
 

@@ -41,12 +41,12 @@ import Data.Foldable (foldM, foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Maybe (fromJust)
-import Partial.Unsafe (unsafePartial)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
@@ -57,26 +57,26 @@ import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import RandomOracle.Sponge (Sponge)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
-import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
-import Prim.Ordering (LT)
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBulletproofChallenges, getOpeningProof, getStepAccs, getWhichBranch, getWrapDomainIndices, getWrapProofState)
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
+import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
+import RandomOracle.Sponge (Sponge)
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
-import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1, Type2(..), groupMapParams)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar) as Curves
 import Snarky.Curves.Class (curveParams, fromInt)
@@ -441,6 +441,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
       -- For mpv=2: `pack [mask_1, mask_0] = mask_1 + 2*mask_0`
       --   (matches the old hand-unrolled `maskVal1 + 2*maskVal0`).
       branchDataMaskWidth = 2
+
       packedMask :: FVar WrapField
       packedMask = foldl
         ( \acc (Tuple slotIdx m) ->
@@ -452,7 +453,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
               add_ acc scaled
         )
         (const_ zero)
-        (Array.zip
+        ( Array.zip
             (Array.range 0 (Vector.length maskVals - 1))
             (Vector.toUnfoldable maskVals)
         )
@@ -596,6 +597,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
     paddedLenInt = reflectType (Proxy @PaddedLength)
     slotWidths = slotWidthsOf (Proxy :: Proxy slots)
     perSlotSponge = map (\w -> Vector.index states (unsafeFinite @3 w)) slotWidths
+
     -- Real (unpadded) challenges per slot: drop the leading padding
     -- entries from each padded vector. Returns `Array` because the
     -- runtime slot width erases the type-level length.
@@ -712,14 +714,17 @@ wrapMain config (WrapStatementPacked stmtR) = do
           bbRest
       in
         { x: finalX, y: finalY }
+
     -- OCaml `lagrange_with_correction` masks each base by `which_branch`
     -- (step_verifier.ml:435) — we compose `maskByBools` into the underlying
     -- lookup so every `publicInputCommit` leaf that fetches at index `i`
     -- gets a branch-masked version of that base.
     maskedLagrangeAt :: LagrangeBaseLookup WrapField
     maskedLagrangeAt i =
-      let lb = config.lagrangeAt i
-      in { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools }
+      let
+        lb = config.lagrangeAt i
+      in
+        { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools }
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
       , lagrangeAt: maskedLagrangeAt

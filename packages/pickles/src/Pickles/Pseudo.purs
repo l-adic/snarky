@@ -16,6 +16,7 @@ module Pickles.Pseudo
 import Prelude
 
 import Data.Fin (Finite, getFinite)
+import Data.Foldable (foldl)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -25,7 +26,6 @@ import JS.BigInt (fromInt)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Data.Foldable (foldl)
 import Snarky.Circuit.CVar (add_, sub_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, const_, equals_, label, mul_, seal, square_)
 import Snarky.Circuit.DSL.Assert (assertNonZero_)

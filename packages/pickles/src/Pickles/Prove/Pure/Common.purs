@@ -95,8 +95,10 @@ actualEvaluation
   -> Array f
   -> f
 actualEvaluation rounds pt e =
-  let ptN = pow2Pow rounds pt
-  in foldr (\fx acc -> fx + ptN * acc) zero e
+  let
+    ptN = pow2Pow rounds pt
+  in
+    foldr (\fx acc -> fx + ptN * acc) zero e
 
 -- | Convenience wrapper: combine a `PointEval (Array f)` (a pair of
 -- | chunked evaluations at `zeta` and `omega·zeta`) into a

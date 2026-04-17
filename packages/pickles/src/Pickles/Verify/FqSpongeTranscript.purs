@@ -31,11 +31,11 @@ module Pickles.Verify.FqSpongeTranscript
 
 import Prelude
 
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Data.Fin (unsafeFinite)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.OptSponge as OptSponge
 import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)

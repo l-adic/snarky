@@ -80,8 +80,8 @@ class
     g
     f
     m
-    | g -> f
-    , slots -> mpv
+  | g -> f
+  , slots -> mpv
   where
   -- | OCaml: `Req.Which_branch` (`wrap_main.ml:223`).
   getWhichBranch :: Unit -> m (F f)

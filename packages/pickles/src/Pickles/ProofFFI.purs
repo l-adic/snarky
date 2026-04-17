@@ -306,6 +306,7 @@ foreign import pallasProofOpeningPrechallenges
            }
      }
   -> Array Pallas.BaseField
+
 foreign import vestaProofOpeningPrechallenges
   :: VerifierIndex Pallas.G Vesta.BaseField
   -> { proof :: Proof Pallas.G Vesta.BaseField

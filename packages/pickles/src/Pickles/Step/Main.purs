@@ -23,24 +23,24 @@ module Pickles.Step.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
-import Data.Array as Array
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.FoldableWithIndex (forWithIndex_)
-import Partial.Unsafe (unsafePartial)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepAppState, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Verify (ivpTrace)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)

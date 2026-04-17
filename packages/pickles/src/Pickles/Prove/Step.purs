@@ -50,11 +50,12 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (unsafeFinite)
 import Data.Fin (getFinite)
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -65,49 +66,48 @@ import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Data.Maybe (Maybe(..), fromJust)
-import Pickles.Trace as Trace
 import Partial.Unsafe (unsafePartial)
-import Safe.Coerce (coerce)
 import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
-import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
+import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepWitnessM)
-import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
+import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.Verify.Types (BranchData) as VT
 import Pickles.VerificationKey (StepVK)
+import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Prim.Int (class Add, class Mul)
-import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, SizedF, UnChecked(..), coerceViaBits)
-import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
-import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) as Curves
-import Snarky.Curves.Pallas as Pallas
-import Snarky.Curves.Vesta as Vesta
-import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Types.Shifted (SplitField, Type1(..), Type2(..), fromShifted, toShifted)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
+import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
+import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar)
+import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) as Curves
+import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Types.Shifted (SplitField, Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -470,8 +470,10 @@ buildStepAdvice input =
 
     digestStep :: F StepField
     digestStep =
-      let F digestWrap = du.spongeDigestBeforeEvaluations
-      in F (Curves.fromBigInt (Curves.toBigInt digestWrap) :: StepField)
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (Curves.fromBigInt (Curves.toBigInt digestWrap) :: StepField)
 
     dv = du.deferredValues
     p = dv.plonk
@@ -599,8 +601,9 @@ extractWrapVKCommsAdvice vk =
     idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
 
     coeff15 :: Vector 15 (AffinePoint StepField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15 $
-      Array.take 15 $ Array.drop 6 raw
+    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
+      $ Array.take 15
+      $ Array.drop 6 raw
 
     sig6 :: Vector 6 (AffinePoint StepField)
     sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
@@ -637,8 +640,9 @@ extractWrapVKForStepHash vk =
     idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
 
     coeff15 :: Vector 15 (AffinePoint StepField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15 $
-      Array.take 15 $ Array.drop 6 raw
+    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
+      $ Array.take 15
+      $ Array.drop 6 raw
 
     sig6 :: Vector 6 (AffinePoint StepField)
     sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
@@ -735,8 +739,10 @@ dummyWrapTockPublicInput input =
     -- conversion (step → raw, raw → wrap via BigInt round-trip).
     sizedStepBits :: SizedF 128 (F StepField) -> WrapField
     sizedStepBits s =
-      let F x = SizedF.toField s
-      in Curves.fromBigInt (Curves.toBigInt x)
+      let
+        F x = SizedF.toField s
+      in
+        Curves.fromBigInt (Curves.toBigInt x)
 
     -- 5 Type1 fp fields, order: cip, b, zetaToSrsLength,
     -- zetaToDomainSize, perm (matches `packStatement`).
@@ -958,6 +964,21 @@ type BuildStepAdviceWithOraclesInput =
   -- |   Expanded = `toFieldPure <$> wrapDv.bulletproofPrechallenges` via
   -- |   step endo scalar.
   , kimchiPrevChallengesExpanded :: Vector StepIPARounds StepField
+  -- | Expanded step-field bp challenges that feed `messagesForNextStepProof`
+  -- | hash AND `stepPrevChallenges` in `expandProofInputRec`. Per OCaml step.ml:
+  -- | 519-525 this is
+  -- |   `Vector.map Ipa.Step.compute_challenges
+  -- |      t.statement.messages_for_next_step_proof.old_bulletproof_challenges`
+  -- | where `t` = prev wrap proof. Values chain through `messages_for_next_step_proof`
+  -- | forwarding; at step_bN they reference step_b{N-2}'s deferred.bp_chals.
+  -- |
+  -- | b0/b1: Simple_chain N1's chain has step_b{-1}=dummy and step_b0.output
+  -- |   old_bp_chals = dummy bp_chals (from dummy wrap's deferred). So use
+  -- |   `Dummy.dummyIpaChallenges.stepExpanded`.
+  -- | b2: prev = wrap_b1, forwarded from step_b1's output old_bp_chals =
+  -- |   wrap_b0.deferred.bp_chals = wrapDv.bulletproofPrechallenges. Expand via
+  -- |   `stepEndoScalar :: StepField`.
+  , prevChallengesForStepHash :: Vector StepIPARounds StepField
   }
 
 -- | Build a `StepAdvice n StepIPARounds WrapIPARounds` from a previous
@@ -1015,7 +1036,7 @@ buildStepAdviceWithOracles input = do
     wrapVkStep = extractWrapVKForStepHash input.wrapVK
 
     stepExpanded :: Vector StepIPARounds StepField
-    stepExpanded = dummyIpaChallenges.stepExpanded
+    stepExpanded = input.prevChallengesForStepHash
 
     prevProofsForHash :: Vector 1 { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
     prevProofsForHash =
@@ -1187,15 +1208,16 @@ buildStepAdviceWithOracles input = do
       let
         pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         ae = input.wrapPrevEvals
-      in StepAllEvals
-        { ftEval1: F ae.ftEval1
-        , publicEvals: pe ae.publicEvals
-        , zEvals: pe ae.zEvals
-        , witnessEvals: map pe ae.witnessEvals
-        , coeffEvals: map pe ae.coeffEvals
-        , sigmaEvals: map pe ae.sigmaEvals
-        , indexEvals: map pe ae.indexEvals
-        }
+      in
+        StepAllEvals
+          { ftEval1: F ae.ftEval1
+          , publicEvals: pe ae.publicEvals
+          , zEvals: pe ae.zEvals
+          , witnessEvals: map pe ae.witnessEvals
+          , coeffEvals: map pe ae.coeffEvals
+          , sigmaEvals: map pe ae.sigmaEvals
+          , indexEvals: map pe ae.indexEvals
+          }
 
     expandProofInputRec :: PureStep.ExpandProofInput 1 2
     expandProofInputRec =
@@ -1246,6 +1268,7 @@ buildStepAdviceWithOracles input = do
   -- === TRACE Stage 2: expand_proof.deferred.* (step-field Type1 deferred values) ===
   let
     dStep = expandProofResult.deferredStep
+
     type1Inner :: forall a. Type1 a -> a
     type1Inner (Type1 x) = x
   Trace.fieldF "expand_proof.deferred.combined_inner_product" (type1Inner dStep.combinedInnerProduct)
@@ -1262,6 +1285,7 @@ buildStepAdviceWithOracles input = do
   -- === TRACE: wrap-field unfinalized deferred values (from expandProof) ===
   let
     wDv = expandProofResult.unfinalized.deferredValues
+
     type2InnerF :: Type2 (F WrapField) -> F WrapField
     type2InnerF (Type2 x) = x
   Trace.fieldF "expand_proof.wrap_deferred.combined_inner_product" (type2InnerF wDv.combinedInnerProduct)
@@ -1395,8 +1419,9 @@ buildStepAdviceWithOracles input = do
     realLr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }
     realLr = unsafePartial $ fromJust $
       Vector.toVector @WrapIPARounds
-        (map (\p -> { l: mkPt p.l, r: mkPt p.r })
-          (vestaProofOpeningLr input.wrapProof))
+        ( map (\p -> { l: mkPt p.l, r: mkPt p.r })
+            (vestaProofOpeningLr input.wrapProof)
+        )
 
     -- z1, z2: `Tock.Field.t` (= WrapField = Fq) values from the wrap
     -- proof's kimchi opening. OCaml wrap_proof.ml:34-59 stores these
@@ -1416,13 +1441,14 @@ buildStepAdviceWithOracles input = do
     realZ2 = toShifted (F (vestaProofOpeningZ2 input.wrapProof) :: F WrapField)
 
     overriddenOpenings = map
-      (\op -> op
-        { sg = overriddenSg
-        , delta = realDelta
-        , lr = realLr
-        , z1 = realZ1
-        , z2 = realZ2
-        })
+      ( \op -> op
+          { sg = overriddenSg
+          , delta = realDelta
+          , lr = realLr
+          , z1 = realZ1
+          , z2 = realZ2
+          }
+      )
       base.openingProofs
 
   let
@@ -1434,6 +1460,7 @@ buildStepAdviceWithOracles input = do
     -- assertion masks this via `assert_any_ [finalized, not should_finalize]`
     -- with mustVerify=false; for b1 (mustVerify=true) the assertion fires.
     wrapCommits = vestaProofCommitments input.wrapProof
+
     mkPallasAffine :: AffinePoint StepField -> AffinePoint (F StepField)
     mkPallasAffine pt = { x: F pt.x, y: F pt.y }
     realWrapMessages =
@@ -1449,17 +1476,19 @@ buildStepAdviceWithOracles input = do
 
     evalsForAdvice :: ProofWitness (F StepField)
     evalsForAdvice =
-      let ae = input.stepAdvicePrevEvals
-      in { allEvals:
-             { ftEval1: F ae.ftEval1
-             , publicEvals: wrapPE' ae.publicEvals
-             , zEvals: wrapPE' ae.zEvals
-             , indexEvals: map wrapPE' ae.indexEvals
-             , witnessEvals: map wrapPE' ae.witnessEvals
-             , coeffEvals: map wrapPE' ae.coeffEvals
-             , sigmaEvals: map wrapPE' ae.sigmaEvals
-             }
-         }
+      let
+        ae = input.stepAdvicePrevEvals
+      in
+        { allEvals:
+            { ftEval1: F ae.ftEval1
+            , publicEvals: wrapPE' ae.publicEvals
+            , zEvals: wrapPE' ae.zEvals
+            , indexEvals: map wrapPE' ae.indexEvals
+            , witnessEvals: map wrapPE' ae.witnessEvals
+            , coeffEvals: map wrapPE' ae.coeffEvals
+            , sigmaEvals: map wrapPE' ae.sigmaEvals
+            }
+        }
 
   pure
     { advice: base
@@ -1477,6 +1506,12 @@ buildStepAdviceWithOracles input = do
               , sgY: input.stepSg.y
               , challenges: input.kimchiPrevChallengesExpanded
               }
+        -- Override advice.prevChallenges to match what step.ml:519-525 uses
+        -- (= t.statement.messages_for_next_step_proof.old_bulletproof_challenges
+        -- expanded). Placeholder buildStepAdvice defaults to dummies, which is
+        -- correct only for Simple_chain b0/b1. For b2+ we need the real chain
+        -- value (= wrap_b{N-2}.deferred.bp_chals expanded via step endo).
+        , prevChallenges = Vector.replicate (map F input.prevChallengesForStepHash)
         }
     , challengePolynomialCommitment: expandProofResult.sg
     }
@@ -1675,29 +1710,31 @@ stepSolveAndProve onError ctx rule compileResult advice = do
           let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
           onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
         else
-          let proof = pallasCreateProofWithPrev
-                { proverIndex: compileResult.proverIndex
-                , witness
-                , prevChallenges:
-                    map
-                      ( \r ->
-                          { sgX: r.sgX
-                          , sgY: r.sgY
-                          , challenges: Vector.toUnfoldable r.challenges
-                          }
-                      )
-                      (Vector.toUnfoldable advice.kimchiPrevChallenges :: Array _)
-                }
-          in pure
-            { proverIndex: compileResult.proverIndex
-            , verifierIndex: compileResult.verifierIndex
-            , constraintSystem: compileResult.constraintSystem
-            , witness
-            , publicInputs
-            , publicOutputs
-            , proof
-            , assignments
-            }
+          let
+            proof = pallasCreateProofWithPrev
+              { proverIndex: compileResult.proverIndex
+              , witness
+              , prevChallenges:
+                  map
+                    ( \r ->
+                        { sgX: r.sgX
+                        , sgY: r.sgY
+                        , challenges: Vector.toUnfoldable r.challenges
+                        }
+                    )
+                    (Vector.toUnfoldable advice.kimchiPrevChallenges :: Array _)
+              }
+          in
+            pure
+              { proverIndex: compileResult.proverIndex
+              , verifierIndex: compileResult.verifierIndex
+              , constraintSystem: compileResult.constraintSystem
+              , witness
+              , publicInputs
+              , publicOutputs
+              , proof
+              , assignments
+              }
 
 -- | Build a row→label_stack text dump from a compiled constraint list and
 -- | write it to /tmp/ps_step_row_labels.txt. Called when the kimchi

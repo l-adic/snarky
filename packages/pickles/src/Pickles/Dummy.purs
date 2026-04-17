@@ -36,6 +36,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -48,7 +49,6 @@ import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.ProofWitness (ProofWitness)
-import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
@@ -591,6 +591,7 @@ stepDummyUnfinalizedProofWith
 stepDummyUnfinalizedProofWith cfg bpChals =
   let
     r = roComputeResult
+
     inputs :: StepDummyInputs
     inputs =
       { stepDummyAlpha: r.stepDummyAlpha
@@ -842,6 +843,7 @@ simpleChainStepDummyFopProofState
 simpleChainStepDummyFopProofState { proofsVerified } =
   let
     r = roComputeResult
+
     bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
     bpChals = map SizedF.wrapF r.stepChalRaw
 

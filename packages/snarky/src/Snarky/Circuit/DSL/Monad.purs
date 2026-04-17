@@ -76,15 +76,15 @@ import Control.Apply (lift2)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
+import Data.Const (Const)
 import Data.Either (Either)
+import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Identity (Identity(..))
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), maybe)
-import Data.Const (Const)
-import Data.Functor.Product (Product(..)) as FP
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (traverse, traverse_)

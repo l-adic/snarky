@@ -223,63 +223,80 @@ spec = describe "Pickles.Dummy fixture comparison" do
       -- dump_simple_chain_dummy.ml emits them via
       -- `Challenge.Constant.to_tick_field`).
       scAssert "simple_chain_dummy.plonk.alpha.raw"
-        (showFp (SizedF.toField simpleChainDummyPlonk.alpha)) entries
+        (showFp (SizedF.toField simpleChainDummyPlonk.alpha))
+        entries
       scAssert "simple_chain_dummy.plonk.beta"
-        (showFp (SizedF.toField simpleChainDummyPlonk.beta)) entries
+        (showFp (SizedF.toField simpleChainDummyPlonk.beta))
+        entries
       scAssert "simple_chain_dummy.plonk.gamma"
-        (showFp (SizedF.toField simpleChainDummyPlonk.gamma)) entries
+        (showFp (SizedF.toField simpleChainDummyPlonk.gamma))
+        entries
       scAssert "simple_chain_dummy.plonk.zeta.raw"
-        (showFp (SizedF.toField simpleChainDummyPlonk.zeta)) entries
+        (showFp (SizedF.toField simpleChainDummyPlonk.zeta))
+        entries
       scAssert "simple_chain_dummy.sponge_digest"
-        (showFq simpleChainDummySpongeDigest) entries
+        (showFq simpleChainDummySpongeDigest)
+        entries
 
     it "simpleChainDummyPrevEvals matches Proof.dummy N1 prev_evals fixture" do
       entries <- loadScFixture
       let pe = (simpleChainDummyPrevEvals :: PC.AllEvals StepField)
       scAssert "simple_chain_dummy.prev_evals.ft_eval1" (showFp pe.ftEval1) entries
       scAssert "simple_chain_dummy.prev_evals.public_input.zeta.0"
-        (showFp pe.publicEvals.zeta) entries
+        (showFp pe.publicEvals.zeta)
+        entries
       scAssert "simple_chain_dummy.prev_evals.public_input.omega_zeta.0"
-        (showFp pe.publicEvals.omegaTimesZeta) entries
+        (showFp pe.publicEvals.omegaTimesZeta)
+        entries
       scAssert "simple_chain_dummy.prev_evals.z.zeta.0" (showFp pe.zEvals.zeta) entries
       scAssert "simple_chain_dummy.prev_evals.z.omega_zeta.0"
-        (showFp pe.zEvals.omegaTimesZeta) entries
+        (showFp pe.zEvals.omegaTimesZeta)
+        entries
 
-      let selectorNames =
-            [ "generic_selector"
-            , "poseidon_selector"
-            , "complete_add_selector"
-            , "mul_selector"
-            , "emul_selector"
-            , "endomul_scalar_selector"
-            ]
-          indexEvalsArr = (Vector.toUnfoldable pe.indexEvals :: Array _)
-          witnessEvalsArr = (Vector.toUnfoldable pe.witnessEvals :: Array _)
-          coeffEvalsArr = (Vector.toUnfoldable pe.coeffEvals :: Array _)
-          sigmaEvalsArr = (Vector.toUnfoldable pe.sigmaEvals :: Array _)
+      let
+        selectorNames =
+          [ "generic_selector"
+          , "poseidon_selector"
+          , "complete_add_selector"
+          , "mul_selector"
+          , "emul_selector"
+          , "endomul_scalar_selector"
+          ]
+        indexEvalsArr = (Vector.toUnfoldable pe.indexEvals :: Array _)
+        witnessEvalsArr = (Vector.toUnfoldable pe.witnessEvals :: Array _)
+        coeffEvalsArr = (Vector.toUnfoldable pe.coeffEvals :: Array _)
+        sigmaEvalsArr = (Vector.toUnfoldable pe.sigmaEvals :: Array _)
       for_ (Array.zip selectorNames indexEvalsArr) \(Tuple name e) -> do
         scAssert ("simple_chain_dummy.prev_evals." <> name <> ".zeta.0")
-          (showFp e.zeta) entries
+          (showFp e.zeta)
+          entries
         scAssert ("simple_chain_dummy.prev_evals." <> name <> ".omega_zeta.0")
-          (showFp e.omegaTimesZeta) entries
+          (showFp e.omegaTimesZeta)
+          entries
 
       for_ (Array.zip (Array.range 0 14) witnessEvalsArr) \(Tuple i e) -> do
         scAssert ("simple_chain_dummy.prev_evals.w." <> show i <> ".zeta.0")
-          (showFp e.zeta) entries
+          (showFp e.zeta)
+          entries
         scAssert ("simple_chain_dummy.prev_evals.w." <> show i <> ".omega_zeta.0")
-          (showFp e.omegaTimesZeta) entries
+          (showFp e.omegaTimesZeta)
+          entries
 
       for_ (Array.zip (Array.range 0 14) coeffEvalsArr) \(Tuple i e) -> do
         scAssert ("simple_chain_dummy.prev_evals.coefficients." <> show i <> ".zeta.0")
-          (showFp e.zeta) entries
+          (showFp e.zeta)
+          entries
         scAssert ("simple_chain_dummy.prev_evals.coefficients." <> show i <> ".omega_zeta.0")
-          (showFp e.omegaTimesZeta) entries
+          (showFp e.omegaTimesZeta)
+          entries
 
       for_ (Array.zip (Array.range 0 5) sigmaEvalsArr) \(Tuple i e) -> do
         scAssert ("simple_chain_dummy.prev_evals.s." <> show i <> ".zeta.0")
-          (showFp e.zeta) entries
+          (showFp e.zeta)
+          entries
         scAssert ("simple_chain_dummy.prev_evals.s." <> show i <> ".omega_zeta.0")
-          (showFp e.omegaTimesZeta) entries
+          (showFp e.omegaTimesZeta)
+          entries
 
     it "every simple_chain fixture key is checked" do
       entries <- loadScFixture

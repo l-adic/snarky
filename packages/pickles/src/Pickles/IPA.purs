@@ -46,8 +46,8 @@ module Pickles.IPA
 
 import Prelude
 
-import Data.Fin (getFinite, unsafeFinite)
 import Data.Array as Array
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (fold, foldM, for_, product)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
@@ -56,15 +56,15 @@ import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
 import Pickles.Trace as Trace
-import Effect.Unsafe (unsafePerformEffect)
-import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
+import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)

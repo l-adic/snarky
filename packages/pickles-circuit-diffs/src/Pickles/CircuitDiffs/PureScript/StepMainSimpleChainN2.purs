@@ -81,7 +81,8 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    (\_ -> stepMain @2 @67 simpleChainN2Rule
-      { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
-      dummyWrapSg)
+    ( \_ -> stepMain @2 @67 simpleChainN2Rule
+        { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
+        dummyWrapSg
+    )
     Kimchi.initialState

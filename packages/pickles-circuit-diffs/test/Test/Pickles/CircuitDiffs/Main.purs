@@ -432,7 +432,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 16)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 16 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "xhat_step_circuit" (fromCompiledCircuit $ compileXhatStep stepSrsData)
@@ -448,7 +448,7 @@ spec =
           srs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          coerce (pallasSrsLagrangeCommitmentAt srs 16 i)
+                coerce (pallasSrsLagrangeCommitmentAt srs 16 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator srs
             }
         exactMatch "xhat_wrap_circuit" (fromCompiledCircuit $ compileXhat wrapSrsData)
@@ -457,7 +457,7 @@ spec =
           wrapSrs = vestaCrsCreate (2 `Int.pow` 16)
           wrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i)
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 16 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatch "ivp_wrap_circuit" (fromCompiledCircuit $ compileIvpWrap wrapSrsData)
@@ -483,7 +483,7 @@ spec =
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepSrs 15 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "ivp_step_circuit" (fromCompiledCircuit $ compileIvpStep stepSrsData)
@@ -493,14 +493,14 @@ spec =
           stepVerifySrs = pallasCrsCreate (2 `Int.pow` 15)
           stepVerifySrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_circuit" (fromCompiledCircuit $ compileStepVerify stepVerifySrsData)
         let
           stepVerifyN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepVerifySrs 15 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepVerifySrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_verify_n2_circuit" (fromCompiledCircuit $ compileStepVerifyN2 stepVerifyN2SrsData)
@@ -509,14 +509,14 @@ spec =
           fullStepSrs = pallasCrsCreate (2 `Int.pow` 15)
           fullStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_circuit" (fromCompiledCircuit $ compileFullStepVerifyOne fullStepSrsData)
         let
           fullStepN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt fullStepSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator fullStepSrs) :: AffinePoint (F Fp)
             }
         exactMatch "full_step_verify_one_n2_circuit" (fromCompiledCircuit $ compileFullStepVerifyOneN2 fullStepN2SrsData)
@@ -528,14 +528,14 @@ spec =
           stepMainSrs = pallasCrsCreate (2 `Int.pow` 15)
           stepMainSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_main_simple_chain_circuit" (fromCompiledCircuit $ compileStepMainSimpleChain stepMainSrsData)
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-          (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         exactMatch "step_main_simple_chain_n2_circuit" (fromCompiledCircuit $ compileStepMainSimpleChainN2 stepMainN2SrsData)

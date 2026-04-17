@@ -21,6 +21,7 @@ foreign import vestaConstraintSystemCreate :: Array (Gate Vesta.ScalarField) -> 
 
 foreign import vestaConstraintSystemCreateWithPrevChallenges
   :: Array (Gate Vesta.ScalarField) -> Int -> Int -> ConstraintSystem Vesta.ScalarField
+
 foreign import vestaConstraintSystemToJson :: ConstraintSystem Vesta.ScalarField -> String
 foreign import vestaGatesToJson :: Array (Gate Vesta.ScalarField) -> Int -> String
 

@@ -27,61 +27,61 @@ module Test.Pickles.Prove.SimpleChain
 
 import Prelude
 
+import Control.Monad.Trans.Class (lift) as MT
 import Data.Array as Array
+import Data.Fin (getFinite)
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Fin (getFinite)
 import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (Tuple(..))
-import Data.Fin (unsafeFinite)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException) as Exc
+import Node.Encoding (Encoding(..)) as Enc
+import Node.FS.Sync (writeTextFile) as FS
+import Node.Process as Process
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState) as Dummy
-import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
-import Pickles.Types (PaddedLength, StepField)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
+import Pickles.Proof.Dummy (dummyWrapProof)
+import Pickles.ProofFFI (OraclesResult)
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
-import Pickles.ProofFFI (OraclesResult)
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
+import Pickles.Trace as Trace
+import Pickles.Types (PaddedLength, StepField)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof, hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots1, slots1)
-import Data.Maybe (Maybe(..), fromJust)
-import Partial.Unsafe (unsafePartial)
-import Node.Encoding (Encoding(..)) as Enc
-import Node.FS.Sync (writeTextFile) as FS
-import Node.Process as Process
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (constraintSystemToJson) as Kimchi
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
+import Snarky.Circuit.CVar (add_) as CVar
+import Snarky.Circuit.DSL (F(..), UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
 import Snarky.Curves.Class as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
-import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Pickles.Trace as Trace
-import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
-import Snarky.Circuit.DSL (F(..), UnChecked(..), assertAny_, coerceViaBits, const_, equals_, exists, not_)
-import Snarky.Types.Shifted (Type2, fromShifted, toShifted)
-import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Types.Shifted (Type2, fromShifted, toShifted)
 import Test.Spec (SpecT, describe, it)
-import Control.Monad.Trans.Class (lift) as MT
 
 -- | PureScript translation of the Simple_chain inductive rule, verbatim
 -- | from OCaml `dump_simple_chain.ml:62-82` (which itself is verbatim
@@ -162,7 +162,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       Trace.field "srs.diag.loaded.H.y" (coerce loadedH.y :: F WrapField)
       Trace.field "srs.diag.fresh.H.x" (coerce freshH.x :: F WrapField)
       Trace.field "srs.diag.fresh.H.y" (coerce freshH.y :: F WrapField)
-      for_ [0, 1, 2, 3] \i -> do
+      for_ [ 0, 1, 2, 3 ] \i -> do
         let lp = ProofFFI.pallasSrsLagrangeCommitmentAt vestaSrsLoaded 14 i
         let fp = ProofFFI.pallasSrsLagrangeCommitmentAt vestaSrsFresh 14 i
         Trace.field ("srs.diag.loaded.lag14." <> show i <> ".x") (coerce lp.x :: F WrapField)
@@ -179,9 +179,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Earlier iterations used `{ x: zero, y: zero }` which baked
     -- compile-time zeros into the step constraint system, producing a
     -- step VK that diverged from OCaml's (iter 6 diagnostic confirmed).
-    let dummySgValues = Dummy.computeDummySgValues lagrangeSrs vestaSrs
-        wrapSg = dummySgValues.ipa.wrap.sg
-        stepSg = dummySgValues.ipa.step.sg
+    let
+      dummySgValues = Dummy.computeDummySgValues lagrangeSrs vestaSrs
+      wrapSg = dummySgValues.ipa.wrap.sg
+      stepSg = dummySgValues.ipa.step.sg
 
     let
       -- OCaml `basic.wrap_domains.h` for N1, from
@@ -193,8 +194,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
             mkConstLagrangeBaseLookup \i ->
               (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt lagrangeSrs wrapDomainLog2 i))
                 :: AffinePoint (F StepField)
-        , blindingH: (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
-            :: AffinePoint (F StepField)
+        , blindingH:
+            (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
+              :: AffinePoint (F StepField)
         , fopDomainLog2: wrapDomainLog2
         }
 
@@ -392,6 +394,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- = Dummy.Ipa.Step.challenges. Expanded via Ipa.Step.compute_challenges
       -- = `dummyIpaChallenges.stepExpanded` in PS.
       , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+      , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
       }
 
     -- ===== Phase 4: run the step solver =====
@@ -417,12 +420,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- wrap-side IPA failure is a bug in the wrap circuit. If no, the
     -- step prover has a hidden bug that verifyProverIndex (constraint
     -- satisfaction only) didn't catch.
-    let stepProofValid = ProofFFI.verifyOpeningProof
-          stepCR.verifierIndex
-          { proof: result.proof, publicInput: result.publicInputs }
+    let
+      stepProofValid = ProofFFI.verifyOpeningProof
+        stepCR.verifierIndex
+        { proof: result.proof, publicInput: result.publicInputs }
     liftEffect $ Trace.int "step.proof.self_verify" (if stepProofValid then 1 else 0)
-    when (not stepProofValid) $
-      liftEffect $ Exc.throw "PS step proof FAILED kimchi batch_verify — step prover bug"
+    when (not stepProofValid)
+      $ liftEffect
+      $ Exc.throw "PS step proof FAILED kimchi batch_verify — step prover bug"
 
     -- DIAG: dump step proof's actual opening values from the raw proof.
     -- These MUST match what the wrap circuit's Req.Openings_proof sees.
@@ -434,25 +439,27 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- Dump kimchi's ground-truth 128-bit prechallenges for PS step proof.
       -- These are the pre-endo-expansion scalars — same format as the
       -- wrap circuit's `scalarChallenges` from `bulletReduceCircuit`.
-      let kimchiPrechals = ProofFFI.pallasProofOpeningPrechallenges
-            stepCR.verifierIndex
-            { proof: result.proof
-            , publicInput: result.publicInputs
-            , prevChallenges:
-                [ { sgX: stepSg.x
-                  , sgY: stepSg.y
-                  , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
-                  }
-                ]
-            }
+      let
+        kimchiPrechals = ProofFFI.pallasProofOpeningPrechallenges
+          stepCR.verifierIndex
+          { proof: result.proof
+          , publicInput: result.publicInputs
+          , prevChallenges:
+              [ { sgX: stepSg.x
+                , sgY: stepSg.y
+                , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+                }
+              ]
+          }
       for_ (Array.mapWithIndex Tuple kimchiPrechals) \(Tuple i c) ->
         Trace.field ("kimchi.prechal." <> show i) c
       -- Dump kimchi's `u_t` scalar (post-CIP-absorb, pre-group_map) for
       -- PS step proof. Compare to PS wrap circuit `ipa.dbg.u_t` to test
       -- whether the sponge state diverges AT the CIP absorb / u squeeze.
-      let kimchiUT = ProofFFI.pallasComputeUT
-            stepCR.verifierIndex
-            { proof: result.proof, publicInput: result.publicInputs }
+      let
+        kimchiUT = ProofFFI.pallasComputeUT
+          stepCR.verifierIndex
+          { proof: result.proof, publicInput: result.publicInputs }
       Trace.field "kimchi.u_t" kimchiUT
 
     -- ===== Phase 5: wrap-prove the step proof =====
@@ -587,8 +594,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
       msgForNextWrapWrapEndo :: WrapField
       msgForNextWrapWrapEndo =
-        let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField
-        in e
+        let
+          Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField
+        in
+          e
 
       msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       msgForNextWrapRealChals =
@@ -636,7 +645,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
       stepPerProof
         :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
-             (F WrapField) Boolean
+             (F WrapField)
+             Boolean
       stepPerProof = PerProofUnfinalized
         { combinedInnerProduct: toShifted (fromShifted stepUnfRec.combinedInnerProduct :: F WrapField)
         , b: toShifted (fromShifted stepUnfRec.b :: F WrapField)
@@ -705,25 +715,27 @@ spec = describe "Pickles.Prove.SimpleChain" do
             , publicInput: baseCaseWrapPI
             , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
             }
-        in { zeta: o.publicEvalZeta, omegaTimesZeta: o.publicEvalZetaOmega }
+        in
+          { zeta: o.publicEvalZeta, omegaTimesZeta: o.publicEvalZetaOmega }
 
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
           de = Dummy.roComputeResult.wrapDummyEvals
           pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
-        in StepAllEvals
-          { ftEval1: F de.ftEval1
-          , publicEvals: PointEval
-              { zeta: F dummyWrapXhat.zeta
-              , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
-              }
-          , zEvals: pe de.zEvals
-          , witnessEvals: map pe de.witnessEvals
-          , coeffEvals: map pe de.coeffEvals
-          , sigmaEvals: map pe de.sigmaEvals
-          , indexEvals: map pe de.indexEvals
-          }
+        in
+          StepAllEvals
+            { ftEval1: F de.ftEval1
+            , publicEvals: PointEval
+                { zeta: F dummyWrapXhat.zeta
+                , omegaTimesZeta: F dummyWrapXhat.omegaTimesZeta
+                }
+            , zEvals: pe de.zEvals
+            , witnessEvals: map pe de.witnessEvals
+            , coeffEvals: map pe de.coeffEvals
+            , sigmaEvals: map pe de.sigmaEvals
+            , indexEvals: map pe de.indexEvals
+            }
 
       wrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
       wrapAdviceInput =
@@ -762,7 +774,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
                 , sgY: b0ChalPolyComm.y
                 , challenges: msgForNextWrapRealChals
                 }
-            in padEntry :< realEntry :< Vector.nil
+            in
+              padEntry :< realEntry :< Vector.nil
         }
 
     -- DIAG: wrapDv.plonk.beta should match OCaml b1 plonk0.beta = 41619386...
@@ -808,9 +821,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- squeeze. Compare to PS wrap's `ipa.dbg.sponge_post.s{0,1,2}`.
       -- Divergence here means PS's circuit-sponge absorb differs from
       -- kimchi's native Poseidon absorb for the same CIP value.
-      let kimchiCheckpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges
-            stepCR.verifierIndex
-            { proof: result.proof, publicInput: result.publicInputs }
+      let
+        kimchiCheckpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges
+          stepCR.verifierIndex
+          { proof: result.proof, publicInput: result.publicInputs }
       Trace.field "kimchi.sponge_post.s0" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 0))
       Trace.field "kimchi.sponge_post.s1" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 1))
       Trace.field "kimchi.sponge_post.s2" (Vector.index kimchiCheckpoint.state (unsafeFinite @3 2))
@@ -841,12 +855,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Self-verify wrap_b0 proof against its own VK. If the proof doesn't
     -- verify here, neither the next step circuit nor the batch verifier
     -- will accept it. Mirrors step proof self-verify at line ~420.
-    let wrapProofValid = ProofFFI.verifyOpeningProof
-          wrapCR.verifierIndex
-          { proof: wrapResult.proof, publicInput: wrapResult.publicInputs }
+    let
+      wrapProofValid = ProofFFI.verifyOpeningProof
+        wrapCR.verifierIndex
+        { proof: wrapResult.proof, publicInput: wrapResult.publicInputs }
     liftEffect $ Trace.int "wrap.proof.self_verify" (if wrapProofValid then 1 else 0)
-    when (not wrapProofValid) $
-      liftEffect $ Exc.throw "PS wrap proof FAILED kimchi batch_verify — wrap prover bug"
+    when (not wrapProofValid)
+      $ liftEffect
+      $ Exc.throw "PS wrap proof FAILED kimchi batch_verify — wrap prover bug"
 
     liftEffect do
       Trace.int "wrap.proof.public_input_count" (Array.length wrapResult.publicInputs)
@@ -1009,6 +1025,13 @@ spec = describe "Pickles.Prove.SimpleChain" do
           map
             (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
             wrapDv.bulletproofPrechallenges
+      -- b1 prevChallengesForStepHash: per OCaml step.ml:519-525 this comes
+      -- from wrap_b0.statement.messages_for_next_step_proof.old_bulletproof_challenges,
+      -- which wrap_b0 forwarded from step_b0's output. step_b0's output
+      -- old_bp_chals = extracted from step_b0's prev (= dummy wrap) =
+      -- dummy wrap's deferred.bp_chals = Dummy.Ipa.Step.challenges. Expanded
+      -- via Ipa.Step.compute_challenges = `dummyIpaChallenges.stepExpanded`.
+      , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
       }
 
     b1Result <- liftEffect $
@@ -1019,12 +1042,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
         stepCR
         b1Advice
 
-    let b1StepProofValid = ProofFFI.verifyOpeningProof
-          stepCR.verifierIndex
-          { proof: b1Result.proof, publicInput: b1Result.publicInputs }
+    let
+      b1StepProofValid = ProofFFI.verifyOpeningProof
+        stepCR.verifierIndex
+        { proof: b1Result.proof, publicInput: b1Result.publicInputs }
     liftEffect $ Trace.int "b1.step.proof.self_verify" (if b1StepProofValid then 1 else 0)
-    when (not b1StepProofValid) $
-      liftEffect $ Exc.throw "b1 step proof FAILED self-verify"
+    when (not b1StepProofValid)
+      $ liftEffect
+      $ Exc.throw "b1 step proof FAILED self-verify"
 
     -- =====================================================================
     -- WRAP b1: wrap step_b1 (the inductive-case step proof above). Mirror
@@ -1126,7 +1151,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
       b1StepPerProof
         :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
-             (F WrapField) Boolean
+             (F WrapField)
+             Boolean
       b1StepPerProof = PerProofUnfinalized
         { combinedInnerProduct: toShifted (fromShifted b1StepUnfRec0.combinedInnerProduct :: F WrapField)
         , b: toShifted (fromShifted b1StepUnfRec0.b :: F WrapField)
@@ -1178,18 +1204,19 @@ spec = describe "Pickles.Prove.SimpleChain" do
             { zeta: F pe'.zeta
             , omegaTimesZeta: F pe'.omegaTimesZeta
             }
-        in StepAllEvals
-          { ftEval1: F b1WrapB0Oracles.ftEval1
-          , publicEvals: PointEval
-              { zeta: F b1WrapB0Oracles.publicEvalZeta
-              , omegaTimesZeta: F b1WrapB0Oracles.publicEvalZetaOmega
-              }
-          , zEvals: peWF (ProofFFI.proofZEvals wrapResult.proof)
-          , witnessEvals: map peWF (ProofFFI.proofWitnessEvals wrapResult.proof)
-          , coeffEvals: map peWF (ProofFFI.proofCoefficientEvals wrapResult.proof)
-          , sigmaEvals: map peWF (ProofFFI.proofSigmaEvals wrapResult.proof)
-          , indexEvals: map peWF (ProofFFI.proofIndexEvals wrapResult.proof)
-          }
+        in
+          StepAllEvals
+            { ftEval1: F b1WrapB0Oracles.ftEval1
+            , publicEvals: PointEval
+                { zeta: F b1WrapB0Oracles.publicEvalZeta
+                , omegaTimesZeta: F b1WrapB0Oracles.publicEvalZetaOmega
+                }
+            , zEvals: peWF (ProofFFI.proofZEvals wrapResult.proof)
+            , witnessEvals: map peWF (ProofFFI.proofWitnessEvals wrapResult.proof)
+            , coeffEvals: map peWF (ProofFFI.proofCoefficientEvals wrapResult.proof)
+            , sigmaEvals: map peWF (ProofFFI.proofSigmaEvals wrapResult.proof)
+            , indexEvals: map peWF (ProofFFI.proofIndexEvals wrapResult.proof)
+            }
 
       b1WrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
       b1WrapAdviceInput =
@@ -1239,7 +1266,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
                 , sgY: b1ChalPolyComm.y
                 , challenges: b1MsgForNextWrapRealChals
                 }
-            in padEntry :< realEntry :< Vector.nil
+            in
+              padEntry :< realEntry :< Vector.nil
         }
 
     -- DIAG: compare what FOP will compare.
@@ -1247,10 +1275,13 @@ spec = describe "Pickles.Prove.SimpleChain" do
       let
         cipClaim :: WrapField
         cipClaim = case fromShifted b1StepUnfRec0.combinedInnerProduct :: F WrapField of F x -> x
+
         bClaim :: WrapField
         bClaim = case fromShifted b1StepUnfRec0.b :: F WrapField of F x -> x
+
         permClaim :: WrapField
         permClaim = case fromShifted b1StepUnfRec0.perm :: F WrapField of F x -> x
+
         spongeDigestClaim :: WrapField
         spongeDigestClaim = case b1StepUnfRec0.spongeDigest of F v -> Curves.fromBigInt (Curves.toBigInt v)
       Trace.field "b1wrap.dbg.cip_claim" cipClaim
@@ -1272,11 +1303,646 @@ spec = describe "Pickles.Prove.SimpleChain" do
         b1WrapProveCtx
         wrapCR
 
-    let b1WrapProofValid = ProofFFI.verifyOpeningProof
-          wrapCR.verifierIndex
-          { proof: b1WrapResult.proof, publicInput: b1WrapResult.publicInputs }
+    let
+      b1WrapProofValid = ProofFFI.verifyOpeningProof
+        wrapCR.verifierIndex
+        { proof: b1WrapResult.proof, publicInput: b1WrapResult.publicInputs }
     liftEffect $ Trace.int "b1.wrap.proof.self_verify" (if b1WrapProofValid then 1 else 0)
-    when (not b1WrapProofValid) $
-      liftEffect $ Exc.throw "b1 wrap proof FAILED self-verify"
+    when (not b1WrapProofValid)
+      $ liftEffect
+      $ Exc.throw "b1 wrap proof FAILED self-verify"
+
+    -- =====================================================================
+    -- Continuation b2: step_b2 (self=2, prev=1, verifying wrap_b1) +
+    -- wrap_b2 (wrapping step_b2). Same N=1 Simple_chain circuit — just
+    -- one more iteration. No OCaml fixture comparison (no counter 4/5
+    -- fixture); each proof only self-verifies via verifyOpeningProof.
+    -- Structurally mirrors the b1 step+wrap blocks with every reference
+    -- to wrap_b0 / step_b0 replaced by wrap_b1 / step_b1.
+    -- =====================================================================
+    let
+      b1StepOpeningSg :: AffinePoint WrapField
+      b1StepOpeningSg = ProofFFI.pallasProofOpeningSg b1Result.proof
+
+      -- wrap_b1's prev_evals field (per wrap.ml:591 applied to wrap_b1
+      -- wrapping step_b1) = step_b1's openings.evals + step_b1 x_hat +
+      -- step_b1 ft_eval1. This is what step_b2's Per_proof_witness
+      -- reads when verifying wrap_b1.
+      b2WrapPrevEvals :: AllEvals StepField
+      b2WrapPrevEvals =
+        { ftEval1: b1StepOracles.ftEval1
+        , publicEvals:
+            { zeta: b1StepOracles.publicEvalZeta
+            , omegaTimesZeta: b1StepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b1Result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b1Result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b1Result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b1Result.proof
+        , indexEvals: ProofFFI.proofIndexEvals b1Result.proof
+        }
+
+      -- prevChalPolys for step_b2's oracles on wrap_b1.
+      b2PrevChalPolys =
+        let
+          realEntry =
+            { sg: b1ChalPolyComm
+            , challenges: b1MsgForNextWrapRealChals
+            }
+          dummyEntry = baseCaseDummyChalPoly
+        in
+          dummyEntry :< realEntry :< Vector.nil
+
+      b2WrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+      b2WrapOwnPaddedBpChals =
+        Dummy.dummyIpaChallenges.wrapExpanded
+          :< b1MsgForNextWrapRealChals
+          :< Vector.nil
+
+    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+      { appState: F (fromInt 2 :: StepField)
+      , prevAppState: F one
+      , mostRecentWidth: 1
+      , wrapDomainLog2
+      , wrapVK: wrapCR.verifierIndex
+      , wrapSg: b1ChalPolyComm
+      , stepSg: b1StepOpeningSg
+      , wrapProof: b1WrapResult.proof
+      , wrapPublicInput: b1WrapResult.publicInputs
+      , prevChalPolys: b2PrevChalPolys
+      , wrapPlonkRaw:
+          { alpha: SizedF.unwrapF b1WrapDv.plonk.alpha
+          , beta: SizedF.unwrapF b1WrapDv.plonk.beta
+          , gamma: SizedF.unwrapF b1WrapDv.plonk.gamma
+          , zeta: SizedF.unwrapF b1WrapDv.plonk.zeta
+          }
+      , wrapPrevEvals: b2WrapPrevEvals
+      , wrapBranchData: b1WrapDv.branchData
+      , wrapSpongeDigest: b1WrapDv.spongeDigestBeforeEvaluations
+      , mustVerify: true
+      , wrapOwnPaddedBpChals: b2WrapOwnPaddedBpChals
+      , stepAdvicePrevEvals: b2WrapPrevEvals
+      , fopState:
+          { deferredValues:
+              { plonk: b1WrapDv.plonk
+              , combinedInnerProduct: b1WrapDv.combinedInnerProduct
+              , xi: b1WrapDv.xi
+              , bulletproofChallenges: b1WrapDv.bulletproofPrechallenges
+              , b: b1WrapDv.b
+              }
+          , shouldFinalize: false
+          , spongeDigestBeforeEvaluations: F b1WrapDv.spongeDigestBeforeEvaluations
+          }
+      , kimchiPrevChallengesExpanded:
+          map
+            (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+            b1WrapDv.bulletproofPrechallenges
+      -- b2 prevChallengesForStepHash: per OCaml step.ml:519-525 + step.ml:790-801,
+      -- this comes via wrap_b1.messages_for_next_step_proof.old_bp_chals =
+      -- step_b1.output.old_bp_chals (forwarded) = step_b1 extracted from its
+      -- prev (= wrap_b0) via `t.statement.proof_state.deferred_values.
+      -- bulletproof_challenges` = wrap_b0.deferred.bp_chals = wrapDv (from b0
+      -- stage). Expanded via step endo scalar to StepField.
+      , prevChallengesForStepHash:
+          map
+            (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+            wrapDv.bulletproofPrechallenges
+      }
+
+    b2Result <- liftEffect $
+      stepSolveAndProve @1 @34
+        (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
+        ctx
+        (simpleChainRule (F one))
+        stepCR
+        b2Advice
+
+    let
+      b2StepProofValid = ProofFFI.verifyOpeningProof
+        stepCR.verifierIndex
+        { proof: b2Result.proof, publicInput: b2Result.publicInputs }
+    liftEffect $ Trace.int "b2.step.proof.self_verify" (if b2StepProofValid then 1 else 0)
+    when (not b2StepProofValid)
+      $ liftEffect
+      $ Exc.throw "b2 step proof FAILED self-verify"
+
+    -- Now wrap_b2 (wrapping step_b2).
+    let
+      b2WrapProofSg :: AffinePoint WrapField
+      b2WrapProofSg = ProofFFI.pallasProofOpeningSg b2Result.proof
+
+      b2StepKimchiPrevChalsExpanded =
+        map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+          b1WrapDv.bulletproofPrechallenges
+
+      b2StepOracles :: OraclesResult StepField
+      b2StepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
+        { proof: b2Result.proof
+        , publicInput: b2Result.publicInputs
+        , prevChallenges:
+            [ { sgX: b1StepOpeningSg.x
+              , sgY: b1StepOpeningSg.y
+              , challenges: Vector.toUnfoldable b2StepKimchiPrevChalsExpanded
+              }
+            ]
+        }
+
+      b2StepAllEvals :: AllEvals StepField
+      b2StepAllEvals =
+        { ftEval1: b2StepOracles.ftEval1
+        , publicEvals:
+            { zeta: b2StepOracles.publicEvalZeta
+            , omegaTimesZeta: b2StepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b2Result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b2Result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b2Result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b2Result.proof
+        , indexEvals: ProofFFI.proofIndexEvals b2Result.proof
+        }
+
+      b2WrapDvInput :: WrapDeferredValuesInput 1
+      b2WrapDvInput =
+        { proof: b2Result.proof
+        , verifierIndex: stepCR.verifierIndex
+        , publicInput: b2Result.publicInputs
+        , allEvals: b2StepAllEvals
+        , pEval0Chunks: [ b2StepOracles.publicEvalZeta ]
+        , domainLog2: stepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator stepDomainLog2 :: StepField)
+        , shifts: (domainShifts stepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: stepDomainLog2, zkRows: 3, pt: b2StepOracles.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: b1StepOpeningSg :< Vector.nil
+        , prevChallenges: b2StepKimchiPrevChalsExpanded :< Vector.nil
+        , proofsVerifiedMask: false :< true :< Vector.nil
+        }
+
+      b2WrapDv = wrapComputeDeferredValues b2WrapDvInput
+
+      b2MsgForNextStepDigest :: StepField
+      b2MsgForNextStepDigest = unsafePartial $ fromJust $
+        Array.index b2Result.publicInputs 32
+
+      PerProofUnfinalized b2StepUnfRec0 =
+        Vector.head b2Advice.publicUnfinalizedProofs
+
+      b2MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
+      b2MsgForNextWrapRealChals =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF.SizedF 128 WrapField)
+                msgForNextWrapWrapEndo
+          )
+          b2StepUnfRec0.bulletproofChallenges
+
+      b2MsgForNextWrapDigest :: WrapField
+      b2MsgForNextWrapDigest =
+        hashMessagesForNextWrapProof
+          { sg: b2WrapProofSg
+          , expandedChallenges: b2MsgForNextWrapRealChals
+          , dummyChallenges: msgForNextWrapDummyChals
+          }
+
+      b2WrapPublicInput = assembleWrapMainInput
+        { deferredValues: b2WrapDv
+        , messagesForNextStepProofDigest: b2MsgForNextStepDigest
+        , messagesForNextWrapProofDigest: b2MsgForNextWrapDigest
+        }
+
+      b2StepPerProof
+        :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
+             (F WrapField)
+             Boolean
+      b2StepPerProof = PerProofUnfinalized
+        { combinedInnerProduct: toShifted (fromShifted b2StepUnfRec0.combinedInnerProduct :: F WrapField)
+        , b: toShifted (fromShifted b2StepUnfRec0.b :: F WrapField)
+        , zetaToSrsLength: toShifted (fromShifted b2StepUnfRec0.zetaToSrsLength :: F WrapField)
+        , zetaToDomainSize: toShifted (fromShifted b2StepUnfRec0.zetaToDomainSize :: F WrapField)
+        , perm: toShifted (fromShifted b2StepUnfRec0.perm :: F WrapField)
+        , spongeDigest: F (fromBigInt (toBigInt (case b2StepUnfRec0.spongeDigest of F x -> x)) :: WrapField)
+        , beta: UnChecked (coerceViaBits (case b2StepUnfRec0.beta of UnChecked v -> v))
+        , gamma: UnChecked (coerceViaBits (case b2StepUnfRec0.gamma of UnChecked v -> v))
+        , alpha: UnChecked (coerceViaBits (case b2StepUnfRec0.alpha of UnChecked v -> v))
+        , zeta: UnChecked (coerceViaBits (case b2StepUnfRec0.zeta of UnChecked v -> v))
+        , xi: UnChecked (coerceViaBits (case b2StepUnfRec0.xi of UnChecked v -> v))
+        , bulletproofChallenges:
+            map (\(UnChecked v) -> UnChecked (coerceViaBits v)) b2StepUnfRec0.bulletproofChallenges
+        , shouldFinalize: b2StepUnfRec0.shouldFinalize
+        }
+
+      -- Oracles on wrap_b1 (for wrap_b2's prev_evals x_hat). Must use
+      -- wrap_b1's OWN kimchi prev_challenges (what was passed to
+      -- wrapSolveAndProve for b1 creation).
+      b2WrapB1Oracles :: OraclesResult WrapField
+      b2WrapB1Oracles = ProofFFI.vestaProofOracles wrapCR.verifierIndex
+        { proof: b1WrapResult.proof
+        , publicInput: b1WrapResult.publicInputs
+        , prevChallenges:
+            [ { sgX: wrapSg.x
+              , sgY: wrapSg.y
+              , challenges:
+                  Vector.toUnfoldable
+                    ( map (fromBigInt <<< toBigInt)
+                        Dummy.dummyIpaChallenges.wrapExpanded
+                        :: Vector WrapIPARounds WrapField
+                    )
+              }
+            , { sgX: b1ChalPolyComm.x
+              , sgY: b1ChalPolyComm.y
+              , challenges: Vector.toUnfoldable b1MsgForNextWrapRealChals
+              }
+            ]
+        }
+
+      b2WrapPrevEvalsForAdvice :: StepAllEvals (F WrapField)
+      b2WrapPrevEvalsForAdvice =
+        let
+          peWF pe' = PointEval
+            { zeta: F pe'.zeta
+            , omegaTimesZeta: F pe'.omegaTimesZeta
+            }
+        in
+          StepAllEvals
+            { ftEval1: F b2WrapB1Oracles.ftEval1
+            , publicEvals: PointEval
+                { zeta: F b2WrapB1Oracles.publicEvalZeta
+                , omegaTimesZeta: F b2WrapB1Oracles.publicEvalZetaOmega
+                }
+            , zEvals: peWF (ProofFFI.proofZEvals b1WrapResult.proof)
+            , witnessEvals: map peWF (ProofFFI.proofWitnessEvals b1WrapResult.proof)
+            , coeffEvals: map peWF (ProofFFI.proofCoefficientEvals b1WrapResult.proof)
+            , sigmaEvals: map peWF (ProofFFI.proofSigmaEvals b1WrapResult.proof)
+            , indexEvals: map peWF (ProofFFI.proofIndexEvals b1WrapResult.proof)
+            }
+
+      b2WrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
+      b2WrapAdviceInput =
+        { stepProof: b2Result.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: b2StepPerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt b2MsgForNextStepDigest) :: WrapField)
+        , prevStepAccs: WeierstrassAffinePoint { x: F b1StepOpeningSg.x, y: F b1StepOpeningSg.y } :< Vector.nil
+        , prevOldBpChals: slots1 ((map F b1MsgForNextWrapRealChals) :< Vector.nil)
+        , prevEvals: b2WrapPrevEvalsForAdvice :< Vector.nil
+        , prevWrapDomainIndices: F (fromInt 1 :: WrapField) :< Vector.nil
+        }
+
+      b2WrapAdvice :: WrapAdvice 1 (Slots1 1)
+      b2WrapAdvice = buildWrapAdvice b2WrapAdviceInput
+
+      b2WrapProveCtx =
+        { wrapMainConfig: wrapCtx.wrapMainConfig
+        , crs: pallasProofCrs
+        , publicInput: b2WrapPublicInput
+        , advice: b2WrapAdvice
+        , kimchiPrevChallenges:
+            let
+              padEntry =
+                { sgX: wrapSg.x
+                , sgY: wrapSg.y
+                , challenges: map (fromBigInt <<< toBigInt)
+                    Dummy.dummyIpaChallenges.wrapExpanded
+                }
+              realEntry =
+                { sgX: b2ChalPolyComm.x
+                , sgY: b2ChalPolyComm.y
+                , challenges: b2MsgForNextWrapRealChals
+                }
+            in
+              padEntry :< realEntry :< Vector.nil
+        }
+
+    b2WrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots1 1)
+        (\e -> Exc.throwException e)
+        b2WrapProveCtx
+        wrapCR
+
+    let
+      b2WrapProofValid = ProofFFI.verifyOpeningProof
+        wrapCR.verifierIndex
+        { proof: b2WrapResult.proof, publicInput: b2WrapResult.publicInputs }
+    liftEffect $ Trace.int "b2.wrap.proof.self_verify" (if b2WrapProofValid then 1 else 0)
+    when (not b2WrapProofValid)
+      $ liftEffect
+      $ Exc.throw "b2 wrap proof FAILED self-verify"
+
+    -- =====================================================================
+    -- Continuation b3: step_b3 (self=3, prev=2, verifying wrap_b2) +
+    -- wrap_b3 (wrapping step_b3). Same N=1 Simple_chain circuit — one
+    -- more iteration. Mechanical mirror of b2 with b1→b2 substitutions
+    -- (one more hop). No OCaml fixture; each proof only self-verifies.
+    -- =====================================================================
+    let
+      b2StepOpeningSg :: AffinePoint WrapField
+      b2StepOpeningSg = ProofFFI.pallasProofOpeningSg b2Result.proof
+
+      -- wrap_b2's prev_evals field = step_b2's openings + step_b2 x_hat +
+      -- step_b2 ft_eval1 (from b2StepOracles).
+      b3WrapPrevEvals :: AllEvals StepField
+      b3WrapPrevEvals =
+        { ftEval1: b2StepOracles.ftEval1
+        , publicEvals:
+            { zeta: b2StepOracles.publicEvalZeta
+            , omegaTimesZeta: b2StepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b2Result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b2Result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b2Result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b2Result.proof
+        , indexEvals: ProofFFI.proofIndexEvals b2Result.proof
+        }
+
+      b3PrevChalPolys =
+        let
+          realEntry =
+            { sg: b2ChalPolyComm
+            , challenges: b2MsgForNextWrapRealChals
+            }
+          dummyEntry = baseCaseDummyChalPoly
+        in
+          dummyEntry :< realEntry :< Vector.nil
+
+      b3WrapOwnPaddedBpChals :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+      b3WrapOwnPaddedBpChals =
+        Dummy.dummyIpaChallenges.wrapExpanded
+          :< b2MsgForNextWrapRealChals
+          :< Vector.nil
+
+    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+      { appState: F (fromInt 3 :: StepField)
+      , prevAppState: F (fromInt 2 :: StepField)
+      , mostRecentWidth: 1
+      , wrapDomainLog2
+      , wrapVK: wrapCR.verifierIndex
+      , wrapSg: b2ChalPolyComm
+      , stepSg: b2StepOpeningSg
+      , wrapProof: b2WrapResult.proof
+      , wrapPublicInput: b2WrapResult.publicInputs
+      , prevChalPolys: b3PrevChalPolys
+      , wrapPlonkRaw:
+          { alpha: SizedF.unwrapF b2WrapDv.plonk.alpha
+          , beta: SizedF.unwrapF b2WrapDv.plonk.beta
+          , gamma: SizedF.unwrapF b2WrapDv.plonk.gamma
+          , zeta: SizedF.unwrapF b2WrapDv.plonk.zeta
+          }
+      , wrapPrevEvals: b3WrapPrevEvals
+      , wrapBranchData: b2WrapDv.branchData
+      , wrapSpongeDigest: b2WrapDv.spongeDigestBeforeEvaluations
+      , mustVerify: true
+      , wrapOwnPaddedBpChals: b3WrapOwnPaddedBpChals
+      , stepAdvicePrevEvals: b3WrapPrevEvals
+      , fopState:
+          { deferredValues:
+              { plonk: b2WrapDv.plonk
+              , combinedInnerProduct: b2WrapDv.combinedInnerProduct
+              , xi: b2WrapDv.xi
+              , bulletproofChallenges: b2WrapDv.bulletproofPrechallenges
+              , b: b2WrapDv.b
+              }
+          , shouldFinalize: false
+          , spongeDigestBeforeEvaluations: F b2WrapDv.spongeDigestBeforeEvaluations
+          }
+      , kimchiPrevChallengesExpanded:
+          map
+            (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+            b2WrapDv.bulletproofPrechallenges
+      -- b3 prevChallengesForStepHash: per step.ml:519-525, forwarded from
+      -- step_b2's output old_bp_chals = step_b2 extracted from its prev
+      -- (= wrap_b1) = wrap_b1.deferred.bp_chals = b1WrapDv (from b1 wrap stage).
+      , prevChallengesForStepHash:
+          map
+            (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+            b1WrapDv.bulletproofPrechallenges
+      }
+
+    b3Result <- liftEffect $
+      stepSolveAndProve @1 @34
+        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
+        ctx
+        (simpleChainRule (F (fromInt 2 :: StepField)))
+        stepCR
+        b3Advice
+
+    let
+      b3StepProofValid = ProofFFI.verifyOpeningProof
+        stepCR.verifierIndex
+        { proof: b3Result.proof, publicInput: b3Result.publicInputs }
+    liftEffect $ Trace.int "b3.step.proof.self_verify" (if b3StepProofValid then 1 else 0)
+    when (not b3StepProofValid)
+      $ liftEffect
+      $ Exc.throw "b3 step proof FAILED self-verify"
+
+    -- wrap_b3 (wrapping step_b3).
+    let
+      b3WrapProofSg :: AffinePoint WrapField
+      b3WrapProofSg = ProofFFI.pallasProofOpeningSg b3Result.proof
+
+      b3StepKimchiPrevChalsExpanded =
+        map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+          b2WrapDv.bulletproofPrechallenges
+
+      b3StepOracles :: OraclesResult StepField
+      b3StepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
+        { proof: b3Result.proof
+        , publicInput: b3Result.publicInputs
+        , prevChallenges:
+            [ { sgX: b2StepOpeningSg.x
+              , sgY: b2StepOpeningSg.y
+              , challenges: Vector.toUnfoldable b3StepKimchiPrevChalsExpanded
+              }
+            ]
+        }
+
+      b3StepAllEvals :: AllEvals StepField
+      b3StepAllEvals =
+        { ftEval1: b3StepOracles.ftEval1
+        , publicEvals:
+            { zeta: b3StepOracles.publicEvalZeta
+            , omegaTimesZeta: b3StepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b3Result.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b3Result.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b3Result.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b3Result.proof
+        , indexEvals: ProofFFI.proofIndexEvals b3Result.proof
+        }
+
+      b3WrapDvInput :: WrapDeferredValuesInput 1
+      b3WrapDvInput =
+        { proof: b3Result.proof
+        , verifierIndex: stepCR.verifierIndex
+        , publicInput: b3Result.publicInputs
+        , allEvals: b3StepAllEvals
+        , pEval0Chunks: [ b3StepOracles.publicEvalZeta ]
+        , domainLog2: stepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator stepDomainLog2 :: StepField)
+        , shifts: (domainShifts stepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: stepDomainLog2, zkRows: 3, pt: b3StepOracles.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: b2StepOpeningSg :< Vector.nil
+        , prevChallenges: b3StepKimchiPrevChalsExpanded :< Vector.nil
+        , proofsVerifiedMask: false :< true :< Vector.nil
+        }
+
+      b3WrapDv = wrapComputeDeferredValues b3WrapDvInput
+
+      b3MsgForNextStepDigest :: StepField
+      b3MsgForNextStepDigest = unsafePartial $ fromJust $
+        Array.index b3Result.publicInputs 32
+
+      PerProofUnfinalized b3StepUnfRec0 =
+        Vector.head b3Advice.publicUnfinalizedProofs
+
+      b3MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
+      b3MsgForNextWrapRealChals =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF.SizedF 128 WrapField)
+                msgForNextWrapWrapEndo
+          )
+          b3StepUnfRec0.bulletproofChallenges
+
+      b3MsgForNextWrapDigest :: WrapField
+      b3MsgForNextWrapDigest =
+        hashMessagesForNextWrapProof
+          { sg: b3WrapProofSg
+          , expandedChallenges: b3MsgForNextWrapRealChals
+          , dummyChallenges: msgForNextWrapDummyChals
+          }
+
+      b3WrapPublicInput = assembleWrapMainInput
+        { deferredValues: b3WrapDv
+        , messagesForNextStepProofDigest: b3MsgForNextStepDigest
+        , messagesForNextWrapProofDigest: b3MsgForNextWrapDigest
+        }
+
+      b3StepPerProof
+        :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
+             (F WrapField)
+             Boolean
+      b3StepPerProof = PerProofUnfinalized
+        { combinedInnerProduct: toShifted (fromShifted b3StepUnfRec0.combinedInnerProduct :: F WrapField)
+        , b: toShifted (fromShifted b3StepUnfRec0.b :: F WrapField)
+        , zetaToSrsLength: toShifted (fromShifted b3StepUnfRec0.zetaToSrsLength :: F WrapField)
+        , zetaToDomainSize: toShifted (fromShifted b3StepUnfRec0.zetaToDomainSize :: F WrapField)
+        , perm: toShifted (fromShifted b3StepUnfRec0.perm :: F WrapField)
+        , spongeDigest: F (fromBigInt (toBigInt (case b3StepUnfRec0.spongeDigest of F x -> x)) :: WrapField)
+        , beta: UnChecked (coerceViaBits (case b3StepUnfRec0.beta of UnChecked v -> v))
+        , gamma: UnChecked (coerceViaBits (case b3StepUnfRec0.gamma of UnChecked v -> v))
+        , alpha: UnChecked (coerceViaBits (case b3StepUnfRec0.alpha of UnChecked v -> v))
+        , zeta: UnChecked (coerceViaBits (case b3StepUnfRec0.zeta of UnChecked v -> v))
+        , xi: UnChecked (coerceViaBits (case b3StepUnfRec0.xi of UnChecked v -> v))
+        , bulletproofChallenges:
+            map (\(UnChecked v) -> UnChecked (coerceViaBits v)) b3StepUnfRec0.bulletproofChallenges
+        , shouldFinalize: b3StepUnfRec0.shouldFinalize
+        }
+
+      b3WrapB2Oracles :: OraclesResult WrapField
+      b3WrapB2Oracles = ProofFFI.vestaProofOracles wrapCR.verifierIndex
+        { proof: b2WrapResult.proof
+        , publicInput: b2WrapResult.publicInputs
+        , prevChallenges:
+            [ { sgX: wrapSg.x
+              , sgY: wrapSg.y
+              , challenges:
+                  Vector.toUnfoldable
+                    ( map (fromBigInt <<< toBigInt)
+                        Dummy.dummyIpaChallenges.wrapExpanded
+                        :: Vector WrapIPARounds WrapField
+                    )
+              }
+            , { sgX: b2ChalPolyComm.x
+              , sgY: b2ChalPolyComm.y
+              , challenges: Vector.toUnfoldable b2MsgForNextWrapRealChals
+              }
+            ]
+        }
+
+      b3WrapPrevEvalsForAdvice :: StepAllEvals (F WrapField)
+      b3WrapPrevEvalsForAdvice =
+        let
+          peWF pe' = PointEval
+            { zeta: F pe'.zeta
+            , omegaTimesZeta: F pe'.omegaTimesZeta
+            }
+        in
+          StepAllEvals
+            { ftEval1: F b3WrapB2Oracles.ftEval1
+            , publicEvals: PointEval
+                { zeta: F b3WrapB2Oracles.publicEvalZeta
+                , omegaTimesZeta: F b3WrapB2Oracles.publicEvalZetaOmega
+                }
+            , zEvals: peWF (ProofFFI.proofZEvals b2WrapResult.proof)
+            , witnessEvals: map peWF (ProofFFI.proofWitnessEvals b2WrapResult.proof)
+            , coeffEvals: map peWF (ProofFFI.proofCoefficientEvals b2WrapResult.proof)
+            , sigmaEvals: map peWF (ProofFFI.proofSigmaEvals b2WrapResult.proof)
+            , indexEvals: map peWF (ProofFFI.proofIndexEvals b2WrapResult.proof)
+            }
+
+      b3WrapAdviceInput :: BuildWrapAdviceInput 1 (Slots1 1)
+      b3WrapAdviceInput =
+        { stepProof: b3Result.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: b3StepPerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt b3MsgForNextStepDigest) :: WrapField)
+        , prevStepAccs: WeierstrassAffinePoint { x: F b2StepOpeningSg.x, y: F b2StepOpeningSg.y } :< Vector.nil
+        , prevOldBpChals: slots1 ((map F b2MsgForNextWrapRealChals) :< Vector.nil)
+        , prevEvals: b3WrapPrevEvalsForAdvice :< Vector.nil
+        , prevWrapDomainIndices: F (fromInt 1 :: WrapField) :< Vector.nil
+        }
+
+      b3WrapAdvice :: WrapAdvice 1 (Slots1 1)
+      b3WrapAdvice = buildWrapAdvice b3WrapAdviceInput
+
+      b3WrapProveCtx =
+        { wrapMainConfig: wrapCtx.wrapMainConfig
+        , crs: pallasProofCrs
+        , publicInput: b3WrapPublicInput
+        , advice: b3WrapAdvice
+        , kimchiPrevChallenges:
+            let
+              padEntry =
+                { sgX: wrapSg.x
+                , sgY: wrapSg.y
+                , challenges: map (fromBigInt <<< toBigInt)
+                    Dummy.dummyIpaChallenges.wrapExpanded
+                }
+              realEntry =
+                { sgX: b3ChalPolyComm.x
+                , sgY: b3ChalPolyComm.y
+                , challenges: b3MsgForNextWrapRealChals
+                }
+            in
+              padEntry :< realEntry :< Vector.nil
+        }
+
+    b3WrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots1 1)
+        (\e -> Exc.throwException e)
+        b3WrapProveCtx
+        wrapCR
+
+    let
+      b3WrapProofValid = ProofFFI.verifyOpeningProof
+        wrapCR.verifierIndex
+        { proof: b3WrapResult.proof, publicInput: b3WrapResult.publicInputs }
+    liftEffect $ Trace.int "b3.wrap.proof.self_verify" (if b3WrapProofValid then 1 else 0)
+    when (not b3WrapProofValid)
+      $ liftEffect
+      $ Exc.throw "b3 wrap proof FAILED self-verify"
 
     liftEffect $ Trace.string "simple_chain.end" "inductive_case_verified"
