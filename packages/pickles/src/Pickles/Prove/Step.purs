@@ -1536,15 +1536,16 @@ buildStepAdviceWithOracles input = do
 -- | (`~public_input:(Input _)`) callers use `output = Unit`. For
 -- | Output-mode rules the computed value flows back via the rule's
 -- | returned `RuleOutput`.
-type StepRule (n :: Int) inputVal input outputVal output =
+type StepRule (n :: Int) inputVal input outputVal output prevInputVal prevInput =
   forall t m'
    . CircuitM StepField (KimchiConstraint StepField) t m'
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m' inputVal
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => input
-  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n input output)
+  -> Snarky (KimchiConstraint StepField) t m' (RuleOutput n prevInput output)
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
@@ -1600,7 +1601,7 @@ type StepProveResult (outputSize :: Int) =
 -- | a placeholder advice here (e.g. one built with synthetic wrap VK
 -- | commitments) and supply the real advice to the solve phase.
 stepCompile
-  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1611,10 +1612,11 @@ stepCompile
   => Add digestPlusUnfs n outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => StepProveContext
-  -> StepRule n inputVal input outputVal output
+  -> StepRule n inputVal input outputVal output prevInputVal prevInput
   -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m StepCompileResult
 stepCompile ctx rule advice = do
@@ -1627,7 +1629,7 @@ stepCompile ctx rule advice = do
         (Proxy @Unit)
         (Proxy @(Vector outputSize (F StepField)))
         (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output rule ctx.srsData ctx.dummySg)
+        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput rule ctx.srsData ctx.dummySg)
         (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
   builtState <- runStepProverT advice compileAction
@@ -1675,7 +1677,7 @@ stepCompile ctx rule advice = do
 -- | `StepCompileResult` and the real advice, runs the witness solver,
 -- | checks constraint satisfaction, and creates the kimchi proof.
 stepSolveAndProve
-  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1686,11 +1688,12 @@ stepSolveAndProve
   => Add digestPlusUnfs n outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
   -> StepProveContext
-  -> StepRule n inputVal input outputVal output
+  -> StepRule n inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m (StepProveResult outputSize)
@@ -1703,7 +1706,7 @@ stepSolveAndProve onError ctx rule compileResult advice = do
            (Vector outputSize (F StepField))
     rawSolver =
       makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output rule ctx.srsData ctx.dummySg)
+        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput rule ctx.srsData ctx.dummySg)
 
   eRes <- runStepProverT advice (runSolverT rawSolver unit)
 
@@ -1790,7 +1793,7 @@ dumpRowLabels cs = do
 -- |   `mina/src/lib/crypto/pickles/step.ml:800-852` — OCaml step prover
 -- |   `mina/src/lib/crypto/pickles/step_main.ml:237-594` — the circuit body
 stepProve
-  :: forall @n @outputSize @inputVal @input @outputVal @output pad unfsTotal digestPlusUnfs m
+  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable n Int
   => Reflectable pad Int
@@ -1801,13 +1804,14 @@ stepProve
   => Add digestPlusUnfs n outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
   -> StepProveContext
-  -> StepRule n inputVal input outputVal output
+  -> StepRule n inputVal input outputVal output prevInputVal prevInput
   -> StepAdvice n StepIPARounds WrapIPARounds inputVal
   -> m (StepProveResult outputSize)
 stepProve onError ctx rule advice = do
-  compileResult <- stepCompile @n @outputSize @inputVal @input @outputVal @output ctx rule advice
-  stepSolveAndProve @n @outputSize @inputVal @input @outputVal @output onError ctx rule compileResult advice
+  compileResult <- stepCompile @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput ctx rule advice
+  stepSolveAndProve @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput onError ctx rule compileResult advice

@@ -44,6 +44,7 @@ import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, c
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
+import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
@@ -565,6 +566,28 @@ spec =
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
         -- This is the only N=0 circuit-diff fixture in the suite.
         exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
+-- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
+-- self @ N2). The PureScript mirror + OCaml fixture are in place but
+-- byte-identity does NOT hold — our `StepPerProofWitness` parameterizes
+-- `prevChallenges` and `prevSgs` by self's `n` uniformly, while OCaml's
+-- `Per_proof_witness` uses each prev's own `max_proofs_verified`. For
+-- prev[0] (N0) OCaml allocates 0 prevSgs while PureScript allocates
+-- self-many (= 2), giving ~4 extra gate rows from the missing-in-OCaml
+-- on-curve checks. Fixing requires moving per-proof witnesses to an
+-- HList indexed by each prev's max_proofs_verified — see
+-- `packages/pickles/src/Pickles/Types.purs:658` `StepPerProofWitness n`.
+-- Fixture ready at `circuits/ocaml/step_main_tree_proof_return_circuit.json`;
+-- PS mirror compiles; re-enable the `exactMatch` below once HList
+-- per-proof witnesses land.
+-- TODO(heterogeneous-prev-N): restore this test entry.
+--
+--     let
+--       treeProofReturnSrsData =
+--         { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+--             (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+--         , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+--         }
+--     exactMatch "step_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileStepMainTreeProofReturn treeProofReturnSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

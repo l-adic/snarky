@@ -68,17 +68,22 @@ import Type.Proxy (Proxy(..))
 -- |
 -- | Reference: `SimpleChainAdvice` in StepMainSimpleChain.purs for the
 -- | N1 rule, `SimpleChainN2Advice` for N2.
--- | The `input` type parameter is the rule's `public_input` circuit var
--- | (OCaml `Inductive_rule.t.public_input`). For Input-mode rules with a
--- | single `Field.typ` this is `FVar f`; for multi-field inputs (records,
--- | vectors) it's the corresponding `CircuitType` var shape.
+-- | The `prevInput` type parameter is the PREVIOUS proofs' public_input
+-- | slot type (what flows into `previous_proof_statements[i].public_input`
+-- | in OCaml `Inductive_rule.t`). For self-recursive Input-mode rules
+-- | this coincides with self's own `input` type; for Output-mode or
+-- | heterogeneous recursion it's the prev rules' `public_output` type
+-- | (e.g. `FVar StepField` for Field-valued outputs). Kept separate from
+-- | the self-input parameter because OCaml treats each prev's
+-- | public_input independently via `Types_map.public_input tag` (see
+-- | step_main.ml:318-332).
 -- | The `output` type parameter is the rule's `public_output` (OCaml
 -- | `Inductive_rule.t.public_output`). For the common Input-mode case
 -- | (`~public_input:(Input _)`) the rule has no output and callers use
 -- | `output = Unit`. For Output-mode rules the computed output flows
 -- | through `publicOutput` back to the caller.
-type RuleOutput n input output =
-  { prevPublicInputs :: Vector n input
+type RuleOutput n prevInput output =
+  { prevPublicInputs :: Vector n prevInput
   , proofMustVerify :: Vector n (BoolVar StepField)
   , publicOutput :: output
   }
@@ -408,13 +413,14 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @n pad @outputSize @inputVal @input @outputVal @output
+  :: forall @n pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable n Int
   => Reflectable pad Int
@@ -422,7 +428,7 @@ stepMain
   => Mul n 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs n outputSize
-  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n input output))
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n prevInput output))
   -> StepMainSrsData
   -> AffinePoint StepField -- dummySg for sgOld padding
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
@@ -530,9 +536,9 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
     rs <- Vector.generateA @n \i -> do
       let
         pw = proofWitnesses !! i
-        prevInput = prevPublicInputs !! i
+        prevInputVar = prevPublicInputs !! i
         input = buildVerifyOneInput @n pw
-          (varToFields @StepField @inputVal prevInput)
+          (varToFields @StepField @prevInputVal prevInputVar)
           (proofMustVerify !! i)
           (unfinalizedProofs !! i)
           (msgsWrap !! i)
@@ -638,7 +644,7 @@ stepMain rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
 -- |
 -- | Reference: step_main.ml:584-586, pickles.ml:476 (Max_proofs_verified = N2)
 stepMainPadded
-  :: forall @n @pad @outputSize @inputVal @input @outputVal @output
+  :: forall @n @pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
        unfsTotal digestPlusUnfs
        padUnfsTotal paddedUnfsTotal paddedDigestPlusUnfs paddedOutputSize
        t m
@@ -646,6 +652,7 @@ stepMainPadded
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable n Int
   => Reflectable pad Int
@@ -661,14 +668,14 @@ stepMainPadded
   => Add paddedUnfsTotal 1 paddedDigestPlusUnfs
   => Add paddedDigestPlusUnfs PaddedLength paddedOutputSize
   => Reflectable paddedOutputSize Int
-  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n input output))
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput n prevInput output))
   -> StepMainSrsData
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector paddedOutputSize (FVar StepField))
 stepMainPadded rule srsData dummySg = do
   -- Run the circuit body to get the raw components (n real proofs)
   -- We inline the same logic as stepMain but produce padded output.
-  unpadded <- stepMain @n @outputSize @inputVal @input @outputVal @output rule srsData dummySg
+  unpadded <- stepMain @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput rule srsData dummySg
 
   -- The unpadded output is [unfs(n*32) | digest(1) | msgs(n)].
   -- Convert to Array, split, pad with dummies at front, reassemble.

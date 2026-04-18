@@ -103,7 +103,7 @@ import Test.Spec (SpecT, describe, it)
 -- | assertion passes regardless of `prev`. OCaml's handler supplies
 -- | `-1` via `Req.Prev_input`; PureScript can use `0` (the value
 -- | doesn't affect the circuit output when `is_base_case = true`).
-simpleChainRule :: F StepField -> StepRule 1 (F StepField) (FVar StepField) Unit Unit
+simpleChainRule :: F StepField -> StepRule 1 (F StepField) (FVar StepField) Unit Unit (F StepField) (FVar StepField)
 simpleChainRule prevAppState self = do
   prev <- exists $ MT.lift $ pure prevAppState
   isBaseCase <- equals_ (const_ zero) self
@@ -226,7 +226,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit ctx (simpleChainRule (F (negate one))) placeholderAdvice
+      stepCompile @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -400,7 +400,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     -- ===== Phase 4: run the step solver =====
     result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
@@ -1036,7 +1036,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b1Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F zero))
@@ -1411,7 +1411,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b2Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F one))
@@ -1725,7 +1725,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b3Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit
+      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))

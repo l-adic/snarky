@@ -64,7 +64,7 @@ addOneReturnRule
    . CircuitM StepField (KimchiConstraint StepField) t m
   => AddOneReturnAdvice m
   => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 (FVar StepField) (FVar StepField))
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 0 Unit (FVar StepField))
 addOneReturnRule x = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -77,7 +77,9 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
     -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
     -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
     -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
-    ( \_ -> stepMain @0 @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
+    -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
+    -- pick any concrete CircuitType-havers; Unit works.
+    ( \_ -> stepMain @0 @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
         addOneReturnRule
         { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 13 }
         dummyWrapSg
