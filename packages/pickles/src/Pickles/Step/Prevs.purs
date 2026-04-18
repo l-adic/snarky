@@ -44,6 +44,7 @@ module Pickles.Step.Prevs
   , PrevsSpecCons
   , class PrevsCarrier
   , traversePrevsA
+  , replicatePrevsCarrier
   ) where
 
 import Prelude
@@ -121,8 +122,25 @@ class
     -> carrier
     -> m (Vector len result)
 
+  -- | Build a carrier from a rank-2 polymorphic dummy value. Each slot
+  -- | auto-specializes the dummy to that slot's own `n_i`. For homogeneous
+  -- | specs (Simple_chain-style), the dummy is just replicated across all
+  -- | slots; for heterogeneous specs the dummy's rank-2 polymorphism gives
+  -- | each slot its correctly-sized version.
+  -- |
+  -- | Callers typically pass a `dummyPPW` built to depend on its own `n`:
+  -- |   `dummyPPW = StepPerProofWitness { …, prevSgs = Vector.replicate g0, … }`
+  -- | The `Vector.replicate` expands to `Vector n_i _` at each slot.
+  replicatePrevsCarrier
+    :: ( forall n
+          . Reflectable n Int
+         => StepPerProofWitness n ds dw f sf b
+       )
+    -> carrier
+
 instance PrevsCarrier PrevsSpecNil ds dw f sf b 0 Unit where
   traversePrevsA _ _ = pure Vector.nil
+  replicatePrevsCarrier _ = unit
 
 instance
   ( PrevsCarrier rest ds dw f sf b restLen rcarrier
@@ -145,3 +163,10 @@ instance
     Vector.cons
       <$> f (finZero :: Finite len) here
       <*> traversePrevsA @rest (\i' pw -> f (shiftSucc i') pw) rest
+
+  replicatePrevsCarrier dummyPPW =
+    -- `dummyPPW` is rank-2 in `n`; at the `here` slot it specializes to
+    -- `StepPerProofWitness n ds dw f sf b` (where `n` is this Cons
+    -- instance's head Int), and at the recursive call it auto-specializes
+    -- to each of `rest`'s per-slot Ns.
+    Tuple dummyPPW (replicatePrevsCarrier @rest dummyPPW)
