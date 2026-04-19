@@ -30,7 +30,7 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
@@ -47,7 +47,7 @@ import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofU
 import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.Types (class CircuitType, varToFields)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
@@ -106,23 +106,53 @@ type StepMainSrsData =
   , fopDomainLog2 :: Int
   }
 
--- | V2 SRS data that carries per-slot FOP domain-log2 values.
+-- | V2 SRS data that carries per-slot FOP domain-log2 values and
+-- | per-slot known wrap verification keys.
 -- |
 -- | In OCaml's `step_main`, `finalize_other_proof` is called per prev
--- | slot with `~step_domains:d.step_domains` — i.e. the PREV'S
+-- | slot with `~step_domains:d.step_domains` — the PREV'S
 -- | step_domains vector. For self-recursive rules (Simple_chain) all
 -- | slots share the same value; for heterogeneous prevs
 -- | (Tree_proof_return: slot 0's prev = No_recursion_return @ 2^13;
 -- | slot 1's prev = self @ 2^16) the per-slot values differ.
 -- |
--- | `perSlotFopDomainLog2` is a `Vector len Int` indexed by absolute
--- | slot position (0..len-1), read inside `stepMain2`'s per-slot
--- | verify_one call so each slot's FOP uses its prev's domain
--- | constants (generator, shifts, pow2PowSquare bound).
+-- | Per-slot wrap VK mirrors OCaml's `~known_wrap_keys:
+-- | 'branches Optional_wrap_key.t list`
+-- | (= `'branches known option list`, `types_map.ml:188-196`). Each
+-- | slot's entry is:
+-- |
+-- |   * `Just vk`   — slot's prev is a COMPILED rule whose wrap VK is
+-- |                   known at step-compile time. OCaml's
+-- |                   `Types_map.For_step.of_compiled_with_known_wrap_key`
+-- |                   maps `~f:Inner_curve.constant` over the coords, so
+-- |                   the VK lives as COMPILE-TIME CONSTANTS in the
+-- |                   circuit — no allocation, no on-curve checks,
+-- |                   downstream `mul_ const var` short-circuits to
+-- |                   `Scale`.
+-- |   * `Nothing`   — slot's prev is SELF. Self's wrap VK doesn't exist
+-- |                   at step-compile time (chicken-and-egg with wrap
+-- |                   compile), so OCaml uses `dlog_plonk_index`
+-- |                   (step_main.ml:498) — the SHARED VK allocated via
+-- |                   `exists` at the top of `step_main`. We mirror
+-- |                   that: one shared exists-allocation, reused by
+-- |                   every `Nothing` slot.
+-- |
+-- | Reference: step_main.ml:513-528 (the per-slot match on
+-- | `self.id ?= tag.id` that dispatches to
+-- | `of_compiled_with_known_wrap_key` or `self_data`).
+-- |
+-- | Shapes for the 4 circuit-diff fixtures:
+-- |   * Simple_chain N1  : `[Nothing]`
+-- |   * Simple_chain N2  : `[Nothing, Nothing]`
+-- |   * Add_one_return   : `[]` (N=0, no slots)
+-- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
 type StepMainSrsData2 len =
   { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   , perSlotFopDomainLog2 :: Vector len Int
+  , perSlotKnownWrapKeys ::
+      Vector len
+        (Maybe (VerificationKey (WeierstrassAffinePoint PallasG (F StepField))))
   }
 
 -------------------------------------------------------------------------------
@@ -767,7 +797,13 @@ stepMain2
   -> StepMainSrsData2 len
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
-stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
+stepMain2 rule
+  { lagrangeAt
+  , blindingH
+  , perSlotFopDomainLog2
+  , perSlotKnownWrapKeys
+  }
+  dummySg = do
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
@@ -783,17 +819,25 @@ stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
     publicOutputFields = varToFields @StepField @outputVal publicOutput
     hashAppFields = publicInputFields <> publicOutputFields
 
-  -- 3. exists: VK via Req.Wrap_index.
-  VerificationKey vkRec <- label "exists_wrap_index"
+  -- 3. exists: SHARED VK via Req.Wrap_index.
+  --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one
+  --    exists-allocation at the top, reused by every `Nothing` slot
+  --    (i.e. slots whose prev is SELF). Slots with `Just vk` ignore
+  --    this allocation and inline their constant VK instead.
+  --
+  -- Also used directly by the outer hash (step 9) — the
+  -- hash_messages_for_next_step_proof sponge absorbs self's wrap VK
+  -- commitments (= `dlog_plonk_index`) once, NOT per-slot.
+  VerificationKey sharedVkRec <- label "exists_wrap_index"
     $ exists
     $ lift
     $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @PallasG unit
   let
     vk =
-      { sigma: Vector.take @6 vkRec.sigma
-      , sigmaLast: Vector.last vkRec.sigma
-      , coeff: vkRec.coeff
-      , index: vkRec.index
+      { sigma: Vector.take @6 sharedVkRec.sigma
+      , sigmaLast: Vector.last sharedVkRec.sigma
+      , coeff: sharedVkRec.coeff
+      , index: sharedVkRec.index
       }
 
   -- 4. exists: per-slot carrier via Req.Proof_with_datas — the v2
@@ -814,14 +858,26 @@ stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
   -- 6. exists: messages_for_next_wrap_proof (uniform Vector len).
   msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
 
-  -- 7. Build VK comms.
   let
-    vkComms =
-      { sigma: map unwrapPt vk.sigma
-      , sigmaLast: unwrapPt vk.sigmaLast
-      , coeff: map unwrapPt vk.coeff
-      , index: map unwrapPt vk.index
+    -- Lift a value-side VK to const_ FVars. Used when a slot has
+    -- `Just vk` — the VK coords appear as compile-time constants in
+    -- the circuit (matches OCaml's `Array.map ~f:Inner_curve.constant`
+    -- in `of_compiled_with_known_wrap_key`, types_map.ml:214-215).
+    liftConstVk
+      :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+      -> VerificationKey (WeierstrassAffinePoint PallasG (FVar StepField))
+    liftConstVk (VerificationKey r) = VerificationKey
+      { sigma: map liftWaPt r.sigma
+      , coeff: map liftWaPt r.coeff
+      , index: map liftWaPt r.index
       }
+      where
+      liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
+      liftWaPt (WeierstrassAffinePoint pt) =
+        let F x = pt.x
+            F y = pt.y
+        in WeierstrassAffinePoint
+          { x: const_ x, y: const_ y }
 
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
@@ -839,10 +895,11 @@ stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
   -- Drive structurally via traversePrevsA — each callback invocation
   -- has its slot's `n_i` in scope so per-slot sizes (prevSgs, etc.)
-  -- are correct, and each slot's `fopParams` is computed from the
-  -- slot's own `fopDomainLog2` via `perSlotFopDomainLog2 !! i`
+  -- are correct, and each slot's `fopParams` / `vkComms` are computed
+  -- from the slot's own `fopDomainLog2` and `knownWrapKey`
   -- (mirroring OCaml's `finalize_other_proof ~step_domains:d.step_domains`
-  -- where `d` is the prev's `Types_map.For_step.t`).
+  -- and the `of_compiled_with_known_wrap_key` / `self_data` dispatch
+  -- at step_main.ml:513-528).
   results <- label "prevs_verified" do
     rs <- traversePrevsA @prevsSpec
       ( \i (StepSlot slotRec) -> do
@@ -861,13 +918,34 @@ stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
               , linearizationPoly: Linearization.pallas
               }
 
+            -- Per-slot VK selection: Just → inline constants, Nothing
+            -- → use shared exists-allocated VK.
+            slotVkRec = case perSlotKnownWrapKeys !! i of
+              Just constVk ->
+                let VerificationKey r = liftConstVk constVk in r
+              Nothing -> sharedVkRec
+
+            slotVk =
+              { sigma: Vector.take @6 slotVkRec.sigma
+              , sigmaLast: Vector.last slotVkRec.sigma
+              , coeff: slotVkRec.coeff
+              , index: slotVkRec.index
+              }
+
+            slotVkComms =
+              { sigma: map unwrapPt slotVk.sigma
+              , sigmaLast: unwrapPt slotVk.sigmaLast
+              , coeff: map unwrapPt slotVk.coeff
+              , index: map unwrapPt slotVk.index
+              }
+
             prevInputVar = prevPublicInputs !! i
             input = buildVerifyOneInput pw
               (varToFields @StepField @prevInputVal prevInputVar)
               (proofMustVerify !! i)
               (unfinalizedProofs !! i)
               (msgsWrap !! i)
-              vkComms
+              slotVkComms
               constDummySg
           r <- verifyOne slotFopParams input ivpParams
           -- Carry pw.sg out alongside the verify_one result so the

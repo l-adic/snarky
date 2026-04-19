@@ -85,6 +85,7 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
         { lagrangeAt: params.lagrangeAt
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: Vector.nil
+        , perSlotKnownWrapKeys: Vector.nil
         }
         dummyWrapSg
     )

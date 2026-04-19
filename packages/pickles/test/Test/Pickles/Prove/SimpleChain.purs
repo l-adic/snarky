@@ -203,6 +203,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -- V2 per-slot FOP domain: Simple_chain N1 has 1 slot (self-recursive),
         -- wrap_domains.h = 2^wrapDomainLog2 (=14).
         , perSlotFopDomainLog2: wrapDomainLog2 :< Vector.nil
+        -- V2 per-slot known wrap keys: Simple_chain N1's only slot is
+        -- self — self's wrap VK isn't known at step-compile time
+        -- (chicken-and-egg with wrap compile), so OCaml uses the
+        -- shared `dlog_plonk_index` — i.e. `Nothing`.
+        , perSlotKnownWrapKeys: Nothing :< Vector.nil
         }
 
       -- Real Ro-derived Pallas point = Dummy.Ipa.Wrap.sg (OCaml

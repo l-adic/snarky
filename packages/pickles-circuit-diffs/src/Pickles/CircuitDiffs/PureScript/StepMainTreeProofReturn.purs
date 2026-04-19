@@ -32,23 +32,28 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
+import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain2)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StepField)
+import Pickles.Types (StepField, VerificationKey(..))
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F, FVar, Snarky, const_, exists, if_, not_)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Class as Curves
+import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Pallas as Pallas
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
 type StepMainTreeProofReturnParams =
@@ -134,12 +139,44 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     --   (from dump_circuit_impl.ml:3901 `no_rec_data.wrap_domains`).
     -- * slot 1's prev = self with wrap_domains.h = 2^14 (from
     --   override_wrap_domain:N1 → common.ml:25-29).
+    --
+    -- Per-slot known wrap keys:
+    -- * slot 0: Just noRecKnownWrapKey — matches OCaml's
+    --   `Some no_rec_known` in dump_circuit_impl.ml:4017. The VK's
+    --   commitments are all `Pallas.generator` (placeholder; OCaml
+    --   uses `Tick.Inner_curve.one` at dump_circuit_impl.ml:3999-4009).
+    -- * slot 1: Nothing — slot's prev is SELF, uses the shared
+    --   `exists`-allocated VK inside stepMain2.
     ( \_ -> stepMain2 @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
         treeProofReturnRule
         { lagrangeAt: params.lagrangeAt
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 13 :< 14 :< Vector.nil
+        , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
         }
         dummyWrapSg
     )
     Kimchi.initialState
+
+-- | Placeholder wrap VK for slot 0's No_recursion_return prev.
+-- |
+-- | OCaml (dump_circuit_impl.ml:3999-4010) fills the
+-- | `Optional_wrap_key.known.wrap_key` with `Tick.Inner_curve.one`
+-- | (Pallas generator) in all 28 commitment slots — not a real VK, just
+-- | a constant placeholder. We do the same here so the compiled circuit
+-- | has the same compile-time constants as the OCaml fixture.
+noRecKnownWrapKey
+  :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+noRecKnownWrapKey =
+  let
+    g :: AffinePoint StepField
+    g = unsafePartial $ fromJust $ Curves.toAffine (Curves.generator :: Pallas.G)
+
+    pt :: WeierstrassAffinePoint PallasG (F StepField)
+    pt = WeierstrassAffinePoint { x: F g.x, y: F g.y }
+  in
+    VerificationKey
+      { sigma: Vector.generate (const pt)
+      , coeff: Vector.generate (const pt)
+      , index: Vector.generate (const pt)
+      }

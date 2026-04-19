@@ -14,6 +14,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -84,6 +85,7 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
         { lagrangeAt: params.lagrangeAt
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil
+        , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil
         }
         dummyWrapSg
     )
