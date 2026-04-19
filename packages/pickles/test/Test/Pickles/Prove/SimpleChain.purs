@@ -54,7 +54,9 @@ import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Data.Newtype (unwrap)
+import Pickles.Prove.Step (StepRule, buildStepAdvice2, buildStepAdviceWithOracles2, extractWrapVKForStepHash, stepCompile2, stepSolveAndProve2)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -213,11 +215,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: vestaSrs
         }
 
-      -- Placeholder advice for `stepCompile`. Values aren't inspected
+      -- Placeholder advice for `stepCompile2`. Values aren't inspected
       -- during compile — only the type shape matters — so we pass a
       -- synthetic all-g0-VK advice here. The REAL advice (with oracles
       -- over the compiled wrap VK) is built below for the solver.
-      placeholderAdvice = buildStepAdvice
+      placeholderAdvice = buildStepAdvice2 @(PrevsSpecCons 1 PrevsSpecNil)
         { publicInput: F zero
         , mostRecentWidth: 1
         , wrapDomainLog2
@@ -226,7 +228,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
+      stepCompile2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -356,7 +358,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Vector.nil
             }
         }
-    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero
       , prevPublicInput: F (negate one) -- OCaml `s_neg_one`
       , mostRecentWidth: 1
@@ -400,7 +402,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     -- ===== Phase 4: run the step solver =====
     result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
@@ -591,7 +593,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- which is derived from `Dummy.Ipa.Wrap.challenges` (a different
       -- Ro-derived vector used for Wrap_hack PADDING only).
       PerProofUnfinalized stepUnfRec0 =
-        Vector.head realAdvice.publicUnfinalizedProofs
+        Vector.head (unwrap realAdvice).publicUnfinalizedProofs
 
       msgForNextWrapWrapEndo :: WrapField
       msgForNextWrapWrapEndo =
@@ -629,7 +631,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- CRITICAL: `prevUnfinalizedProofs[0]` in the wrap advice must
       -- represent the SAME values that the step circuit packed into the
       -- step proof's public_input. We get those directly from
-      -- `realAdvice.publicUnfinalizedProofs` (which is what the step
+      -- `(unwrap realAdvice).publicUnfinalizedProofs` (which is what the step
       -- circuit wrote at solve time), converting each Type2-SplitField-
       -- StepField field to Type2-WrapField via cross-field `Shifted`:
       --
@@ -642,7 +644,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       --     for `BuildWrapAdviceInput`. wrap_main's `splitPerProofUnfinalized`
       --     re-splits these to `Type2 (SplitField (F WrapField) Boolean)`
       --     which feeds into the in-circuit `publicInputCommit` MSM.
-      PerProofUnfinalized stepUnfRec = Vector.head realAdvice.publicUnfinalizedProofs
+      PerProofUnfinalized stepUnfRec = Vector.head (unwrap realAdvice).publicUnfinalizedProofs
 
       stepPerProof
         :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
@@ -968,7 +970,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< msgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F one
       , prevPublicInput: F zero
       , mostRecentWidth: 1
@@ -1036,7 +1038,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b1Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F zero))
@@ -1125,7 +1127,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         Array.index b1Result.publicInputs 32
 
       PerProofUnfinalized b1StepUnfRec0 =
-        Vector.head b1Advice.publicUnfinalizedProofs
+        Vector.head (unwrap b1Advice).publicUnfinalizedProofs
 
       b1MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       b1MsgForNextWrapRealChals =
@@ -1360,7 +1362,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b1MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 2 :: StepField)
       , prevPublicInput: F one
       , mostRecentWidth: 1
@@ -1411,7 +1413,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b2Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F one))
@@ -1491,7 +1493,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         Array.index b2Result.publicInputs 32
 
       PerProofUnfinalized b2StepUnfRec0 =
-        Vector.head b2Advice.publicUnfinalizedProofs
+        Vector.head (unwrap b2Advice).publicUnfinalizedProofs
 
       b2MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       b2MsgForNextWrapRealChals =
@@ -1677,7 +1679,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b2MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles
+    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 3 :: StepField)
       , prevPublicInput: F (fromInt 2 :: StepField)
       , mostRecentWidth: 1
@@ -1725,7 +1727,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b3Result <- liftEffect $
-      stepSolveAndProve @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
         (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))
@@ -1805,7 +1807,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         Array.index b3Result.publicInputs 32
 
       PerProofUnfinalized b3StepUnfRec0 =
-        Vector.head b3Advice.publicUnfinalizedProofs
+        Vector.head (unwrap b3Advice).publicUnfinalizedProofs
 
       b3MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
       b3MsgForNextWrapRealChals =

@@ -57,6 +57,10 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (PaddedLength, StepPerProofWitness)
 import Prim.Int (class Add)
+import Snarky.Circuit.DSL (BoolVar, F, FVar)
+import Snarky.Circuit.DSL.Monad (class CheckedType, check)
+import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields, fieldsToValue, varToFields, fieldsToVar)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Type-level list of per-prev max_proofs_verified values
@@ -196,3 +200,53 @@ instance
     -- instance's head Int), and at the recursive call it auto-specializes
     -- to each of `rest`'s per-slot Ns.
     Tuple dummyPPW (replicatePrevsCarrier @rest dummyPPW)
+
+--------------------------------------------------------------------------------
+-- CircuitType / CheckedType instances for StepSlot
+--
+-- `StepSlot` is a newtype wrapping a single `sppw` field, so both
+-- instances just forward to `StepPerProofWitness`'s. This lets `exists`
+-- at a slot-tuple type structurally resolve to each slot's own SPPW
+-- `CircuitType` instance (via the standard Tuple instance for
+-- `CircuitType` / `CheckedType`).
+--
+-- The field layout for `valueToFields` / `varToFields` is unchanged
+-- from SPPW: the `StepSlot` wrapper contributes zero bytes.
+--------------------------------------------------------------------------------
+
+instance
+  ( CircuitType f
+      (StepPerProofWitness n ds dw (F f) sf Boolean)
+      (StepPerProofWitness n ds dw (FVar f) sfvar (BoolVar f))
+  ) =>
+  CircuitType f
+    (StepSlot n ds dw (F f) sf Boolean)
+    (StepSlot n ds dw (FVar f) sfvar (BoolVar f)) where
+  sizeInFields pf _ = sizeInFields pf
+    (Proxy @(StepPerProofWitness n ds dw (F f) sf Boolean))
+  valueToFields (StepSlot r) =
+    valueToFields @f @(StepPerProofWitness n ds dw (F f) sf Boolean) r.sppw
+  fieldsToValue fs = StepSlot
+    { sppw: fieldsToValue @f @(StepPerProofWitness n ds dw (F f) sf Boolean) fs
+    }
+  varToFields (StepSlot r) =
+    varToFields
+      @f
+      @(StepPerProofWitness n ds dw (F f) sf Boolean)
+      @(StepPerProofWitness n ds dw (FVar f) sfvar (BoolVar f))
+      r.sppw
+  fieldsToVar fs = StepSlot
+    { sppw:
+        fieldsToVar
+          @f
+          @(StepPerProofWitness n ds dw (F f) sf Boolean)
+          @(StepPerProofWitness n ds dw (FVar f) sfvar (BoolVar f))
+          fs
+    }
+
+instance
+  ( CheckedType f c
+      (StepPerProofWitness n ds dw (FVar f) sfvar (BoolVar f))
+  ) =>
+  CheckedType f c (StepSlot n ds dw (FVar f) sfvar (BoolVar f)) where
+  check (StepSlot r) = check r.sppw
