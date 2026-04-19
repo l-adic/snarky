@@ -42,6 +42,12 @@ module Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   , stepProve
+  -- Parallel v2 stack: spec-indexed per-slot carrier + accompanying
+  -- StepSlotsM instance. Sits alongside the v1 stack so callers can
+  -- migrate one at a time.
+  , StepAdvice2(..)
+  , StepProverT2(..)
+  , runStepProverT2
   ) where
 
 import Prelude
@@ -75,7 +81,8 @@ import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSigmaCommLast, vestaVerifierIndexColumnComms, vestaVerifierIndexDigest)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
-import Pickles.Step.Advice (class StepWitnessM)
+import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
+import Pickles.Step.Prevs (class PrevsCarrier)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Trace as Trace
@@ -1815,3 +1822,89 @@ stepProve
 stepProve onError ctx rule advice = do
   compileResult <- stepCompile @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput ctx rule advice
   stepSolveAndProve @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput onError ctx rule compileResult advice
+
+--------------------------------------------------------------------------------
+-- Parallel v2 advice stack
+--
+-- New types that sit alongside `StepAdvice` / `StepProverT` for the
+-- spec-indexed per-slot carrier migration. Callers migrate to these
+-- one at a time; once all v1 callers are gone the old types are
+-- dropped and the `2` suffix is removed.
+--
+-- Minimal for now — only carries the fields needed by the new
+-- `StepSlotsM` class. Additional fields (wrap VKs, etc.) can be added
+-- here as the migration uncovers more per-slot data that belongs in
+-- the spec-indexed rack rather than a uniform `Vector len`.
+--------------------------------------------------------------------------------
+
+-- | Advice record for the v2 (spec-indexed) prover stack. `carrier`
+-- | holds the nested-tuple of per-slot `StepSlot`s (derived from the
+-- | `prevsSpec` via the `PrevsCarrier` instance).
+newtype StepAdvice2
+  :: Type -> Int -> Int -> Type -> Int -> Type -> Type
+newtype StepAdvice2 prevsSpec ds dw inputVal len carrier =
+  StepAdvice2
+    { perProofSlotsCarrier :: carrier
+    , publicInput :: inputVal
+    }
+
+derive instance Newtype
+  (StepAdvice2 prevsSpec ds dw inputVal len carrier)
+  _
+
+-- | ReaderT transformer for the v2 prover stack, carrying a
+-- | `StepAdvice2` over a base monad.
+newtype StepProverT2
+  :: Type -> Int -> Int -> Type -> Int -> Type -> (Type -> Type) -> Type -> Type
+newtype StepProverT2 prevsSpec ds dw inputVal len carrier m a =
+  StepProverT2 (ReaderT (StepAdvice2 prevsSpec ds dw inputVal len carrier) m a)
+
+derive instance Newtype
+  (StepProverT2 prevsSpec ds dw inputVal len carrier m a)
+  _
+
+derive newtype instance Functor m =>
+  Functor (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+
+derive newtype instance Apply m =>
+  Apply (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+
+derive newtype instance Applicative m =>
+  Applicative (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+
+derive newtype instance Bind m =>
+  Bind (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+
+derive newtype instance Monad m =>
+  Monad (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+
+runStepProverT2
+  :: forall prevsSpec ds dw inputVal len carrier m a
+   . StepAdvice2 prevsSpec ds dw inputVal len carrier
+  -> StepProverT2 prevsSpec ds dw inputVal len carrier m a
+  -> m a
+runStepProverT2 advice (StepProverT2 m) = runReaderT m advice
+
+instance
+  ( Monad m
+  , PrevsCarrier
+      prevsSpec
+      ds
+      dw
+      (F StepField)
+      (Type2 (SplitField (F StepField) Boolean))
+      Boolean
+      len
+      carrier
+  ) =>
+  StepSlotsM
+    prevsSpec
+    ds
+    dw
+    PallasG
+    StepField
+    (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+    len
+    carrier where
+  getStepSlotsCarrier _ =
+    StepProverT2 $ map (\(StepAdvice2 r) -> r.perProofSlotsCarrier) ask

@@ -71,6 +71,11 @@ module Pickles.Step.Advice
   , getStepPublicInput
   , getStepPerProofWitnesses
   , getStepUnfinalizedProofs
+
+  -- Parallel v2 class: provides the spec-indexed per-slot carrier.
+  -- Sits alongside `StepWitnessM` so callers can migrate one at a time.
+  , class StepSlotsM
+  , getStepSlotsCarrier
   ) where
 
 import Prelude
@@ -80,6 +85,7 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Step.Prevs (class PrevsCarrier)
 import Pickles.Types (PerProofUnfinalized, StepPerProofWitness, VerificationKey)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Snarky.Circuit.DSL (F)
@@ -232,3 +238,63 @@ instance
   getStepPublicInput _ = throw "impossible! getStepPublicInput called during compilation"
   getStepPerProofWitnesses _ = throw "impossible! getStepPerProofWitnesses called during compilation"
   getStepUnfinalizedProofs _ = throw "impossible! getStepUnfinalizedProofs called during compilation"
+
+--------------------------------------------------------------------------------
+-- Parallel v2 class: spec-indexed per-slot carrier
+--
+-- Sits alongside `StepWitnessM`. During the migration to spec-indexed
+-- per-slot witnesses, callers can depend on this class to obtain the
+-- `StepSlot`-tuple carrier (matching OCaml's heterogeneous
+-- `H3.T(Per_proof_witness.No_app_state).t`) while still using the
+-- existing `StepWitnessM` for the homogeneous methods they haven't
+-- migrated yet. Once all callers migrate, `StepWitnessM`'s
+-- `getStepPerProofWitnesses` can be dropped.
+--------------------------------------------------------------------------------
+
+-- | Produces a spec-indexed nested-tuple carrier where each slot holds
+-- | one `StepSlot n_i ds dw …` with its OWN per-slot `n_i`. Matches
+-- | OCaml's `exists (Prev_typ.f prev_proof_typs)` — an hlist-typed
+-- | allocation per prev, each slot carrying a `Per_proof_witness`
+-- | sized by that prev's own `max_proofs_verified`.
+-- |
+-- | The curve/field type params mirror `StepWitnessM`'s so an instance
+-- | can be piggybacked on an existing `StepProverT`-like monad. The
+-- | `prevsSpec` / `len` / `carrier` fundep from `PrevsCarrier` pins
+-- | the carrier's concrete shape.
+class
+  ( Monad m
+  , WeierstrassCurve f g
+  , PrevsCarrier
+      prevsSpec
+      ds
+      dw
+      (F f)
+      (Type2 (SplitField (F f) Boolean))
+      Boolean
+      len
+      carrier
+  ) <=
+  StepSlotsM prevsSpec (ds :: Int) (dw :: Int) g f m len carrier
+  | g -> f
+  , m -> prevsSpec
+  , prevsSpec ds dw g f -> len carrier
+  where
+  getStepSlotsCarrier :: Unit -> m carrier
+
+-- | Compilation instance (Effect) — never actually called; stepMain's
+-- | `exists $ lift (getStepSlotsCarrier unit)` discards the AsProverT
+-- | body during circuit compilation.
+instance
+  ( WeierstrassCurve f g
+  , PrevsCarrier
+      prevsSpec
+      ds
+      dw
+      (F f)
+      (Type2 (SplitField (F f) Boolean))
+      Boolean
+      len
+      carrier
+  ) =>
+  StepSlotsM prevsSpec ds dw g f Effect len carrier where
+  getStepSlotsCarrier _ = throw "impossible! getStepSlotsCarrier called during compilation"
