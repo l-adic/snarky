@@ -567,19 +567,25 @@ spec =
         -- This is the only N=0 circuit-diff fixture in the suite.
         exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
 -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
--- self @ N2). The PureScript mirror + OCaml fixture are in place but
--- byte-identity does NOT hold — our `StepPerProofWitness` parameterizes
--- `prevChallenges` and `prevSgs` by self's `n` uniformly, while OCaml's
--- `Per_proof_witness` uses each prev's own `max_proofs_verified`. For
--- prev[0] (N0) OCaml allocates 0 prevSgs while PureScript allocates
--- self-many (= 2), giving ~4 extra gate rows from the missing-in-OCaml
--- on-curve checks. Fixing requires moving per-proof witnesses to an
--- HList indexed by each prev's max_proofs_verified — see
--- `packages/pickles/src/Pickles/Types.purs:658` `StepPerProofWitness n`.
+-- self @ N2). First layer of divergence — per-slot prev_challenges /
+-- prev_sgs sizing — is FIXED by `stepMain2` + heterogeneous
+-- `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)` spec. Second layer
+-- remains: OCaml uses per-slot wrap DOMAINS (slot 0's prev verifies
+-- against wrap_domains.h = 2^13; slot 1's prev against 2^14) and
+-- per-slot wrap VKs (`known_wrap_keys:[Some no_rec; None]`), while PS
+-- passes a single `fopDomainLog2: 14` and a single wrap VK uniformly.
+-- This causes a 47-generic-gate delta inside `finalize_other_proof`
+-- where domain constants differ between slots.
+--
+-- Fixing requires extending `StepSlot` to carry per-slot
+-- `fopDomainLog2` + wrap VK (see Prevs.purs's StepSlot comment noting
+-- this as a planned extension).
+--
 -- Fixture ready at `circuits/ocaml/step_main_tree_proof_return_circuit.json`;
--- PS mirror compiles; re-enable the `exactMatch` below once HList
--- per-proof witnesses land.
--- TODO(heterogeneous-prev-N): restore this test entry.
+-- PS mirror compiles and produces the CORRECT heterogeneous per-slot
+-- SPPW shape via stepMain2.
+-- TODO(heterogeneous-prev-domain): restore the exactMatch below once
+-- StepSlot carries per-slot wrap domain + VK.
 --
 --     let
 --       treeProofReturnSrsData =

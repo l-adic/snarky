@@ -39,7 +39,8 @@ import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -123,7 +124,12 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     -- Self: input=Unit (Output mode), output=Field. Prevs: both
     -- public_input slots are Field (prev[0]=No_recursion_return's
     -- output, prev[1]=self's output), so prevInputVal=F StepField.
-    ( \_ -> stepMain @2 @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
+    -- Heterogeneous spec: slot 0 is No_recursion_return (n=0), slot 1 is
+    -- self (n=2). With stepMain2's spec-indexed carrier, slot 0's SPPW
+    -- has empty prev_challenges / prev_sgs (correctly reflecting that a
+    -- N=0 prev verified zero prior proofs). The v1 path over-allocated
+    -- slot 0 to size 2, producing ~4 extra on-curve-check rows vs OCaml.
+    ( \_ -> stepMain2 @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
         treeProofReturnRule
         { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
         dummyWrapSg
