@@ -4,6 +4,7 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -21,7 +22,9 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | matching trace via Pickles.Trace; the two trace files are then diffed
 -- | to verify pickles correctness end-to-end.
 spec :: SpecT Aff Unit Aff Unit
-spec = SimpleChain.spec
+spec = do
+  SimpleChain.spec
+  NoRecursionReturn.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'
