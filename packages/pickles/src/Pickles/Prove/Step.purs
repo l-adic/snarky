@@ -71,7 +71,7 @@ import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -1837,15 +1837,31 @@ stepProve onError ctx rule advice = do
 -- the spec-indexed rack rather than a uniform `Vector len`.
 --------------------------------------------------------------------------------
 
--- | Advice record for the v2 (spec-indexed) prover stack. `carrier`
--- | holds the nested-tuple of per-slot `StepSlot`s (derived from the
--- | `prevsSpec` via the `PrevsCarrier` instance).
+-- | Advice record for the v2 (spec-indexed) prover stack.
+-- |
+-- | * `perProofSlotsCarrier` — nested-tuple of per-slot `StepSlot`s
+-- |   (sized by `prevsSpec`). Heterogeneous per-slot data lives here.
+-- | * Uniform-per-slot fields (`publicUnfinalizedProofs`,
+-- |   `messagesForNextWrapProof`) are plain `Vector len` — their
+-- |   element types don't depend on per-slot `n_i`.
+-- | * Singletons (`wrapVerifierIndex`, `publicInput`) stand alone.
 newtype StepAdvice2
   :: Type -> Int -> Int -> Type -> Int -> Type -> Type
 newtype StepAdvice2 prevsSpec ds dw inputVal len carrier =
   StepAdvice2
     { perProofSlotsCarrier :: carrier
     , publicInput :: inputVal
+    , publicUnfinalizedProofs ::
+        Vector len
+          ( PerProofUnfinalized
+              dw
+              (Type2 (SplitField (F StepField) Boolean))
+              (F StepField)
+              Boolean
+          )
+    , messagesForNextWrapProof :: Vector len (F StepField)
+    , wrapVerifierIndex ::
+        VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
     }
 
 derive instance Newtype
@@ -1908,3 +1924,53 @@ instance
     carrier where
   getStepSlotsCarrier _ =
     StepProverT2 $ map (\(StepAdvice2 r) -> r.perProofSlotsCarrier) ask
+
+-- | `StepWitnessM` instance on `StepProverT2`. Implements the uniform
+-- | methods `stepMain` actually calls (getStepPublicInput,
+-- | getStepUnfinalizedProofs, getMessagesForNextWrapProof,
+-- | getWrapVerifierIndex) via direct field access. The remaining
+-- | legacy methods (getProofWitnesses, getPrevChallenges,
+-- | getStepPerProofWitnesses, etc.) throw — v2 code uses
+-- | `getStepSlotsCarrier` instead, and the legacy per-slot methods
+-- | are dead code from the deleted `Step.Circuit` path.
+instance
+  ( Monad m
+  , Reflectable len Int
+  ) =>
+  StepWitnessM
+    len  -- ← n in StepWitnessM's class header. For the v2 stack the
+         --   advice's outer `Vector len` fields are sized by len, and
+         --   len matches what StepWitnessM's methods expect.
+    ds
+    dw
+    PallasG
+    StepField
+    (StepProverT2 prevsSpec ds dw inputVal len carrier m)
+    inputVal where
+
+  getProofWitnesses _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getPrevChallenges _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getMessages _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getOpeningProof _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getFopProofStates _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getSgOld _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getStepPerProofWitnesses _ =
+    unsafeCrashWith unusedV2LegacyMethod
+  getMessagesForNextWrapProof _ =
+    StepProverT2 $ map (\(StepAdvice2 r) -> r.messagesForNextWrapProof) ask
+  getWrapVerifierIndex _ =
+    StepProverT2 $ map (\(StepAdvice2 r) -> r.wrapVerifierIndex) ask
+  getStepPublicInput _ =
+    StepProverT2 $ map (\(StepAdvice2 r) -> r.publicInput) ask
+  getStepUnfinalizedProofs _ =
+    StepProverT2 $ map (\(StepAdvice2 r) -> r.publicUnfinalizedProofs) ask
+
+unusedV2LegacyMethod :: String
+unusedV2LegacyMethod =
+  "StepProverT2 does not implement StepWitnessM's legacy per-slot methods; use `getStepSlotsCarrier` from StepSlotsM instead"
