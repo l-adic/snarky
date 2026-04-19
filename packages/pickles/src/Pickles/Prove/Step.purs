@@ -48,6 +48,8 @@ module Pickles.Prove.Step
   , StepAdvice2(..)
   , StepProverT2(..)
   , runStepProverT2
+  , buildStepAdvice2
+  , buildStepAdviceWithOracles2
   , stepCompile2
   , stepSolveAndProve2
   , stepProve2
@@ -59,7 +61,7 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
@@ -85,7 +87,7 @@ import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingP
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
-import Pickles.Step.Prevs (class PrevsCarrier)
+import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMain2)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Trace as Trace
@@ -409,7 +411,7 @@ type BuildStepAdviceInput inputVal =
 -- | values are reused across slots — OCaml does the equivalent via
 -- | `Vector.init Max_proofs_verified.n` in `step.ml:704-735`.
 buildStepAdvice
-  :: forall n inputVal
+  :: forall @n inputVal
    . Reflectable n Int
   => BuildStepAdviceInput inputVal
   -> StepAdvice n StepIPARounds WrapIPARounds inputVal
@@ -559,6 +561,187 @@ buildStepAdvice input =
           , challenges: Vector.replicate zero
           }
     }
+
+--------------------------------------------------------------------------------
+-- V2 base-case advice builder (spec-indexed per-slot carrier)
+--
+-- `buildStepAdvice2` mirrors `buildStepAdvice`'s base-case construction
+-- but outputs a `StepAdvice2` keyed on a `prevsSpec` type-level list of
+-- per-slot max_proofs_verified values. Handles homogeneous specs
+-- (Simple_chain N1/N2, Add_one_return) directly via
+-- `replicatePrevsCarrier` — the rank-2 `dummySlot` uses `Vector.replicate`
+-- for the two n-dependent SPPW fields (`prevChallenges`, `prevSgs`), so
+-- each slot's `n_i` auto-specializes. For genuinely heterogeneous specs
+-- (e.g. Tree_proof_return's `[N0; N2]`) the same helper still works
+-- because `Vector.replicate` at n=0 produces nil correctly.
+--
+-- Everything else (non-n-dependent fields and the uniform `Vector len`
+-- fields like `publicUnfinalizedProofs`, `messagesForNextWrapProof`,
+-- `kimchiPrevChallenges`) is constructed exactly as v1 does.
+--------------------------------------------------------------------------------
+
+-- | V2 variant of `buildStepAdvice`. Produces a `StepAdvice2` keyed on
+-- | a spec-indexed per-slot carrier.
+-- |
+-- | Requires a `PrevsCarrier prevsSpec … len carrier` instance so the
+-- | caller's `prevsSpec` determines `len` (= number of prev slots) and
+-- | `carrier` (= nested-tuple carrier type). The rank-2 `dummySlot`
+-- | builds each slot's `StepPerProofWitness` with the correct per-slot
+-- | `n_i` via `Vector.replicate`.
+buildStepAdvice2
+  :: forall @prevsSpec inputVal len carrier
+   . Reflectable len Int
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => BuildStepAdviceInput inputVal
+  -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+buildStepAdvice2 input =
+  let
+    -- Reuse every non-carrier field from v1's base-case builder.
+    -- `len` here plays the role of v1's `n` (top-level max_proofs_verified).
+    v1 :: StepAdvice len StepIPARounds WrapIPARounds inputVal
+    v1 = buildStepAdvice @len input
+
+    -- Pallas generator, same as v1.
+    g0 :: AffinePoint (F StepField)
+    g0 = coerce
+      ( unsafePartial fromJust $ Curves.toAffine (Curves.generator :: Pallas.G)
+          :: AffinePoint StepField
+      )
+
+    r = roComputeResult
+
+    z1 :: Type2 (SplitField (F StepField) Boolean)
+    z1 = toShifted (F r.proofZ1)
+
+    z2 :: Type2 (SplitField (F StepField) Boolean)
+    z2 = toShifted (F r.proofZ2)
+
+    wrapPE :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
+    wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
+
+    wrapAE :: AllEvals StepField -> AllEvals (F StepField)
+    wrapAE ae =
+      { ftEval1: F ae.ftEval1
+      , publicEvals: wrapPE ae.publicEvals
+      , zEvals: wrapPE ae.zEvals
+      , indexEvals: map wrapPE ae.indexEvals
+      , witnessEvals: map wrapPE ae.witnessEvals
+      , coeffEvals: map wrapPE ae.coeffEvals
+      , sigmaEvals: map wrapPE ae.sigmaEvals
+      }
+
+    prevEvalsDummy :: StepAllEvals (F StepField)
+    prevEvalsDummy =
+      let
+        aeF = wrapAE r.stepDummyPrevEvals
+      in
+        StepAllEvals
+          { publicEvals: PointEval aeF.publicEvals
+          , witnessEvals: map PointEval aeF.witnessEvals
+          , coeffEvals: map PointEval aeF.coeffEvals
+          , zEvals: PointEval aeF.zEvals
+          , sigmaEvals: map PointEval aeF.sigmaEvals
+          , indexEvals: map PointEval aeF.indexEvals
+          , ftEval1: aeF.ftEval1
+          }
+
+    dummyFop
+      :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
+    dummyFop = stepDummyFopProofState
+      { proofsVerified: input.mostRecentWidth }
+
+    dummyBranch :: StepBranchData
+    dummyBranch =
+      { domainLog2: F (Curves.fromInt input.wrapDomainLog2 :: StepField)
+      , mask0: false
+      , mask1: true
+      }
+
+    dvFop = dummyFop.deferredValues
+    pFop = dvFop.plonk
+
+    -- Rank-2 per-slot dummy: the only n-dependent fields (`prevChallenges`,
+    -- `prevSgs`) use `Vector.replicate` so they specialize per slot.
+    -- All other fields are slot-agnostic and reused verbatim.
+    --
+    -- NB: the `UnChecked <$>` on `bulletproofChallenges` etc. matches
+    -- OCaml's in-circuit wrapping (see `fopStateDummy` construction
+    -- inside `v1`).
+    dummySlot
+      :: forall n
+       . Reflectable n Int
+      => StepSlot
+           n
+           StepIPARounds
+           WrapIPARounds
+           (F StepField)
+           (Type2 (SplitField (F StepField) Boolean))
+           Boolean
+    dummySlot = StepSlot
+      { sppw: StepPerProofWitness
+          { wrapProof: WrapProof
+              { opening: WrapProofOpening
+                  { lr: Vector.generate
+                      ( \_ ->
+                          { l: WeierstrassAffinePoint g0
+                          , r: WeierstrassAffinePoint g0
+                          }
+                      )
+                  , z1: z1
+                  , z2: z2
+                  , delta: WeierstrassAffinePoint g0
+                  , sg: WeierstrassAffinePoint g0
+                  }
+              , messages: WrapProofMessages
+                  { wComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
+                  , zComm: WeierstrassAffinePoint g0
+                  , tComm: Vector.generate (\_ -> WeierstrassAffinePoint g0)
+                  }
+              }
+          , proofState: StepProofState
+              { fopState: FopProofState
+                  { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
+                  , b: unwrap dvFop.b
+                  , zetaToSrsLength: unwrap pFop.zetaToSrsLength
+                  , zetaToDomainSize: unwrap pFop.zetaToDomainSize
+                  , perm: unwrap pFop.perm
+                  , spongeDigest: dummyFop.spongeDigestBeforeEvaluations
+                  , beta: UnChecked pFop.beta
+                  , gamma: UnChecked pFop.gamma
+                  , alpha: UnChecked pFop.alpha
+                  , zeta: UnChecked pFop.zeta
+                  , xi: UnChecked dvFop.xi
+                  , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
+                  }
+              , branchData: BranchData
+                  { domainLog2: dummyBranch.domainLog2
+                  , mask0: dummyBranch.mask0
+                  , mask1: dummyBranch.mask1
+                  }
+              }
+          , prevEvals: prevEvalsDummy
+          , prevChallenges:
+              Vector.replicate (UnChecked (map F dummyIpaChallenges.stepExpanded))
+          , prevSgs: Vector.replicate (WeierstrassAffinePoint g0)
+          }
+      }
+  in
+    StepAdvice2
+      { perProofSlotsCarrier: replicatePrevsCarrier @prevsSpec dummySlot
+      , publicInput: v1.publicInput
+      , publicUnfinalizedProofs: v1.publicUnfinalizedProofs
+      , messagesForNextWrapProof: v1.messagesForNextWrapProof
+      , wrapVerifierIndex: v1.wrapVerifierIndex
+      , kimchiPrevChallenges: v1.kimchiPrevChallenges
+      }
 
 --------------------------------------------------------------------------------
 -- Real wrap VK advice builder
@@ -1001,7 +1184,7 @@ type BuildStepAdviceWithOraclesInput inputVal =
 -- | then feeds the result through `expandProof` to compute the full
 -- | advice record.
 buildStepAdviceWithOracles
-  :: forall n inputVal input
+  :: forall @n @inputVal @input
    . Reflectable n Int
   => CircuitType StepField inputVal input
   => BuildStepAdviceWithOraclesInput inputVal
@@ -1524,6 +1707,150 @@ buildStepAdviceWithOracles input = do
         }
     , challengePolynomialCommitment: expandProofResult.sg
     }
+
+--------------------------------------------------------------------------------
+-- V2 oracle-enriched advice builder (spec-indexed per-slot carrier)
+--
+-- `buildStepAdviceWithOracles2` thin-wraps v1 `buildStepAdviceWithOracles`
+-- and reshapes its output into `StepAdvice2`. The v1 builder produces
+-- Vector-replicated per-slot data (homogeneous across slots, matching
+-- self-recursive rules); v2 repacks that into a spec-indexed carrier.
+--
+-- Extracts the shared slot template from v1's `Vector len` fields
+-- (using `Vector.index … (unsafeFinite 0)`) and uses it inside a rank-2
+-- `StepSlot` passed to `replicatePrevsCarrier`. `Vector.replicate`
+-- inside the rank-2 body specializes per-slot `n_i`.
+--
+-- Requires `len >= 1` — callers passing real wrap-proof oracle data
+-- always have at least one prev slot. For rules with no prev proofs
+-- (e.g. Add_one_return, `PrevsSpecNil`) use `buildStepAdvice2` directly.
+--------------------------------------------------------------------------------
+
+-- | V2 variant of `buildStepAdviceWithOracles`. Same inputs, same oracle
+-- | extraction work; outputs a `StepAdvice2` with a spec-indexed
+-- | per-slot carrier instead of a flat `Vector n` advice.
+buildStepAdviceWithOracles2
+  :: forall @prevsSpec inputVal input len carrier
+   . Reflectable len Int
+  => CircuitType StepField inputVal input
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => BuildStepAdviceWithOraclesInput inputVal
+  -> Effect
+       { advice :: StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+       , challengePolynomialCommitment :: AffinePoint StepField
+       }
+buildStepAdviceWithOracles2 input = do
+  { advice: v1Advice, challengePolynomialCommitment } <-
+    buildStepAdviceWithOracles @len @inputVal @input input
+
+  let
+    -- Extract the shared slot template from v1's homogeneous Vector len.
+    -- Safe for len >= 1 (callers pass real oracle data → at least one
+    -- prev slot exists). For len = 0 this helper is the wrong tool;
+    -- rules with `PrevsSpecNil` should use `buildStepAdvice2`.
+    slot0 :: Finite len
+    slot0 = unsafeFinite @len 0
+
+    evals0 = Vector.index v1Advice.evals slot0
+    messages0 = Vector.index v1Advice.messages slot0
+    opening0 = Vector.index v1Advice.openingProofs slot0
+    fop0 = Vector.index v1Advice.fopProofStates slot0
+    branch0 = Vector.index v1Advice.branchData slot0
+    sgOld0 = Vector.index v1Advice.sgOld slot0
+    -- One representative challenge vector (homogeneous across slots).
+    -- v1.prevChallenges is `Vector len (Vector ds f)`; pick the first
+    -- entry as the per-slot replication source for the rank-2 SPPW.
+    prevChalsRep = Vector.index v1Advice.prevChallenges slot0
+
+    dvFop = fop0.deferredValues
+    pFop = dvFop.plonk
+
+    dummySlot
+      :: forall n
+       . Reflectable n Int
+      => StepSlot
+           n
+           StepIPARounds
+           WrapIPARounds
+           (F StepField)
+           (Type2 (SplitField (F StepField) Boolean))
+           Boolean
+    dummySlot = StepSlot
+      { sppw: StepPerProofWitness
+          { wrapProof: WrapProof
+              { opening: WrapProofOpening
+                  { lr: map
+                      ( \r ->
+                          { l: WeierstrassAffinePoint r.l
+                          , r: WeierstrassAffinePoint r.r
+                          }
+                      )
+                      opening0.lr
+                  , z1: opening0.z1
+                  , z2: opening0.z2
+                  , delta: WeierstrassAffinePoint opening0.delta
+                  , sg: WeierstrassAffinePoint opening0.sg
+                  }
+              , messages: WrapProofMessages
+                  { wComm: map WeierstrassAffinePoint messages0.wComm
+                  , zComm: WeierstrassAffinePoint messages0.zComm
+                  , tComm: map WeierstrassAffinePoint messages0.tComm
+                  }
+              }
+          , proofState: StepProofState
+              { fopState: FopProofState
+                  { combinedInnerProduct: unwrap dvFop.combinedInnerProduct
+                  , b: unwrap dvFop.b
+                  , zetaToSrsLength: unwrap pFop.zetaToSrsLength
+                  , zetaToDomainSize: unwrap pFop.zetaToDomainSize
+                  , perm: unwrap pFop.perm
+                  , spongeDigest: fop0.spongeDigestBeforeEvaluations
+                  , beta: UnChecked pFop.beta
+                  , gamma: UnChecked pFop.gamma
+                  , alpha: UnChecked pFop.alpha
+                  , zeta: UnChecked pFop.zeta
+                  , xi: UnChecked dvFop.xi
+                  , bulletproofChallenges: map UnChecked dvFop.bulletproofChallenges
+                  }
+              , branchData: BranchData
+                  { domainLog2: branch0.domainLog2
+                  , mask0: branch0.mask0
+                  , mask1: branch0.mask1
+                  }
+              }
+          , prevEvals: StepAllEvals
+              { publicEvals: PointEval evals0.allEvals.publicEvals
+              , witnessEvals: map PointEval evals0.allEvals.witnessEvals
+              , coeffEvals: map PointEval evals0.allEvals.coeffEvals
+              , zEvals: PointEval evals0.allEvals.zEvals
+              , sigmaEvals: map PointEval evals0.allEvals.sigmaEvals
+              , indexEvals: map PointEval evals0.allEvals.indexEvals
+              , ftEval1: evals0.allEvals.ftEval1
+              }
+          , prevChallenges: Vector.replicate (UnChecked prevChalsRep)
+          , prevSgs: Vector.replicate (WeierstrassAffinePoint sgOld0)
+          }
+      }
+
+    advice2 :: StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+    advice2 = StepAdvice2
+      { perProofSlotsCarrier: replicatePrevsCarrier @prevsSpec dummySlot
+      , publicInput: v1Advice.publicInput
+      , publicUnfinalizedProofs: v1Advice.publicUnfinalizedProofs
+      , messagesForNextWrapProof: v1Advice.messagesForNextWrapProof
+      , wrapVerifierIndex: v1Advice.wrapVerifierIndex
+      , kimchiPrevChallenges: v1Advice.kimchiPrevChallenges
+      }
+
+  pure { advice: advice2, challengePolynomialCommitment }
 
 --------------------------------------------------------------------------------
 -- stepProve — compile + solve + kimchi proof creation
