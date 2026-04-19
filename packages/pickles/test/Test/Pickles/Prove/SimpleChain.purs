@@ -200,7 +200,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , blindingH:
             (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
               :: AffinePoint (F StepField)
-        , fopDomainLog2: wrapDomainLog2
+        -- V2 per-slot FOP domain: Simple_chain N1 has 1 slot (self-recursive),
+        -- wrap_domains.h = 2^wrapDomainLog2 (=14).
+        , perSlotFopDomainLog2: wrapDomainLog2 :< Vector.nil
         }
 
       -- Real Ro-derived Pallas point = Dummy.Ipa.Wrap.sg (OCaml

@@ -48,6 +48,7 @@ module Pickles.Prove.Step
   , StepAdvice2(..)
   , StepProverT2(..)
   , runStepProverT2
+  , StepProveContext2
   , buildStepAdvice2
   , buildStepAdviceWithOracles2
   , stepCompile2
@@ -88,7 +89,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMain2)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, StepMainSrsData2, stepMain, stepMain2)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -1897,6 +1898,15 @@ type StepProveContext =
   , crs :: CRS VestaG
   }
 
+-- | V2 prove context: uses `StepMainSrsData2 len` with per-slot
+-- | FOP domain log2, enabling heterogeneous-prev rules
+-- | (Tree_proof_return style) to select each slot's correct domain.
+type StepProveContext2 len =
+  { srsData :: StepMainSrsData2 len
+  , dummySg :: AffinePoint StepField
+  , crs :: CRS VestaG
+  }
+
 -- | Artifacts produced by `stepCompile`. These are the pieces the
 -- | SimpleChain test (and anything else that wraps the split flow)
 -- | needs to hand off between compile → wrap compile → solve.
@@ -2362,7 +2372,7 @@ stepCompile2
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
-  => StepProveContext
+  => StepProveContext2 len
   -> StepRule len inputVal input outputVal output prevInputVal prevInput
   -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
   -> m StepCompileResult
@@ -2463,7 +2473,7 @@ stepSolveAndProve2
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext
+  -> StepProveContext2 len
   -> StepRule len inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
@@ -2584,7 +2594,7 @@ stepProve2
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext
+  -> StepProveContext2 len
   -> StepRule len inputVal input outputVal output prevInputVal prevInput
   -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
   -> m (StepProveResult outputSize)

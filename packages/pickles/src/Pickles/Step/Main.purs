@@ -19,6 +19,7 @@ module Pickles.Step.Main
   -- * Padded variant (production Pickles)
   , stepMainPadded
   -- * V2 (spec-indexed per-slot carrier) variant
+  , StepMainSrsData2
   , stepMain2
   ) where
 
@@ -103,6 +104,25 @@ type StepMainSrsData =
   -- | where it's used for domain_for_compiled). For simple_chain: 16.
   -- | See dump_circuit_impl.ml:3723.
   , fopDomainLog2 :: Int
+  }
+
+-- | V2 SRS data that carries per-slot FOP domain-log2 values.
+-- |
+-- | In OCaml's `step_main`, `finalize_other_proof` is called per prev
+-- | slot with `~step_domains:d.step_domains` — i.e. the PREV'S
+-- | step_domains vector. For self-recursive rules (Simple_chain) all
+-- | slots share the same value; for heterogeneous prevs
+-- | (Tree_proof_return: slot 0's prev = No_recursion_return @ 2^13;
+-- | slot 1's prev = self @ 2^16) the per-slot values differ.
+-- |
+-- | `perSlotFopDomainLog2` is a `Vector len Int` indexed by absolute
+-- | slot position (0..len-1), read inside `stepMain2`'s per-slot
+-- | verify_one call so each slot's FOP uses its prev's domain
+-- | constants (generator, shifts, pow2PowSquare bound).
+type StepMainSrsData2 len =
+  { lagrangeAt :: LagrangeBaseLookup StepField
+  , blindingH :: AffinePoint (F StepField)
+  , perSlotFopDomainLog2 :: Vector len Int
   }
 
 -------------------------------------------------------------------------------
@@ -744,10 +764,10 @@ stepMain2
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs len outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData
+  -> StepMainSrsData2 len
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
-stepMain2 rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
+stepMain2 rule { lagrangeAt, blindingH, perSlotFopDomainLog2 } dummySg = do
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
@@ -806,17 +826,6 @@ stepMain2 rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
-    fopParams =
-      { domain:
-          { generator: const_ (LinFFI.domainGenerator @StepField fopDomainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @StepField fopDomainLog2)
-          }
-      , domainLog2: fopDomainLog2
-      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
-      , endo: stepEndoVal
-      , linearizationPoly: Linearization.pallas
-      }
-
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
       , lagrangeAt
@@ -830,12 +839,28 @@ stepMain2 rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
   -- Drive structurally via traversePrevsA — each callback invocation
   -- has its slot's `n_i` in scope so per-slot sizes (prevSgs, etc.)
-  -- are correct.
+  -- are correct, and each slot's `fopParams` is computed from the
+  -- slot's own `fopDomainLog2` via `perSlotFopDomainLog2 !! i`
+  -- (mirroring OCaml's `finalize_other_proof ~step_domains:d.step_domains`
+  -- where `d` is the prev's `Types_map.For_step.t`).
   results <- label "prevs_verified" do
     rs <- traversePrevsA @prevsSpec
       ( \i (StepSlot slotRec) -> do
           pw <- allocatePerProofWitness slotRec.sppw
           let
+            slotFopDomainLog2 = perSlotFopDomainLog2 !! i
+
+            slotFopParams =
+              { domain:
+                  { generator: const_ (LinFFI.domainGenerator @StepField slotFopDomainLog2)
+                  , shifts: map const_ (LinFFI.domainShifts @StepField slotFopDomainLog2)
+                  }
+              , domainLog2: slotFopDomainLog2
+              , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+              , endo: stepEndoVal
+              , linearizationPoly: Linearization.pallas
+              }
+
             prevInputVar = prevPublicInputs !! i
             input = buildVerifyOneInput pw
               (varToFields @StepField @prevInputVal prevInputVar)
@@ -844,7 +869,7 @@ stepMain2 rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
               (msgsWrap !! i)
               vkComms
               constDummySg
-          r <- verifyOne fopParams input ivpParams
+          r <- verifyOne slotFopParams input ivpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }

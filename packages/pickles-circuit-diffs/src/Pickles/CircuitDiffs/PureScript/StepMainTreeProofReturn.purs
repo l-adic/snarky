@@ -129,9 +129,17 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     -- has empty prev_challenges / prev_sgs (correctly reflecting that a
     -- N=0 prev verified zero prior proofs). The v1 path over-allocated
     -- slot 0 to size 2, producing ~4 extra on-curve-check rows vs OCaml.
+    -- Per-slot FOP domain_log2:
+    -- * slot 0's prev = No_recursion_return with wrap_domains.h = 2^13
+    --   (from dump_circuit_impl.ml:3901 `no_rec_data.wrap_domains`).
+    -- * slot 1's prev = self with wrap_domains.h = 2^14 (from
+    --   override_wrap_domain:N1 → common.ml:25-29).
     ( \_ -> stepMain2 @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
         treeProofReturnRule
-        { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
+        { lagrangeAt: params.lagrangeAt
+        , blindingH: params.blindingH
+        , perSlotFopDomainLog2: 13 :< 14 :< Vector.nil
+        }
         dummyWrapSg
     )
     Kimchi.initialState

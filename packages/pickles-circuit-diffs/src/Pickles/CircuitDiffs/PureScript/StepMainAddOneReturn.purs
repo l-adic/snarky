@@ -82,7 +82,10 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
     -- pick any concrete CircuitType-havers; Unit works.
     ( \_ -> stepMain2 @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
         addOneReturnRule
-        { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 13 }
+        { lagrangeAt: params.lagrangeAt
+        , blindingH: params.blindingH
+        , perSlotFopDomainLog2: Vector.nil
+        }
         dummyWrapSg
     )
     Kimchi.initialState
