@@ -7,7 +7,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
   ) where
 
 -- | step_main circuit for the Simple_Chain N2 rule (2 previous proofs).
--- | Delegates to the generic Pickles.Step.Main.stepMain.
+-- | Delegates to the generic Pickles.Step.Main.stepMain2.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/dump_circuit_impl.ml (step_main_simple_chain_n2)
 

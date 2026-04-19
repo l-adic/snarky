@@ -6,7 +6,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
   ) where
 
 -- | step_main circuit for the Simple_Chain inductive rule (N1, 1 previous proof).
--- | Delegates to the generic Pickles.Step.Main.stepMain.
+-- | Delegates to the generic Pickles.Step.Main.stepMain2.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/dump_circuit_impl.ml (step_main_simple_chain)
 
