@@ -43,6 +43,7 @@ import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
@@ -565,8 +566,15 @@ spec =
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
-        -- This is the only N=0 circuit-diff fixture in the suite.
         exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
+        -- N=0, Output mode — No_recursion_return. Rule returns
+        -- `output = 0` with no input. Exercises the Output-mode branch
+        -- of step_main.ml:566-573 (`Output _ -> ret_var`) at N=0: the
+        -- hash_messages_for_next_step_proof absorbs ONLY the output
+        -- field (no input contribution). Precursor to Tree_proof_return's
+        -- proof-level byte-for-byte test, which consumes a real
+        -- No_recursion_return proof in slot 0.
+        exactMatch "step_main_no_recursion_return_circuit" (fromCompiledCircuit $ compileStepMainNoRecursionReturn stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`PrevsSpecCons 0 (PrevsSpecCons 2 …)`)
