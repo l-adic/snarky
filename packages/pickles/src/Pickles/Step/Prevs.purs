@@ -42,6 +42,7 @@
 module Pickles.Step.Prevs
   ( PrevsSpecNil
   , PrevsSpecCons
+  , StepSlot(..)
   , class PrevsCarrier
   , traversePrevsA
   , replicatePrevsCarrier
@@ -75,6 +76,26 @@ data PrevsSpecNil
 -- | * Simple_chain N2  : `PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)`
 -- | * Tree_proof_return: `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)`
 data PrevsSpecCons (n :: Int) (rest :: Type)
+
+--------------------------------------------------------------------------------
+-- Per-slot payload
+--------------------------------------------------------------------------------
+
+-- | All runtime data for one step-prev slot, bundled. Currently holds
+-- | just the per-proof witness; extensible over time (e.g. per-slot
+-- | wrap VK commitments for heterogeneous-prev rules like
+-- | `Tree_proof_return`, where slot 0's wrap VK is from
+-- | `No_recursion_return` and slot 1's is self's).
+-- |
+-- | Bundling lets us thread a single rack (one spec-indexed carrier of
+-- | `StepSlot`s) through the prover stack rather than maintaining
+-- | multiple co-indexed racks à la OCaml's `H4.T(Tag).t` /
+-- | `H1.T(Nat).t` / `H1.T(Optional_wrap_key).t`. OCaml keeps them
+-- | separate due to hlist ergonomics; PureScript can encode the same
+-- | information as type parameters on a single newtype.
+newtype StepSlot n ds dw f sf b = StepSlot
+  { sppw :: StepPerProofWitness n ds dw f sf b
+  }
 
 --------------------------------------------------------------------------------
 -- The carrier class
@@ -116,25 +137,26 @@ class
     => ( forall n
           . Reflectable n Int
          => Finite len
-         -> StepPerProofWitness n ds dw f sf b
+         -> StepSlot n ds dw f sf b
          -> m result
        )
     -> carrier
     -> m (Vector len result)
 
-  -- | Build a carrier from a rank-2 polymorphic dummy value. Each slot
-  -- | auto-specializes the dummy to that slot's own `n_i`. For homogeneous
-  -- | specs (Simple_chain-style), the dummy is just replicated across all
-  -- | slots; for heterogeneous specs the dummy's rank-2 polymorphism gives
+  -- | Build a carrier from a rank-2 polymorphic dummy slot. Each slot
+  -- | auto-specializes the dummy to its own `n_i`. For homogeneous
+  -- | specs (Simple_chain-style), the dummy is just replicated across
+  -- | all slots; for heterogeneous specs the rank-2 polymorphism gives
   -- | each slot its correctly-sized version.
   -- |
-  -- | Callers typically pass a `dummyPPW` built to depend on its own `n`:
-  -- |   `dummyPPW = StepPerProofWitness { …, prevSgs = Vector.replicate g0, … }`
-  -- | The `Vector.replicate` expands to `Vector n_i _` at each slot.
+  -- | Callers typically pass a dummy built to depend on its own `n`:
+  -- |   `dummySlot = StepSlot { sppw: StepPerProofWitness { …, prevSgs = Vector.replicate g0, … } }`
+  -- | `Vector.replicate` inside the SPPW expands to `Vector n_i _` at
+  -- | each slot.
   replicatePrevsCarrier
     :: ( forall n
           . Reflectable n Int
-         => StepPerProofWitness n ds dw f sf b
+         => StepSlot n ds dw f sf b
        )
     -> carrier
 
@@ -149,7 +171,7 @@ instance
   ) =>
   PrevsCarrier
     (PrevsSpecCons n rest) ds dw f sf b len
-    (Tuple (StepPerProofWitness n ds dw f sf b) rcarrier)
+    (Tuple (StepSlot n ds dw f sf b) rcarrier)
   where
   traversePrevsA f (Tuple here rest) =
     -- `hereIdx :: Finite len` — slot 0 of `len`. `finZero`'s
