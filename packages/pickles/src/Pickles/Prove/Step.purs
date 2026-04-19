@@ -25,26 +25,14 @@
 -- | rule.
 module Pickles.Prove.Step
   ( StepBranchData
-  , StepAdvice
-  , StepProverT(..)
-  , runStepProverT
   , BuildStepAdviceInput
-  , buildStepAdvice
   , BuildStepAdviceWithOraclesInput
-  , buildStepAdviceWithOracles
   , extractWrapVKCommsAdvice
   , extractWrapVKForStepHash
   , dummyWrapTockPublicInput
   , StepRule
-  , StepProveContext
   , StepCompileResult
   , StepProveResult
-  , stepCompile
-  , stepSolveAndProve
-  , stepProve
-  -- Parallel v2 stack: spec-indexed per-slot carrier + accompanying
-  -- StepSlotsM instance. Sits alongside the v1 stack so callers can
-  -- migrate one at a time.
   , StepAdvice2(..)
   , StepProverT2(..)
   , runStepProverT2
@@ -89,7 +77,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, StepMainSrsData2, stepMain, stepMain2)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData2, stepMain2)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -208,149 +196,6 @@ type StepAdvice (n :: Int) (ds :: Int) (dw :: Int) inputVal =
         , challenges :: Vector ds StepField
         }
   }
-
---------------------------------------------------------------------------------
--- ReaderT + StepWitnessM instance
---------------------------------------------------------------------------------
-
--- | ReaderT transformer carrying a `StepAdvice` over a base monad.
-newtype StepProverT
-  :: Int
-  -> Int
-  -> Int
-  -> Type
-  -> (Type -> Type)
-  -> Type
-  -> Type
-newtype StepProverT n ds dw inputVal m a =
-  StepProverT (ReaderT (StepAdvice n ds dw inputVal) m a)
-
-derive instance Newtype (StepProverT n ds dw inputVal m a) _
-derive newtype instance Functor m => Functor (StepProverT n ds dw inputVal m)
-derive newtype instance Apply m => Apply (StepProverT n ds dw inputVal m)
-derive newtype instance Applicative m => Applicative (StepProverT n ds dw inputVal m)
-derive newtype instance Bind m => Bind (StepProverT n ds dw inputVal m)
-derive newtype instance Monad m => Monad (StepProverT n ds dw inputVal m)
-
--- | Supply the advice record and run the prover computation in the
--- | base monad.
-runStepProverT
-  :: forall n ds dw inputVal m a
-   . StepAdvice n ds dw inputVal
-  -> StepProverT n ds dw inputVal m a
-  -> m a
-runStepProverT advice (StepProverT m) = runReaderT m advice
-
--- | `StepWitnessM` instance. Raw getters are plain record projections
--- | via `ask`; `getStepPerProofWitnesses` composes the wire-format
--- | `StepPerProofWitness` from several raw fields, matching
--- | `step_main.ml`'s per-slot advice layout.
--- |
--- | Polymorphic in `ds`/`dw` (the IPA-round counts); the caller's
--- | choice gets unified with the stepMain constraint
--- | (`StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m`)
--- | at the `stepProve` call site via ordinary type inference, so
--- | `Pickles.Prove.Step` itself never writes `StepIPARounds` /
--- | `WrapIPARounds` literally.
-instance
-  ( Monad m
-  , Reflectable n Int
-  ) =>
-  StepWitnessM
-    n
-    ds
-    dw
-    PallasG
-    StepField
-    (StepProverT n ds dw inputVal m)
-    inputVal where
-
-  getProofWitnesses _ = StepProverT $ map _.evals ask
-  getPrevChallenges _ = StepProverT $ map _.prevChallenges ask
-  getMessages _ = StepProverT $ map _.messages ask
-  getOpeningProof _ = StepProverT $ map _.openingProofs ask
-  getFopProofStates _ = StepProverT $ map _.fopProofStates ask
-  getMessagesForNextWrapProof _ = StepProverT $ map _.messagesForNextWrapProof ask
-  getWrapVerifierIndex _ = StepProverT $ map _.wrapVerifierIndex ask
-  getSgOld _ = StepProverT $ map _.sgOld ask
-  getStepPublicInput _ = StepProverT $ map _.publicInput ask
-  getStepUnfinalizedProofs _ = StepProverT $ map _.publicUnfinalizedProofs ask
-  getStepPerProofWitnesses _ = StepProverT $ do
-    adv <- ask
-    pure $ Vector.generate \i ->
-      let
-        pw = Vector.index adv.evals i
-        fop = Vector.index adv.fopProofStates i
-        opening = Vector.index adv.openingProofs i
-        msgs = Vector.index adv.messages i
-        bd = Vector.index adv.branchData i
-        dv = fop.deferredValues
-        p = dv.plonk
-      in
-        StepPerProofWitness
-          { wrapProof: WrapProof
-              { opening: WrapProofOpening
-                  { lr: map (\r -> { l: WeierstrassAffinePoint r.l, r: WeierstrassAffinePoint r.r }) opening.lr
-                  , z1: opening.z1
-                  , z2: opening.z2
-                  , delta: WeierstrassAffinePoint opening.delta
-                  , sg: WeierstrassAffinePoint opening.sg
-                  }
-              , messages: WrapProofMessages
-                  { wComm: map WeierstrassAffinePoint msgs.wComm
-                  , zComm: WeierstrassAffinePoint msgs.zComm
-                  , tComm: map WeierstrassAffinePoint msgs.tComm
-                  }
-              }
-          , proofState: StepProofState
-              -- The 5 fp slots store the **shifted inner** form of each
-              -- `Type1 (F StepField)` advice value, matching OCaml's
-              -- `Per_proof_witness.proof_state.deferred_values.plonk` at
-              -- the var level (`field_var Shifted_value.Type1.t` with
-              -- `field_var = Impls.Step.Field.t`). PS's
-              -- `fopShiftOps.unshift = fromShiftedType1Circuit` then
-              -- reconstructs `2*t + c` from this stored form when FOP
-              -- needs the unshifted value, and `scalarMulLeaf` feeds
-              -- the stored form directly to `scaleFast2'` (which has
-              -- Type2-ish internal semantics `[s + 2^n] * g`) to match
-              -- OCaml's MSM input at `step_verifier.ml:1260-1264`.
-              -- A prior `fromShifted` call here was silently unshifting
-              -- the value, which was latent because FOP's assertions
-              -- are gated on `proof_must_verify` (bypassed for the
-              -- base case) but surfaced at the unconditional
-              -- `ivp_assert_plonk_beta` assertion.
-              { fopState: FopProofState
-                  { combinedInnerProduct: unwrap dv.combinedInnerProduct
-                  , b: unwrap dv.b
-                  , zetaToSrsLength: unwrap p.zetaToSrsLength
-                  , zetaToDomainSize: unwrap p.zetaToDomainSize
-                  , perm: unwrap p.perm
-                  , spongeDigest: fop.spongeDigestBeforeEvaluations
-                  , beta: UnChecked p.beta
-                  , gamma: UnChecked p.gamma
-                  , alpha: UnChecked p.alpha
-                  , zeta: UnChecked p.zeta
-                  , xi: UnChecked dv.xi
-                  , bulletproofChallenges: map UnChecked dv.bulletproofChallenges
-                  }
-              , branchData: BranchData
-                  { domainLog2: bd.domainLog2
-                  , mask0: bd.mask0
-                  , mask1: bd.mask1
-                  }
-              }
-          , prevEvals: StepAllEvals
-              { publicEvals: PointEval pw.allEvals.publicEvals
-              , witnessEvals: map PointEval pw.allEvals.witnessEvals
-              , coeffEvals: map PointEval pw.allEvals.coeffEvals
-              , zEvals: PointEval pw.allEvals.zEvals
-              , sigmaEvals: map PointEval pw.allEvals.sigmaEvals
-              , indexEvals: map PointEval pw.allEvals.indexEvals
-              , ftEval1: pw.allEvals.ftEval1
-              }
-          , prevChallenges: map UnChecked adv.prevChallenges
-          , prevSgs: map WeierstrassAffinePoint adv.sgOld
-          }
 
 --------------------------------------------------------------------------------
 -- Base-case advice builder
@@ -605,20 +450,22 @@ buildStepAdvice2
   -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
 buildStepAdvice2 input =
   let
-    -- Reuse every non-carrier field from v1's base-case builder.
-    -- `len` here plays the role of v1's `n` (top-level max_proofs_verified).
-    v1 :: StepAdvice len StepIPARounds WrapIPARounds inputVal
-    v1 = buildStepAdvice @len input
-
-    -- Pallas generator, same as v1.
+    -- Pallas generator (= OCaml `Tock.Curve.one`). Reused for every
+    -- curve-point field in the base-case dummy advice.
     g0 :: AffinePoint (F StepField)
     g0 = coerce
       ( unsafePartial fromJust $ Curves.toAffine (Curves.generator :: Pallas.G)
           :: AffinePoint StepField
       )
 
+    g0w :: WeierstrassAffinePoint PallasG (F StepField)
+    g0w = WeierstrassAffinePoint g0
+
+    -- Ro-derived constants shared across all fields.
     r = roComputeResult
 
+    -- z1 / z2 from OCaml `proof.ml:dummy` openings (Ro.tock values
+    -- re-wrapped as cross-field Type2 SplitField in the step field).
     z1 :: Type2 (SplitField (F StepField) Boolean)
     z1 = toShifted (F r.proofZ1)
 
@@ -668,6 +515,50 @@ buildStepAdvice2 input =
 
     dvFop = dummyFop.deferredValues
     pFop = dvFop.plonk
+
+    -- Cross-field conversion of `wrapDummyUnfinalizedProof` (which
+    -- is in wrap-field `Type2 (F WrapField)`) to the step-field
+    -- `Type2 (SplitField (F StepField) Boolean)` that step_main's
+    -- `publicInputCommit` walks over.
+    du = wrapDummyUnfinalizedProof
+
+    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+
+    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
+
+    digestStep :: F StepField
+    digestStep =
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (Curves.fromBigInt (Curves.toBigInt digestWrap) :: StepField)
+
+    dvDu = du.deferredValues
+    pDu = dvDu.plonk
+
+    dummyPublicUnfinalized
+      :: PerProofUnfinalized
+           WrapIPARounds
+           (Type2 (SplitField (F StepField) Boolean))
+           (F StepField)
+           Boolean
+    dummyPublicUnfinalized = PerProofUnfinalized
+      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
+      , b: t2toT2sf dvDu.b
+      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
+      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
+      , perm: t2toT2sf pDu.perm
+      , spongeDigest: digestStep
+      , beta: UnChecked (chalToStep pDu.beta)
+      , gamma: UnChecked (chalToStep pDu.gamma)
+      , alpha: UnChecked (chalToStep pDu.alpha)
+      , zeta: UnChecked (chalToStep pDu.zeta)
+      , xi: UnChecked (chalToStep dvDu.xi)
+      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
+      , shouldFinalize: false
+      }
 
     -- Rank-2 per-slot dummy: the only n-dependent fields (`prevChallenges`,
     -- `prevSgs`) use `Vector.replicate` so they specialize per slot.
@@ -737,11 +628,21 @@ buildStepAdvice2 input =
   in
     StepAdvice2
       { perProofSlotsCarrier: replicatePrevsCarrier @prevsSpec dummySlot
-      , publicInput: v1.publicInput
-      , publicUnfinalizedProofs: v1.publicUnfinalizedProofs
-      , messagesForNextWrapProof: v1.messagesForNextWrapProof
-      , wrapVerifierIndex: v1.wrapVerifierIndex
-      , kimchiPrevChallenges: v1.kimchiPrevChallenges
+      , publicInput: input.publicInput
+      , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
+      , messagesForNextWrapProof: Vector.replicate (F zero)
+      , wrapVerifierIndex:
+          VerificationKey
+            { sigma: Vector.generate (const g0w)
+            , coeff: Vector.generate (const g0w)
+            , index: Vector.generate (const g0w)
+            }
+      , kimchiPrevChallenges:
+          Vector.replicate
+            { sgX: zero
+            , sgY: zero
+            , challenges: Vector.replicate zero
+            }
       }
 
 --------------------------------------------------------------------------------
@@ -1887,20 +1788,11 @@ type StepRule (n :: Int) inputVal input outputVal output prevInputVal prevInput 
 
 -- | Ambient data the step prover needs alongside the advice and rule.
 -- |
--- | * `srsData` — `StepMainSrsData` that `stepMain` consumes as a
--- |   compile-time parameter (lagrange-base lookup, blinding H,
--- |   fop domain log2).
+-- | * `srsData` — `StepMainSrsData2 len` with per-slot FOP domain log2
+-- |   (lagrange-base lookup, blinding H, per-slot FOP domains, per-slot
+-- |   known wrap keys) that `stepMain2` consumes.
 -- | * `dummySg` — dummy sg point for sg_old padding in verify_one.
 -- | * `crs` — the step circuit's Vesta SRS.
-type StepProveContext =
-  { srsData :: StepMainSrsData
-  , dummySg :: AffinePoint StepField
-  , crs :: CRS VestaG
-  }
-
--- | V2 prove context: uses `StepMainSrsData2 len` with per-slot
--- | FOP domain log2, enabling heterogeneous-prev rules
--- | (Tree_proof_return style) to select each slot's correct domain.
 type StepProveContext2 len =
   { srsData :: StepMainSrsData2 len
   , dummySg :: AffinePoint StepField
@@ -1936,170 +1828,6 @@ type StepProveResult (outputSize :: Int) =
   , assignments :: Map Variable StepField
   }
 
--- | Compile phase of the step prover: walks the circuit shape under
--- | `StepProverT`, produces the `ConstraintSystem` + `ProverIndex` +
--- | `VerifierIndex`, and returns the intermediate `builtState` +
--- | `constraints` the solver phase needs to continue.
--- |
--- | The `advice` argument is threaded to `runStepProverT` so instance
--- | resolution lines up, but its *values* are not inspected during
--- | compile — the circuit walker only needs the advice's type shape.
--- | Callers that split `stepCompile` from `stepSolveAndProve` can pass
--- | a placeholder advice here (e.g. one built with synthetic wrap VK
--- | commitments) and supply the real advice to the solve phase.
-stepCompile
-  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable n Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad n PaddedLength
-  => Mul n 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs n outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => StepProveContext
-  -> StepRule n inputVal input outputVal output prevInputVal prevInput
-  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
-  -> m StepCompileResult
-stepCompile ctx rule advice = do
-  let
-    compileAction
-      :: StepProverT n StepIPARounds WrapIPARounds inputVal m
-           (CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
-    compileAction =
-      compile
-        (Proxy @Unit)
-        (Proxy @(Vector outputSize (F StepField)))
-        (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput rule ctx.srsData ctx.dummySg)
-        (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
-
-  builtState <- runStepProverT advice compileAction
-
-  let
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    -- Step circuit verifies `n` previous proofs at the kimchi layer
-    -- (= OCaml `Compile.step_main ~prev_challenges:n`). Declare it on
-    -- the CS so `verifier_index.prev_challenges` matches the length
-    -- of `ProverProof.prev_challenges` produced by
-    -- `pallasCreateProofWithPrev`.
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @n)
-      }
-
-    -- EXPERIMENT: use endoBase (= Pallas.endo_base = Step_inner_curve.base)
-    -- to match what `EndoMul.purs` uses in both the circuit builder and
-    -- the debug-mode eval. Previous value was `endoScalar @StepField` (=
-    -- Vesta.endo_scalar = Wrap_inner_curve.scalar), which differs from the
-    -- circuit builder's constant and caused Rust's EndoMul gate check to
-    -- fail at row 6471 once Simple_chain started exercising dense challenge
-    -- bits (specifically `b3 = 1`, which makes `xq2 = endo * xt` endo-sensitive).
-    endo :: StepField
-    endo =
-      let EndoBase e = (endoBase :: EndoBase StepField) in e
-
-    proverIndex =
-      createProverIndex @StepField @VestaG
-        { endo, constraintSystem, crs: ctx.crs }
-
-    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
-
-  pure
-    { proverIndex
-    , verifierIndex
-    , constraintSystem
-    , builtState
-    , constraints
-    }
-
--- | Solve phase of the step prover: takes a previously compiled
--- | `StepCompileResult` and the real advice, runs the witness solver,
--- | checks constraint satisfaction, and creates the kimchi proof.
-stepSolveAndProve
-  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable n Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad n PaddedLength
-  => Mul n 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs n outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext
-  -> StepRule n inputVal input outputVal output prevInputVal prevInput
-  -> StepCompileResult
-  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
-  -> m (StepProveResult outputSize)
-stepSolveAndProve onError ctx rule compileResult advice = do
-  let
-    rawSolver
-      :: SolverT StepField (KimchiConstraint StepField)
-           (StepProverT n StepIPARounds WrapIPARounds inputVal m)
-           Unit
-           (Vector outputSize (F StepField))
-    rawSolver =
-      makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint StepField))
-        (\_ -> stepMain @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput rule ctx.srsData ctx.dummySg)
-
-  eRes <- runStepProverT advice (runSolverT rawSolver unit)
-
-  case eRes of
-    Left e -> onError (error ("stepProve solver: " <> show e))
-    Right (Tuple publicOutputs assignments) ->
-      let
-        { witness, publicInputs } = makeWitness
-          { assignments
-          , constraints: map _.variables compileResult.constraints
-          , publicInputs: compileResult.builtState.publicInputs
-          }
-
-        csSatisfied = verifyProverIndex @StepField @VestaG
-          { proverIndex: compileResult.proverIndex, witness, publicInputs }
-      in
-        if not csSatisfied then do
-          let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
-          onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
-        else
-          let
-            proof = pallasCreateProofWithPrev
-              { proverIndex: compileResult.proverIndex
-              , witness
-              , prevChallenges:
-                  map
-                    ( \r ->
-                        { sgX: r.sgX
-                        , sgY: r.sgY
-                        , challenges: Vector.toUnfoldable r.challenges
-                        }
-                    )
-                    (Vector.toUnfoldable advice.kimchiPrevChallenges :: Array _)
-              }
-          in
-            pure
-              { proverIndex: compileResult.proverIndex
-              , verifierIndex: compileResult.verifierIndex
-              , constraintSystem: compileResult.constraintSystem
-              , witness
-              , publicInputs
-              , publicOutputs
-              , proof
-              , assignments
-              }
-
 -- | Build a row→label_stack text dump from a compiled constraint list and
 -- | write it to /tmp/ps_step_row_labels.txt. Called when the kimchi
 -- | prover-index verification fails so the user can look up the failing
@@ -2129,39 +1857,6 @@ dumpRowLabels cs = do
       cs
   FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
     (Array.intercalate "\n" out <> "\n")
-
--- | Run the step prover end-to-end: `stepCompile` then `stepSolveAndProve`.
--- | Kept for backward compatibility / single-call convenience; new code
--- | that needs the compile output (e.g. to feed a wrap compile before
--- | running the solver) should call `stepCompile` and `stepSolveAndProve`
--- | directly.
--- |
--- | Reference:
--- |   `mina/src/lib/crypto/pickles/step.ml:800-852` — OCaml step prover
--- |   `mina/src/lib/crypto/pickles/step_main.ml:237-594` — the circuit body
-stepProve
-  :: forall @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable n Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad n PaddedLength
-  => Mul n 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs n outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext
-  -> StepRule n inputVal input outputVal output prevInputVal prevInput
-  -> StepAdvice n StepIPARounds WrapIPARounds inputVal
-  -> m (StepProveResult outputSize)
-stepProve onError ctx rule advice = do
-  compileResult <- stepCompile @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput ctx rule advice
-  stepSolveAndProve @n @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput onError ctx rule compileResult advice
 
 --------------------------------------------------------------------------------
 -- Parallel v2 advice stack
