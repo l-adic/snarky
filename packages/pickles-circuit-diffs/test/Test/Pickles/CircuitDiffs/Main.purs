@@ -7,7 +7,8 @@ import Data.Either (Either(..))
 import Data.Int as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -566,42 +567,24 @@ spec =
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
         -- This is the only N=0 circuit-diff fixture in the suite.
         exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
--- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
--- self @ N2). Three layers of heterogeneity fixed, one remaining:
---
--- [FIXED] per-slot prev_challenges/prev_sgs sizing
---   → `stepMain2` + `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)`.
--- [FIXED] per-slot FOP domain constants (slot 0: 2^13, slot 1: 2^14)
---   → `StepMainSrsData2.perSlotFopDomainLog2 = [13, 14]`.
--- [FIXED] per-slot wrap VK (slot 0 inlines `Just no_rec_vk`, slot 1
---   uses shared `exists`-allocated VK via `Nothing`).
---   → `StepMainSrsData2.perSlotKnownWrapKeys = [Just _, Nothing]`.
--- [OPEN]  per-slot IVP/SRS lagrange commitments. OCaml's
---   `ivp_xhat = Σᵢ lagrange_at(prev_domain, i) * PI[i]` uses the
---   PREV'S wrap-domain SRS lagrange bases. PS currently passes a
---   single `lagrangeAt` (domain 14 only), so slot 0 (prev domain 13)
---   commits against the wrong lagrange bases.
---
--- First diff moved from row 623 (original) → 2157 (after domain) →
--- 2560 (after VK). Remaining 47-gate delta now concentrated in
--- `prevs_verified > step6_ivp > incrementally-verify-proof > ivp_xhat
--- > public-input-commit > scale-fast` — i.e. the per-slot lagrange
--- commitments gap. Cached constants: PS 103, OC 195 (92 OC-only).
---
--- Fixing requires extending `StepMainSrsData2` with a per-slot
--- `lagrangeAt :: Vector len (LagrangeBaseLookup StepField)` (plus
--- potentially per-slot `blindingH` since both come from the PREV's
--- wrap-SRS).
--- TODO(heterogeneous-prev-srs): restore the exactMatch below once
--- per-slot lagrange commitments land.
---
---     let
---       treeProofReturnSrsData =
---         { lagrangeAt: mkConstLagrangeBaseLookup \i ->
---             (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
---         , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
---         }
---     exactMatch "step_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileStepMainTreeProofReturn treeProofReturnSrsData)
+        -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
+        -- self @ N2). All four layers of heterogeneity wired up:
+        -- * per-slot SPPW sizing  (`PrevsSpecCons 0 (PrevsSpecCons 2 …)`)
+        -- * per-slot FOP domain   (`[13, 14]`)
+        -- * per-slot wrap VK      (`[Just no_rec_vk, Nothing]`)
+        -- * per-slot lagrange     (`[domain 13 lookup, domain 14 lookup]`).
+        let
+          lagrangeAtD13 =
+            mkConstLagrangeBaseLookup \i ->
+              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+          lagrangeAtD14 =
+            mkConstLagrangeBaseLookup \i ->
+              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+          treeProofReturnSrsData =
+            { perSlotLagrangeAt: lagrangeAtD13 :< lagrangeAtD14 :< Vector.nil
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatch "step_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileStepMainTreeProofReturn treeProofReturnSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

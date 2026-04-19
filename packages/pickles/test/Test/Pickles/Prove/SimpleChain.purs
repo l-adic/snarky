@@ -192,16 +192,19 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- `dump_circuit_impl.ml:3718-3719`: wrap proof's eval domain = 14.
       wrapDomainLog2 = 14
 
+      lagrangeAtD14 =
+        mkConstLagrangeBaseLookup \i ->
+          (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt lagrangeSrs wrapDomainLog2 i))
+            :: AffinePoint (F StepField)
+
       srsData =
-        { lagrangeAt:
-            mkConstLagrangeBaseLookup \i ->
-              (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt lagrangeSrs wrapDomainLog2 i))
-                :: AffinePoint (F StepField)
+        -- V2 per-slot lagrange: Simple_chain N1 has 1 slot
+        -- (self-recursive) — single lookup at wrap_domains.h = 2^14.
+        { perSlotLagrangeAt: lagrangeAtD14 :< Vector.nil
         , blindingH:
             (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
               :: AffinePoint (F StepField)
-        -- V2 per-slot FOP domain: Simple_chain N1 has 1 slot (self-recursive),
-        -- wrap_domains.h = 2^wrapDomainLog2 (=14).
+        -- V2 per-slot FOP domain: 2^14.
         , perSlotFopDomainLog2: wrapDomainLog2 :< Vector.nil
         -- V2 per-slot known wrap keys: Simple_chain N1's only slot is
         -- self — self's wrap VK isn't known at step-compile time

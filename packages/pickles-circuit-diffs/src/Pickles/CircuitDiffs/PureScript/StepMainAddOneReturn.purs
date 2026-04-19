@@ -82,7 +82,7 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
     -- pick any concrete CircuitType-havers; Unit works.
     ( \_ -> stepMain2 @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
         addOneReturnRule
-        { lagrangeAt: params.lagrangeAt
+        { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: Vector.nil
         , perSlotKnownWrapKeys: Vector.nil

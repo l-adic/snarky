@@ -82,7 +82,7 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
     ( \_ -> stepMain2 @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
-        { lagrangeAt: params.lagrangeAt
+        { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil
         , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil

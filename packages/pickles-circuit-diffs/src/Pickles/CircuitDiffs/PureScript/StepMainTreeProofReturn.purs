@@ -56,8 +56,12 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
+-- | Tree_proof_return has HETEROGENEOUS prev wrap_domains (slot 0: 2^13
+-- | from No_recursion_return; slot 1: 2^14 from self @
+-- | override_wrap_domain:N1). Each slot needs its own lagrange lookup
+-- | keyed on the slot's domain size.
 type StepMainTreeProofReturnParams =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { perSlotLagrangeAt :: Vector 2 (LagrangeBaseLookup StepField)
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -134,11 +138,14 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     -- has empty prev_challenges / prev_sgs (correctly reflecting that a
     -- N=0 prev verified zero prior proofs). The v1 path over-allocated
     -- slot 0 to size 2, producing ~4 extra on-curve-check rows vs OCaml.
-    -- Per-slot FOP domain_log2:
-    -- * slot 0's prev = No_recursion_return with wrap_domains.h = 2^13
-    --   (from dump_circuit_impl.ml:3901 `no_rec_data.wrap_domains`).
-    -- * slot 1's prev = self with wrap_domains.h = 2^14 (from
-    --   override_wrap_domain:N1 → common.ml:25-29).
+    -- Per-slot FOP domain_log2 — `finalize_other_proof ~step_domains`
+    -- uses the prev's STEP_DOMAINS (NOT wrap_domains):
+    -- * slot 0: no_rec_data.step_domains[0].h = 2^13
+    --   (dump_circuit_impl.ml:3902-3906).
+    -- * slot 1: self's step_domains[0].h = 2^16
+    --   (dump_circuit_impl.ml:3974). Note: self's wrap_domains.h is
+    --   2^14 (override_wrap_domain:N1), but that's used for the IVP
+    --   lagrange lookup, not the FOP domain.
     --
     -- Per-slot known wrap keys:
     -- * slot 0: Just noRecKnownWrapKey — matches OCaml's
@@ -149,9 +156,9 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     --   `exists`-allocated VK inside stepMain2.
     ( \_ -> stepMain2 @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
         treeProofReturnRule
-        { lagrangeAt: params.lagrangeAt
+        { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2: 13 :< 14 :< Vector.nil
+        , perSlotFopDomainLog2: 13 :< 16 :< Vector.nil
         , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
         }
         dummyWrapSg

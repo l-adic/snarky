@@ -83,7 +83,7 @@ compileStepMainSimpleChain params = unsafePerformEffect $
     -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
     -- exercises the same compile config Pickles.compile_promise produces.
     ( \_ -> stepMain2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
-        { lagrangeAt: params.lagrangeAt
+        { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 14 :< Vector.nil
         , perSlotKnownWrapKeys: Nothing :< Vector.nil

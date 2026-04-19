@@ -147,7 +147,20 @@ type StepMainSrsData =
 -- |   * Add_one_return   : `[]` (N=0, no slots)
 -- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
 type StepMainSrsData2 len =
-  { lagrangeAt :: LagrangeBaseLookup StepField
+  { -- | Per-slot lagrange commitments. In OCaml
+    -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
+    -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
+    -- | from the per-slot `Types_map.For_step.t`. The SRS itself is
+    -- | shared (one Tock URS, step_main.ml:394). For heterogeneous
+    -- | prevs (Tree_proof_return: slot 0 @ domain 2^13; slot 1 @
+    -- | domain 2^14), the lagrange commitments at each index differ
+    -- | per slot — same SRS, different domain size, different `i`-th
+    -- | lagrange basis point.
+    perSlotLagrangeAt :: Vector len (LagrangeBaseLookup StepField)
+    -- | Shared Tock SRS h-generator. `Generators.h =
+    -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
+    -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
+    -- | NOT per-slot.
   , blindingH :: AffinePoint (F StepField)
   , perSlotFopDomainLog2 :: Vector len Int
   , perSlotKnownWrapKeys ::
@@ -798,7 +811,7 @@ stepMain2
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain2 rule
-  { lagrangeAt
+  { perSlotLagrangeAt
   , blindingH
   , perSlotFopDomainLog2
   , perSlotKnownWrapKeys
@@ -882,16 +895,6 @@ stepMain2 rule
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
 
-    ivpParams =
-      { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeAt
-      , blindingH
-      , correctionMode: PureCorrections
-      , endo: stepEndoVal
-      , groupMapParams: groupMapParams (Proxy @PallasG)
-      , useOptSponge: false
-      }
-
   -- 8. verify_one × len + Assert.all (inside prevs_verified label).
   -- Drive structurally via traversePrevsA — each callback invocation
   -- has its slot's `n_i` in scope so per-slot sizes (prevSgs, etc.)
@@ -906,6 +909,17 @@ stepMain2 rule
           pw <- allocatePerProofWitness slotRec.sppw
           let
             slotFopDomainLog2 = perSlotFopDomainLog2 !! i
+            slotLagrangeAt = perSlotLagrangeAt !! i
+
+            slotIvpParams =
+              { curveParams: curveParams (Proxy @PallasG)
+              , lagrangeAt: slotLagrangeAt
+              , blindingH
+              , correctionMode: PureCorrections
+              , endo: stepEndoVal
+              , groupMapParams: groupMapParams (Proxy @PallasG)
+              , useOptSponge: false
+              }
 
             slotFopParams =
               { domain:
@@ -947,7 +961,7 @@ stepMain2 rule
               (msgsWrap !! i)
               slotVkComms
               constDummySg
-          r <- verifyOne slotFopParams input ivpParams
+          r <- verifyOne slotFopParams input slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }
