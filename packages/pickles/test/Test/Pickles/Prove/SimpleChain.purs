@@ -121,7 +121,7 @@ simpleChainRule prevAppState self = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
-  it "base case trace matches OCaml fixture" \_ -> do
+  it "4-iteration step+wrap chain (b0..b3) trace matches OCaml fixture" \_ -> do
     -- Mirror OCaml dump_simple_chain.ml's begin sentinel.
     liftEffect $ Trace.string "simple_chain.begin" "base_case"
 
