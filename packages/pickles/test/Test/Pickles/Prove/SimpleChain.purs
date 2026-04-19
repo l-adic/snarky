@@ -4,19 +4,20 @@
 -- |
 -- | Runs the exact same inductive rule (`prev + 1`) at
 -- | `max_proofs_verified = N1`, base case only (self = 0), through
--- | the generic `Pickles.Prove.Step.stepProve` orchestrator. The trace
--- | file PureScript emits is diffed byte-for-byte against the OCaml
--- | fixture at `packages/pickles/test/fixtures/simple_chain_base_case.trace`
+-- | the v2 `stepCompile2` + `stepSolveAndProve2` orchestrators. The
+-- | trace file PureScript emits is diffed byte-for-byte against the
+-- | OCaml fixture at `packages/pickles/test/fixtures/simple_chain_base_case.trace`
 -- | via `tools/simple_chain_trace_diff.sh`.
 -- |
 -- | This file is the top-level binding for the Simple_chain test —
--- | the ONLY place concrete `n=1` + `stepDomainLog2=16` +
--- | `wrapDomainLog2=14` + `mostRecentWidth=1` appear. Everything
--- | downstream (`Pickles.Prove.Step`, `Pickles.Step.Main`,
--- | `Pickles.Types`) stays polymorphic in `n`, `ds`, `dw`; type
--- | inference unifies them against `stepMain`'s
--- | `StepWitnessM n StepIPARounds WrapIPARounds ...` constraint when
--- | `stepProve` is invoked here.
+-- | the ONLY place concrete `prevsSpec = PrevsSpecCons 1 PrevsSpecNil`
+-- | + `stepDomainLog2=16` + `wrapDomainLog2=14` + `mostRecentWidth=1`
+-- | appear. Everything downstream (`Pickles.Prove.Step`,
+-- | `Pickles.Step.Main`, `Pickles.Types`) stays polymorphic in
+-- | `prevsSpec`, `ds`, `dw`; type inference unifies them against
+-- | `stepMain2`'s `StepWitnessM len StepIPARounds WrapIPARounds ...`
+-- | + `StepSlotsM prevsSpec …` constraints when `stepCompile2` /
+-- | `stepSolveAndProve2` are invoked here.
 -- |
 -- | Required env vars at runtime:
 -- | - `PICKLES_TRACE_FILE` — path to the trace log (truncated).
@@ -413,7 +414,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 4: run the step solver =====
     result <- liftEffect $
       stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
+        (\e -> Exc.throw ("stepSolveAndProve2: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
         stepCR
@@ -1049,7 +1050,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     b1Result <- liftEffect $
       stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
+        (\e -> Exc.throw ("b1 stepSolveAndProve2: " <> show e))
         ctx
         (simpleChainRule (F zero))
         stepCR
@@ -1424,7 +1425,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     b2Result <- liftEffect $
       stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
+        (\e -> Exc.throw ("b2 stepSolveAndProve2: " <> show e))
         ctx
         (simpleChainRule (F one))
         stepCR
@@ -1738,7 +1739,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     b3Result <- liftEffect $
       stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
+        (\e -> Exc.throw ("b3 stepSolveAndProve2: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))
         stepCR
