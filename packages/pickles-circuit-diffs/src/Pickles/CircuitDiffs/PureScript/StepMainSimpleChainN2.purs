@@ -21,7 +21,8 @@ import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -79,7 +80,7 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    ( \_ -> stepMain @2 @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
+    ( \_ -> stepMain2 @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
         { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 16 }
         dummyWrapSg
     )

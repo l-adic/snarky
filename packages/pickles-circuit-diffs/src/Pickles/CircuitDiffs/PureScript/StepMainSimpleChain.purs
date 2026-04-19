@@ -20,7 +20,8 @@ import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -80,7 +81,7 @@ compileStepMainSimpleChain params = unsafePerformEffect $
     -- mismatch that didn't validate the production compile path. Both this
     -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
     -- exercises the same compile config Pickles.compile_promise produces.
-    ( \_ -> stepMain @1 @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
+    ( \_ -> stepMain2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
         { lagrangeAt: params.lagrangeAt, blindingH: params.blindingH, fopDomainLog2: 14 }
         dummyWrapSg
     )
