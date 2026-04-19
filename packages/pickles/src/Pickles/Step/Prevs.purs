@@ -55,7 +55,7 @@ import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Types (StepPerProofWitness)
+import Pickles.Types (PaddedLength, StepPerProofWitness)
 import Prim.Int (class Add)
 
 --------------------------------------------------------------------------------
@@ -134,8 +134,10 @@ class
   traversePrevsA
     :: forall m result
      . Applicative m
-    => ( forall n
+    => ( forall n pad
           . Reflectable n Int
+         => Reflectable pad Int
+         => Add pad n PaddedLength
          => Finite len
          -> StepSlot n ds dw f sf b
          -> m result
@@ -168,6 +170,8 @@ instance
   ( PrevsCarrier rest ds dw f sf b restLen rcarrier
   , Add restLen 1 len
   , Reflectable n Int
+  , Add pad n PaddedLength
+  , Reflectable pad Int
   ) =>
   PrevsCarrier
     (PrevsSpecCons n rest) ds dw f sf b len

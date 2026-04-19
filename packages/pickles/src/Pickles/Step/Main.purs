@@ -18,6 +18,8 @@ module Pickles.Step.Main
   , stepMain
   -- * Padded variant (production Pickles)
   , stepMainPadded
+  -- * V2 (spec-indexed per-slot carrier) variant
+  , stepMain2
   ) where
 
 import Prelude
@@ -37,7 +39,8 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepPerProofWitnesses, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepPerProofWitnesses, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
@@ -695,4 +698,231 @@ stepMainPadded rule srsData dummySg = do
     paddedArr = dummyUnfs <> realUnfs <> digest <> dummyMsgs <> realMsgs
 
   pure (unsafePartial fromJust $ Vector.toVector @paddedOutputSize paddedArr)
+
+-------------------------------------------------------------------------------
+-- | V2 step_main — spec-indexed per-slot carrier variant
+-- |
+-- | Drops `getStepPerProofWitnesses` / `traverse allocatePerProofWitness`
+-- | / `Vector.generateA @n` in favor of `getStepSlotsCarrier` + a single
+-- | `traversePrevsA` that walks the carrier per slot, extracting SPPW
+-- | from `StepSlot`, allocating, and running verify_one — all with the
+-- | per-slot `n_i` in scope.
+-- |
+-- | Everything else (public input allocation, wrap VK, unfinalized
+-- | proofs, messages_for_next_wrap_proof, outer hash, output
+-- | assembly) is identical to `stepMain` — the only structural
+-- | difference is the per-slot heterogeneity source.
+-------------------------------------------------------------------------------
+
+stepMain2
+  :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       unfsTotal digestPlusUnfs
+       t m
+   . CircuitM StepField (KimchiConstraint StepField) t m
+  => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
+  => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
+  -> StepMainSrsData
+  -> AffinePoint StepField
+  -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
+stepMain2 rule { lagrangeAt, blindingH, fopDomainLog2 } dummySg = do
+  -- 1. exists: public input via Req.App_state.
+  let
+    requestInput :: m inputVal
+    requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
+  (publicInput :: input) <- exists $ lift requestInput
+
+  -- 2. rule_main
+  { prevPublicInputs, proofMustVerify, publicOutput } <-
+    label "rule_main" $ rule publicInput
+
+  let
+    publicInputFields = varToFields @StepField @inputVal publicInput
+    publicOutputFields = varToFields @StepField @outputVal publicOutput
+    hashAppFields = publicInputFields <> publicOutputFields
+
+  -- 3. exists: VK via Req.Wrap_index.
+  VerificationKey vkRec <- label "exists_wrap_index"
+    $ exists
+    $ lift
+    $ getWrapVerifierIndex @len @StepIPARounds @WrapIPARounds @PallasG unit
+  let
+    vk =
+      { sigma: Vector.take @6 vkRec.sigma
+      , sigmaLast: Vector.last vkRec.sigma
+      , coeff: vkRec.coeff
+      , index: vkRec.index
+      }
+
+  -- 4. exists: per-slot carrier via Req.Proof_with_datas — the v2
+  --    spec-indexed variant. Each slot of the carrier holds a
+  --    `StepSlot n_i ds dw …` typed with its own per-slot n_i.
+  slotsCarrier <- label "exists_prevs"
+    $ exists
+    $ lift
+    $ getStepSlotsCarrier @prevsSpec @StepIPARounds @WrapIPARounds @PallasG unit
+
+  -- 5. exists: unfinalized proofs (uniform Vector len).
+  rawUnfinalizedProofs <- label "exists_unfinalized"
+    $ exists
+    $ lift
+    $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @PallasG unit
+  unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
+
+  -- 6. exists: messages_for_next_wrap_proof (uniform Vector len).
+  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+
+  -- 7. Build VK comms.
+  let
+    vkComms =
+      { sigma: map unwrapPt vk.sigma
+      , sigmaLast: unwrapPt vk.sigmaLast
+      , coeff: map unwrapPt vk.coeff
+      , index: map unwrapPt vk.index
+      }
+
+    constDummySg :: AffinePoint (FVar StepField)
+    constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }
+
+    fopParams =
+      { domain:
+          { generator: const_ (LinFFI.domainGenerator @StepField fopDomainLog2)
+          , shifts: map const_ (LinFFI.domainShifts @StepField fopDomainLog2)
+          }
+      , domainLog2: fopDomainLog2
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+      , endo: stepEndoVal
+      , linearizationPoly: Linearization.pallas
+      }
+
+    ivpParams =
+      { curveParams: curveParams (Proxy @PallasG)
+      , lagrangeAt
+      , blindingH
+      , correctionMode: PureCorrections
+      , endo: stepEndoVal
+      , groupMapParams: groupMapParams (Proxy @PallasG)
+      , useOptSponge: false
+      }
+
+  -- 8. verify_one × len + Assert.all (inside prevs_verified label).
+  -- Drive structurally via traversePrevsA — each callback invocation
+  -- has its slot's `n_i` in scope so per-slot sizes (prevSgs, etc.)
+  -- are correct.
+  results <- label "prevs_verified" do
+    rs <- traversePrevsA @prevsSpec
+      ( \i (StepSlot slotRec) -> do
+          pw <- allocatePerProofWitness slotRec.sppw
+          let
+            prevInputVar = prevPublicInputs !! i
+            input = buildVerifyOneInput pw
+              (varToFields @StepField @prevInputVal prevInputVar)
+              (proofMustVerify !! i)
+              (unfinalizedProofs !! i)
+              (msgsWrap !! i)
+              vkComms
+              constDummySg
+          r <- verifyOne fopParams input ivpParams
+          -- Carry pw.sg out alongside the verify_one result so the
+          -- outer hash can absorb it.
+          pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }
+      )
+      slotsCarrier
+    assertAll_ (Vector.toUnfoldable $ map _.result rs)
+    pure rs
+
+  -- 9. Outer hash: hash_messages_for_next_step_proof (identical to v1).
+  outerDigest <- label "hash_messages_for_next_step_proof" do
+    let
+      absorbPt s pt = do
+        let { x, y } = unwrapPt pt
+        s1 <- Sponge.absorb x s
+        Sponge.absorb y s1
+
+    forWithIndex_ vk.sigma \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
+    let { x: slX, y: slY } = unwrapPt vk.sigmaLast
+    ivpTrace "step_main_outer.vk.sigma_last.x" slX
+    ivpTrace "step_main_outer.vk.sigma_last.y" slY
+    forWithIndex_ vk.coeff \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
+    forWithIndex_ vk.index \fi pt -> do
+      let i = getFinite fi
+      let { x, y } = unwrapPt pt
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
+      ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
+    forWithIndex_ hashAppFields \i f ->
+      ivpTrace ("step_main_outer.app_state." <> show i) f
+
+    spongeAfterIndex <- do
+      let sponge0 = initialSpongeCircuit :: Sponge.Sponge (FVar StepField)
+      s1 <- foldM absorbPt sponge0 vk.sigma
+      s2 <- absorbPt s1 vk.sigmaLast
+      s3 <- foldM absorbPt s2 vk.coeff
+      foldM absorbPt s3 vk.index
+
+    s1 <- foldM (flip Sponge.absorb) spongeAfterIndex hashAppFields
+
+    let proofData = map (\r -> { sg: r.sg, expandedChals: r.expandedChallenges }) results
+    forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
+      let i = getFinite fi
+      let pt = unwrapPt sgPt
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
+      ivpTrace ("step_main_outer.proof." <> show i <> ".sg.y") pt.y
+      forWithIndex_ expandedChals \fj c ->
+        ivpTrace ("step_main_outer.proof." <> show i <> ".bp_chal." <> show (getFinite fj)) c
+    sAfterProofs <- foldM
+      ( \s { sg: sgPt, expandedChals } -> do
+          let pt = unwrapPt sgPt
+          s2 <- Sponge.absorb pt.x s
+          s3 <- Sponge.absorb pt.y s2
+          foldM (\s' c -> Sponge.absorb c s') s3 expandedChals
+      )
+      s1
+      proofData
+
+    { result: digest } <- Sponge.squeeze sAfterProofs
+    ivpTrace "step_main_outer.digest" digest
+    pure digest
+
+  -- 10. Build output: len × 32 (unfinalized) + 1 (step msg) + len (wrap msgs).
+  let
+    unfsFlat :: Vector unfsTotal (FVar StepField)
+    unfsFlat = Vector.concat (map unfFields unfinalizedProofs)
+
+    digestVec :: Vector 1 (FVar StepField)
+    digestVec = outerDigest :< Vector.nil
+
+    outputV :: Vector outputSize (FVar StepField)
+    outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
+
+  pure outputV
 
