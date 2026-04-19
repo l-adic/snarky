@@ -48,6 +48,7 @@ module Pickles.Prove.Step
   , StepAdvice2(..)
   , StepProverT2(..)
   , runStepProverT2
+  , stepCompile2
   ) where
 
 import Prelude
@@ -83,7 +84,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Prevs (class PrevsCarrier)
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain, stepMain2)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -100,7 +101,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (Variable)
-import Snarky.Circuit.DSL (class CircuitM, F(..), SizedF, Snarky, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Types (class CircuitType, valueToFields)
@@ -1974,3 +1975,107 @@ instance
 unusedV2LegacyMethod :: String
 unusedV2LegacyMethod =
   "StepProverT2 does not implement StepWitnessM's legacy per-slot methods; use `getStepSlotsCarrier` from StepSlotsM instead"
+
+-- | V2 compile phase — parallel to `stepCompile` but runs `stepMain2`
+-- | in the `StepProverT2` monad and takes a `StepAdvice2`. The circuit
+-- | shape only depends on `prevsSpec` / `len` / `carrier`; advice
+-- | VALUES aren't inspected during compile.
+-- |
+-- | `stepSolveAndProve2` / `stepProve2` are not yet added — they need
+-- | per-slot kimchi-prev-challenges data in StepAdvice2 that we
+-- | haven't introduced yet.
+stepCompile2
+  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       pad unfsTotal digestPlusUnfs m
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Monad m
+  => StepProveContext
+  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+  -> m StepCompileResult
+stepCompile2 ctx rule advice = do
+  let
+    compileAction
+      :: StepProverT2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier m
+           (CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+    compileAction =
+      compile
+        (Proxy @Unit)
+        (Proxy @(Vector outputSize (F StepField)))
+        (Proxy @(KimchiConstraint StepField))
+        ( \_ ->
+            stepMain2
+              @prevsSpec
+              @outputSize
+              @inputVal
+              @input
+              @outputVal
+              @output
+              @prevInputVal
+              @prevInput
+              rule
+              ctx.srsData
+              ctx.dummySg
+        )
+        (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+
+  builtState <- runStepProverT2 advice compileAction
+
+  let
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @len)
+      }
+
+    endo :: StepField
+    endo =
+      let EndoBase e = (endoBase :: EndoBase StepField) in e
+
+    proverIndex =
+      createProverIndex @StepField @VestaG
+        { endo, constraintSystem, crs: ctx.crs }
+
+    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+
+  pure
+    { proverIndex
+    , verifierIndex
+    , constraintSystem
+    , builtState
+    , constraints
+    }
