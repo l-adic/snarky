@@ -49,6 +49,8 @@ module Pickles.Prove.Step
   , StepProverT2(..)
   , runStepProverT2
   , stepCompile2
+  , stepSolveAndProve2
+  , stepProve2
   ) where
 
 import Prelude
@@ -1863,6 +1865,18 @@ newtype StepAdvice2 prevsSpec ds dw inputVal len carrier =
     , messagesForNextWrapProof :: Vector len (F StepField)
     , wrapVerifierIndex ::
         VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+    -- | Kimchi-level prev_challenges threaded to
+    -- | `pallasCreateProofWithPrev`. One entry per prev slot of the
+    -- | step circuit. Uniform Vector len — each entry's `challenges`
+    -- | is sized by `ds` (step IPA rounds, fixed), NOT by per-slot
+    -- | `n_i`, so this stays a plain Vector (not a spec-indexed
+    -- | carrier).
+    , kimchiPrevChallenges ::
+        Vector len
+          { sgX :: WrapField
+          , sgY :: WrapField
+          , challenges :: Vector ds StepField
+          }
     }
 
 derive instance Newtype
@@ -2079,3 +2093,199 @@ stepCompile2 ctx rule advice = do
     , builtState
     , constraints
     }
+
+-- | V2 solve phase — parallel to `stepSolveAndProve` but uses
+-- | `StepProverT2` / `StepAdvice2` / `stepMain2`. `prevChallenges` for
+-- | `pallasCreateProofWithPrev` come from the uniform
+-- | `kimchiPrevChallenges` field on `StepAdvice2` (sized `len`).
+stepSolveAndProve2
+  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       pad unfsTotal digestPlusUnfs m
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Monad m
+  => (Error -> m (StepProveResult outputSize))
+  -> StepProveContext
+  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> StepCompileResult
+  -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+  -> m (StepProveResult outputSize)
+stepSolveAndProve2 onError ctx rule compileResult advice = do
+  let
+    StepAdvice2 adv = advice
+
+    rawSolver
+      :: SolverT StepField (KimchiConstraint StepField)
+           ( StepProverT2 prevsSpec StepIPARounds WrapIPARounds inputVal
+               len
+               carrier
+               m
+           )
+           Unit
+           (Vector outputSize (F StepField))
+    rawSolver =
+      makeSolver' (emptyProverState { debug = true })
+        (Proxy @(KimchiConstraint StepField))
+        ( \_ ->
+            stepMain2
+              @prevsSpec
+              @outputSize
+              @inputVal
+              @input
+              @outputVal
+              @output
+              @prevInputVal
+              @prevInput
+              rule
+              ctx.srsData
+              ctx.dummySg
+        )
+
+  eRes <- runStepProverT2 advice (runSolverT rawSolver unit)
+
+  case eRes of
+    Left e -> onError (error ("stepProve2 solver: " <> show e))
+    Right (Tuple publicOutputs assignments) ->
+      let
+        { witness, publicInputs } = makeWitness
+          { assignments
+          , constraints: map _.variables compileResult.constraints
+          , publicInputs: compileResult.builtState.publicInputs
+          }
+
+        csSatisfied = verifyProverIndex @StepField @VestaG
+          { proverIndex: compileResult.proverIndex, witness, publicInputs }
+      in
+        if not csSatisfied then do
+          let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
+          onError (error "stepProve2: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
+        else
+          let
+            proof = pallasCreateProofWithPrev
+              { proverIndex: compileResult.proverIndex
+              , witness
+              , prevChallenges:
+                  map
+                    ( \r ->
+                        { sgX: r.sgX
+                        , sgY: r.sgY
+                        , challenges: Vector.toUnfoldable r.challenges
+                        }
+                    )
+                    (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
+              }
+          in
+            pure
+              { proverIndex: compileResult.proverIndex
+              , verifierIndex: compileResult.verifierIndex
+              , constraintSystem: compileResult.constraintSystem
+              , witness
+              , publicInputs
+              , publicOutputs
+              , proof
+              , assignments
+              }
+
+-- | V2 end-to-end prover: `stepCompile2` then `stepSolveAndProve2`.
+-- | Convenience wrapper mirroring v1's `stepProve`.
+stepProve2
+  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       pad unfsTotal digestPlusUnfs m
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => Monad m
+  => (Error -> m (StepProveResult outputSize))
+  -> StepProveContext
+  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> StepAdvice2 prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+  -> m (StepProveResult outputSize)
+stepProve2 onError ctx rule advice = do
+  compileResult <-
+    stepCompile2
+      @prevsSpec
+      @outputSize
+      @inputVal
+      @input
+      @outputVal
+      @output
+      @prevInputVal
+      @prevInput
+      ctx
+      rule
+      advice
+  stepSolveAndProve2
+    @prevsSpec
+    @outputSize
+    @inputVal
+    @input
+    @outputVal
+    @output
+    @prevInputVal
+    @prevInput
+    onError
+    ctx
+    rule
+    compileResult
+    advice
