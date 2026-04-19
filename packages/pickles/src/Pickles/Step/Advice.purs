@@ -113,7 +113,8 @@ class
   , WeierstrassCurve f g
   ) <=
   StepWitnessM (n :: Int) (ds :: Int) (dw :: Int) g f m inputVal
-  | g -> f, m -> inputVal where
+  | g -> f
+  , m -> inputVal where
   -- | Per-proof polynomial evaluations and domain values for finalizeOtherProof.
   -- | A subset of OCaml's Req.Proof_with_datas (the prev_proof_evals portion).
   getProofWitnesses :: Unit -> m (Vector n (ProofWitness (F f)))

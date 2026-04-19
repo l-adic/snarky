@@ -7,7 +7,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
   ) where
 
 -- | step_main circuit for the Simple_Chain N2 rule (2 previous proofs).
--- | Delegates to the generic Pickles.Step.Main.stepMain2.
+-- | Delegates to the generic Pickles.Step.Main.stepMain.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/dump_circuit_impl.ml (step_main_simple_chain_n2)
 
@@ -22,7 +22,7 @@ import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -81,7 +81,7 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    ( \_ -> stepMain2 @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
+    ( \_ -> stepMain @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
         { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil

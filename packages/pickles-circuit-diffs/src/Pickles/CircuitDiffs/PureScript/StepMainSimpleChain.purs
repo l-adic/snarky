@@ -6,7 +6,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
   ) where
 
 -- | step_main circuit for the Simple_Chain inductive rule (N1, 1 previous proof).
--- | Delegates to the generic Pickles.Step.Main.stepMain2.
+-- | Delegates to the generic Pickles.Step.Main.stepMain.
 -- |
 -- | Reference: mina/src/lib/crypto/pickles/dump_circuit_impl.ml (step_main_simple_chain)
 
@@ -21,7 +21,7 @@ import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -82,7 +82,7 @@ compileStepMainSimpleChain params = unsafePerformEffect $
     -- mismatch that didn't validate the production compile path. Both this
     -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
     -- exercises the same compile config Pickles.compile_promise produces.
-    ( \_ -> stepMain2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
+    ( \_ -> stepMain @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 14 :< Vector.nil

@@ -4,7 +4,7 @@
 -- |
 -- | Runs the exact same inductive rule (`prev + 1`) at
 -- | `max_proofs_verified = N1`, base case only (self = 0), through
--- | the v2 `stepCompile2` + `stepSolveAndProve2` orchestrators. The
+-- | the v2 `stepCompile` + `stepSolveAndProve` orchestrators. The
 -- | trace file PureScript emits is diffed byte-for-byte against the
 -- | OCaml fixture at `packages/pickles/test/fixtures/simple_chain_base_case.trace`
 -- | via `tools/simple_chain_trace_diff.sh`.
@@ -15,9 +15,9 @@
 -- | appear. Everything downstream (`Pickles.Prove.Step`,
 -- | `Pickles.Step.Main`, `Pickles.Types`) stays polymorphic in
 -- | `prevsSpec`, `ds`, `dw`; type inference unifies them against
--- | `stepMain2`'s `StepWitnessM len StepIPARounds WrapIPARounds ...`
--- | + `StepSlotsM prevsSpec …` constraints when `stepCompile2` /
--- | `stepSolveAndProve2` are invoked here.
+-- | `stepMain`'s `StepWitnessM len StepIPARounds WrapIPARounds ...`
+-- | + `StepSlotsM prevsSpec …` constraints when `stepCompile` /
+-- | `stepSolveAndProve` are invoked here.
 -- |
 -- | Required env vars at runtime:
 -- | - `PICKLES_TRACE_FILE` — path to the trace log (truncated).
@@ -36,6 +36,7 @@ import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..), fromJust)
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -55,14 +56,13 @@ import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Data.Newtype (unwrap)
-import Pickles.Prove.Step (StepRule, buildStepAdvice2, buildStepAdviceWithOracles2, extractWrapVKForStepHash, stepCompile2, stepSolveAndProve2)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
 import Pickles.Types (PaddedLength, StepField)
 import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
@@ -226,11 +226,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: vestaSrs
         }
 
-      -- Placeholder advice for `stepCompile2`. Values aren't inspected
+      -- Placeholder advice for `stepCompile`. Values aren't inspected
       -- during compile — only the type shape matters — so we pass a
       -- synthetic all-g0-VK advice here. The REAL advice (with oracles
       -- over the compiled wrap VK) is built below for the solver.
-      placeholderAdvice = buildStepAdvice2 @(PrevsSpecCons 1 PrevsSpecNil)
+      placeholderAdvice = buildStepAdvice @(PrevsSpecCons 1 PrevsSpecNil)
         { publicInput: F zero
         , mostRecentWidth: 1
         , wrapDomainLog2
@@ -239,7 +239,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
+      stepCompile @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -369,7 +369,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Vector.nil
             }
         }
-    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero
       , prevPublicInput: F (negate one) -- OCaml `s_neg_one`
       , mostRecentWidth: 1
@@ -413,8 +413,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
 
     -- ===== Phase 4: run the step solver =====
     result <- liftEffect $
-      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("stepSolveAndProve2: " <> show e))
+      stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
         stepCR
@@ -981,7 +981,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< msgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F one
       , prevPublicInput: F zero
       , mostRecentWidth: 1
@@ -1049,8 +1049,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b1Result <- liftEffect $
-      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b1 stepSolveAndProve2: " <> show e))
+      stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F zero))
         stepCR
@@ -1373,7 +1373,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b1MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 2 :: StepField)
       , prevPublicInput: F one
       , mostRecentWidth: 1
@@ -1424,8 +1424,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b2Result <- liftEffect $
-      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b2 stepSolveAndProve2: " <> show e))
+      stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F one))
         stepCR
@@ -1690,7 +1690,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b2MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles2 @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 3 :: StepField)
       , prevPublicInput: F (fromInt 2 :: StepField)
       , mostRecentWidth: 1
@@ -1738,8 +1738,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     b3Result <- liftEffect $
-      stepSolveAndProve2 @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b3 stepSolveAndProve2: " <> show e))
+      stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))
         stepCR

@@ -29,7 +29,7 @@ import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -80,7 +80,7 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
     -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
     -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
     -- pick any concrete CircuitType-havers; Unit works.
-    ( \_ -> stepMain2 @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
+    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
         addOneReturnRule
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH

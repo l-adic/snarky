@@ -14,8 +14,8 @@ module Pickles.Step.Main
   ( -- * Rule abstraction
     RuleOutput
   -- * Spec-indexed per-slot carrier step_main
-  , StepMainSrsData2
-  , stepMain2
+  , StepMainSrsData
+  , stepMain
   ) where
 
 import Prelude
@@ -35,7 +35,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepPerProofWitnesses, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPerProofWitnesses, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -44,10 +44,10 @@ import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
-import Snarky.Circuit.Types (class CircuitType, varToFields)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
+import Snarky.Circuit.Types (class CircuitType, varToFields)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), curveParams, endoScalar)
 import Snarky.Curves.Pasta (PallasG)
@@ -131,7 +131,7 @@ type RuleOutput n prevInput output =
 -- |   * Simple_chain N2  : `[Nothing, Nothing]`
 -- |   * Add_one_return   : `[]` (N=0, no slots)
 -- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
-type StepMainSrsData2 len =
+type StepMainSrsData len =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -142,10 +142,10 @@ type StepMainSrsData2 len =
     -- | per slot — same SRS, different domain size, different `i`-th
     -- | lagrange basis point.
     perSlotLagrangeAt :: Vector len (LagrangeBaseLookup StepField)
-    -- | Shared Tock SRS h-generator. `Generators.h =
-    -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
-    -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
-    -- | NOT per-slot.
+  -- | Shared Tock SRS h-generator. `Generators.h =
+  -- | Kimchi_bindings.Protocol.SRS.Fq.urs_h (Tock URS)`
+  -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
+  -- | NOT per-slot.
   , blindingH :: AffinePoint (F StepField)
   , perSlotFopDomainLog2 :: Vector len Int
   , perSlotKnownWrapKeys ::
@@ -469,7 +469,7 @@ unfFields unf =
 -- | difference is the per-slot heterogeneity source.
 -------------------------------------------------------------------------------
 
-stepMain2
+stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
        len carrier carrierVar
        unfsTotal digestPlusUnfs
@@ -499,10 +499,11 @@ stepMain2
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs len outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData2 len
+  -> StepMainSrsData len
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
-stepMain2 rule
+stepMain
+  rule
   { perSlotLagrangeAt
   , blindingH
   , perSlotFopDomainLog2
@@ -579,10 +580,12 @@ stepMain2 rule
       where
       liftWaPt :: WeierstrassAffinePoint PallasG (F StepField) -> WeierstrassAffinePoint PallasG (FVar StepField)
       liftWaPt (WeierstrassAffinePoint pt) =
-        let F x = pt.x
-            F y = pt.y
-        in WeierstrassAffinePoint
-          { x: const_ x, y: const_ y }
+        let
+          F x = pt.x
+          F y = pt.y
+        in
+          WeierstrassAffinePoint
+            { x: const_ x, y: const_ y }
 
     constDummySg :: AffinePoint (FVar StepField)
     constDummySg = { x: const_ dummySg.x, y: const_ dummySg.y }

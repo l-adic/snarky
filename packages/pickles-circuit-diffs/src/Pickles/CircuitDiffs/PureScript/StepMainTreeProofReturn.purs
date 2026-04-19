@@ -41,18 +41,18 @@ import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain2)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField, VerificationKey(..))
+import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, const_, exists, if_, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Curves.Class as Curves
-import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
@@ -134,7 +134,7 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     -- public_input slots are Field (prev[0]=No_recursion_return's
     -- output, prev[1]=self's output), so prevInputVal=F StepField.
     -- Heterogeneous spec: slot 0 is No_recursion_return (n=0), slot 1 is
-    -- self (n=2). With stepMain2's spec-indexed carrier, slot 0's SPPW
+    -- self (n=2). With stepMain's spec-indexed carrier, slot 0's SPPW
     -- has empty prev_challenges / prev_sgs (correctly reflecting that a
     -- N=0 prev verified zero prior proofs). The v1 path over-allocated
     -- slot 0 to size 2, producing ~4 extra on-curve-check rows vs OCaml.
@@ -153,8 +153,8 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     --   commitments are all `Pallas.generator` (placeholder; OCaml
     --   uses `Tick.Inner_curve.one` at dump_circuit_impl.ml:3999-4009).
     -- * slot 1: Nothing — slot's prev is SELF, uses the shared
-    --   `exists`-allocated VK inside stepMain2.
-    ( \_ -> stepMain2 @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
+    --   `exists`-allocated VK inside stepMain.
+    ( \_ -> stepMain @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
         treeProofReturnRule
         { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH

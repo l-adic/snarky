@@ -59,7 +59,7 @@ import Pickles.Types (PaddedLength, StepPerProofWitness)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
-import Snarky.Circuit.Types (class CircuitType, sizeInFields, valueToFields, fieldsToValue, varToFields, fieldsToVar)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue, fieldsToVar, sizeInFields, valueToFields, varToFields)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -178,7 +178,13 @@ instance
   , Reflectable pad Int
   ) =>
   PrevsCarrier
-    (PrevsSpecCons n rest) ds dw f sf b len
+    (PrevsSpecCons n rest)
+    ds
+    dw
+    f
+    sf
+    b
+    len
     (Tuple (StepSlot n ds dw f sf b) rcarrier)
   where
   traversePrevsA f (Tuple here rest) =
