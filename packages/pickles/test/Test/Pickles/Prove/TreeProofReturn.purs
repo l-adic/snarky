@@ -39,40 +39,46 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
+import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exc
+import Effect.Exception (throw, throwException) as Exc
 import Pickles.Dummy as Dummy
+import Pickles.Linearization as Linearization
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.Prevs (StepSlot(..))
-import Pickles.Types (PaddedLength, StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
+import Pickles.Util.Fatal (fromJust')
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Types.Shifted (Type2) as ShiftedType2
-import Snarky.Circuit.DSL (SizedF)
+import Snarky.Types.Shifted (fromShifted, toShifted)
+import Snarky.Circuit.DSL (SizedF, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
-import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
 import Pickles.Types (StepField, WrapField)
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.Wrap.Slots (Slots2, slots2)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
-import Snarky.Curves.Pasta (PallasG)
+import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Spec (SpecT, describe, it)
 
@@ -532,7 +538,285 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
 
-    -- TODO(iter 2c): Tree wrap prove.
-    -- TODO(iter 3):  witness diff via KIMCHI_WITNESS_DUMP on all 4 proofs.
+    -- ===== Phase C: Tree wrap prove (iter 2t) =====
+    -- Analogous to SimpleChain's base-case wrap prove (SimpleChain.purs:480-866)
+    -- but for `mpv=2` / `Slots2 0 2` — slot 0 is a real NRR wrap proof,
+    -- slot 1 is a dummy N2.
+    let
+      stepOraclesTree = ProofFFI.pallasProofOracles treeStepCR.verifierIndex
+        { proof: treeStepResult.proof
+        , publicInput: treeStepResult.publicInputs
+        , prevChallenges:
+            -- Tree has mpv=2 prev slots. Both carry dummy step-IPA values
+            -- (real prev STEP challenges don't exist in base case; the
+            -- advice.kimchiPrevChallenges uses nrr.stepSg for both entries
+            -- per the step prover setup above).
+            [ { sgX: nrr.stepSg.x
+              , sgY: nrr.stepSg.y
+              , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+              }
+            , { sgX: nrr.stepSg.x
+              , sgY: nrr.stepSg.y
+              , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+              }
+            ]
+        }
 
-    liftEffect $ Trace.string "tree_proof_return.end" "compile_only"
+      treeStepAllEvals :: AllEvals StepField
+      treeStepAllEvals =
+        { ftEval1: stepOraclesTree.ftEval1
+        , publicEvals:
+            { zeta: stepOraclesTree.publicEvalZeta
+            , omegaTimesZeta: stepOraclesTree.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals treeStepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals treeStepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals treeStepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals treeStepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals treeStepResult.proof
+        }
+
+      treeWrapDvInput :: WrapDeferredValuesInput 2
+      treeWrapDvInput =
+        { proof: treeStepResult.proof
+        , verifierIndex: treeStepCR.verifierIndex
+        , publicInput: treeStepResult.publicInputs
+        , allEvals: treeStepAllEvals
+        , pEval0Chunks: [ stepOraclesTree.publicEvalZeta ]
+        , domainLog2: treeStepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator treeStepDomainLog2 :: StepField)
+        , shifts: (domainShifts treeStepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: treeStepDomainLog2, zkRows: 3, pt: stepOraclesTree.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        -- Both slot prevSgs use nrr.stepSg (dummy step-IPA sg) since the
+        -- step prover's prev_challenges for both slots used this same value.
+        , prevSgs: nrr.stepSg :< nrr.stepSg :< Vector.nil
+        , prevChallenges:
+            Dummy.dummyIpaChallenges.stepExpanded
+              :< Dummy.dummyIpaChallenges.stepExpanded
+              :< Vector.nil
+        -- Tree proofs_verified = 2 → N2 mask = [T, T].
+        , proofsVerifiedMask: true :< true :< Vector.nil
+        }
+
+      treeWrapDv = wrapComputeDeferredValues treeWrapDvInput
+
+      -- msg_for_next_step_proof digest: read from the step proof's PI.
+      -- Tree outputSize=67 layout: 2*32 unfinalizeds (indices 0-63) +
+      -- 1 outer hash (index 64) + 2 widths (indices 65-66). Index 64
+      -- holds the outer `hash_messages_for_next_step_proof` digest.
+      msgForNextStepDigestTree :: StepField
+      msgForNextStepDigestTree = fromJust'
+        "Tree wrap prove: step PI[64] outer hash must exist" $
+        Array.index treeStepResult.publicInputs 64
+
+      treeWrapProofSg :: AffinePoint WrapField
+      treeWrapProofSg = ProofFFI.pallasProofOpeningSg treeStepResult.proof
+
+      treeWrapEndoScalar :: WrapField
+      treeWrapEndoScalar =
+        let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+
+      -- For slot-0 (real NRR prev), extract raw bp chals from the step
+      -- advice's publicUnfinalizedProofs[0] and expand via wrap endo.
+      PerProofUnfinalized slot0UnfRec =
+        Vector.head (unwrap treeRealAdvice).publicUnfinalizedProofs
+
+      PerProofUnfinalized slot1UnfRec =
+        Vector.head (Vector.drop @1 (unwrap treeRealAdvice).publicUnfinalizedProofs)
+
+      slot0RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      slot0RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          slot0UnfRec.bulletproofChallenges
+
+      -- `dummyIpaChallenges.wrapExpanded` already has type `Vector
+      -- WrapIPARounds WrapField`; no coercion needed. (The similar
+      -- `fromBigInt <<< toBigInt` pattern in SimpleChain.purs:596 is
+      -- same-field identity and should eventually be cleaned up.)
+      msgForNextWrapDummyChals :: Vector WrapIPARounds WrapField
+      msgForNextWrapDummyChals = Dummy.dummyIpaChallenges.wrapExpanded
+
+      -- Base case: both slots of the Tree wrap proof's own
+      -- messages_for_next_wrap_proof are dummy + real-slot-0 pattern.
+      msgForNextWrapDigestTree :: WrapField
+      msgForNextWrapDigestTree = hashMessagesForNextWrapProofPureGeneral
+        { sg: treeWrapProofSg
+        , paddedChallenges:
+            msgForNextWrapDummyChals
+              :< slot0RealBpChalsWrap
+              :< Vector.nil
+        }
+
+      treeWrapPublicInput = assembleWrapMainInput
+        { deferredValues: treeWrapDv
+        , messagesForNextStepProofDigest: msgForNextStepDigestTree
+        , messagesForNextWrapProofDigest: msgForNextWrapDigestTree
+        }
+
+      -- Convert each slot's advice unfinalized (Type2 SplitField F StepField)
+      -- into wrap-field form (Type2 F WrapField). Same pattern as
+      -- SimpleChain.purs:662-681.
+      convertSlotUnf
+        :: { combinedInnerProduct :: Type2 (SplitField (F StepField) Boolean)
+           , b :: Type2 (SplitField (F StepField) Boolean)
+           , zetaToSrsLength :: Type2 (SplitField (F StepField) Boolean)
+           , zetaToDomainSize :: Type2 (SplitField (F StepField) Boolean)
+           , perm :: Type2 (SplitField (F StepField) Boolean)
+           , spongeDigest :: F StepField
+           , beta :: UnChecked (SizedF 128 (F StepField))
+           , gamma :: UnChecked (SizedF 128 (F StepField))
+           , alpha :: UnChecked (SizedF 128 (F StepField))
+           , zeta :: UnChecked (SizedF 128 (F StepField))
+           , xi :: UnChecked (SizedF 128 (F StepField))
+           , bulletproofChallenges ::
+               Vector WrapIPARounds (UnChecked (SizedF 128 (F StepField)))
+           , shouldFinalize :: Boolean
+           }
+        -> PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
+             (F WrapField)
+             Boolean
+      convertSlotUnf r = PerProofUnfinalized
+        { combinedInnerProduct: toShifted (fromShifted r.combinedInnerProduct :: F WrapField)
+        , b: toShifted (fromShifted r.b :: F WrapField)
+        , zetaToSrsLength: toShifted (fromShifted r.zetaToSrsLength :: F WrapField)
+        , zetaToDomainSize: toShifted (fromShifted r.zetaToDomainSize :: F WrapField)
+        , perm: toShifted (fromShifted r.perm :: F WrapField)
+        , spongeDigest: F (fromBigInt (toBigInt (case r.spongeDigest of F x -> x)) :: WrapField)
+        , beta: UnChecked (coerceViaBits (case r.beta of UnChecked v -> v))
+        , gamma: UnChecked (coerceViaBits (case r.gamma of UnChecked v -> v))
+        , alpha: UnChecked (coerceViaBits (case r.alpha of UnChecked v -> v))
+        , zeta: UnChecked (coerceViaBits (case r.zeta of UnChecked v -> v))
+        , xi: UnChecked (coerceViaBits (case r.xi of UnChecked v -> v))
+        , bulletproofChallenges:
+            map (\(UnChecked v) -> UnChecked (coerceViaBits v)) r.bulletproofChallenges
+        , shouldFinalize: r.shouldFinalize
+        }
+
+      slot0PerProof = convertSlotUnf slot0UnfRec
+      slot1PerProof = convertSlotUnf slot1UnfRec
+
+      -- prevStepAccs: slot 0 = NRR's step proof opening sg (Vesta),
+      -- slot 1 = dummy step sg (also nrr.stepSg which is Dummy.Ipa.Step.sg).
+      nrrStepOpeningSg = ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
+      slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      slot0StepAcc = WeierstrassAffinePoint
+        { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+      slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      slot1StepAcc = WeierstrassAffinePoint
+        { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
+
+      -- Slot 1 (width 2) gets two copies of dummyWrapBpChals.
+      dummyWrapBpChalsW :: Vector WrapIPARounds (F WrapField)
+      dummyWrapBpChalsW = map F Dummy.dummyIpaChallenges.wrapExpanded
+
+      -- Slot 0: real NRR wrap proof's evals (wrap-field, for the wrap
+      -- IVP's prevEvals). xhat comes from oracles over NRR's wrap proof.
+      slot0PrevEvalsW :: StepAllEvals (F WrapField)
+      slot0PrevEvalsW =
+        let
+          o = ProofFFI.vestaProofOracles nrr.wrapCR.verifierIndex
+            { proof: nrr.wrapResult.proof
+            , publicInput: nrr.wrapPublicInput
+            , prevChallenges: [] -- NRR wrap mpv=0
+            }
+          mkPE p = { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
+        in
+          StepAllEvals
+            { ftEval1: F o.ftEval1
+            , publicEvals: PointEval
+                { zeta: F o.publicEvalZeta
+                , omegaTimesZeta: F o.publicEvalZetaOmega
+                }
+            , zEvals: PointEval (mkPE (ProofFFI.proofZEvals nrr.wrapResult.proof))
+            , witnessEvals: map (PointEval <<< mkPE) (ProofFFI.proofWitnessEvals nrr.wrapResult.proof)
+            , coeffEvals: map (PointEval <<< mkPE) (ProofFFI.proofCoefficientEvals nrr.wrapResult.proof)
+            , sigmaEvals: map (PointEval <<< mkPE) (ProofFFI.proofSigmaEvals nrr.wrapResult.proof)
+            , indexEvals: map (PointEval <<< mkPE) (ProofFFI.proofIndexEvals nrr.wrapResult.proof)
+            }
+
+      -- Slot 1: dummy N2 wrap proof's evals. Dummy evals for non-xhat
+      -- fields, plus oracle-derived xhat from vestaProofOracles on
+      -- dummyWrapProof + Tree's wrap VK.
+      slot1PrevEvalsW :: StepAllEvals (F WrapField)
+      slot1PrevEvalsW =
+        let
+          toFFI r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
+          dummyChalPoly =
+            { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+          o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
+            { proof: dummyWrapProof
+            , publicInput: slot1BaseCaseWrapPI
+            , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
+            }
+          de = Dummy.roComputeResult.wrapDummyEvals
+          pe p = PointEval { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
+        in
+          StepAllEvals
+            { ftEval1: F de.ftEval1
+            , publicEvals: PointEval
+                { zeta: F o.publicEvalZeta
+                , omegaTimesZeta: F o.publicEvalZetaOmega
+                }
+            , zEvals: pe de.zEvals
+            , witnessEvals: map pe de.witnessEvals
+            , coeffEvals: map pe de.coeffEvals
+            , sigmaEvals: map pe de.sigmaEvals
+            , indexEvals: map pe de.indexEvals
+            }
+
+      treeWrapAdviceInput :: BuildWrapAdviceInput 2 (Slots2 0 2)
+      treeWrapAdviceInput =
+        { stepProof: treeStepResult.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: slot0PerProof :< slot1PerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt msgForNextStepDigestTree) :: WrapField)
+        , prevStepAccs: slot0StepAcc :< slot1StepAcc :< Vector.nil
+        -- Slots2 0 2: slot 0 width 0 (empty), slot 1 width 2 (two dummy chals).
+        , prevOldBpChals: slots2 Vector.nil (dummyWrapBpChalsW :< dummyWrapBpChalsW :< Vector.nil)
+        , prevEvals: slot0PrevEvalsW :< slot1PrevEvalsW :< Vector.nil
+        , prevWrapDomainIndices:
+            F (fromInt 1 :: WrapField) :< F (fromInt 1 :: WrapField) :< Vector.nil
+        }
+
+      treeWrapAdvice :: WrapAdvice 2 (Slots2 0 2)
+      treeWrapAdvice = buildWrapAdvice treeWrapAdviceInput
+
+      treeWrapProveCtx =
+        { wrapMainConfig: treeWrapCtx.wrapMainConfig
+        , crs: pallasWrapSrs
+        , publicInput: treeWrapPublicInput
+        , advice: treeWrapAdvice
+        , kimchiPrevChallenges:
+            -- Padded-length-2 accumulator for the wrap prover's kimchi
+            -- prev_challenges. Both entries dummy for base case.
+            let
+              padEntry =
+                { sgX: nrrWrapSg.x
+                , sgY: nrrWrapSg.y
+                , challenges: Dummy.dummyIpaChallenges.wrapExpanded
+                }
+            in
+              padEntry :< padEntry :< Vector.nil
+        }
+
+    treeWrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots2 0 2)
+        (\e -> Exc.throwException e)
+        treeWrapProveCtx
+        treeWrapCR
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple treeWrapResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("wrap.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "base_case_proved"
