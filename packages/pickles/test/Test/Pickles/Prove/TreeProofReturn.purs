@@ -476,7 +476,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { publicInput: unit
         , prevPublicInput: (F (negate one)) :: F StepField
         , mostRecentWidth: 2
-        , wrapDomainLog2: treeSelfStepDomainLog2
+        -- Iter 2ah: for slot 1 wrap-side derive_plonk, domain = Tree
+        -- wrap VK's domain (log2=14 via override_wrap_domain=N1), NOT
+        -- Tree's step domain (log2=15). Per OCaml step.ml:533-538
+        -- tock_domain uses `dlog_vk.domain.log_size_of_group`.
+        , wrapDomainLog2: treeWrapDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
         , wrapSg: nrrWrapSg
         , stepOpeningSg: nrr.stepSg
