@@ -51,6 +51,7 @@ import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
@@ -499,6 +500,12 @@ spec =
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
         exactMatch "wrap_main_add_one_return_circuit" (fromCompiledCircuit $ compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData)
+        -- N=2 Output mode (Tree_proof_return). Single branch with
+        -- heterogeneous prev slots [0; 2] (No_recursion_return at
+        -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]],
+        -- wrap domain 2^13. Same SRS config as Add_one_return (both
+        -- use domain_log2=13).
+        exactMatch "wrap_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileWrapMainTreeProofReturn wrapMainAddOneReturnSrsData)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
