@@ -539,6 +539,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
 
+    liftEffect $ Trace.string "DEBUG.reached" "after-step-prove"
     -- iter 2x diag: kimchi-native step VK digest (what the oracle absorbs
     -- as index_digest). Compare to ivp.trace.wrap.index_digest (circuit).
     liftEffect $ Trace.field "diag.kimchi.step_vk_digest"
