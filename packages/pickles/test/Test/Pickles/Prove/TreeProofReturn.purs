@@ -543,19 +543,28 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- but for `mpv=2` / `Slots2 0 2` — slot 0 is a real NRR wrap proof,
     -- slot 1 is a dummy N2.
     let
+      -- Slot-0 kimchi prev_challenges: NRR's REAL wrap bp_chals expanded
+      -- via Vesta.ScalarField endo (step endo_scalar). Mirrors what
+      -- buildStepAdviceWithOracles wrote into slot 0's kimchiPrevChallenges
+      -- via `input.kimchiPrevChallengesExpanded = toFieldPure <$>
+      -- nrrDv.bulletproofPrechallenges`.
+      nrrBpChalsExpandedForSlot0 :: Vector StepIPARounds StepField
+      nrrBpChalsExpandedForSlot0 =
+        map
+          (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+          nrr.wrapDv.bulletproofPrechallenges
+
       stepOraclesTree = ProofFFI.pallasProofOracles treeStepCR.verifierIndex
         { proof: treeStepResult.proof
         , publicInput: treeStepResult.publicInputs
         , prevChallenges:
-            -- Tree has mpv=2 prev slots. Both carry dummy step-IPA values
-            -- (real prev STEP challenges don't exist in base case; the
-            -- advice.kimchiPrevChallenges uses nrr.stepSg for both entries
-            -- per the step prover setup above).
-            [ { sgX: nrr.stepSg.x
+            [ -- slot 0 (NRR verified): NRR's real bp_chals (expanded)
+              { sgX: nrr.stepSg.x
               , sgY: nrr.stepSg.y
-              , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+              , challenges: Vector.toUnfoldable nrrBpChalsExpandedForSlot0
               }
-            , { sgX: nrr.stepSg.x
+            , -- slot 1 (dummy N2): dummy step-IPA challenges
+              { sgX: nrr.stepSg.x
               , sgY: nrr.stepSg.y
               , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
               }
@@ -596,8 +605,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- Both slot prevSgs use nrr.stepSg (dummy step-IPA sg) since the
         -- step prover's prev_challenges for both slots used this same value.
         , prevSgs: nrr.stepSg :< nrr.stepSg :< Vector.nil
+        -- slot 0 (NRR verified): NRR's real bp_chals expanded;
+        -- slot 1 (dummy N2): dummy step-IPA challenges.
         , prevChallenges:
-            Dummy.dummyIpaChallenges.stepExpanded
+            nrrBpChalsExpandedForSlot0
               :< Dummy.dummyIpaChallenges.stepExpanded
               :< Vector.nil
         -- Tree proofs_verified = 2 → N2 mask = [T, T].
@@ -785,8 +796,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- Slots2 0 2: slot 0 width 0 (empty), slot 1 width 2 (two dummy chals).
         , prevOldBpChals: slots2 Vector.nil (dummyWrapBpChalsW :< dummyWrapBpChalsW :< Vector.nil)
         , prevEvals: slot0PrevEvalsW :< slot1PrevEvalsW :< Vector.nil
+        -- Indices into `allPossibleDomainLog2s = [13, 14, 15]`:
+        -- slot 0 verifies NRR wrap (mpv=0 → wrap_domain 2^13 → index 0).
+        -- slot 1 verifies Tree self wrap (override_wrap_domain=N1 → 2^14 → index 1).
         , prevWrapDomainIndices:
-            F (fromInt 1 :: WrapField) :< F (fromInt 1 :: WrapField) :< Vector.nil
+            F (fromInt 0 :: WrapField) :< F (fromInt 1 :: WrapField) :< Vector.nil
         }
 
       treeWrapAdvice :: WrapAdvice 2 (Slots2 0 2)
