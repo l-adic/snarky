@@ -39,6 +39,7 @@ import Data.Array as Array
 import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
+import Data.Fin (unsafeFinite)
 import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -537,6 +538,26 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
+
+    -- iter 2x diag: kimchi-native step VK digest (what the oracle absorbs
+    -- as index_digest). Compare to ivp.trace.wrap.index_digest (circuit).
+    liftEffect $ Trace.field "diag.kimchi.step_vk_digest"
+      (ProofFFI.pallasVerifierIndexDigest treeStepCR.verifierIndex)
+    -- Kimchi's post-absorb sponge state (before beta squeeze) — gives us
+    -- ground truth for what the circuit's sponge state should be.
+    liftEffect do
+      let
+        kimchiCheckpoint = ProofFFI.pallasSpongeCheckpointBeforeChallenges
+          treeStepCR.verifierIndex
+          { proof: treeStepResult.proof, publicInput: treeStepResult.publicInputs }
+      Trace.field "diag.kimchi.sponge_post.s0"
+        (Vector.index kimchiCheckpoint.state (unsafeFinite @3 0))
+      Trace.field "diag.kimchi.sponge_post.s1"
+        (Vector.index kimchiCheckpoint.state (unsafeFinite @3 1))
+      Trace.field "diag.kimchi.sponge_post.s2"
+        (Vector.index kimchiCheckpoint.state (unsafeFinite @3 2))
+      Trace.string "diag.kimchi.sponge_post.mode" kimchiCheckpoint.spongeMode
+      Trace.int "diag.kimchi.sponge_post.mode_count" kimchiCheckpoint.modeCount
 
     -- ===== Phase C: Tree wrap prove (iter 2t) =====
     -- Analogous to SimpleChain's base-case wrap prove (SimpleChain.purs:480-866)
