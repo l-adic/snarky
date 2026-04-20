@@ -75,7 +75,7 @@ rm -f "$PS_TRACE"
 export PATH=$HOME/.nvm/versions/node/v22.22.2/bin:$PATH
 cd "$REPO_ROOT"
 KIMCHI_DETERMINISTIC_SEED=$SEED PICKLES_TRACE_FILE=$PS_TRACE \
-  npx spago test -p pickles -- --example "no_recursion_return" >/dev/null 2>&1
+  npx spago test -p pickles -- --example "NoRecursionReturn" >/dev/null 2>&1
 
 if [ ! -f "$PS_TRACE" ]; then
   echo "FATAL: PureScript No_recursion_return test did not produce a trace file." >&2
