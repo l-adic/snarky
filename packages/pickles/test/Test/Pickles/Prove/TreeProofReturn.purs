@@ -850,6 +850,35 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               padEntry :< padEntry :< Vector.nil
         }
 
+    -- Iter 2z: kimchi-native sponge state right BEFORE beta squeeze.
+    -- Compare to wrap circuit's OptSponge state at the equivalent
+    -- point (after absorbing index_digest + sg_old + x_hat + w_comm).
+    liftEffect do
+      let
+        kimchiBetaState = ProofFFI.pallasSpongeStateBeforeBeta
+          treeStepCR.verifierIndex
+          { proof: treeStepResult.proof
+          , publicInput: treeStepResult.publicInputs
+          , prevChallenges:
+              [ { sgX: nrr.stepSg.x
+                , sgY: nrr.stepSg.y
+                , challenges: Vector.toUnfoldable nrrBpChalsExpandedForSlot0
+                }
+              , { sgX: nrr.stepSg.x
+                , sgY: nrr.stepSg.y
+                , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+                }
+              ]
+          }
+      Trace.field "diag.kimchi.before_beta.s0"
+        (Vector.index kimchiBetaState.state (unsafeFinite @3 0))
+      Trace.field "diag.kimchi.before_beta.s1"
+        (Vector.index kimchiBetaState.state (unsafeFinite @3 1))
+      Trace.field "diag.kimchi.before_beta.s2"
+        (Vector.index kimchiBetaState.state (unsafeFinite @3 2))
+      Trace.string "diag.kimchi.before_beta.mode" kimchiBetaState.spongeMode
+      Trace.int "diag.kimchi.before_beta.mode_count" kimchiBetaState.modeCount
+
     treeWrapResult <- liftEffect $
       wrapSolveAndProve @1 @(Slots2 0 2)
         (\e -> Exc.throwException e)

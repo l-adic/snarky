@@ -27,6 +27,7 @@ module Pickles.ProofFFI
   , vestaProofOracles
   , pallasSpongeCheckpointBeforeChallenges
   , vestaSpongeCheckpointBeforeChallenges
+  , pallasSpongeStateBeforeBeta
   , pallasProofOpeningLr
   , vestaProofOpeningLr
   , pallasProofLrProd
@@ -86,6 +87,7 @@ module Pickles.ProofFFI
   , LrPair
   ) where
 
+import Data.Array as Array
 import Data.Unit (Unit)
 import Data.Vector (Vector)
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
@@ -347,6 +349,40 @@ foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
 -- Vesta circuits use Pallas for commitments, so sponge is over Pallas.BaseField = Vesta.ScalarField
 foreign import pallasSpongeCheckpointBeforeChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> SpongeCheckpoint Pallas.ScalarField
 foreign import vestaSpongeCheckpointBeforeChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> SpongeCheckpoint Vesta.ScalarField
+
+-- | Capture the Fq sponge state RIGHT BEFORE the beta squeeze in a
+-- | Vesta proof's verifier oracle run. Mirrors kimchi's verifier.rs
+-- | 140-158 absorb sequence: index_digest, prev_challenge commitments,
+-- | public_comm (x_hat), w_comm. Then checkpoints and returns the state.
+-- |
+-- | Takes `prevChallenges` in the same shape as `pallasProofOracles` —
+-- | the caller provides the (sg, expanded challenges) pairs that kimchi
+-- | would see when verifying this proof recursively. The returned
+-- | SpongeCheckpoint is the ground truth for what a re-implementation
+-- | (e.g. PS wrap circuit OptSponge) should match at the equivalent
+-- | point in its absorb sequence.
+foreign import pallasSpongeStateBeforeBetaImpl
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> Proof Vesta.G Pallas.BaseField
+  -> Array Pallas.BaseField
+  -> Array Vesta.BaseField
+  -> Array Vesta.BaseField
+  -> Array (Array Pallas.BaseField)
+  -> SpongeCheckpoint Pallas.ScalarField
+
+pallasSpongeStateBeforeBeta
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> { proof :: Proof Vesta.G Pallas.BaseField
+     , publicInput :: Array Pallas.BaseField
+     , prevChallenges :: Array { sgX :: Vesta.BaseField, sgY :: Vesta.BaseField, challenges :: Array Pallas.BaseField }
+     }
+  -> SpongeCheckpoint Pallas.ScalarField
+pallasSpongeStateBeforeBeta vk { proof, publicInput, prevChallenges } =
+  pallasSpongeStateBeforeBetaImpl
+    vk proof publicInput
+    (Array.concatMap (\p -> [ p.sgX ]) prevChallenges)
+    (Array.concatMap (\p -> [ p.sgY ]) prevChallenges)
+    (Array.concatMap (\p -> [ p.challenges ]) prevChallenges)
 
 -- Note: L/R coordinates are in the commitment curve's base field (the "other" field in the 2-cycle)
 -- For Pallas circuits using Vesta commitments: Vesta.BaseField = Pallas.ScalarField
