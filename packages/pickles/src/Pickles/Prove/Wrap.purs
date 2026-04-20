@@ -42,8 +42,7 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite, unsafeFinite)
-import Data.FoldableWithIndex (forWithIndex_)
+import Data.Fin (unsafeFinite)
 import Data.Map (Map)
 import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un)
@@ -58,7 +57,6 @@ import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Trace as Trace
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
@@ -592,13 +590,6 @@ wrapSolveAndProve onError ctx compileResult = do
           onError (error "wrapProve: constraint system not satisfied")
         else
           let
-            _ = unsafePerformEffect do
-              forWithIndex_ ctx.kimchiPrevChallenges \fi r -> do
-                let i = getFinite fi
-                Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.x") r.sgX
-                Trace.field ("wrap.create_proof.accum." <> show i <> ".sg.y") r.sgY
-                forWithIndex_ r.challenges \fj c ->
-                  Trace.field ("wrap.create_proof.accum." <> show i <> ".chal." <> show (getFinite fj)) c
             proof = vestaCreateProofWithPrev
               { proverIndex: compileResult.proverIndex
               , witness

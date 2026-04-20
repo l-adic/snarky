@@ -617,13 +617,6 @@ wrapMain config (WrapStatementPacked stmtR) = do
       revIdxs
     pure (Vector.reverse revMsgs)
 
-  -- DIAG: dump msgsForWrap[0] at solve time so we can compare to
-  -- OCaml's expand_proof.msgForNextWrap expected value.
-  let m0 = Array.head $ Vector.toUnfoldable msgsForWrap
-  for_ m0 \m0' -> 
-    ivpTrace "wrap.dbg.msgsForWrap.0" m0'
-  ivpTrace "wrap.dbg.prevMsgForNextStep" prevMsgForNextStep
-
   label "block4-assert-msg-step" $
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
 

@@ -482,14 +482,6 @@ ipaFinalCheckCircuit scalarOps params input = do
   scalarChallenges <- labelM "ipa_extract_challenges" $
     extractScalarChallenges params input.lr
 
-  -- DIAG: dump the 128-bit prechallenges the wrap circuit derived
-  -- from bullet_reduce. These are endo-expanded later. Compare to
-  -- `pallasProofOpeningPrechallenges` (kimchi's ground truth) to
-  -- detect any L/R absorption ordering / squeeze bug.
-  liftSnarky do
-    forWithIndex_ scalarChallenges \fi sc ->
-      ivpTrace ("ipa.dbg.prechal." <> show (getFinite fi)) (SizedF.toField sc)
-
   -- 2. Compute lr_prod from L/R pairs and challenges
   -- OCaml: bullet_reduce does curve ops (endo_inv/endo/add_fast) AFTER all absorptions
   lrProd <- liftSnarky $ label "ipa_bullet_reduce" $ do
@@ -655,51 +647,30 @@ checkBulletproof scalarOps params commitmentBases baseMasks input = do
         let _ = unsafePerformEffect (Trace.fieldF labelStr val)
         pure val
       pure unit
-  -- DIAG: dump the sponge STATE entering check_bulletproof (pre-CIP-
-  -- absorb). Compare to what kimchi's native Fq sponge state would be
-  -- at the same point for PS's step proof.
+  -- Dump the sponge STATE entering check_bulletproof (pre-CIP-absorb).
   pre <- getSponge
   liftSnarky do
-    ivpTrace' "ipa.dbg.sponge_pre.s0" (Vector.index pre.state (unsafeFinite @3 0))
-    ivpTrace' "ipa.dbg.sponge_pre.s1" (Vector.index pre.state (unsafeFinite @3 1))
-    ivpTrace' "ipa.dbg.sponge_pre.s2" (Vector.index pre.state (unsafeFinite @3 2))
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s0" (Vector.index pre.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s1" (Vector.index pre.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s2" (Vector.index pre.state (unsafeFinite @3 2))
 
   -- 1. Absorb shift_scalar(CIP) into sponge
   -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
     let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
-    -- DIAG: dump each field element absorbed as the shifted CIP. For
-    -- wrap (Type1), this is a single Fq value. Compare to
-    -- `kimchi.cip` (the raw CIP before shift) and
-    -- `shift_scalar::<Vesta>(cip)` which kimchi absorbs.
-    liftSnarky do
-      for_ (Array.mapWithIndex Tuple cipFields) \(Tuple i f) ->
-        ivpTrace' ("ipa.dbg.cip_absorb." <> show i) f
     for_ cipFields absorb
 
-  -- DIAG: dump sponge state after CIP absorb
+  -- Dump sponge state after CIP absorb.
   post <- getSponge
   liftSnarky do
-    ivpTrace' "ipa.dbg.sponge_post.s0" (Vector.index post.state (unsafeFinite @3 0))
-    ivpTrace' "ipa.dbg.sponge_post.s1" (Vector.index post.state (unsafeFinite @3 1))
-    ivpTrace' "ipa.dbg.sponge_post.s2" (Vector.index post.state (unsafeFinite @3 2))
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s0" (Vector.index post.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s1" (Vector.index post.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s2" (Vector.index post.state (unsafeFinite @3 2))
 
   -- 2. Derive u via group_map (squeeze BEFORE combine_poly, matching OCaml)
   -- OCaml: let u = let t = Sponge.squeeze_field sponge in group_map t
   u <- labelM "ipa_group_map" $ do
     t <- squeeze
-    -- DIAG: dump the scalar `t` squeezed from the sponge AFTER absorbing
-    -- shifted CIP, BEFORE group_map. Compare to kimchi's `u_t` for
-    -- PS's step proof.
-    liftSnarky $ do
-      let
-        ivpTraceUT labelStr v = do
-          _ <- SDSL.exists do
-            val <- SDSL.readCVar v
-            let _ = unsafePerformEffect (Trace.fieldF labelStr val)
-            pure val
-          pure unit
-      ivpTraceUT "ipa.dbg.u_t" t
     liftSnarky $ groupMapCircuit params.groupMapParams t
 
   -- 3. Compute combined polynomial via Horner (AFTER u, matching OCaml)

@@ -172,32 +172,8 @@ spongeTranscriptOptCircuit params sgOldMask input = do
   -- Copy sponge before squeezing digest (step_verifier.ml:559)
   spongeBeforeEvals <- getSponge
   -- DIAG: dump the snapshot state we're about to restore to.
-  Sponge.liftSnarky do
-    let
-      dumpS labelStr v = do
-        _ <- exists do
-          val <- readCVar v
-          let _ = unsafePerformEffect (Trace.fieldF labelStr val)
-          pure val
-        pure unit
-    dumpS "ivp.trace.wrap.snapshot.s0" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 0))
-    dumpS "ivp.trace.wrap.snapshot.s1" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 1))
-    dumpS "ivp.trace.wrap.snapshot.s2" (Vector.index spongeBeforeEvals.state (unsafeFinite @3 2))
   digest <- Sponge.squeeze
   putSponge spongeBeforeEvals
-  -- DIAG: dump the sponge state AFTER `putSponge`. Must match snapshot.
-  restored <- getSponge
-  Sponge.liftSnarky do
-    let
-      dumpR labelStr v = do
-        _ <- exists do
-          val <- readCVar v
-          let _ = unsafePerformEffect (Trace.fieldF labelStr val)
-          pure val
-        pure unit
-    dumpR "ivp.trace.wrap.restored.s0" (Vector.index restored.state (unsafeFinite @3 0))
-    dumpR "ivp.trace.wrap.restored.s1" (Vector.index restored.state (unsafeFinite @3 1))
-    dumpR "ivp.trace.wrap.restored.s2" (Vector.index restored.state (unsafeFinite @3 2))
   pure { beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest }
 
 -------------------------------------------------------------------------------

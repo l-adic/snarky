@@ -257,12 +257,6 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    _ <- exists do
-      val <- readCVar (coerce bool :: FVar f)
-      let
-        _ = unsafePerformEffect $
-          Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
-      pure val
     pure { results: [ CondAdd bool (base.maskPt base.constant) ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
@@ -489,15 +483,6 @@ scalarMulLeaf params scalar lookup idx = do
     actualShift = reflectType (Proxy @bitsUsed)
     correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params base.constant actualShift
     scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
-  -- DEBUG: solve-time trace of this leaf's scalar input. Lets the
-  -- Simple_chain trace-diff compare the exact values PS's MSM sees at
-  -- each lagrange position against OCaml's.
-  _ <- exists do
-    val <- readCVar scalar
-    let
-      _ = unsafePerformEffect $
-        Trace.fieldF ("ivp.trace.msm_scalar." <> show idx) val
-    pure val
   pure
     { results: [ AddWithCorrection { scaleMul, correction } ]
     , nextIdx: idx + 1

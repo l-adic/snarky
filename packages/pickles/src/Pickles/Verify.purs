@@ -238,15 +238,11 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
           let i = getFinite fi
           ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".x") pt.x
           ivpTrace ("ivp.trace.wrap.w_comm." <> show i <> ".y") pt.y
-        ivpTrace "ivp.trace.wrap.zcomm.x" input.zComm.x
-        ivpTrace "ivp.trace.wrap.zcomm.y" input.zComm.y
       let
         spongeInput = { indexDigest, sgOld: input.sgOld, publicComm: xHat, wComm: input.wComm, zComm: input.zComm, tComm: input.tComm }
         mask = map (coerce :: FVar f -> Bool (FVar f)) input.sgOldMask
       result <- labelM "ivp_opt_sponge" $ spongeTranscriptOptCircuit endoParams mask spongeInput
       liftSnarky $ ivpTrace "ivp.trace.wrap.beta_squeezed" (SizedF.toField result.beta)
-      liftSnarky $ ivpTrace "ivp.trace.wrap.gamma_squeezed" (SizedF.toField result.gamma)
-      liftSnarky $ ivpTrace "ivp.trace.wrap.digest" result.digest
       pure { xHat, beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest: result.digest }
     else do
       -- Step path: absorb index_digest + sg_old into main sponge BEFORE x_hat
@@ -304,15 +300,6 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
   -- 3. Assert deferred values match sponge output (all 128-bit scalar challenges)
   liftSnarky do
     let expected = toPlonkMinimal input.deferredValues.plonk
-    ivpTrace "ivp.trace.xi" (SizedF.toField input.deferredValues.xi)
-    -- Trace the advice (`beta_used`) right next to the assertion so the
-    -- trace-diff workflow can compare it byte-for-byte against OCaml's
-    -- `wrap_verifier.ml` `plonk.beta` at the same site. The OCaml-side
-    -- companion lives in mina/.../wrap_verifier.ml under the same label.
-    -- Note: `useOptSponge=true` is the wrap-side path, so this trace
-    -- only matters for the wrap IVP (which is what we're debugging).
-    when params.useOptSponge $
-      ivpTrace "ivp.trace.wrap.beta_used" (SizedF.toField expected.beta)
     label "ivp_assert_plonk_beta" $ assertEq beta expected.beta
     label "ivp_assert_plonk_gamma" $ assertEq gamma expected.gamma
     label "ivp_assert_plonk_alpha" $ assertEq alphaChal expected.alpha
@@ -373,6 +360,12 @@ incrementallyVerifyProof scalarOps params input mSpongeAfterIndex = labelM "incr
     allBases
     allBaseMasks
     bpInput
+
+  -- Emit `beta_used` here (AFTER checkBulletproof) so the wrap trace
+  -- order matches OCaml's wrap_verifier.ml:1525 — IPA verification
+  -- runs first, then the deferred-values comparison dumps `plonk.beta`.
+  liftSnarky $ when params.useOptSponge $
+    ivpTrace "ivp.trace.wrap.beta_used" (SizedF.toField (toPlonkMinimal input.deferredValues.plonk).beta)
 
   -- 7. Return output
   pure { spongeDigestBeforeEvaluations: digest, bulletproofChallenges: challenges, success }

@@ -34,24 +34,32 @@ import Data.Array as Array
 import Data.Const (Const)
 import Data.Int.Bits as Int
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exc
+import Effect.Exception (throw, throwException) as Exc
 import Data.Foldable (for_)
 import Pickles.Dummy as Dummy
+import Pickles.Linearization as Linearization
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI as ProofFFI
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Trace as Trace
-import Pickles.Types (StepField, WrapField)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles.Types (StepField, WrapField, WrapIPARounds)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Pickles.Wrap.Slots (NoSlots, noSlots)
+import Pickles.Util.Fatal (fromJust')
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, const_)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Spec (SpecT, describe, it)
 
@@ -225,6 +233,158 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple stepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
 
-    -- TODO(iteration-4): wrap prove.
+    -- ===== Phase 4: wrap prove =====
+    -- Run kimchi oracles on the fresh step proof. N=0 step has no
+    -- prev proofs of its own, so `prevChallenges` is empty.
+    let
+      stepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
+        { proof: stepResult.proof
+        , publicInput: stepResult.publicInputs
+        , prevChallenges: []
+        }
+
+      stepAllEvals :: AllEvals StepField
+      stepAllEvals =
+        { ftEval1: stepOracles.ftEval1
+        , publicEvals:
+            { zeta: stepOracles.publicEvalZeta
+            , omegaTimesZeta: stepOracles.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals stepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals stepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals stepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals stepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals stepResult.proof
+        }
+
+      stepEndoScalar :: StepField
+      stepEndoScalar =
+        let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+
+      stepDomainLog2ForWrap = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
+
+      wrapDvInput :: WrapDeferredValuesInput 0
+      wrapDvInput =
+        { proof: stepResult.proof
+        , verifierIndex: stepCR.verifierIndex
+        , publicInput: stepResult.publicInputs
+        , allEvals: stepAllEvals
+        , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+        , domainLog2: stepDomainLog2ForWrap
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator stepDomainLog2ForWrap :: StepField)
+        , shifts: (domainShifts stepDomainLog2ForWrap :: Vector.Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: stepDomainLog2ForWrap, zkRows: 3, pt: stepOracles.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: Vector.nil
+        , prevChallenges: Vector.nil
+        -- N=0: both padded challenge slots are dummies (no real prev
+        -- wrap proofs). Pack as [false, false] = 0.
+        , proofsVerifiedMask: false :< false :< Vector.nil
+        }
+
+      wrapDv = wrapComputeDeferredValues wrapDvInput
+
+      -- Step's one and only public input IS the outer digest
+      -- (`step_main_outer.digest`); there are no FOP-packed fields
+      -- at N=0. Grab it directly.
+      msgForNextStepDigest :: StepField
+      msgForNextStepDigest = fromJust'
+        "NoRecursionReturn: step PI[0] must exist" $
+        Array.index stepResult.publicInputs 0
+
+      -- The NEW wrap proof's `messages_for_next_wrap_proof` hashes
+      -- its own `sg` + padded-length-2 old bulletproof challenges.
+      -- N=0 step → no prev wrap proofs → both padding slots use the
+      -- wrap-endo dummy challenges (`Dummy.Ipa.Wrap.challenges_computed`
+      -- in OCaml).
+      wrapProofSg :: AffinePoint WrapField
+      wrapProofSg = ProofFFI.pallasProofOpeningSg stepResult.proof
+
+      msgForNextWrapDummyChals :: Vector.Vector WrapIPARounds WrapField
+      msgForNextWrapDummyChals = Dummy.dummyIpaChallenges.wrapExpanded
+
+      msgForNextWrapDigest :: WrapField
+      msgForNextWrapDigest = hashMessagesForNextWrapProofPureGeneral
+        { sg: wrapProofSg
+        , paddedChallenges:
+            msgForNextWrapDummyChals
+              :< msgForNextWrapDummyChals
+              :< Vector.nil
+        }
+
+      wrapPublicInput = assembleWrapMainInput
+        { deferredValues: wrapDv
+        , messagesForNextStepProofDigest: msgForNextStepDigest
+        , messagesForNextWrapProofDigest: msgForNextWrapDigest
+        }
+
+      -- N=0 wrap advice: all prev-proof fields are Vector 0 = empty.
+      wrapAdviceInput :: BuildWrapAdviceInput 0 NoSlots
+      wrapAdviceInput =
+        { stepProof: stepResult.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt msgForNextStepDigest) :: WrapField)
+        , prevStepAccs: Vector.nil
+        , prevOldBpChals: noSlots
+        , prevEvals: Vector.nil
+        , prevWrapDomainIndices: Vector.nil
+        }
+
+      wrapAdvice :: WrapAdvice 0 NoSlots
+      wrapAdvice = buildWrapAdvice wrapAdviceInput
+
+      wrapProveCtx =
+        { wrapMainConfig: wrapCtx.wrapMainConfig
+        , crs: pallasProofCrs
+        , publicInput: wrapPublicInput
+        , advice: wrapAdvice
+        -- Both PaddedLength=2 slots are padding (dummy sg + dummy chals).
+        , kimchiPrevChallenges:
+            let
+              padEntry =
+                { sgX: wrapSg.x
+                , sgY: wrapSg.y
+                , challenges: map (fromBigInt <<< toBigInt)
+                    Dummy.dummyIpaChallenges.wrapExpanded
+                }
+            in
+              padEntry :< padEntry :< Vector.nil
+        }
+
+    wrapResult <- liftEffect $
+      wrapSolveAndProve @1 @NoSlots
+        (\e -> Exc.throwException e)
+        wrapProveCtx
+        wrapCR
+
+    liftEffect do
+      -- `wrap.witness.col0.0..49` + `wrap.witness.pi.*` mirror OCaml
+      -- `wrap.ml:517-526` — the first 50 auxiliary-input values + the
+      -- public inputs the wrap prover feeds to kimchi. PS
+      -- `wrapResult.witness` is column-major (`Vector 15 (Array WrapField)`),
+      -- so column 0 == `Vector.head witness`.
+      -- OCaml's `auxiliary_inputs` excludes the public-input rows of
+      -- column 0; PS's `wrapResult.witness` includes them at the head.
+      -- Skip `publicInputs.length` rows to align the two layouts.
+      let
+        piLen = Array.length wrapResult.publicInputs
+        col0 = Vector.head wrapResult.witness
+        col0Aux = Array.drop piLen col0
+      for_ (Array.mapWithIndex Tuple (Array.take 50 col0Aux)) \(Tuple i x) ->
+        Trace.field ("wrap.witness.col0." <> show i) x
+      for_ (Array.mapWithIndex Tuple wrapResult.publicInputs) \(Tuple i x) ->
+        Trace.field ("wrap.witness.pi." <> show i) x
+      let wrapSgOut = ProofFFI.vestaProofOpeningSg wrapResult.proof
+      Trace.field "wrap.proof.opening.sg.x" wrapSgOut.x
+      Trace.field "wrap.proof.opening.sg.y" wrapSgOut.y
+      Trace.field "wrap.proof.opening.z1" (ProofFFI.vestaProofOpeningZ1 wrapResult.proof)
+      Trace.field "wrap.proof.opening.z2" (ProofFFI.vestaProofOpeningZ2 wrapResult.proof)
 
     liftEffect $ Trace.string "no_recursion_return.end" "base_case_verified"
