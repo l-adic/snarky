@@ -377,7 +377,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         --     (what the step prover's pallasCreateProofWithPrev sees as
         --     the prev IPA fold reference). Base case = dummy.
         , stepOpeningSg: ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
-        , kimchiPrevSg: nrr.stepSg
+        -- Iter 2ad: per OCaml step.ml:907-909, kimchi step prev_challenges[i].sg =
+        -- prev_wrap_proof[i].statement.proof_state.messages_for_next_wrap_proof
+        -- .challenge_polynomial_commitment. NRR wrap stored stepOpeningSg
+        -- at that field (per wrap.ml:541-556), so the kimchi prev_challenges
+        -- for slot 0 uses the same value.
+        , kimchiPrevSg: ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
         , wrapProof: nrr.wrapResult.proof
         , wrapPublicInput: nrr.wrapPublicInput
         , prevChalPolys:
@@ -585,17 +590,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
           nrr.wrapDv.bulletproofPrechallenges
 
+      nrrStepOpeningSgOracle = ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
       stepOraclesTree = ProofFFI.pallasProofOracles treeStepCR.verifierIndex
         { proof: treeStepResult.proof
         , publicInput: treeStepResult.publicInputs
+        -- Iter 2ad: must match what the step prover fed to
+        -- pallasCreateProofWithPrev via advice.kimchiPrevChallenges
+        -- (per-slot sg = prev_wrap_proof[i].messages_for_next_wrap_proof.cpc).
+        -- Slot 0: NRR step opening sg. Slot 1: nrr.stepSg (dummy).
         , prevChallenges:
-            [ -- slot 0 (NRR verified): NRR's real bp_chals (expanded)
-              { sgX: nrr.stepSg.x
-              , sgY: nrr.stepSg.y
+            [ { sgX: nrrStepOpeningSgOracle.x
+              , sgY: nrrStepOpeningSgOracle.y
               , challenges: Vector.toUnfoldable nrrBpChalsExpandedForSlot0
               }
-            , -- slot 1 (dummy N2): dummy step-IPA challenges
-              { sgX: nrr.stepSg.x
+            , { sgX: nrr.stepSg.x
               , sgY: nrr.stepSg.y
               , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
               }
@@ -633,9 +641,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , omegaForLagrange: \_ -> one
         , endo: stepEndoScalar
         , linearizationPoly: Linearization.pallas
-        -- Both slot prevSgs use nrr.stepSg (dummy step-IPA sg) since the
-        -- step prover's prev_challenges for both slots used this same value.
-        , prevSgs: nrr.stepSg :< nrr.stepSg :< Vector.nil
+        -- Iter 2ad: match step prover's kimchiPrevChallenges sgs —
+        -- slot 0 = NRR step opening sg, slot 1 = nrr.stepSg.
+        , prevSgs: nrrStepOpeningSgOracle :< nrr.stepSg :< Vector.nil
         -- slot 0 (NRR verified): NRR's real bp_chals expanded;
         -- slot 1 (dummy N2): dummy step-IPA challenges.
         , prevChallenges:
@@ -747,17 +755,17 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       slot0PerProof = convertSlotUnf slot0UnfRec
       slot1PerProof = convertSlotUnf slot1UnfRec
 
-      -- prevStepAccs = wrap IVP's sg_old for the step proof. Kimchi
-      -- stores the step proof's `prev_challenges[i].sg` in the proof's
-      -- accumulator; the wrap IVP's sponge absorbs these at IVC step 2
-      -- (sg_old). Both must match what the step prover fed to
-      -- `pallasCreateProofWithPrev` at kimchi level, i.e. advice's
-      -- `kimchiPrevChallenges[i].sg` which for Tree base case both
-      -- slots = `nrr.stepSg` (= `Dummy.Ipa.Step.sg`, per
-      -- `buildStepAdviceWithOracles.kimchiPrevSg: nrr.stepSg` above).
+      -- Iter 2ad: prev_step_accs[i] = prev_wrap_proof[i]'s
+      -- messages_for_next_wrap_proof.challenge_polynomial_commitment
+      -- (per OCaml wrap.ml:371 Step_accs responder). Must equal the
+      -- step prover's kimchi prev_challenges[i].sg (both derived from
+      -- the same source).
+      -- slot 0: NRR wrap stored NRR step proof's opening sg.
+      -- slot 1: Proof.dummy N2 N2 stored Dummy.Ipa.Step.sg = nrr.stepSg.
+      nrrStepOpeningSg = ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
       slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot0StepAcc = WeierstrassAffinePoint
-        { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
+        { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
       slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot1StepAcc = WeierstrassAffinePoint
         { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
@@ -870,8 +878,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { proof: treeStepResult.proof
           , publicInput: treeStepResult.publicInputs
           , prevChallenges:
-              [ { sgX: nrr.stepSg.x
-                , sgY: nrr.stepSg.y
+              [ { sgX: nrrStepOpeningSgOracle.x
+                , sgY: nrrStepOpeningSgOracle.y
                 , challenges: Vector.toUnfoldable nrrBpChalsExpandedForSlot0
                 }
               , { sgX: nrr.stepSg.x
