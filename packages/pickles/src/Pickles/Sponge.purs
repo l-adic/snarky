@@ -44,14 +44,13 @@ import Prelude
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
 import Data.Foldable (class Foldable)
 import Data.Identity (Identity(..))
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge
@@ -323,20 +322,14 @@ lowest128Bits' constrainLowBits endo x = do
       xBig = toBigInt xVal
 
       lo :: SizedF 128 (F f)
-      lo =
-        unsafePartial fromJust
-          $ SizedF.fromField @128
-          $ fromBigInt
-          $
-            mod xBig two128
+      lo = fromJust'
+        "Sponge squeezeScalar lo: `mod xBig 2^128` always fits 128 bits"
+        (SizedF.fromField @128 (fromBigInt (mod xBig two128)))
 
       hi :: SizedF 128 (F f)
-      hi =
-        unsafePartial fromJust
-          $ SizedF.fromField @128
-          $ fromBigInt
-          $
-            div xBig two128
+      hi = fromJust'
+        "Sponge squeezeScalar hi: `div xBig 2^128` fits 128 bits for field-size-bounded x"
+        (SizedF.fromField @128 (fromBigInt (div xBig two128)))
     pure $ UnChecked (Tuple lo hi)
   -- Range check hi via EndoScalar (discard result) — hi first, matching OCaml
   void $ EndoScalar.toField @8 hi endo
@@ -361,7 +354,7 @@ lowest128BitsPure x =
     two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
     lo = fromBigInt (mod xBig two128)
   in
-    unsafePartial fromJust $ fromField @128 lo
+    fromJust' "lowest128BitsPure: `mod xBig 2^128` always fits 128 bits" (fromField @128 lo)
 
 --------------------------------------------------------------------------------
 -- | Initial States

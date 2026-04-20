@@ -44,7 +44,7 @@ import Data.Array as Array
 import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..), fromLeft)
 import Data.Foldable (foldM, foldl)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
@@ -53,6 +53,7 @@ import Data.Vector (Vector)
 import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Trace as Trace
+import Pickles.Util.Fatal (fromJust')
 import Prim.Int (class Add, class Mul)
 import Prim.Row as Row
 import Prim.RowList as RL
@@ -394,7 +395,7 @@ publicInputCommit params input = label "public-input-commit" do
           )
           (NEA.toArray results')
 
-      let { head: corrHead, tail: corrTail } = fromJust $ Array.uncons rawCorrectionPts
+      let { head: corrHead, tail: corrTail } = fromJust' "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')" $ Array.uncons rawCorrectionPts
       let allTerms = NEA.toArray results'
 
       case params.correctionMode of
@@ -412,7 +413,7 @@ publicInputCommit params input = label "public-input-commit" do
           -- Phase 2: Reduce results pairwise with addComplete.
           --   Matches OCaml's List.reduce_exn ~f:(fun (_,b1) (_,b2) -> (_, add_fast b1 b2)).
           --   Corrections are summed as pure constants in parallel.
-          let { head: first, tail: rest } = fromJust $ Array.uncons evaluated
+          let { head: first, tail: rest } = fromJust' "PublicInputCommit PureCorrections: `evaluated` non-empty (results' is NEA)" $ Array.uncons evaluated
           acc <- foldM
             ( \acc result -> case result of
                 Left point -> _.p <$> addComplete acc point
@@ -436,7 +437,7 @@ publicInputCommit params input = label "public-input-commit" do
         InCircuitCorrections -> do
           -- Wrap verifier: corrections summed in-circuit, fold interleaved.
           let corrPts = map constPt rawCorrectionPts
-          let { head: ch, tail: ct } = fromJust $ Array.uncons corrPts
+          let { head: ch, tail: ct } = fromJust' "PublicInputCommit InCircuitCorrections: `corrPts` non-empty (≥1 AddWithCorrection expected)" $ Array.uncons corrPts
           init <- foldM (\acc c -> _.p <$> addComplete acc c) ch ct
 
           acc <- foldM
@@ -516,7 +517,7 @@ wrapPt { x, y } = { x: F x, y: F y }
 addPurePt :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> AffinePoint (F f) -> AffinePoint (F f)
 addPurePt params p1 p2
   | unwrapPt p1 == unwrapPt p2 = EC.double params p1
-  | otherwise = wrapPt $ unsafePartial $ fromJust $ EC.toAffine $ EC.addAffine (unwrapPt p1) (unwrapPt p2)
+  | otherwise = wrapPt $ fromJust' "PublicInputCommit.addPurePt: EC.toAffine on distinct-points addAffine result (x1 /= x2 so no identity)" $ EC.toAffine $ unsafePartial (EC.addAffine (unwrapPt p1) (unwrapPt p2))
 
 -- | Compute [2^k] * p by iterating pure doubling.
 pow2pow :: forall f. PrimeField f => CurveParams f -> AffinePoint (F f) -> Int -> AffinePoint (F f)

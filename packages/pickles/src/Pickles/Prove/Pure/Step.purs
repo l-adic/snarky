@@ -35,7 +35,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
@@ -626,9 +626,10 @@ expandProof input =
       }
 
     rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
-    rawPrechalsVec = unsafePartial $ fromJust $
-      Vector.toVector @WrapIPARounds
-        (map (unsafePartial unsafeFromField) rawPrechalsArray)
+    rawPrechalsVec = fromJust'
+      "Pure.Step rawPrechalsVec: FFI `rawPrechalsArray` expected to be WrapIPARounds (=15) long"
+      (Vector.toVector @WrapIPARounds
+        (map (unsafePartial unsafeFromField) rawPrechalsArray))
 
     wrapGen :: WrapField
     wrapGen = domainGenerator input.wrapDomainLog2
@@ -795,8 +796,9 @@ expandProof input =
       { wComm: map mkPallasPt wrapCommits.wComm
       , zComm: mkPallasPt wrapCommits.zComm
       , tComm:
-          unsafePartial fromJust $
-            Vector.toVector @7 (map mkPallasPt wrapCommits.tComm)
+          fromJust'
+            "Pure.Step wrapProofMessages.tComm: wrap proof's `vestaProofCommitments.tComm` expected to yield 7 t-commitments"
+            (Vector.toVector @7 (map mkPallasPt wrapCommits.tComm))
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
@@ -813,7 +815,9 @@ expandProof input =
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofOpening = WrapProofOpening
-      { lr: unsafePartial fromJust $ Vector.toVector @WrapIPARounds lrArray
+      { lr: fromJust'
+          "Pure.Step wrapProofOpening.lr: `vestaProofOpeningLr` expected to yield WrapIPARounds (=15) lr-pairs"
+          (Vector.toVector @WrapIPARounds lrArray)
       , z1: toShifted (F (vestaProofOpeningZ1 input.wrapProof))
       , z2: toShifted (F (vestaProofOpeningZ2 input.wrapProof))
       , delta: mkPallasPt (vestaProofOpeningDelta input.wrapProof)

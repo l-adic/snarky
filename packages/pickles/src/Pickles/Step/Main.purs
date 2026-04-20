@@ -23,19 +23,19 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (getFinite)
+import Pickles.Util.Fatal (fromJust')
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPerProofWitnesses, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -673,24 +673,33 @@ stepMain
         s1 <- Sponge.absorb x s
         Sponge.absorb y s1
 
+    -- Emit all 7 sigmas under a contiguous `sigma.0..6` index to match
+    -- OCaml's `Vector.iter dlog_plonk_index.sigma_comm`. Internally PS
+    -- splits into `sigma` (Vector 6) + `sigmaLast` for the sponge path,
+    -- but the trace labels stay contiguous.
     forWithIndex_ vk.sigma \fi pt -> do
       let i = getFinite fi
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.sigma." <> show i <> ".y") y
     let { x: slX, y: slY } = unwrapPt vk.sigmaLast
-    ivpTrace "step_main_outer.vk.sigma_last.x" slX
-    ivpTrace "step_main_outer.vk.sigma_last.y" slY
+    ivpTrace "step_main_outer.vk.sigma.6.x" slX
+    ivpTrace "step_main_outer.vk.sigma.6.y" slY
     forWithIndex_ vk.coeff \fi pt -> do
       let i = getFinite fi
       let { x, y } = unwrapPt pt
       ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".x") x
       ivpTrace ("step_main_outer.vk.coeff." <> show i <> ".y") y
+    -- Emit the 6 "idx" commitments by OCaml's name order (generic, psm,
+    -- complete_add, mul, emul, endomul_scalar) to match `List.iter
+    -- idx_pts` in step_main.ml.
+    let idxNames = [ "generic", "psm", "complete_add", "mul", "emul", "endomul_scalar" ]
     forWithIndex_ vk.index \fi pt -> do
       let i = getFinite fi
       let { x, y } = unwrapPt pt
-      ivpTrace ("step_main_outer.vk.index." <> show i <> ".x") x
-      ivpTrace ("step_main_outer.vk.index." <> show i <> ".y") y
+      let name = fromJust' ("step_main_outer idx name lookup at " <> show i) (Array.index idxNames i)
+      ivpTrace ("step_main_outer.vk.idx." <> name <> ".x") x
+      ivpTrace ("step_main_outer.vk.idx." <> name <> ".y") y
     forWithIndex_ hashAppFields \i f ->
       ivpTrace ("step_main_outer.app_state." <> show i) f
 

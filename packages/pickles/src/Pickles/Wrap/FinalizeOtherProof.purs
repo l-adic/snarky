@@ -23,14 +23,13 @@ import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
-import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for, traverse, traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
@@ -242,7 +241,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     vanishingPolynomial zeta
 
   let
-    alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n
+    alphaPow n = fromJust' ("wrap.FinalizeOtherProof: alpha^" <> show n <> " (precomputeAlphaPowers output)") $ Array.index alphaPowers n
     a21 = alphaPow 21
     a22 = alphaPow 22
     a23 = alphaPow 23

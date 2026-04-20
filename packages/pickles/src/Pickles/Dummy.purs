@@ -29,14 +29,14 @@ import Control.Monad.State (State, evalState, get, put)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
 import Data.Foldable (foldl)
-import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Util.Fatal (fromJust')
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -111,7 +111,7 @@ chal = do
   ro <- get
   let next = ro.chalCounter + 1
   put $ ro { chalCounter = next }
-  pure $ fromBits $ unsafePartial fromJust $ Vector.toVector @128 $ bitsRandomOracle 128 ("chal_" <> show next)
+  pure $ fromBits $ fromJust' "Dummy chal: `bitsRandomOracle 128` yields exactly 128 bits" $ Vector.toVector @128 $ bitsRandomOracle 128 ("chal_" <> show next)
 
 scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 scalarChal = chal
@@ -132,7 +132,7 @@ replicateChal
 replicateChal = do
   let n = reflectType (Proxy @n)
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
-  pure $ unsafePartial fromJust $ Vector.toVector @n (Array.reverse arr)
+  pure $ fromJust' "replicateChal: `Array.replicate n` followed by reverse yields length-n array" $ Vector.toVector @n (Array.reverse arr)
 
 -------------------------------------------------------------------------------
 -- | Shared Ro computation
@@ -227,7 +227,7 @@ roComputeResult = flip evalState mkRo do
   idxPoseidon <- tockPointEval
   idxGeneric <- tockPointEval
   let
-    wrapIndexEvals = unsafePartial fromJust $ Vector.toVector @6
+    wrapIndexEvals = fromJust' "Dummy wrapIndexEvals: literal array of 6 evals" $ Vector.toVector @6
       [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
   wrapSigmaEvals <- tockPointEvalVec @6
   wrapZEvals <- tockPointEval
@@ -303,7 +303,7 @@ roComputeResult = flip evalState mkRo do
   stepIdxPoseidon <- tickPointEval
   stepIdxGeneric <- tickPointEval
   let
-    indexEvals = unsafePartial fromJust $ Vector.toVector @6
+    indexEvals = fromJust' "Dummy stepIndexEvals: literal array of 6 evals" $ Vector.toVector @6
       [ stepIdxGeneric, stepIdxPoseidon, stepIdxCompleteAdd, stepIdxMul, stepIdxEmul, stepIdxEndomulScalar ]
   sigmaEvals <- tickPointEvalVec @6
   zEvals <- tickPointEval
@@ -436,8 +436,10 @@ computeDummySgValues pallasSrs vestaSrs =
         , zetaRaw: roComputeResult.zeta
         -- xi = Scalar_challenge.create(Challenge.Constant.dummy)
         -- Challenge.Constant.dummy = [1L, 1L] → 1 + 2^64 as a 128-bit field element
-        , xiRaw: unsafePartial fromJust $ SizedF.fromField @128
-            (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
+        , xiRaw: fromJust'
+            "Dummy xiRaw: dummy-challenge `1 + 2^64` fits in 128 bits"
+            (SizedF.fromField @128
+              (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField))
         , zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
@@ -452,7 +454,7 @@ computeDummySgValues pallasSrs vestaSrs =
     }
 
 unsafeIdx :: forall a. Array a -> Int -> a
-unsafeIdx arr i = unsafePartial fromJust (Array.index arr i)
+unsafeIdx arr i = fromJust' ("Dummy.unsafeIdx: index " <> show i <> " into array of length " <> show (Array.length arr)) (Array.index arr i)
 
 -------------------------------------------------------------------------------
 -- | Convenience re-exports
@@ -540,7 +542,7 @@ wrapDummyUnfinalizedProof =
 
     -- xi = Scalar_challenge.create(Challenge.Constant.dummy) = [1L, 1L] packed
     xi :: SizedF 128 (F WrapField)
-    xi = SizedF.wrapF $ unsafePartial fromJust $ SizedF.fromField @128
+    xi = SizedF.wrapF $ fromJust' "Dummy wrap xi: 65-bit packed Challenge.Constant.dummy fits into SizedF 128" $ SizedF.fromField @128
       (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
   in
     { deferredValues:

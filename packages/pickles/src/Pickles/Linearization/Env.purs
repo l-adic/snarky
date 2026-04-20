@@ -20,7 +20,7 @@ import Prelude
 import Data.Array as Array
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
@@ -190,7 +190,7 @@ precomputeAlphaPowers maxPow alpha = label "precompute-alpha-powers" $ go 2 [ co
   go i acc
     | i > maxPow = pure acc
     | otherwise = do
-        let prev = unsafePartial $ fromJust $ Array.last acc
+        let prev = fromJust' "precomputeAlphaPowers: `acc` seeded with [1, alpha], never empty" (Array.last acc)
         next <- Circuit.mul_ alpha prev
         go (i + 1) (Array.snoc acc next)
 
@@ -222,7 +222,7 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
   , pow: pow_
   , var: \col row -> lookupCell evalPoint col row
   , cell: identity
-  , alphaPow: \n -> unsafePartial $ fromJust $ Array.index alphaPowers n
+  , alphaPow: \n -> fromJust' ("buildCircuitEnvM alphaPow: index " <> show n <> " out of alphaPowers bounds") (Array.index alphaPowers n)
   , mds: \{ row, col } -> const_ $ lookupMds (Proxy :: Proxy f) row col
   , endoCoefficient:
       let

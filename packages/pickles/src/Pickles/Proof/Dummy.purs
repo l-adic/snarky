@@ -29,10 +29,9 @@ module Pickles.Proof.Dummy
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (roComputeResult)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
 import Pickles.Types (WrapField)
@@ -62,7 +61,8 @@ dummyWrapProof =
     -- Pallas generator g0 = Tock.Curve.(to_affine_exn one). Pallas points
     -- have coordinates in Pallas.BaseField = Vesta.ScalarField.
     g0 :: AffinePoint Vesta.ScalarField
-    g0 = unsafePartial fromJust
+    g0 = fromJust'
+      "Pallas generator to affine (never the identity element)"
       (toAffine (generator :: Pallas.G) :: _ (AffinePoint Vesta.ScalarField))
 
     g0XY :: Array Vesta.ScalarField

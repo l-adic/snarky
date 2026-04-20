@@ -52,11 +52,11 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (Finite, getFinite, unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -67,7 +67,7 @@ import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -215,7 +215,9 @@ buildStepAdvice input =
     -- curve-point field in the base-case dummy advice.
     g0 :: AffinePoint (F StepField)
     g0 = coerce
-      ( unsafePartial fromJust $ Curves.toAffine (Curves.generator :: Pallas.G)
+      ( fromJust'
+          "Pallas generator to affine (never the identity element)"
+          (Curves.toAffine (Curves.generator :: Pallas.G))
           :: AffinePoint StepField
       )
 
@@ -420,15 +422,19 @@ extractWrapVKCommsAdvice vk =
     raw = vestaVerifierIndexColumnComms vk
 
     idx6 :: Vector 6 (AffinePoint StepField)
-    idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
+    idx6 = fromJust'
+      "extract wrap VK idx6 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 6 column commitments"
+      (Vector.toVector @6 (Array.take 6 raw))
 
     coeff15 :: Vector 15 (AffinePoint StepField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
-      $ Array.take 15
-      $ Array.drop 6 raw
+    coeff15 = fromJust'
+      "extract wrap VK coeff15 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 21 column commitments"
+      (Vector.toVector @15 (Array.take 15 (Array.drop 6 raw)))
 
     sig6 :: Vector 6 (AffinePoint StepField)
-    sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
+    sig6 = fromJust'
+      "extract wrap VK sig6 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 27 column commitments"
+      (Vector.toVector @6 (Array.drop 21 raw))
 
     sigLast :: AffinePoint StepField
     sigLast = vestaSigmaCommLast vk
@@ -459,15 +465,19 @@ extractWrapVKForStepHash vk =
     raw = vestaVerifierIndexColumnComms vk
 
     idx6 :: Vector 6 (AffinePoint StepField)
-    idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
+    idx6 = fromJust'
+      "extract wrap VK idx6 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 6 column commitments"
+      (Vector.toVector @6 (Array.take 6 raw))
 
     coeff15 :: Vector 15 (AffinePoint StepField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
-      $ Array.take 15
-      $ Array.drop 6 raw
+    coeff15 = fromJust'
+      "extract wrap VK coeff15 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 21 column commitments"
+      (Vector.toVector @15 (Array.take 15 (Array.drop 6 raw)))
 
     sig6 :: Vector 6 (AffinePoint StepField)
-    sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
+    sig6 = fromJust'
+      "extract wrap VK sig6 (step side): `vestaVerifierIndexColumnComms` must yield ≥ 27 column commitments"
+      (Vector.toVector @6 (Array.drop 21 raw))
 
     sigLast :: AffinePoint StepField
     sigLast = vestaSigmaCommLast vk
@@ -1157,11 +1167,12 @@ buildStepAdviceWithOracles input = do
     openingDelta = mkPt (vestaProofOpeningDelta input.wrapProof)
 
     openingLr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }
-    openingLr = unsafePartial $ fromJust $
-      Vector.toVector @WrapIPARounds
+    openingLr = fromJust'
+      "Step advice openingLr: wrap proof's `vestaProofOpeningLr` expected to yield WrapIPARounds (=15) lr-pairs"
+      (Vector.toVector @WrapIPARounds
         ( map (\p -> { l: mkPt p.l, r: mkPt p.r })
             (vestaProofOpeningLr input.wrapProof)
-        )
+        ))
 
     openingZ1 :: Type2 (SplitField (F StepField) Boolean)
     openingZ1 = toShifted (F (vestaProofOpeningZ1 input.wrapProof) :: F WrapField)
@@ -1176,8 +1187,9 @@ buildStepAdviceWithOracles input = do
     wrapMessages =
       { wComm: map mkPallasAffine wrapCommits.wComm
       , zComm: mkPallasAffine wrapCommits.zComm
-      , tComm: unsafePartial $ fromJust $
-          Vector.toVector @7 (map mkPallasAffine wrapCommits.tComm)
+      , tComm: fromJust'
+          "Step advice wrapMessages.tComm: wrap proof's `vestaProofCommitments.tComm` expected to yield 7 t-commitments"
+          (Vector.toVector @7 (map mkPallasAffine wrapCommits.tComm))
       }
 
     wrapPE' :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)

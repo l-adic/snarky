@@ -5,7 +5,7 @@ import Prelude
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Foldable (foldM, foldl)
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Partial.Unsafe (unsafePartial)
@@ -71,7 +71,9 @@ multiscaleKnown params pairs = unsafePartial do
   -- | Pure affine addition that handles the doubling case
   addPure p1 p2
     | p1.x == p2.x && p1.y == p2.y = unwrapF $ EC.double params (wrapF p1)
-    | otherwise = unsafePartial $ fromJust $ EC.toAffine $ EC.addAffine p1 p2
+    | otherwise = fromJust'
+        "multiscaleKnown addPure: affine addition of distinct points (x1 /= x2) cannot produce identity"
+        (EC.toAffine (unsafePartial (EC.addAffine p1 p2)))
 
   -- | Compute [2^k] * p by iterating pure doubling k times
   pow2pow p k

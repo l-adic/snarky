@@ -32,7 +32,7 @@ module Pickles.Prove.Wrap
   , wrapProve
   , extractStepVKComms
   , stepVkForCircuit
-  , buildWrapMainConfigN1
+  , buildWrapMainConfig
   , zeroWrapAdvice
   ) where
 
@@ -45,7 +45,7 @@ import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -288,7 +288,8 @@ buildWrapAdvice input =
     commits = pallasProofCommitments input.stepProof
 
     tCommVec :: Vector 7 (WeierstrassAffinePoint VestaG (F WrapField))
-    tCommVec = unsafePartial $ fromJust $
+    tCommVec = fromJust'
+      "Wrap advice tComm: step proof's `pallasProofCommitments.tComm` expected to yield 7 t-commitments" $
       Vector.toVector @7 (map mkVestaPt commits.tComm)
 
     messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
@@ -313,7 +314,8 @@ buildWrapAdvice input =
            { l :: WeierstrassAffinePoint VestaG (F WrapField)
            , r :: WeierstrassAffinePoint VestaG (F WrapField)
            }
-    lrVec = unsafePartial $ fromJust $
+    lrVec = fromJust'
+      "Wrap advice lrVec: step proof's `pallasProofOpeningLr` expected to yield StepIPARounds (=16) lr-pairs" $
       Vector.toVector @StepIPARounds
         (map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r }) lrRaw)
 
@@ -453,12 +455,11 @@ type WrapProveResult =
 -- | `runWrapProverT` for instance resolution but its values are
 -- | never inspected during compile — callers can pass a placeholder.
 wrapCompile
-  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
+  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
-  => Add 1 mpvPred mpv
   => Compare mpv 3 LT
   => Add mpv 45 totalBases
   => Add 1 totalBasesPred totalBases
@@ -526,12 +527,11 @@ wrapCompile ctx advice = do
 -- | `WrapCompileResult` + the real advice + public input, runs the
 -- | solver, and creates the kimchi proof.
 wrapSolveAndProve
-  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
+  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
-  => Add 1 mpvPred mpv
   => Compare mpv 3 LT
   => Add mpv 45 totalBases
   => Add 1 totalBasesPred totalBases
@@ -625,12 +625,11 @@ wrapSolveAndProve onError ctx compileResult = do
 
 -- | End-to-end wrap prover: `wrapCompile` then `wrapSolveAndProve`.
 wrapProve
-  :: forall @branches @slots mpv branchesPred mpvPred totalBases totalBasesPred m
+  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
    . CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 branchesPred branches
-  => Add 1 mpvPred mpv
   => Compare mpv 3 LT
   => Add mpv 45 totalBases
   => Add 1 totalBasesPred totalBases
@@ -686,15 +685,19 @@ extractStepVKComms vk =
     raw = pallasVerifierIndexColumnComms vk
 
     idx6 :: Vector 6 (AffinePoint WrapField)
-    idx6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.take 6 raw
+    idx6 = fromJust'
+      "extractStepVKComms idx6: `pallasVerifierIndexColumnComms` must yield ≥ 6 column commitments for idx take"
+      (Vector.toVector @6 (Array.take 6 raw))
 
     coeff15 :: Vector 15 (AffinePoint WrapField)
-    coeff15 = unsafePartial $ fromJust $ Vector.toVector @15
-      $ Array.take 15
-      $ Array.drop 6 raw
+    coeff15 = fromJust'
+      "extractStepVKComms coeff15: `pallasVerifierIndexColumnComms` must yield ≥ 21 column commitments for coeff take"
+      (Vector.toVector @15 (Array.take 15 (Array.drop 6 raw)))
 
     sig6 :: Vector 6 (AffinePoint WrapField)
-    sig6 = unsafePartial $ fromJust $ Vector.toVector @6 $ Array.drop 21 raw
+    sig6 = fromJust'
+      "extractStepVKComms sig6: `pallasVerifierIndexColumnComms` must yield ≥ 27 column commitments for sigma take"
+      (Vector.toVector @6 (Array.drop 21 raw))
 
     sigLast :: AffinePoint WrapField
     sigLast = pallasSigmaCommLast vk
@@ -741,13 +744,26 @@ stepVkForCircuit vk =
 -- | from the same Vesta SRS. `allPossibleDomainLog2s` is hardcoded to
 -- | `{13, 14, 15}` matching OCaml's `Wrap_verifier.all_possible_domains`
 -- | for `proofs_verified ∈ {0,1,2}`.
-buildWrapMainConfigN1
+-- | Single-branch wrap main config. The wrap circuit always verifies
+-- | exactly ONE step proof regardless of that step's `max_proofs_verified`
+-- | — what differs between N=0 / N=1 / N=2 rules is:
+-- |
+-- |   * `stepWidth` — the step rule's `max_proofs_verified` (OCaml's
+-- |     `Widths`; 0 for No_recursion_return, 1 for Simple_chain,
+-- |     2 for Simple_chain_n2 / Tree_proof_return).
+-- |   * `domainLog2` — the step circuit's kimchi domain log2, read
+-- |     dynamically from the compiled step prover index.
+-- |
+-- | All other fields (lagrange lookup, blinding H, the three possible
+-- | wrap-domains) are structural constants of the Tock SRS, independent
+-- | of N.
+buildWrapMainConfig
   :: CRS VestaG
   -> VerifierIndex VestaG StepField
-  -> Int
+  -> { stepWidth :: Int, domainLog2 :: Int }
   -> WrapMainConfig 1
-buildWrapMainConfigN1 vestaSrs stepVK domainLog2 =
-  { stepWidths: 1 :< Vector.nil
+buildWrapMainConfig vestaSrs stepVK { stepWidth, domainLog2 } =
+  { stepWidths: stepWidth :< Vector.nil
   , domainLog2s: domainLog2 :< Vector.nil
   , stepKeys: stepVkForCircuit (extractStepVKComms stepVK) :< Vector.nil
   , lagrangeAt:

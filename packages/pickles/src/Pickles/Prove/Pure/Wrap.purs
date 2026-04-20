@@ -34,7 +34,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -329,9 +329,10 @@ wrapComputeDeferredValues input =
       }
 
     rawPrechalsVec :: Vector StepIPARounds (SizedF 128 StepField)
-    rawPrechalsVec = unsafePartial $ fromJust $
-      Vector.toVector @StepIPARounds
-        (map (unsafePartial unsafeFromField) rawPrechalsArray)
+    rawPrechalsVec = fromJust'
+      "Pure.Wrap rawPrechalsVec: FFI `rawPrechalsArray` expected to be StepIPARounds (=16) long"
+      (Vector.toVector @StepIPARounds
+        (map (unsafePartial unsafeFromField) rawPrechalsArray))
 
     newBpResult :: BulletproofBOutput StepIPARounds StepField
     newBpResult = computeBpChalsAndB

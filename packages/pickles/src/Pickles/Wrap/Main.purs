@@ -34,19 +34,18 @@ module Pickles.Wrap.Main
 
 import Prelude
 
+import Control.Monad.State.Trans (evalStateT, get, put)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Foldable (foldM, foldl)
+import Data.Foldable (foldl, for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
-import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
@@ -323,7 +322,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots mpv _branchesPred _mpvPred totalBases _totalBasesPred t m
+  :: forall @branches @slots mpv _branchesPred totalBases _totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -346,7 +345,6 @@ wrapMain
   => Reflectable branches Int
   => Reflectable mpv Int
   => Add 1 _branchesPred branches
-  => Add 1 _mpvPred mpv
   => Compare mpv 3 LT
   -- Forwarded to `wrapVerify` (which needs `Add sgOldN 45 totalBases`
   -- and `Add 1 _ totalBases`). With `sgOldN = mpv`, these collapse to
@@ -414,17 +412,13 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- per-slot mask booleans in slot order. For mpv=2 this matches the
   -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
   -- (slot index = vector index).
-  maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector" do
-    let mpvLen = reflectType (Proxy @mpv)
-    Tuple _ resultArr <- foldM
-      ( \(Tuple prevV acc) i -> do
-          eq <- equals_ firstZero (const_ (fromInt i))
-          v <- and_ prevV (not_ eq)
-          pure (Tuple v (Array.snoc acc v))
-      )
-      (Tuple true_ [])
-      (Array.range 0 (mpvLen - 1))
-    pure $ unsafePartial $ fromJust $ Vector.toVector @mpv resultArr
+  maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector" $
+    flip evalStateT true_ $ Vector.generateA @mpv \i -> do
+      prevV <- get
+      eq <- lift $ equals_ firstZero (const_ (fromInt (getFinite i)))
+      v <- lift $ and_ prevV (not_ eq)
+      put v
+      pure v
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s
@@ -625,8 +619,9 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   -- DIAG: dump msgsForWrap[0] at solve time so we can compare to
   -- OCaml's expand_proof.msgForNextWrap expected value.
-  let { head: m0, tail: _ } = Vector.uncons msgsForWrap
-  ivpTrace "wrap.dbg.msgsForWrap.0" m0
+  let m0 = Array.head $ Vector.toUnfoldable msgsForWrap
+  for_ m0 \m0' -> 
+    ivpTrace "wrap.dbg.msgsForWrap.0" m0'
   ivpTrace "wrap.dbg.prevMsgForNextStep" prevMsgForNextStep
 
   label "block4-assert-msg-step" $
@@ -666,26 +661,27 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- against OCaml's equivalent at wrap.ml pack_statement input point.
   -- The MSM walks these exact values, so any one that differs from
   -- OCaml localizes the remaining xhat divergence.
-  let { head: sp0, tail: _ } = Vector.uncons splitProofs
-  let unType2Split (Type2 sf) = sf
-  let cipSF = unType2Split sp0.deferredValues.combinedInnerProduct
-  let bSF = unType2Split sp0.deferredValues.b
-  let permSF = unType2Split sp0.deferredValues.plonk.perm
-  let ztSrsSF = unType2Split sp0.deferredValues.plonk.zetaToSrsLength
-  let ztDomSF = unType2Split sp0.deferredValues.plonk.zetaToDomainSize
-  ivpTrace "wrap.dbg.unf0.cip.sDiv2" (case cipSF of SplitField r -> r.sDiv2)
-  ivpTrace "wrap.dbg.unf0.b.sDiv2" (case bSF of SplitField r -> r.sDiv2)
-  ivpTrace "wrap.dbg.unf0.perm.sDiv2" (case permSF of SplitField r -> r.sDiv2)
-  ivpTrace "wrap.dbg.unf0.ztSrs.sDiv2" (case ztSrsSF of SplitField r -> r.sDiv2)
-  ivpTrace "wrap.dbg.unf0.ztDom.sDiv2" (case ztDomSF of SplitField r -> r.sDiv2)
-  ivpTrace "wrap.dbg.unf0.spongeDigest" sp0.spongeDigestBeforeEvaluations
-  ivpTrace "wrap.dbg.unf0.alpha" (SizedF.toField sp0.deferredValues.plonk.alpha)
-  ivpTrace "wrap.dbg.unf0.beta" (SizedF.toField sp0.deferredValues.plonk.beta)
-  ivpTrace "wrap.dbg.unf0.gamma" (SizedF.toField sp0.deferredValues.plonk.gamma)
-  ivpTrace "wrap.dbg.unf0.zeta" (SizedF.toField sp0.deferredValues.plonk.zeta)
-  ivpTrace "wrap.dbg.unf0.xi" (SizedF.toField sp0.deferredValues.xi)
-  forWithIndex_ sp0.deferredValues.bulletproofChallenges \fi c ->
-    ivpTrace ("wrap.dbg.unf0.bpc." <> show (getFinite fi)) (SizedF.toField c)
+  let sp0' = Array.head $ Vector.toUnfoldable splitProofs
+  for_ sp0' \sp0 -> do
+    let unType2Split (Type2 sf) = sf
+    let cipSF = unType2Split sp0.deferredValues.combinedInnerProduct
+    let bSF = unType2Split sp0.deferredValues.b
+    let permSF = unType2Split sp0.deferredValues.plonk.perm
+    let ztSrsSF = unType2Split sp0.deferredValues.plonk.zetaToSrsLength
+    let ztDomSF = unType2Split sp0.deferredValues.plonk.zetaToDomainSize
+    ivpTrace "wrap.dbg.unf0.cip.sDiv2" (case cipSF of SplitField r -> r.sDiv2)
+    ivpTrace "wrap.dbg.unf0.b.sDiv2" (case bSF of SplitField r -> r.sDiv2)
+    ivpTrace "wrap.dbg.unf0.perm.sDiv2" (case permSF of SplitField r -> r.sDiv2)
+    ivpTrace "wrap.dbg.unf0.ztSrs.sDiv2" (case ztSrsSF of SplitField r -> r.sDiv2)
+    ivpTrace "wrap.dbg.unf0.ztDom.sDiv2" (case ztDomSF of SplitField r -> r.sDiv2)
+    ivpTrace "wrap.dbg.unf0.spongeDigest" sp0.spongeDigestBeforeEvaluations
+    ivpTrace "wrap.dbg.unf0.alpha" (SizedF.toField sp0.deferredValues.plonk.alpha)
+    ivpTrace "wrap.dbg.unf0.beta" (SizedF.toField sp0.deferredValues.plonk.beta)
+    ivpTrace "wrap.dbg.unf0.gamma" (SizedF.toField sp0.deferredValues.plonk.gamma)
+    ivpTrace "wrap.dbg.unf0.zeta" (SizedF.toField sp0.deferredValues.plonk.zeta)
+    ivpTrace "wrap.dbg.unf0.xi" (SizedF.toField sp0.deferredValues.xi)
+    forWithIndex_ sp0.deferredValues.bulletproofChallenges \fi c ->
+      ivpTrace ("wrap.dbg.unf0.bpc." <> show (getFinite fi)) (SizedF.toField c)
 
   let
     publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)

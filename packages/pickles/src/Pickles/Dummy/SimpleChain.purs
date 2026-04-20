@@ -25,28 +25,27 @@ module Pickles.Dummy.SimpleChain
 import Prelude
 
 import Data.Array as Array
-import Data.Maybe (fromJust)
+import Pickles.Util.Fatal (fromJust')
 import Data.Vector as Vector
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Types (StepField, WrapField)
 import Snarky.Circuit.DSL (SizedF, fromBits)
 import Snarky.Curves.Class (fromBigInt) as Curves
 
 fpLit :: String -> StepField
-fpLit s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
+fpLit s = Curves.fromBigInt (fromJust' ("fpLit literal parse: " <> s) (BigInt.fromString s))
 
 fqLit :: String -> WrapField
-fqLit s = Curves.fromBigInt (unsafePartial fromJust (BigInt.fromString s))
+fqLit s = Curves.fromBigInt (fromJust' ("fqLit literal parse: " <> s) (BigInt.fromString s))
 
 -- | Convert a BigInt string to a 128-bit challenge in the Step field.
 fpChal128 :: String -> SizedF 128 StepField
 fpChal128 s =
   let
     bi :: BigInt
-    bi = unsafePartial fromJust (BigInt.fromString s)
+    bi = fromJust' ("fpChal128 literal parse: " <> s) (BigInt.fromString s)
 
     bits :: Array Boolean
     bits = map
@@ -56,7 +55,7 @@ fpChal128 s =
       )
       (Array.range 0 127)
   in
-    fromBits (unsafePartial fromJust (Vector.toVector @128 bits))
+    fromBits (fromJust' "simpleChain dummy 128-bit chal: Array.range 0 127 produced 128 bits" (Vector.toVector @128 bits))
 
 type SimpleChainDummyPlonk =
   { alpha :: SizedF 128 StepField
@@ -85,7 +84,7 @@ simpleChainDummyPrevEvals =
   , publicEvals: { zeta: fpLit "25017820526189347102788800069461251603536040841910862956231269055437677345850", omegaTimesZeta: fpLit "6301143421047118355628750025490270654562331655512153084950149625222284360434" }
   , zEvals: { zeta: fpLit "9562437781726307142676639342049592019954821251000291454331265634497071763470", omegaTimesZeta: fpLit "12539491783959550948160011778628098137047932382250465589738730837991725649614" }
   , indexEvals:
-      ( unsafePartial fromJust $ Vector.toVector @6
+      ( fromJust' "simpleChainDummyPrevEvals.indexEvals: literal array of 6 evals" $ Vector.toVector @6
           [ { zeta: fpLit "3759912871974866512797252374818497532590305332083451819069121362636421686494", omegaTimesZeta: fpLit "5642111342741473015520938739926634737369680478864739216184695134653130570010" }
           , { zeta: fpLit "13465029331881939001491127520930822011188855210726945049856125610963362453699", omegaTimesZeta: fpLit "26305856085966333676151271033793652783470520471663455465782875691673549178920" }
           , { zeta: fpLit "23326307318869970115413571504850098725808400919131791138340704056399782864591", omegaTimesZeta: fpLit "16976702996307627343786458027861818649360094577974728787742183143296070379031" }
@@ -95,7 +94,7 @@ simpleChainDummyPrevEvals =
           ]
       )
   , witnessEvals:
-      ( unsafePartial fromJust $ Vector.toVector @15
+      ( fromJust' "simpleChainDummyPrevEvals.witnessEvals: literal array of 15 evals" $ Vector.toVector @15
           [ { zeta: fpLit "22657584517753446339250152346077850323318658177682308641722354085360567153297", omegaTimesZeta: fpLit "10265595673877381023596856881370086666683759266056976977910499987566915616068" }
           , { zeta: fpLit "15736529671946274563412856875308506000939823761157894971513244203555501072950", omegaTimesZeta: fpLit "11203604146147239401066891729415772848802585221220269009297109936898803013554" }
           , { zeta: fpLit "3040643287021551269536735915280021175256827893807559331102359305221890990350", omegaTimesZeta: fpLit "26575640277911783362741659576226861067463103391737190216029738789232983468687" }
@@ -114,7 +113,7 @@ simpleChainDummyPrevEvals =
           ]
       )
   , coeffEvals:
-      ( unsafePartial fromJust $ Vector.toVector @15
+      ( fromJust' "simpleChainDummyPrevEvals.coeffEvals: literal array of 15 evals" $ Vector.toVector @15
           [ { zeta: fpLit "13335662825959817079643694102376013609967968449408868504385987575257689014319", omegaTimesZeta: fpLit "10431345732606858269975819096545240674097213525976285493909027823783087071938" }
           , { zeta: fpLit "24306282583848485597521562175102664765387297438890553293231311291079904024965", omegaTimesZeta: fpLit "509031274389797358473106100994866909889950905952776680646489380870325471645" }
           , { zeta: fpLit "28921801564334489342361672420557031580049747290291034194134732205820816853933", omegaTimesZeta: fpLit "14252108000938955717997240856792791913211864400697463209915140149285241409941" }
@@ -133,7 +132,7 @@ simpleChainDummyPrevEvals =
           ]
       )
   , sigmaEvals:
-      ( unsafePartial fromJust $ Vector.toVector @6
+      ( fromJust' "simpleChainDummyPrevEvals.sigmaEvals: literal array of 6 evals" $ Vector.toVector @6
           [ { zeta: fpLit "16582021454150657419047688502334080003518944216199777527484496188522537504330", omegaTimesZeta: fpLit "13987071869876717238080584934983094650768636081472428732281254556168034418398" }
           , { zeta: fpLit "9118724503305290279555773830916948618580874360469294299581574550926961715326", omegaTimesZeta: fpLit "9714346278157631194300616641271021045902966703814353991426608024121502094237" }
           , { zeta: fpLit "20798736169971873255987320819569836472694816221932893171939531889369170216089", omegaTimesZeta: fpLit "2401426850925078597953281894872269948409051928254780839483605139039904349650" }
