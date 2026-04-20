@@ -54,7 +54,7 @@ import Pickles.Wrap.Slots (Slots2, NoSlots)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..), FVar, const_, exists, true_)
+import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Test.Spec (SpecT, describe, it)
 
@@ -82,26 +82,29 @@ nrrRule _ = pure
 -- |
 -- | Output: `if is_base_case then 0 else 1 + prev`
 treeProofReturnRule
-  :: StepRule 2
+  :: { isBaseCase :: Boolean, nrrInputVal :: F StepField, prevInputVal :: F StepField }
+  -> StepRule 2
        Unit
        Unit
        (F StepField)
        (FVar StepField)
        (F StepField)
        (FVar StepField)
-treeProofReturnRule _ = do
+treeProofReturnRule { isBaseCase, nrrInputVal, prevInputVal } _ = do
   -- Prev input witnesses: slot-0 (No_recursion_return) input value,
-  -- slot-1 (self) input value. For the base case these are supplied
-  -- via the step advice; at compile time they're placeholders.
-  nrrInput <- exists $ lift $ pure (F zero)
-  prevInput <- exists $ lift $ pure (F zero)
+  -- slot-1 (self) input value. Threaded in as constants via `exists`
+  -- in the same pattern `simpleChainRule` uses for its prev value.
+  nrrInput <- exists $ lift $ pure nrrInputVal
+  prevInput <- exists $ lift $ pure prevInputVal
+  isBaseCaseBool <- exists $ lift $ pure isBaseCase
+  let proofMustVerifySlot1 = not_ isBaseCaseBool
+  -- self = if is_base_case then 0 else 1 + prev
+  let onePlusPrev = add_ (const_ one) prevInput
+  self <- if_ isBaseCaseBool (const_ zero) onePlusPrev
   pure
     { prevPublicInputs: nrrInput :< prevInput :< Vector.nil
-    -- iter 1: placeholder must-verify flags. Real structure for
-    -- the base case is [true_, not is_base_case]; iter 2 will
-    -- thread is_base_case through from the advice.
-    , proofMustVerify: true_ :< true_ :< Vector.nil
-    , publicOutput: const_ zero
+    , proofMustVerify: true_ :< proofMustVerifySlot1 :< Vector.nil
+    , publicOutput: self
     }
 
 spec :: SpecT Aff Unit Aff Unit
@@ -199,12 +202,21 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     -- outputSize = len*32 + 1 + len = 2*32 + 1 + 2 = 67 for N=2.
+    -- Base case: is_base_case=true; NRR's output is zero (see
+    -- assertion in OCaml dump_tree_proof_return.ml:78); prev=s_neg_one
+    -- per dump_tree_proof_return.ml:178 (negate one, unused at base).
+    let
+      baseRuleArgs =
+        { isBaseCase: true
+        , nrrInputVal: F zero
+        , prevInputVal: F (negate one)
+        }
     treeStepCR <- liftEffect $
       stepCompile @TreeProofReturnPrevsSpec @67
         @Unit @Unit
         @(F StepField) @(FVar StepField)
         @(F StepField) @(FVar StepField)
-        treeCtx treeProofReturnRule treePlaceholderAdvice
+        treeCtx (treeProofReturnRule baseRuleArgs) treePlaceholderAdvice
 
     -- ===== Phase 3: compile Tree_proof_return wrap =====
     let
