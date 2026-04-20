@@ -33,6 +33,7 @@ import Prelude
 import Data.Array as Array
 import Data.Const (Const)
 import Data.Int.Bits as Int
+import Data.Map as Map
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -58,6 +59,7 @@ import Pickles.Util.Fatal (fromJust')
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Circuit.CVar (getVariable)
 import Snarky.Circuit.DSL (F(..), FVar, const_)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -366,19 +368,23 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
 
     liftEffect do
       -- `wrap.witness.col0.0..49` + `wrap.witness.pi.*` mirror OCaml
-      -- `wrap.ml:517-526` — the first 50 auxiliary-input values + the
-      -- public inputs the wrap prover feeds to kimchi. PS
-      -- `wrapResult.witness` is column-major (`Vector 15 (Array WrapField)`),
-      -- so column 0 == `Vector.head witness`.
-      -- OCaml's `auxiliary_inputs` excludes the public-input rows of
-      -- column 0; PS's `wrapResult.witness` includes them at the head.
-      -- Skip `publicInputs.length` rows to align the two layouts.
+      -- `wrap.ml:517-526`. OCaml emits `Tock.Field.Vector.get
+      -- auxiliary_inputs i` — the flat allocation-order vector of
+      -- non-public witness variables that kimchi receives as its
+      -- `auxiliary` input. PS allocates variables in a DIFFERENT
+      -- order than OCaml (confirmed empirically: aux[0] differs
+      -- despite identical gate structure). TODO: align allocation
+      -- order — until then, col0 values diverge even though every
+      -- other trace line (step_main_outer.*, ivp.trace.*,
+      -- ipa.dbg.*, wrap.witness.pi.*, wrap.proof.opening.*) is
+      -- byte-identical.
       let
         piLen = Array.length wrapResult.publicInputs
-        col0 = Vector.head wrapResult.witness
-        col0Aux = Array.drop piLen col0
-      for_ (Array.mapWithIndex Tuple (Array.take 50 col0Aux)) \(Tuple i x) ->
-        Trace.field ("wrap.witness.col0." <> show i) x
+        auxEntries =
+          Array.filter (\(Tuple vk _) -> getVariable vk > piLen)
+            (Map.toUnfoldable wrapResult.assignments)
+      for_ (Array.take 50 auxEntries) \(Tuple vk x) ->
+        Trace.field ("wrap.witness.col0." <> show (getVariable vk - piLen - 1)) x
       for_ (Array.mapWithIndex Tuple wrapResult.publicInputs) \(Tuple i x) ->
         Trace.field ("wrap.witness.pi." <> show i) x
       let wrapSgOut = ProofFFI.vestaProofOpeningSg wrapResult.proof
