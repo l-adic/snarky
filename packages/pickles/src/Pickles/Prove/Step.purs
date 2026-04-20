@@ -1231,9 +1231,18 @@ buildStepAdviceWithOracles input = do
 
     slotBranchData :: StepBranchData
     slotBranchData =
-      { domainLog2: F (Curves.fromInt input.wrapDomainLog2 :: StepField)
-      , mask0: false
-      , mask1: true
+      -- Source from the caller's `wrapBranchData` input so the prev
+      -- STEP domain size flows through (NOT `input.wrapDomainLog2`,
+      -- which is the prev's WRAP domain — they coincide for
+      -- SimpleChain N=1 but differ for e.g. Tree_proof_return's
+      -- slot-0 = No_recursion_return where wrap_domain=2^13 but
+      -- step_domain=2^9). The inner `inv_ maskedGen` in
+      -- step FinalizeOtherProof derives omega from this domain
+      -- size; passing the wrong value makes zeta-omega^k=0 later →
+      -- DivisionByZero.
+      { domainLog2: F input.wrapBranchData.domainLog2
+      , mask0: input.wrapBranchData.proofsVerifiedMask `Vector.index` (unsafeFinite @2 0)
+      , mask1: input.wrapBranchData.proofsVerifiedMask `Vector.index` (unsafeFinite @2 1)
       }
 
     prevChalsRep :: Vector StepIPARounds (F StepField)
