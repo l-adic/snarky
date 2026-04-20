@@ -49,8 +49,8 @@ import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Step.Prevs (StepSlot)
-import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Pickles.Step.Prevs (StepSlot(..))
+import Pickles.Types (StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Types.Shifted (Type2) as ShiftedType2
 import Snarky.Circuit.DSL (SizedF)
@@ -69,7 +69,8 @@ import Snarky.Backend.Kimchi.Class (createCRS)
 import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Test.Spec (SpecT, describe, it)
 
 -- | Tree_proof_return prev-spec: slot 0 has width 0 (No_recursion_return
@@ -450,7 +451,33 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       StepAdvice s0 = slot0Advice
       StepAdvice s1 = slot1Dummy
       Tuple slot0Sppw _ = s0.perProofSlotsCarrier
-      Tuple slot1Sppw _ = s1.perProofSlotsCarrier
+      Tuple slot1SppwRaw _ = s1.perProofSlotsCarrier
+
+      -- Patch slot-1 dummy's prevSgs from Pallas.one (what
+      -- buildStepAdvice's dummySlot fills) to Dummy.Ipa.Wrap.sg
+      -- (Ro-derived constant). OCaml Proof.dummy N2 N2's stored
+      -- messages_for_next_step_proof.challenge_polynomial_commitments
+      -- are dummy wrap sgs, not Pallas.one — and the in-circuit
+      -- IVP absorbs these as `sg_old`, producing a sponge state
+      -- that determines beta. Pallas.one breaks the advice's
+      -- pre-computed beta by diverging the sponge input.
+      slot1Sppw =
+        let
+          StepSlot slot1Rec = slot1SppwRaw
+          StepPerProofWitness sppwRec = slot1Rec.sppw
+          dummyWrapSgPt
+            :: WeierstrassAffinePoint PallasG (F StepField)
+          dummyWrapSgPt =
+            let p = nrrWrapSg
+            in WeierstrassAffinePoint { x: F p.x, y: F p.y }
+        in
+          StepSlot
+            { sppw: StepPerProofWitness
+                ( sppwRec
+                    { prevSgs = Vector.replicate dummyWrapSgPt
+                    }
+                )
+            }
 
       treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
       treeRealAdvice = StepAdvice
