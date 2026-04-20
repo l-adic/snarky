@@ -47,7 +47,10 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
-import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.PlonkChecks (AllEvals)
+import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Snarky.Circuit.DSL (SizedF)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -265,19 +268,115 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Trace.field "compile.wrapVK.endomul_scalar.x" treeWrapVkComms.endomulScalarComm.x
       Trace.field "compile.wrapVK.endomul_scalar.y" treeWrapVkComms.endomulScalarComm.y
 
-    -- ===== Phase B: Tree step prove (first-pass, placeholder advice) =====
-    -- Mirror NRR's minimal advice patch: swap the wrap VK commitments
-    -- in the placeholder so step_main's outer hash absorbs the real
-    -- compiled wrap key rather than g0 placeholders. Slot 0 stays as
-    -- dummy NRR proof for now — slot-0 must_verify=true in the rule
-    -- will cause solve to fail until we inject the real NRR wrap proof.
+    -- ===== Phase B: Tree step prove with REAL NRR at slot 0 =====
+    -- Use the refactored `buildStepAdviceWithOracles` (2026-04-NN
+    -- split own/prev inputVal into separate type params) with
+    -- @inputVal=Unit and @prevInputVal=F StepField.
+    --
+    -- The helper replicates one slot template to ALL slots. With
+    -- PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil), slot 0 (n=0)
+    -- specializes prevChallenges/prevSgs to `Vector.nil`, slot 1
+    -- (n=2) to two copies of the NRR-derived value. Slot-1 sppw
+    -- fields end up with NRR's values rather than a dummy N2 — not
+    -- production-faithful, but slot-1 must_verify=false so the step
+    -- finalize check passes. We'll revisit if a later assertion
+    -- catches the slot-1 fakery.
     let
-      StepAdvice treePlaceholderRec = treePlaceholderAdvice
-      treeRealAdvice = StepAdvice
-        ( treePlaceholderRec
-            { wrapVerifierIndex = extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+      nrrDv = nrr.wrapDv
+
+      unF :: SizedF 128 (F StepField) -> SizedF 128 StepField
+      unF = SizedF.unwrapF
+
+      wrapPlonkRawFromDv =
+        { alpha: unF nrrDv.plonk.alpha
+        , beta: unF nrrDv.plonk.beta
+        , gamma: unF nrrDv.plonk.gamma
+        , zeta: unF nrrDv.plonk.zeta
+        }
+
+      stepOraclesNrr = ProofFFI.pallasProofOracles nrr.stepCR.verifierIndex
+        { proof: nrr.stepResult.proof
+        , publicInput: nrr.stepResult.publicInputs
+        , prevChallenges: []
+        }
+
+      nrrWrapPrevEvals :: AllEvals StepField
+      nrrWrapPrevEvals =
+        { ftEval1: stepOraclesNrr.ftEval1
+        , publicEvals:
+            { zeta: stepOraclesNrr.publicEvalZeta
+            , omegaTimesZeta: stepOraclesNrr.publicEvalZetaOmega
             }
-        )
+        , zEvals: ProofFFI.proofZEvals nrr.stepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals nrr.stepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals nrr.stepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals nrr.stepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals nrr.stepResult.proof
+        }
+
+    let
+      oracleInput ::
+        { publicInput :: Unit
+        , prevPublicInput :: F StepField
+        , mostRecentWidth :: Int
+        , wrapDomainLog2 :: Int
+        , wrapVK :: _
+        , wrapSg :: _
+        , stepSg :: _
+        , wrapProof :: _
+        , wrapPublicInput :: _
+        , prevChalPolys :: _
+        , wrapPlonkRaw :: _
+        , wrapPrevEvals :: _
+        , wrapBranchData :: _
+        , wrapSpongeDigest :: _
+        , mustVerify :: _
+        , wrapOwnPaddedBpChals :: _
+        , fopState :: _
+        , stepAdvicePrevEvals :: _
+        , kimchiPrevChallengesExpanded :: _
+        , prevChallengesForStepHash :: _
+        }
+      oracleInput =
+        { publicInput: unit
+        , prevPublicInput: F zero        -- NRR's output
+        , mostRecentWidth: 0             -- NRR is N=0
+        , wrapDomainLog2: nrr.wrapDomainLog2
+        , wrapVK: nrr.wrapCR.verifierIndex
+        , wrapSg: nrrWrapSg
+        , stepSg: nrr.stepSg
+        , wrapProof: nrr.wrapResult.proof
+        , wrapPublicInput: nrr.wrapPublicInput
+        , prevChalPolys:
+            -- NRR is N=0: both padded slots are dummy.
+            let
+              dummyEntry =
+                { sg: nrrWrapSg
+                , challenges: Dummy.dummyIpaChallenges.wrapExpanded
+                }
+            in
+              dummyEntry :< dummyEntry :< Vector.nil
+        , wrapPlonkRaw: wrapPlonkRawFromDv
+        , wrapPrevEvals: nrrWrapPrevEvals
+        , wrapBranchData: nrrDv.branchData
+        , wrapSpongeDigest: nrrDv.spongeDigestBeforeEvaluations
+        , mustVerify: true               -- slot 0 always verifies
+        , wrapOwnPaddedBpChals:
+            -- NRR wrap has no real prev-bp-chal input (N=0); both
+            -- slots dummy. TODO(iter 2f): extract real own-bp-chals
+            -- from NRR wrap proof via vestaProofOpeningPrechallenges
+            -- once we hit the inevitable mismatch here.
+            Dummy.dummyIpaChallenges.wrapExpanded
+              :< Dummy.dummyIpaChallenges.wrapExpanded
+              :< Vector.nil
+        , fopState: Dummy.stepDummyFopProofState { proofsVerified: 0 }
+        , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
+        , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
+        }
+
+    { advice: treeRealAdvice, challengePolynomialCommitment: _nrrChalPolyComm } <- liftEffect $
+      buildStepAdviceWithOracles @TreeProofReturnPrevsSpec oracleInput
 
     treeStepResult <- liftEffect $
       stepSolveAndProve
