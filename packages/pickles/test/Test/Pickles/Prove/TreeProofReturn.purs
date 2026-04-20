@@ -35,24 +35,28 @@ module Test.Pickles.Prove.TreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
+import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
+import Data.Tuple (Tuple(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
-import Pickles.Prove.Step (StepRule, buildStepAdvice, extractWrapVKCommsAdvice, stepCompile)
-import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, wrapCompile, zeroWrapAdvice)
+import Pickles.Prove.Step (StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile)
+import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
-import Pickles.Types (StepField)
-import Pickles.Wrap.Slots (Slots2, NoSlots)
+import Pickles.Types (StepField, WrapField)
+import Pickles.Wrap.Slots (Slots2)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -61,16 +65,6 @@ import Test.Spec (SpecT, describe, it)
 -- | Tree_proof_return prev-spec: slot 0 has width 0 (No_recursion_return
 -- | proof), slot 1 has width 2 (self).
 type TreeProofReturnPrevsSpec = PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)
-
--- | No_recursion_return rule — identical to `Test.Pickles.Prove.NoRecursionReturn`.
--- | N=0 Output mode, returns zero, no prev proofs.
--- | Reference: test_no_sideloaded.ml:100-107
-nrrRule :: StepRule 0 Unit Unit (F StepField) (FVar StepField) Unit Unit
-nrrRule _ = pure
-  { prevPublicInputs: Vector.nil
-  , proofMustVerify: Vector.nil
-  , publicOutput: const_ zero
-  }
 
 -- | Tree_proof_return rule — N=2 Output mode with heterogeneous prevs.
 -- | Mirrors OCaml test_no_sideloaded.ml:336-386 and the identical
@@ -110,58 +104,33 @@ treeProofReturnRule { isBaseCase, nrrInputVal, prevInputVal } _ = do
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
   it "Tree_proof_return base case (step0 + wrap0) compiles" \_ -> do
-    liftEffect $ Trace.string "tree_proof_return.begin" "base_case"
-
     -- ===== SRS setup (same depths as NoRecursionReturn / Simple_chain) =====
     let pallasWrapSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     let lagrangeSrs = pallasWrapSrs
     vestaSrs <- liftEffect $ createCRS @StepField
 
+    -- ===== Phase 1: NRR step + wrap via the producer =====
+    -- Produces real NRR step + wrap proofs (counter=0, counter=1 in
+    -- KIMCHI_WITNESS_DUMP), emits the NRR trace-block prefix the
+    -- Tree fixture expects at lines 1-326 (compile.stepVK.*,
+    -- compile.wrapVK.*, step_main_outer.*, step.proof.public_input.*,
+    -- wrap.witness.*, wrap.proof.opening.*).
+    nrr <- produceNoRecursionReturn
+      { vestaSrs, lagrangeSrs, pallasProofCrs: pallasWrapSrs }
+    let nrrWrapVKCommsAdvice = extractWrapVKCommsAdvice nrr.wrapCR.verifierIndex
+
+    liftEffect $ Trace.string "tree_proof_return.begin" "base_case"
+
     let
       dummySgValues = Dummy.computeDummySgValues lagrangeSrs vestaSrs
       nrrWrapSg = dummySgValues.ipa.wrap.sg
-      nrrWrapDomainLog2 = 13
-      treeWrapDomainLog2 = 13  -- override_wrap_domain:N1 → h = 2^13
-
-    -- ===== Phase 1: compile No_recursion_return step + wrap =====
-    -- This produces the compiled wrap VK whose point commitments get
-    -- baked into Tree_proof_return's `known_wrap_keys` for slot 0.
-    let
-      nrrCtx =
-        { srsData:
-            { perSlotLagrangeAt: Vector.nil
-            , blindingH:
-                (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
-                  :: AffinePoint (F StepField)
-            , perSlotFopDomainLog2: Vector.nil
-            , perSlotKnownWrapKeys: Vector.nil
-            }
-        , dummySg: nrrWrapSg
-        , crs: vestaSrs
-        }
-      nrrPlaceholderAdvice = buildStepAdvice @PrevsSpecNil
-        { publicInput: unit
-        , mostRecentWidth: 0
-        , wrapDomainLog2: nrrWrapDomainLog2
-        }
-
-    nrrStepCR <- liftEffect $
-      stepCompile @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
-        nrrCtx nrrRule nrrPlaceholderAdvice
-
-    let
-      nrrStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 nrrStepCR.proverIndex
-      nrrWrapCtx :: WP.WrapCompileContext 1
-      nrrWrapCtx =
-        { wrapMainConfig:
-            buildWrapMainConfig vestaSrs nrrStepCR.verifierIndex
-              { stepWidth: 0, domainLog2: nrrStepDomainLog2 }
-        , crs: pallasWrapSrs
-        }
-    nrrWrapCR <- liftEffect $
-      wrapCompile @1 @NoSlots nrrWrapCtx
-        (zeroWrapAdvice :: WrapAdvice 0 _)
-    let nrrWrapVKCommsAdvice = extractWrapVKCommsAdvice nrrWrapCR.verifierIndex
+      nrrWrapDomainLog2 = nrr.wrapDomainLog2
+      -- `override_wrap_domain:N1` → wrap_domains.h = 2^14 per
+      -- `Common.wrap_domains` (common.ml:25-29 maps N1 → 14). This
+      -- is emitted as `compile.wrap_domains.h.log2` trace — the
+      -- wrap circuit's OWN domain, distinct from the STEP proof's
+      -- domain-log2 that `buildWrapMainConfig` passes downstream.
+      treeWrapDomainLog2 = 14
 
     -- ===== Phase 2: compile Tree_proof_return step =====
     -- Heterogeneous prev-slot config:
@@ -170,21 +139,34 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     --   slot 1: lagrange @ self wrap domain (2^13), FOP log2=13,
     --           known VK = Nothing (self — placeholder, patched post-compile)
     let
-      -- Both slots use wrap domain 2^13 (No_recursion_return's h=2^13 and
-      -- Tree_proof_return's own h=2^13 via override_wrap_domain:N1). We
-      -- pre-compute a `LagrangeBaseLookup` closure for each slot — they
-      -- happen to be identical here but kept per-slot for symmetry with
-      -- heterogeneous cases where they'd differ.
-      mkLagrangeAt = mkConstLagrangeBaseLookup \i ->
-        (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt pallasWrapSrs 13 i))
+      -- Slot 0 lagrange is at NRR's wrap domain 2^13.
+      -- Slot 1 lagrange is at Tree's own wrap domain 2^14.
+      mkLagrangeAtNrr = mkConstLagrangeBaseLookup \i ->
+        (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt pallasWrapSrs nrrWrapDomainLog2 i))
+          :: AffinePoint (F StepField)
+      mkLagrangeAtTree = mkConstLagrangeBaseLookup \i ->
+        (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt pallasWrapSrs treeWrapDomainLog2 i))
           :: AffinePoint (F StepField)
 
+      -- `perSlotFopDomainLog2` is each slot's STEP-DOMAIN log2 (used by
+      -- `finalize_other_proof` for omega/vanishing-poly constants). NOT
+      -- the wrap domain — wrap domain drives lagrange only.
+      --   slot 0: NRR step domain = log_size_of_group of NRR step prover
+      --           index (= 9 per trace; read dynamically).
+      --   slot 1: self = Tree step domain. Chicken-and-egg: we don't have
+      --           Tree's compiled step domain until AFTER this compile.
+      --           OCaml fixture line 328 confirms Tree step domain = 2^15;
+      --           pin at 15 as a "production-known" placeholder (same
+      --           pattern OCaml dump uses with hardcoded 16).
+      nrrStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 nrr.stepCR.proverIndex
+      treeSelfStepDomainLog2 = 15
+
       treeSrsData =
-        { perSlotLagrangeAt: mkLagrangeAt :< mkLagrangeAt :< Vector.nil
+        { perSlotLagrangeAt: mkLagrangeAtNrr :< mkLagrangeAtTree :< Vector.nil
         , blindingH:
             (coerce $ ProofFFI.vestaSrsBlindingGenerator lagrangeSrs)
               :: AffinePoint (F StepField)
-        , perSlotFopDomainLog2: nrrWrapDomainLog2 :< treeWrapDomainLog2 :< Vector.nil
+        , perSlotFopDomainLog2: nrrStepDomainLog2 :< treeSelfStepDomainLog2 :< Vector.nil
         -- slot 0 carries the real NRR wrap VK; slot 1 is Nothing (self).
         , perSlotKnownWrapKeys: Just nrrWrapVKCommsAdvice :< Nothing :< Vector.nil
         }
@@ -218,9 +200,34 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(F StepField) @(FVar StepField)
         treeCtx (treeProofReturnRule baseRuleArgs) treePlaceholderAdvice
 
+    -- Emit Tree step VK + compile metadata (same shape as NRR Producer).
+    let treeStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 treeStepCR.proverIndex
+    let treeStepVkComms = extractStepVKComms treeStepCR.verifierIndex
+    liftEffect do
+      Trace.int "compile.stepVK.0.log_size_of_group" treeStepDomainLog2
+      Trace.int "compile.step_domains.0.h.log2" treeStepDomainLog2
+      Trace.int "compile.wrap_domains.h.log2" treeWrapDomainLog2
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable treeStepVkComms.sigmaComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.stepVK.sigma." <> show i <> ".x") (coerce pt.x :: F WrapField)
+        Trace.field ("compile.stepVK.sigma." <> show i <> ".y") (coerce pt.y :: F WrapField)
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable treeStepVkComms.coefficientsComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.stepVK.coeff." <> show i <> ".x") (coerce pt.x :: F WrapField)
+        Trace.field ("compile.stepVK.coeff." <> show i <> ".y") (coerce pt.y :: F WrapField)
+      Trace.field "compile.stepVK.generic.x" (coerce treeStepVkComms.genericComm.x :: F WrapField)
+      Trace.field "compile.stepVK.generic.y" (coerce treeStepVkComms.genericComm.y :: F WrapField)
+      Trace.field "compile.stepVK.psm.x" (coerce treeStepVkComms.psmComm.x :: F WrapField)
+      Trace.field "compile.stepVK.psm.y" (coerce treeStepVkComms.psmComm.y :: F WrapField)
+      Trace.field "compile.stepVK.complete_add.x" (coerce treeStepVkComms.completeAddComm.x :: F WrapField)
+      Trace.field "compile.stepVK.complete_add.y" (coerce treeStepVkComms.completeAddComm.y :: F WrapField)
+      Trace.field "compile.stepVK.mul.x" (coerce treeStepVkComms.mulComm.x :: F WrapField)
+      Trace.field "compile.stepVK.mul.y" (coerce treeStepVkComms.mulComm.y :: F WrapField)
+      Trace.field "compile.stepVK.emul.x" (coerce treeStepVkComms.emulComm.x :: F WrapField)
+      Trace.field "compile.stepVK.emul.y" (coerce treeStepVkComms.emulComm.y :: F WrapField)
+      Trace.field "compile.stepVK.endomul_scalar.x" (coerce treeStepVkComms.endomulScalarComm.x :: F WrapField)
+      Trace.field "compile.stepVK.endomul_scalar.y" (coerce treeStepVkComms.endomulScalarComm.y :: F WrapField)
+
     -- ===== Phase 3: compile Tree_proof_return wrap =====
     let
-      treeStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 treeStepCR.proverIndex
       treeWrapCtx :: WP.WrapCompileContext 1
       treeWrapCtx =
         { wrapMainConfig:
@@ -228,14 +235,38 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               { stepWidth: 2, domainLog2: treeStepDomainLog2 }
         , crs: pallasWrapSrs
         }
-    _treeWrapCR <- liftEffect $
+    treeWrapCR <- liftEffect $
       wrapCompile @1 @(Slots2 0 2) treeWrapCtx
         (zeroWrapAdvice :: WrapAdvice 2 _)
 
-    -- TODO(iter 2): NRR step prove → NRR wrap prove →
-    --               Tree step prove (slot 0 = real NRR proof,
-    --                                slot 1 = dummy N2) →
-    --               Tree wrap prove.
-    -- TODO(iter 3): witness diff via KIMCHI_WITNESS_DUMP on all 4 proofs.
+    -- Emit Tree wrap CS + VK traces.
+    let treeWrapCSDomainLog2 = ProofFFI.vestaProverIndexDomainLog2 treeWrapCR.proverIndex
+    let treeWrapVkComms = extractWrapVKForStepHash treeWrapCR.verifierIndex
+    liftEffect do
+      Trace.int "compile.wrapCS.domain_log2" treeWrapCSDomainLog2
+      Trace.int "compile.wrapCS.public_input_size" (Array.length treeWrapCR.builtState.publicInputs)
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable treeWrapVkComms.sigmaComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.wrapVK.sigma." <> show i <> ".x") pt.x
+        Trace.field ("compile.wrapVK.sigma." <> show i <> ".y") pt.y
+      for_ (Array.mapWithIndex Tuple (Vector.toUnfoldable treeWrapVkComms.coefficientsComm)) \(Tuple i pt) -> do
+        Trace.field ("compile.wrapVK.coeff." <> show i <> ".x") pt.x
+        Trace.field ("compile.wrapVK.coeff." <> show i <> ".y") pt.y
+      Trace.field "compile.wrapVK.generic.x" treeWrapVkComms.genericComm.x
+      Trace.field "compile.wrapVK.generic.y" treeWrapVkComms.genericComm.y
+      Trace.field "compile.wrapVK.psm.x" treeWrapVkComms.psmComm.x
+      Trace.field "compile.wrapVK.psm.y" treeWrapVkComms.psmComm.y
+      Trace.field "compile.wrapVK.complete_add.x" treeWrapVkComms.completeAddComm.x
+      Trace.field "compile.wrapVK.complete_add.y" treeWrapVkComms.completeAddComm.y
+      Trace.field "compile.wrapVK.mul.x" treeWrapVkComms.mulComm.x
+      Trace.field "compile.wrapVK.mul.y" treeWrapVkComms.mulComm.y
+      Trace.field "compile.wrapVK.emul.x" treeWrapVkComms.emulComm.x
+      Trace.field "compile.wrapVK.emul.y" treeWrapVkComms.emulComm.y
+      Trace.field "compile.wrapVK.endomul_scalar.x" treeWrapVkComms.endomulScalarComm.x
+      Trace.field "compile.wrapVK.endomul_scalar.y" treeWrapVkComms.endomulScalarComm.y
+
+    -- TODO(iter 2b): Tree step prove (slot 0 = real NRR proof,
+    --                                 slot 1 = dummy N2).
+    -- TODO(iter 2c): Tree wrap prove.
+    -- TODO(iter 3):  witness diff via KIMCHI_WITNESS_DUMP on all 4 proofs.
 
     liftEffect $ Trace.string "tree_proof_return.end" "compile_only"
