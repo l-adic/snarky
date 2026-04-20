@@ -377,7 +377,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg
-      , stepSg
+      , stepOpeningSg: stepSg
+      , kimchiPrevSg: stepSg
       , wrapProof: dummyWrapProof
       , wrapPublicInput: baseCaseWrapPI
       , prevChalPolys:
@@ -989,7 +990,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b1WrapSg
-      , stepSg: b0StepSg
+      , stepOpeningSg: b0StepSg
+      , kimchiPrevSg: b0StepSg
       , wrapProof: wrapResult.proof
       , wrapPublicInput: wrapResult.publicInputs
       , prevChalPolys: b1PrevChalPolys
@@ -1381,7 +1383,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b1ChalPolyComm
-      , stepSg: b1StepOpeningSg
+      , stepOpeningSg: b1StepOpeningSg
+      , kimchiPrevSg: b1StepOpeningSg
       , wrapProof: b1WrapResult.proof
       , wrapPublicInput: b1WrapResult.publicInputs
       , prevChalPolys: b2PrevChalPolys
@@ -1698,7 +1701,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b2ChalPolyComm
-      , stepSg: b2StepOpeningSg
+      , stepOpeningSg: b2StepOpeningSg
+      , kimchiPrevSg: b2StepOpeningSg
       , wrapProof: b2WrapResult.proof
       , wrapPublicInput: b2WrapResult.publicInputs
       , prevChalPolys: b3PrevChalPolys

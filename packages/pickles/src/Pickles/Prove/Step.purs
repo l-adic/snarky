@@ -708,10 +708,23 @@ type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
   -- | Previous wrap proof's sg (Pallas point, Fp coords = StepField).
   -- | Base case: `Dummy.Ipa.Wrap.sg`. Inductive: real wrap proof's sg.
   , wrapSg :: AffinePoint StepField
-  -- | Previous step proof's sg (Vesta point, Fq coords = WrapField).
-  -- | Base case: `Dummy.Ipa.Step.sg`. Inductive: real step proof's
-  -- | opening sg from the prior iteration.
-  , stepSg :: AffinePoint WrapField
+  -- | Previous step proof's opening sg (Vesta point, Fq coords =
+  -- | WrapField). Used by the HELPER's msgForNextWrap hash + its
+  -- | `wrapChallengePolynomialCommitment` feed into expandProof.
+  -- | OCaml wrap.ml:541-556 stores this value as
+  -- | `messages_for_next_wrap_proof.challenge_polynomial_commitment`
+  -- | of the wrap statement.
+  -- | Base case (no real prev step): `Dummy.Ipa.Step.sg`.
+  -- | Inductive / verifying a REAL wrap: the step proof's actual
+  -- | opening sg (`pallasProofOpeningSg prev_step_proof`).
+  , stepOpeningSg :: AffinePoint WrapField
+  -- | Kimchi-level prev-challenges sg: what the step prover passes
+  -- | to `pallasCreateProofWithPrev` in each entry's `sgX/Y`. This
+  -- | is kimchi's own prev-IPA-fold reference, which for the base
+  -- | case remains the compile-time dummy (`Dummy.Ipa.Step.sg`),
+  -- | DISTINCT from `stepOpeningSg` when the helper's caller has
+  -- | a real prev wrap proof to verify.
+  , kimchiPrevSg :: AffinePoint WrapField
   -- | The wrap proof to run oracles on. Base case: `Proof.dummy`.
   -- | Inductive: the real wrap proof from the previous iteration.
   , wrapProof :: Proof PallasG WrapField
@@ -881,7 +894,7 @@ buildStepAdviceWithOracles input = do
 
     msgWrapHash :: WrapField
     msgWrapHash = hashMessagesForNextWrapProofPureGeneral
-      { sg: input.stepSg
+      { sg: input.stepOpeningSg
       , paddedChallenges: wrapPadded
       }
 
@@ -1059,7 +1072,7 @@ buildStepAdviceWithOracles input = do
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
       , appStateFields: valueToFields @StepField @prevInputVal input.prevPublicInput
       , stepPrevSgs: input.wrapSg :< Vector.nil
-      , wrapChallengePolynomialCommitment: input.stepSg
+      , wrapChallengePolynomialCommitment: input.stepOpeningSg
       , wrapPaddedPrevChallenges: wrapPadded
       , wrapVerifierIndex: input.wrapVK
       , wrapProof: input.wrapProof
@@ -1331,8 +1344,8 @@ buildStepAdviceWithOracles input = do
       , wrapVerifierIndex: extractWrapVKCommsAdvice input.wrapVK
       , kimchiPrevChallenges:
           Vector.replicate
-            { sgX: input.stepSg.x
-            , sgY: input.stepSg.y
+            { sgX: input.kimchiPrevSg.x
+            , sgY: input.kimchiPrevSg.y
             , challenges: input.kimchiPrevChallengesExpanded
             }
       }

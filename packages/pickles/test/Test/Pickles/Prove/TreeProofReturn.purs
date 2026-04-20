@@ -332,7 +332,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapDomainLog2 :: Int
         , wrapVK :: _
         , wrapSg :: _
-        , stepSg :: _
+        , stepOpeningSg :: _
+        , kimchiPrevSg :: _
         , wrapProof :: _
         , wrapPublicInput :: _
         , prevChalPolys :: _
@@ -354,15 +355,18 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapDomainLog2: nrr.wrapDomainLog2
         , wrapVK: nrr.wrapCR.verifierIndex
         , wrapSg: nrrWrapSg
-        -- TODO(iter 2m): `stepSg` in buildStepAdviceWithOracles is
-        -- conflated across three uses with different semantics:
-        --   (1) msgWrapHash         — needs real step opening sg
-        --   (2) wrapChallengePolyCom — needs real step opening sg
-        --   (3) kimchiPrevChallenges sg — needs dummy for base case
-        -- Using the dummy `nrr.stepSg` gets us to step6_ivp
-        -- (ivp_assert_plonk_beta); using the real step opening sg
-        -- regresses to step2_fop. Need to split the input field.
-        , stepSg: nrr.stepSg
+        -- Split of previously-conflated `stepSg`:
+        --   stepOpeningSg = real NRR step proof's opening sg. Fed into
+        --     msgForNextWrap hash + expandProof's wrapChallengePoly
+        --     commitment. OCaml wrap.ml:541-556 stores this into NRR's
+        --     wrap statement, so advice.messagesForNextWrapProof needs
+        --     to see the REAL value to match what step_main recomputes.
+        --   kimchiPrevSg = Dummy.Ipa.Step.sg, the compile-time constant.
+        --     Fed into the advice's kimchiPrevChallenges[_].sg entries
+        --     (what the step prover's pallasCreateProofWithPrev sees as
+        --     the prev IPA fold reference). Base case = dummy.
+        , stepOpeningSg: ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
+        , kimchiPrevSg: nrr.stepSg
         , wrapProof: nrr.wrapResult.proof
         , wrapPublicInput: nrr.wrapPublicInput
         , prevChalPolys:
