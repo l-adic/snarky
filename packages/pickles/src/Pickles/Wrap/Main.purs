@@ -654,27 +654,27 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- against OCaml's equivalent at wrap.ml pack_statement input point.
   -- The MSM walks these exact values, so any one that differs from
   -- OCaml localizes the remaining xhat divergence.
-  let sp0' = Array.head $ Vector.toUnfoldable splitProofs
-  for_ sp0' \sp0 -> do
+  forWithIndex_ splitProofs \fi sp -> do
+    let slotIdx = getFinite fi
     let unType2Split (Type2 sf) = sf
-    let cipSF = unType2Split sp0.deferredValues.combinedInnerProduct
-    let bSF = unType2Split sp0.deferredValues.b
-    let permSF = unType2Split sp0.deferredValues.plonk.perm
-    let ztSrsSF = unType2Split sp0.deferredValues.plonk.zetaToSrsLength
-    let ztDomSF = unType2Split sp0.deferredValues.plonk.zetaToDomainSize
-    ivpTrace "wrap.dbg.unf0.cip.sDiv2" (case cipSF of SplitField r -> r.sDiv2)
-    ivpTrace "wrap.dbg.unf0.b.sDiv2" (case bSF of SplitField r -> r.sDiv2)
-    ivpTrace "wrap.dbg.unf0.perm.sDiv2" (case permSF of SplitField r -> r.sDiv2)
-    ivpTrace "wrap.dbg.unf0.ztSrs.sDiv2" (case ztSrsSF of SplitField r -> r.sDiv2)
-    ivpTrace "wrap.dbg.unf0.ztDom.sDiv2" (case ztDomSF of SplitField r -> r.sDiv2)
-    ivpTrace "wrap.dbg.unf0.spongeDigest" sp0.spongeDigestBeforeEvaluations
-    ivpTrace "wrap.dbg.unf0.alpha" (SizedF.toField sp0.deferredValues.plonk.alpha)
-    ivpTrace "wrap.dbg.unf0.beta" (SizedF.toField sp0.deferredValues.plonk.beta)
-    ivpTrace "wrap.dbg.unf0.gamma" (SizedF.toField sp0.deferredValues.plonk.gamma)
-    ivpTrace "wrap.dbg.unf0.zeta" (SizedF.toField sp0.deferredValues.plonk.zeta)
-    ivpTrace "wrap.dbg.unf0.xi" (SizedF.toField sp0.deferredValues.xi)
-    forWithIndex_ sp0.deferredValues.bulletproofChallenges \fi c ->
-      ivpTrace ("wrap.dbg.unf0.bpc." <> show (getFinite fi)) (SizedF.toField c)
+    let cipSF = unType2Split sp.deferredValues.combinedInnerProduct
+    let bSF = unType2Split sp.deferredValues.b
+    let permSF = unType2Split sp.deferredValues.plonk.perm
+    let ztSrsSF = unType2Split sp.deferredValues.plonk.zetaToSrsLength
+    let ztDomSF = unType2Split sp.deferredValues.plonk.zetaToDomainSize
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".cip.sDiv2") (case cipSF of SplitField r -> r.sDiv2)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".b.sDiv2") (case bSF of SplitField r -> r.sDiv2)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".perm.sDiv2") (case permSF of SplitField r -> r.sDiv2)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".ztSrs.sDiv2") (case ztSrsSF of SplitField r -> r.sDiv2)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".ztDom.sDiv2") (case ztDomSF of SplitField r -> r.sDiv2)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".spongeDigest") sp.spongeDigestBeforeEvaluations
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".alpha") (SizedF.toField sp.deferredValues.plonk.alpha)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".beta") (SizedF.toField sp.deferredValues.plonk.beta)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".gamma") (SizedF.toField sp.deferredValues.plonk.gamma)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".zeta") (SizedF.toField sp.deferredValues.plonk.zeta)
+    ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".xi") (SizedF.toField sp.deferredValues.xi)
+    forWithIndex_ sp.deferredValues.bulletproofChallenges \fj c ->
+      ivpTrace ("wrap.dbg.unf" <> show slotIdx <> ".bpc." <> show (getFinite fj)) (SizedF.toField c)
 
   let
     publicInput :: PackedStepPublicInput mpv WrapIPARounds (FVar WrapField) (BoolVar WrapField)
