@@ -40,7 +40,7 @@ import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -48,16 +48,18 @@ import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Proof.Dummy (dummyWrapProof)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Step.Prevs (StepSlot(..))
-import Pickles.Types (StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
+import Pickles.Types (PaddedLength, StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
 import Snarky.Circuit.Kimchi (SplitField, Type2)
 import Snarky.Types.Shifted (Type2) as ShiftedType2
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -428,98 +430,85 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: slot0Advice } <- liftEffect $
       buildStepAdviceWithOracles @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
 
+    -- Iter 2s: slot 1 dummy now built via `buildStepAdviceWithOracles`
+    -- over `Pickles.Proof.Dummy.dummyWrapProof`. OCaml's `expand_proof`
+    -- (step.ml:406-418,637-645) returns Unfinalized with plonk.{α,β,γ,ζ}
+    -- = oracle outputs (NOT stored Ro-derived values). The previous
+    -- `buildStepAdvice`-based dummy stored Ro-derived plonk into the
+    -- advice, which diverged from the in-circuit sponge squeeze (which
+    -- reproduces oracle-style values) → ivp_assert_plonk_beta failure.
+    -- Template: `Test.Pickles.Prove.SimpleChain` base case (lines 355-414).
     let
-      slot1Dummy :: StepAdvice
-        (PrevsSpecCons 2 PrevsSpecNil)
-        StepIPARounds
-        WrapIPARounds
-        Unit
-        1
-        (Tuple (StepSlot 2 StepIPARounds WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean) Unit)
-      slot1Dummy = buildStepAdvice @(PrevsSpecCons 2 PrevsSpecNil)
-        { publicInput: unit
-        , mostRecentWidth: 2
-        -- `buildStepAdvice` sets slot-1's dummy branchData.domainLog2
-        -- = input.wrapDomainLog2. That field is semantically the
-        -- prev slot's STEP domain (per OCaml fixture line 912:
-        -- expand_proof.deferred.branch_data.domain_log2 = 15 for Tree
-        -- slot 1, i.e. Tree step's log_size_of_group). Pass 15, not
-        -- Tree's WRAP domain 14 — branchData drives FOP's
-        -- maskedGen → inv_ would see wrong gen with 14.
+      slot1BaseCaseDummyChalPoly =
+        { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+      slot1BaseCaseWrapPI = dummyWrapTockPublicInput
+        { mostRecentWidth: 2
+        -- branchData.domainLog2 for OCaml Proof.dummy N2 N2 ~domain_log2:15.
         , wrapDomainLog2: treeSelfStepDomainLog2
+        , wrapVK: treeWrapCR.verifierIndex
+        , prevPublicInput: (F (negate one)) :: F StepField
+        , wrapSg: nrrWrapSg
+        , stepSg: nrr.stepSg
+        , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
+            { sg: nrr.stepSg
+            , paddedChallenges:
+                Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Vector.nil
+            }
+        }
+    { advice: slot1Advice } <- liftEffect $
+      buildStepAdviceWithOracles @(PrevsSpecCons 2 PrevsSpecNil)
+        { publicInput: unit
+        , prevPublicInput: (F (negate one)) :: F StepField
+        , mostRecentWidth: 2
+        , wrapDomainLog2: treeSelfStepDomainLog2
+        , wrapVK: treeWrapCR.verifierIndex
+        , wrapSg: nrrWrapSg
+        , stepOpeningSg: nrr.stepSg
+        , kimchiPrevSg: nrr.stepSg
+        , wrapProof: dummyWrapProof
+        , wrapPublicInput: slot1BaseCaseWrapPI
+        , prevChalPolys:
+            slot1BaseCaseDummyChalPoly
+              :< slot1BaseCaseDummyChalPoly
+              :< Vector.nil
+              :: Vector PaddedLength _
+        , wrapPlonkRaw: simpleChainDummyPlonk
+        , wrapPrevEvals: simpleChainDummyPrevEvals
+        , wrapBranchData:
+            { domainLog2: (fromInt treeSelfStepDomainLog2) :: StepField
+            , proofsVerifiedMask: true :< true :< Vector.nil
+            }
+        , wrapSpongeDigest: zero
+        , mustVerify: false
+        , wrapOwnPaddedBpChals:
+            Dummy.dummyIpaChallenges.wrapExpanded
+              :< Dummy.dummyIpaChallenges.wrapExpanded
+              :< Vector.nil
+        , fopState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 2 }
+        , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
+        , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
         }
 
+    let
       StepAdvice s0 = slot0Advice
-      StepAdvice s1 = slot1Dummy
+      StepAdvice s1 = slot1Advice
       Tuple slot0Sppw _ = s0.perProofSlotsCarrier
-      Tuple slot1SppwRaw _ = s1.perProofSlotsCarrier
-
-      -- Patch slot-1 dummy's prevSgs from Pallas.one (what
-      -- buildStepAdvice's dummySlot fills) to Dummy.Ipa.Wrap.sg
-      -- (Ro-derived constant). OCaml Proof.dummy N2 N2's stored
-      -- messages_for_next_step_proof.challenge_polynomial_commitments
-      -- are dummy wrap sgs, not Pallas.one — and the in-circuit
-      -- IVP absorbs these as `sg_old`, producing a sponge state
-      -- that determines beta. Pallas.one breaks the advice's
-      -- pre-computed beta by diverging the sponge input.
-      slot1Sppw =
-        let
-          StepSlot slot1Rec = slot1SppwRaw
-          StepPerProofWitness sppwRec = slot1Rec.sppw
-          dummyWrapSgPt
-            :: WeierstrassAffinePoint PallasG (F StepField)
-          dummyWrapSgPt =
-            let p = nrrWrapSg
-            in WeierstrassAffinePoint { x: F p.x, y: F p.y }
-        in
-          StepSlot
-            { sppw: StepPerProofWitness
-                ( sppwRec
-                    { prevSgs = Vector.replicate dummyWrapSgPt
-                    }
-                )
-            }
+      Tuple slot1Sppw _ = s1.perProofSlotsCarrier
 
       treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
       treeRealAdvice = StepAdvice
         { perProofSlotsCarrier: Tuple slot0Sppw (Tuple slot1Sppw unit)
         , publicInput: unit
-        -- Slot 0: real NRR unfinalized (from slot0Advice).
-        -- Slot 1: dummy (from slot1Dummy).
         , publicUnfinalizedProofs:
             Vector.head s0.publicUnfinalizedProofs
               :< Vector.head s1.publicUnfinalizedProofs
               :< Vector.nil
         , messagesForNextWrapProof:
             Vector.head s0.messagesForNextWrapProof
-              -- Slot 1 = OCaml Proof.dummy N2 N2 ~domain_log2:15.
-              -- Per mina/.../pickles/proof.ml:155-159 OCaml sets
-              -- messages_for_next_wrap_proof = { challenge_polynomial_commitment
-              --   = Dummy.Ipa.Step.sg
-              -- , old_bulletproof_challenges
-              --   = Vector.init h ~f:(fun _ -> Dummy.Ipa.Wrap.challenges) }
-              -- h = N2 so Vector 2 entries. Hash these to get the
-              -- digest that ends up in Tree's slot-1 wrap-statement.
-              -- PS's buildStepAdvice defaults to F zero here, which
-              -- zeroes out the msg_wrap scalar in slot-1's packed
-              -- statement → xhat diverges → IVP beta diverges.
-              -- hashMessagesForNextWrapProofPureGeneral produces a
-              -- WrapField; cross-field coerce to F StepField via
-              -- fromBigInt/toBigInt (same pattern as Producer).
-              :< F
-                   ( fromBigInt
-                       ( toBigInt
-                           ( hashMessagesForNextWrapProofPureGeneral
-                               { sg: nrr.stepSg
-                               , paddedChallenges:
-                                   Dummy.dummyIpaChallenges.wrapExpanded
-                                     :< Dummy.dummyIpaChallenges.wrapExpanded
-                                     :< Vector.nil
-                               }
-                           )
-                       )
-                       :: StepField
-                   )
+              :< Vector.head s1.messagesForNextWrapProof
               :< Vector.nil
         , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
         , kimchiPrevChallenges:

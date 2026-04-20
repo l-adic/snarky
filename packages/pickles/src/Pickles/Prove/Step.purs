@@ -626,16 +626,34 @@ dummyWrapTockPublicInput input =
     stepExpanded :: Vector StepIPARounds StepField
     stepExpanded = dummyIpaChallenges.stepExpanded
 
-    prevProofs :: Vector 1 { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
-    prevProofs =
-      { sg: input.wrapSg, expandedBpChallenges: stepExpanded } :< Vector.nil
+    singleEntry :: { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
+    singleEntry = { sg: input.wrapSg, expandedBpChallenges: stepExpanded }
 
+    -- `prevProofs` has `mostRecentWidth` entries, matching OCaml
+    -- `proof.ml:168-171`:
+    --   messages_for_next_step_proof.challenge_polynomial_commitments
+    --     = Vector.init most_recent_width (fun _ -> Dummy.Ipa.Wrap.sg)
+    -- We reify the runtime width to the type level so
+    -- `hashMessagesForNextStepProofPure` gets a `Vector n` of the
+    -- correct length.
     msgStepDigestStepField :: StepField
-    msgStepDigestStepField = hashMessagesForNextStepProofPure
-      { stepVk: wrapVkStep
-      , appState: valueToFields @StepField @inputVal input.prevPublicInput
-      , proofs: prevProofs
-      }
+    msgStepDigestStepField = case input.mostRecentWidth of
+      0 -> hashMessagesForNextStepProofPure
+        { stepVk: wrapVkStep
+        , appState: valueToFields @StepField @inputVal input.prevPublicInput
+        , proofs: (Vector.nil :: Vector 0 _)
+        }
+      1 -> hashMessagesForNextStepProofPure
+        { stepVk: wrapVkStep
+        , appState: valueToFields @StepField @inputVal input.prevPublicInput
+        , proofs: singleEntry :< (Vector.nil :: Vector 0 _)
+        }
+      2 -> hashMessagesForNextStepProofPure
+        { stepVk: wrapVkStep
+        , appState: valueToFields @StepField @inputVal input.prevPublicInput
+        , proofs: singleEntry :< singleEntry :< (Vector.nil :: Vector 0 _)
+        }
+      w -> unsafeCrashWith $ "dummyWrapTockPublicInput: mostRecentWidth must be 0, 1, or 2; got " <> show w
 
     -- 3 digests in packStatement order:
     -- [spongeDigest, msgWrap, msgStep]. `fopProofState.spongeDigest`
@@ -658,12 +676,22 @@ dummyWrapTockPublicInput input =
     --   4 * domainLog2 + mask0 + 2 * mask1
     -- In the step circuit `packStatement` this is computed in step
     -- field and absorbed as a `SizedF 10` value (10 bits are enough
-    -- for domainLog2 ∈ [0,15], mask bits). We emit it as the plain
-    -- wrap-field integer 4 * domainLog2 + 0 + 2 * 1 (Simple_chain
-    -- base case has proofsVerifiedMask = [false, true]).
+    -- for domainLog2 ∈ [0,15], mask bits). The mask follows OCaml's
+    -- `ones_vector ~first_zero:most_recent_width |> Vector.rev`
+    -- (wrap_main.ml:231-238):
+    --   N0 → [F, F] → packed = 0
+    --   N1 → [F, T] → packed = 2
+    --   N2 → [T, T] → packed = 3
     packedBranchData :: WrapField
     packedBranchData =
-      Curves.fromInt (4 * input.wrapDomainLog2 + 2)
+      let
+        maskBits = case input.mostRecentWidth of
+          0 -> 0
+          1 -> 2
+          2 -> 3
+          _ -> 0
+      in
+        Curves.fromInt (4 * input.wrapDomainLog2 + maskBits)
 
     -- Feature flags + lookup slots — all constant zero for vanilla
     -- Mina (`Features.Full.none`).
