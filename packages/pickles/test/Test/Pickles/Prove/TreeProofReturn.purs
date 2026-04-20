@@ -354,6 +354,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapDomainLog2: nrr.wrapDomainLog2
         , wrapVK: nrr.wrapCR.verifierIndex
         , wrapSg: nrrWrapSg
+        -- TODO(iter 2m): `stepSg` in buildStepAdviceWithOracles is
+        -- conflated across three uses with different semantics:
+        --   (1) msgWrapHash         — needs real step opening sg
+        --   (2) wrapChallengePolyCom — needs real step opening sg
+        --   (3) kimchiPrevChallenges sg — needs dummy for base case
+        -- Using the dummy `nrr.stepSg` gets us to step6_ivp
+        -- (ivp_assert_plonk_beta); using the real step opening sg
+        -- regresses to step2_fop. Need to split the input field.
         , stepSg: nrr.stepSg
         , wrapProof: nrr.wrapResult.proof
         , wrapPublicInput: nrr.wrapPublicInput
