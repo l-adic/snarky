@@ -716,12 +716,17 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       slot0PerProof = convertSlotUnf slot0UnfRec
       slot1PerProof = convertSlotUnf slot1UnfRec
 
-      -- prevStepAccs: slot 0 = NRR's step proof opening sg (Vesta),
-      -- slot 1 = dummy step sg (also nrr.stepSg which is Dummy.Ipa.Step.sg).
-      nrrStepOpeningSg = ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
+      -- prevStepAccs = wrap IVP's sg_old for the step proof. Kimchi
+      -- stores the step proof's `prev_challenges[i].sg` in the proof's
+      -- accumulator; the wrap IVP's sponge absorbs these at IVC step 2
+      -- (sg_old). Both must match what the step prover fed to
+      -- `pallasCreateProofWithPrev` at kimchi level, i.e. advice's
+      -- `kimchiPrevChallenges[i].sg` which for Tree base case both
+      -- slots = `nrr.stepSg` (= `Dummy.Ipa.Step.sg`, per
+      -- `buildStepAdviceWithOracles.kimchiPrevSg: nrr.stepSg` above).
       slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot0StepAcc = WeierstrassAffinePoint
-        { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+        { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
       slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot1StepAcc = WeierstrassAffinePoint
         { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
