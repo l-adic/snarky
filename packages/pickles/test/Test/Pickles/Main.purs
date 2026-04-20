@@ -6,6 +6,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SimpleChain as SimpleChain
+import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -25,6 +26,7 @@ spec :: SpecT Aff Unit Aff Unit
 spec = do
   SimpleChain.spec
   NoRecursionReturn.spec
+  TreeProofReturn.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'
