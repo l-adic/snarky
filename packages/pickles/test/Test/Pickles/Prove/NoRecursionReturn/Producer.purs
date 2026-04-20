@@ -36,7 +36,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI as ProofFFI
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepAdvice(..), StepCompileResult, StepProveResult, StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, WrapProveResult, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -75,8 +75,17 @@ type NoRecursionReturnArtifacts =
   , stepResult :: StepProveResult 1
   , wrapResult :: WrapProveResult
   , wrapSg :: AffinePoint StepField
+  , stepSg :: AffinePoint WrapField  -- dummy Step IPA sg (Vesta)
   , stepDomainLog2 :: Int
   , wrapDomainLog2 :: Int
+  -- | Output of `wrapComputeDeferredValues` over NRR's step proof.
+  -- | Downstream (Tree_proof_return slot-0 injection) reads this
+  -- | for `wrapPlonkRaw`, `wrapBranchData`,
+  -- | `wrapSpongeDigest`, etc.
+  , wrapDv :: WrapDeferredValuesOutput
+  -- | NRR's wrap public input (for feeding vestaProofOracles
+  -- | downstream).
+  , wrapPublicInput :: Array WrapField
   }
 
 -- | Produce the No_recursion_return base-case step + wrap proofs.
@@ -343,6 +352,9 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     , stepResult
     , wrapResult
     , wrapSg
+    , stepSg: dummySgValues.ipa.step.sg
     , stepDomainLog2
     , wrapDomainLog2
+    , wrapDv
+    , wrapPublicInput: wrapResult.publicInputs
     }
