@@ -460,18 +460,18 @@ type ExpandProofInput n nwp =
   -- Caller applies `Ipa.Step.compute_challenges` to the raw ones from
   -- `statement.messages_for_next_step_proof.old_bulletproof_challenges`
   -- and extends with `Dummy.Ipa.Step.challenges_computed` to reach
-  -- `Local_max_proofs_verified.n = 1`.
-  , stepPrevChallenges :: Vector 1 (Vector StepIPARounds (F StepField))
+  -- `Local_max_proofs_verified.n = n`.
+  , stepPrevChallenges :: Vector n (Vector StepIPARounds (F StepField))
 
   -- Pre-padded step-side previous challenge-polynomial commitments
   -- (sgs). Separate from `stepPrevSgs` (unpadded, used by the hash).
-  , stepPrevSgsPadded :: Vector 1 (AffinePoint StepField)
+  , stepPrevSgsPadded :: Vector n (AffinePoint StepField)
   }
 
 -- | Output of `expandProof` — the witness data the step circuit
 -- | reads for one predecessor slot. Maps to OCaml's return tuple
 -- | from `expand_proof` (step.ml:515-536).
-type ExpandProofOutput =
+type ExpandProofOutput n =
   { sg :: AffinePoint StepField
   -- | The wrap-field deferred-value record + should_finalize flag +
   -- | sponge digest. Corresponds to OCaml `Unfinalized.Constant.t`.
@@ -494,7 +494,7 @@ type ExpandProofOutput =
   , xHat :: { zeta :: WrapField, omegaTimesZeta :: WrapField }
   , perProofWitness ::
       StepPerProofWitness
-        1
+        n
         StepIPARounds
         WrapIPARounds
         (F StepField)
@@ -531,7 +531,7 @@ type PrevStatementWithHashes =
 expandProof
   :: forall n nwp
    . ExpandProofInput n nwp
-  -> ExpandProofOutput
+  -> ExpandProofOutput n
 expandProof input =
   let
     -- ===== Step-field Type1 deferred values. =====
@@ -881,7 +881,7 @@ expandProof input =
 
     perProofWitnessAssembled
       :: StepPerProofWitness
-           1
+           n
            StepIPARounds
            WrapIPARounds
            (F StepField)

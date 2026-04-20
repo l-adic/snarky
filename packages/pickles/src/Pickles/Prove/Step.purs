@@ -68,7 +68,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy (dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState, stepDummyFopProofState, wrapDummyUnfinalizedProof)
+import Pickles.Dummy (dummyIpaChallenges, roComputeResult, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -740,6 +740,13 @@ type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
   , prevPublicInput :: prevInputVal
   , mostRecentWidth :: Int
   , wrapDomainLog2 :: Int
+  -- | STEP-domain log2 of the proof being verified (= branch_data.domain_log2
+  -- | of the wrap statement). OCaml `Wrap_deferred_values.expand_deferred`
+  -- | uses `Branch_data.domain branch_data` for `step_domain`, which drives
+  -- | `zetaToDomainSize`, `perm`, and omega. Distinct from `wrapDomainLog2`
+  -- | (the wrap VK's own domain) whenever a rule uses `override_wrap_domain`
+  -- | or verifies a prev whose step domain differs from its wrap domain.
+  , stepDomainLog2 :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
   -- | Previous wrap proof's sg (Pallas point, Fp coords = StepField).
   -- | Base case: `Dummy.Ipa.Wrap.sg`. Inductive: real wrap proof's sg.
@@ -901,8 +908,9 @@ type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
 -- | public input, feeds through `expandProof`, and assembles the
 -- | per-slot rank-2 `StepSlot` dummy used by `replicatePrevsCarrier`.
 buildStepAdviceWithOracles
-  :: forall @prevsSpec inputVal input prevInputVal prevInput len carrier
-   . Reflectable len Int
+  :: forall @n @prevsSpec inputVal input prevInputVal prevInput len carrier
+   . Reflectable n Int
+  => Reflectable len Int
   => CircuitType StepField inputVal input
   => CircuitType StepField prevInputVal prevInput
   => PrevsCarrier
@@ -1034,10 +1042,10 @@ buildStepAdviceWithOracles input = do
     branchDataStep = input.wrapBranchData
 
     stepFopGenerator :: StepField
-    stepFopGenerator = domainGenerator input.wrapDomainLog2
+    stepFopGenerator = domainGenerator input.stepDomainLog2
 
     stepFopShifts :: Vector 7 StepField
-    stepFopShifts = domainShifts input.wrapDomainLog2
+    stepFopShifts = domainShifts input.stepDomainLog2
 
     zetaExpandedStep :: StepField
     zetaExpandedStep =
@@ -1046,7 +1054,7 @@ buildStepAdviceWithOracles input = do
     stepFopVanishesOnZk :: StepField
     stepFopVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
-        { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: zetaExpandedStep }
+        { domainLog2: input.stepDomainLog2, zkRows: 3, pt: zetaExpandedStep }
 
     wrapAllEvalsW :: AllEvals WrapField
     wrapAllEvalsW =
@@ -1086,19 +1094,28 @@ buildStepAdviceWithOracles input = do
           , indexEvals: map pe ae.indexEvals
           }
 
-    expandProofInputRec :: PureStep.ExpandProofInput 1 2
+    expandProofInputRec :: PureStep.ExpandProofInput n 2
     expandProofInputRec =
       { mustVerify: input.mustVerify
       , zkRows: 3
       , srsLengthLog2: 16
       , allEvals: input.wrapPrevEvals
       , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
-      , oldBulletproofChallenges: dummyStepBpChalsRaw :< Vector.nil
+      -- Sized by the slot's `most_recent_width` (= `n`). OCaml
+      -- `proof.ml:dummy` fills this as `Vector.init most_recent_width
+      -- (Lazy.force Dummy.Ipa.Step.challenges)`; for real prevs, entries
+      -- come from the wrap statement.
+      , oldBulletproofChallenges: Vector.replicate @n dummyStepBpChalsRaw
       , plonkMinimal: plonkMinimalStep
-      , rawBulletproofChallenges: dummyStepBpChalsRaw
+      -- This wrap proof's OWN bp challenges, as stored in its
+      -- `deferred_values.bulletproof_challenges`. For a dummy prev this
+      -- is `Dummy.Ipa.Step.challenges`; for a real prev it's the
+      -- challenges from the real IPA fold. `fopState` carries that value
+      -- (the caller supplies it per-slot via `input.fopState`).
+      , rawBulletproofChallenges: input.fopState.deferredValues.bulletproofChallenges
       , branchData: branchDataStep
       , spongeDigestBeforeEvaluations: input.wrapSpongeDigest
-      , stepDomainLog2: input.wrapDomainLog2
+      , stepDomainLog2: input.stepDomainLog2
       , stepGenerator: stepFopGenerator
       , stepShifts: stepFopShifts
       , stepVanishesOnZk: stepFopVanishesOnZk
@@ -1107,7 +1124,11 @@ buildStepAdviceWithOracles input = do
       , linearizationPoly: Linearization.pallas
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
       , appStateFields: valueToFields @StepField @prevInputVal input.prevPublicInput
-      , stepPrevSgs: input.wrapSg :< Vector.nil
+      -- One entry per prev-of-prev (sized by slot's `n`). For dummy
+      -- prevs, all entries are `Dummy.Ipa.Wrap.sg` per OCaml
+      -- `proof.ml:168-171`; caller's `wrapSg` already carries that value
+      -- in the base case.
+      , stepPrevSgs: Vector.replicate @n input.wrapSg
       , wrapChallengePolynomialCommitment: input.stepOpeningSg
       , wrapPaddedPrevChallenges: wrapPadded
       , wrapVerifierIndex: input.wrapVK
@@ -1125,11 +1146,12 @@ buildStepAdviceWithOracles input = do
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
       , stepProofPrevEvals: wrapPrevEvalsF
-      , stepPrevChallenges: map F stepExpanded :< Vector.nil
-      , stepPrevSgsPadded: input.wrapSg :< Vector.nil
+      -- Padded to the slot's Local_max_proofs_verified = `n`.
+      , stepPrevChallenges: Vector.replicate @n (map F stepExpanded)
+      , stepPrevSgsPadded: Vector.replicate @n input.wrapSg
       }
 
-    expandProofResult :: PureStep.ExpandProofOutput
+    expandProofResult :: PureStep.ExpandProofOutput n
     expandProofResult = PureStep.expandProof expandProofInputRec
 
   -- === TRACE Stage 2: expand_proof.deferred.* (step-field Type1 deferred values) ===
@@ -1305,10 +1327,10 @@ buildStepAdviceWithOracles input = do
     -- its own `n_i`; other SPPW fields use the concrete
     -- oracle-enriched values computed above.
     slotTemplate
-      :: forall n
-       . Reflectable n Int
+      :: forall nSlot
+       . Reflectable nSlot Int
       => StepSlot
-           n
+           nSlot
            StepIPARounds
            WrapIPARounds
            (F StepField)

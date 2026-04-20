@@ -371,11 +371,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
             }
         , fopProofState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 1 }
         }
-    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero
       , prevPublicInput: F (negate one) -- OCaml `s_neg_one`
       , mostRecentWidth: 1
       , wrapDomainLog2
+      , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg
       , stepOpeningSg: stepSg
@@ -984,11 +985,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< msgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F one
       , prevPublicInput: F zero
       , mostRecentWidth: 1
       , wrapDomainLog2
+      , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b1WrapSg
       , stepOpeningSg: b0StepSg
@@ -1377,11 +1379,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b1MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 2 :: StepField)
       , prevPublicInput: F one
       , mostRecentWidth: 1
       , wrapDomainLog2
+      , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b1ChalPolyComm
       , stepOpeningSg: b1StepOpeningSg
@@ -1695,11 +1698,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
           :< b2MsgForNextWrapRealChals
           :< Vector.nil
 
-    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
+    { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 3 :: StepField)
       , prevPublicInput: F (fromInt 2 :: StepField)
       , mostRecentWidth: 1
       , wrapDomainLog2
+      , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , wrapSg: b2ChalPolyComm
       , stepOpeningSg: b2StepOpeningSg

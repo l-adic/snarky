@@ -342,6 +342,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , prevPublicInput :: F StepField
         , mostRecentWidth :: Int
         , wrapDomainLog2 :: Int
+        , stepDomainLog2 :: Int
         , wrapVK :: _
         , wrapSg :: _
         , stepOpeningSg :: _
@@ -365,6 +366,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , prevPublicInput: F zero        -- NRR's output
         , mostRecentWidth: 0             -- NRR is N=0
         , wrapDomainLog2: nrr.wrapDomainLog2
+        -- Step domain of the NRR proof being verified. NRR's step domain
+        -- log2 = 9 (from its prover index), distinct from wrap VK domain 13.
+        -- OCaml `expand_deferred` uses `Branch_data.domain branch_data` for
+        -- `step_domain`; branch_data.domain_log2 of NRR's wrap statement
+        -- equals NRR step log2 = 9.
+        , stepDomainLog2: nrrStepDomainLog2
         , wrapVK: nrr.wrapCR.verifierIndex
         , wrapSg: nrrWrapSg
         -- Split of previously-conflated `stepSg`:
@@ -441,7 +448,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- We splice their carriers into Tree's heterogeneous
     -- `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)` shape.
     { advice: slot0Advice } <- liftEffect $
-      buildStepAdviceWithOracles @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
 
     -- Iter 2s: slot 1 dummy now built via `buildStepAdviceWithOracles`
     -- over `Pickles.Proof.Dummy.dummyWrapProof`. OCaml's `expand_proof`
@@ -472,7 +479,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , fopProofState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
         }
     { advice: slot1Advice } <- liftEffect $
-      buildStepAdviceWithOracles @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (negate one)) :: F StepField
         , mostRecentWidth: 2
@@ -481,6 +488,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- Tree's step domain (log2=15). Per OCaml step.ml:533-538
         -- tock_domain uses `dlog_vk.domain.log_size_of_group`.
         , wrapDomainLog2: treeWrapDomainLog2
+        -- Step domain of the dummy self-proof being verified. OCaml
+        -- `Proof.dummy N2 N2 ~domain_log2:15` stores 15 in
+        -- `branch_data.domain_log2`; `expand_deferred` uses that as
+        -- `step_domain`, which controls zetaToDomainSize, perm, omega.
+        -- Distinct from Tree wrap VK domain (14).
+        , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
         , wrapSg: nrrWrapSg
         , stepOpeningSg: nrr.stepSg
