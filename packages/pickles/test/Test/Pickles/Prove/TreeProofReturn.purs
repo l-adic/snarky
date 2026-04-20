@@ -48,9 +48,15 @@ import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Step.Prevs (StepSlot)
+import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Snarky.Circuit.Kimchi (SplitField, Type2)
+import Snarky.Types.Shifted (Type2) as ShiftedType2
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (toFieldPure)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -284,6 +290,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       nrrDv = nrr.wrapDv
 
+      stepEndoScalar :: StepField
+      stepEndoScalar =
+        let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+
       unF :: SizedF 128 (F StepField) -> SizedF 128 StepField
       unF = SizedF.unwrapF
 
@@ -369,14 +379,80 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Dummy.dummyIpaChallenges.wrapExpanded
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
-        , fopState: Dummy.stepDummyFopProofState { proofsVerified: 0 }
-        , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
-        , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+        -- Slot 0 is a REAL NRR wrap proof: fopState MUST come from
+        -- nrr.wrapDv (what NRR wrap statement's deferred_values
+        -- store), not `stepDummyFopProofState`. The DivisionByZero at
+        -- `step2_fop [finalize-other-proof]` on iter 2e came from
+        -- using the dummy fopState — its zero plonk/cip/bp_chals
+        -- broke the finalize math.
+        , fopState:
+            { deferredValues:
+                { plonk: nrrDv.plonk
+                , combinedInnerProduct: nrrDv.combinedInnerProduct
+                , xi: nrrDv.xi
+                , bulletproofChallenges: nrrDv.bulletproofPrechallenges
+                , b: nrrDv.b
+                }
+            , shouldFinalize: false
+            , spongeDigestBeforeEvaluations: F nrrDv.spongeDigestBeforeEvaluations
+            }
+        , stepAdvicePrevEvals: nrrWrapPrevEvals
+        -- kimchiPrevChallengesExpanded: expand nrr.wrapDv.bulletproofPrechallenges
+        -- via Vesta.ScalarField endo (step endo_scalar). Same pattern
+        -- as SimpleChain b1 at Prove/SimpleChain.purs:1039.
+        , kimchiPrevChallengesExpanded:
+            map
+              (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              nrrDv.bulletproofPrechallenges
         , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
         }
 
-    { advice: treeRealAdvice, challengePolynomialCommitment: _nrrChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @TreeProofReturnPrevsSpec oracleInput
+    -- Single-slot advice builds: slot 0 from buildStepAdviceWithOracles
+    -- (real NRR data), slot 1 from buildStepAdvice (dummy N=2).
+    -- We splice their carriers into Tree's heterogeneous
+    -- `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)` shape.
+    { advice: slot0Advice } <- liftEffect $
+      buildStepAdviceWithOracles @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+
+    let
+      slot1Dummy :: StepAdvice
+        (PrevsSpecCons 2 PrevsSpecNil)
+        StepIPARounds
+        WrapIPARounds
+        Unit
+        1
+        (Tuple (StepSlot 2 StepIPARounds WrapIPARounds (F StepField) (Type2 (SplitField (F StepField) Boolean)) Boolean) Unit)
+      slot1Dummy = buildStepAdvice @(PrevsSpecCons 2 PrevsSpecNil)
+        { publicInput: unit
+        , mostRecentWidth: 2
+        , wrapDomainLog2: treeWrapDomainLog2
+        }
+
+      StepAdvice s0 = slot0Advice
+      StepAdvice s1 = slot1Dummy
+      Tuple slot0Sppw _ = s0.perProofSlotsCarrier
+      Tuple slot1Sppw _ = s1.perProofSlotsCarrier
+
+      treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeRealAdvice = StepAdvice
+        { perProofSlotsCarrier: Tuple slot0Sppw (Tuple slot1Sppw unit)
+        , publicInput: unit
+        -- Slot 0: real NRR unfinalized (from slot0Advice).
+        -- Slot 1: dummy (from slot1Dummy).
+        , publicUnfinalizedProofs:
+            Vector.head s0.publicUnfinalizedProofs
+              :< Vector.head s1.publicUnfinalizedProofs
+              :< Vector.nil
+        , messagesForNextWrapProof:
+            Vector.head s0.messagesForNextWrapProof
+              :< Vector.head s1.messagesForNextWrapProof
+              :< Vector.nil
+        , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+        , kimchiPrevChallenges:
+            Vector.head s0.kimchiPrevChallenges
+              :< Vector.head s1.kimchiPrevChallenges
+              :< Vector.nil
+        }
 
     treeStepResult <- liftEffect $
       stepSolveAndProve
