@@ -616,6 +616,11 @@ wrapMain config (WrapStatementPacked stmtR) = do
       )
       revIdxs
     pure (Vector.reverse revMsgs)
+  -- iter 2ac diag: dump per-slot msgsForWrap to compare with
+  -- step PI[mpv*32 + 1 + i] (which the step prover wrote).
+  forWithIndex_ msgsForWrap \fi v -> do
+    let i = getFinite fi
+    ivpTrace ("wrap.dbg.msgsForWrap." <> show i) v
 
   label "block4-assert-msg-step" $
     assertEqual_ stmt.messagesForNextStepProof prevMsgForNextStep
