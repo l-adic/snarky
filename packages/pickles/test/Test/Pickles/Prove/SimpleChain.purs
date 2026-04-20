@@ -58,7 +58,7 @@ import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpe
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Step (dummyWrapTockPublicInput)
-import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfigN1, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
@@ -288,7 +288,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
       wrapCtx :: WP.WrapCompileContext 1
       wrapCtx =
         { wrapMainConfig:
-            buildWrapMainConfigN1 vestaSrs stepCR.verifierIndex stepDomainLog2
+            buildWrapMainConfig vestaSrs stepCR.verifierIndex
+              { stepWidth: 1, domainLog2: stepDomainLog2 }
         , crs: pallasProofCrs
         }
 
