@@ -369,6 +369,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
+        , fopProofState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 1 }
         }
     { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero

@@ -543,17 +543,19 @@ dummyWrapTockPublicInput
      -- | advice's `messagesForNextWrapProof` slot — eliminates any
      -- | self-consistency risk between the two.
      , msgWrapDigest :: WrapField
+     -- | Pre-computed FOP proof state to serialize. Picks which Ro
+     -- | state's plonk values to use (SimpleChain vs Tree_proof_return
+     -- | vs module-init). Caller passes e.g.
+     -- | `Dummy.simpleChainStepDummyFopProofState { proofsVerified }` or
+     -- | `Dummy.treeStepDummyFopProofState { proofsVerified }`.
+     , fopProofState ::
+         UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
      }
   -> Array WrapField
 dummyWrapTockPublicInput input =
   let
-    -- Simple_chain base case: source plonk0 + prev_evals from the
-    -- hardcoded fixture so the values match what OCaml observes at
-    -- the same point in the pipeline (post Pickles.compile). The
-    -- legacy `stepDummyFopProofState` would pick up module-init-time
-    -- Ro values instead. See `Pickles.Dummy.SimpleChain`.
     fop :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    fop = simpleChainStepDummyFopProofState { proofsVerified: input.mostRecentWidth }
+    fop = input.fopProofState
 
     dv = fop.deferredValues
     p = dv.plonk

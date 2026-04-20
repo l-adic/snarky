@@ -14,6 +14,7 @@ module Pickles.Dummy
   , stepDummyUnfinalizedProof
   , stepDummyFopProofState
   , simpleChainStepDummyFopProofState
+  , treeStepDummyFopProofState
   , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyFinalizeOtherProofParams
@@ -36,6 +37,7 @@ import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Dummy.Tree as Tree
 import Pickles.Util.Fatal (fromJust')
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -855,6 +857,43 @@ simpleChainStepDummyFopProofState { proofsVerified } =
       , stepDummyBeta: simpleChainDummyPlonk.beta
       , stepDummyGamma: simpleChainDummyPlonk.gamma
       , stepDummyZeta: simpleChainDummyPlonk.zeta
+      , stepDummyPrevEvals: simpleChainDummyPrevEvals
+      }
+  in
+    stepDummyUnfinalizedProofFromInputs inputs
+      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
+      , mostRecentWidth: proofsVerified
+      }
+      bpChals
+
+-- | Tree_proof_return-specific dummy FOP proof state.
+-- |
+-- | Same as `simpleChainStepDummyFopProofState` but sources the `plonk`
+-- | challenges from `Pickles.Dummy.Tree` (Ro state at post-Tree-compile
+-- | runtime, differs from SimpleChain's post-compile state).
+-- | `prev_evals` reuses `simpleChainDummyPrevEvals` since `Dummy.evals`
+-- | is a module-level lazy value shared by all `Proof.dummy` calls.
+-- |
+-- | Use this for Tree_proof_return slot-1 dummy advice; matches OCaml's
+-- | `Proof.dummy Nat.N2.n Nat.N2.n ~domain_log2:15` byte-for-byte.
+treeStepDummyFopProofState
+  :: forall sf
+   . Shifted (F StepField) sf
+  => { proofsVerified :: Int }
+  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
+treeStepDummyFopProofState { proofsVerified } =
+  let
+    r = roComputeResult
+
+    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
+    bpChals = map SizedF.wrapF r.stepChalRaw
+
+    inputs :: StepDummyInputs
+    inputs =
+      { stepDummyAlpha: Tree.treeDummyPlonk.alpha
+      , stepDummyBeta: Tree.treeDummyPlonk.beta
+      , stepDummyGamma: Tree.treeDummyPlonk.gamma
+      , stepDummyZeta: Tree.treeDummyPlonk.zeta
       , stepDummyPrevEvals: simpleChainDummyPrevEvals
       }
   in

@@ -53,7 +53,8 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
+import Pickles.Dummy.SimpleChain (simpleChainDummyPrevEvals)
+import Pickles.Dummy.Tree (treeDummyPlonk)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.Prevs (StepSlot(..))
@@ -468,6 +469,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
+        , fopProofState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
         }
     { advice: slot1Advice } <- liftEffect $
       buildStepAdviceWithOracles @(PrevsSpecCons 2 PrevsSpecNil)
@@ -486,7 +488,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< slot1BaseCaseDummyChalPoly
               :< Vector.nil
               :: Vector PaddedLength _
-        , wrapPlonkRaw: simpleChainDummyPlonk
+        , wrapPlonkRaw: treeDummyPlonk
         , wrapPrevEvals: simpleChainDummyPrevEvals
         , wrapBranchData:
             { domainLog2: (fromInt treeSelfStepDomainLog2) :: StepField
@@ -498,7 +500,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Dummy.dummyIpaChallenges.wrapExpanded
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
-        , fopState: Dummy.simpleChainStepDummyFopProofState { proofsVerified: 2 }
+        , fopState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
         , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
