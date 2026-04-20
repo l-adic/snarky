@@ -682,9 +682,26 @@ dummyWrapTockPublicInput input =
 -- | inductive case (real wrap proof from a previous iteration).
 -- | The caller provides the wrap proof, its public input, and the
 -- | padded accumulator — the builder treats them uniformly.
-type BuildStepAdviceWithOraclesInput inputVal =
+-- | Input record for `buildStepAdviceWithOracles`. Parameterized on
+-- | TWO types:
+-- |
+-- |   * `inputVal`     — the rule's own `public_input` value type.
+-- |                      Serialized into `advice.publicInput` and
+-- |                      ultimately the step proof's public input.
+-- |                      For Input-mode rules this is the input
+-- |                      field; for Output-mode rules it's `Unit`.
+-- |
+-- |   * `prevInputVal` — the PREV wrap proof's app_state type (what
+-- |                      `hash_messages_for_next_step_proof` serializes
+-- |                      as the app-state field). Distinct from
+-- |                      `inputVal` for Output-mode rules that verify
+-- |                      heterogeneous-shaped prevs (e.g.
+-- |                      Tree_proof_return's Unit-input rule verifies
+-- |                      a No_recursion_return prev whose app_state
+-- |                      is `F StepField`).
+type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
   { publicInput :: inputVal
-  , prevPublicInput :: inputVal
+  , prevPublicInput :: prevInputVal
   , mostRecentWidth :: Int
   , wrapDomainLog2 :: Int
   , wrapVK :: VerifierIndex PallasG WrapField
@@ -835,9 +852,10 @@ type BuildStepAdviceWithOraclesInput inputVal =
 -- | public input, feeds through `expandProof`, and assembles the
 -- | per-slot rank-2 `StepSlot` dummy used by `replicatePrevsCarrier`.
 buildStepAdviceWithOracles
-  :: forall @prevsSpec inputVal input len carrier
+  :: forall @prevsSpec inputVal input prevInputVal prevInput len carrier
    . Reflectable len Int
   => CircuitType StepField inputVal input
+  => CircuitType StepField prevInputVal prevInput
   => PrevsCarrier
        prevsSpec
        StepIPARounds
@@ -847,7 +865,7 @@ buildStepAdviceWithOracles
        Boolean
        len
        carrier
-  => BuildStepAdviceWithOraclesInput inputVal
+  => BuildStepAdviceWithOraclesInput inputVal prevInputVal
   -> Effect
        { advice :: StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
        , challengePolynomialCommitment :: AffinePoint StepField
@@ -885,7 +903,7 @@ buildStepAdviceWithOracles input = do
 
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
     { stepVk: wrapVkStep
-    , appState: valueToFields @StepField @inputVal input.prevPublicInput
+    , appState: valueToFields @StepField @prevInputVal input.prevPublicInput
     , proofs: prevProofsForHash
     }
 
@@ -1039,7 +1057,7 @@ buildStepAdviceWithOracles input = do
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
-      , appStateFields: valueToFields @StepField @inputVal input.prevPublicInput
+      , appStateFields: valueToFields @StepField @prevInputVal input.prevPublicInput
       , stepPrevSgs: input.wrapSg :< Vector.nil
       , wrapChallengePolynomialCommitment: input.stepSg
       , wrapPaddedPrevChallenges: wrapPadded
