@@ -56,7 +56,8 @@ import Snarky.Types.Shifted (Type2) as ShiftedType2
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -491,7 +492,34 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         , messagesForNextWrapProof:
             Vector.head s0.messagesForNextWrapProof
-              :< Vector.head s1.messagesForNextWrapProof
+              -- Slot 1 = OCaml Proof.dummy N2 N2 ~domain_log2:15.
+              -- Per mina/.../pickles/proof.ml:155-159 OCaml sets
+              -- messages_for_next_wrap_proof = { challenge_polynomial_commitment
+              --   = Dummy.Ipa.Step.sg
+              -- , old_bulletproof_challenges
+              --   = Vector.init h ~f:(fun _ -> Dummy.Ipa.Wrap.challenges) }
+              -- h = N2 so Vector 2 entries. Hash these to get the
+              -- digest that ends up in Tree's slot-1 wrap-statement.
+              -- PS's buildStepAdvice defaults to F zero here, which
+              -- zeroes out the msg_wrap scalar in slot-1's packed
+              -- statement → xhat diverges → IVP beta diverges.
+              -- hashMessagesForNextWrapProofPureGeneral produces a
+              -- WrapField; cross-field coerce to F StepField via
+              -- fromBigInt/toBigInt (same pattern as Producer).
+              :< F
+                   ( fromBigInt
+                       ( toBigInt
+                           ( hashMessagesForNextWrapProofPureGeneral
+                               { sg: nrr.stepSg
+                               , paddedChallenges:
+                                   Dummy.dummyIpaChallenges.wrapExpanded
+                                     :< Dummy.dummyIpaChallenges.wrapExpanded
+                                     :< Vector.nil
+                               }
+                           )
+                       )
+                       :: StepField
+                   )
               :< Vector.nil
         , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
         , kimchiPrevChallenges:

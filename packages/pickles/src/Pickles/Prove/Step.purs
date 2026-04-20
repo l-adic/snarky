@@ -271,9 +271,15 @@ buildStepAdvice input =
 
     dummyBranch :: StepBranchData
     dummyBranch =
+      -- OCaml wrap_main.ml:231-238 computes
+      -- `actual_proofs_verified_mask = ones_vector ~first_zero:w
+      --  |> Vector.rev`. Yields per-width masks:
+      --   N0 → [F, F]
+      --   N1 → [F, T]
+      --   N2 → [T, T]
       { domainLog2: F (Curves.fromInt input.wrapDomainLog2 :: StepField)
-      , mask0: false
-      , mask1: true
+      , mask0: input.mostRecentWidth >= 2
+      , mask1: input.mostRecentWidth >= 1
       }
 
     dvFop = dummyFop.deferredValues
