@@ -539,7 +539,16 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
 
-    liftEffect $ Trace.string "DEBUG.reached" "after-step-prove"
+    -- iter 2ab diag: kimchi-native x_hat for Tree's step proof.
+    -- Compare to circuit's `ivp.trace.wrap.xhat.{x,y}` to verify
+    -- public_comm computation matches.
+    liftEffect do
+      let kimchiXhats = ProofFFI.pallasPublicComm treeStepCR.verifierIndex treeStepResult.publicInputs
+      case Array.head kimchiXhats of
+        Just pt -> do
+          Trace.field "diag.kimchi.xhat.x" pt.x
+          Trace.field "diag.kimchi.xhat.y" pt.y
+        Nothing -> pure unit
     -- iter 2x diag: kimchi-native step VK digest (what the oracle absorbs
     -- as index_digest). Compare to ivp.trace.wrap.index_digest (circuit).
     liftEffect $ Trace.field "diag.kimchi.step_vk_digest"
