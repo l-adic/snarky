@@ -696,14 +696,29 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       msgForNextWrapDummyChals :: Vector WrapIPARounds WrapField
       msgForNextWrapDummyChals = Dummy.dummyIpaChallenges.wrapExpanded
 
-      -- Base case: both slots of the Tree wrap proof's own
-      -- messages_for_next_wrap_proof are dummy + real-slot-0 pattern.
+      -- slot 1's bp chals: from advice.publicUnfinalizedProofs[1]
+      -- (= dummy N2 wrap's stored bp_chals, which are
+      -- dummyIpaChallenges.wrapExpanded per Proof.dummy N2 N2).
+      slot1RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      slot1RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          slot1UnfRec.bulletproofChallenges
+
+      -- Iter 2ae: OCaml wrap_main.ml:117-125 hashes per-slot
+      -- NEW bp chals (from FOP), no padding dummy — for mpv=2
+      -- Tree both slots are real (slot 0 = NRR real, slot 1 =
+      -- dummy N2 real). Previously had [dummy, slot0] which was
+      -- wrong padding order for mpv=2.
       msgForNextWrapDigestTree :: WrapField
       msgForNextWrapDigestTree = hashMessagesForNextWrapProofPureGeneral
         { sg: treeWrapProofSg
         , paddedChallenges:
-            msgForNextWrapDummyChals
-              :< slot0RealBpChalsWrap
+            slot0RealBpChalsWrap
+              :< slot1RealBpChalsWrap
               :< Vector.nil
         }
 
