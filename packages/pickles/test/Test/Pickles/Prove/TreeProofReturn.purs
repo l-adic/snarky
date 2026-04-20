@@ -437,7 +437,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       slot1Dummy = buildStepAdvice @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , mostRecentWidth: 2
-        , wrapDomainLog2: treeWrapDomainLog2
+        -- `buildStepAdvice` sets slot-1's dummy branchData.domainLog2
+        -- = input.wrapDomainLog2. That field is semantically the
+        -- prev slot's STEP domain (per OCaml fixture line 912:
+        -- expand_proof.deferred.branch_data.domain_log2 = 15 for Tree
+        -- slot 1, i.e. Tree step's log_size_of_group). Pass 15, not
+        -- Tree's WRAP domain 14 — branchData drives FOP's
+        -- maskedGen → inv_ would see wrong gen with 14.
+        , wrapDomainLog2: treeSelfStepDomainLog2
         }
 
       StepAdvice s0 = slot0Advice
