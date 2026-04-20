@@ -44,9 +44,10 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
+import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI as ProofFFI
-import Pickles.Prove.Step (StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile)
+import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (WrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, zeroWrapAdvice)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
@@ -264,8 +265,35 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Trace.field "compile.wrapVK.endomul_scalar.x" treeWrapVkComms.endomulScalarComm.x
       Trace.field "compile.wrapVK.endomul_scalar.y" treeWrapVkComms.endomulScalarComm.y
 
-    -- TODO(iter 2b): Tree step prove (slot 0 = real NRR proof,
-    --                                 slot 1 = dummy N2).
+    -- ===== Phase B: Tree step prove (first-pass, placeholder advice) =====
+    -- Mirror NRR's minimal advice patch: swap the wrap VK commitments
+    -- in the placeholder so step_main's outer hash absorbs the real
+    -- compiled wrap key rather than g0 placeholders. Slot 0 stays as
+    -- dummy NRR proof for now — slot-0 must_verify=true in the rule
+    -- will cause solve to fail until we inject the real NRR wrap proof.
+    let
+      StepAdvice treePlaceholderRec = treePlaceholderAdvice
+      treeRealAdvice = StepAdvice
+        ( treePlaceholderRec
+            { wrapVerifierIndex = extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+            }
+        )
+
+    treeStepResult <- liftEffect $
+      stepSolveAndProve
+        @TreeProofReturnPrevsSpec @67
+        @Unit @Unit
+        @(F StepField) @(FVar StepField)
+        @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("tree stepSolveAndProve: " <> show e))
+        treeCtx
+        (treeProofReturnRule baseRuleArgs)
+        treeStepCR
+        treeRealAdvice
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("step.proof.public_input." <> show i) x
+
     -- TODO(iter 2c): Tree wrap prove.
     -- TODO(iter 3):  witness diff via KIMCHI_WITNESS_DUMP on all 4 proofs.
 
