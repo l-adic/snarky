@@ -946,14 +946,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple treeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("wrap.proof.public_input." <> show i) x
 
-    -- DIAG: emit Tree b0 wrap proof's opening sg for comparison against
-    -- ipa.dbg.sg.x emitted during b1 slot 1's IPA check. If they match,
-    -- advice's input.sg is correct and the bug is in later computation;
-    -- if they differ, advice.sg is wrong (likely from expandProofResult.sg).
+    -- DIAG: emit Tree b0 wrap proof's opening values for comparison
+    -- against ipa.dbg.* during b1 slot 1's IPA check. Iter 2bd confirmed
+    -- sg matches byte-identical. Now check delta, z1, z2.
     let treeB0WrapOpeningSg = ProofFFI.vestaProofOpeningSg treeWrapResult.proof
+    let treeB0WrapOpeningDelta = ProofFFI.vestaProofOpeningDelta treeWrapResult.proof
+    let treeB0WrapOpeningZ1 = ProofFFI.vestaProofOpeningZ1 treeWrapResult.proof
+    let treeB0WrapOpeningZ2 = ProofFFI.vestaProofOpeningZ2 treeWrapResult.proof
     liftEffect do
       Trace.field "diag.b0wrap.opening.sg.x" treeB0WrapOpeningSg.x
       Trace.field "diag.b0wrap.opening.sg.y" treeB0WrapOpeningSg.y
+      Trace.field "diag.b0wrap.opening.delta.x" treeB0WrapOpeningDelta.x
+      Trace.field "diag.b0wrap.opening.delta.y" treeB0WrapOpeningDelta.y
+      Trace.field "diag.b0wrap.opening.z1" treeB0WrapOpeningZ1
+      Trace.field "diag.b0wrap.opening.z2" treeB0WrapOpeningZ2
 
     liftEffect $ Trace.string "tree_proof_return.end" "base_case_proved"
 
