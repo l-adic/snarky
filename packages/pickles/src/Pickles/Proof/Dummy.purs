@@ -24,6 +24,7 @@
 -- | preserved exactly.
 module Pickles.Proof.Dummy
   ( dummyWrapProof
+  , dummyWrapProofWithZ
   ) where
 
 import Prelude
@@ -53,8 +54,16 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | fed to `vestaProofOracles` so the step circuit's in-circuit Fq sponge
 -- | squeeze (beta, gamma, alpha, zeta, sponge_digest) matches the advice
 -- | values the prover hands it.
-dummyWrapProof :: Proof Pallas.G Vesta.BaseField
-dummyWrapProof =
+-- | Variant that overrides the `z_1`/`z_2` openings. Use this when the
+-- | OCaml-side `Proof.dummy` runs at a different Ro counter position than
+-- | `roComputeResult` models (e.g. Tree_proof_return — `Proof.dummy` is
+-- | called AFTER Tree compile, so its Ro state has advanced past module
+-- | init). Capture the correct z values from the corresponding OCaml
+-- | dumper's `expand_proof.dummy_proof.z1/z2` trace.
+dummyWrapProofWithZ
+  :: { z1 :: Vesta.BaseField, z2 :: Vesta.BaseField }
+  -> Proof Pallas.G Vesta.BaseField
+dummyWrapProofWithZ { z1, z2 } =
   let
     r = roComputeResult
 
@@ -127,8 +136,17 @@ dummyWrapProof =
       , lr
       , delta
       , sg
-      , z1: r.proofZ1
-      , z2: r.proofZ2
+      , z1
+      , z2
       , evals: evalsFlat
       , ftEval1: evals.ftEval1
       }
+
+-- | Original module-init variant — uses `roComputeResult.proofZ1/proofZ2`.
+-- | Correct for SimpleChain (whose Proof.dummy runs at module-init-equivalent
+-- | Ro state); incorrect for Tree_proof_return (use `dummyWrapProofWithZ`
+-- | with Tree-runtime values from `Pickles.Dummy.Tree`).
+dummyWrapProof :: Proof Pallas.G Vesta.BaseField
+dummyWrapProof =
+  let r = roComputeResult
+  in dummyWrapProofWithZ { z1: r.proofZ1, z2: r.proofZ2 }

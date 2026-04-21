@@ -109,7 +109,7 @@ import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (SplitField, Type1(..), Type2(..), fromShifted, toShifted)
+import Snarky.Types.Shifted (SplitField(..), Type1(..), Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -1263,11 +1263,17 @@ buildStepAdviceWithOracles input = do
             (vestaProofOpeningLr input.wrapProof)
         ))
 
+    openingZ1Raw :: WrapField
+    openingZ1Raw = vestaProofOpeningZ1 input.wrapProof
+
+    openingZ2Raw :: WrapField
+    openingZ2Raw = vestaProofOpeningZ2 input.wrapProof
+
     openingZ1 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ1 = toShifted (F (vestaProofOpeningZ1 input.wrapProof) :: F WrapField)
+    openingZ1 = toShifted (F openingZ1Raw :: F WrapField)
 
     openingZ2 :: Type2 (SplitField (F StepField) Boolean)
-    openingZ2 = toShifted (F (vestaProofOpeningZ2 input.wrapProof) :: F WrapField)
+    openingZ2 = toShifted (F openingZ2Raw :: F WrapField)
 
     wrapCommits = vestaProofCommitments input.wrapProof
 
@@ -1407,6 +1413,22 @@ buildStepAdviceWithOracles input = do
             , challenges: input.kimchiPrevChallengesExpanded
             }
       }
+
+  -- === TRACE: wrap-proof opening z1/z2 values (raw Fq + cross-field sDiv2) ===
+  -- The exists_prevs Type2 SplitField check runs on these. Tag by mustVerify
+  -- to distinguish slot 0 (real NRR, mustVerify=true) from slot 1 (dummy,
+  -- mustVerify=false) in Tree_proof_return.
+  let
+    tag = if input.mustVerify then "real" else "dummy"
+    z1SplitField = case openingZ1 of Type2 sf -> sf
+    z2SplitField = case openingZ2 of Type2 sf -> sf
+    sDiv2OfSf sf = case sf of SplitField { sDiv2: F d } -> d
+  Trace.field ("expand_proof.opening.z1.raw_" <> tag)
+    (Curves.fromBigInt (Curves.toBigInt openingZ1Raw) :: StepField)
+  Trace.field ("expand_proof.opening.z1.sDiv2_" <> tag) (sDiv2OfSf z1SplitField)
+  Trace.field ("expand_proof.opening.z2.raw_" <> tag)
+    (Curves.fromBigInt (Curves.toBigInt openingZ2Raw) :: StepField)
+  Trace.field ("expand_proof.opening.z2.sDiv2_" <> tag) (sDiv2OfSf z2SplitField)
 
   pure
     { advice

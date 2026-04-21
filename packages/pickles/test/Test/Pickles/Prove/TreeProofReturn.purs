@@ -52,9 +52,9 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Proof.Dummy (dummyWrapProof)
+import Pickles.Proof.Dummy (dummyWrapProof, dummyWrapProofWithZ)
 import Pickles.Dummy.SimpleChain (simpleChainDummyPrevEvals)
-import Pickles.Dummy.Tree (treeDummyPlonk)
+import Pickles.Dummy.Tree (treeDummyPlonk, treeDummyProofZ1, treeDummyProofZ2)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.Prevs (StepSlot(..))
@@ -498,7 +498,15 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapSg: nrrWrapSg
         , stepOpeningSg: nrr.stepSg
         , kimchiPrevSg: nrr.stepSg
-        , wrapProof: dummyWrapProof
+        -- Slot 1 (Tree self dummy): Proof.dummy is called at runtime AFTER
+        -- Tree compile, so its Ro counter is past module-init. Use the
+        -- Tree-runtime z1/z2 values captured from dump_tree_proof_return's
+        -- `expand_proof.dummy_proof.z1/z2` trace; everything else in the
+        -- dummy proof (lr=g0, sg=g0, delta=g0, evals=Dummy.evals,
+        -- ft_eval1=Dummy.evals.ft_eval1) is deterministic and matches
+        -- module-init dummyWrapProof.
+        , wrapProof: dummyWrapProofWithZ
+            { z1: treeDummyProofZ1, z2: treeDummyProofZ2 }
         , wrapPublicInput: slot1BaseCaseWrapPI
         , prevChalPolys:
             slot1BaseCaseDummyChalPoly
@@ -843,7 +851,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           dummyChalPoly =
             { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
           o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
-            { proof: dummyWrapProof
+            { proof: dummyWrapProofWithZ
+                { z1: treeDummyProofZ1, z2: treeDummyProofZ2 }
             , publicInput: slot1BaseCaseWrapPI
             , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
             }

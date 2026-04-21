@@ -27,6 +27,8 @@
 module Pickles.Dummy.Tree
   ( TreeDummyPlonk
   , treeDummyPlonk
+  , treeDummyProofZ1
+  , treeDummyProofZ2
   ) where
 
 import Prelude
@@ -36,8 +38,9 @@ import Pickles.Util.Fatal (fromJust')
 import Data.Vector as Vector
 import JS.BigInt (BigInt)
 import JS.BigInt as BigInt
-import Pickles.Types (StepField)
+import Pickles.Types (StepField, WrapField)
 import Snarky.Circuit.DSL (SizedF, fromBits)
+import Snarky.Curves.Class (fromBigInt) as Curves
 
 fpChal128 :: String -> SizedF 128 StepField
 fpChal128 s =
@@ -69,3 +72,24 @@ treeDummyPlonk =
   , gamma: fpChal128 "336749301731200029198653052774605635264"
   , zeta: fpChal128 "158734529890406899856543714254821979093"
   }
+
+-- | Tree-runtime dummy proof openings.z_1. At Tree-compile time OCaml's
+-- | `Ro.tock()` stream has advanced past module-init by the time
+-- | `Proof.dummy N2 N2 ~domain_log2:15` is called, so
+-- | `roComputeResult.proofZ1` (module-init position) is wrong. This
+-- | value comes from `expand_proof.dummy_proof.z1` in
+-- | `dump_tree_proof_return` trace.
+treeDummyProofZ1 :: WrapField
+treeDummyProofZ1 =
+  Curves.fromBigInt
+    (fromJust' "tree dummy z1 parse"
+      (BigInt.fromString
+        "5281385098520859005545355477397412481366608499214315684471942062120505106499"))
+
+-- | Tree-runtime dummy proof openings.z_2. See `treeDummyProofZ1`.
+treeDummyProofZ2 :: WrapField
+treeDummyProofZ2 =
+  Curves.fromBigInt
+    (fromJust' "tree dummy z2 parse"
+      (BigInt.fromString
+        "26491731231012156673629980523331701495484055473812390979220080566819250131633"))
