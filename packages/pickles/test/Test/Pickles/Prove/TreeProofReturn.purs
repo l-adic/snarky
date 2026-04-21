@@ -1086,15 +1086,25 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               treeWrapDv.bulletproofPrechallenges
         -- prevChallengesForStepHash: wrap_b0.stmt.msg_for_next_step
-        -- .old_bulletproof_challenges expanded via step_endo. For Tree b0
-        -- base case both entries of this Vector 2 are `dummyIpaChallenges
-        -- .stepExpanded` (since step_b0's prev_challenges forwarding
-        -- from both its slots' prev-wraps landed on dummies). wrap_b0
-        -- forwards these; for b1 slot 1 verifying wrap_b0 we use the
-        -- same dummy replicated. Dimension: Vector PaddedLength of
-        -- Vector StepIPARounds StepField.
+        -- .old_bulletproof_challenges expanded via step_endo. This is
+        -- what step_b0 stored as its own msg.old_bp_chals (forwarded
+        -- by wrap_b0 into its statement). For Tree b0:
+        --   slot 0 (NRR verify): step_b0 stored the step-expansion of
+        --     NRR wrap's deferred.bp_chals (= nrr.wrapDv
+        --     .bulletproofPrechallenges raw → step_expand).
+        --   slot 1 (dummy verify): step_b0 stored the step-expansion
+        --     of the dummy wrap's deferred.bp_chals (= Dummy.Ipa.Step
+        --     .challenges_computed, which is dummyIpaChallenges
+        --     .stepExpanded already step-expanded).
+        -- These HETEROGENEOUS per-slot values match the byte-identical
+        -- step_main_outer.proof.i.bp_chal.j trace (slot 0: 24243814...,
+        -- slot 1: 7495663189...). Dimension: Vector PaddedLength=2 of
+        -- Vector StepIPARounds=16 StepField.
         , prevChallengesForStepHash:
-            Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+            map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              nrr.wrapDv.bulletproofPrechallenges
+              :< Dummy.dummyIpaChallenges.stepExpanded
+              :< Vector.nil
         }
 
     -- Splice b1 slot-0 + slot-1 advices into the heterogeneous carrier.
