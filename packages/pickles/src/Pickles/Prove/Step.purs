@@ -1519,12 +1519,23 @@ type StepProveResult (outputSize :: Int) =
 -- |    "<row_start>..<row_end>\t<label>/<label>/.../<label>"
 -- | Each labeled constraint may expand to multiple Kimchi rows (e.g. an
 -- | EndoMul gate = 32 rows); the row range covers all of them.
+-- |
+-- | Row numbering aligns with the final kimchi witness file
+-- | (`KIMCHI_WITNESS_DUMP`): the first `publicInputSize` rows are
+-- | reserved by `makeGateData` for public-input placement, so constraint
+-- | rows begin at `publicInputSize`. Passing the wrong offset gives
+-- | labels that look correct but point to the wrong row — past mistakes
+-- | on Tree_proof_return wasted multiple iterations chasing the wrong
+-- | context because labels said `exists_unfinalized` when the actual
+-- | kimchi row was in `exists_prevs` (see
+-- | `memory/project_tree_proof_return_iter2.md` iter 2ap).
 dumpRowLabels
-  :: Array (Labeled (KimchiGate StepField))
+  :: Int  -- ^ publicInputSize — number of rows kimchi reserves for PI
+  -> Array (Labeled (KimchiGate StepField))
   -> Effect Unit
-dumpRowLabels cs = do
+dumpRowLabels publicInputSize cs = do
   let
-    { out } = Array.foldl
+    { out, row: finalRow } = Array.foldl
       ( \{ row, out } lc ->
           let
             nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow StepField))
@@ -1534,10 +1545,14 @@ dumpRowLabels cs = do
           in
             { row: row + nRows, out: out <> [ line ] }
       )
-      { row: 0, out: [] }
+      { row: publicInputSize, out: [] }
       cs
+    header =
+      "# publicInputSize=" <> show publicInputSize
+        <> " constraintRowsEnd=" <> show finalRow
+        <> " (kimchi witness row = offset + publicInputSize)"
   FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
-    (Array.intercalate "\n" out <> "\n")
+    (header <> "\n" <> Array.intercalate "\n" out <> "\n")
 
 --------------------------------------------------------------------------------
 -- Spec-indexed advice stack
@@ -1904,7 +1919,10 @@ stepSolveAndProve onError ctx rule compileResult advice = do
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
       in
         if not csSatisfied then do
-          let _ = unsafePerformEffect $ dumpRowLabels compileResult.builtState.constraints
+          let _ = unsafePerformEffect $
+                dumpRowLabels
+                  (Array.length compileResult.builtState.publicInputs)
+                  compileResult.builtState.constraints
           onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
         else
           let
