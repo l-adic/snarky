@@ -881,21 +881,31 @@ type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
   -- |   Expanded = `toFieldPure <$> wrapDv.bulletproofPrechallenges` via
   -- |   step endo scalar.
   , kimchiPrevChallengesExpanded :: Vector StepIPARounds StepField
-  -- | Expanded step-field bp challenges that feed `messagesForNextStepProof`
-  -- | hash AND `stepPrevChallenges` in `expandProofInputRec`. Per OCaml step.ml:
-  -- | 519-525 this is
+  -- | Per-slot expanded step-field bp challenges that feed
+  -- | `messagesForNextStepProof` hash AND `stepPrevChallenges` in
+  -- | `expandProofInputRec`. Pre-padded to PaddedLength=2 (the caller
+  -- | front-pads with `Dummy.Ipa.Step.challenges_computed` when slot
+  -- | width < PaddedLength, matching OCaml's
+  -- | `Vector.extend_front_exn` behavior). The helper extracts its
+  -- | own `Vector n` via `Vector.drop @pad`, symmetrically with how
+  -- | `prevCpcs` is derived from `prevChalPolys` (Path A).
+  -- |
+  -- | MUST be heterogeneous when the prev wrap proof's
+  -- | `msg_for_next_step_proof.old_bulletproof_challenges` has distinct
+  -- | per-slot entries (e.g. Tree b1 slot-1 where wrap_b0 wrapped
+  -- | step_b0 verifying [NRR, dummy-N2] → 2 distinct bp_chal vectors).
+  -- |
+  -- | Per OCaml step.ml:519-525:
   -- |   `Vector.map Ipa.Step.compute_challenges
   -- |      t.statement.messages_for_next_step_proof.old_bulletproof_challenges`
-  -- | where `t` = prev wrap proof. Values chain through `messages_for_next_step_proof`
-  -- | forwarding; at step_bN they reference step_b{N-2}'s deferred.bp_chals.
+  -- | where `t` = prev wrap proof.
   -- |
-  -- | b0/b1: Simple_chain N1's chain has step_b{-1}=dummy and step_b0.output
-  -- |   old_bp_chals = dummy bp_chals (from dummy wrap's deferred). So use
-  -- |   `Dummy.dummyIpaChallenges.stepExpanded`.
-  -- | b2: prev = wrap_b1, forwarded from step_b1's output old_bp_chals =
-  -- |   wrap_b0.deferred.bp_chals = wrapDv.bulletproofPrechallenges. Expand via
-  -- |   `stepEndoScalar :: StepField`.
-  , prevChallengesForStepHash :: Vector StepIPARounds StepField
+  -- | Base-case / dummy prevs: all entries =
+  -- |   `Dummy.dummyIpaChallenges.stepExpanded` (homogeneous).
+  -- | Tree b1 slot 1: `[step_b0.unfinalized[0].bp_chals step-expanded,
+  -- |   step_b0.unfinalized[1].bp_chals step-expanded]` — two distinct
+  -- |   vectors from the REAL unfinalized state of step_b0.
+  , prevChallengesForStepHash :: Vector PaddedLength (Vector StepIPARounds StepField)
   }
 
 --------------------------------------------------------------------------------
@@ -963,9 +973,6 @@ buildStepAdviceWithOracles input = do
     wrapVkStep :: StepVK StepField
     wrapVkStep = extractWrapVKForStepHash input.wrapVK
 
-    stepExpanded :: Vector StepIPARounds StepField
-    stepExpanded = input.prevChallengesForStepHash
-
     -- | Per-slot `prev_challenge_polynomial_commitments :: Vector n`,
     -- | derived from `input.prevChalPolys :: Vector PaddedLength` by
     -- | dropping the Wrap_hack front-padding. Each entry preserves its
@@ -975,9 +982,21 @@ buildStepAdviceWithOracles input = do
     prevCpcs :: Vector n (AffinePoint StepField)
     prevCpcs = map _.sg (Vector.drop @pad input.prevChalPolys)
 
+    -- | Per-slot step-expanded bp_chals, derived from the pre-padded
+    -- | `input.prevChallengesForStepHash :: Vector PaddedLength` via
+    -- | `Vector.drop @pad`. Heterogeneous per slot.
+    prevChalsPerSlot :: Vector n (Vector StepIPARounds StepField)
+    prevChalsPerSlot = Vector.drop @pad input.prevChallengesForStepHash
+
+    -- | Per-slot `prev_proofs_for_hash`: zips each slot's sg with its
+    -- | corresponding step-field-expanded bp_chals vector. Mirrors OCaml
+    -- | `Common.hash_messages_for_next_step_proof_traced`'s per-slot
+    -- | vectorized input (step.ml:303-306).
     prevProofsForHash :: Vector n { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
     prevProofsForHash =
-      map (\sg -> { sg, expandedBpChallenges: stepExpanded }) prevCpcs
+      Vector.zipWith (\sg chals -> { sg, expandedBpChallenges: chals })
+        prevCpcs
+        prevChalsPerSlot
 
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
     { stepVk: wrapVkStep
@@ -1168,8 +1187,11 @@ buildStepAdviceWithOracles input = do
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
       , stepProofPrevEvals: wrapPrevEvalsF
-      -- Padded to the slot's Local_max_proofs_verified = `n`.
-      , stepPrevChallenges: Vector.replicate @n (map F stepExpanded)
+      -- Per-slot step-expanded bp_chals, heterogeneous per OCaml
+      -- step.ml:519-525. For homogeneous cases (SimpleChain, dummy
+      -- prevs) all entries are equal; for Tree b1 slot 1 they differ
+      -- (one per slot of the prev wrap proof's stored chal vector).
+      , stepPrevChallenges: map (map F) prevChalsPerSlot
       , stepPrevSgsPadded: prevCpcs
       }
 
@@ -1341,9 +1363,6 @@ buildStepAdviceWithOracles input = do
       , mask1: input.wrapBranchData.proofsVerifiedMask `Vector.index` (unsafeFinite @2 1)
       }
 
-    prevChalsRep :: Vector StepIPARounds (F StepField)
-    prevChalsRep = map F input.prevChallengesForStepHash
-
     dvFop = fopState.deferredValues
     pFop = dvFop.plonk
 
@@ -1419,7 +1438,15 @@ buildStepAdviceWithOracles input = do
               , indexEvals: map PointEval evalsForAdvice.allEvals.indexEvals
               , ftEval1: evalsForAdvice.allEvals.ftEval1
               }
-          , prevChallenges: Vector.replicate (UnChecked prevChalsRep)
+          -- Per-slot prev_challenges (step-expanded bp_chals), heterogeneous
+          -- per OCaml step.ml:519-525. Derived from
+          -- `input.prevChallengesForStepHash :: Vector PaddedLength` via
+          -- `Vector.drop @padSlot` — same pattern as `prevSgs` below,
+          -- preserving distinct per-slot challenge vectors that matter
+          -- for Tree b1 slot 1 verifying wrap_b0.
+          , prevChallenges: map
+              (\chals -> UnChecked (map F chals))
+              (Vector.drop @padSlot input.prevChallengesForStepHash)
           -- Per-slot prev_challenge_polynomial_commitments, heterogeneous
           -- per OCaml step.ml:513-517. Derived from `input.prevChalPolys`
           -- via `Vector.drop @padSlot` (using the rank-2-quantified

@@ -438,7 +438,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             map
               (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               nrrDv.bulletproofPrechallenges
-        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
+        , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
 
     -- Single-slot advice builds: slot 0 from buildStepAdviceWithOracles
@@ -525,7 +525,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , fopState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
         , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
-        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
+        , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
 
     let
@@ -1085,11 +1085,16 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             map
               (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               treeWrapDv.bulletproofPrechallenges
-        -- prevChallengesForStepHash: wrap_b0.statement.msg_for_next_step_proof
-        -- .old_bulletproof_challenges[slot1] = the prev step proof's
-        -- output's old_bp_chals. For b0 base case, slot-1's prev was
-        -- dummy, so expanded = dummyIpaChallenges.stepExpanded.
-        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
+        -- prevChallengesForStepHash: wrap_b0.stmt.msg_for_next_step
+        -- .old_bulletproof_challenges expanded via step_endo. For Tree b0
+        -- base case both entries of this Vector 2 are `dummyIpaChallenges
+        -- .stepExpanded` (since step_b0's prev_challenges forwarding
+        -- from both its slots' prev-wraps landed on dummies). wrap_b0
+        -- forwards these; for b1 slot 1 verifying wrap_b0 we use the
+        -- same dummy replicated. Dimension: Vector PaddedLength of
+        -- Vector StepIPARounds StepField.
+        , prevChallengesForStepHash:
+            Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
 
     -- Splice b1 slot-0 + slot-1 advices into the heterogeneous carrier.
