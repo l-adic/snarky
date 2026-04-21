@@ -12,7 +12,9 @@ module Pickles.Step.VerifyOne
 
 import Prelude
 
+import Data.Fin (getFinite) as Data.Fin
 import Data.Foldable (for_)
+import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -22,11 +24,12 @@ import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams, finalizeOtherP
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
-import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, packStatement)
+import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.Kimchi (SplitField, Type1, Type2)
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (SplitField, Type1(..), Type2)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -196,6 +199,33 @@ verifyOne fopParams input ivpParams = do
       , messagesForNextStepProof
       }
     publicInput = packStatement statement
+
+  -- DIAG: emit the reconstructed wrap PI element-by-element to compare
+  -- against tock_pi.N. Confirmed fp[0..4] match byte-identical; divergence
+  -- must be in later positions (5+).
+  let
+    Tuple fpFieldsVec (Tuple chalsVec (Tuple scalarChalsVec (Tuple digestsVec (Tuple bpChalsVec packedBranchData)))) = publicInput
+  forWithIndex_ fpFieldsVec \fi (Type1 v) -> do
+    let i = Data.Fin.getFinite fi
+    ivpTrace ("diag.packed_pi." <> show i) v
+  -- challenges (beta, gamma) at positions 5-6
+  forWithIndex_ chalsVec \fi s -> do
+    let i = Data.Fin.getFinite fi + 5
+    ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
+  -- scalarChallenges (alpha, zeta, xi) at positions 7-9
+  forWithIndex_ scalarChalsVec \fi s -> do
+    let i = Data.Fin.getFinite fi + 7
+    ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
+  -- digests (spongeDigest, msgWrap, msgStep) at positions 10-12
+  forWithIndex_ digestsVec \fi v -> do
+    let i = Data.Fin.getFinite fi + 10
+    ivpTrace ("diag.packed_pi." <> show i) v
+  -- bp chals (Vector 15) at positions 13-27
+  forWithIndex_ bpChalsVec \fi s -> do
+    let i = Data.Fin.getFinite fi + 13
+    ivpTrace ("diag.packed_pi." <> show i) (SizedF.toField s)
+  -- packedBranchData at position 28
+  ivpTrace "diag.packed_pi.28" (SizedF.toField packedBranchData)
 
   -- Step 6: IVP (step_main.ml:115-136)
   let
