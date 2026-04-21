@@ -140,7 +140,7 @@ verifyOne fopParams input ivpParams = do
 
   -- Step 2: FOP (step_main.ml:61-73)
   let ps = input.proofState
-  { finalized, challenges, expandedChallenges } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
+  { finalized, challenges, expandedChallenges, xiCorrect, bCorrect, cipCorrect, plonkOk } <- label "step2_fop" $ finalizeOtherProofCircuit StepOtherField.fopShiftOps fopParams
     { unfinalized:
         { deferredValues:
             { plonk: ps.plonk
@@ -157,6 +157,14 @@ verifyOne fopParams input ivpParams = do
     , prevChallenges: input.prevChallenges
     , domainLog2Var: input.branchData.domainLog2Var
     }
+
+  -- DIAG: emit each of the 4 FOP sub-check booleans to identify which
+  -- false one causes the "1 != 2" assertion downstream.
+  ivpTrace "diag.fop.xiCorrect" (coerce xiCorrect :: FVar StepField)
+  ivpTrace "diag.fop.bCorrect" (coerce bCorrect :: FVar StepField)
+  ivpTrace "diag.fop.cipCorrect" (coerce cipCorrect :: FVar StepField)
+  ivpTrace "diag.fop.plonkOk" (coerce plonkOk :: FVar StepField)
+  ivpTrace "diag.fop.finalized" (coerce finalized :: FVar StepField)
 
   -- Steps 3-4: sponge_after_index + message hash (step_main.ml:76-104)
   -- Build per-proof data for the opt_sponge message hash.
@@ -256,6 +264,10 @@ verifyOne fopParams input ivpParams = do
 
   output <- label "step6_ivp" $ evalSpongeM initialSpongeCircuit $
     incrementallyVerifyProof @PallasG StepOtherField.ipaScalarOps ivpParams' ivpInput (Just spongeAfterIndex)
+
+  -- DIAG: emit IVP success for each slot — complements diag.fop.* to
+  -- localize the failing sub-check in verify_one's final result.
+  ivpTrace "diag.ivp.success" (coerce output.success :: FVar StepField)
 
   -- Step 7: Assert sponge digest (step_verifier.ml:1293-1294, unconditional)
   label "step7_assert_digest" $
