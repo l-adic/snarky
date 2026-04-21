@@ -160,8 +160,10 @@ class
   -- | `Vector.replicate` inside the SPPW expands to `Vector n_i _` at
   -- | each slot.
   replicatePrevsCarrier
-    :: ( forall n
+    :: ( forall n pad
           . Reflectable n Int
+         => Reflectable pad Int
+         => Add pad n PaddedLength
          => StepSlot n ds dw f sf b
        )
     -> carrier

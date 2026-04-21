@@ -344,7 +344,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapDomainLog2 :: Int
         , stepDomainLog2 :: Int
         , wrapVK :: _
-        , wrapSg :: _
         , stepOpeningSg :: _
         , kimchiPrevSg :: _
         , wrapProof :: _
@@ -373,7 +372,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- equals NRR step log2 = 9.
         , stepDomainLog2: nrrStepDomainLog2
         , wrapVK: nrr.wrapCR.verifierIndex
-        , wrapSg: nrrWrapSg
         -- Split of previously-conflated `stepSg`:
         --   stepOpeningSg = real NRR step proof's opening sg. Fed into
         --     msgForNextWrap hash + expandProof's wrapChallengePoly
@@ -495,7 +493,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- Distinct from Tree wrap VK domain (14).
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
-        , wrapSg: nrrWrapSg
         , stepOpeningSg: nrr.stepSg
         , kimchiPrevSg: nrr.stepSg
         -- Slot 1 (Tree self dummy): Proof.dummy is called at runtime AFTER
@@ -1006,14 +1003,30 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , indexEvals: ProofFFI.proofIndexEvals treeStepResult.proof
         }
 
-      -- b1 slot-1 prevChalPolys (Padded_length=2 for width-2 slot):
-      -- wrap_b0's own kimchi prev_challenges were [dummy, dummy] (both
-      -- slots fed dummy challenges in b0 wrap prove, line 901-912). So
-      -- for b1's oracles over wrap_b0 to match what kimchi actually
-      -- absorbed, feed the same [dummy, dummy].
+      -- b1 slot-1 prevChalPolys (Padded_length=2 for Tree's width-2
+      -- slot, n=2=PaddedLength so NO front-padding required).
+      --
+      -- Per OCaml step.ml:513-517, these are extend_front of wrap_b0
+      -- .statement.msg_for_next_step_proof.challenge_polynomial_commitments
+      -- to Local_max_proofs_verified.n=2 with Dummy.Ipa.Wrap.sg. Since
+      -- wrap_b0.stmt.msg_for_next_step.cpc already has length 2 (Tree's
+      -- own max_proofs_verified), extend_front is identity.
+      --
+      -- Each entry's sg is what step_b0's own per-slot circuit computed
+      -- for `challenge_polynomial_commitment` (step.ml:502-504):
+      --   slot 0 (NRR, must_verify=true): real NRR wrap opening sg,
+      --     captured here as b0Slot0ChalPolyComm (= expandProofResult.sg
+      --     from b0's slot-0 buildStepAdviceWithOracles call).
+      --   slot 1 (dummy N2, must_verify=false): Ipa.Wrap.compute_sg
+      --     (new_bp_chals), captured as b0Slot1ChalPolyComm.
+      --
+      -- Each entry's challenges = expanded new bp chals of the
+      -- corresponding slot from b0 (= slot0RealBpChalsWrap,
+      -- slot1RealBpChalsWrap lifted from wrap endo).
       b1Slot1PrevChalPolys =
-        let dummy = { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
-        in dummy :< dummy :< Vector.nil
+        { sg: b0Slot0ChalPolyComm, challenges: slot0RealBpChalsWrap }
+          :< { sg: b0Slot1ChalPolyComm, challenges: slot1RealBpChalsWrap }
+          :< Vector.nil
 
     -- b1 slot-0 advice: NRR is unchanged from b0, so the oracleInput
     -- is identical (same NRR wrap proof, same prevPublicInput, etc).
@@ -1030,12 +1043,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
-        -- wrapSg: for b1 slot 1, this is wrap_b0.statement
-        --   .messages_for_next_step_proof.challenge_polynomial_commitment
-        --   — the CPC b0's slot-1 step circuit wrote (= result of
-        --   buildStepAdviceWithOracles for that slot in b0, which we
-        --   captured as b0Slot1ChalPolyComm).
-        , wrapSg: b0Slot1ChalPolyComm
         , stepOpeningSg: b0StepOpeningSg
         , kimchiPrevSg: b0StepOpeningSg
         , wrapProof: treeWrapResult.proof
