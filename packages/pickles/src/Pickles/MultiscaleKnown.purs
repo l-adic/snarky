@@ -5,10 +5,10 @@ import Prelude
 import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NonEmptyArray
 import Data.Foldable (foldM, foldl)
-import Pickles.Util.Fatal (fromJust')
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Partial.Unsafe (unsafePartial)
+import Pickles.Util.Fatal (fromJust')
 import Prim.Int (class Add, class Mul)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, Snarky, const_)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)

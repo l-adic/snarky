@@ -46,7 +46,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -62,6 +61,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Compare)
 import Prim.Ordering (LT)
@@ -236,28 +236,30 @@ dummyEvals =
       oz <- tock -- right tuple element first (OCaml RTL)
       z <- tock
       pure { zeta: z, omegaTimesZeta: oz }
+
     pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval WrapField))
     pointEvalVec = do
       v <- Vector.generateA (const pointEval)
       pure (Vector.reverse v)
-  in do
-    -- Evals record RTL: selectors first, then sigma, z, coefficients, w, public_input, ft_eval1
-    idxEndomulScalar <- pointEval
-    idxEmul <- pointEval
-    idxMul <- pointEval
-    idxCompleteAdd <- pointEval
-    idxPoseidon <- pointEval
-    idxGeneric <- pointEval
-    let
-      indexEvals = fromJust' "dummyEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
-        [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
-    sigmaEvals <- pointEvalVec @6
-    zEvals <- pointEval
-    coeffEvals <- pointEvalVec @15
-    witnessEvals <- pointEvalVec @15
-    publicEvals <- pointEval
-    ftEval1 <- tock
-    pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
+  in
+    do
+      -- Evals record RTL: selectors first, then sigma, z, coefficients, w, public_input, ft_eval1
+      idxEndomulScalar <- pointEval
+      idxEmul <- pointEval
+      idxMul <- pointEval
+      idxCompleteAdd <- pointEval
+      idxPoseidon <- pointEval
+      idxGeneric <- pointEval
+      let
+        indexEvals = fromJust' "dummyEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
+          [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+      sigmaEvals <- pointEvalVec @6
+      zEvals <- pointEval
+      coeffEvals <- pointEvalVec @15
+      witnessEvals <- pointEvalVec @15
+      publicEvals <- pointEval
+      ftEval1 <- tock
+      pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
 
 -- | 4 chals + 2 tocks, matching OCaml `unfinalized.ml:25-106`:
 -- |
@@ -320,27 +322,29 @@ proofDummyPrevEvals =
       oz <- tick
       z <- tick
       pure { zeta: z, omegaTimesZeta: oz }
+
     pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval StepField))
     pointEvalVec = do
       v <- Vector.generateA (const pointEval)
       pure (Vector.reverse v)
-  in do
-    idxEndomulScalar <- pointEval
-    idxEmul <- pointEval
-    idxMul <- pointEval
-    idxCompleteAdd <- pointEval
-    idxPoseidon <- pointEval
-    idxGeneric <- pointEval
-    let
-      indexEvals = fromJust' "proofDummyPrevEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
-        [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
-    sigmaEvals <- pointEvalVec @6
-    zEvals <- pointEval
-    coeffEvals <- pointEvalVec @15
-    witnessEvals <- pointEvalVec @15
-    publicEvals <- pointEval
-    ftEval1 <- tick
-    pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
+  in
+    do
+      idxEndomulScalar <- pointEval
+      idxEmul <- pointEval
+      idxMul <- pointEval
+      idxCompleteAdd <- pointEval
+      idxPoseidon <- pointEval
+      idxGeneric <- pointEval
+      let
+        indexEvals = fromJust' "proofDummyPrevEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
+          [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+      sigmaEvals <- pointEvalVec @6
+      zEvals <- pointEval
+      coeffEvals <- pointEvalVec @15
+      witnessEvals <- pointEvalVec @15
+      publicEvals <- pointEval
+      ftEval1 <- tick
+      pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
 
 -- | 15 chals — OCaml `Dummy.Ipa.Wrap.challenges` (dummy.ml:28-33),
 -- | eager module init.

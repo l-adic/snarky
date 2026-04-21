@@ -27,12 +27,12 @@ module Pickles.Proof.Dummy
 import Prelude
 
 import Data.Array as Array
-import Pickles.Util.Fatal (fromJust')
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Dummy (BaseCaseDummies)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
 import Pickles.Types (WrapField)
+import Pickles.Util.Fatal (fromJust')
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta

@@ -379,7 +379,9 @@ pallasSpongeStateBeforeBeta
   -> SpongeCheckpoint Pallas.ScalarField
 pallasSpongeStateBeforeBeta vk { proof, publicInput, prevChallenges } =
   pallasSpongeStateBeforeBetaImpl
-    vk proof publicInput
+    vk
+    proof
+    publicInput
     (Array.concatMap (\p -> [ p.sgX ]) prevChallenges)
     (Array.concatMap (\p -> [ p.sgY ]) prevChallenges)
     (Array.concatMap (\p -> [ p.challenges ]) prevChallenges)

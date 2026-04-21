@@ -35,12 +35,12 @@ import Data.Foldable (foldM)
 import Data.List (List)
 import Data.List as List
 import Data.Maybe (Maybe(..))
-import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
+import Pickles.Util.Fatal (fromJust')
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
@@ -400,11 +400,11 @@ peekPreSqueezeState = wrap $ StateT \s -> case s.phase of
       }
       input
     pure $ Tuple newState
-      (s
-        { state = newState
-        , phase = OptSqueezed 0
-        , needsFinalPermuteIfEmpty = true
-        }
+      ( s
+          { state = newState
+          , phase = OptSqueezed 0
+          , needsFinalPermuteIfEmpty = true
+          }
       )
 
 -- | Squeeze a challenge (lowest 128 bits, constrain_low_bits:true).

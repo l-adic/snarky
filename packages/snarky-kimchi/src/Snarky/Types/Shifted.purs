@@ -27,12 +27,12 @@ import Data.Newtype (class Newtype)
 import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Data.TraversableWithIndex (forWithIndex)
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas

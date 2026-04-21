@@ -20,13 +20,13 @@ import Prelude
 import Data.Array as Array
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
-import Pickles.Util.Fatal (fromJust')
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Hex (parseHex)
 import Pickles.Linearization.Types (Column(..), CurrOrNext(..), FeatureFlag(..), GateType(..), LookupPattern(..)) as ReExports
 import Pickles.Linearization.Types (Column(..), CurrOrNext, FeatureFlag, GateType)
+import Pickles.Util.Fatal (fromJust')
 import Poseidon (class PoseidonField, getMdsMatrix)
 import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, div_, label, pow_, sub_)
 import Snarky.Circuit.DSL (mul_) as Circuit

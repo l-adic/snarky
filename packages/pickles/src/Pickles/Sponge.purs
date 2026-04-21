@@ -44,13 +44,13 @@ import Prelude
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
 import Data.Foldable (class Foldable)
 import Data.Identity (Identity(..))
-import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
+import Pickles.Util.Fatal (fromJust')
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge (Sponge, create)
 import RandomOracle.Sponge as PureSponge

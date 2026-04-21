@@ -23,7 +23,6 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (getFinite)
-import Pickles.Util.Fatal (fromJust')
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
@@ -39,6 +38,7 @@ import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesFor
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)

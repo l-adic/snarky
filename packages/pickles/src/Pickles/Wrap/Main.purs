@@ -412,13 +412,14 @@ wrapMain config (WrapStatementPacked stmtR) = do
   -- per-slot mask booleans in slot order. For mpv=2 this matches the
   -- old hand-unrolled `{ maskVal0, maskVal1 }` pair element-for-element
   -- (slot index = vector index).
-  maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector" $
-    flip evalStateT true_ $ Vector.generateA @mpv \i -> do
-      prevV <- get
-      eq <- lift $ equals_ firstZero (const_ (fromInt (getFinite i)))
-      v <- lift $ and_ prevV (not_ eq)
-      put v
-      pure v
+  maskVals :: Vector mpv (BoolVar WrapField) <- label "block1-ones-vector"
+    $ flip evalStateT true_
+    $ Vector.generateA @mpv \i -> do
+        prevV <- get
+        eq <- lift $ equals_ firstZero (const_ (fromInt (getFinite i)))
+        v <- lift $ and_ prevV (not_ eq)
+        put v
+        pure v
 
   domainLog2 <- label "block1-domain-log2" $
     Pseudo.choose whichBranch config.domainLog2s

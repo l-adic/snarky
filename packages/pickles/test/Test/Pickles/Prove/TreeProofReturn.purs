@@ -34,12 +34,13 @@ module Test.Pickles.Prove.TreeProofReturn
 
 import Prelude
 
+import Control.Monad.State (evalState)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
+import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Fin (unsafeFinite)
 import Data.Newtype (unwrap)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -50,37 +51,36 @@ import Effect.Exception (throw, throwException) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
-import Control.Monad.State (evalState)
-import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Step.Prevs (StepSlot(..))
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
-import Pickles.Util.Fatal (fromJust')
-import Snarky.Circuit.Kimchi (SplitField, Type2)
-import Snarky.Types.Shifted (Type2) as ShiftedType2
-import Snarky.Types.Shifted (fromShifted, toShifted)
-import Snarky.Circuit.DSL (SizedF, UnChecked(..), coerceViaBits)
-import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (toFieldPure)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
+import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Prevs (StepSlot(..))
 import Pickles.Trace as Trace
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
 import Pickles.Types (StepField, WrapField)
+import Pickles.Util.Fatal (fromJust')
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
-import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
+import Snarky.Circuit.DSL (SizedF, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (SplitField, Type2)
+import Snarky.Circuit.Kimchi (toFieldPure)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Types.Shifted (Type2) as ShiftedType2
+import Snarky.Types.Shifted (fromShifted, toShifted)
+import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Test.Spec (SpecT, describe, it)
 
 -- | Tree_proof_return prev-spec: slot 0 has width 0 (No_recursion_return
@@ -223,10 +223,15 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
     treeStepCR <- liftEffect $
       stepCompile @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
-        treeCtx (treeProofReturnRule baseRuleArgs) treePlaceholderAdvice
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
+        treeCtx
+        (treeProofReturnRule baseRuleArgs)
+        treePlaceholderAdvice
 
     -- Emit Tree step VK + compile metadata (same shape as NRR Producer).
     let treeStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 treeStepCR.proverIndex
@@ -343,33 +348,33 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
 
     let
-      oracleInput ::
-        { publicInput :: Unit
-        , prevPublicInput :: F StepField
-        , mostRecentWidth :: Int
-        , wrapDomainLog2 :: Int
-        , stepDomainLog2 :: Int
-        , wrapVK :: _
-        , stepOpeningSg :: _
-        , kimchiPrevSg :: _
-        , wrapProof :: _
-        , wrapPublicInput :: _
-        , prevChalPolys :: _
-        , wrapPlonkRaw :: _
-        , wrapPrevEvals :: _
-        , wrapBranchData :: _
-        , wrapSpongeDigest :: _
-        , mustVerify :: _
-        , wrapOwnPaddedBpChals :: _
-        , fopState :: _
-        , stepAdvicePrevEvals :: _
-        , kimchiPrevChallengesExpanded :: _
-        , prevChallengesForStepHash :: _
-        }
+      oracleInput
+        :: { publicInput :: Unit
+           , prevPublicInput :: F StepField
+           , mostRecentWidth :: Int
+           , wrapDomainLog2 :: Int
+           , stepDomainLog2 :: Int
+           , wrapVK :: _
+           , stepOpeningSg :: _
+           , kimchiPrevSg :: _
+           , wrapProof :: _
+           , wrapPublicInput :: _
+           , prevChalPolys :: _
+           , wrapPlonkRaw :: _
+           , wrapPrevEvals :: _
+           , wrapBranchData :: _
+           , wrapSpongeDigest :: _
+           , mustVerify :: _
+           , wrapOwnPaddedBpChals :: _
+           , fopState :: _
+           , stepAdvicePrevEvals :: _
+           , kimchiPrevChallengesExpanded :: _
+           , prevChallengesForStepHash :: _
+           }
       oracleInput =
         { publicInput: unit
-        , prevPublicInput: F zero        -- NRR's output
-        , mostRecentWidth: 0             -- NRR is N=0
+        , prevPublicInput: F zero -- NRR's output
+        , mostRecentWidth: 0 -- NRR is N=0
         , wrapDomainLog2: nrr.wrapDomainLog2
         -- Step domain of the NRR proof being verified. NRR's step domain
         -- log2 = 9 (from its prover index), distinct from wrap VK domain 13.
@@ -410,7 +415,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , wrapPrevEvals: nrrWrapPrevEvals
         , wrapBranchData: nrrDv.branchData
         , wrapSpongeDigest: nrrDv.spongeDigestBeforeEvaluations
-        , mustVerify: true               -- slot 0 always verifies
+        , mustVerify: true -- slot 0 always verifies
         , wrapOwnPaddedBpChals:
             -- NRR wrap has no real prev-bp-chal input (N=0); both
             -- slots dummy. TODO(iter 2f): extract real own-bp-chals
@@ -567,10 +572,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     treeStepResult <- liftEffect $
       stepSolveAndProve
-        @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
+        @TreeProofReturnPrevsSpec
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         (\e -> Exc.throw ("tree stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule baseRuleArgs)
@@ -697,9 +706,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       -- 1 outer hash (index 64) + 2 widths (indices 65-66). Index 64
       -- holds the outer `hash_messages_for_next_step_proof` digest.
       msgForNextStepDigestTree :: StepField
-      msgForNextStepDigestTree = fromJust'
-        "Tree wrap prove: step PI[64] outer hash must exist" $
-        Array.index treeStepResult.publicInputs 64
+      msgForNextStepDigestTree =
+        fromJust'
+          "Tree wrap prove: step PI[64] outer hash must exist" $
+          Array.index treeStepResult.publicInputs 64
 
       treeWrapProofSg :: AffinePoint WrapField
       treeWrapProofSg = ProofFFI.pallasProofOpeningSg treeStepResult.proof
@@ -814,9 +824,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       -- slot 0: NRR wrap stored NRR step proof's opening sg.
       -- slot 1: Proof.dummy N2 N2 stored Dummy.Ipa.Step.sg = nrr.stepSg.
       nrrStepOpeningSg = ProofFFI.pallasProofOpeningSg nrr.stepResult.proof
+
       slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot0StepAcc = WeierstrassAffinePoint
         { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+
       slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       slot1StepAcc = WeierstrassAffinePoint
         { x: F nrr.stepSg.x, y: F nrr.stepSg.y }
@@ -924,12 +936,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sgX: b0Slot0ChalPolyComm.x
             , sgY: b0Slot0ChalPolyComm.y
             , challenges: slot0RealBpChalsWrap
-            } :<
-            { sgX: b0Slot1ChalPolyComm.x
-            , sgY: b0Slot1ChalPolyComm.y
-            , challenges: slot1RealBpChalsWrap
-            } :<
-            Vector.nil
+            }
+              :<
+                { sgX: b0Slot1ChalPolyComm.x
+                , sgY: b0Slot1ChalPolyComm.y
+                , challenges: slot1RealBpChalsWrap
+                }
+              :<
+                Vector.nil
         }
 
     -- Iter 2z: kimchi-native sponge state right BEFORE beta squeeze.
@@ -998,8 +1012,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       b1RuleArgs =
         { isBaseCase: false
-        , nrrInputVal: F zero       -- NRR's output is always 0
-        , prevInputVal: F zero      -- b0's output was 0
+        , nrrInputVal: F zero -- NRR's output is always 0
+        , prevInputVal: F zero -- b0's output was 0
         }
 
       -- b0's Tree step proof opening sg: what b1 slot-1's oracleInput
@@ -1077,7 +1091,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b1Slot1Advice, challengePolynomialCommitment: b1Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F zero) :: F StepField  -- b0 output was 0
+        , prevPublicInput: (F zero) :: F StepField -- b0 output was 0
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
@@ -1174,10 +1188,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     b1StepResult <- liftEffect $
       stepSolveAndProve
-        @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
+        @TreeProofReturnPrevsSpec
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b1RuleArgs)
@@ -1268,9 +1286,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b1TreeWrapDv = wrapComputeDeferredValues b1TreeWrapDvInput
 
       b1MsgForNextStepDigestTree :: StepField
-      b1MsgForNextStepDigestTree = fromJust'
-        "b1 wrap prove: step PI[64] outer hash must exist" $
-        Array.index b1StepResult.publicInputs 64
+      b1MsgForNextStepDigestTree =
+        fromJust'
+          "b1 wrap prove: step PI[64] outer hash must exist" $
+          Array.index b1StepResult.publicInputs 64
 
       b1TreeWrapProofSg :: AffinePoint WrapField
       b1TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b1StepResult.proof
@@ -1325,6 +1344,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b1Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b1Slot0StepAcc = WeierstrassAffinePoint
         { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+
       b1Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b1Slot1StepAcc = WeierstrassAffinePoint
         { x: F b0TreeStepOpeningSgOracle.x, y: F b0TreeStepOpeningSgOracle.y }
@@ -1339,7 +1359,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
       -- Slot 0 (NRR wrap): real NRR wrap evals + oracle xhat.
       b1Slot0PrevEvalsW :: StepAllEvals (F WrapField)
-      b1Slot0PrevEvalsW = slot0PrevEvalsW  -- reuse b0's NRR eval computation
+      b1Slot0PrevEvalsW = slot0PrevEvalsW -- reuse b0's NRR eval computation
 
       -- Slot 1 (Tree b0 wrap, real): oracles + evals over treeWrapResult.proof
       -- with b0's actual kimchi prev_challenges (iter 2bf fix).
@@ -1413,12 +1433,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sgX: b1Slot0ChalPolyComm.x
             , sgY: b1Slot0ChalPolyComm.y
             , challenges: b1Slot0RealBpChalsWrap
-            } :<
-            { sgX: b1Slot1ChalPolyComm.x
-            , sgY: b1Slot1ChalPolyComm.y
-            , challenges: b1Slot1RealBpChalsWrap
-            } :<
-            Vector.nil
+            }
+              :<
+                { sgX: b1Slot1ChalPolyComm.x
+                , sgY: b1Slot1ChalPolyComm.y
+                , challenges: b1Slot1RealBpChalsWrap
+                }
+              :<
+                Vector.nil
         }
 
     b1TreeWrapResult <- liftEffect $
@@ -1445,8 +1467,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       b2RuleArgs =
         { isBaseCase: false
-        , nrrInputVal: F zero       -- NRR's output is always 0
-        , prevInputVal: F one       -- b1's output was 1
+        , nrrInputVal: F zero -- NRR's output is always 0
+        , prevInputVal: F one -- b1's output was 1
         }
 
       -- b1's Tree step proof opening sg: reuse b1TreeWrapProofSg from the
@@ -1478,7 +1500,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b2Slot1Advice, challengePolynomialCommitment: b2Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F one) :: F StepField  -- b1 output was 1
+        , prevPublicInput: (F one) :: F StepField -- b1 output was 1
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
@@ -1534,7 +1556,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               nrr.wrapDv.bulletproofPrechallenges
               :< map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-                   treeWrapDv.bulletproofPrechallenges
+                treeWrapDv.bulletproofPrechallenges
               :< Vector.nil
         }
 
@@ -1566,10 +1588,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     b2StepResult <- liftEffect $
       stepSolveAndProve
-        @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
+        @TreeProofReturnPrevsSpec
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b2RuleArgs)
@@ -1662,9 +1688,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b2TreeWrapDv = wrapComputeDeferredValues b2TreeWrapDvInput
 
       b2MsgForNextStepDigestTree :: StepField
-      b2MsgForNextStepDigestTree = fromJust'
-        "b2 wrap prove: step PI[64] outer hash must exist" $
-        Array.index b2StepResult.publicInputs 64
+      b2MsgForNextStepDigestTree =
+        fromJust'
+          "b2 wrap prove: step PI[64] outer hash must exist" $
+          Array.index b2StepResult.publicInputs 64
 
       b2TreeWrapProofSg :: AffinePoint WrapField
       b2TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b2StepResult.proof
@@ -1716,6 +1743,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b2Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b2Slot0StepAcc = WeierstrassAffinePoint
         { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+
       b2Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b2Slot1StepAcc = WeierstrassAffinePoint
         { x: F b1TreeStepOpeningSgOracle.x, y: F b1TreeStepOpeningSgOracle.y }
@@ -1792,12 +1820,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sgX: b2Slot0ChalPolyComm.x
             , sgY: b2Slot0ChalPolyComm.y
             , challenges: b2Slot0RealBpChalsWrap
-            } :<
-            { sgX: b2Slot1ChalPolyComm.x
-            , sgY: b2Slot1ChalPolyComm.y
-            , challenges: b2Slot1RealBpChalsWrap
-            } :<
-            Vector.nil
+            }
+              :<
+                { sgX: b2Slot1ChalPolyComm.x
+                , sgY: b2Slot1ChalPolyComm.y
+                , challenges: b2Slot1RealBpChalsWrap
+                }
+              :<
+                Vector.nil
         }
 
     b2TreeWrapResult <- liftEffect $
@@ -1824,8 +1854,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       b3RuleArgs =
         { isBaseCase: false
-        , nrrInputVal: F zero                        -- NRR's output is always 0
-        , prevInputVal: F (fromInt 2 :: StepField)   -- b2's output was 2
+        , nrrInputVal: F zero -- NRR's output is always 0
+        , prevInputVal: F (fromInt 2 :: StepField) -- b2's output was 2
         }
 
       -- b2's Tree step proof opening sg: reuse b2TreeWrapProofSg from the
@@ -1856,7 +1886,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b3Slot1Advice, challengePolynomialCommitment: b3Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F (fromInt 2 :: StepField))  -- b2 output = 2
+        , prevPublicInput: (F (fromInt 2 :: StepField)) -- b2 output = 2
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
@@ -1910,7 +1940,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               nrr.wrapDv.bulletproofPrechallenges
               :< map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-                   b1TreeWrapDv.bulletproofPrechallenges
+                b1TreeWrapDv.bulletproofPrechallenges
               :< Vector.nil
         }
 
@@ -1942,10 +1972,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     b3StepResult <- liftEffect $
       stepSolveAndProve
-        @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
+        @TreeProofReturnPrevsSpec
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b3RuleArgs)
@@ -2038,9 +2072,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b3TreeWrapDv = wrapComputeDeferredValues b3TreeWrapDvInput
 
       b3MsgForNextStepDigestTree :: StepField
-      b3MsgForNextStepDigestTree = fromJust'
-        "b3 wrap prove: step PI[64] outer hash must exist" $
-        Array.index b3StepResult.publicInputs 64
+      b3MsgForNextStepDigestTree =
+        fromJust'
+          "b3 wrap prove: step PI[64] outer hash must exist" $
+          Array.index b3StepResult.publicInputs 64
 
       b3TreeWrapProofSg :: AffinePoint WrapField
       b3TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b3StepResult.proof
@@ -2092,6 +2127,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b3Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b3Slot0StepAcc = WeierstrassAffinePoint
         { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+
       b3Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b3Slot1StepAcc = WeierstrassAffinePoint
         { x: F b2TreeStepOpeningSgOracle.x, y: F b2TreeStepOpeningSgOracle.y }
@@ -2168,12 +2204,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sgX: b3Slot0ChalPolyComm.x
             , sgY: b3Slot0ChalPolyComm.y
             , challenges: b3Slot0RealBpChalsWrap
-            } :<
-            { sgX: b3Slot1ChalPolyComm.x
-            , sgY: b3Slot1ChalPolyComm.y
-            , challenges: b3Slot1RealBpChalsWrap
-            } :<
-            Vector.nil
+            }
+              :<
+                { sgX: b3Slot1ChalPolyComm.x
+                , sgY: b3Slot1ChalPolyComm.y
+                , challenges: b3Slot1RealBpChalsWrap
+                }
+              :<
+                Vector.nil
         }
 
     b3TreeWrapResult <- liftEffect $
@@ -2199,8 +2237,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       b4RuleArgs =
         { isBaseCase: false
-        , nrrInputVal: F zero                        -- NRR's output is always 0
-        , prevInputVal: F (fromInt 3 :: StepField)   -- b3's output was 3
+        , nrrInputVal: F zero -- NRR's output is always 0
+        , prevInputVal: F (fromInt 3 :: StepField) -- b3's output was 3
         }
 
       -- b3's Tree step proof opening sg: reuse b3TreeWrapProofSg from the
@@ -2225,7 +2263,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b4Slot1Advice, challengePolynomialCommitment: b4Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F (fromInt 3 :: StepField))  -- b3 output = 3
+        , prevPublicInput: (F (fromInt 3 :: StepField)) -- b3 output = 3
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
@@ -2277,7 +2315,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
               nrr.wrapDv.bulletproofPrechallenges
               :< map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-                   b2TreeWrapDv.bulletproofPrechallenges
+                b2TreeWrapDv.bulletproofPrechallenges
               :< Vector.nil
         }
 
@@ -2308,10 +2346,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     b4StepResult <- liftEffect $
       stepSolveAndProve
-        @TreeProofReturnPrevsSpec @67
-        @Unit @Unit
-        @(F StepField) @(FVar StepField)
-        @(F StepField) @(FVar StepField)
+        @TreeProofReturnPrevsSpec
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         (\e -> Exc.throw ("b4 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b4RuleArgs)
@@ -2399,9 +2441,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b4TreeWrapDv = wrapComputeDeferredValues b4TreeWrapDvInput
 
       b4MsgForNextStepDigestTree :: StepField
-      b4MsgForNextStepDigestTree = fromJust'
-        "b4 wrap prove: step PI[64] outer hash must exist" $
-        Array.index b4StepResult.publicInputs 64
+      b4MsgForNextStepDigestTree =
+        fromJust'
+          "b4 wrap prove: step PI[64] outer hash must exist" $
+          Array.index b4StepResult.publicInputs 64
 
       b4TreeWrapProofSg :: AffinePoint WrapField
       b4TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b4StepResult.proof
@@ -2451,6 +2494,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       b4Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b4Slot0StepAcc = WeierstrassAffinePoint
         { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+
       b4Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
       b4Slot1StepAcc = WeierstrassAffinePoint
         { x: F b3TreeStepOpeningSgOracle.x, y: F b3TreeStepOpeningSgOracle.y }
@@ -2524,12 +2568,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sgX: b4Slot0ChalPolyComm.x
             , sgY: b4Slot0ChalPolyComm.y
             , challenges: b4Slot0RealBpChalsWrap
-            } :<
-            { sgX: b4Slot1ChalPolyComm.x
-            , sgY: b4Slot1ChalPolyComm.y
-            , challenges: b4Slot1RealBpChalsWrap
-            } :<
-            Vector.nil
+            }
+              :<
+                { sgX: b4Slot1ChalPolyComm.x
+                , sgY: b4Slot1ChalPolyComm.y
+                , challenges: b4Slot1RealBpChalsWrap
+                }
+              :<
+                Vector.nil
         }
 
     b4TreeWrapResult <- liftEffect $

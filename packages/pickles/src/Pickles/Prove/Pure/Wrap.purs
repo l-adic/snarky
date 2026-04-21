@@ -34,7 +34,6 @@ import Prelude
 
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
-import Pickles.Util.Fatal (fromJust')
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -43,6 +42,7 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallenges, pallasProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked(..))
+import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
@@ -331,8 +331,9 @@ wrapComputeDeferredValues input =
     rawPrechalsVec :: Vector StepIPARounds (SizedF 128 StepField)
     rawPrechalsVec = fromJust'
       "Pure.Wrap rawPrechalsVec: FFI `rawPrechalsArray` expected to be StepIPARounds (=16) long"
-      (Vector.toVector @StepIPARounds
-        (map (unsafePartial unsafeFromField) rawPrechalsArray))
+      ( Vector.toVector @StepIPARounds
+          (map (unsafePartial unsafeFromField) rawPrechalsArray)
+      )
 
     newBpResult :: BulletproofBOutput StepIPARounds StepField
     newBpResult = computeBpChalsAndB

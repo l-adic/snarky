@@ -49,6 +49,7 @@ module Pickles.Prove.Step
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.State (evalState)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -56,7 +57,6 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
-import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -69,7 +69,6 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Dummy (BaseCaseDummies, computeBaseCaseDummies, dummyIpaChallenges, initialRo, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
-import Control.Monad.State (evalState)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -84,6 +83,7 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesF
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
@@ -1309,10 +1309,11 @@ buildStepAdviceWithOracles input = do
     openingLr :: Vector WrapIPARounds { l :: AffinePoint (F StepField), r :: AffinePoint (F StepField) }
     openingLr = fromJust'
       "Step advice openingLr: wrap proof's `vestaProofOpeningLr` expected to yield WrapIPARounds (=15) lr-pairs"
-      (Vector.toVector @WrapIPARounds
-        ( map (\p -> { l: mkPt p.l, r: mkPt p.r })
-            (vestaProofOpeningLr input.wrapProof)
-        ))
+      ( Vector.toVector @WrapIPARounds
+          ( map (\p -> { l: mkPt p.l, r: mkPt p.r })
+              (vestaProofOpeningLr input.wrapProof)
+          )
+      )
 
     openingZ1Raw :: WrapField
     openingZ1Raw = vestaProofOpeningZ1 input.wrapProof
@@ -1564,10 +1565,10 @@ type StepCompileResult =
   , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
   , constraints :: Array (KimchiRow StepField)
   , baseCaseDummies :: BaseCaseDummies
-    -- ^ Ro-derived base-case dummies, sequenced per `max_proofs_verified`
-    -- | to match OCaml's compile force order. Holds OCaml's three primitive
-    -- | dummy constructors (`Dummy.evals`, `Unfinalized.Constant.dummy`,
-    -- | `Proof.dummy`) plus the module-init IPA challenges.
+  -- ^ Ro-derived base-case dummies, sequenced per `max_proofs_verified`
+  -- | to match OCaml's compile force order. Holds OCaml's three primitive
+  -- | dummy constructors (`Dummy.evals`, `Unfinalized.Constant.dummy`,
+  -- | `Proof.dummy`) plus the module-init IPA challenges.
   }
 
 -- | Artifacts produced by `stepProve` / `stepSolveAndProve`. Shape mirrors
@@ -1605,7 +1606,7 @@ type StepProveResult (outputSize :: Int) =
 -- | kimchi row was in `exists_prevs` (see
 -- | `memory/project_tree_proof_return_iter2.md` iter 2ap).
 dumpRowLabels
-  :: Int  -- ^ publicInputSize — number of rows kimchi reserves for PI
+  :: Int -- ^ publicInputSize — number of rows kimchi reserves for PI
   -> Array (Labeled (KimchiGate StepField))
   -> Effect Unit
 dumpRowLabels publicInputSize cs = do
@@ -1624,7 +1625,8 @@ dumpRowLabels publicInputSize cs = do
       cs
     header =
       "# publicInputSize=" <> show publicInputSize
-        <> " constraintRowsEnd=" <> show finalRow
+        <> " constraintRowsEnd="
+        <> show finalRow
         <> " (kimchi witness row = offset + publicInputSize)"
   FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
     (header <> "\n" <> Array.intercalate "\n" out <> "\n")
@@ -2003,10 +2005,11 @@ stepSolveAndProve onError ctx rule compileResult advice = do
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
       in
         if not csSatisfied then do
-          let _ = unsafePerformEffect $
-                dumpRowLabels
-                  (Array.length compileResult.builtState.publicInputs)
-                  compileResult.builtState.constraints
+          let
+            _ = unsafePerformEffect $
+              dumpRowLabels
+                (Array.length compileResult.builtState.publicInputs)
+                compileResult.builtState.constraints
           onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
         else
           let

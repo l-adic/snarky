@@ -76,7 +76,7 @@ type NoRecursionReturnArtifacts =
   , stepResult :: StepProveResult 1
   , wrapResult :: WrapProveResult
   , wrapSg :: AffinePoint StepField
-  , stepSg :: AffinePoint WrapField  -- dummy Step IPA sg (Vesta)
+  , stepSg :: AffinePoint WrapField -- dummy Step IPA sg (Vesta)
   , stepDomainLog2 :: Int
   , wrapDomainLog2 :: Int
   -- | Output of `wrapComputeDeferredValues` over NRR's step proof.
@@ -138,7 +138,9 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- ===== Phase 1: compile the step circuit =====
   stepCR <- liftEffect $
     stepCompile @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
-      ctx nrrRule placeholderAdvice
+      ctx
+      nrrRule
+      placeholderAdvice
 
   -- ===== Emit step VK + compile metadata =====
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
@@ -273,9 +275,10 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     wrapDv = wrapComputeDeferredValues wrapDvInput
 
     msgForNextStepDigest :: StepField
-    msgForNextStepDigest = fromJust'
-      "NoRecursionReturn.Producer: step PI[0] must exist" $
-      Array.index stepResult.publicInputs 0
+    msgForNextStepDigest =
+      fromJust'
+        "NoRecursionReturn.Producer: step PI[0] must exist" $
+        Array.index stepResult.publicInputs 0
 
     wrapProofSg :: AffinePoint WrapField
     wrapProofSg = ProofFFI.pallasProofOpeningSg stepResult.proof

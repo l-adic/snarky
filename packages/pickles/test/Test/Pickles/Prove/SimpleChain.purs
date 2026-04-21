@@ -28,6 +28,7 @@ module Test.Pickles.Prove.SimpleChain
 
 import Prelude
 
+import Control.Monad.State (evalState)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Array as Array
 import Data.Fin (getFinite)
@@ -48,7 +49,6 @@ import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (computeBaseCaseDummies, computeDummySgValues, dummyIpaChallenges, initialRo, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified) as Dummy
-import Control.Monad.State (evalState)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -1442,8 +1442,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- bulletproof_challenges` = wrap_b0.deferred.bp_chals = wrapDv (from b0
       -- stage). Expanded via step endo scalar to StepField.
       , prevChallengesForStepHash: Vector.replicate
-          (map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-               wrapDv.bulletproofPrechallenges)
+          ( map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              wrapDv.bulletproofPrechallenges
+          )
       }
 
     b2Result <- liftEffect $
@@ -1756,8 +1757,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- step_b2's output old_bp_chals = step_b2 extracted from its prev
       -- (= wrap_b1) = wrap_b1.deferred.bp_chals = b1WrapDv (from b1 wrap stage).
       , prevChallengesForStepHash: Vector.replicate
-          (map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-               b1WrapDv.bulletproofPrechallenges)
+          ( map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              b1WrapDv.bulletproofPrechallenges
+          )
       }
 
     b3Result <- liftEffect $
@@ -2065,8 +2067,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- old_bp_chals = step_b3 extracted from its prev (= wrap_b2) =
       -- wrap_b2.deferred.bp_chals = b2WrapDv. Expanded via step endo scalar.
       , prevChallengesForStepHash: Vector.replicate
-          (map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
-               b2WrapDv.bulletproofPrechallenges)
+          ( map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              b2WrapDv.bulletproofPrechallenges
+          )
       }
 
     b4Result <- liftEffect $

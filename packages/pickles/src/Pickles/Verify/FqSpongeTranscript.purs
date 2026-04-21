@@ -156,12 +156,13 @@ spongeTranscriptOptCircuit params sgOldMask input = do
       -- `ProofFFI.pallasSpongeStateBeforeBeta`). First divergence point
       -- localizes whether mismatch is in absorb data or sponge math.
       preBetaState <- OptSponge.peekPreSqueezeState
-      let traceOne lbl v = OptSponge.liftSnarky $ do
-            _ <- exists $ do
-              val <- readCVar v
-              let _ = unsafePerformEffect (Trace.field lbl val)
-              pure val
-            pure unit
+      let
+        traceOne lbl v = OptSponge.liftSnarky $ do
+          _ <- exists $ do
+            val <- readCVar v
+            let _ = unsafePerformEffect (Trace.field lbl val)
+            pure val
+          pure unit
       traceOne "ivp.trace.wrap.before_beta.s0" (Vector.index preBetaState (unsafeFinite @3 0))
       traceOne "ivp.trace.wrap.before_beta.s1" (Vector.index preBetaState (unsafeFinite @3 1))
       traceOne "ivp.trace.wrap.before_beta.s2" (Vector.index preBetaState (unsafeFinite @3 2))

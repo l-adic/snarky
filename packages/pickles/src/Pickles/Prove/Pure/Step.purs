@@ -35,7 +35,6 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
-import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (unwrap)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
@@ -50,6 +49,7 @@ import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeS
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (FopProofState(..), StepAllEvals, StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Types as PT
+import Pickles.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
@@ -628,8 +628,9 @@ expandProof input =
     rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
     rawPrechalsVec = fromJust'
       "Pure.Step rawPrechalsVec: FFI `rawPrechalsArray` expected to be WrapIPARounds (=15) long"
-      (Vector.toVector @WrapIPARounds
-        (map (unsafePartial unsafeFromField) rawPrechalsArray))
+      ( Vector.toVector @WrapIPARounds
+          (map (unsafePartial unsafeFromField) rawPrechalsArray)
+      )
 
     wrapGen :: WrapField
     wrapGen = domainGenerator input.wrapDomainLog2
