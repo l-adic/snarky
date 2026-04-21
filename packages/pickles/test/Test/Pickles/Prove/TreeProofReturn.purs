@@ -946,6 +946,15 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ for_ (Array.mapWithIndex Tuple treeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("wrap.proof.public_input." <> show i) x
 
+    -- DIAG: emit Tree b0 wrap proof's opening sg for comparison against
+    -- ipa.dbg.sg.x emitted during b1 slot 1's IPA check. If they match,
+    -- advice's input.sg is correct and the bug is in later computation;
+    -- if they differ, advice.sg is wrong (likely from expandProofResult.sg).
+    let treeB0WrapOpeningSg = ProofFFI.vestaProofOpeningSg treeWrapResult.proof
+    liftEffect do
+      Trace.field "diag.b0wrap.opening.sg.x" treeB0WrapOpeningSg.x
+      Trace.field "diag.b0wrap.opening.sg.y" treeB0WrapOpeningSg.y
+
     liftEffect $ Trace.string "tree_proof_return.end" "base_case_proved"
 
     -- =====================================================================
