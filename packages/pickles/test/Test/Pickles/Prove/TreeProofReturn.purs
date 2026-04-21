@@ -447,7 +447,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- (real NRR data), slot 1 from buildStepAdvice (dummy N=2).
     -- We splice their carriers into Tree's heterogeneous
     -- `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)` shape.
-    { advice: slot0Advice } <- liftEffect $
+    { advice: slot0Advice, challengePolynomialCommitment: b0Slot0ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
 
     -- Iter 2s: slot 1 dummy now built via `buildStepAdviceWithOracles`
@@ -478,7 +478,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             }
         , fopProofState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
         }
-    { advice: slot1Advice } <- liftEffect $
+    { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (negate one)) :: F StepField
