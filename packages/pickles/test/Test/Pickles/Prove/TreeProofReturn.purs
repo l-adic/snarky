@@ -950,3 +950,180 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Trace.field ("wrap.proof.public_input." <> show i) x
 
     liftEffect $ Trace.string "tree_proof_return.end" "base_case_proved"
+
+    -- =====================================================================
+    -- INDUCTIVE CASE (b1): slot 0 = NRR (unchanged), slot 1 = REAL Tree b0
+    -- wrap proof replacing the dummy N2. Expected public_output = 1
+    -- (= 1 + prev with prev=0). Mirrors SimpleChain b1 (lines 907-1333)
+    -- adapted for Tree's heterogeneous [N0, N2] slots.
+    -- =====================================================================
+    liftEffect $ Trace.string "tree_proof_return.begin" "inductive_case"
+
+    let
+      b1RuleArgs =
+        { isBaseCase: false
+        , nrrInputVal: F zero       -- NRR's output is always 0
+        , prevInputVal: F zero      -- b0's output was 0
+        }
+
+      -- b0's Tree step proof opening sg: what b1 slot-1's oracleInput
+      -- feeds as stepOpeningSg (i.e. the sg field stored in wrap_b0's
+      -- messages_for_next_wrap_proof, per wrap.ml:541-556).
+      b0StepOpeningSg :: AffinePoint WrapField
+      b0StepOpeningSg = ProofFFI.pallasProofOpeningSg treeStepResult.proof
+
+      -- wrap-field endo (for expanding step unfinalized bp chals to wrap-field
+      -- msgForNextWrap challenges).
+      treeWrapEndoScalarB1 :: WrapField
+      treeWrapEndoScalarB1 =
+        let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
+
+      -- b0's Tree step proof's unfinalized bp chals (slot 0 and slot 1),
+      -- expanded via the wrap endo. These are what Tree b0 wrap hashed
+      -- into its msg_for_next_wrap_proof digest (see line 744-750).
+      b0MsgForNextWrapChalsSlot0Wrap :: Vector WrapIPARounds WrapField
+      b0MsgForNextWrapChalsSlot0Wrap = slot0RealBpChalsWrap
+
+      b0MsgForNextWrapChalsSlot1Wrap :: Vector WrapIPARounds WrapField
+      b0MsgForNextWrapChalsSlot1Wrap = slot1RealBpChalsWrap
+
+      -- b1 slot-1 wrap-prev-evals: oracles over Tree b0 STEP proof's
+      -- polynomial evaluations + oracle outputs. Per step.ml:1023-1036
+      -- applied to step_b1 verifying wrap_b0: prev_evals = step_b0's
+      -- eval vectors + x_hat from oracles. PS has `stepOraclesTree`
+      -- (from line 621) + treeStepResult.proof already computed.
+      b1Slot1WrapPrevEvals :: AllEvals StepField
+      b1Slot1WrapPrevEvals =
+        { ftEval1: stepOraclesTree.ftEval1
+        , publicEvals:
+            { zeta: stepOraclesTree.publicEvalZeta
+            , omegaTimesZeta: stepOraclesTree.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals treeStepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals treeStepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals treeStepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals treeStepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals treeStepResult.proof
+        }
+
+      -- b1 slot-1 prevChalPolys (Padded_length=2 for width-2 slot):
+      -- wrap_b0's own kimchi prev_challenges were [dummy, dummy] (both
+      -- slots fed dummy challenges in b0 wrap prove, line 901-912). So
+      -- for b1's oracles over wrap_b0 to match what kimchi actually
+      -- absorbed, feed the same [dummy, dummy].
+      b1Slot1PrevChalPolys =
+        let dummy = { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+        in dummy :< dummy :< Vector.nil
+
+    -- b1 slot-0 advice: NRR is unchanged from b0, so the oracleInput
+    -- is identical (same NRR wrap proof, same prevPublicInput, etc).
+    -- Just call buildStepAdviceWithOracles again with the SAME input.
+    { advice: b1Slot0Advice } <- liftEffect $
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+
+    -- b1 slot-1 advice: NEW — verifying REAL Tree b0 wrap proof.
+    { advice: b1Slot1Advice } <- liftEffect $
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+        { publicInput: unit
+        , prevPublicInput: (F zero) :: F StepField  -- b0 output was 0
+        , mostRecentWidth: 2
+        , wrapDomainLog2: treeWrapDomainLog2
+        , stepDomainLog2: treeSelfStepDomainLog2
+        , wrapVK: treeWrapCR.verifierIndex
+        -- wrapSg: for b1 slot 1, this is wrap_b0.statement
+        --   .messages_for_next_step_proof.challenge_polynomial_commitment
+        --   — the CPC b0's slot-1 step circuit wrote (= result of
+        --   buildStepAdviceWithOracles for that slot in b0, which we
+        --   captured as b0Slot1ChalPolyComm).
+        , wrapSg: b0Slot1ChalPolyComm
+        , stepOpeningSg: b0StepOpeningSg
+        , kimchiPrevSg: b0StepOpeningSg
+        , wrapProof: treeWrapResult.proof
+        , wrapPublicInput: treeWrapResult.publicInputs
+        , prevChalPolys: b1Slot1PrevChalPolys
+        , wrapPlonkRaw:
+            { alpha: SizedF.unwrapF treeWrapDv.plonk.alpha
+            , beta: SizedF.unwrapF treeWrapDv.plonk.beta
+            , gamma: SizedF.unwrapF treeWrapDv.plonk.gamma
+            , zeta: SizedF.unwrapF treeWrapDv.plonk.zeta
+            }
+        , wrapPrevEvals: b1Slot1WrapPrevEvals
+        , wrapBranchData: treeWrapDv.branchData
+        , wrapSpongeDigest: treeWrapDv.spongeDigestBeforeEvaluations
+        , mustVerify: true
+        -- wrapOwnPaddedBpChals: per wrap.ml:46-59 +:463-465 this is
+        -- what wrap_b0 hashed into its msg_for_next_wrap_proof digest.
+        -- Tree b0 hashed [slot0RealBpChalsWrap, slot1RealBpChalsWrap]
+        -- (line 746-749). Same values here.
+        , wrapOwnPaddedBpChals:
+            b0MsgForNextWrapChalsSlot0Wrap
+              :< b0MsgForNextWrapChalsSlot1Wrap
+              :< Vector.nil
+        , fopState:
+            { deferredValues:
+                { plonk: treeWrapDv.plonk
+                , combinedInnerProduct: treeWrapDv.combinedInnerProduct
+                , xi: treeWrapDv.xi
+                , bulletproofChallenges: treeWrapDv.bulletproofPrechallenges
+                , b: treeWrapDv.b
+                }
+            , shouldFinalize: false
+            , spongeDigestBeforeEvaluations: F treeWrapDv.spongeDigestBeforeEvaluations
+            }
+        , stepAdvicePrevEvals: b1Slot1WrapPrevEvals
+        -- kimchi prev_challenges for b1 slot 1: expand wrap_b0's
+        -- own bp_chals via step endo (per step.ml:913-920 +
+        -- reduced_messages_for_next_proof_over_same_field.ml:41).
+        , kimchiPrevChallengesExpanded:
+            map
+              (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              treeWrapDv.bulletproofPrechallenges
+        -- prevChallengesForStepHash: wrap_b0.statement.msg_for_next_step_proof
+        -- .old_bulletproof_challenges[slot1] = the prev step proof's
+        -- output's old_bp_chals. For b0 base case, slot-1's prev was
+        -- dummy, so expanded = dummyIpaChallenges.stepExpanded.
+        , prevChallengesForStepHash: Dummy.dummyIpaChallenges.stepExpanded
+        }
+
+    -- Splice b1 slot-0 + slot-1 advices into the heterogeneous carrier.
+    let
+      StepAdvice b1s0 = b1Slot0Advice
+      StepAdvice b1s1 = b1Slot1Advice
+      Tuple b1Slot0Sppw _ = b1s0.perProofSlotsCarrier
+      Tuple b1Slot1Sppw _ = b1s1.perProofSlotsCarrier
+
+      treeB1Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB1Advice = StepAdvice
+        { perProofSlotsCarrier: Tuple b1Slot0Sppw (Tuple b1Slot1Sppw unit)
+        , publicInput: unit
+        , publicUnfinalizedProofs:
+            Vector.head b1s0.publicUnfinalizedProofs
+              :< Vector.head b1s1.publicUnfinalizedProofs
+              :< Vector.nil
+        , messagesForNextWrapProof:
+            Vector.head b1s0.messagesForNextWrapProof
+              :< Vector.head b1s1.messagesForNextWrapProof
+              :< Vector.nil
+        , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+        , kimchiPrevChallenges:
+            Vector.head b1s0.kimchiPrevChallenges
+              :< Vector.head b1s1.kimchiPrevChallenges
+              :< Vector.nil
+        }
+
+    b1StepResult <- liftEffect $
+      stepSolveAndProve
+        @TreeProofReturnPrevsSpec @67
+        @Unit @Unit
+        @(F StepField) @(FVar StepField)
+        @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
+        treeCtx
+        (treeProofReturnRule b1RuleArgs)
+        treeStepCR
+        treeB1Advice
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple b1StepResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("b1.step.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_proved"
