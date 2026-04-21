@@ -68,7 +68,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy (dummyIpaChallenges, roComputeResult, stepDummyFopProofState, wrapDummyUnfinalizedProof)
+import Pickles.Dummy (RoComputeResult, dummyIpaChallenges, roComputeResult, stepDummyFopProofState, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -1553,6 +1553,18 @@ type StepCompileResult =
   , constraintSystem :: ConstraintSystem StepField
   , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
   , constraints :: Array (KimchiRow StepField)
+  , baseCaseDummies :: RoComputeResult
+    -- ^ Ro-derived base-case dummy values for this circuit's prover-side
+    -- | base case (plonk challenges, prev_evals, proof z1/z2, etc.).
+    -- | Consumers should read `stepCR.baseCaseDummies.X` instead of
+    -- | the global `Pickles.Dummy.roComputeResult.X`.
+    -- |
+    -- | Phase-1 note: populated from the module-init singleton
+    -- | `Pickles.Dummy.roComputeResult` — i.e. always the same value
+    -- | regardless of where this compile sits in a chain. Phase 2 of
+    -- | the Ro-threading refactor will take `Ro` as compile input and
+    -- | sample via `computeRoResult`, at which point each circuit's
+    -- | base case will use the Ro state current at its compile site.
   }
 
 -- | Artifacts produced by `stepProve` / `stepSolveAndProve`. Shape mirrors
@@ -1883,6 +1895,7 @@ stepCompile ctx rule advice = do
     , constraintSystem
     , builtState
     , constraints
+    , baseCaseDummies: roComputeResult
     }
 
 -- | V2 solve phase — parallel to `stepSolveAndProve` but uses

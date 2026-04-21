@@ -44,6 +44,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Map (Map)
+import Pickles.Dummy (RoComputeResult, roComputeResult)
 import Pickles.Util.Fatal (fromJust')
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -427,6 +428,12 @@ type WrapCompileResult =
   , constraintSystem :: ConstraintSystem WrapField
   , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
   , constraints :: Array (KimchiRow WrapField)
+  , baseCaseDummies :: RoComputeResult
+    -- ^ Ro-derived base-case dummy values for this circuit's prover-side
+    -- | base case. Populated from the module-init singleton
+    -- | `Pickles.Dummy.roComputeResult` in phase 1; in phase 2 will be
+    -- | sampled from the compile's ambient Ro state. Parallel to the
+    -- | `baseCaseDummies` field on `StepCompileResult`.
   }
 
 -- | Artifacts produced by `wrapProve`.
@@ -519,6 +526,7 @@ wrapCompile ctx advice = do
     , constraintSystem
     , builtState
     , constraints
+    , baseCaseDummies: roComputeResult
     }
 
 -- | Solve phase of the wrap prover. Takes a previously compiled
