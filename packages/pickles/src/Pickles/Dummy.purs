@@ -25,6 +25,20 @@ module Pickles.Dummy
   , mkRo
   , initialRo
   , tick
+  -- New OCaml-primitive Ro API (replaces RoComputeResult once consumers migrate)
+  , DummyEvals
+  , PlonkChals
+  , UnfinalizedConstantDummy
+  , ProofDummy
+  , BaseCaseDummies
+  , ForceOrder(..)
+  , dummyEvals
+  , unfinalizedConstantDummy
+  , proofDummy
+  , dummyIpaWrapChallenges
+  , dummyIpaStepChallenges
+  , forceOrderFor
+  , computeBaseCaseDummies
   ) where
 
 import Prelude
@@ -367,6 +381,258 @@ computeRoResult = do
 -- | end of the refactor.
 roComputeResult :: RoComputeResult
 roComputeResult = evalState computeRoResult initialRo
+
+-------------------------------------------------------------------------------
+-- | OCaml-primitive Ro-consuming dummies
+-- |
+-- | 1:1 translations of OCaml's three Ro-consuming dummy constructors:
+-- |
+-- |   OCaml                           PureScript
+-- |   -----                           ----------
+-- |   `Dummy.evals`                   → `dummyEvals`
+-- |   `Unfinalized.Constant.dummy`    → `unfinalizedConstantDummy`
+-- |   `Proof.dummy`                   → `proofDummy`
+-- |
+-- | Each primitive's output type carries EXACTLY the OCaml record fields
+-- | that consume Ro, with field names matched to OCaml. Derived fields
+-- | that don't consume Ro (xi, bulletproof_challenges, perm, etc.) are
+-- | computed at consumer level from shared data.
+-- |
+-- | Ro footprint per primitive (fq, fp, chal counters are independent):
+-- |
+-- |   dummyEvals                89 fq,  0 fp, 0 chal
+-- |   unfinalizedConstantDummy   2 fq,  0 fp, 4 chal
+-- |   proofDummy                 2 fq, 89 fp, 4 chal
+-- |   dummyIpaWrapChallenges     0 fq,  0 fp, 15 chal
+-- |   dummyIpaStepChallenges     0 fq,  0 fp, 16 chal
+-- |
+-- | `computeBaseCaseDummies` composes them in the order OCaml's
+-- | `Pickles.compile_promise` forces them for a given `max_proofs_verified`.
+-- | Verified empirically from instrumented Simple_chain (N1) and
+-- | Tree_proof_return (N2) OCaml dumpers (see `/tmp/audit_sc.stderr`,
+-- | `/tmp/audit_tree.stderr`).
+-------------------------------------------------------------------------------
+
+-- | OCaml `Dummy.evals : Tock.Field.t All_evals.t` (dummy.ml:6-21).
+type DummyEvals = AllEvals WrapField
+
+-- | OCaml `scalar_chal`/`chal` outputs share the plonk record layout
+-- | in both `Unfinalized.Constant.dummy` and `Proof.dummy.statement`.
+type PlonkChals f =
+  { alpha :: SizedF 128 f
+  , beta :: SizedF 128 f
+  , gamma :: SizedF 128 f
+  , zeta :: SizedF 128 f
+  }
+
+-- | OCaml `Unfinalized.Constant.dummy : Impls.Step.unfinalized_proof`
+-- | (unfinalized.ml:25-106). Only the Ro-consumed fields are captured
+-- | here; `xi`, `bulletproof_challenges`, `should_finalize`,
+-- | `sponge_digest_before_evaluations`, and `plonk.perm/zetaToSrsLength/
+-- | zetaToDomainSize` are pure/derived and reconstructed at consumer level.
+type UnfinalizedConstantDummy =
+  { plonk :: PlonkChals WrapField
+  , combinedInnerProduct :: WrapField -- OCaml: deferred_values.combined_inner_product (raw tock)
+  , b :: WrapField -- OCaml: deferred_values.b (raw tock)
+  }
+
+-- | OCaml `Proof.dummy : h Nat.t -> r Nat.t -> domain_log2:int -> h t`
+-- | (proof.ml:115-211). Captures only the Ro-derived fields; the vector
+-- | padding (challenge_polynomial_commitments using `Dummy.Ipa.*.sg`),
+-- | `branch_data`, and `g0`-valued commitments are non-Ro and computed
+-- | at consumer level.
+type ProofDummy =
+  { plonk :: PlonkChals StepField
+  , z1 :: WrapField -- OCaml: proof.openings.proof.z_1 (tock)
+  , z2 :: WrapField -- OCaml: proof.openings.proof.z_2 (tock)
+  , prevEvals :: AllEvals StepField
+  }
+
+-- | 89 tocks, matching OCaml `dummy.ml:7-21`:
+-- |
+-- |   Evals.map Evaluation_lengths.default ~f:(fun n ->
+-- |     let a () = Array.create ~len:n (Ro.tock ()) in (a (), a ()))
+-- |
+-- | `Array.create ~len:n (Ro.tock ())` consumes exactly one tock per
+-- | `a()` call (the value is replicated, not redrawn), so each Evals
+-- | field of shape `(array, array)` costs 2 tocks.
+-- | Total: (6 selectors + 6 sigmas + 15 w + 15 coefficients + 1 z
+-- |        + 1 public_input) × 2 + 1 ft_eval1 = 89.
+-- |
+-- | Record/tuple evaluation is right-to-left (OCaml).
+dummyEvals :: RoM DummyEvals
+dummyEvals =
+  let
+    pointEval :: RoM (PointEval WrapField)
+    pointEval = do
+      oz <- tock -- right tuple element first (OCaml RTL)
+      z <- tock
+      pure { zeta: z, omegaTimesZeta: oz }
+    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval WrapField))
+    pointEvalVec = do
+      v <- Vector.generateA (const pointEval)
+      pure (Vector.reverse v)
+  in do
+    -- Evals record RTL: selectors first, then sigma, z, coefficients, w, public_input, ft_eval1
+    idxEndomulScalar <- pointEval
+    idxEmul <- pointEval
+    idxMul <- pointEval
+    idxCompleteAdd <- pointEval
+    idxPoseidon <- pointEval
+    idxGeneric <- pointEval
+    let
+      indexEvals = fromJust' "dummyEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
+        [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+    sigmaEvals <- pointEvalVec @6
+    zEvals <- pointEval
+    coeffEvals <- pointEvalVec @15
+    witnessEvals <- pointEvalVec @15
+    publicEvals <- pointEval
+    ftEval1 <- tock
+    pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
+
+-- | 4 chals + 2 tocks, matching OCaml `unfinalized.ml:25-106`:
+-- |
+-- |   let alpha = scalar_chal ()    -- LTR let-bindings
+-- |   let beta  = chal ()
+-- |   let gamma = chal ()
+-- |   let zeta  = scalar_chal ()
+-- |   ...
+-- |   { deferred_values = { plonk = { ... alpha; beta; gamma; zeta }
+-- |                       ; combined_inner_product = Shifted_value (tock ())
+-- |                       ; ...
+-- |                       ; b = Shifted_value (tock ()) }
+-- |   ; ... }
+-- |
+-- | The outer record is constructed RTL, so `b` fires before
+-- | `combined_inner_product` when both `tock ()` calls execute.
+unfinalizedConstantDummy :: RoM UnfinalizedConstantDummy
+unfinalizedConstantDummy = do
+  alpha <- scalarChal
+  beta <- chal
+  gamma <- chal
+  zeta <- scalarChal
+  -- Record RTL: b first, combined_inner_product second
+  b <- tock
+  combinedInnerProduct <- tock
+  pure { plonk: { alpha, beta, gamma, zeta }, combinedInnerProduct, b }
+
+-- | 2 tocks + 89 ticks + 4 chals, matching OCaml `proof.ml:115-211`.
+-- |
+-- | Top-level record `T { statement; proof; prev_evals }` evaluation
+-- | order (empirically verified from instrumented Simple_chain trace):
+-- |   1. `proof` evaluates first — openings.proof.{z_2, z_1} tocks (RTL within openings.proof)
+-- |   2. `prev_evals` evaluates second — 89 ticks in the same RTL record layout as `dummyEvals`
+-- |   3. `statement` evaluates third — plonk.{zeta, gamma, beta, alpha} chals (RTL)
+-- |
+-- | `Lazy.force Dummy.evals` fires inside `openings` construction if
+-- | not yet forced; for byte-parity with OCaml, callers MUST call
+-- | `dummyEvals` before `proofDummy` in any fresh Ro sequence.
+proofDummy :: RoM ProofDummy
+proofDummy = do
+  -- 1. openings.proof.{z_2, z_1} RTL
+  z2 <- tock
+  z1 <- tock
+  -- 2. prev_evals (89 ticks)
+  prevEvals <- proofDummyPrevEvals
+  -- 3. statement.proof_state.deferred_values.plonk RTL: zeta, gamma, beta, alpha
+  zeta <- scalarChal
+  gamma <- chal
+  beta <- chal
+  alpha <- scalarChal
+  pure { plonk: { alpha, beta, gamma, zeta }, z1, z2, prevEvals }
+
+-- | Internal: 89 ticks in the same RTL Evals record layout as
+-- | `dummyEvals`. Extracted for clarity.
+proofDummyPrevEvals :: RoM (AllEvals StepField)
+proofDummyPrevEvals =
+  let
+    pointEval :: RoM (PointEval StepField)
+    pointEval = do
+      oz <- tick
+      z <- tick
+      pure { zeta: z, omegaTimesZeta: oz }
+    pointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n (PointEval StepField))
+    pointEvalVec = do
+      v <- Vector.generateA (const pointEval)
+      pure (Vector.reverse v)
+  in do
+    idxEndomulScalar <- pointEval
+    idxEmul <- pointEval
+    idxMul <- pointEval
+    idxCompleteAdd <- pointEval
+    idxPoseidon <- pointEval
+    idxGeneric <- pointEval
+    let
+      indexEvals = fromJust' "proofDummyPrevEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
+        [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+    sigmaEvals <- pointEvalVec @6
+    zEvals <- pointEval
+    coeffEvals <- pointEvalVec @15
+    witnessEvals <- pointEvalVec @15
+    publicEvals <- pointEval
+    ftEval1 <- tick
+    pure { ftEval1, publicEvals, zEvals, indexEvals, witnessEvals, coeffEvals, sigmaEvals }
+
+-- | 15 chals — OCaml `Dummy.Ipa.Wrap.challenges` (dummy.ml:28-33),
+-- | eager module init.
+dummyIpaWrapChallenges :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
+dummyIpaWrapChallenges = replicateChal @WrapIPARounds
+
+-- | 16 chals — OCaml `Dummy.Ipa.Step.challenges` (dummy.ml:44-48),
+-- | eager module init.
+dummyIpaStepChallenges :: RoM (Vector StepIPARounds (SizedF 128 StepField))
+dummyIpaStepChallenges = replicateChal @StepIPARounds
+
+-- | Composed base-case dummies. A compile threads its own `Ro` and
+-- | calls `computeBaseCaseDummies` to obtain everything needed to pad
+-- | base-case slots with Ro-derived values.
+type BaseCaseDummies =
+  { ipaWrapChallenges :: Vector WrapIPARounds (SizedF 128 WrapField)
+  , ipaStepChallenges :: Vector StepIPARounds (SizedF 128 StepField)
+  , dummyEvals :: DummyEvals
+  , unfinalizedConstantDummy :: UnfinalizedConstantDummy
+  , proofDummy :: ProofDummy
+  }
+
+-- | Which of `Unfinalized.Constant.dummy` vs `Proof.dummy` does
+-- | `Pickles.compile_promise` force first? Verified empirically from
+-- | instrumented OCaml runs:
+-- |
+-- |   max_proofs_verified = 1 (Simple_chain) → Proof.dummy first
+-- |   max_proofs_verified = 2 (Tree)         → Unfinalized first
+data ForceOrder = UnfinalizedFirst | ProofDummyFirst
+
+forceOrderFor :: { maxProofsVerified :: Int } -> ForceOrder
+forceOrderFor { maxProofsVerified } = case maxProofsVerified of
+  1 -> ProofDummyFirst
+  _ -> UnfinalizedFirst
+
+-- | Sequences IPA challenges + the three Ro-consuming dummies in the
+-- | OCaml-correct order for the given circuit shape. Consumers read
+-- | the returned `BaseCaseDummies` record by semantic field name; no
+-- | swaps or reinterpretation is needed.
+computeBaseCaseDummies :: { maxProofsVerified :: Int } -> RoM BaseCaseDummies
+computeBaseCaseDummies cfg = do
+  ipaWrapChallenges <- dummyIpaWrapChallenges
+  ipaStepChallenges <- dummyIpaStepChallenges
+  evals <- dummyEvals
+  pair <- case forceOrderFor cfg of
+    UnfinalizedFirst -> do
+      unf <- unfinalizedConstantDummy
+      prf <- proofDummy
+      pure { unf, prf }
+    ProofDummyFirst -> do
+      prf <- proofDummy
+      unf <- unfinalizedConstantDummy
+      pure { unf, prf }
+  pure
+    { ipaWrapChallenges
+    , ipaStepChallenges
+    , dummyEvals: evals
+    , unfinalizedConstantDummy: pair.unf
+    , proofDummy: pair.prf
+    }
 
 -------------------------------------------------------------------------------
 -- | DummyValues
