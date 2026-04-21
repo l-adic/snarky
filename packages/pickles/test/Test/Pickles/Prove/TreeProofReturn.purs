@@ -523,7 +523,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
         , fopState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
-        , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
+        , stepAdvicePrevEvals: treeStepCR.baseCaseDummies.stepDummyPrevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
@@ -853,7 +853,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             , publicInput: slot1BaseCaseWrapPI
             , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
             }
-          de = Dummy.roComputeResult.wrapDummyEvals
+          de = treeWrapCR.baseCaseDummies.wrapDummyEvals
           pe p = PointEval { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
         in
           StepAllEvals

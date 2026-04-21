@@ -47,7 +47,7 @@ import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, roComputeResult, simpleChainStepDummyFopProofState) as Dummy
+import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, simpleChainStepDummyFopProofState) as Dummy
 import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -405,7 +405,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- byte-identical to OCaml. Verified empirically: changing to
       -- simpleChainDummyPrevEvals here diverges step_b0 at row 0 despite
       -- both being nominally "dummy prev_evals".
-      , stepAdvicePrevEvals: Dummy.roComputeResult.stepDummyPrevEvals
+      , stepAdvicePrevEvals: stepCR.baseCaseDummies.stepDummyPrevEvals
       -- b0: kimchi prev_challenges.challenges for prev = dummy wrap.
       -- Per proof.ml:143, dummy wrap's deferred_values.bulletproof_challenges
       -- = Dummy.Ipa.Step.challenges. Expanded via Ipa.Step.compute_challenges
@@ -711,9 +711,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- For the base case, the prev wrap proof IS the dummy wrap proof,
       -- whose `openings.evals` = `Dummy.evals` (dummy.ml:7-20) generated
       -- via `Ro.tock ()` = WrapField (Tock/Fq) values.
-      -- PS mirror: `Dummy.roComputeResult.wrapDummyEvals` is built from
+      -- PS mirror: `wrapCR.baseCaseDummies.wrapDummyEvals` is built from
       -- the same tock() sequence and is typed as `AllEvals WrapField`.
-      de_debug = Dummy.roComputeResult.wrapDummyEvals
+      de_debug = wrapCR.baseCaseDummies.wrapDummyEvals
 
       -- CRUCIAL FIX: publicEvals for the wrap advice must come from running
       -- vestaProofOracles on the DUMMY WRAP proof (what step.ml:402 does
@@ -738,7 +738,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
-          de = Dummy.roComputeResult.wrapDummyEvals
+          de = wrapCR.baseCaseDummies.wrapDummyEvals
           pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         in
           StepAllEvals
