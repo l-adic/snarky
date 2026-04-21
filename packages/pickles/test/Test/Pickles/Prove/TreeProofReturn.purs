@@ -896,16 +896,29 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , publicInput: treeWrapPublicInput
         , advice: treeWrapAdvice
         , kimchiPrevChallenges:
-            -- Padded-length-2 accumulator for the wrap prover's kimchi
-            -- prev_challenges. Both entries dummy for base case.
-            let
-              padEntry =
-                { sgX: nrrWrapSg.x
-                , sgY: nrrWrapSg.y
-                , challenges: Dummy.dummyIpaChallenges.wrapExpanded
-                }
-            in
-              padEntry :< padEntry :< Vector.nil
+            -- Per OCaml wrap.ml:496-507: wrap's kimchi prev_challenges
+            -- are per-slot (step_b0's stored sg + step_b0's new bp_chals
+            -- wrap-expanded). For Tree N=2 b0: slot 0 = NRR real
+            -- prev (step_b0's IVP over NRR wrap → slot0RealBpChalsWrap
+            -- already computed); slot 1 = dummy wrap verify (step_b0's
+            -- IVP over dummy → slot1RealBpChalsWrap). The sg points are
+            -- step_b0.msg_for_next_step_proof.cpc[i] = b0Slot{0,1}
+            -- ChalPolyComm (already captured).
+            --
+            -- Previously used `[dummy, dummy]` which matched at witness
+            -- level (kimchi's witness dump is deterministic wrt CS+PI
+            -- and independent of prev_challenges in the sponge phase)
+            -- but diverged in the OPENING phase (opening.sg depends on
+            -- IPA's sponge state which absorbs prev_challenges).
+            { sgX: b0Slot0ChalPolyComm.x
+            , sgY: b0Slot0ChalPolyComm.y
+            , challenges: slot0RealBpChalsWrap
+            } :<
+            { sgX: b0Slot1ChalPolyComm.x
+            , sgY: b0Slot1ChalPolyComm.y
+            , challenges: slot1RealBpChalsWrap
+            } :<
+            Vector.nil
         }
 
     -- Iter 2z: kimchi-native sponge state right BEFORE beta squeeze.
