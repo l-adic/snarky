@@ -18,13 +18,10 @@
 -- | `vestaMakeWireProof` FFI (the PureScript analog of
 -- | `Wrap_wire_proof.to_kimchi_proof`).
 -- |
--- | The Ro-derived values come from `Pickles.Dummy.roComputeResult`, which
--- | runs the full Ro state machine once and shares the results with the
--- | rest of the dummy machinery so the OCaml global-counter ordering is
--- | preserved exactly.
+-- | Ro-derived values come from the caller-supplied `BaseCaseDummies`
+-- | so the circuit's compile-derived Ro state is the single source of truth.
 module Pickles.Proof.Dummy
   ( dummyWrapProof
-  , dummyWrapProofWithZ
   ) where
 
 import Prelude
@@ -33,7 +30,7 @@ import Data.Array as Array
 import Pickles.Util.Fatal (fromJust')
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Dummy (roComputeResult)
+import Pickles.Dummy (BaseCaseDummies)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
 import Pickles.Types (WrapField)
 import Snarky.Curves.Class (generator, toAffine)
@@ -41,31 +38,17 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 
--- | The PureScript analog of OCaml `Proof.dummy` (wrap proof body only).
--- |
--- | Only the kimchi `ProverProof`-level part of OCaml `Proof.dummy` is
--- | constructed here: the `messages`, `openings.proof`, `openings.evals`,
--- | and `openings.ft_eval1` fields. OCaml `Proof.dummy` also carries a
--- | `statement` and `prev_evals`, but those are consumed separately by the
--- | step prover (via `expand_proof`) and don't participate in kimchi's
--- | native oracle computation.
--- |
--- | Used by `Pickles.Dummy.dummyStepAdvice` as the "previous wrap proof"
--- | fed to `vestaProofOracles` so the step circuit's in-circuit Fq sponge
--- | squeeze (beta, gamma, alpha, zeta, sponge_digest) matches the advice
--- | values the prover hands it.
--- | Variant that overrides the `z_1`/`z_2` openings. Use this when the
--- | OCaml-side `Proof.dummy` runs at a different Ro counter position than
--- | `roComputeResult` models (e.g. Tree_proof_return — `Proof.dummy` is
--- | called AFTER Tree compile, so its Ro state has advanced past module
--- | init). Capture the correct z values from the corresponding OCaml
--- | dumper's `expand_proof.dummy_proof.z1/z2` trace.
-dummyWrapProofWithZ
-  :: { z1 :: Vesta.BaseField, z2 :: Vesta.BaseField }
+-- | Build the kimchi-level wrap proof body from a `BaseCaseDummies`.
+-- | Consumes `bcd.proofDummy.{z1, z2}` and `bcd.dummyEvals` — the exact
+-- | shape OCaml's `Proof.dummy` produces, threaded in from the circuit's
+-- | `computeBaseCaseDummies` output.
+dummyWrapProof
+  :: BaseCaseDummies
   -> Proof Pallas.G Vesta.BaseField
-dummyWrapProofWithZ { z1, z2 } =
+dummyWrapProof bcd =
   let
-    r = roComputeResult
+    prf = bcd.proofDummy
+    evals = bcd.dummyEvals
 
     -- Pallas generator g0 = Tock.Curve.(to_affine_exn one). Pallas points
     -- have coordinates in Pallas.BaseField = Vesta.ScalarField.
@@ -99,18 +82,10 @@ dummyWrapProofWithZ { z1, z2 } =
     sg :: Array Vesta.ScalarField
     sg = g0XY
 
-    -- Evaluations: flatten `roComputeResult.wrapDummyEvals` into the kimchi
-    -- eval order, matching OCaml `wrap_wire_proof.ml` Evaluations.to_kimchi
-    -- (wrap_wire_proof.ml:107-134). The ordering is:
-    --
-    --   witness (w)[0..14] | coefficients[0..14] | z | sigma (s)[0..5]
+    -- Flatten dummyEvals into kimchi eval order
+    -- (wrap_wire_proof.ml:107-134 Evaluations.to_kimchi):
+    --   witness[0..14] | coefficients[0..14] | z | sigma[0..5]
     --   | generic | poseidon | complete_add | mul | emul | endomul_scalar
-    --
-    -- `wrapDummyEvals.indexEvals` holds the 6 selectors in the exact order
-    -- `[generic, poseidon, completeAdd, mul, emul, endomulScalar]` (matches
-    -- `Pickles.Dummy.roComputeResult`).
-    evals = wrapDummyEvals
-
     flattenVec :: forall n. Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField } -> Array WrapField
     flattenVec v =
       Array.concatMap (\pe -> [ pe.zeta, pe.omegaTimesZeta ])
@@ -126,8 +101,6 @@ dummyWrapProofWithZ { z1, z2 } =
         <> flattenPe evals.zEvals
         <> flattenVec evals.sigmaEvals
         <> flattenVec evals.indexEvals
-
-    wrapDummyEvals = r.wrapDummyEvals
   in
     vestaMakeWireProof
       { wComm
@@ -136,17 +109,8 @@ dummyWrapProofWithZ { z1, z2 } =
       , lr
       , delta
       , sg
-      , z1
-      , z2
+      , z1: prf.z1
+      , z2: prf.z2
       , evals: evalsFlat
       , ftEval1: evals.ftEval1
       }
-
--- | Original module-init variant — uses `roComputeResult.proofZ1/proofZ2`.
--- | Correct for SimpleChain (whose Proof.dummy runs at module-init-equivalent
--- | Ro state); incorrect for Tree_proof_return (use `dummyWrapProofWithZ`
--- | with Tree-runtime values from `Pickles.Dummy.Tree`).
-dummyWrapProof :: Proof Pallas.G Vesta.BaseField
-dummyWrapProof =
-  let r = roComputeResult
-  in dummyWrapProofWithZ { z1: r.proofZ1, z2: r.proofZ2 }

@@ -21,6 +21,7 @@ module Test.Pickles.Prove.NoRecursionReturn.Producer
 
 import Prelude
 
+import Control.Monad.State (evalState)
 import Data.Array as Array
 import Data.Const (Const)
 import Data.Foldable (for_)
@@ -102,7 +103,12 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Ro-derived Dummy.Ipa.Wrap.sg (step_main's compile-time constant).
   -- Unused at N=0 (no verify_one) but required by stepCompile.
   let
-    dummySgValues = Dummy.computeDummySgValues lagrangeSrs vestaSrs
+    -- Base-case dummies at max_proofs_verified=0. All padding slots are
+    -- masked away at N=0 so the specific bit positions don't affect
+    -- the witness; we just need SOMETHING of type BaseCaseDummies to
+    -- satisfy stepCompile's type signature.
+    baseCaseDummies = evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 0 }) Dummy.initialRo
+    dummySgValues = Dummy.computeDummySgValues baseCaseDummies lagrangeSrs vestaSrs
     wrapSg = dummySgValues.ipa.wrap.sg
     -- OCaml default wrap_domains for N0 → h = 2^13 (common.ml:25-29).
     wrapDomainLog2 = 13
@@ -126,6 +132,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       { publicInput: unit
       , mostRecentWidth: 0
       , wrapDomainLog2
+      , baseCaseDummies
       }
 
   -- ===== Phase 1: compile the step circuit =====

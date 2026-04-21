@@ -68,7 +68,8 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy (RoComputeResult, dummyIpaChallenges, roComputeResult, stepDummyFopProofState, wrapDummyUnfinalizedProof)
+import Pickles.Dummy (BaseCaseDummies, computeBaseCaseDummies, dummyIpaChallenges, initialRo, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
+import Control.Monad.State (evalState)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -180,6 +181,12 @@ type BuildStepAdviceInput inputVal =
   -- | `dump_circuit_impl.ml:3721-3723`); that value is determined by
   -- | kimchi at proof-creation time, not read from advice.
   , wrapDomainLog2 :: Int
+
+  -- | Base-case dummies from the circuit's compile (`stepCR.baseCaseDummies`).
+  -- | Single source of truth for OCaml's `Unfinalized.Constant.dummy`,
+  -- | `Proof.dummy`, `Dummy.evals`, and `Dummy.Ipa.*.challenges` — ordered
+  -- | per `max_proofs_verified` to match OCaml's compile force sequence.
+  , baseCaseDummies :: BaseCaseDummies
   }
 
 -- | Build a base-case `StepAdvice` keyed on a spec-indexed per-slot
@@ -224,16 +231,16 @@ buildStepAdvice input =
     g0w :: WeierstrassAffinePoint PallasG (F StepField)
     g0w = WeierstrassAffinePoint g0
 
-    -- Ro-derived constants shared across all fields.
-    r = roComputeResult
+    -- Ro-derived constants shared across all fields (from compile's BaseCaseDummies).
+    bcd = input.baseCaseDummies
 
     -- z1 / z2 from OCaml `proof.ml:dummy` openings (Ro.tock values
     -- re-wrapped as cross-field Type2 SplitField in the step field).
     z1 :: Type2 (SplitField (F StepField) Boolean)
-    z1 = toShifted (F r.proofZ1)
+    z1 = toShifted (F bcd.proofDummy.z1)
 
     z2 :: Type2 (SplitField (F StepField) Boolean)
-    z2 = toShifted (F r.proofZ2)
+    z2 = toShifted (F bcd.proofDummy.z2)
 
     wrapPE :: LFFI.PointEval StepField -> LFFI.PointEval (F StepField)
     wrapPE pe = { zeta: F pe.zeta, omegaTimesZeta: F pe.omegaTimesZeta }
@@ -252,7 +259,7 @@ buildStepAdvice input =
     prevEvalsDummy :: StepAllEvals (F StepField)
     prevEvalsDummy =
       let
-        aeF = wrapAE r.stepDummyPrevEvals
+        aeF = wrapAE bcd.proofDummy.prevEvals
       in
         StepAllEvals
           { publicEvals: PointEval aeF.publicEvals
@@ -266,8 +273,11 @@ buildStepAdvice input =
 
     dummyFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    dummyFop = stepDummyFopProofState
-      { proofsVerified: input.mostRecentWidth }
+    dummyFop = stepDummyUnfinalizedProof bcd
+      { domainLog2: wrapDomainLog2ForProofsVerified input.mostRecentWidth
+      , mostRecentWidth: input.mostRecentWidth
+      }
+      (map SizedF.wrapF bcd.ipaStepChallenges)
 
     dummyBranch :: StepBranchData
     dummyBranch =
@@ -289,7 +299,7 @@ buildStepAdvice input =
     -- is in wrap-field `Type2 (F WrapField)`) to the step-field
     -- `Type2 (SplitField (F StepField) Boolean)` that step_main's
     -- `publicInputCommit` walks over.
-    du = wrapDummyUnfinalizedProof
+    du = wrapDummyUnfinalizedProof bcd
 
     t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
     t2toT2sf t = toShifted (fromShifted t :: F WrapField)
@@ -1066,7 +1076,7 @@ buildStepAdviceWithOracles input = do
       let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
     dummyStepBpChalsRaw :: Vector StepIPARounds (SizedF 128 (F StepField))
-    dummyStepBpChalsRaw = map SizedF.wrapF roComputeResult.stepChalRaw
+    dummyStepBpChalsRaw = map SizedF.wrapF dummyIpaChallenges.stepRaw
 
     -- plonk0 from the wrap STATEMENT's deferred_values.plonk (matching
     -- OCaml step.ml:150 `let plonk0 = t.statement.proof_state.deferred_values.plonk`).
@@ -1553,18 +1563,11 @@ type StepCompileResult =
   , constraintSystem :: ConstraintSystem StepField
   , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
   , constraints :: Array (KimchiRow StepField)
-  , baseCaseDummies :: RoComputeResult
-    -- ^ Ro-derived base-case dummy values for this circuit's prover-side
-    -- | base case (plonk challenges, prev_evals, proof z1/z2, etc.).
-    -- | Consumers should read `stepCR.baseCaseDummies.X` instead of
-    -- | the global `Pickles.Dummy.roComputeResult.X`.
-    -- |
-    -- | Phase-1 note: populated from the module-init singleton
-    -- | `Pickles.Dummy.roComputeResult` — i.e. always the same value
-    -- | regardless of where this compile sits in a chain. Phase 2 of
-    -- | the Ro-threading refactor will take `Ro` as compile input and
-    -- | sample via `computeRoResult`, at which point each circuit's
-    -- | base case will use the Ro state current at its compile site.
+  , baseCaseDummies :: BaseCaseDummies
+    -- ^ Ro-derived base-case dummies, sequenced per `max_proofs_verified`
+    -- | to match OCaml's compile force order. Holds OCaml's three primitive
+    -- | dummy constructors (`Dummy.evals`, `Unfinalized.Constant.dummy`,
+    -- | `Proof.dummy`) plus the module-init IPA challenges.
   }
 
 -- | Artifacts produced by `stepProve` / `stepSolveAndProve`. Shape mirrors
@@ -1889,13 +1892,21 @@ stepCompile ctx rule advice = do
 
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
 
+    -- `len` = number of previous-proof slots = `max_proofs_verified`
+    -- for this circuit. Threads through `computeBaseCaseDummies` so the
+    -- Ro force order matches OCaml's compile for this N.
+    maxProofsVerified = reflectType (Proxy @len)
+
+    baseCaseDummies =
+      evalState (computeBaseCaseDummies { maxProofsVerified }) initialRo
+
   pure
     { proverIndex
     , verifierIndex
     , constraintSystem
     , builtState
     , constraints
-    , baseCaseDummies: roComputeResult
+    , baseCaseDummies
     }
 
 -- | V2 solve phase — parallel to `stepSolveAndProve` but uses

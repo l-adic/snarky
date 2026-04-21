@@ -52,7 +52,8 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Proof.Dummy (dummyWrapProof, dummyWrapProofWithZ)
+import Pickles.Proof.Dummy (dummyWrapProof)
+import Control.Monad.State (evalState)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.Prevs (StepSlot(..))
@@ -142,7 +143,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ Trace.string "tree_proof_return.begin" "base_case"
 
     let
-      dummySgValues = Dummy.computeDummySgValues lagrangeSrs vestaSrs
+      -- Only ipa.{wrap,step}.sg read here — both force-order-invariant.
+      setupBaseCaseDummies =
+        evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 2 }) Dummy.initialRo
+      dummySgValues = Dummy.computeDummySgValues setupBaseCaseDummies lagrangeSrs vestaSrs
       nrrWrapSg = dummySgValues.ipa.wrap.sg
       nrrWrapDomainLog2 = nrr.wrapDomainLog2
       -- `override_wrap_domain:N1` → wrap_domains.h = 2^14 per
@@ -197,10 +201,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: vestaSrs
         }
 
+      treePlaceholderBaseCaseDummies =
+        evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 2 }) Dummy.initialRo
+
       treePlaceholderAdvice = buildStepAdvice @TreeProofReturnPrevsSpec
         { publicInput: unit
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
+        , baseCaseDummies: treePlaceholderBaseCaseDummies
         }
 
     -- outputSize = len*32 + 1 + len = 2*32 + 1 + 2 = 67 for N=2.
@@ -472,7 +480,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
-        , fopProofState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
+        , fopProofState: Dummy.stepDummyUnfinalizedProof treeStepCR.baseCaseDummies
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
+            (map SizedF.wrapF treeStepCR.baseCaseDummies.ipaStepChallenges)
         }
     { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
@@ -494,38 +504,24 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , stepOpeningSg: nrr.stepSg
         , kimchiPrevSg: nrr.stepSg
         -- Slot 1 (Tree self dummy): Proof.dummy is called at runtime AFTER
-        -- Tree compile, so its Ro counter is past module-init. Use the
-        -- Tree-runtime z1/z2 values captured from dump_tree_proof_return's
-        -- `expand_proof.dummy_proof.z1/z2` trace; everything else in the
-        -- dummy proof (lr=g0, sg=g0, delta=g0, evals=Dummy.evals,
-        -- ft_eval1=Dummy.evals.ft_eval1) is deterministic and matches
-        -- module-init dummyWrapProof.
-        -- z1/z2 replacement for deleted `Pickles.Dummy.Tree` sidecar:
-        -- r.cipRaw/bRaw hold the same Tree-runtime z1/z2 bits (verified
-        -- empirically: r.cipRaw == treeDummyProofZ1 and r.bRaw ==
-        -- treeDummyProofZ2). Labels are unintuitive because PS's old
-        -- Phase 4/4b ordering put z1/z2 slots at tocks 90/91 and b/cip
-        -- at 92/93, but OCaml has them swapped — the bits at tock 92/93
-        -- (PS's r.bRaw/cipRaw) correspond to OCaml's z2/z1.
-        , wrapProof: dummyWrapProofWithZ
-            { z1: treeStepCR.baseCaseDummies.cipRaw
-            , z2: treeStepCR.baseCaseDummies.bRaw
-            }
+        -- Tree compile, so its Ro counter is past module-init. Everything
+        -- flows from `treeStepCR.baseCaseDummies.proofDummy` — the compile's
+        -- N=2 force order gives Proof.dummy's z1/z2 at fq 92/93 (OCaml RTL)
+        -- and plonk.{alpha,beta,gamma,zeta} at chals 36-39.
+        , wrapProof: dummyWrapProof treeStepCR.baseCaseDummies
         , wrapPublicInput: slot1BaseCaseWrapPI
         , prevChalPolys:
             slot1BaseCaseDummyChalPoly
               :< slot1BaseCaseDummyChalPoly
               :< Vector.nil
               :: Vector PaddedLength _
-        -- treeDummyPlonk sidecar replacement: r.stepDummy{Alpha,Beta,Gamma,Zeta}
-        -- match bit-for-bit (already labeled in OCaml's RTL order).
         , wrapPlonkRaw:
-            { alpha: treeStepCR.baseCaseDummies.stepDummyAlpha
-            , beta: treeStepCR.baseCaseDummies.stepDummyBeta
-            , gamma: treeStepCR.baseCaseDummies.stepDummyGamma
-            , zeta: treeStepCR.baseCaseDummies.stepDummyZeta
+            { alpha: treeStepCR.baseCaseDummies.proofDummy.plonk.alpha
+            , beta: treeStepCR.baseCaseDummies.proofDummy.plonk.beta
+            , gamma: treeStepCR.baseCaseDummies.proofDummy.plonk.gamma
+            , zeta: treeStepCR.baseCaseDummies.proofDummy.plonk.zeta
             }
-        , wrapPrevEvals: treeStepCR.baseCaseDummies.stepDummyPrevEvals
+        , wrapPrevEvals: treeStepCR.baseCaseDummies.proofDummy.prevEvals
         , wrapBranchData:
             { domainLog2: (fromInt treeSelfStepDomainLog2) :: StepField
             , proofsVerifiedMask: true :< true :< Vector.nil
@@ -536,8 +532,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Dummy.dummyIpaChallenges.wrapExpanded
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
-        , fopState: Dummy.treeStepDummyFopProofState { proofsVerified: 2 }
-        , stepAdvicePrevEvals: treeStepCR.baseCaseDummies.stepDummyPrevEvals
+        , fopState: Dummy.stepDummyUnfinalizedProof treeStepCR.baseCaseDummies
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
+            (map SizedF.wrapF treeStepCR.baseCaseDummies.ipaStepChallenges)
+        , stepAdvicePrevEvals: treeStepCR.baseCaseDummies.proofDummy.prevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
@@ -862,14 +860,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           dummyChalPoly =
             { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
           o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
-            { proof: dummyWrapProofWithZ
-                { z1: treeStepCR.baseCaseDummies.cipRaw
-                , z2: treeStepCR.baseCaseDummies.bRaw
-                }
+            { proof: dummyWrapProof treeStepCR.baseCaseDummies
             , publicInput: slot1BaseCaseWrapPI
             , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
             }
-          de = treeWrapCR.baseCaseDummies.wrapDummyEvals
+          de = treeWrapCR.baseCaseDummies.dummyEvals
           pe p = PointEval { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
         in
           StepAllEvals

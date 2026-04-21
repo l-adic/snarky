@@ -12,20 +12,13 @@ module Pickles.Dummy
   , dummyIpaChallenges
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
-  , stepDummyFopProofState
-  , simpleChainStepDummyFopProofState
-  , treeStepDummyFopProofState
   , wrapDomainLog2ForProofsVerified
   , dummyProofWitness
   , dummyFinalizeOtherProofParams
-  , roComputeResult
-  , computeRoResult
-  , RoComputeResult
   , Ro
   , mkRo
   , initialRo
   , tick
-  -- New OCaml-primitive Ro API (replaces RoComputeResult once consumers migrate)
   , DummyEvals
   , PlonkChals
   , UnfinalizedConstantDummy
@@ -156,231 +149,6 @@ replicateChal = do
   let n = reflectType (Proxy @n)
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
   pure $ fromJust' "replicateChal: `Array.replicate n` followed by reverse yields length-n array" $ Vector.toVector @n (Array.reverse arr)
-
--------------------------------------------------------------------------------
--- | Shared Ro computation
--- |
--- | OCaml's Ro module uses globally mutable state. All dummy values in
--- | `dummy.ml` and `unfinalized.ml` draw from a single shared counter sequence.
--- | Here we mirror that by running the full Ro sequence exactly once and
--- | sharing the result across computeDummySgValues, dummyIpaChallenges, and
--- | wrapDummyUnfinalizedProof. Any change to the sequence affects all three.
--------------------------------------------------------------------------------
-
-type RoComputeResult =
-  { wrapChalRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
-  , stepChalRaw :: Vector StepIPARounds (SizedF 128 StepField)
-  , alpha :: SizedF 128 WrapField
-  , beta :: SizedF 128 WrapField
-  , gamma :: SizedF 128 WrapField
-  , zeta :: SizedF 128 WrapField
-  -- Dummy.evals (tock 1-89): the Wrap-side polynomial evaluations
-  , wrapDummyEvals :: AllEvals WrapField
-  , cipRaw :: WrapField
-  , bRaw :: WrapField
-  -- z1/z2 from proof.ml:dummy openings (tock 92-93)
-  , proofZ1 :: WrapField
-  , proofZ2 :: WrapField
-  -- Step dummy plonk challenges from proof.ml:dummy.
-  -- OCaml right-to-left evaluation: zeta first, then gamma, beta, alpha.
-  , stepDummyZeta :: SizedF 128 StepField
-  , stepDummyGamma :: SizedF 128 StepField
-  , stepDummyBeta :: SizedF 128 StepField
-  , stepDummyAlpha :: SizedF 128 StepField
-  -- Step dummy prev_evals from tick() in OCaml's right-to-left record order.
-  , stepDummyPrevEvals :: AllEvals StepField
-  }
-
--- | Run the complete Ro sequence once (matching OCaml's global Ro state).
--- |
--- | Chal sequence (35 calls):
--- |   chal 1–15:  Dummy.Ipa.Wrap.challenges (WrapIPARounds = 15)
--- |   chal 16–31: Dummy.Ipa.Step.challenges (StepIPARounds = 16)
--- |   chal 32–35: Unfinalized.Constant.dummy plonk (alpha, beta, gamma, zeta)
--- |
--- | Tock sequence (93 calls):
--- |   tock 1–89: Dummy.evals
--- |     15 w evals            x 2 = 30
--- |     15 coeff evals        x 2 = 30
--- |      1 z eval             x 2 =  2
--- |      6 sigma evals        x 2 = 12
--- |      6 selector evals     x 2 = 12  (generic, poseidon, completeAdd, mul, emul, endomulScalar)
--- |      1 publicInput        x 2 =  2
--- |      1 ft_eval1           x 1 =  1
--- |                                  89
--- |   tock 90: b  (evaluated before CIP in OCaml record construction)
--- |   tock 91: cipRaw
--- |   tock 92–93: proof.ml:dummy openings z2, z1 (right-to-left)
--- |
--- | Chal sequence continued (4 more calls):
--- |   chal 36–39: proof.ml:dummy plonk (zeta, gamma, beta, alpha — right-to-left)
--- |
--- | Tick sequence (89 calls, independent counter):
--- |   tick 1–89: proof.ml:dummy prev_evals (see stepDummyPrevEvals)
--- | Run the full Ro-dependent dummy-value computation starting from an
--- | arbitrary `Ro` state. Replaces the module-init singleton semantics
--- | of `roComputeResult` (which runs from `mkRo`).
--- |
--- | Intended as the primary API: compile functions carry `Ro` in
--- | `MonadState Ro m` and call `mapStateT _ computeRoResult` (or
--- | similar) to sample dummies for their base case, advancing Ro
--- | along the way.
-computeRoResult :: RoM RoComputeResult
-computeRoResult = do
-  -- Phase 1: IPA challenges (chal counters 1–31)
-  wrapChalRaw <- replicateChal @WrapIPARounds :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
-  stepChalRaw <- replicateChal @StepIPARounds :: RoM (Vector StepIPARounds (SizedF 128 StepField))
-
-  -- Phase 2: Unfinalized.Constant.dummy plonk challenges (chal counters 32–35)
-  alpha <- scalarChal :: RoM (SizedF 128 WrapField)
-  beta <- chal :: RoM (SizedF 128 WrapField)
-  gamma <- chal :: RoM (SizedF 128 WrapField)
-  zeta <- scalarChal :: RoM (SizedF 128 WrapField)
-
-  -- Phase 3: Dummy.evals tock calls (tock 1–89, see header comment for count)
-  -- Same right-to-left record + right-to-left :: eval order as the tick-based prev_evals.
-  let
-    tockPointEval :: RoM { zeta :: WrapField, omegaTimesZeta :: WrapField }
-    tockPointEval = do
-      oz <- tock -- right tuple element first (OCaml right-to-left)
-      z <- tock
-      pure { zeta: z, omegaTimesZeta: oz }
-
-    tockPointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n { zeta :: WrapField, omegaTimesZeta :: WrapField })
-    tockPointEvalVec = do
-      v <- Vector.generateA (const tockPointEval)
-      pure (Vector.reverse v) -- OCaml Vector.map :: right-to-left side effects
-  -- Evals record right-to-left: selectors first, then s, z, coefficients, w
-  idxEndomulScalar <- tockPointEval
-  idxEmul <- tockPointEval
-  idxMul <- tockPointEval
-  idxCompleteAdd <- tockPointEval
-  idxPoseidon <- tockPointEval
-  idxGeneric <- tockPointEval
-  let
-    wrapIndexEvals = fromJust' "Dummy wrapIndexEvals: literal array of 6 evals" $ Vector.toVector @6
-      [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
-  wrapSigmaEvals <- tockPointEvalVec @6
-  wrapZEvals <- tockPointEval
-  wrapCoeffEvals <- tockPointEvalVec @15
-  wrapWitnessEvals <- tockPointEvalVec @15
-  wrapPublicEvals <- tockPointEval
-  wrapFtEval1 <- tock
-  let
-    wrapDummyEvals =
-      { ftEval1: wrapFtEval1
-      , publicEvals: wrapPublicEvals
-      , zEvals: wrapZEvals
-      , indexEvals: wrapIndexEvals
-      , witnessEvals: wrapWitnessEvals
-      , coeffEvals: wrapCoeffEvals
-      , sigmaEvals: wrapSigmaEvals
-      }
-
-  -- Phase 4: proof.ml:dummy openings z_1, z_2 (OCaml evaluates the
-  -- `{ lr = ...; z_1 = Ro.tock (); z_2 = Ro.tock (); ... }` record
-  -- RIGHT-TO-LEFT, so z_2 is pulled first at position 90, then z_1
-  -- at position 91. `Proof.dummy` is forced BEFORE
-  -- `Unfinalized.Constant.dummy` in `compile_promise` / dump_simple_chain,
-  -- so z_1/z_2 come first in the Ro stream after Dummy.evals.
-  --
-  -- Verified empirically: traces `expand_proof.dummy_proof.z1/z2`
-  -- (from `proof.openings.proof.z_{1,2}` at expand_proof time in OCaml)
-  -- match these positions byte-for-byte with the right field
-  -- assignments below.
-  proofZ2 <- tock -- tock 90
-  proofZ1 <- tock -- tock 91
-
-  -- Phase 4b: Unfinalized.Constant.dummy's b and combined_inner_product
-  -- (OCaml `unfinalized.ml:97-100`: `combined_inner_product = Shifted_value (tock ())`
-  -- then `b = Shifted_value (tock ())`). Record evaluated right-to-left
-  -- in OCaml so `b` pulls first at position 92, `cipRaw` at position 93.
-  -- These feed `wrapDummyUnfinalizedProof.{b, combinedInnerProduct}`.
-  bRaw <- tock -- tock 92
-  cipRaw <- tock -- tock 93
-
-  -- Phase 5: Step dummy plonk challenges from proof.ml:dummy.
-  -- OCaml evaluates record fields right-to-left, so within
-  --   plonk = { alpha = scalar_chal(); beta = chal(); gamma = chal(); zeta = scalar_chal() }
-  -- zeta is evaluated first (last field), then gamma, beta, alpha.
-  stepDummyZeta <- scalarChal :: RoM (SizedF 128 StepField)
-  stepDummyGamma <- chal :: RoM (SizedF 128 StepField)
-  stepDummyBeta <- chal :: RoM (SizedF 128 StepField)
-  stepDummyAlpha <- scalarChal :: RoM (SizedF 128 StepField)
-
-  -- Phase 6: Step dummy prev_evals from tick().
-  -- OCaml proof.ml:dummy constructs prev_evals with tick() calls.
-  -- Record fields evaluate right-to-left; vectors evaluate left-to-right (Vector.map).
-  -- Each eval pair: (tick_arr 1, tick_arr 1) → right tuple element first (omega_zeta).
-  let
-    tickPointEval :: RoM { zeta :: StepField, omegaTimesZeta :: StepField }
-    tickPointEval = do
-      oz <- tick -- OCaml right-to-left tuple: omega_zeta first
-      z <- tick
-      pure { zeta: z, omegaTimesZeta: oz }
-
-    -- OCaml's Vector.map (list-based) evaluates side effects right-to-left
-    -- (due to `::` right-to-left eval), so last element gets tick values first.
-    -- Generate in reverse, then reverse back to get correct index→value mapping.
-    tickPointEvalVec :: forall @n. Reflectable n Int => RoM (Vector n { zeta :: StepField, omegaTimesZeta :: StepField })
-    tickPointEvalVec = do
-      v <- Vector.generateA (const tickPointEval)
-      pure (Vector.reverse v)
-  -- Evals record right-to-left: selectors first, then s, z, coefficients, w
-  stepIdxEndomulScalar <- tickPointEval
-  stepIdxEmul <- tickPointEval
-  stepIdxMul <- tickPointEval
-  stepIdxCompleteAdd <- tickPointEval
-  stepIdxPoseidon <- tickPointEval
-  stepIdxGeneric <- tickPointEval
-  let
-    indexEvals = fromJust' "Dummy stepIndexEvals: literal array of 6 evals" $ Vector.toVector @6
-      [ stepIdxGeneric, stepIdxPoseidon, stepIdxCompleteAdd, stepIdxMul, stepIdxEmul, stepIdxEndomulScalar ]
-  sigmaEvals <- tickPointEvalVec @6
-  zEvals <- tickPointEval
-  coeffEvals <- tickPointEvalVec @15
-  witnessEvals <- tickPointEvalVec @15
-  -- public_input: right tuple element first
-  publicEvals <- tickPointEval
-  -- ft_eval1: last tick call
-  stepDummyFtEval1 <- tick
-  let
-    stepDummyPrevEvals =
-      { ftEval1: stepDummyFtEval1
-      , publicEvals
-      , zEvals
-      , indexEvals
-      , witnessEvals
-      , coeffEvals
-      , sigmaEvals
-      }
-
-  pure
-    { wrapChalRaw
-    , stepChalRaw
-    , alpha
-    , beta
-    , gamma
-    , zeta
-    , wrapDummyEvals
-    , cipRaw
-    , bRaw
-    , proofZ1
-    , proofZ2
-    , stepDummyZeta
-    , stepDummyGamma
-    , stepDummyBeta
-    , stepDummyAlpha
-    , stepDummyPrevEvals
-    }
-
--- | DEPRECATED (phase 1 refactor): module-init singleton shortcut for
--- | `evalState computeRoResult initialRo`. Kept as a thin alias so
--- | existing callsites continue to compile while callers are migrated
--- | to carry `Ro` in `MonadState Ro m` context. Will be removed at the
--- | end of the refactor.
-roComputeResult :: RoComputeResult
-roComputeResult = evalState computeRoResult initialRo
 
 -------------------------------------------------------------------------------
 -- | OCaml-primitive Ro-consuming dummies
@@ -635,7 +403,11 @@ computeBaseCaseDummies cfg = do
     }
 
 -------------------------------------------------------------------------------
--- | DummyValues
+-- | Derived dummy values
+-- |
+-- | Consumer-level views over `BaseCaseDummies`. Each takes a
+-- | `BaseCaseDummies` produced by `computeBaseCaseDummies` and derives
+-- | the expanded / shifted / hashed values step/wrap circuits need.
 -------------------------------------------------------------------------------
 
 type DummySgValues =
@@ -652,14 +424,11 @@ type DummySgValues =
           }
       }
   , unfinalized ::
-      { -- Raw scalar challenges from Ro (SizedF 128 in Fq, before expansion)
-        alphaRaw :: SizedF 128 WrapField
+      { alphaRaw :: SizedF 128 WrapField
       , betaRaw :: SizedF 128 WrapField
       , gammaRaw :: SizedF 128 WrapField
       , zetaRaw :: SizedF 128 WrapField
-      -- xi = Scalar_challenge.create(Challenge.Constant.dummy) = [1L,1L] as SizedF 128
       , xiRaw :: SizedF 128 WrapField
-      -- Expanded versions (after endo_to_field / to_tock_field)
       , zetaExpanded :: WrapField
       , alphaExpanded :: WrapField
       , plonk ::
@@ -673,20 +442,17 @@ type DummySgValues =
       }
   }
 
--- | Compute all dummy values.
-computeDummySgValues :: CRS Pallas.G -> CRS Vesta.G -> DummySgValues
-computeDummySgValues pallasSrs vestaSrs =
+computeDummySgValues :: BaseCaseDummies -> CRS Pallas.G -> CRS Vesta.G -> DummySgValues
+computeDummySgValues bcd pallasSrs vestaSrs =
   let
-    -- Expand challenges using shared Ro result
-    wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) roComputeResult.wrapChalRaw
-    stepChalExpanded = map (\c -> toFieldPure c stepEndo) roComputeResult.stepChalRaw
+    u = bcd.unfinalizedConstantDummy
 
-    -- Expand plonk challenges to Fq (unfinalized.ml:36-39)
-    -- alpha/zeta use endo expansion; beta/gamma use raw bit packing (no endo).
-    alphaFq = toFieldPure roComputeResult.alpha wrapEndo
-    zetaFq = toFieldPure roComputeResult.zeta wrapEndo
+    wrapChalExpanded = map (\c -> toFieldPure c wrapEndo) bcd.ipaWrapChallenges
+    stepChalExpanded = map (\c -> toFieldPure c stepEndo) bcd.ipaStepChallenges
 
-    -- Compute sg from SRS
+    alphaFq = toFieldPure u.plonk.alpha wrapEndo
+    zetaFq = toFieldPure u.plonk.zeta wrapEndo
+
     wrapSgCoords = PallasImpl.pallasSrsBPolyCommitment pallasSrs
       (Vector.toUnfoldable wrapChalExpanded)
     wrapSg = { x: unsafeIdx wrapSgCoords 0, y: unsafeIdx wrapSgCoords 1 }
@@ -694,13 +460,9 @@ computeDummySgValues pallasSrs vestaSrs =
       (Vector.toUnfoldable stepChalExpanded)
     stepSg = { x: unsafeIdx stepSgCoords 0, y: unsafeIdx stepSgCoords 1 }
 
-    -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
-    -- For Wrap: srs_length_log2 = Tock.Rounds.n = WrapIPARounds = domain_log2 = 15
-    -- So zetaToSrsLength = zetaToDomainSize = zeta^(2^15)
     wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
     zetaPow = Curves.pow zetaFq (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
 
-    -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
           + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
@@ -710,36 +472,35 @@ computeDummySgValues pallasSrs vestaSrs =
   in
     { ipa:
         { wrap:
-            { challengesRaw: roComputeResult.wrapChalRaw
+            { challengesRaw: bcd.ipaWrapChallenges
             , challengesExpanded: wrapChalExpanded
             , sg: wrapSg
             }
         , step:
-            { challengesRaw: roComputeResult.stepChalRaw
+            { challengesRaw: bcd.ipaStepChallenges
             , challengesExpanded: stepChalExpanded
             , sg: stepSg
             }
         }
     , unfinalized:
-        { alphaRaw: roComputeResult.alpha
-        , betaRaw: roComputeResult.beta
-        , gammaRaw: roComputeResult.gamma
-        , zetaRaw: roComputeResult.zeta
-        -- xi = Scalar_challenge.create(Challenge.Constant.dummy)
-        -- Challenge.Constant.dummy = [1L, 1L] → 1 + 2^64 as a 128-bit field element
+        { alphaRaw: u.plonk.alpha
+        , betaRaw: u.plonk.beta
+        , gammaRaw: u.plonk.gamma
+        , zetaRaw: u.plonk.zeta
         , xiRaw: fromJust'
             "Dummy xiRaw: dummy-challenge `1 + 2^64` fits in 128 bits"
-            (SizedF.fromField @128
-              (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField))
+            ( SizedF.fromField @128
+                (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
+            )
         , zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
-            { perm: wrapDummyUnfinalizedProof.deferredValues.plonk.perm
+            { perm: (wrapDummyUnfinalizedProof bcd).deferredValues.plonk.perm
             , zetaToSrsLength: toShifted (F zetaPow)
             , zetaToDomainSize: toShifted (F zetaPow)
             }
-        , combinedInnerProduct: roComputeResult.cipRaw
-        , b: roComputeResult.bRaw
+        , combinedInnerProduct: u.combinedInnerProduct
+        , b: u.b
         , spongeDigest: digestDummy
         }
     }
@@ -747,9 +508,12 @@ computeDummySgValues pallasSrs vestaSrs =
 unsafeIdx :: forall a. Array a -> Int -> a
 unsafeIdx arr i = fromJust' ("Dummy.unsafeIdx: index " <> show i <> " into array of length " <> show (Array.length arr)) (Array.index arr i)
 
--------------------------------------------------------------------------------
--- | Convenience re-exports
--------------------------------------------------------------------------------
+-- | IPA challenges are force-order-invariant — `Dummy.Ipa.Wrap.challenges`
+-- | and `Dummy.Ipa.Step.challenges` in OCaml are eager module-init values
+-- | drawn at fixed Ro positions regardless of which circuit is compiled.
+-- | We mirror that with a module-level constant so circuit-building code
+-- | that only needs IPA challenges (e.g. wrap main's dummy challenge /
+-- | padding sponge states) doesn't have to thread `BaseCaseDummies`.
 dummyIpaChallenges
   :: { wrapRaw :: Vector WrapIPARounds (SizedF 128 WrapField)
      , wrapExpanded :: Vector WrapIPARounds WrapField
@@ -758,39 +522,30 @@ dummyIpaChallenges
      }
 dummyIpaChallenges =
   let
-    wrapRaw = roComputeResult.wrapChalRaw
-    stepRaw = roComputeResult.stepChalRaw
+    wrapRaw = evalState dummyIpaWrapChallenges initialRo
+    stepRaw = evalState (dummyIpaWrapChallenges *> dummyIpaStepChallenges) initialRo
     wrapExpanded = map (\c -> toFieldPure c wrapEndo) wrapRaw
     stepExpanded = map (\c -> toFieldPure c stepEndo) stepRaw
   in
     { wrapRaw, wrapExpanded, stepRaw, stepExpanded }
 
--- | Correct dummy unfinalized proof matching OCaml's Unfinalized.Constant.dummy.
--- |
--- | Uses Ro-derived challenges, NOT zeros. Derives from the same shared Ro
--- | computation as computeDummyValues and defaultChallenges — mirrors OCaml's
--- | globally mutable Ro state.
--- |
--- | Key: OCaml's `Shifted_value(tock())` stores the raw tock value directly
--- | (NOT tock - shift). So combinedInnerProduct and b use Type2 (F raw) directly,
--- | unlike zetaToSrsLength/zetaToDomainSize which use `of_field` (= value - shift).
--- |
--- | Reference: mina/src/lib/crypto/pickles/unfinalized.ml:25-104
-wrapDummyUnfinalizedProof :: UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
-wrapDummyUnfinalizedProof =
+-- | Wrap-side dummy unfinalized proof, mirroring OCaml's
+-- | `Unfinalized.Constant.dummy` (unfinalized.ml:25-106).
+wrapDummyUnfinalizedProof
+  :: BaseCaseDummies
+  -> UnfinalizedProof WrapIPARounds (F WrapField) (Type2 (F WrapField)) Boolean
+wrapDummyUnfinalizedProof bcd =
   let
-    r = roComputeResult
-    evals = r.wrapDummyEvals
+    u = bcd.unfinalizedConstantDummy
+    evals = bcd.dummyEvals
     Curves.EndoScalar wEndo = (Curves.endoScalar :: Curves.EndoScalar Pallas.ScalarField)
 
-    -- Expand plonk challenges in WrapField
-    alphaExpanded = toFieldPure r.alpha wEndo
-    betaExpanded = SizedF.toField r.beta :: WrapField
-    gammaExpanded = SizedF.toField r.gamma :: WrapField
-    zetaExpanded = toFieldPure r.zeta wEndo
+    alphaExpanded = toFieldPure u.plonk.alpha wEndo
+    betaExpanded = SizedF.toField u.plonk.beta :: WrapField
+    gammaExpanded = SizedF.toField u.plonk.gamma :: WrapField
+    zetaExpanded = toFieldPure u.plonk.zeta wEndo
 
-    -- Domain: wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
-    -- srs_length_log2 = Tock.Rounds.n = WrapIPARounds = 15
+    -- wrap_domains ~proofs_verified:2 = Pow_2_roots_of_unity 15
     wrapDomainLog2 = 15
     zkRows = 3
     omega = (domainGenerator wrapDomainLog2 :: WrapField)
@@ -802,7 +557,6 @@ wrapDummyUnfinalizedProof =
     zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
     omegaToMinusZkRows = Curves.pow omega (n - BigInt.fromInt zkRows)
 
-    -- Compute perm via permScalar (same as Step side but in WrapField)
     permInput =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
@@ -818,12 +572,8 @@ wrapDummyUnfinalizedProof =
       }
     perm = permScalar permInput
 
-    -- zetaToSrsLength = zeta^(2^srs_length_log2)
-    -- For Wrap: srs_length_log2 = Tock.Rounds.n = WrapIPARounds = 15
-    -- domain_log2 = 15 → zetaToDomainSize = zeta^(2^15) = same
     zetaPow = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
 
-    -- Digest.Constant.dummy = [1L, 1L, 1L, 1L] → 1 + 2^64 + 2^128 + 2^192
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
           + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
@@ -831,95 +581,52 @@ wrapDummyUnfinalizedProof =
           + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192)
       )
 
-    -- xi = Scalar_challenge.create(Challenge.Constant.dummy) = [1L, 1L] packed
     xi :: SizedF 128 (F WrapField)
-    xi = SizedF.wrapF $ fromJust' "Dummy wrap xi: 65-bit packed Challenge.Constant.dummy fits into SizedF 128" $ SizedF.fromField @128
+    xi = SizedF.wrapF $ fromJust' "Dummy wrap xi" $ SizedF.fromField @128
       (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
   in
     { deferredValues:
         { plonk:
-            { alpha: SizedF.wrapF r.alpha
-            , beta: SizedF.wrapF r.beta
-            , gamma: SizedF.wrapF r.gamma
-            , zeta: SizedF.wrapF r.zeta
+            { alpha: SizedF.wrapF u.plonk.alpha
+            , beta: SizedF.wrapF u.plonk.beta
+            , gamma: SizedF.wrapF u.plonk.gamma
+            , zeta: SizedF.wrapF u.plonk.zeta
             , perm: toShifted (F perm)
             , zetaToSrsLength: toShifted (F zetaPow)
             , zetaToDomainSize: toShifted (F zetaPow)
             }
-        -- OCaml: `Shifted_value(tock())` stores raw tock value directly (NOT tock - shift).
-        -- Type2 (F raw) is the correct representation here, NOT toShifted (F raw).
-        , combinedInnerProduct: Type2 (F r.cipRaw)
+        , combinedInnerProduct: Type2 (F u.combinedInnerProduct)
         , xi
-        , bulletproofChallenges: map SizedF.wrapF r.wrapChalRaw
-        , b: Type2 (F r.bRaw)
+        , bulletproofChallenges: map SizedF.wrapF bcd.ipaWrapChallenges
+        , b: Type2 (F u.b)
         }
     , shouldFinalize: false
     , spongeDigestBeforeEvaluations: F digestDummy
     }
 
--- | Input bundle for `stepDummyUnfinalizedProofFromInputs` — the
--- | caller supplies the Ro-derived plonk challenges and prev_evals so
--- | we can plug in either `roComputeResult` values (for the legacy
--- | `stepDummyFopProofState`) or Simple_chain post-compile values
--- | (for the Simple_chain base case).
-type StepDummyInputs =
-  { stepDummyAlpha :: SizedF 128 StepField
-  , stepDummyBeta :: SizedF 128 StepField
-  , stepDummyGamma :: SizedF 128 StepField
-  , stepDummyZeta :: SizedF 128 StepField
-  , stepDummyPrevEvals :: AllEvals StepField
-  }
-
--- | Shared computation for Step dummy unfinalized proofs.
--- | The `d` parameter and bp challenges vary between:
--- | - Public input side (WrapIPARounds = 15, Wrap IPA challenges)
--- | - FOP side (StepIPARounds = 16, Step IPA challenges)
--- | All other fields (plonk, cip, b, xi, spongeDigest) are identical.
-stepDummyUnfinalizedProofWith
+-- | Step-side dummy unfinalized proof, mirroring OCaml's
+-- | `Wrap_deferred_values.expand_deferred` applied to `Proof.dummy`.
+-- |
+-- | Called at two sites (same deferred values, differing only in d/bpChals):
+-- |   Step public-input side (d = WrapIPARounds): bpChals from ipaWrapChallenges
+-- |   Step FOP advice side   (d = StepIPARounds): bpChals from ipaStepChallenges
+stepDummyUnfinalizedProof
   :: forall d sf
    . Shifted (F StepField) sf
-  => { domainLog2 :: Int, mostRecentWidth :: Int }
-  -> Vector d (SizedF 128 (F StepField))
-  -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProofWith cfg bpChals =
-  let
-    r = roComputeResult
-
-    inputs :: StepDummyInputs
-    inputs =
-      { stepDummyAlpha: r.stepDummyAlpha
-      , stepDummyBeta: r.stepDummyBeta
-      , stepDummyGamma: r.stepDummyGamma
-      , stepDummyZeta: r.stepDummyZeta
-      , stepDummyPrevEvals: r.stepDummyPrevEvals
-      }
-  in
-    stepDummyUnfinalizedProofFromInputs inputs cfg bpChals
-
--- | Like `stepDummyUnfinalizedProofWith` but the plonk challenges and
--- | prev_evals are supplied by the caller instead of read from
--- | `roComputeResult`. Used by `simpleChainStepDummyFopProofState` to
--- | plug in the hardcoded Simple_chain base-case fixture values that
--- | correspond to the post-compile Ro state (see
--- | `Pickles.Dummy.SimpleChain` for the discrepancy rationale).
-stepDummyUnfinalizedProofFromInputs
-  :: forall d sf
-   . Shifted (F StepField) sf
-  => StepDummyInputs
+  => BaseCaseDummies
   -> { domainLog2 :: Int, mostRecentWidth :: Int }
   -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpChals =
+stepDummyUnfinalizedProof bcd { domainLog2, mostRecentWidth } bpChals =
   let
-    r = roComputeResult
-    evals = inputs.stepDummyPrevEvals
-    Curves.EndoScalar stepEndo = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
+    p = bcd.proofDummy.plonk
+    evals = bcd.proofDummy.prevEvals
+    Curves.EndoScalar stepEndoScalar = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)
 
-    -- Expand plonk challenges
-    alphaExpanded = toFieldPure inputs.stepDummyAlpha stepEndo
-    betaExpanded = SizedF.toField inputs.stepDummyBeta :: StepField
-    gammaExpanded = SizedF.toField inputs.stepDummyGamma :: StepField
-    zetaExpanded = toFieldPure inputs.stepDummyZeta stepEndo
+    alphaExpanded = toFieldPure p.alpha stepEndoScalar
+    betaExpanded = SizedF.toField p.beta :: StepField
+    gammaExpanded = SizedF.toField p.gamma :: StepField
+    zetaExpanded = toFieldPure p.zeta stepEndoScalar
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
     n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
@@ -931,29 +638,21 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
     zkPoly = (zetaExpanded - omegaM1) * (zetaExpanded - omegaM2) * (zetaExpanded - omegaM3)
     omegaToMinusZkRows = Curves.pow omega (n - BigInt.fromInt zkRows)
 
-    -- 1. Fr-sponge → xi, evalscale
-    -- challenges_digest from expanded old_bulletproof_challenges
-    -- OCaml uses 2 copies of Dummy.Ipa.Step.challenges (= stepChalRaw expanded)
     expandedBpChals :: Vector StepIPARounds StepField
-    expandedBpChals = map (\c -> toFieldPure c stepEndo) (map coerceViaBits r.stepChalRaw)
+    expandedBpChals = map (\c -> toFieldPure c stepEndoScalar) (map coerceViaBits bcd.ipaStepChallenges)
 
     challengesDigest :: StepField
     challengesDigest =
       let
-        -- OCaml expand_deferred: absorbs old_bulletproof_challenges (expanded Step IPA challenges).
-        -- For Proof.dummy with most_recent_width = N, there are N copies of Dummy.Ipa.Step.challenges.
-        -- Each copy = expandedBpChals (16 Step IPA challenges expanded via endo).
-        -- No masking — expand_deferred knows the exact count, masking is only in the circuit.
         sponge0 = initialSponge :: PureSponge.Sponge StepField
         absorbOneCopy s = foldl (\s' c -> PureSponge.absorb c s') s expandedBpChals
-        -- Absorb mostRecentWidth copies
         spongeN = Array.foldl (\s _ -> absorbOneCopy s) sponge0 (Array.replicate mostRecentWidth unit)
       in
         (PureSponge.squeeze spongeN).result
 
     frInput :: FrSpongeInput StepField
     frInput =
-      { fqDigest: zero -- sponge_digest_before_evaluations = 0 for dummy
+      { fqDigest: zero
       , prevChallengeDigest: challengesDigest
       , ftEval1: evals.ftEval1
       , publicEvals: evals.publicEvals
@@ -962,11 +661,10 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
       , witnessEvals: evals.witnessEvals
       , coeffEvals: evals.coeffEvals
       , sigmaEvals: evals.sigmaEvals
-      , endo: stepEndo
+      , endo: stepEndoScalar
       }
     frResult = frSpongeChallengesPure frInput
 
-    -- 2. Permutation scalar
     permInput =
       { w: map _.zeta (Vector.take @7 evals.witnessEvals)
       , sigma: map _.zeta evals.sigmaEvals
@@ -982,9 +680,8 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
       }
     perm = permScalar permInput
 
-    -- 3. ftEval0
     permContrib = permContribution permInput
-    vanishesOnZk = one :: StepField -- No lookups → vanishes = 1
+    vanishesOnZk = one :: StepField
     lagrangeFalse0 = unnormalizedLagrangeBasis { domainLog2, zkRows: 0, offset: 0, pt: zetaExpanded }
     lagrangeTrue1 = unnormalizedLagrangeBasis { domainLog2, zkRows, offset: -1, pt: zetaExpanded }
     evalPoint = buildEvalPoint
@@ -1010,7 +707,6 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
       , gateConstraints
       }
 
-    -- 4. CIP
     ftPointEval :: PointEval StepField
     ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
 
@@ -1022,33 +718,28 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
         `Vector.append` evals.coeffEvals
         `Vector.append` evals.sigmaEvals
 
-    -- sg evals from bPoly on expanded bp challenges.
-    -- OCaml: old_bulletproof_challenges has most_recent_width copies.
-    -- Each produces one sg eval point via challenge_polynomial.
     sgPointEval :: PointEval StepField
     sgPointEval = { zeta: bPoly expandedBpChals zetaExpanded, omegaTimesZeta: bPoly expandedBpChals zetaw }
     cipAllEvals = Array.replicate mostRecentWidth sgPointEval <> Array.fromFoldable allEvals45
-    cipStep { result, scale } eval =
+    cipStep { result, scale } ev =
       let
-        term = eval.zeta + frResult.evalscale * eval.omegaTimesZeta
+        term = ev.zeta + frResult.evalscale * ev.omegaTimesZeta
       in
         { result: result + scale * term, scale: scale * frResult.xi }
     cip = (Array.foldl cipStep { result: zero, scale: one } cipAllEvals).result
 
-    -- 5. b
     b = computeB expandedBpChals { zeta: zetaExpanded, zetaOmega: zetaw, evalscale: frResult.evalscale }
 
-    -- 6. zetaToSrsLength, zetaToDomainSize
     srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
     zetaToSrsLength = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
     zetaToDomainSize = Curves.pow zetaExpanded n
   in
     { deferredValues:
         { plonk:
-            { alpha: SizedF.wrapF inputs.stepDummyAlpha
-            , beta: SizedF.wrapF inputs.stepDummyBeta
-            , gamma: SizedF.wrapF inputs.stepDummyGamma
-            , zeta: SizedF.wrapF inputs.stepDummyZeta
+            { alpha: SizedF.wrapF p.alpha
+            , beta: SizedF.wrapF p.beta
+            , gamma: SizedF.wrapF p.gamma
+            , zeta: SizedF.wrapF p.zeta
             , perm: toShifted (F perm)
             , zetaToSrsLength: toShifted (F zetaToSrsLength)
             , zetaToDomainSize: toShifted (F zetaToDomainSize)
@@ -1062,149 +753,14 @@ stepDummyUnfinalizedProofFromInputs inputs { domainLog2, mostRecentWidth } bpCha
     , spongeDigestBeforeEvaluations: F (zero :: StepField)
     }
 
--- | Dummy unfinalized proof for the Step circuit's FOP (Step verifying a Wrap proof).
--- |
--- | Computes expand_deferred on tick()-derived proof evaluations, matching OCaml's
--- | Wrap_deferred_values.expand_deferred applied to proof.ml:dummy.
--- |
--- | Uses WrapIPARounds (15) bp challenges from the Wrap IPA, matching the public
--- | input's unfinalized proof structure.
--- |
--- | Reference: mina/src/lib/crypto/pickles/wrap_deferred_values.ml (expand_deferred)
--- | Verified against fixture: packages/pickles-circuit-diffs/test/fixtures/dummy_values.txt
-stepDummyUnfinalizedProof
-  :: forall sf
-   . Shifted (F StepField) sf
-  => UnfinalizedProof WrapIPARounds (F StepField) sf Boolean
-stepDummyUnfinalizedProof =
-  let
-    -- Bulletproof challenges (WrapIPARounds = 15)
-    -- Raw 128-bit scalar challenges coerced from WrapField to StepField
-    bpChals :: Vector WrapIPARounds (SizedF 128 (F StepField))
-    bpChals = map (SizedF.wrapF <<< coerceViaBits) roComputeResult.wrapChalRaw
-  in
-    -- wrap_domains ~proofs_verified:2 = { h = 15 }
-    -- most_recent_width=2 (MaxProofsVerified for production Mina)
-    stepDummyUnfinalizedProofWith { domainLog2: 15, mostRecentWidth: 2 } bpChals
-
--- | Dummy FOP proof state with StepIPARounds (16) bp challenges.
--- |
--- | Same deferred values as stepDummyUnfinalizedProof but with Step IPA challenges
--- | (N16) instead of Wrap IPA challenges (N15). Used for the FOP proof states in
--- | the advisory monad and prevChallenges vector.
--- | domainLog2 for wrap_domains ~proofs_verified.
--- | OCaml: common.ml:25-29
--- |   0 -> 13, 1 -> 14, 2 -> 15
+-- | OCaml `common.ml:25-29` — maps max_proofs_verified to the
+-- | `wrap_domains.h` log2 used by step FOP constructions.
 wrapDomainLog2ForProofsVerified :: Int -> Int
 wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
   0 -> 13
   1 -> 14
   2 -> 15
   _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
-
-stepDummyFopProofState
-  :: forall sf
-   . Shifted (F StepField) sf
-  => { proofsVerified :: Int }
-  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
-stepDummyFopProofState { proofsVerified } =
-  let
-    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
-    bpChals = map SizedF.wrapF roComputeResult.stepChalRaw
-  in
-    -- most_recent_width = proofs_verified for Proof.dummy
-    stepDummyUnfinalizedProofWith
-      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
-      , mostRecentWidth: proofsVerified
-      }
-      bpChals
-
--- | Simple_chain-specific dummy FOP proof state.
--- |
--- | Same as `stepDummyFopProofState` but sources the `plonk` challenges
--- | and `prev_evals` from `Pickles.Dummy.SimpleChain` (hardcoded from the
--- | post-compile Ro state that Simple_chain observes at runtime) rather
--- | than from the legacy module-init `roComputeResult` values.
--- |
--- | Use this for the Simple_chain base case; the plain
--- | `stepDummyFopProofState` remains the default for all other callers.
-simpleChainStepDummyFopProofState
-  :: forall sf
-   . Shifted (F StepField) sf
-  => { proofsVerified :: Int }
-  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
-simpleChainStepDummyFopProofState { proofsVerified } =
-  let
-    r = roComputeResult
-
-    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
-    bpChals = map SizedF.wrapF r.stepChalRaw
-
-    inputs :: StepDummyInputs
-    inputs =
-      -- NOTE: PS's `r.alpha/beta/gamma/zeta` are WrapField-typed AND
-      -- labeled left-to-right (r.alpha = chal 32 bits, r.zeta = chal 35
-      -- bits). OCaml's Unfinalized.Constant.dummy plonk record is
-      -- evaluated right-to-left (OCaml's alpha = chal 35 bits), so:
-      --   * bits at chal 35 → OCaml's alpha → read PS's r.zeta
-      --   * bits at chal 34 → OCaml's beta  → read PS's r.gamma
-      --   * bits at chal 33 → OCaml's gamma → read PS's r.beta
-      --   * bits at chal 32 → OCaml's zeta  → read PS's r.alpha
-      -- Also `coerceViaBits` crosses from WrapField (PS's r) to StepField
-      -- (the `stepDummy*` slot's type). Byte-identity verified empirically
-      -- against the deleted `simpleChainDummyPlonk` sidecar.
-      { stepDummyAlpha: coerceViaBits r.zeta
-      , stepDummyBeta: coerceViaBits r.gamma
-      , stepDummyGamma: coerceViaBits r.beta
-      , stepDummyZeta: coerceViaBits r.alpha
-      , stepDummyPrevEvals: r.stepDummyPrevEvals
-      }
-  in
-    stepDummyUnfinalizedProofFromInputs inputs
-      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
-      , mostRecentWidth: proofsVerified
-      }
-      bpChals
-
--- | Tree_proof_return-specific dummy FOP proof state.
--- |
--- | Same as `simpleChainStepDummyFopProofState` but sources the `plonk`
--- | challenges from `Pickles.Dummy.Tree` (Ro state at post-Tree-compile
--- | runtime, differs from SimpleChain's post-compile state).
--- | `prev_evals` reuses `simpleChainDummyPrevEvals` since `Dummy.evals`
--- | is a module-level lazy value shared by all `Proof.dummy` calls.
--- |
--- | Use this for Tree_proof_return slot-1 dummy advice; matches OCaml's
--- | `Proof.dummy Nat.N2.n Nat.N2.n ~domain_log2:15` byte-for-byte.
-treeStepDummyFopProofState
-  :: forall sf
-   . Shifted (F StepField) sf
-  => { proofsVerified :: Int }
-  -> UnfinalizedProof StepIPARounds (F StepField) sf Boolean
-treeStepDummyFopProofState { proofsVerified } =
-  let
-    r = roComputeResult
-
-    bpChals :: Vector StepIPARounds (SizedF 128 (F StepField))
-    bpChals = map SizedF.wrapF r.stepChalRaw
-
-    inputs :: StepDummyInputs
-    inputs =
-      -- Step-side plonk challenges: `r.stepDummy{Alpha,Beta,Gamma,Zeta}`
-      -- are already labeled to match OCaml's right-to-left eval order
-      -- (alpha = chal 39, zeta = chal 36), so no swap needed here.
-      { stepDummyAlpha: r.stepDummyAlpha
-      , stepDummyBeta: r.stepDummyBeta
-      , stepDummyGamma: r.stepDummyGamma
-      , stepDummyZeta: r.stepDummyZeta
-      , stepDummyPrevEvals: r.stepDummyPrevEvals
-      }
-  in
-    stepDummyUnfinalizedProofFromInputs inputs
-      { domainLog2: wrapDomainLog2ForProofsVerified proofsVerified
-      , mostRecentWidth: proofsVerified
-      }
-      bpChals
 
 -- | Zero-valued proof witness for use in base case bootstrapping.
 -- |
