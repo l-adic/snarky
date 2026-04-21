@@ -19,8 +19,11 @@ module Pickles.Dummy
   , dummyProofWitness
   , dummyFinalizeOtherProofParams
   , roComputeResult
+  , computeRoResult
+  , RoComputeResult
   , Ro
   , mkRo
+  , initialRo
   , tick
   ) where
 
@@ -83,6 +86,12 @@ type Ro =
 
 mkRo :: Ro
 mkRo = { tockCounter: 0, tickCounter: 0, chalCounter: 0 }
+
+-- | Canonical "start" Ro state. Alias of `mkRo`, renamed to surface the
+-- | intent at callsites (e.g. test setups pass `initialRo` into
+-- | `evalStateT` at the top of a `StateT Ro m` block).
+initialRo :: Ro
+initialRo = mkRo
 
 type RoM = State Ro
 
@@ -196,8 +205,16 @@ type RoComputeResult =
 -- |
 -- | Tick sequence (89 calls, independent counter):
 -- |   tick 1–89: proof.ml:dummy prev_evals (see stepDummyPrevEvals)
-roComputeResult :: RoComputeResult
-roComputeResult = flip evalState mkRo do
+-- | Run the full Ro-dependent dummy-value computation starting from an
+-- | arbitrary `Ro` state. Replaces the module-init singleton semantics
+-- | of `roComputeResult` (which runs from `mkRo`).
+-- |
+-- | Intended as the primary API: compile functions carry `Ro` in
+-- | `MonadState Ro m` and call `mapStateT _ computeRoResult` (or
+-- | similar) to sample dummies for their base case, advancing Ro
+-- | along the way.
+computeRoResult :: RoM RoComputeResult
+computeRoResult = do
   -- Phase 1: IPA challenges (chal counters 1–31)
   wrapChalRaw <- replicateChal @WrapIPARounds :: RoM (Vector WrapIPARounds (SizedF 128 WrapField))
   stepChalRaw <- replicateChal @StepIPARounds :: RoM (Vector StepIPARounds (SizedF 128 StepField))
@@ -344,6 +361,14 @@ roComputeResult = flip evalState mkRo do
     , stepDummyAlpha
     , stepDummyPrevEvals
     }
+
+-- | DEPRECATED (phase 1 refactor): module-init singleton shortcut for
+-- | `evalState computeRoResult initialRo`. Kept as a thin alias so
+-- | existing callsites continue to compile while callers are migrated
+-- | to carry `Ro` in `MonadState Ro m` context. Will be removed at the
+-- | end of the refactor.
+roComputeResult :: RoComputeResult
+roComputeResult = evalState computeRoResult initialRo
 
 -------------------------------------------------------------------------------
 -- | DummyValues
