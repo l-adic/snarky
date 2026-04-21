@@ -1799,3 +1799,735 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Trace.field ("b2.wrap.proof.public_input." <> show i) x
 
     liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_2_proved"
+
+    -- =====================================================================
+    -- INDUCTIVE CASE (b3): slot 0 = NRR (unchanged), slot 1 = REAL Tree b2
+    -- wrap proof replacing b1. Expected public_output = 3 (= 1 + s2 with
+    -- s2=2). Mirror of b2 step with b1→b2 (prev) and b2→b3 (new)
+    -- substitutions.
+    --
+    -- Step-only block; b3 wrap is deferred to a separate block.
+    -- =====================================================================
+    liftEffect $ Trace.string "tree_proof_return.begin" "inductive_case_3"
+
+    let
+      b3RuleArgs =
+        { isBaseCase: false
+        , nrrInputVal: F zero                        -- NRR's output is always 0
+        , prevInputVal: F (fromInt 2 :: StepField)   -- b2's output was 2
+        }
+
+      -- b2's Tree step proof opening sg: reuse b2TreeWrapProofSg from the
+      -- b2 wrap block (= pallasProofOpeningSg b2StepResult.proof).
+      b2StepOpeningSg :: AffinePoint WrapField
+      b2StepOpeningSg = b2TreeWrapProofSg
+
+      -- Reuse b2StepOraclesTree / b2StepAllEvals / b2TreeWrapDv from the
+      -- b2 wrap block: same data (oracles + AllEvals + wrap DV over b2
+      -- step proof), already computed there for wrap_b2's FOP.
+
+      -- b3 slot-1 wrap-prev-evals: evaluations over b2 step proof.
+      b3Slot1WrapPrevEvals :: AllEvals StepField
+      b3Slot1WrapPrevEvals = b2StepAllEvals
+
+      -- b3 slot-1 prevChalPolys: b2 step's per-slot cpc paired with b2
+      -- slot's new bp_chals wrap-expanded.
+      b3Slot1PrevChalPolys =
+        { sg: b2Slot0ChalPolyComm, challenges: b2Slot0RealBpChalsWrap }
+          :< { sg: b2Slot1ChalPolyComm, challenges: b2Slot1RealBpChalsWrap }
+          :< Vector.nil
+
+    -- b3 slot-0 advice: reuse oracleInput (NRR identical across all bN).
+    { advice: b3Slot0Advice, challengePolynomialCommitment: b3Slot0ChalPolyComm } <- liftEffect $
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+
+    -- b3 slot-1 advice: verify REAL Tree b2 wrap proof.
+    { advice: b3Slot1Advice, challengePolynomialCommitment: b3Slot1ChalPolyComm } <- liftEffect $
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+        { publicInput: unit
+        , prevPublicInput: (F (fromInt 2 :: StepField))  -- b2 output = 2
+        , mostRecentWidth: 2
+        , wrapDomainLog2: treeWrapDomainLog2
+        , stepDomainLog2: treeSelfStepDomainLog2
+        , wrapVK: treeWrapCR.verifierIndex
+        , stepOpeningSg: b2StepOpeningSg
+        , kimchiPrevSg: b2StepOpeningSg
+        , wrapProof: b2TreeWrapResult.proof
+        , wrapPublicInput: b2TreeWrapResult.publicInputs
+        , prevChalPolys: b3Slot1PrevChalPolys
+        , wrapPlonkRaw:
+            { alpha: SizedF.unwrapF b2TreeWrapDv.plonk.alpha
+            , beta: SizedF.unwrapF b2TreeWrapDv.plonk.beta
+            , gamma: SizedF.unwrapF b2TreeWrapDv.plonk.gamma
+            , zeta: SizedF.unwrapF b2TreeWrapDv.plonk.zeta
+            }
+        , wrapPrevEvals: b3Slot1WrapPrevEvals
+        , wrapBranchData: b2TreeWrapDv.branchData
+        , wrapSpongeDigest: b2TreeWrapDv.spongeDigestBeforeEvaluations
+        , mustVerify: true
+        -- wrap_b2 hashed [b2Slot0RealBpChalsWrap, b2Slot1RealBpChalsWrap]
+        -- into its own msg_for_next_wrap_proof digest.
+        , wrapOwnPaddedBpChals:
+            b2Slot0RealBpChalsWrap
+              :< b2Slot1RealBpChalsWrap
+              :< Vector.nil
+        , fopState:
+            { deferredValues:
+                { plonk: b2TreeWrapDv.plonk
+                , combinedInnerProduct: b2TreeWrapDv.combinedInnerProduct
+                , xi: b2TreeWrapDv.xi
+                , bulletproofChallenges: b2TreeWrapDv.bulletproofPrechallenges
+                , b: b2TreeWrapDv.b
+                }
+            , shouldFinalize: false
+            , spongeDigestBeforeEvaluations: F b2TreeWrapDv.spongeDigestBeforeEvaluations
+            }
+        , stepAdvicePrevEvals: b3Slot1WrapPrevEvals
+        -- kimchi prev_challenges for b3 slot 1: wrap_b2's own bp_chals
+        -- expanded via step endo.
+        , kimchiPrevChallengesExpanded:
+            map
+              (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              b2TreeWrapDv.bulletproofPrechallenges
+        -- prevChallengesForStepHash: wrap_b2.stmt.msg_for_next_step
+        -- .old_bulletproof_challenges step-expanded. b2 step stored:
+        --   slot 0 (NRR verify): step-expansion of NRR wrap's bp_chals.
+        --   slot 1 (real wrap_b1 verify): step-expansion of wrap_b1's
+        --          bp_chals = b1TreeWrapDv.bulletproofPrechallenges
+        --          step-expanded.
+        , prevChallengesForStepHash:
+            map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              nrr.wrapDv.bulletproofPrechallenges
+              :< map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+                   b1TreeWrapDv.bulletproofPrechallenges
+              :< Vector.nil
+        }
+
+    -- Splice b3 slot-0 + slot-1 advices into the heterogeneous carrier.
+    let
+      StepAdvice b3s0 = b3Slot0Advice
+      StepAdvice b3s1 = b3Slot1Advice
+      Tuple b3Slot0Sppw _ = b3s0.perProofSlotsCarrier
+      Tuple b3Slot1Sppw _ = b3s1.perProofSlotsCarrier
+
+      treeB3Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB3Advice = StepAdvice
+        { perProofSlotsCarrier: Tuple b3Slot0Sppw (Tuple b3Slot1Sppw unit)
+        , publicInput: unit
+        , publicUnfinalizedProofs:
+            Vector.head b3s0.publicUnfinalizedProofs
+              :< Vector.head b3s1.publicUnfinalizedProofs
+              :< Vector.nil
+        , messagesForNextWrapProof:
+            Vector.head b3s0.messagesForNextWrapProof
+              :< Vector.head b3s1.messagesForNextWrapProof
+              :< Vector.nil
+        , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+        , kimchiPrevChallenges:
+            Vector.head b3s0.kimchiPrevChallenges
+              :< Vector.head b3s1.kimchiPrevChallenges
+              :< Vector.nil
+        }
+
+    b3StepResult <- liftEffect $
+      stepSolveAndProve
+        @TreeProofReturnPrevsSpec @67
+        @Unit @Unit
+        @(F StepField) @(FVar StepField)
+        @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
+        treeCtx
+        (treeProofReturnRule b3RuleArgs)
+        treeStepCR
+        treeB3Advice
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple b3StepResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("b3.step.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_3_step_proved"
+
+    -- =====================================================================
+    -- b3 WRAP: wrap step_b3. Mirror of b2 wrap with b2→b3 (new) and
+    -- b1→b2 (prev) substitutions. Per-slot kimchi prev_challenges use
+    -- step_b3's slot{0,1}ChalPolyComm + wrap-expanded b3StepResult's
+    -- per-slot new bp_chals (iter 2bf pattern).
+    -- =====================================================================
+    let
+      -- b2 step opening sg: kimchi prev sg for step_b3 slot 1 (= wrap_b2
+      -- stored this into its msg_for_next_wrap_proof.cpc).
+      b2TreeStepOpeningSgOracle :: AffinePoint WrapField
+      b2TreeStepOpeningSgOracle = b2TreeWrapProofSg
+
+      -- kimchi prev_challenges absorbed by step_b3 per treeB3Advice:
+      --   slot 0 (NRR): nrrBpChalsExpandedForSlot0 (same as all other bN)
+      --   slot 1 (real wrap_b2): b2TreeWrapDv.bulletproofPrechallenges
+      --                          step-expanded
+      b3StepKimchiPrevChalsSlot0 :: Vector StepIPARounds StepField
+      b3StepKimchiPrevChalsSlot0 = nrrBpChalsExpandedForSlot0
+
+      b3StepKimchiPrevChalsSlot1 :: Vector StepIPARounds StepField
+      b3StepKimchiPrevChalsSlot1 =
+        map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+          b2TreeWrapDv.bulletproofPrechallenges
+
+      b3StepOraclesTree = ProofFFI.pallasProofOracles treeStepCR.verifierIndex
+        { proof: b3StepResult.proof
+        , publicInput: b3StepResult.publicInputs
+        , prevChallenges:
+            [ { sgX: nrrStepOpeningSgOracle.x
+              , sgY: nrrStepOpeningSgOracle.y
+              , challenges: Vector.toUnfoldable b3StepKimchiPrevChalsSlot0
+              }
+            , { sgX: b2TreeStepOpeningSgOracle.x
+              , sgY: b2TreeStepOpeningSgOracle.y
+              , challenges: Vector.toUnfoldable b3StepKimchiPrevChalsSlot1
+              }
+            ]
+        }
+
+      b3StepAllEvals :: AllEvals StepField
+      b3StepAllEvals =
+        { ftEval1: b3StepOraclesTree.ftEval1
+        , publicEvals:
+            { zeta: b3StepOraclesTree.publicEvalZeta
+            , omegaTimesZeta: b3StepOraclesTree.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b3StepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b3StepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b3StepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b3StepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals b3StepResult.proof
+        }
+
+      b3TreeWrapDvInput :: WrapDeferredValuesInput 2
+      b3TreeWrapDvInput =
+        { proof: b3StepResult.proof
+        , verifierIndex: treeStepCR.verifierIndex
+        , publicInput: b3StepResult.publicInputs
+        , allEvals: b3StepAllEvals
+        , pEval0Chunks: [ b3StepOraclesTree.publicEvalZeta ]
+        , domainLog2: treeStepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator treeStepDomainLog2 :: StepField)
+        , shifts: (domainShifts treeStepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: treeStepDomainLog2, zkRows: 3, pt: b3StepOraclesTree.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: nrrStepOpeningSgOracle :< b2TreeStepOpeningSgOracle :< Vector.nil
+        , prevChallenges:
+            b3StepKimchiPrevChalsSlot0
+              :< b3StepKimchiPrevChalsSlot1
+              :< Vector.nil
+        , proofsVerifiedMask: true :< true :< Vector.nil
+        }
+
+      b3TreeWrapDv = wrapComputeDeferredValues b3TreeWrapDvInput
+
+      b3MsgForNextStepDigestTree :: StepField
+      b3MsgForNextStepDigestTree = fromJust'
+        "b3 wrap prove: step PI[64] outer hash must exist" $
+        Array.index b3StepResult.publicInputs 64
+
+      b3TreeWrapProofSg :: AffinePoint WrapField
+      b3TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b3StepResult.proof
+
+      PerProofUnfinalized b3Slot0UnfRec =
+        Vector.head (unwrap treeB3Advice).publicUnfinalizedProofs
+
+      PerProofUnfinalized b3Slot1UnfRec =
+        Vector.head (Vector.drop @1 (unwrap treeB3Advice).publicUnfinalizedProofs)
+
+      b3Slot0RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      b3Slot0RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          b3Slot0UnfRec.bulletproofChallenges
+
+      b3Slot1RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      b3Slot1RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          b3Slot1UnfRec.bulletproofChallenges
+
+      b3MsgForNextWrapDigestTree :: WrapField
+      b3MsgForNextWrapDigestTree = hashMessagesForNextWrapProofPureGeneral
+        { sg: b3TreeWrapProofSg
+        , paddedChallenges:
+            b3Slot0RealBpChalsWrap
+              :< b3Slot1RealBpChalsWrap
+              :< Vector.nil
+        }
+
+      b3TreeWrapPublicInput = assembleWrapMainInput
+        { deferredValues: b3TreeWrapDv
+        , messagesForNextStepProofDigest: b3MsgForNextStepDigestTree
+        , messagesForNextWrapProofDigest: b3MsgForNextWrapDigestTree
+        }
+
+      b3Slot0PerProof = convertSlotUnf b3Slot0UnfRec
+      b3Slot1PerProof = convertSlotUnf b3Slot1UnfRec
+
+      -- prev_step_accs: slot 0 = NRR wrap's stored sg, slot 1 = b2 wrap's
+      -- stored sg (= b2 step opening sg).
+      b3Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      b3Slot0StepAcc = WeierstrassAffinePoint
+        { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+      b3Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      b3Slot1StepAcc = WeierstrassAffinePoint
+        { x: F b2TreeStepOpeningSgOracle.x, y: F b2TreeStepOpeningSgOracle.y }
+
+      -- Slot 0 (NRR wrap): reuse b0's NRR eval computation.
+      b3Slot0PrevEvalsW :: StepAllEvals (F WrapField)
+      b3Slot0PrevEvalsW = slot0PrevEvalsW
+
+      -- Slot 1 (Tree b2 wrap, real): oracles + evals over b2TreeWrapResult
+      -- .proof with b2 wrap's actual kimchi prev_challenges (iter 2bf
+      -- pattern: per-slot cpc = b2Slot{0,1}ChalPolyComm, per-slot chals
+      -- = b2Slot{0,1}RealBpChalsWrap).
+      b3Slot1PrevEvalsW :: StepAllEvals (F WrapField)
+      b3Slot1PrevEvalsW =
+        let
+          o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
+            { proof: b2TreeWrapResult.proof
+            , publicInput: b2TreeWrapResult.publicInputs
+            , prevChallenges:
+                [ { sgX: b2Slot0ChalPolyComm.x
+                  , sgY: b2Slot0ChalPolyComm.y
+                  , challenges: Vector.toUnfoldable b2Slot0RealBpChalsWrap
+                  }
+                , { sgX: b2Slot1ChalPolyComm.x
+                  , sgY: b2Slot1ChalPolyComm.y
+                  , challenges: Vector.toUnfoldable b2Slot1RealBpChalsWrap
+                  }
+                ]
+            }
+          mkPE p = { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
+        in
+          StepAllEvals
+            { ftEval1: F o.ftEval1
+            , publicEvals: PointEval
+                { zeta: F o.publicEvalZeta
+                , omegaTimesZeta: F o.publicEvalZetaOmega
+                }
+            , zEvals: PointEval (mkPE (ProofFFI.proofZEvals b2TreeWrapResult.proof))
+            , witnessEvals: map (PointEval <<< mkPE) (ProofFFI.proofWitnessEvals b2TreeWrapResult.proof)
+            , coeffEvals: map (PointEval <<< mkPE) (ProofFFI.proofCoefficientEvals b2TreeWrapResult.proof)
+            , sigmaEvals: map (PointEval <<< mkPE) (ProofFFI.proofSigmaEvals b2TreeWrapResult.proof)
+            , indexEvals: map (PointEval <<< mkPE) (ProofFFI.proofIndexEvals b2TreeWrapResult.proof)
+            }
+
+      b3TreeWrapAdviceInput :: BuildWrapAdviceInput 2 (Slots2 0 2)
+      b3TreeWrapAdviceInput =
+        { stepProof: b3StepResult.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: b3Slot0PerProof :< b3Slot1PerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt b3MsgForNextStepDigestTree) :: WrapField)
+        , prevStepAccs: b3Slot0StepAcc :< b3Slot1StepAcc :< Vector.nil
+        -- wrap_b2 forwarded step_b2's per-slot bp_chals wrap-expanded
+        -- into its msg_for_next_wrap_proof → b2Slot{0,1}RealBpChalsWrap.
+        , prevOldBpChals: slots2 Vector.nil
+            ( map F b2Slot0RealBpChalsWrap
+                :< map F b2Slot1RealBpChalsWrap
+                :< Vector.nil
+            )
+        , prevEvals: b3Slot0PrevEvalsW :< b3Slot1PrevEvalsW :< Vector.nil
+        , prevWrapDomainIndices:
+            F (fromInt 0 :: WrapField) :< F (fromInt 1 :: WrapField) :< Vector.nil
+        }
+
+      b3TreeWrapAdvice :: WrapAdvice 2 (Slots2 0 2)
+      b3TreeWrapAdvice = buildWrapAdvice b3TreeWrapAdviceInput
+
+      b3TreeWrapProveCtx =
+        { wrapMainConfig: treeWrapCtx.wrapMainConfig
+        , crs: pallasWrapSrs
+        , publicInput: b3TreeWrapPublicInput
+        , advice: b3TreeWrapAdvice
+        , kimchiPrevChallenges:
+            { sgX: b3Slot0ChalPolyComm.x
+            , sgY: b3Slot0ChalPolyComm.y
+            , challenges: b3Slot0RealBpChalsWrap
+            } :<
+            { sgX: b3Slot1ChalPolyComm.x
+            , sgY: b3Slot1ChalPolyComm.y
+            , challenges: b3Slot1RealBpChalsWrap
+            } :<
+            Vector.nil
+        }
+
+    b3TreeWrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots2 0 2)
+        (\e -> Exc.throwException e)
+        b3TreeWrapProveCtx
+        treeWrapCR
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple b3TreeWrapResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("b3.wrap.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_3_proved"
+
+    -- =====================================================================
+    -- INDUCTIVE CASE (b4): slot 0 = NRR (unchanged), slot 1 = REAL Tree b3
+    -- wrap proof replacing b2. Expected public_output = 4 (= 1 + s3 with
+    -- s3=3). Final round — by b4 all initial base-case dummy values have
+    -- cycled out of the visible slot-1 chain. Mirror of b3 step with
+    -- b2→b3 (prev) and b3→b4 (new) substitutions.
+    -- =====================================================================
+    liftEffect $ Trace.string "tree_proof_return.begin" "inductive_case_4"
+
+    let
+      b4RuleArgs =
+        { isBaseCase: false
+        , nrrInputVal: F zero                        -- NRR's output is always 0
+        , prevInputVal: F (fromInt 3 :: StepField)   -- b3's output was 3
+        }
+
+      -- b3's Tree step proof opening sg: reuse b3TreeWrapProofSg from the
+      -- b3 wrap block (= pallasProofOpeningSg b3StepResult.proof).
+      b3StepOpeningSg :: AffinePoint WrapField
+      b3StepOpeningSg = b3TreeWrapProofSg
+
+      -- Reuse b3StepAllEvals / b3TreeWrapDv from the b3 wrap block.
+
+      b4Slot1WrapPrevEvals :: AllEvals StepField
+      b4Slot1WrapPrevEvals = b3StepAllEvals
+
+      b4Slot1PrevChalPolys =
+        { sg: b3Slot0ChalPolyComm, challenges: b3Slot0RealBpChalsWrap }
+          :< { sg: b3Slot1ChalPolyComm, challenges: b3Slot1RealBpChalsWrap }
+          :< Vector.nil
+
+    { advice: b4Slot0Advice, challengePolynomialCommitment: b4Slot0ChalPolyComm } <- liftEffect $
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+
+    -- b4 slot-1 advice: verify REAL Tree b3 wrap proof.
+    { advice: b4Slot1Advice, challengePolynomialCommitment: b4Slot1ChalPolyComm } <- liftEffect $
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+        { publicInput: unit
+        , prevPublicInput: (F (fromInt 3 :: StepField))  -- b3 output = 3
+        , mostRecentWidth: 2
+        , wrapDomainLog2: treeWrapDomainLog2
+        , stepDomainLog2: treeSelfStepDomainLog2
+        , wrapVK: treeWrapCR.verifierIndex
+        , stepOpeningSg: b3StepOpeningSg
+        , kimchiPrevSg: b3StepOpeningSg
+        , wrapProof: b3TreeWrapResult.proof
+        , wrapPublicInput: b3TreeWrapResult.publicInputs
+        , prevChalPolys: b4Slot1PrevChalPolys
+        , wrapPlonkRaw:
+            { alpha: SizedF.unwrapF b3TreeWrapDv.plonk.alpha
+            , beta: SizedF.unwrapF b3TreeWrapDv.plonk.beta
+            , gamma: SizedF.unwrapF b3TreeWrapDv.plonk.gamma
+            , zeta: SizedF.unwrapF b3TreeWrapDv.plonk.zeta
+            }
+        , wrapPrevEvals: b4Slot1WrapPrevEvals
+        , wrapBranchData: b3TreeWrapDv.branchData
+        , wrapSpongeDigest: b3TreeWrapDv.spongeDigestBeforeEvaluations
+        , mustVerify: true
+        -- wrap_b3 hashed [b3Slot0RealBpChalsWrap, b3Slot1RealBpChalsWrap]
+        -- into its own msg_for_next_wrap_proof digest.
+        , wrapOwnPaddedBpChals:
+            b3Slot0RealBpChalsWrap
+              :< b3Slot1RealBpChalsWrap
+              :< Vector.nil
+        , fopState:
+            { deferredValues:
+                { plonk: b3TreeWrapDv.plonk
+                , combinedInnerProduct: b3TreeWrapDv.combinedInnerProduct
+                , xi: b3TreeWrapDv.xi
+                , bulletproofChallenges: b3TreeWrapDv.bulletproofPrechallenges
+                , b: b3TreeWrapDv.b
+                }
+            , shouldFinalize: false
+            , spongeDigestBeforeEvaluations: F b3TreeWrapDv.spongeDigestBeforeEvaluations
+            }
+        , stepAdvicePrevEvals: b4Slot1WrapPrevEvals
+        , kimchiPrevChallengesExpanded:
+            map
+              (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              b3TreeWrapDv.bulletproofPrechallenges
+        -- prevChallengesForStepHash: wrap_b3.stmt.msg_for_next_step
+        -- .old_bulletproof_challenges step-expanded. b3 step stored:
+        --   slot 0 (NRR verify): step-expansion of NRR wrap's bp_chals.
+        --   slot 1 (real wrap_b2 verify): step-expansion of wrap_b2's
+        --          bp_chals = b2TreeWrapDv.bulletproofPrechallenges
+        --          step-expanded.
+        , prevChallengesForStepHash:
+            map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+              nrr.wrapDv.bulletproofPrechallenges
+              :< map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+                   b2TreeWrapDv.bulletproofPrechallenges
+              :< Vector.nil
+        }
+
+    let
+      StepAdvice b4s0 = b4Slot0Advice
+      StepAdvice b4s1 = b4Slot1Advice
+      Tuple b4Slot0Sppw _ = b4s0.perProofSlotsCarrier
+      Tuple b4Slot1Sppw _ = b4s1.perProofSlotsCarrier
+
+      treeB4Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB4Advice = StepAdvice
+        { perProofSlotsCarrier: Tuple b4Slot0Sppw (Tuple b4Slot1Sppw unit)
+        , publicInput: unit
+        , publicUnfinalizedProofs:
+            Vector.head b4s0.publicUnfinalizedProofs
+              :< Vector.head b4s1.publicUnfinalizedProofs
+              :< Vector.nil
+        , messagesForNextWrapProof:
+            Vector.head b4s0.messagesForNextWrapProof
+              :< Vector.head b4s1.messagesForNextWrapProof
+              :< Vector.nil
+        , wrapVerifierIndex: extractWrapVKCommsAdvice treeWrapCR.verifierIndex
+        , kimchiPrevChallenges:
+            Vector.head b4s0.kimchiPrevChallenges
+              :< Vector.head b4s1.kimchiPrevChallenges
+              :< Vector.nil
+        }
+
+    b4StepResult <- liftEffect $
+      stepSolveAndProve
+        @TreeProofReturnPrevsSpec @67
+        @Unit @Unit
+        @(F StepField) @(FVar StepField)
+        @(F StepField) @(FVar StepField)
+        (\e -> Exc.throw ("b4 stepSolveAndProve: " <> show e))
+        treeCtx
+        (treeProofReturnRule b4RuleArgs)
+        treeStepCR
+        treeB4Advice
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple b4StepResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("b4.step.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_4_step_proved"
+
+    -- =====================================================================
+    -- b4 WRAP: wrap step_b4. Mirror of b3 wrap with b3→b4 (new) and
+    -- b2→b3 (prev) substitutions. Per-slot kimchi prev_challenges use
+    -- step_b4's slot{0,1}ChalPolyComm + wrap-expanded b4StepResult's
+    -- per-slot new bp_chals (iter 2bf pattern).
+    -- =====================================================================
+    let
+      -- b3 step opening sg: kimchi prev sg for step_b4 slot 1.
+      b3TreeStepOpeningSgOracle :: AffinePoint WrapField
+      b3TreeStepOpeningSgOracle = b3TreeWrapProofSg
+
+      b4StepKimchiPrevChalsSlot0 :: Vector StepIPARounds StepField
+      b4StepKimchiPrevChalsSlot0 = nrrBpChalsExpandedForSlot0
+
+      b4StepKimchiPrevChalsSlot1 :: Vector StepIPARounds StepField
+      b4StepKimchiPrevChalsSlot1 =
+        map (\sf -> toFieldPure (SizedF.unwrapF sf) stepEndoScalar)
+          b3TreeWrapDv.bulletproofPrechallenges
+
+      b4StepOraclesTree = ProofFFI.pallasProofOracles treeStepCR.verifierIndex
+        { proof: b4StepResult.proof
+        , publicInput: b4StepResult.publicInputs
+        , prevChallenges:
+            [ { sgX: nrrStepOpeningSgOracle.x
+              , sgY: nrrStepOpeningSgOracle.y
+              , challenges: Vector.toUnfoldable b4StepKimchiPrevChalsSlot0
+              }
+            , { sgX: b3TreeStepOpeningSgOracle.x
+              , sgY: b3TreeStepOpeningSgOracle.y
+              , challenges: Vector.toUnfoldable b4StepKimchiPrevChalsSlot1
+              }
+            ]
+        }
+
+      b4StepAllEvals :: AllEvals StepField
+      b4StepAllEvals =
+        { ftEval1: b4StepOraclesTree.ftEval1
+        , publicEvals:
+            { zeta: b4StepOraclesTree.publicEvalZeta
+            , omegaTimesZeta: b4StepOraclesTree.publicEvalZetaOmega
+            }
+        , zEvals: ProofFFI.proofZEvals b4StepResult.proof
+        , witnessEvals: ProofFFI.proofWitnessEvals b4StepResult.proof
+        , coeffEvals: ProofFFI.proofCoefficientEvals b4StepResult.proof
+        , sigmaEvals: ProofFFI.proofSigmaEvals b4StepResult.proof
+        , indexEvals: ProofFFI.proofIndexEvals b4StepResult.proof
+        }
+
+      b4TreeWrapDvInput :: WrapDeferredValuesInput 2
+      b4TreeWrapDvInput =
+        { proof: b4StepResult.proof
+        , verifierIndex: treeStepCR.verifierIndex
+        , publicInput: b4StepResult.publicInputs
+        , allEvals: b4StepAllEvals
+        , pEval0Chunks: [ b4StepOraclesTree.publicEvalZeta ]
+        , domainLog2: treeStepDomainLog2
+        , zkRows: 3
+        , srsLengthLog2: 16
+        , generator: (domainGenerator treeStepDomainLog2 :: StepField)
+        , shifts: (domainShifts treeStepDomainLog2 :: Vector 7 StepField)
+        , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
+            { domainLog2: treeStepDomainLog2, zkRows: 3, pt: b4StepOraclesTree.zeta }
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndoScalar
+        , linearizationPoly: Linearization.pallas
+        , prevSgs: nrrStepOpeningSgOracle :< b3TreeStepOpeningSgOracle :< Vector.nil
+        , prevChallenges:
+            b4StepKimchiPrevChalsSlot0
+              :< b4StepKimchiPrevChalsSlot1
+              :< Vector.nil
+        , proofsVerifiedMask: true :< true :< Vector.nil
+        }
+
+      b4TreeWrapDv = wrapComputeDeferredValues b4TreeWrapDvInput
+
+      b4MsgForNextStepDigestTree :: StepField
+      b4MsgForNextStepDigestTree = fromJust'
+        "b4 wrap prove: step PI[64] outer hash must exist" $
+        Array.index b4StepResult.publicInputs 64
+
+      b4TreeWrapProofSg :: AffinePoint WrapField
+      b4TreeWrapProofSg = ProofFFI.pallasProofOpeningSg b4StepResult.proof
+
+      PerProofUnfinalized b4Slot0UnfRec =
+        Vector.head (unwrap treeB4Advice).publicUnfinalizedProofs
+
+      PerProofUnfinalized b4Slot1UnfRec =
+        Vector.head (Vector.drop @1 (unwrap treeB4Advice).publicUnfinalizedProofs)
+
+      b4Slot0RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      b4Slot0RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          b4Slot0UnfRec.bulletproofChallenges
+
+      b4Slot1RealBpChalsWrap :: Vector WrapIPARounds WrapField
+      b4Slot1RealBpChalsWrap =
+        map
+          ( \(UnChecked v) ->
+              toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+                treeWrapEndoScalar
+          )
+          b4Slot1UnfRec.bulletproofChallenges
+
+      b4MsgForNextWrapDigestTree :: WrapField
+      b4MsgForNextWrapDigestTree = hashMessagesForNextWrapProofPureGeneral
+        { sg: b4TreeWrapProofSg
+        , paddedChallenges:
+            b4Slot0RealBpChalsWrap
+              :< b4Slot1RealBpChalsWrap
+              :< Vector.nil
+        }
+
+      b4TreeWrapPublicInput = assembleWrapMainInput
+        { deferredValues: b4TreeWrapDv
+        , messagesForNextStepProofDigest: b4MsgForNextStepDigestTree
+        , messagesForNextWrapProofDigest: b4MsgForNextWrapDigestTree
+        }
+
+      b4Slot0PerProof = convertSlotUnf b4Slot0UnfRec
+      b4Slot1PerProof = convertSlotUnf b4Slot1UnfRec
+
+      b4Slot0StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      b4Slot0StepAcc = WeierstrassAffinePoint
+        { x: F nrrStepOpeningSg.x, y: F nrrStepOpeningSg.y }
+      b4Slot1StepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+      b4Slot1StepAcc = WeierstrassAffinePoint
+        { x: F b3TreeStepOpeningSgOracle.x, y: F b3TreeStepOpeningSgOracle.y }
+
+      b4Slot0PrevEvalsW :: StepAllEvals (F WrapField)
+      b4Slot0PrevEvalsW = slot0PrevEvalsW
+
+      -- Slot 1 (Tree b3 wrap, real): oracles + evals over b3TreeWrapResult
+      -- .proof with b3 wrap's actual kimchi prev_challenges.
+      b4Slot1PrevEvalsW :: StepAllEvals (F WrapField)
+      b4Slot1PrevEvalsW =
+        let
+          o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
+            { proof: b3TreeWrapResult.proof
+            , publicInput: b3TreeWrapResult.publicInputs
+            , prevChallenges:
+                [ { sgX: b3Slot0ChalPolyComm.x
+                  , sgY: b3Slot0ChalPolyComm.y
+                  , challenges: Vector.toUnfoldable b3Slot0RealBpChalsWrap
+                  }
+                , { sgX: b3Slot1ChalPolyComm.x
+                  , sgY: b3Slot1ChalPolyComm.y
+                  , challenges: Vector.toUnfoldable b3Slot1RealBpChalsWrap
+                  }
+                ]
+            }
+          mkPE p = { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
+        in
+          StepAllEvals
+            { ftEval1: F o.ftEval1
+            , publicEvals: PointEval
+                { zeta: F o.publicEvalZeta
+                , omegaTimesZeta: F o.publicEvalZetaOmega
+                }
+            , zEvals: PointEval (mkPE (ProofFFI.proofZEvals b3TreeWrapResult.proof))
+            , witnessEvals: map (PointEval <<< mkPE) (ProofFFI.proofWitnessEvals b3TreeWrapResult.proof)
+            , coeffEvals: map (PointEval <<< mkPE) (ProofFFI.proofCoefficientEvals b3TreeWrapResult.proof)
+            , sigmaEvals: map (PointEval <<< mkPE) (ProofFFI.proofSigmaEvals b3TreeWrapResult.proof)
+            , indexEvals: map (PointEval <<< mkPE) (ProofFFI.proofIndexEvals b3TreeWrapResult.proof)
+            }
+
+      b4TreeWrapAdviceInput :: BuildWrapAdviceInput 2 (Slots2 0 2)
+      b4TreeWrapAdviceInput =
+        { stepProof: b4StepResult.proof
+        , whichBranch: F zero
+        , prevUnfinalizedProofs: b4Slot0PerProof :< b4Slot1PerProof :< Vector.nil
+        , prevMessagesForNextStepProofHash:
+            F (fromBigInt (toBigInt b4MsgForNextStepDigestTree) :: WrapField)
+        , prevStepAccs: b4Slot0StepAcc :< b4Slot1StepAcc :< Vector.nil
+        -- wrap_b3 forwarded step_b3's per-slot bp_chals wrap-expanded
+        -- into its msg_for_next_wrap_proof → b3Slot{0,1}RealBpChalsWrap.
+        , prevOldBpChals: slots2 Vector.nil
+            ( map F b3Slot0RealBpChalsWrap
+                :< map F b3Slot1RealBpChalsWrap
+                :< Vector.nil
+            )
+        , prevEvals: b4Slot0PrevEvalsW :< b4Slot1PrevEvalsW :< Vector.nil
+        , prevWrapDomainIndices:
+            F (fromInt 0 :: WrapField) :< F (fromInt 1 :: WrapField) :< Vector.nil
+        }
+
+      b4TreeWrapAdvice :: WrapAdvice 2 (Slots2 0 2)
+      b4TreeWrapAdvice = buildWrapAdvice b4TreeWrapAdviceInput
+
+      b4TreeWrapProveCtx =
+        { wrapMainConfig: treeWrapCtx.wrapMainConfig
+        , crs: pallasWrapSrs
+        , publicInput: b4TreeWrapPublicInput
+        , advice: b4TreeWrapAdvice
+        , kimchiPrevChallenges:
+            { sgX: b4Slot0ChalPolyComm.x
+            , sgY: b4Slot0ChalPolyComm.y
+            , challenges: b4Slot0RealBpChalsWrap
+            } :<
+            { sgX: b4Slot1ChalPolyComm.x
+            , sgY: b4Slot1ChalPolyComm.y
+            , challenges: b4Slot1RealBpChalsWrap
+            } :<
+            Vector.nil
+        }
+
+    b4TreeWrapResult <- liftEffect $
+      wrapSolveAndProve @1 @(Slots2 0 2)
+        (\e -> Exc.throwException e)
+        b4TreeWrapProveCtx
+        treeWrapCR
+
+    liftEffect $ for_ (Array.mapWithIndex Tuple b4TreeWrapResult.publicInputs) \(Tuple i x) ->
+      Trace.field ("b4.wrap.proof.public_input." <> show i) x
+
+    liftEffect $ Trace.string "tree_proof_return.end" "inductive_case_4_proved"
