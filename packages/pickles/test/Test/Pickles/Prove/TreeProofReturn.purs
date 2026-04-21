@@ -53,8 +53,6 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof, dummyWrapProofWithZ)
-import Pickles.Dummy.SimpleChain (simpleChainDummyPrevEvals)
-import Pickles.Dummy.Tree (treeDummyPlonk, treeDummyProofZ1, treeDummyProofZ2)
 import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Step.Prevs (StepSlot(..))
@@ -502,16 +500,32 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- dummy proof (lr=g0, sg=g0, delta=g0, evals=Dummy.evals,
         -- ft_eval1=Dummy.evals.ft_eval1) is deterministic and matches
         -- module-init dummyWrapProof.
+        -- z1/z2 replacement for deleted `Pickles.Dummy.Tree` sidecar:
+        -- r.cipRaw/bRaw hold the same Tree-runtime z1/z2 bits (verified
+        -- empirically: r.cipRaw == treeDummyProofZ1 and r.bRaw ==
+        -- treeDummyProofZ2). Labels are unintuitive because PS's old
+        -- Phase 4/4b ordering put z1/z2 slots at tocks 90/91 and b/cip
+        -- at 92/93, but OCaml has them swapped — the bits at tock 92/93
+        -- (PS's r.bRaw/cipRaw) correspond to OCaml's z2/z1.
         , wrapProof: dummyWrapProofWithZ
-            { z1: treeDummyProofZ1, z2: treeDummyProofZ2 }
+            { z1: treeStepCR.baseCaseDummies.cipRaw
+            , z2: treeStepCR.baseCaseDummies.bRaw
+            }
         , wrapPublicInput: slot1BaseCaseWrapPI
         , prevChalPolys:
             slot1BaseCaseDummyChalPoly
               :< slot1BaseCaseDummyChalPoly
               :< Vector.nil
               :: Vector PaddedLength _
-        , wrapPlonkRaw: treeDummyPlonk
-        , wrapPrevEvals: simpleChainDummyPrevEvals
+        -- treeDummyPlonk sidecar replacement: r.stepDummy{Alpha,Beta,Gamma,Zeta}
+        -- match bit-for-bit (already labeled in OCaml's RTL order).
+        , wrapPlonkRaw:
+            { alpha: treeStepCR.baseCaseDummies.stepDummyAlpha
+            , beta: treeStepCR.baseCaseDummies.stepDummyBeta
+            , gamma: treeStepCR.baseCaseDummies.stepDummyGamma
+            , zeta: treeStepCR.baseCaseDummies.stepDummyZeta
+            }
+        , wrapPrevEvals: treeStepCR.baseCaseDummies.stepDummyPrevEvals
         , wrapBranchData:
             { domainLog2: (fromInt treeSelfStepDomainLog2) :: StepField
             , proofsVerifiedMask: true :< true :< Vector.nil
@@ -849,7 +863,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
           o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
             { proof: dummyWrapProofWithZ
-                { z1: treeDummyProofZ1, z2: treeDummyProofZ2 }
+                { z1: treeStepCR.baseCaseDummies.cipRaw
+                , z2: treeStepCR.baseCaseDummies.bRaw
+                }
             , publicInput: slot1BaseCaseWrapPI
             , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
             }

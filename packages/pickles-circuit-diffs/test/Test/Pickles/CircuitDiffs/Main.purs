@@ -79,7 +79,6 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..))
-import Test.DummyFixture as DummyFixture
 import Test.Spec (SpecT, beforeAll_, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -617,4 +616,3 @@ spec =
         exactMatch "pseudo_choose_n3_step_circuit" (fromCompiledCircuit compilePseudoChooseN3Step)
         exactMatch "pseudo_choose_n3_wrap_circuit" (fromCompiledCircuit compilePseudoChooseN3Wrap)
         exactMatch "choose_key_n1_wrap_circuit" (fromCompiledCircuit compileChooseKeyN1Wrap)
-      DummyFixture.spec

@@ -48,7 +48,6 @@ import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, simpleChainStepDummyFopProofState) as Dummy
-import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -386,8 +385,17 @@ spec = describe "Pickles.Prove.SimpleChain" do
           baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
             :: Vector PaddedLength _
 
-      , wrapPlonkRaw: simpleChainDummyPlonk
-      , wrapPrevEvals: simpleChainDummyPrevEvals
+      -- Replaces the deleted `simpleChainDummyPlonk` sidecar. PS's
+      -- `r.alpha/beta/gamma/zeta` are WrapField-labeled LTR (alpha=chal 32),
+      -- while OCaml's Unfinalized.Constant.dummy plonk is RTL (alpha=chal 35).
+      -- Swap labels and coerce WrapField→StepField via bits.
+      , wrapPlonkRaw:
+          { alpha: coerceViaBits stepCR.baseCaseDummies.zeta
+          , beta: coerceViaBits stepCR.baseCaseDummies.gamma
+          , gamma: coerceViaBits stepCR.baseCaseDummies.beta
+          , zeta: coerceViaBits stepCR.baseCaseDummies.alpha
+          }
+      , wrapPrevEvals: stepCR.baseCaseDummies.stepDummyPrevEvals
       , wrapBranchData:
           { domainLog2: fromInt wrapDomainLog2 :: StepField
           , proofsVerifiedMask: false :< true :< Vector.nil

@@ -39,8 +39,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy.SimpleChain (simpleChainDummyPlonk, simpleChainDummyPrevEvals)
-import Pickles.Dummy.Tree as Tree
 import Pickles.Util.Fatal (fromJust')
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
@@ -878,11 +876,22 @@ simpleChainStepDummyFopProofState { proofsVerified } =
 
     inputs :: StepDummyInputs
     inputs =
-      { stepDummyAlpha: simpleChainDummyPlonk.alpha
-      , stepDummyBeta: simpleChainDummyPlonk.beta
-      , stepDummyGamma: simpleChainDummyPlonk.gamma
-      , stepDummyZeta: simpleChainDummyPlonk.zeta
-      , stepDummyPrevEvals: simpleChainDummyPrevEvals
+      -- NOTE: PS's `r.alpha/beta/gamma/zeta` are WrapField-typed AND
+      -- labeled left-to-right (r.alpha = chal 32 bits, r.zeta = chal 35
+      -- bits). OCaml's Unfinalized.Constant.dummy plonk record is
+      -- evaluated right-to-left (OCaml's alpha = chal 35 bits), so:
+      --   * bits at chal 35 → OCaml's alpha → read PS's r.zeta
+      --   * bits at chal 34 → OCaml's beta  → read PS's r.gamma
+      --   * bits at chal 33 → OCaml's gamma → read PS's r.beta
+      --   * bits at chal 32 → OCaml's zeta  → read PS's r.alpha
+      -- Also `coerceViaBits` crosses from WrapField (PS's r) to StepField
+      -- (the `stepDummy*` slot's type). Byte-identity verified empirically
+      -- against the deleted `simpleChainDummyPlonk` sidecar.
+      { stepDummyAlpha: coerceViaBits r.zeta
+      , stepDummyBeta: coerceViaBits r.gamma
+      , stepDummyGamma: coerceViaBits r.beta
+      , stepDummyZeta: coerceViaBits r.alpha
+      , stepDummyPrevEvals: r.stepDummyPrevEvals
       }
   in
     stepDummyUnfinalizedProofFromInputs inputs
@@ -915,11 +924,14 @@ treeStepDummyFopProofState { proofsVerified } =
 
     inputs :: StepDummyInputs
     inputs =
-      { stepDummyAlpha: Tree.treeDummyPlonk.alpha
-      , stepDummyBeta: Tree.treeDummyPlonk.beta
-      , stepDummyGamma: Tree.treeDummyPlonk.gamma
-      , stepDummyZeta: Tree.treeDummyPlonk.zeta
-      , stepDummyPrevEvals: simpleChainDummyPrevEvals
+      -- Step-side plonk challenges: `r.stepDummy{Alpha,Beta,Gamma,Zeta}`
+      -- are already labeled to match OCaml's right-to-left eval order
+      -- (alpha = chal 39, zeta = chal 36), so no swap needed here.
+      { stepDummyAlpha: r.stepDummyAlpha
+      , stepDummyBeta: r.stepDummyBeta
+      , stepDummyGamma: r.stepDummyGamma
+      , stepDummyZeta: r.stepDummyZeta
+      , stepDummyPrevEvals: r.stepDummyPrevEvals
       }
   in
     stepDummyUnfinalizedProofFromInputs inputs
