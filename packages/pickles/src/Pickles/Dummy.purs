@@ -41,7 +41,6 @@ import Data.Blake2s (blake2s256Bits)
 import Data.Foldable (class Foldable, foldl, foldr)
 import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
@@ -52,15 +51,13 @@ import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unno
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
-import Prim.Int (class Add, class Compare)
-import Prim.Ordering (LT)
+import Prim.Int (class Add)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
@@ -140,23 +137,21 @@ chal = do
 scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 scalarChal = chal
 
--- | Generate n challenges, reversed to match OCaml's right-to-left Vector.init evaluation.
+-- | Generate n challenges, reversed to match OCaml's right-to-left
+-- | Vector.init evaluation.
 -- |
 -- | OCaml pitfall: `Vector.init n ~f:(fun _ -> Ro.scalar_chal())` evaluates
 -- | the side-effecting function right-to-left — index n-1 gets chal counter 1,
--- | index 0 gets counter n. PureScript's `sequence` evaluates left-to-right,
--- | so we reverse after generation to match OCaml's index→counter mapping.
+-- | index 0 gets counter n. We reverse the generated vector so the stored
+-- | values match OCaml's index→counter mapping. (The effect order differs,
+-- | but only the chal counter is touched, so the end state is identical.)
 replicateChal
   :: forall @n f
-   . Compare 128 255 LT
-  => Curves.FieldSizeInBits f 255
+   . Curves.FieldSizeInBits f 255
   => Curves.PrimeField f
   => Reflectable n Int
   => RoM (Vector n (SizedF 128 f))
-replicateChal = do
-  let n = reflectType (Proxy @n)
-  arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
-  pure $ unsafePartial $ fromJust $ Vector.toVector @n (Array.reverse arr)
+replicateChal = Vector.reverse <$> Vector.generateA @n (\_ -> chal)
 
 -------------------------------------------------------------------------------
 -- | OCaml-primitive Ro-consuming dummies
@@ -725,11 +720,11 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
       }
     env = fieldEnv evalPoint challenges_
     gateConstraints = evaluate PallasTokens.constantTermTokens env
-    ftEval0Value = ftEval0
-      { permContribution: permContrib
-      , publicEval: negate evals.publicEvals.zeta
-      , gateConstraints
-      }
+    -- `ft_eval0 = permContribution - pEval0Folded - gateConstraints`
+    -- (mirrors `Pickles.Prove.Pure.Common.ftEval0`). Here the public
+    -- evaluation is a single-chunk value (`evals.publicEvals.zeta`), so
+    -- the Horner-fold degenerates to the value itself.
+    ftEval0Value = permContrib - evals.publicEvals.zeta - gateConstraints
 
     ftPointEval :: PointEval StepField
     ftPointEval = { zeta: ftEval0Value, omegaTimesZeta: evals.ftEval1 }
