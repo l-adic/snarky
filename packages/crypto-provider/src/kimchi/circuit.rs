@@ -2246,7 +2246,6 @@ pub fn vesta_create_proof_with_prev(
     Ok(External::new(proof))
 }
 
-
 /// Extract witness evaluations from a Vesta proof (Pallas/Fp circuits).
 /// Returns 30 values: 15 columns x 2 points (zeta, zeta*omega).
 #[napi]
@@ -2715,13 +2714,12 @@ pub fn pallas_sponge_state_before_beta(
             (sg, chals_expanded)
         })
         .collect();
-    let checkpoint =
-        generic::sponge_state_before_beta::<VestaGroup, VestaBaseSponge>(
-            &**verifier_index,
-            &**proof,
-            &public,
-            prev,
-        )?;
+    let checkpoint = generic::sponge_state_before_beta::<VestaGroup, VestaBaseSponge>(
+        &**verifier_index,
+        &**proof,
+        &public,
+        prev,
+    )?;
     Ok(External::new(checkpoint))
 }
 
@@ -3029,9 +3027,7 @@ where
     let comm = basis.get(i as usize).ok_or_else(|| {
         Error::new(
             Status::GenericFailure,
-            format!(
-                "lagrange commitment index {i} out of range (domain size {domain_size})"
-            ),
+            format!("lagrange commitment index {i} out of range (domain size {domain_size})"),
         )
     })?;
     let pt = comm.chunks.first().ok_or_else(|| {
@@ -3642,10 +3638,7 @@ pub fn vesta_make_wire_proof(
         ));
     }
     if sg.len() != 2 {
-        return Err(Error::new(
-            Status::GenericFailure,
-            "sg: expected 2 coords",
-        ));
+        return Err(Error::new(Status::GenericFailure, "sg: expected 2 coords"));
     }
 
     let opening = OpeningProof::<PallasGroup> {
