@@ -1759,20 +1759,6 @@ instance
     (StepProverT prevsSpec ds dw inputVal len carrier m)
     inputVal where
 
-  getProofWitnesses _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getPrevChallenges _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getMessages _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getOpeningProof _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getFopProofStates _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getSgOld _ =
-    unsafeCrashWith unusedV2LegacyMethod
-  getStepPerProofWitnesses _ =
-    unsafeCrashWith unusedV2LegacyMethod
   getMessagesForNextWrapProof _ =
     StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProof) ask
   getWrapVerifierIndex _ =
@@ -1782,9 +1768,6 @@ instance
   getStepUnfinalizedProofs _ =
     StepProverT $ map (\(StepAdvice r) -> r.publicUnfinalizedProofs) ask
 
-unusedV2LegacyMethod :: String
-unusedV2LegacyMethod =
-  "StepProverT does not implement StepWitnessM's legacy per-slot methods; use `getStepSlotsCarrier` from StepSlotsM instead"
 
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in the `StepProverT` monad and takes a `StepAdvice`. The circuit
