@@ -51,7 +51,7 @@ import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (getFinite, reflectFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
@@ -87,7 +87,8 @@ import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Prim.Int (class Add, class Mul)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
@@ -522,6 +523,7 @@ extractWrapVKForStepHash vk =
 dummyWrapTockPublicInput
   :: forall @n inputVal input
    . Reflectable n Int
+  => Compare n 3 LT
   => CircuitType StepField inputVal input
   => { wrapDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
@@ -674,12 +676,13 @@ dummyWrapTockPublicInput input =
     packedBranchData :: WrapField
     packedBranchData =
       let
-        mrw = reflectType (Proxy @n)
-        maskBits = case mrw of
+        -- `reflectFinite @n @3` witnesses `n ∈ {0, 1, 2}`, so the three
+        -- cases below are exhaustive. `unsafePartial` declares that
+        -- reliance on the type-level bound.
+        maskBits = unsafePartial case getFinite (reflectFinite @n @3) of
           0 -> 0
           1 -> 2
           2 -> 3
-          _ -> 0
       in
         Curves.fromInt (4 * input.wrapDomainLog2 + maskBits)
 
