@@ -32,11 +32,10 @@ pub fn make_rng() -> ChaCha20Rng {
         Ok(s) => s,
         Err(_) => {
             eprintln!(
-                "[crypto-provider] FATAL: {} environment variable must be set \
-                 to a u64 seed. crypto-provider has been patched to require \
-                 deterministic RNG; OsRng is no longer available. See \
-                 packages/pickles/test/Test/Pickles/Main.purs for context.",
-                SEED_ENV_VAR
+                "[crypto-provider] FATAL: {SEED_ENV_VAR} environment variable \
+                 must be set to a u64 seed. crypto-provider has been patched \
+                 to require deterministic RNG; OsRng is no longer available. \
+                 See packages/pickles/test/Test/Pickles/Main.purs for context."
             );
             std::process::exit(1);
         }
@@ -45,8 +44,8 @@ pub fn make_rng() -> ChaCha20Rng {
         Ok(seed) => ChaCha20Rng::seed_from_u64(seed),
         Err(e) => {
             eprintln!(
-                "[crypto-provider] FATAL: {} must parse as u64, got `{}`: {}",
-                SEED_ENV_VAR, raw, e
+                "[crypto-provider] FATAL: {SEED_ENV_VAR} must parse as u64, \
+                 got `{raw}`: {e}"
             );
             std::process::exit(1);
         }

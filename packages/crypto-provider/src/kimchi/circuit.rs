@@ -724,13 +724,14 @@ mod generic {
     /// 2. Absorb each prev_challenge commitment (sg_old)
     /// 3. Absorb public_comm (x_hat)
     /// 4. Absorb w_comm (witness commitments)
+    ///
     /// Then returns the sponge state (= where `fq_sponge.challenge()`
     /// would be called for beta in kimchi::verifier).
     ///
     /// For lookup-enabled circuits, this would need to also handle
     /// runtime_table / joint_combiner absorbs — but Mina doesn't use
     /// lookups in the pickles wrap path, so we skip those here.
-    pub fn sponge_state_before_beta<G, EFqSponge, EFrSponge>(
+    pub fn sponge_state_before_beta<G, EFqSponge>(
         verifier_index: &VerifierIndex<G, OpeningProof<G>>,
         proof: &ProverProof<G, OpeningProof<G>>,
         public_input: &[G::ScalarField],
@@ -740,7 +741,6 @@ mod generic {
         G: KimchiCurve,
         G::BaseField: PrimeField,
         EFqSponge: Clone + mina_poseidon::FqSponge<G::BaseField, G, G::ScalarField>,
-        EFrSponge: kimchi::plonk_sponge::FrSponge<G::ScalarField>,
         VerifierIndex<G, OpeningProof<G>>: Clone,
     {
         // Clone proof and swap in our prev_challenges, mirroring
@@ -2235,7 +2235,7 @@ pub fn vesta_create_proof_with_prev(
     // DIAG: find first divergent witness row (compare col0 values row by row)
     {
         for (row_idx, val) in witness[0].iter().enumerate() {
-            eprintln!("[vesta_witness] row {} col0 = {}", row_idx, val);
+            eprintln!("[vesta_witness] row {row_idx} col0 = {val}");
         }
     }
     let proof = generic::create_proof_with_prev::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
@@ -2716,7 +2716,7 @@ pub fn pallas_sponge_state_before_beta(
         })
         .collect();
     let checkpoint =
-        generic::sponge_state_before_beta::<VestaGroup, VestaBaseSponge, VestaScalarSponge>(
+        generic::sponge_state_before_beta::<VestaGroup, VestaBaseSponge>(
             &**verifier_index,
             &**proof,
             &public,
@@ -3525,6 +3525,7 @@ pub fn vesta_srs_b_poly_commitment(
 /// because the sponge field is `Vesta.BaseField` = Fq. See existing
 /// `vesta_proof_oracles` / `vesta_proof_commitments` for the same pattern.
 #[napi]
+#[allow(clippy::too_many_arguments)]
 pub fn vesta_make_wire_proof(
     w_comm: Vec<&VestaFieldExternal>,
     z_comm: Vec<&VestaFieldExternal>,
@@ -3700,7 +3701,8 @@ pub fn vesta_make_wire_proof(
     let mul_selector = take_pe();
     let emul_selector = take_pe();
     let endomul_scalar_selector = take_pe();
-    drop(take_pe);
+    // `take_pe`'s mutable borrow on `iter` ends here (NLL), so we can
+    // call `iter.next()` directly to assert all scalars were consumed.
     debug_assert!(iter.next().is_none());
 
     let evals_proof = ProofEvaluations {
