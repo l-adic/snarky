@@ -54,10 +54,10 @@ packages/pickles/src/Pickles/Linearization/Vesta.purs
 packages/pickles-codegen/rust/output/
 
 # Developer debug artifacts — regenerated on demand via
-# `tools/regen-fixtures.sh trace`. Consumed only by the manual
-# convergence diff scripts (`tools/*_trace_diff.sh`), not by the
-# automated test suite.
+# `tools/regen-fixtures.sh`. Consumed only by the manual convergence
+# diff scripts in `tools/`, not by the automated test suite.
 packages/pickles/test/fixtures/*.trace
+packages/pickles/test/fixtures/witness/
 
 # Generated dependency graph
 deps.svg
