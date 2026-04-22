@@ -1768,7 +1768,6 @@ instance
   getStepUnfinalizedProofs _ =
     StepProverT $ map (\(StepAdvice r) -> r.publicUnfinalizedProofs) ask
 
-
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in the `StepProverT` monad and takes a `StepAdvice`. The circuit
 -- | shape only depends on `prevsSpec` / `len` / `carrier`; advice

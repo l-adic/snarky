@@ -101,7 +101,6 @@ derive newtype instance (Monad (Snarky c t m)) => Applicative (SpongeM f c t m)
 derive newtype instance (Monad (Snarky c t m)) => Bind (SpongeM f c t m)
 derive newtype instance (Monad (Snarky c t m)) => Monad (SpongeM f c t m)
 
-
 -- | Run a SpongeM computation, returning only the result
 evalSpongeM
   :: forall f c t m a
@@ -237,7 +236,6 @@ evalPureSpongeM initialState computation =
 -- | Get the current sponge state (pure version)
 getSpongeState :: forall f. PureSpongeM f (Sponge f)
 getSpongeState = wrap get
-
 
 -- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where

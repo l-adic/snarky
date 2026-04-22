@@ -52,11 +52,9 @@ field label x = emitLineImpl label (BigInt.toString (toBigInt x))
 fieldF :: forall f. PrimeField f => String -> F f -> Effect Unit
 fieldF label (F x) = field label x
 
-
 -- | Trace a primitive int.
 int :: String -> Int -> Effect Unit
 int label x = emitLineImpl label (show x)
-
 
 -- | Trace an opaque string. Useful for sentinel markers (e.g. begin/end of
 -- | a circuit phase) where the value is structural rather than numeric.

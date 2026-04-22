@@ -71,6 +71,7 @@ type FqSpongeOutput f =
   , zetaChal :: SizedF 128 f
   , digest :: f
   }
+
 spongeTranscriptOptCircuit
   :: forall f sgOldN chunks t m r
    . PrimeField f

@@ -769,7 +769,6 @@ wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
   2 -> 15
   _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
 
-
 -------------------------------------------------------------------------------
 -- | Internal
 -------------------------------------------------------------------------------

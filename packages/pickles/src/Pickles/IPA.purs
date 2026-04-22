@@ -241,7 +241,6 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
 -- | Verification
 -------------------------------------------------------------------------------
 
-
 -- | Circuit version of b correctness check.
 -- |
 -- | Computes b = bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
@@ -263,7 +262,6 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -------------------------------------------------------------------------------
 -- | Bullet Reduce (lr_prod computation)
 -------------------------------------------------------------------------------
-
 
 -- | Circuit version of bullet reduce.
 -- |

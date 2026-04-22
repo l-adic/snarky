@@ -144,4 +144,3 @@ permContribution input =
   in
     term1 - term2 + boundary
 
-

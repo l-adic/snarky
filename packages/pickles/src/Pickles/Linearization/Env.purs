@@ -116,7 +116,6 @@ fieldEnv evalPoint challenges =
   , ifFeature: \{ onFalse } -> onFalse unit
   }
 
-
 -- | Monadic environment for direct-in-Snarky evaluation of linearization.
 -- | Pure operations (add, sub, var, cell, alphaPow, constants) return FVar directly.
 -- | Monadic operations (mul, pow, unnormalizedLagrangeBasis) run in monad n and create constraints.
