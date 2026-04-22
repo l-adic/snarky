@@ -15,7 +15,6 @@ module Pickles.Verify
   , incrementallyVerifyProof
   , ivpTrace
   , packStatement
-  , verify
   ) where
 
 import Prelude
@@ -44,7 +43,7 @@ import Prim.Int (class Add)
 import RandomOracle.Sponge (Sponge)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar as CVar
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, if_, label, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, assertEq, const_, exists, label, readCVar)
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams)
@@ -445,53 +444,3 @@ packStatement { proofState: ps, messagesForNextStepProof } =
       )
 
 -------------------------------------------------------------------------------
--- | verify (Step_verifier.verify)
--------------------------------------------------------------------------------
-
--- | Thin wrapper around incrementallyVerifyProof that asserts:
--- |   1. Sponge digest matches the claimed digest from the unfinalized proof
--- |   2. Bulletproof challenges match the claimed challenges (bypassed for base case)
--- |
--- | Reference: mina/src/lib/pickles/step_verifier.ml:1164-1222
-verify
-  :: forall publicInput sgOldN totalBases d f f' @g sf t m _l2 _l3 _l4 r
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => FieldSizeInBits f' 255
-  => PoseidonField f
-  => HasEndo f f'
-  => HasSqrt f
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => CircuitM f (KimchiConstraint f) t m
-  => PublicInputCommit publicInput f
-  => Reflectable d Int
-  => Reflectable sgOldN Int
-  => Add 1 _l2 7
-  => Add 1 _l3 d
-  => Add sgOldN 45 totalBases
-  => Add 1 _l4 totalBases
-  => IpaScalarOps f t m sf
-  -> IncrementallyVerifyProofParams f r
-  -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf
-  -> BoolVar f -- isBaseCase
-  -> FVar f -- claimed spongeDigestBeforeEvaluations
-  -> Maybe (Sponge (FVar f)) -- ^ Pre-computed sponge_after_index
-  -> SpongeM f (KimchiConstraint f) t m (BoolVar f)
-verify scalarOps params input isBaseCase claimedDigest mSpongeAfterIndex = labelM "verify" do
-  -- 1. Call incrementallyVerifyProof
-  output <- incrementallyVerifyProof @g scalarOps params input mSpongeAfterIndex
-
-  -- 2. Assert sponge digest matches unconditionally (step_verifier.ml:1294)
-  labelM "ivp_assert_digest" $ liftSnarky $
-    assertEq claimedDigest output.spongeDigestBeforeEvaluations
-
-  -- 3. Assert bulletproof challenges match with base-case bypass (lines 1209-1221)
-  labelM "ivp_assert_bp_challenges" $ liftSnarky $
-    for_ (Vector.zip input.deferredValues.bulletproofChallenges output.bulletproofChallenges)
-      \(Tuple c1 c2) -> do
-        c2' <- if_ isBaseCase c1 c2
-        assertEq c1 c2'
-
-  -- 4. Return bulletproof success
-  pure output.success

@@ -43,7 +43,6 @@ module Pickles.Prove.Step
   , buildStepAdviceWithOracles
   , stepCompile
   , stepSolveAndProve
-  , stepProve
   ) where
 
 import Prelude
@@ -2018,77 +2017,3 @@ stepSolveAndProve onError ctx rule compileResult advice = do
               , assignments
               }
 
--- | End-to-end prover: `stepCompile` then `stepSolveAndProve`.
--- | Single-call convenience; code that needs the compile output
--- | before the solver runs (e.g. feeding step VK into a wrap compile)
--- | should call the two phases directly.
-stepProve
-  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
-       pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable len Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-  => PrevsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext len
-  -> StepRule len inputVal input outputVal output prevInputVal prevInput
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
-  -> m (StepProveResult outputSize)
-stepProve onError ctx rule advice = do
-  compileResult <-
-    stepCompile
-      @prevsSpec
-      @outputSize
-      @inputVal
-      @input
-      @outputVal
-      @output
-      @prevInputVal
-      @prevInput
-      ctx
-      rule
-      advice
-  stepSolveAndProve
-    @prevsSpec
-    @outputSize
-    @inputVal
-    @input
-    @outputVal
-    @output
-    @prevInputVal
-    @prevInput
-    onError
-    ctx
-    rule
-    compileResult
-    advice

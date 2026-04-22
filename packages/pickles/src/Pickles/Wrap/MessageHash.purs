@@ -14,7 +14,6 @@
 module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProof
   , hashMessagesForNextWrapProofPureGeneral
-  , hashMessagesForNextWrapProofCircuit
   , hashMessagesForNextWrapProofCircuit'
   , dummyPaddingSpongeStates
   ) where
@@ -30,7 +29,7 @@ import Pickles.Sponge (SpongeM, absorb, absorbMany, getSpongeState, initialSpong
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField, hash)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.DSL (class CircuitM, FVar, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -84,49 +83,6 @@ hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
   in
     hash (flatChals <> [ sg.x, sg.y ])
 
--- | Circuit version: hash messages for next Wrap proof.
--- |
--- | Uses the Poseidon sponge in-circuit to absorb all field elements
--- | and squeeze the digest.
-hashMessagesForNextWrapProofCircuit
-  :: forall d f t m
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => Reflectable d Int
-  => { sg :: AffinePoint (FVar f)
-     , expandedChallenges :: Vector d (FVar f)
-     , dummyChallenges :: Vector d f -- compile-time constants
-     }
-  -> SpongeM f (KimchiConstraint f) t m (FVar f)
-hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } = labelM "hash-messages-for-next-wrap-proof" do
-  -- Absorb dummy challenges (constants, lifted to circuit variables)
-  Pickles.Sponge.absorbMany (map const_ dummyChallenges)
-  -- Absorb real expanded challenges
-  Pickles.Sponge.absorbMany expandedChallenges
-  -- Absorb sg point
-  absorb sg.x
-  absorb sg.y
-  -- Squeeze digest
-  squeeze
-
--- | General circuit version: takes n vectors of expanded bp challenges
--- | (all as circuit variables) + sg point.
--- |
--- | Matches OCaml's Wrap_hack.Checked.hash_messages_for_next_wrap_proof
--- | with max_proofs_verified = n. No padding — all vectors are circuit inputs.
--- |
--- | Serialization order from Messages_for_next_wrap_proof.to_field_elements:
--- | [old_bulletproof_challenges (flattened), sg.x, sg.y]
--- |
--- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
--- | The outer container is taken as a `Foldable`, so this works for both
--- | `Vector n` (used by `wrapVerify`) and `Array` (used by per-slot
--- | hashing in `wrapMain`, where the runtime slot widths erase the
--- | type-level length). The inner `Vector d` keeps its type-level
--- | length because every slot's bp-challenge stack is the same width
--- | (= `WrapIPARounds`).
 hashMessagesForNextWrapProofCircuit'
   :: forall outer d f t m
    . PrimeField f

@@ -24,7 +24,6 @@
 module Pickles.Prove.Pure.Common
   ( -- * Evaluation recombination
     actualEvaluation
-  , evalsOfSplitPoint
   -- * Bulletproof
   , BulletproofBInput
   , BulletproofBOutput
@@ -55,7 +54,6 @@ import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
-import Pickles.Types (PointEval(..)) as PT
 import Pickles.Verify.Types (PlonkInCircuit, PlonkMinimal, expandPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Compare)
@@ -100,40 +98,6 @@ actualEvaluation rounds pt e =
   in
     foldr (\fx acc -> fx + ptN * acc) zero e
 
--- | Convenience wrapper: combine a `PointEval (Array f)` (a pair of
--- | chunked evaluations at `zeta` and `omega·zeta`) into a
--- | `PointEval f` (a pair of combined field-element evaluations).
--- |
--- | Matches the per-column step of OCaml's `evals_of_split_evals`
--- | (`plonk_checks.ml:102-105`).
-evalsOfSplitPoint
-  :: forall f
-   . Semiring f
-  => Int
-  -> f
-  -> f
-  -> PT.PointEval (Array f)
-  -> PT.PointEval f
-evalsOfSplitPoint rounds zeta zetaw (PT.PointEval p) =
-  PT.PointEval
-    { zeta: actualEvaluation rounds zeta p.zeta
-    , omegaTimesZeta: actualEvaluation rounds zetaw p.omegaTimesZeta
-    }
-
---------------------------------------------------------------------------------
--- Bulletproof — `computeBpChalsAndB`
---------------------------------------------------------------------------------
-
--- | Input to `computeBpChalsAndB`.
--- |
--- | * `rawPrechallenges` — raw 128-bit opening prechallenges from the
--- |   proof oracle.
--- | * `endo` — scalar endo coefficient used to expand each
--- |   prechallenge to a full field element (OCaml step.ml uses
--- |   `Endo.Wrap_inner_curve.scalar`, which in PS terms is the wrap
--- |   scalar-field endo).
--- | * `zeta`, `zetaw` — evaluation points.
--- | * `r` — the batching challenge.
 type BulletproofBInput d f =
   { rawPrechallenges :: Vector d (SizedF 128 f)
   , endo :: f

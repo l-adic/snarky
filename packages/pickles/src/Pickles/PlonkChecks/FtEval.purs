@@ -14,18 +14,11 @@
 -- | Reference: mina/src/lib/pickles/plonk_checks/plonk_checks.ml (ft_eval0)
 module Pickles.PlonkChecks.FtEval
   ( ftEval0
-  , ftEval0Circuit
   ) where
 
 import Prelude
 
-import Pickles.Linearization.FFI (class LinearizationFFI)
-import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks.GateConstraints (GateConstraintInput, evaluateGateConstraints)
-import Pickles.PlonkChecks.Permutation (PermutationInput, permContributionCircuit)
-import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, label, sub_)
-import Snarky.Curves.Class (class HasEndo, class PrimeField)
+
 
 -------------------------------------------------------------------------------
 -- | Pure (Field-level) computation
@@ -52,32 +45,3 @@ ftEval0
 ftEval0 { permContribution: perm, publicEval, gateConstraints } =
   perm + publicEval - gateConstraints
 
--------------------------------------------------------------------------------
--- | Circuit-level computation
--------------------------------------------------------------------------------
-
--- | Compute ft_eval0 in-circuit using precomputed alpha powers.
--- |
--- | ft_eval0 = permContribution + publicEval - gateConstraints
--- |
--- | Uses evaluateGateConstraints which matches OCaml's scalars_env approach
--- | (precomputed alpha powers, array lookups instead of pow(alpha, n)).
-ftEval0Circuit
-  :: forall f f' g c t m r
-   . PrimeField f
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f c t m
-  => LinearizationFFI f g
-  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
-  -> FVar f -- ^ zeta (expanded)
-  -> { permInput :: PermutationInput (FVar f)
-     , gateInput :: GateConstraintInput (FVar f)
-     , publicEval :: FVar f
-     }
-  -> Snarky c t m (FVar f)
-ftEval0Circuit params zeta { permInput, gateInput, publicEval } = label "ft-eval0" do
-  perm <- permContributionCircuit permInput
-  gate <- evaluateGateConstraints params zeta gateInput
-  let permPlusPublic = add_ perm publicEval
-  pure $ sub_ permPlusPublic gate

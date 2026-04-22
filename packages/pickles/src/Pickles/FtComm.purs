@@ -6,7 +6,6 @@
 -- | Reference: kimchi/src/verifier.rs ft_comm computation, common.ml:227-246
 module Pickles.FtComm
   ( ftComm
-  , squareN
   ) where
 
 import Prelude
@@ -20,22 +19,6 @@ import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, label)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Data.EllipticCurve (AffinePoint)
-
--- | Compute x^(2^k) via k repeated squarings in-circuit.
--- |
--- | Used to efficiently compute ζ^domain_size and ζ^max_poly_size,
--- | since both domain_size and max_poly_size are powers of 2 in Kimchi.
-squareN
-  :: forall f c t m
-   . CircuitM f c t m
-  => Int
-  -> FVar f
-  -> Snarky c t m (FVar f)
-squareN k x
-  | k <= 0 = pure x
-  | otherwise = do
-      x2 <- pure x * pure x
-      squareN (k - 1) x2
 
 -- | Compute the ft polynomial commitment in-circuit.
 -- |

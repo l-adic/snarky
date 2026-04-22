@@ -29,7 +29,6 @@ module Pickles.Prove.Wrap
   , WrapProveResult
   , wrapCompile
   , wrapSolveAndProve
-  , wrapProve
   , extractStepVKComms
   , stepVkForCircuit
   , buildWrapMainConfig
@@ -616,59 +615,6 @@ wrapSolveAndProve onError ctx compileResult = do
               , assignments
               }
 
--- | End-to-end wrap prover: `wrapCompile` then `wrapSolveAndProve`.
-wrapProve
-  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred m
-   . CircuitGateConstructor WrapField PallasG
-  => Reflectable branches Int
-  => Reflectable mpv Int
-  => Add 1 branchesPred branches
-  => Compare mpv 3 LT
-  => Add mpv 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => PadSlots slots mpv
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => Monad m
-  => (Error -> m WrapProveResult)
-  -> WrapProveContext branches mpv slots
-  -> m WrapProveResult
-wrapProve onError ctx = do
-  compileResult <- wrapCompile @branches @slots
-    { wrapMainConfig: ctx.wrapMainConfig, crs: ctx.crs }
-    ctx.advice
-  wrapSolveAndProve @branches @slots onError ctx compileResult
-
---------------------------------------------------------------------------------
--- Wrap VK extraction helpers for Simple_chain driver
---
--- These helpers let the Simple_chain test (and anything else with the
--- same shape) build a `WrapMainConfig 1` from a compiled step
--- `VerifierIndex` + a Vesta SRS, without hand-wiring all the
--- lagrange-base / blinding / domain plumbing. They also expose a
--- baseline `zeroWrapAdvice` for `wrapCompile`'s advice slot (compile
--- doesn't inspect values, just the type shape).
---
--- References:
---   `git show 1f9611e3:packages/pickles/test/Test/Pickles/Prove/WrapE2E.purs`
---     lines 56-113 (old `extractStepVKComms` / `stepVkForCircuit` /
---     `buildWrapMainConfig` helpers, ported here with updated lagrange
---     lookup shape).
---   `packages/pickles/src/Pickles/Wrap/Main.purs:104-111`
---     (current `WrapMainConfig` record shape).
---------------------------------------------------------------------------------
-
--- | Extract the step-side (Vesta curve) VK commitments from a compiled
--- | step verifier index, in the `StepVK WrapField` shape `wrapMain`
--- | embeds in its config (as circuit variables via `stepVkForCircuit`).
--- |
--- | The 27 column commitments are returned in `to_batch` order by the
--- | FFI: `index (6) + coefficient (15) + sigma (6)`. The 7th sigma
--- | comes from a separate FFI call. Pallas column comms are Vesta
--- | points with coordinates in `Vesta.BaseField = WrapField`.
 extractStepVKComms
   :: VerifierIndex VestaG StepField
   -> StepVK WrapField

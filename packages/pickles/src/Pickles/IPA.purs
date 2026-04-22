@@ -29,12 +29,9 @@ module Pickles.IPA
   , computeBCircuit
   -- Challenge extraction (returns 128-bit scalar challenges)
   , extractScalarChallenges
-  , extractScalarChallengesPure
   -- Bullet reduce (lr_prod computation)
-  , bulletReduce
   , bulletReduceCircuit
   -- Verification
-  , bCorrect
   , bCorrectCircuit
   -- Combined polynomial commitment
   , combinePolynomials
@@ -47,7 +44,7 @@ module Pickles.IPA
 import Prelude
 
 import Data.Fin (getFinite, unsafeFinite)
-import Data.Foldable (fold, foldM, for_, product)
+import Data.Foldable (foldM, for_, product)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
@@ -57,7 +54,7 @@ import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
+import Pickles.Sponge (SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar)
 import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -67,7 +64,7 @@ import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -------------------------------------------------------------------------------
@@ -240,42 +237,10 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
   -- squeeze_scalar with constrain_low_bits:false (matches OCaml's squeeze_scalar)
   squeezeScalar params
 
--- | Pure version of extractScalarChallenges for testing.
--- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
-extractScalarChallengesPure
-  :: forall n f
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => Vector n (LrPair f)
-  -> PureSpongeM f (Vector n (SizedF 128 f))
-extractScalarChallengesPure pairs = for pairs \{ l, r } -> do
-  absorb l.x
-  absorb l.y
-  absorb r.x
-  absorb r.y
-  squeezeScalarChallengePure
-
 -------------------------------------------------------------------------------
 -- | Verification
 -------------------------------------------------------------------------------
 
--- | Pure version of b correctness check.
--- |
--- | Verifies: b == bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
--- |
--- | This is the "b_correct" check from wrap_verifier.ml.
-bCorrect
-  :: forall n f
-   . Reflectable n Int
-  => PrimeField f
-  => BCorrectInput n f
-  -> Boolean
-bCorrect input@{ expectedB } =
-  let
-    computedB = computeB input.challenges { zeta: input.zeta, zetaOmega: input.zetaOmega, evalscale: input.evalscale }
-  in
-    computedB == expectedB
 
 -- | Circuit version of b correctness check.
 -- |
@@ -299,47 +264,6 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -- | Bullet Reduce (lr_prod computation)
 -------------------------------------------------------------------------------
 
--- | Pure version of bullet reduce.
--- |
--- | Computes: lr_prod = Σ_i [endoInv(L_i, u_i) + endo(R_i, u_i)]
--- |
--- | Where u_i are 128-bit scalar challenges and endo/endoInv apply the
--- | endomorphism-based scalar multiplication.
--- |
--- | This corresponds to `bullet_reduce` in wrap_verifier.ml / step_verifier.ml.
-bulletReduce
-  :: forall n @f f' @g _l
-   . Reflectable n Int
-  => Add 1 _l n
-  => FieldSizeInBits f' 255
-  => FieldSizeInBits f 255
-  => HasEndo f f'
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => BulletReduceInput n f
-  -> g
-bulletReduce { pairs, challenges } =
-  let
-    -- Compute one term: endoInv(L, u) + endo(R, u)
-    -- where u is the full field challenge
-    computeTerm :: LrPair f -> SizedF 128 f -> g
-    computeTerm { l, r } raw128 =
-      let
-        fullChal = expandToEndoScalar raw128 :: f'
-        fullChalInv = recip fullChal
-        -- L * chal_inv
-        lPoint = fromAffine @f @g l
-        lScaled = scalarMul fullChalInv lPoint
-        -- R * chal
-        rPoint = fromAffine @f @g r
-        rScaled = scalarMul fullChal rPoint
-      in
-        lScaled <> rScaled
-
-    -- Compute all terms and sum them
-    terms = Vector.zipWith computeTerm pairs challenges
-  in
-    fold terms
 
 -- | Circuit version of bullet reduce.
 -- |

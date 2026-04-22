@@ -13,8 +13,6 @@ module Pickles.Dummy
   , wrapDummyUnfinalizedProof
   , stepDummyUnfinalizedProof
   , wrapDomainLog2ForProofsVerified
-  , dummyProofWitness
-  , dummyFinalizeOtherProofParams
   , Ro
   , mkRo
   , initialRo
@@ -52,15 +50,12 @@ import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
 import Pickles.Linearization.Interpreter (evaluate)
 import Pickles.Linearization.Pallas as PallasTokens
-import Pickles.Linearization.Types (mkLinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.FtEval (ftEval0)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
-import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (initialSponge)
-import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofParams)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (UnfinalizedProof)
@@ -70,7 +65,7 @@ import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, coerceViaBits, const_, fromBits)
+import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, fromBits)
 import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
@@ -774,40 +769,6 @@ wrapDomainLog2ForProofsVerified proofsVerified = case proofsVerified of
   2 -> 15
   _ -> unsafeCrashWith "wrapDomainLog2: proofs_verified must be 0, 1, or 2"
 
--- | Zero-valued proof witness for use in base case bootstrapping.
--- |
--- | The evals are zero because the FOP circuit skips evaluation checks
--- | when shouldFinalize = false. Using zero avoids any field-arithmetic
--- | degenerate cases that random values might trigger.
-dummyProofWitness :: forall f. Curves.PrimeField f => ProofWitness f
-dummyProofWitness =
-  { allEvals:
-      { ftEval1: zero
-      , publicEvals: { zeta: zero, omegaTimesZeta: zero }
-      , zEvals: { zeta: zero, omegaTimesZeta: zero }
-      , indexEvals: Vector.generate \_ -> { zeta: zero, omegaTimesZeta: zero }
-      , witnessEvals: Vector.generate \_ -> { zeta: zero, omegaTimesZeta: zero }
-      , coeffEvals: Vector.generate \_ -> { zeta: zero, omegaTimesZeta: zero }
-      , sigmaEvals: Vector.generate \_ -> { zeta: zero, omegaTimesZeta: zero }
-      }
-  }
-
--- | Stub FinalizeOtherProof params for base case bootstrapping.
--- |
--- | Domain/endo/linearization values are placeholders — the FOP circuit uses
--- | these as compile-time constants but the actual verification is skipped when
--- | shouldFinalize = false.
-dummyFinalizeOtherProofParams :: forall f. Curves.PrimeField f => FinalizeOtherProofParams f ()
-dummyFinalizeOtherProofParams =
-  { domain:
-      { generator: const_ one :: FVar f
-      , shifts: Vector.generate \_ -> (const_ one :: FVar f)
-      }
-  , domainLog2: 0
-  , srsLengthLog2: 0
-  , endo: zero
-  , linearizationPoly: mkLinearizationPoly []
-  }
 
 -------------------------------------------------------------------------------
 -- | Internal

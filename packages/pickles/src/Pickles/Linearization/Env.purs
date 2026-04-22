@@ -7,7 +7,6 @@ module Pickles.Linearization.Env
   , module ReExports
   , EvalPoint
   , Challenges
-  , circuitEnv
   , buildCircuitEnvM
   , fieldEnv
   , lookupCell
@@ -117,40 +116,6 @@ fieldEnv evalPoint challenges =
   , ifFeature: \{ onFalse } -> onFalse unit
   }
 
--- | Construct a circuit environment for evaluating linearization polynomials
-circuitEnv
-  :: forall f f' c t m
-   . CircuitM f c t m
-  => PoseidonField f
-  => HasEndo f f'
-  => EvalPoint (FVar f)
-  -> Challenges (FVar f)
-  -> Env (Snarky c t m (FVar f))
-circuitEnv evalPoint challenges =
-  { add: \x y -> add_ <$> x <*> y
-  , sub: \x y -> sub_ <$> x <*> y
-  , mul: \x y -> join (Circuit.mul_ <$> x <*> y)
-  , pow: \x n -> x >>= \v -> pow_ v n
-  , var: \col row -> pure $ lookupCell evalPoint col row
-  , cell: identity -- cell is identity since var already returns the value
-  , alphaPow: \n -> pow_ challenges.alpha n
-  , mds: \{ row, col } -> pure $ const_ $ lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient:
-      let
-        EndoBase eb = endoBase @f @f'
-      in
-        pure $ const_ eb
-  , field: \hex -> pure $ const_ $ unsafePartial parseHex hex
-  , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
-  , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args
-  , jointCombiner: pure challenges.jointCombiner
-  , beta: pure challenges.beta
-  , gamma: pure challenges.gamma
-  -- All features are treated as disabled for testing, matching Rust behavior.
-  -- SkipIfNot(feat): skip when feature disabled → use onFalse (push zero)
-  -- SkipIf(feat): don't skip when feature disabled → use onTrue (evaluated)
-  , ifFeature: \{ onFalse } -> onFalse unit
-  }
 
 -- | Monadic environment for direct-in-Snarky evaluation of linearization.
 -- | Pure operations (add, sub, var, cell, alphaPow, constants) return FVar directly.
