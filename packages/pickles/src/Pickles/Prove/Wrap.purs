@@ -53,10 +53,9 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
-import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms, vestaCreateProofWithPrev)
+import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -284,17 +283,11 @@ buildWrapAdvice input =
     -- `WrapProofMessages` shape.
     commits = pallasProofCommitments input.stepProof
 
-    tCommVec :: Vector 7 (WeierstrassAffinePoint VestaG (F WrapField))
-    tCommVec =
-      fromJust'
-        "Wrap advice tComm: step proof's `pallasProofCommitments.tComm` expected to yield 7 t-commitments" $
-        Vector.toVector @7 (map mkVestaPt commits.tComm)
-
     messagesOut :: WrapProofMessages (WeierstrassAffinePoint VestaG (F WrapField))
     messagesOut = WrapProofMessages
       { wComm: map mkVestaPt commits.wComm
       , zComm: mkVestaPt commits.zComm
-      , tComm: tCommVec
+      , tComm: map mkVestaPt (tCommVec commits)
       }
 
     -- ===== Req.Openings_proof. =====
@@ -304,19 +297,13 @@ buildWrapAdvice input =
     -- `StepField` values; cross-field `toShifted` packs them as
     -- `Type1 (F WrapField)` via the `Shifted (F StepField)
     -- (Type1 (F WrapField))` instance.
-    lrRaw :: Array { l :: AffinePoint WrapField, r :: AffinePoint WrapField }
-    lrRaw = pallasProofOpeningLr input.stepProof
-
     lrVec
       :: Vector StepIPARounds
            { l :: WeierstrassAffinePoint VestaG (F WrapField)
            , r :: WeierstrassAffinePoint VestaG (F WrapField)
            }
-    lrVec =
-      fromJust'
-        "Wrap advice lrVec: step proof's `pallasProofOpeningLr` expected to yield StepIPARounds (=16) lr-pairs" $
-        Vector.toVector @StepIPARounds
-          (map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r }) lrRaw)
+    lrVec = map (\p -> { l: mkVestaPt p.l, r: mkVestaPt p.r })
+      (pallasProofOpeningLrVec input.stepProof)
 
     z1Step :: StepField
     z1Step = pallasProofOpeningZ1 input.stepProof
@@ -620,35 +607,16 @@ extractStepVKComms
   -> StepVK WrapField
 extractStepVKComms vk =
   let
-    raw :: Array (AffinePoint WrapField)
-    raw = pallasVerifierIndexColumnComms vk
-
-    idx6 :: Vector 6 (AffinePoint WrapField)
-    idx6 = fromJust'
-      "extractStepVKComms idx6: `pallasVerifierIndexColumnComms` must yield ≥ 6 column commitments for idx take"
-      (Vector.toVector @6 (Array.take 6 raw))
-
-    coeff15 :: Vector 15 (AffinePoint WrapField)
-    coeff15 = fromJust'
-      "extractStepVKComms coeff15: `pallasVerifierIndexColumnComms` must yield ≥ 21 column commitments for coeff take"
-      (Vector.toVector @15 (Array.take 15 (Array.drop 6 raw)))
-
-    sig6 :: Vector 6 (AffinePoint WrapField)
-    sig6 = fromJust'
-      "extractStepVKComms sig6: `pallasVerifierIndexColumnComms` must yield ≥ 27 column commitments for sigma take"
-      (Vector.toVector @6 (Array.drop 21 raw))
-
-    sigLast :: AffinePoint WrapField
-    sigLast = pallasSigmaCommLast vk
+    comms = pallasVerifierIndexCommitments vk
   in
-    { sigmaComm: Vector.snoc sig6 sigLast
-    , coefficientsComm: coeff15
-    , genericComm: Vector.index idx6 (unsafeFinite @6 0)
-    , psmComm: Vector.index idx6 (unsafeFinite @6 1)
-    , completeAddComm: Vector.index idx6 (unsafeFinite @6 2)
-    , mulComm: Vector.index idx6 (unsafeFinite @6 3)
-    , emulComm: Vector.index idx6 (unsafeFinite @6 4)
-    , endomulScalarComm: Vector.index idx6 (unsafeFinite @6 5)
+    { sigmaComm: comms.sigma
+    , coefficientsComm: comms.coeff
+    , genericComm: Vector.index comms.index (unsafeFinite @6 0)
+    , psmComm: Vector.index comms.index (unsafeFinite @6 1)
+    , completeAddComm: Vector.index comms.index (unsafeFinite @6 2)
+    , mulComm: Vector.index comms.index (unsafeFinite @6 3)
+    , emulComm: Vector.index comms.index (unsafeFinite @6 4)
+    , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
 
 -- | Lift a constant `StepVK WrapField` into a `StepVK (FVar WrapField)`

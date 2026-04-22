@@ -85,11 +85,25 @@ module Pickles.ProofFFI
   , PointEval
   , SpongeCheckpoint
   , LrPair
+  -- Typed wrappers: length-checked at the FFI boundary
+  , VerifierIndexCommitments
+  , pallasVerifierIndexCommitments
+  , vestaVerifierIndexCommitments
+  , pallasProofOpeningPrechallengesVec
+  , vestaProofOpeningPrechallengesVec
+  , pallasProofOpeningLrVec
+  , vestaProofOpeningLrVec
+  , tCommVec
   ) where
+
+import Prelude
 
 import Data.Array as Array
 import Data.Unit (Unit)
 import Data.Vector (Vector)
+import Data.Vector as Vector
+import Pickles.Types (StepIPARounds, WrapIPARounds)
+import Pickles.Util.Fatal (fromJust')
 import Snarky.Backend.Kimchi.Types (CRS, ProverIndex, VerifierIndex)
 import Snarky.Circuit.DSL (SizedF)
 import Snarky.Curves.Pallas as Pallas
@@ -555,3 +569,139 @@ instance ProofFFI Vesta.BaseField Pallas.G where
   domainGenerator = vestaDomainGenerator
   computeB0 = vestaComputeB0
   proofIpaRounds = vestaProofIpaRounds
+
+--------------------------------------------------------------------------------
+-- Typed wrappers
+--
+-- The raw `foreign import` functions return `Array a` because the FFI marshals
+-- JS arrays. The wrappers below apply the length check once, at the FFI
+-- boundary, so library code downstream can use `Vector n a` ops without
+-- repeating the `fromJust' ... Vector.toVector @n` dance at every call site.
+--
+-- Each wrapper panics (via `fromJust'`) if the underlying FFI returns an
+-- array of the wrong length. That's a programmer/FFI-contract error, not a
+-- user-recoverable condition — the Rust side is expected to uphold the
+-- shape invariant.
+--------------------------------------------------------------------------------
+
+-- | Verifier-index polynomial commitments, split into the three groups
+-- | Pickles consumers actually work with. Layout (matches OCaml
+-- | `Plonk_verification_key_evals`):
+-- |   `index`  = 6 selector commitments (generic, psm, complete_add, mul,
+-- |              emul, endomul_scalar)
+-- |   `coeff`  = 15 coefficient commitments
+-- |   `sigma`  = 7 sigma commitments (6 from `*VerifierIndexColumnComms`
+-- |              + 1 from `*SigmaCommLast`, snoc'd into a Vector 7)
+type VerifierIndexCommitments f =
+  { index :: Vector 6 (AffinePoint f)
+  , coeff :: Vector 15 (AffinePoint f)
+  , sigma :: Vector 7 (AffinePoint f)
+  }
+
+-- | Vector-typed split of `pallasVerifierIndexColumnComms` +
+-- | `pallasSigmaCommLast` into `VerifierIndexCommitments`.
+pallasVerifierIndexCommitments
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> VerifierIndexCommitments Pallas.ScalarField
+pallasVerifierIndexCommitments vk =
+  splitVkCommitments (pallasVerifierIndexColumnComms vk) (pallasSigmaCommLast vk)
+
+-- | Vector-typed split of `vestaVerifierIndexColumnComms` +
+-- | `vestaSigmaCommLast` into `VerifierIndexCommitments`.
+vestaVerifierIndexCommitments
+  :: VerifierIndex Pallas.G Vesta.BaseField
+  -> VerifierIndexCommitments Vesta.ScalarField
+vestaVerifierIndexCommitments vk =
+  splitVkCommitments (vestaVerifierIndexColumnComms vk) (vestaSigmaCommLast vk)
+
+-- | Shared splitter. Raw layout:
+-- |   [ index(6) ; coeff(15) ; sigma-except-last(6) ]  = 27 points
+-- | `sigmaLast` is snoc'd onto `sigma6` to produce the exported `Vector 7`.
+splitVkCommitments
+  :: forall f
+   . Array (AffinePoint f)
+  -> AffinePoint f
+  -> VerifierIndexCommitments f
+splitVkCommitments raw sigmaLast =
+  let
+    mkIndex = fromJust' "VerifierIndex index commits (6 points)"
+      <<< Vector.toVector @6
+    mkCoeff = fromJust' "VerifierIndex coeff commits (15 points)"
+      <<< Vector.toVector @15
+    mkSigma6 = fromJust' "VerifierIndex sigma commits (6 points, pre-sigmaLast)"
+      <<< Vector.toVector @6
+  in
+    { index: mkIndex (Array.take 6 raw)
+    , coeff: mkCoeff (Array.take 15 (Array.drop 6 raw))
+    , sigma: Vector.snoc (mkSigma6 (Array.drop 21 raw)) sigmaLast
+    }
+
+-- | Vector-typed wrapper for `pallasProofOpeningPrechallenges`. The raw
+-- | FFI produces an array of StepIPARounds (= 16) 128-bit scalar
+-- | prechallenges for a Pallas (step-commitment) proof.
+pallasProofOpeningPrechallengesVec
+  :: VerifierIndex Vesta.G Pallas.BaseField
+  -> { proof :: Proof Vesta.G Pallas.BaseField
+     , publicInput :: Array Pallas.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Pallas.ScalarField
+           , sgY :: Pallas.ScalarField
+           , challenges :: Array Pallas.BaseField
+           }
+     }
+  -> Vector StepIPARounds Pallas.BaseField
+pallasProofOpeningPrechallengesVec vk input =
+  fromJust' "pallasProofOpeningPrechallenges: expected Vector StepIPARounds (=16)"
+    (Vector.toVector @StepIPARounds (pallasProofOpeningPrechallenges vk input))
+
+-- | Vector-typed wrapper for `vestaProofOpeningPrechallenges`. The raw
+-- | FFI produces an array of WrapIPARounds (= 15) 128-bit scalar
+-- | prechallenges for a Vesta (wrap-commitment) proof.
+vestaProofOpeningPrechallengesVec
+  :: VerifierIndex Pallas.G Vesta.BaseField
+  -> { proof :: Proof Pallas.G Vesta.BaseField
+     , publicInput :: Array Vesta.BaseField
+     , prevChallenges ::
+         Array
+           { sgX :: Vesta.ScalarField
+           , sgY :: Vesta.ScalarField
+           , challenges :: Array Vesta.BaseField
+           }
+     }
+  -> Vector WrapIPARounds Vesta.BaseField
+vestaProofOpeningPrechallengesVec vk input =
+  fromJust' "vestaProofOpeningPrechallenges: expected Vector WrapIPARounds (=15)"
+    (Vector.toVector @WrapIPARounds (vestaProofOpeningPrechallenges vk input))
+
+-- | Vector-typed wrapper for `pallasProofOpeningLr` (step proof). Each
+-- | IPA round contributes one L/R commitment pair; a Pallas step proof
+-- | has `StepIPARounds` (= 16) rounds.
+pallasProofOpeningLrVec
+  :: Proof Vesta.G Pallas.BaseField
+  -> Vector StepIPARounds (LrPair Pallas.ScalarField)
+pallasProofOpeningLrVec p =
+  fromJust' "pallasProofOpeningLr: expected Vector StepIPARounds (=16) L/R pairs"
+    (Vector.toVector @StepIPARounds (pallasProofOpeningLr p))
+
+-- | Vector-typed wrapper for `vestaProofOpeningLr` (wrap proof). Each
+-- | IPA round contributes one L/R commitment pair; a Vesta wrap proof
+-- | has `WrapIPARounds` (= 15) rounds.
+vestaProofOpeningLrVec
+  :: Proof Pallas.G Vesta.BaseField
+  -> Vector WrapIPARounds (LrPair Vesta.ScalarField)
+vestaProofOpeningLrVec p =
+  fromJust' "vestaProofOpeningLr: expected Vector WrapIPARounds (=15) L/R pairs"
+    (Vector.toVector @WrapIPARounds (vestaProofOpeningLr p))
+
+-- | `ProofCommitments.tComm` is an `Array` because the FFI doesn't
+-- | encode `num_chunks` at the type level. In vanilla Mina
+-- | `num_chunks = 1` so the array is always 7 long (= quotient-poly
+-- | chunk count). This helper exposes that statically.
+tCommVec
+  :: forall f
+   . ProofCommitments f
+  -> Vector 7 (AffinePoint f)
+tCommVec c =
+  fromJust' "ProofCommitments.tComm: expected Vector 7 (num_chunks=1)"
+    (Vector.toVector @7 c.tComm)

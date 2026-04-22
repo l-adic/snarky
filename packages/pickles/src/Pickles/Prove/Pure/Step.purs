@@ -43,19 +43,19 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bPoly)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals, absorbAllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLr, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, domainGenerator, tCommVec, vestaChallengePolyCommitment, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallengesVec, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Sponge (absorb, evalPureSpongeM, initialSponge, squeeze, squeezeScalarChallengePure)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Types (FopProofState(..), StepAllEvals, StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Types as PT
-import Pickles.Util.Fatal (fromJust')
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge, UnfinalizedProof)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unsafeFromField, unwrapF, wrapF)
+import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (SplitField, Type1, Type2, toFieldPure, toShifted)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
@@ -618,18 +618,13 @@ expandProof input =
     -- each element as a `SizedF 128`. Kimchi's `ScalarChallenge`
     -- contract guarantees the 128-bit bound, so `unsafeFromField` is
     -- safe here.
-    rawPrechalsArray :: Array WrapField
-    rawPrechalsArray = vestaProofOpeningPrechallenges input.wrapVerifierIndex
-      { proof: input.wrapProof
-      , publicInput: input.tockPublicInput
-      , prevChallenges: input.wrapOraclesPrevChallenges
-      }
-
     rawPrechalsVec :: Vector WrapIPARounds (SizedF 128 WrapField)
-    rawPrechalsVec = fromJust'
-      "Pure.Step rawPrechalsVec: FFI `rawPrechalsArray` expected to be WrapIPARounds (=15) long"
-      ( Vector.toVector @WrapIPARounds
-          (map (unsafePartial unsafeFromField) rawPrechalsArray)
+    rawPrechalsVec = map (unsafePartial unsafeFromField)
+      ( vestaProofOpeningPrechallengesVec input.wrapVerifierIndex
+          { proof: input.wrapProof
+          , publicInput: input.tockPublicInput
+          , prevChallenges: input.wrapOraclesPrevChallenges
+          }
       )
 
     wrapGen :: WrapField
@@ -796,29 +791,21 @@ expandProof input =
     wrapProofMessages = WrapProofMessages
       { wComm: map mkPallasPt wrapCommits.wComm
       , zComm: mkPallasPt wrapCommits.zComm
-      , tComm:
-          fromJust'
-            "Pure.Step wrapProofMessages.tComm: wrap proof's `vestaProofCommitments.tComm` expected to yield 7 t-commitments"
-            (Vector.toVector @7 (map mkPallasPt wrapCommits.tComm))
+      , tComm: map mkPallasPt (tCommVec wrapCommits)
       }
 
     -- Wrap proof's opening proof from the kimchi form. The `sg`
     -- commitment is replaced with `challengePolynomialCommitment`
     -- (our computed one) to match OCaml step.ml:404-408's
     -- `{ proof.openings.proof with challenge_polynomial_commitment }`.
-    lrArray :: Array { l :: WeierstrassAffinePoint PallasG (F StepField), r :: WeierstrassAffinePoint PallasG (F StepField) }
-    lrArray = vestaProofOpeningLr input.wrapProof <#> \pair ->
-      { l: mkPallasPt pair.l, r: mkPallasPt pair.r }
-
     wrapProofOpening
       :: WrapProofOpening
            WrapIPARounds
            (WeierstrassAffinePoint PallasG (F StepField))
            (Type2 (SplitField (F StepField) Boolean))
     wrapProofOpening = WrapProofOpening
-      { lr: fromJust'
-          "Pure.Step wrapProofOpening.lr: `vestaProofOpeningLr` expected to yield WrapIPARounds (=15) lr-pairs"
-          (Vector.toVector @WrapIPARounds lrArray)
+      { lr: map (\pair -> { l: mkPallasPt pair.l, r: mkPallasPt pair.r })
+          (vestaProofOpeningLrVec input.wrapProof)
       , z1: toShifted (F (vestaProofOpeningZ1 input.wrapProof))
       , z2: toShifted (F (vestaProofOpeningZ2 input.wrapProof))
       , delta: mkPallasPt (vestaProofOpeningDelta input.wrapProof)
@@ -899,7 +886,7 @@ expandProof input =
     { sg: challengePolynomialCommitment
     , unfinalized: wrapUnfinalized
     , deferredStep: _deferredStep
-    , rawPrechallenges: rawPrechalsArray
+    , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
     , xHat:
         { zeta: oraclesResult.publicEvalZeta
         , omegaTimesZeta: oraclesResult.publicEvalZetaOmega

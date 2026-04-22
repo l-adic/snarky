@@ -39,10 +39,9 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallenges, pallasProofOracles)
+import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
 import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked(..))
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
@@ -321,18 +320,13 @@ wrapComputeDeferredValues input =
     -- challenges from the IPA round loop. We wrap each into a
     -- `SizedF 128` and feed through `computeBpChalsAndB`, which endo-
     -- expands them and evaluates `b_poly(zeta) + r·b_poly(zetaw)`.
-    rawPrechalsArray :: Array StepField
-    rawPrechalsArray = pallasProofOpeningPrechallenges input.verifierIndex
-      { proof: input.proof
-      , publicInput: input.publicInput
-      , prevChallenges: prevChallengeList
-      }
-
     rawPrechalsVec :: Vector StepIPARounds (SizedF 128 StepField)
-    rawPrechalsVec = fromJust'
-      "Pure.Wrap rawPrechalsVec: FFI `rawPrechalsArray` expected to be StepIPARounds (=16) long"
-      ( Vector.toVector @StepIPARounds
-          (map (unsafePartial unsafeFromField) rawPrechalsArray)
+    rawPrechalsVec = map (unsafePartial unsafeFromField)
+      ( pallasProofOpeningPrechallengesVec input.verifierIndex
+          { proof: input.proof
+          , publicInput: input.publicInput
+          , prevChallenges: prevChallengeList
+          }
       )
 
     newBpResult :: BulletproofBOutput StepIPARounds StepField
