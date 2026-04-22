@@ -1471,6 +1471,11 @@ type StepProveContext len =
   { srsData :: StepMainSrsData len
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
+  -- | When `true`, enables prover-state debug checks and runs a
+  -- | `verifyProverIndex` sanity check against the solved witness.
+  -- | On failure, the row → label map for the step circuit gets
+  -- | written to `/tmp/ps_step_row_labels.txt`. Off by default.
+  , debug :: Boolean
   }
 
 -- | Artifacts produced by `stepCompile`. These are the pieces the
@@ -1857,7 +1862,7 @@ stepSolveAndProve ctx rule compileResult advice = do
            Unit
            (Vector outputSize (F StepField))
     rawSolver =
-      makeSolver' (emptyProverState { debug = true })
+      makeSolver' (emptyProverState { debug = ctx.debug })
         (Proxy @(KimchiConstraint StepField))
         ( \_ ->
             stepMain
@@ -1885,40 +1890,37 @@ stepSolveAndProve ctx rule compileResult advice = do
           , constraints: map _.variables compileResult.constraints
           , publicInputs: compileResult.builtState.publicInputs
           }
-
-        csSatisfied = verifyProverIndex @StepField @VestaG
-          { proverIndex: compileResult.proverIndex, witness, publicInputs }
-      if not csSatisfied then do
-        let
-          _ = unsafePerformEffect $
-            dumpRowLabels
-              (Array.length compileResult.builtState.publicInputs)
-              compileResult.builtState.constraints
-        throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
-      else
-        let
-          proof = pallasCreateProofWithPrev
-            { proverIndex: compileResult.proverIndex
-            , witness
-            , prevChallenges:
-                map
-                  ( \r ->
-                      { sgX: r.sgX
-                      , sgY: r.sgY
-                      , challenges: Vector.toUnfoldable r.challenges
-                      }
-                  )
-                  (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
-            }
-        in
-          pure
-            { proverIndex: compileResult.proverIndex
-            , verifierIndex: compileResult.verifierIndex
-            , constraintSystem: compileResult.constraintSystem
-            , witness
-            , publicInputs
-            , publicOutputs
-            , proof
-            , assignments
-            }
+      when ctx.debug do
+        let csSatisfied = verifyProverIndex @StepField @VestaG
+              { proverIndex: compileResult.proverIndex, witness, publicInputs }
+        when (not csSatisfied) do
+          let _ = unsafePerformEffect $
+                dumpRowLabels
+                  (Array.length compileResult.builtState.publicInputs)
+                  compileResult.builtState.constraints
+          throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
+      let
+        proof = pallasCreateProofWithPrev
+          { proverIndex: compileResult.proverIndex
+          , witness
+          , prevChallenges:
+              map
+                ( \r ->
+                    { sgX: r.sgX
+                    , sgY: r.sgY
+                    , challenges: Vector.toUnfoldable r.challenges
+                    }
+                )
+                (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
+          }
+      pure
+        { proverIndex: compileResult.proverIndex
+        , verifierIndex: compileResult.verifierIndex
+        , constraintSystem: compileResult.constraintSystem
+        , witness
+        , publicInputs
+        , publicOutputs
+        , proof
+        , assignments
+        }
 

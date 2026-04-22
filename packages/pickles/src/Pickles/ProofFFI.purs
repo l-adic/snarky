@@ -99,7 +99,6 @@ module Pickles.ProofFFI
 import Prelude
 
 import Data.Array as Array
-import Data.Unit (Unit)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (StepIPARounds, WrapIPARounds)

@@ -195,6 +195,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { srsData: treeSrsData
         , dummySg: nrrWrapSg
         , crs: vestaSrs
+        , debug: true
         }
 
     -- outputSize = len*32 + 1 + len = 2*32 + 1 + 2 = 67 for N=2.
@@ -893,6 +894,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: pallasWrapSrs
         , publicInput: treeWrapPublicInput
         , advice: treeWrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             -- Per OCaml wrap.ml:496-507: wrap's kimchi prev_challenges
             -- are per-slot (step_b0's stored sg + step_b0's new bp_chals
@@ -1394,6 +1396,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: pallasWrapSrs
         , publicInput: b1TreeWrapPublicInput
         , advice: b1TreeWrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             -- Per OCaml wrap.ml:496-507, per-slot from step_b1's stored cpc
             -- + step_b1's per-slot new bp_chals wrap-expanded. For Tree b1
@@ -1787,6 +1790,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: pallasWrapSrs
         , publicInput: b2TreeWrapPublicInput
         , advice: b2TreeWrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             { sgX: b2Slot0ChalPolyComm.x
             , sgY: b2Slot0ChalPolyComm.y
@@ -2172,6 +2176,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: pallasWrapSrs
         , publicInput: b3TreeWrapPublicInput
         , advice: b3TreeWrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             { sgX: b3Slot0ChalPolyComm.x
             , sgY: b3Slot0ChalPolyComm.y
@@ -2537,6 +2542,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: pallasWrapSrs
         , publicInput: b4TreeWrapPublicInput
         , advice: b4TreeWrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             { sgX: b4Slot0ChalPolyComm.x
             , sgY: b4Slot0ChalPolyComm.y

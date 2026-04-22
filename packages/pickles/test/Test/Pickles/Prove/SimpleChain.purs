@@ -223,6 +223,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         { srsData
         , dummySg
         , crs: vestaSrs
+        , debug: true
         }
 
     -- ===== Phase 1: compile the step circuit =====
@@ -773,6 +774,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: wrapPublicInput
         , advice: wrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             let
               -- Padding slot: Dummy.Ipa.Wrap.sg + Dummy.Ipa.Wrap.challenges_computed
@@ -1264,6 +1266,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: b1WrapPublicInput
         , advice: b1WrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             let
               padEntry =
@@ -1615,6 +1618,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: b2WrapPublicInput
         , advice: b2WrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             let
               padEntry =
@@ -1928,6 +1932,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: b3WrapPublicInput
         , advice: b3WrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             let
               padEntry =
@@ -2239,6 +2244,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: pallasProofCrs
         , publicInput: b4WrapPublicInput
         , advice: b4WrapAdvice
+        , debug: true
         , kimchiPrevChallenges:
             let
               padEntry =

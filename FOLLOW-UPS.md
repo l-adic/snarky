@@ -15,37 +15,13 @@ Affected locations:
 
 Currently `num_chunks = 1` is correct for all Mina circuits. This would only matter for very large circuits exceeding the SRS degree bound.
 
-## Retire or retarget `Pickles.Wrap.Circuit` sub-circuit — `TODO(wrap_subcircuit)`
-
-Phase 5 of the wrap_main advice refactor introduced a separate
-`WrapSubCircuitWitnessM` class in `Pickles.Wrap.Advice` to keep the
-deprecated `wrapCircuit` sub-circuit (and its `WrapProverM`-based test
-infrastructure in `Test.Pickles.TestContext`) compiling. It's now the
-only consumer of that legacy class, and all of its real test surface
-(`createWrapProofContext`, `buildWrapProverWitness`, `WrapE2E`) is
-the pre-`wrap_main` shape.
-
-Options:
-- Delete `Pickles.Wrap.Circuit` and its consumers entirely, reroute
-  `wrap0` in `InductiveTestContext` to use `wrapMain` directly (and
-  build a `WrapMainAdvice` from a real `StepProofContext`).
-- Keep `Pickles.Wrap.Circuit` but migrate it onto the new
-  `WrapWitnessM` class, deleting `WrapSubCircuitWitnessM`.
-
-The first option is cleaner; it matches what step_main did with its
-predecessor sub-circuit.
-
 ## FOP domain as separate argument
 
-`wrapFinalizeOtherProofCircuit` currently receives the per-proof domain merged into static params via `Record.merge`. Cleaner to separate static params (endo, srsLengthLog2, linearizationPoly) from per-proof domain (generator, shifts, vanishingPolynomial) as distinct arguments. See `TODO` comment in `WrapMain.purs` at the FOP call sites.
+`wrapFinalizeOtherProofCircuit` currently receives the per-proof domain merged into static params via `Record.merge` (see `Pickles.Wrap.Main:249`). Cleaner to separate static params (endo, srsLengthLog2, linearizationPoly) from per-proof domain (generator, shifts, vanishingPolynomial) as distinct arguments.
 
 ## Abstract ones_vector
 
-The `ones_vector` logic in `WrapMain.purs` (block1) computes the `actual_proofs_verified_mask` inline. This mirrors OCaml's `Util.Wrap.ones_vector`. For the general N case (not just N1), this should be extracted as a reusable function, likely in `Pickles.Pseudo` or a utilities module.
-
-## assertAll_ is defined but uncalled
-
-`Snarky.Circuit.DSL.Assert.assertAll_` matches OCaml's `Boolean.Assert.all` (void assertion, sum-based). It's implemented and exported but not yet called by any circuit code. It exists for completeness — the OCaml equivalent is used in some circuit paths we haven't translated yet.
+The `ones_vector` logic in `WrapMain.purs` (block1) computes the `actual_proofs_verified_mask` inline. This mirrors OCaml's `Util.Wrap.ones_vector`. For the general N case (not just N1), this should be extracted as a reusable function, likely in `Pickles.Pseudo` or a utilities module. A second inline copy lives in `Pickles.Prove.Step.purs:packedBranchData` (the mask → `[F,F]`/`[F,T]`/`[T,T]` / packed-int encoding). Both should share one implementation.
 
 ## On-the-fly Lagrange commitments for x_hat — `TODO(lagrange_on_the_fly)`
 

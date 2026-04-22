@@ -22,7 +22,6 @@ module Test.Pickles.Prove.NoRecursionReturn.Producer
 import Prelude
 
 import Data.Array as Array
-import Data.Const (Const)
 import Data.Foldable (for_)
 import Data.Map as Map
 import Data.Tuple (Tuple(..))
@@ -32,7 +31,7 @@ import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw, throwException) as Exc
+import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -126,6 +125,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       { srsData
       , dummySg: wrapSg
       , crs: vestaSrs
+      , debug: true
       }
 
   -- ===== Phase 1: compile the step circuit =====
@@ -319,6 +319,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       , crs: pallasProofCrs
       , publicInput: wrapPublicInput
       , advice: wrapAdvice
+      , debug: true
       , kimchiPrevChallenges:
           let
             padEntry =

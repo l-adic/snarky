@@ -63,7 +63,7 @@ import Pickles.Wrap.Slots (class PadSlots)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
@@ -384,6 +384,12 @@ type WrapProveContext (branches :: Int) (mpv :: Int) (slots :: Type -> Type) =
   , publicInput ::
       WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean
   , advice :: WrapAdvice mpv slots
+  -- | When `true`, enables prover-state debug checks, runs
+  -- | `verifyProverIndex` against the solved witness, and dumps
+  -- | `/tmp/ps_wrap_row_labels.txt` for debugging witness
+  -- | mismatches. Off by default — these checks are redundant once
+  -- | the wrap prover is known to be correct.
+  , debug :: Boolean
   -- | Kimchi-level `prev_challenges` for `ProverProof::create_recursive`.
   -- | Padded to `PaddedLength = 2` entries (via `Wrap_hack.pad_accumulator`).
   -- | Each entry holds sg (Pallas point, StepField coords) + expanded
@@ -530,7 +536,7 @@ wrapSolveAndProve ctx compileResult = do
            (WrapStatementPacked StepIPARounds (Type1 (F WrapField)) (F WrapField) Boolean)
            Unit
     rawSolver =
-      makeSolver' (emptyProverState { debug = true }) (Proxy @(KimchiConstraint WrapField))
+      makeSolver' (emptyProverState { debug = ctx.debug }) (Proxy @(KimchiConstraint WrapField))
         (wrapMain @branches @slots ctx.wrapMainConfig)
 
   eRes <- lift $ runWrapProverT ctx.advice (runSolverT rawSolver ctx.publicInput)
@@ -544,52 +550,58 @@ wrapSolveAndProve ctx compileResult = do
           , constraints: map _.variables compileResult.constraints
           , publicInputs: compileResult.builtState.publicInputs
           }
+      when ctx.debug do
+        let _ = unsafePerformEffect (wrapDumpRowLabels compileResult.builtState.constraints)
+        let csSatisfied = verifyProverIndex @WrapField @PallasG
+              { proverIndex: compileResult.proverIndex, witness, publicInputs }
+        when (not csSatisfied) $
+          throwError (FailedAssertion "wrapProve: constraint system not satisfied (wrote row→label map to /tmp/ps_wrap_row_labels.txt)")
+      let
+        proof = vestaCreateProofWithPrev
+          { proverIndex: compileResult.proverIndex
+          , witness
+          , prevChallenges:
+              map
+                ( \r ->
+                    { sgX: r.sgX
+                    , sgY: r.sgY
+                    , challenges: Vector.toUnfoldable r.challenges
+                    }
+                )
+                (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
+          }
+      pure
+        { proverIndex: compileResult.proverIndex
+        , verifierIndex: compileResult.verifierIndex
+        , constraintSystem: compileResult.constraintSystem
+        , witness
+        , publicInputs
+        , proof
+        , assignments
+        }
 
-        csSatisfied = verifyProverIndex @WrapField @PallasG
-          { proverIndex: compileResult.proverIndex, witness, publicInputs }
-        _dumpRowLabels = unsafePerformEffect do
+-- | Debug helper: dump row → label mapping for the wrap circuit,
+-- | so a `/tmp/ps_wrap_row_labels.txt` file can cross-reference a
+-- | failing row in the kimchi witness diff against the labelled
+-- | constraint source. Only fires when `WrapProveContext.debug`.
+wrapDumpRowLabels :: Array (Labeled (KimchiGate WrapField)) -> Effect Unit
+wrapDumpRowLabels constraints =
+  let
+    { out } = Array.foldl
+      ( \{ row, out } lc ->
           let
-            { out } = Array.foldl
-              ( \{ row, out } lc ->
-                  let
-                    nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow WrapField))
-                    endRow = row + nRows - 1
-                    path = Array.intercalate "/" lc.context
-                    line = show row <> ".." <> show endRow <> "\t" <> path
-                  in
-                    { row: row + nRows, out: out <> [ line ] }
-              )
-              { row: 0, out: [] }
-              compileResult.builtState.constraints
-          FS.writeTextFile UTF8 "/tmp/ps_wrap_row_labels.txt"
-            (Array.intercalate "\n" out <> "\n")
-      if not csSatisfied then
-        throwError (FailedAssertion "wrapProve: constraint system not satisfied")
-      else
-        let
-          proof = vestaCreateProofWithPrev
-            { proverIndex: compileResult.proverIndex
-            , witness
-            , prevChallenges:
-                map
-                  ( \r ->
-                      { sgX: r.sgX
-                      , sgY: r.sgY
-                      , challenges: Vector.toUnfoldable r.challenges
-                      }
-                  )
-                  (Vector.toUnfoldable ctx.kimchiPrevChallenges :: Array _)
-            }
-        in
-          pure
-            { proverIndex: compileResult.proverIndex
-            , verifierIndex: compileResult.verifierIndex
-            , constraintSystem: compileResult.constraintSystem
-            , witness
-            , publicInputs
-            , proof
-            , assignments
-            }
+            nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow WrapField))
+            endRow = row + nRows - 1
+            path = Array.intercalate "/" lc.context
+            line = show row <> ".." <> show endRow <> "\t" <> path
+          in
+            { row: row + nRows, out: out <> [ line ] }
+      )
+      { row: 0, out: [] }
+      constraints
+  in
+    FS.writeTextFile UTF8 "/tmp/ps_wrap_row_labels.txt"
+      (Array.intercalate "\n" out <> "\n")
 
 extractStepVKComms
   :: VerifierIndex VestaG StepField

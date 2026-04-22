@@ -245,21 +245,23 @@ instance
   varToFields = genericVarToFields @(Tuple a b)
   fieldsToVar = genericFieldsToVar @(Tuple a b)
 
--- | `Const Unit a` carries no content regardless of `a`, so its
--- | `CircuitType` instance is trivial (zero wires, empty arrays).
--- | The `a` on the RHS is a fresh type variable the fundep resolves
--- | to whatever the caller needs.
+-- | `Const a b` ignores its phantom `b` and carries a value of type
+-- | `a`, so its `CircuitType` instance delegates to the inner `a`.
+-- | With `a = Unit`, `Const Unit b` carries no content and the
+-- | instance is trivial via the `Unit Unit` case.
 -- |
 -- | This instance, together with the `Product` instance below, lets
 -- | higher-kinded "functor-product slot lists" (see
 -- | `Pickles.Wrap.Slots`) be allocated by `exists` without a custom
 -- | newtype wrapper.
-instance CircuitType f (Const Unit a) (Const Unit avar) where
-  sizeInFields _ _ = 0
-  valueToFields _ = mempty
-  fieldsToValue _ = Const unit
-  varToFields _ = mempty
-  fieldsToVar _ = Const unit
+instance circuitTypeConst ::
+  CircuitType f a avar =>
+  CircuitType f (Const a b) (Const avar bvar) where
+  sizeInFields _ _ = sizeInFields (Proxy @f) (Proxy @a)
+  valueToFields (Const a) = valueToFields @f @a a
+  fieldsToValue fs = Const (fieldsToValue @f @a fs)
+  varToFields (Const a) = varToFields @f @a @avar a
+  fieldsToVar fs = Const (fieldsToVar @f @a @avar fs)
 
 -- | `Product f g a = Product (Tuple (f a) (g a))` delegates to the
 -- | generic Tuple instance via the newtype wrapper. Walks head-first
