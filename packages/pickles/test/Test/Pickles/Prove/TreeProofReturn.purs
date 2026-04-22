@@ -197,7 +197,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
       treePlaceholderAdvice = buildStepAdvice @TreeProofReturnPrevsSpec
         { publicInput: unit
-        , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         }
 
@@ -341,7 +340,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       oracleInput
         :: { publicInput :: Unit
            , prevPublicInput :: F StepField
-           , mostRecentWidth :: Int
            , wrapDomainLog2 :: Int
            , stepDomainLog2 :: Int
            , wrapVK :: _
@@ -364,7 +362,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       oracleInput =
         { publicInput: unit
         , prevPublicInput: F zero -- NRR's output
-        , mostRecentWidth: 0 -- NRR is N=0
         , wrapDomainLog2: nrr.wrapDomainLog2
         -- Step domain of the NRR proof being verified. NRR's step domain
         -- log2 = 9 (from its prover index), distinct from wrap VK domain 13.
@@ -460,10 +457,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       slot1BaseCaseDummyChalPoly =
         { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
-      slot1BaseCaseWrapPI = dummyWrapTockPublicInput
-        { mostRecentWidth: 2
+      slot1BaseCaseWrapPI = dummyWrapTockPublicInput @2
         -- branchData.domainLog2 for OCaml Proof.dummy N2 N2 ~domain_log2:15.
-        , wrapDomainLog2: treeSelfStepDomainLog2
+        { wrapDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
         , prevPublicInput: (F (negate one)) :: F StepField
         , wrapSg: nrrWrapSg
@@ -475,15 +471,14 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
-        , fopProofState: Dummy.stepDummyUnfinalizedProof bcd
-            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
+        , fopProofState: Dummy.stepDummyUnfinalizedProof @2 bcd
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2 }
             (map SizedF.wrapF bcd.ipaStepChallenges)
         }
     { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (negate one)) :: F StepField
-        , mostRecentWidth: 2
         -- Iter 2ah: for slot 1 wrap-side derive_plonk, domain = Tree
         -- wrap VK's domain (log2=14 via override_wrap_domain=N1), NOT
         -- Tree's step domain (log2=15). Per OCaml step.ml:533-538
@@ -527,8 +522,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Dummy.dummyIpaChallenges.wrapExpanded
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
-        , fopState: Dummy.stepDummyUnfinalizedProof bcd
-            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
+        , fopState: Dummy.stepDummyUnfinalizedProof @2 bcd
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2 }
             (map SizedF.wrapF bcd.ipaStepChallenges)
         , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
@@ -1069,7 +1064,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F zero) :: F StepField -- b0 output was 0
-        , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -1478,7 +1472,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F one) :: F StepField -- b1 output was 1
-        , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -1864,7 +1857,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (fromInt 2 :: StepField)) -- b2 output = 2
-        , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -2241,7 +2233,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (fromInt 3 :: StepField)) -- b3 output = 3
-        , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex

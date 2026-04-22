@@ -66,7 +66,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Data.Maybe (fromJust)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -157,18 +157,17 @@ type StepBranchData =
 
 -- | Inputs `buildStepAdvice` needs from the caller. Everything else
 -- | is protocol-constant dummy data derived from `Pickles.Dummy`.
+-- | Inputs to `buildStepAdvice`. `most_recent_width` is NOT a field —
+-- | it's carried at the type level as `len` (the number of prev slots,
+-- | derived from `prevsSpec` via the `PrevsCarrier` instance), and
+-- | reified to an Int internally via `reflectType (Proxy @len)` where
+-- | needed.
 type BuildStepAdviceInput inputVal =
   { -- | Value bound to the step circuit's public input (OCaml
     -- | `Req.App_state`). Polymorphic in `inputVal` so rules with
     -- | Input-mode typ other than `Field.typ` can bind multi-field
     -- | records. For Simple_chain base case this is `F zero` (self = 0).
     publicInput :: inputVal
-
-  -- | `most_recent_width` parameter the OCaml `Proof.dummy` call
-  -- | would pass. For Simple_chain at N1 this is 1. Drives the
-  -- | wrap-domain choice for `stepDummyFopProofState` via
-  -- | `common.ml:25-29 wrap_domains` (0 → 13, 1 → 14, 2 → 15).
-  , mostRecentWidth :: Int
 
   -- | OCaml `Pickles.Proof.dummy`'s `~domain_log2` parameter. This is
   -- | the dummy wrap proof's evaluation domain, which becomes
@@ -220,9 +219,12 @@ buildStepAdvice input =
     g0w :: WeierstrassAffinePoint PallasG (F StepField)
     g0w = WeierstrassAffinePoint g0
 
-    -- Ro-derived constants shared across all fields. Pure function of
-    -- `mostRecentWidth` (= max_proofs_verified for the circuit's base case).
-    bcd = baseCaseDummies { maxProofsVerified: input.mostRecentWidth }
+    -- Reify `len` (= most_recent_width = max_proofs_verified) to a
+    -- runtime Int for the few places that need one.
+    mrw = reflectType (Proxy @len)
+
+    -- Ro-derived constants shared across all fields.
+    bcd = baseCaseDummies { maxProofsVerified: mrw }
 
     -- z1 / z2 from OCaml `proof.ml:dummy` openings (Ro.tock values
     -- re-wrapped as cross-field Type2 SplitField in the step field).
@@ -263,10 +265,8 @@ buildStepAdvice input =
 
     dummyFop
       :: UnfinalizedProof StepIPARounds (F StepField) (Type1 (F StepField)) Boolean
-    dummyFop = stepDummyUnfinalizedProof bcd
-      { domainLog2: wrapDomainLog2ForProofsVerified input.mostRecentWidth
-      , mostRecentWidth: input.mostRecentWidth
-      }
+    dummyFop = stepDummyUnfinalizedProof @len bcd
+      { domainLog2: wrapDomainLog2ForProofsVerified mrw }
       (map SizedF.wrapF bcd.ipaStepChallenges)
 
     dummyBranch :: StepBranchData
@@ -278,8 +278,8 @@ buildStepAdvice input =
       --   N1 → [F, T]
       --   N2 → [T, T]
       { domainLog2: F (Curves.fromInt input.wrapDomainLog2 :: StepField)
-      , mask0: input.mostRecentWidth >= 2
-      , mask1: input.mostRecentWidth >= 1
+      , mask0: mrw >= 2
+      , mask1: mrw >= 1
       }
 
     dvFop = dummyFop.deferredValues
@@ -520,10 +520,10 @@ extractWrapVKForStepHash vk =
 -- | 3 scalar challenges, 3 digests, `StepIPARounds` bp challenges,
 -- | packed branch data, 8 feature flags, 2 lookup slots.
 dummyWrapTockPublicInput
-  :: forall inputVal input
-   . CircuitType StepField inputVal input
-  => { mostRecentWidth :: Int
-     , wrapDomainLog2 :: Int
+  :: forall @n inputVal input
+   . Reflectable n Int
+  => CircuitType StepField inputVal input
+  => { wrapDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
      , prevPublicInput :: inputVal
      -- | `Dummy.Ipa.Wrap.sg` — Ro-derived Pallas point from
@@ -631,30 +631,18 @@ dummyWrapTockPublicInput input =
     singleEntry :: { sg :: AffinePoint StepField, expandedBpChallenges :: Vector StepIPARounds StepField }
     singleEntry = { sg: input.wrapSg, expandedBpChallenges: stepExpanded }
 
-    -- `prevProofs` has `mostRecentWidth` entries, matching OCaml
+    -- `proofs` has `n` entries (type param), matching OCaml
     -- `proof.ml:168-171`:
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width (fun _ -> Dummy.Ipa.Wrap.sg)
-    -- We reify the runtime width to the type level so
-    -- `hashMessagesForNextStepProofPure` gets a `Vector n` of the
-    -- correct length.
     appStateFields = valueToFields @StepField @inputVal input.prevPublicInput
 
     msgStepDigestStepField :: StepField
-    msgStepDigestStepField = case input.mostRecentWidth of
-      0 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep, appState: appStateFields
-        , proofs: Vector.replicate @0 singleEntry
-        }
-      1 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep, appState: appStateFields
-        , proofs: Vector.replicate @1 singleEntry
-        }
-      2 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep, appState: appStateFields
-        , proofs: Vector.replicate @2 singleEntry
-        }
-      w -> unsafeCrashWith $ "dummyWrapTockPublicInput: mostRecentWidth must be 0, 1, or 2; got " <> show w
+    msgStepDigestStepField = hashMessagesForNextStepProofPure
+      { stepVk: wrapVkStep
+      , appState: appStateFields
+      , proofs: Vector.replicate @n singleEntry
+      }
 
     -- 3 digests in packStatement order:
     -- [spongeDigest, msgWrap, msgStep]. `fopProofState.spongeDigest`
@@ -686,7 +674,8 @@ dummyWrapTockPublicInput input =
     packedBranchData :: WrapField
     packedBranchData =
       let
-        maskBits = case input.mostRecentWidth of
+        mrw = reflectType (Proxy @n)
+        maskBits = case mrw of
           0 -> 0
           1 -> 2
           2 -> 3
@@ -737,7 +726,6 @@ dummyWrapTockPublicInput input =
 type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
   { publicInput :: inputVal
   , prevPublicInput :: prevInputVal
-  , mostRecentWidth :: Int
   , wrapDomainLog2 :: Int
   -- | STEP-domain log2 of the proof being verified (= branch_data.domain_log2
   -- | of the wrap statement). OCaml `Wrap_deferred_values.expand_deferred`

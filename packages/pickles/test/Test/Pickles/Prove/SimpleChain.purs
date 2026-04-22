@@ -229,7 +229,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- over the compiled wrap VK) is built below for the solver.
       placeholderAdvice = buildStepAdvice @(PrevsSpecCons 1 PrevsSpecNil)
         { publicInput: F zero
-        , mostRecentWidth: 1
         , wrapDomainLog2
         }
 
@@ -352,9 +351,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
     let
       baseCaseDummyChalPoly =
         { sg: wrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
-      baseCaseWrapPI = dummyWrapTockPublicInput
-        { mostRecentWidth: 1
-        , wrapDomainLog2
+      baseCaseWrapPI = dummyWrapTockPublicInput @1
+        { wrapDomainLog2
         , wrapVK: wrapCR.verifierIndex
         , prevPublicInput: F (negate one)
         , wrapSg
@@ -366,14 +364,13 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
-        , fopProofState: Dummy.stepDummyUnfinalizedProof bcd
-            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1, mostRecentWidth: 1 }
+        , fopProofState: Dummy.stepDummyUnfinalizedProof @1 bcd
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1 }
             (map SizedF.wrapF bcd.ipaStepChallenges)
         }
     { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero
       , prevPublicInput: F (negate one) -- OCaml `s_neg_one`
-      , mostRecentWidth: 1
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -407,8 +404,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
           Dummy.dummyIpaChallenges.wrapExpanded
             :< Dummy.dummyIpaChallenges.wrapExpanded
             :< Vector.nil
-      , fopState: Dummy.stepDummyUnfinalizedProof bcd
-          { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1, mostRecentWidth: 1 }
+      , fopState: Dummy.stepDummyUnfinalizedProof @1 bcd
+          { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1 }
           (map SizedF.wrapF bcd.ipaStepChallenges)
       -- b0: advice.evals mirrors the compile-time placeholder so the
       -- step_b0 witness stays byte-identical to OCaml.
@@ -988,7 +985,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F one
       , prevPublicInput: F zero
-      , mostRecentWidth: 1
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -1381,7 +1377,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     { advice: b2Advice, challengePolynomialCommitment: b2ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 2 :: StepField)
       , prevPublicInput: F one
-      , mostRecentWidth: 1
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -1699,7 +1694,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     { advice: b3Advice, challengePolynomialCommitment: b3ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 3 :: StepField)
       , prevPublicInput: F (fromInt 2 :: StepField)
-      , mostRecentWidth: 1
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -2009,7 +2003,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
     { advice: b4Advice, challengePolynomialCommitment: b4ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F (fromInt 4 :: StepField)
       , prevPublicInput: F (fromInt 3 :: StepField)
-      , mostRecentWidth: 1
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex

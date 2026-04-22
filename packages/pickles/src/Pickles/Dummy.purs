@@ -617,15 +617,22 @@ wrapDummyUnfinalizedProof bcd =
 -- | Called at two sites (same deferred values, differing only in d/bpChals):
 -- |   Step public-input side (d = WrapIPARounds): bpChals from ipaWrapChallenges
 -- |   Step FOP advice side   (d = StepIPARounds): bpChals from ipaStepChallenges
+-- |
+-- | The `@n` phantom is the `most_recent_width` (= max_proofs_verified of
+-- | the circuit whose base case we're padding). It drives how many copies
+-- | of `Dummy.Ipa.Step.challenges` get absorbed into the challenges
+-- | digest and how many `sg` eval points prepend `cipAllEvals`.
 stepDummyUnfinalizedProof
-  :: forall d sf
-   . Shifted (F StepField) sf
+  :: forall @n d sf
+   . Reflectable n Int
+  => Shifted (F StepField) sf
   => BaseCaseDummies
-  -> { domainLog2 :: Int, mostRecentWidth :: Int }
+  -> { domainLog2 :: Int }
   -> Vector d (SizedF 128 (F StepField))
   -> UnfinalizedProof d (F StepField) sf Boolean
-stepDummyUnfinalizedProof bcd { domainLog2, mostRecentWidth } bpChals =
+stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
   let
+    mostRecentWidth = reflectType (Proxy @n)
     p = bcd.proofDummy.plonk
     evals = bcd.proofDummy.prevEvals
     Curves.EndoScalar stepEndoScalar = (Curves.endoScalar :: Curves.EndoScalar Vesta.ScalarField)

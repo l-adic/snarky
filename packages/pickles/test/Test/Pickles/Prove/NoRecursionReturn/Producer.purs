@@ -128,7 +128,6 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
     placeholderAdvice = buildStepAdvice @PrevsSpecNil
       { publicInput: unit
-      , mostRecentWidth: 0
       , wrapDomainLog2
       }
 
