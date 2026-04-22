@@ -13,10 +13,6 @@ module Pickles.PlonkChecks
   , extractEvalFields
   , absorbAllEvals
   , absorbPointEval
-  -- * PlonkChecks Circuit
-  , PlonkChecksInput
-  , PlonkChecksOutput
-  , plonkChecksCircuit
   , module Pickles.PlonkChecks.Permutation
   ) where
 
@@ -25,17 +21,9 @@ import Prelude
 import Data.Foldable (traverse_)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Pickles.Linearization (LinearizationPoly)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
-import Pickles.PlonkChecks.CombinedInnerProduct (CombinedInnerProductCheckInput, combinedInnerProductCheckCircuit)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
-import Pickles.Sponge (class MonadSponge, SpongeM, absorb, labelM, liftSnarky, squeezeScalarChallenge)
-import Pickles.Verify.Types (ScalarChallenge)
-import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, assertEq)
-import Snarky.Circuit.Kimchi (toField)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField)
+import Pickles.Sponge (class MonadSponge, absorb)
 
 -------------------------------------------------------------------------------
 -- | Evaluation Types
@@ -103,99 +91,6 @@ absorbAllEvals evals = do
 -- | field elements. The comparison happens on the raw 128-bit values, then
 -- | we convert to full field via endo for use in CIP computation.
 -- |
--- | Reference: step_verifier.ml - xi_correct compares raw scalar challenges
-type PlonkChecksInput f =
-  { -- Polynomial evaluations (includes ftEval1)
-    allEvals :: AllEvals f
-  -- EndoScalar coefficient for scalar challenge expansion (= Wrap_inner_curve.scalar)
-  , endo :: f
-  -- Claimed xi (polyscale) to verify - 128-bit scalar challenge
-  , claimedXi :: ScalarChallenge f
-  -- Claimed r (evalscale) to verify - 128-bit scalar challenge
-  , claimedR :: ScalarChallenge f
-  -- For combined inner product computation
-  , cipInput :: CombinedInnerProductCheckInput f
-  }
-
--- | Output from PLONK checks, providing values for IPA verification.
--- |
--- | All values are native circuit field elements.
-type PlonkChecksOutput f =
-  { polyscale :: f -- xi, for combining commitments
-  , evalscale :: f -- r, for combining evaluations
-  , combinedInnerProduct :: f -- the batched evaluation sum
-  }
-
--------------------------------------------------------------------------------
--- | Circuit
--------------------------------------------------------------------------------
-
--- | Composed PLONK verification circuit.
--- |
--- | This circuit stays in `SpongeM` so the caller can continue using the sponge
--- | for IPA verification (which needs to squeeze for u, absorb L/R pairs, etc.).
--- |
--- | The sponge should be initialized with fqDigest and prevChallengeDigest
--- | already absorbed before calling this circuit.
--- |
--- | Operations:
--- | 1. Absorb evaluations into Fr-sponge (ftEval1, publicEvals, all poly evals)
--- | 2. Squeeze xi (polyscale) as 128-bit scalar challenge
--- | 3. Assert raw xi matches claimed value (128-bit comparison)
--- | 4. Convert xi to full field via endo for CIP use
--- | 5. Squeeze r (evalscale) as 128-bit scalar challenge
--- | 6. Assert raw r matches claimed value (128-bit comparison)
--- | 7. Convert r to full field via endo for CIP use
--- | 8. Compute combined_inner_product using derived polyscale/evalscale
--- |
--- | Note: b_correct is NOT done here - it belongs in IPA verification where
--- | the challenge derivation context is clear.
--- |
--- | Reference: step_verifier.ml - xi_correct and r comparisons happen on raw
--- | 128-bit scalar challenges, NOT on endo-converted full field elements.
-plonkChecksCircuit
-  :: forall f f' g t m r
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f (KimchiConstraint f) t m
-  => LinearizationFFI f g
-  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
-  -> PlonkChecksInput (FVar f)
-  -> SpongeM f (KimchiConstraint f) t m (PlonkChecksOutput (FVar f))
-plonkChecksCircuit params input = labelM "plonk-checks" do
-  -- 1. Absorb all polynomial evaluations in Kimchi's order
-  absorbAllEvals input.allEvals
-
-  -- 2. Squeeze scalar challenge (128-bit) for xi
-  rawXi <- squeezeScalarChallenge input
-
-  -- 3. Assert raw xi matches claimed value (128-bit comparison)
-  -- This is xi_correct from OCaml - compares raw scalar challenges
-  liftSnarky $ assertEq rawXi input.claimedXi
-
-  -- 4. Convert to full field via endo for CIP computation
-  polyscale <- liftSnarky $ toField @8 rawXi input.endo
-
-  -- 5. Squeeze scalar challenge (128-bit) for evalscale (r)
-  rawR <- squeezeScalarChallenge input
-
-  -- 6. Assert raw r matches claimed value (128-bit comparison)
-  liftSnarky $ assertEq rawR input.claimedR
-
-  -- 7. Convert to full field via endo for CIP computation
-  evalscale <- liftSnarky $ toField @8 rawR input.endo
-
-  -- 8. Compute combined inner product using derived values
-  -- zeta comes from the permutation input (it's the evaluation point)
-  combinedInnerProduct <- liftSnarky $
-    combinedInnerProductCheckCircuit params input.cipInput.permInput.zeta
-      { polyscale, evalscale }
-      input.cipInput
-
-  pure { polyscale, evalscale, combinedInnerProduct }
-
 -- | Helper: absorb a PointEval (zeta then zeta_omega)
 absorbPointEval
   :: forall f m
