@@ -27,12 +27,13 @@ module Pickles.Proof.Dummy
 import Prelude
 
 import Data.Array as Array
+import Data.Maybe (fromJust)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (BaseCaseDummies)
 import Pickles.ProofFFI (Proof, vestaMakeWireProof)
 import Pickles.Types (WrapField)
-import Pickles.Util.Fatal (fromJust')
 import Snarky.Curves.Class (generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -52,10 +53,9 @@ dummyWrapProof bcd =
 
     -- Pallas generator g0 = Tock.Curve.(to_affine_exn one). Pallas points
     -- have coordinates in Pallas.BaseField = Vesta.ScalarField.
+    -- Generator is never the point-at-infinity, so `toAffine` is always `Just`.
     g0 :: AffinePoint Vesta.ScalarField
-    g0 = fromJust'
-      "Pallas generator to affine (never the identity element)"
-      (toAffine (generator :: Pallas.G) :: _ (AffinePoint Vesta.ScalarField))
+    g0 = unsafePartial $ fromJust (toAffine (generator :: Pallas.G))
 
     g0XY :: Array Vesta.ScalarField
     g0XY = [ g0.x, g0.y ]

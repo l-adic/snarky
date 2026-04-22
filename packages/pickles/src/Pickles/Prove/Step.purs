@@ -58,14 +58,15 @@ import Data.Map (Map)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Partial.Unsafe (unsafeCrashWith)
+import Data.Maybe (fromJust)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -210,15 +211,11 @@ buildStepAdvice
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
 buildStepAdvice input =
   let
-    -- Pallas generator (= OCaml `Tock.Curve.one`). Reused for every
-    -- curve-point field in the base-case dummy advice.
+    -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
+    -- point-at-infinity, so `toAffine` is always `Just`. Reused for
+    -- every curve-point field in the base-case dummy advice.
     g0 :: AffinePoint (F StepField)
-    g0 = coerce
-      ( fromJust'
-          "Pallas generator to affine (never the identity element)"
-          (Curves.toAffine (Curves.generator :: Pallas.G))
-          :: AffinePoint StepField
-      )
+    g0 = coerce (unsafePartial (fromJust (Curves.toAffine (Curves.generator :: Pallas.G))) :: AffinePoint StepField)
 
     g0w :: WeierstrassAffinePoint PallasG (F StepField)
     g0w = WeierstrassAffinePoint g0
@@ -641,22 +638,21 @@ dummyWrapTockPublicInput input =
     -- We reify the runtime width to the type level so
     -- `hashMessagesForNextStepProofPure` gets a `Vector n` of the
     -- correct length.
+    appStateFields = valueToFields @StepField @inputVal input.prevPublicInput
+
     msgStepDigestStepField :: StepField
     msgStepDigestStepField = case input.mostRecentWidth of
       0 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep
-        , appState: valueToFields @StepField @inputVal input.prevPublicInput
-        , proofs: (Vector.nil :: Vector 0 _)
+        { stepVk: wrapVkStep, appState: appStateFields
+        , proofs: Vector.replicate @0 singleEntry
         }
       1 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep
-        , appState: valueToFields @StepField @inputVal input.prevPublicInput
-        , proofs: singleEntry :< (Vector.nil :: Vector 0 _)
+        { stepVk: wrapVkStep, appState: appStateFields
+        , proofs: Vector.replicate @1 singleEntry
         }
       2 -> hashMessagesForNextStepProofPure
-        { stepVk: wrapVkStep
-        , appState: valueToFields @StepField @inputVal input.prevPublicInput
-        , proofs: singleEntry :< singleEntry :< (Vector.nil :: Vector 0 _)
+        { stepVk: wrapVkStep, appState: appStateFields
+        , proofs: Vector.replicate @2 singleEntry
         }
       w -> unsafeCrashWith $ "dummyWrapTockPublicInput: mostRecentWidth must be 0, 1, or 2; got " <> show w
 
@@ -670,7 +666,7 @@ dummyWrapTockPublicInput input =
     digests3 =
       [ stepToWrap sponge0
       , msgWrapDigestWrapField -- already wrap field
-      , Curves.fromBigInt (Curves.toBigInt msgStepDigestStepField)
+      , stepToWrap (F msgStepDigestStepField)
       ]
 
     -- StepIPARounds bulletproof challenges.

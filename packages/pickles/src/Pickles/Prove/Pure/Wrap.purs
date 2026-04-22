@@ -509,11 +509,12 @@ assembleWrapMainInput input =
     -- Order matches OCaml's `to_data`:
     --   (sponge_digest, msg_for_next_wrap, msg_for_next_step)
     digests :: Vector 3 (F WrapField)
-    digests =
-      F (crossFieldDigest dv.spongeDigestBeforeEvaluations)
-        :< F input.messagesForNextWrapProofDigest
-        :< F (crossFieldDigest input.messagesForNextStepProofDigest)
-        :< Vector.nil
+    digests = map F
+      ( crossFieldDigest dv.spongeDigestBeforeEvaluations
+          :< input.messagesForNextWrapProofDigest
+          :< crossFieldDigest input.messagesForNextStepProofDigest
+          :< Vector.nil
+      )
 
     -- ===== Bulletproof prechallenges (raw 128-bit, cross-field) =====
     bulletproofChallenges
@@ -531,10 +532,7 @@ assembleWrapMainInput input =
     -- these as field elements (with the check skipped). For
     -- `Features.Full.none` + `lookup.use = No`, all slots are zero.
     featureFlags :: Vector 8 (F WrapField)
-    featureFlags = Vector.replicate (F zero)
-
-    zeroF :: F WrapField
-    zeroF = F zero
+    featureFlags = Vector.replicate zero
   in
     WrapStatementPacked
       { fpFields
@@ -544,7 +542,7 @@ assembleWrapMainInput input =
       , bulletproofChallenges
       , branchData
       , featureFlags
-      , lookupOptFlag: zeroF
-      , lookupOptScalarChallenge: zeroF
+      , lookupOptFlag: zero
+      , lookupOptScalarChallenge: zero
       }
 

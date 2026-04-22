@@ -241,7 +241,7 @@ expandDeferred input =
     -- Step 4a: sub-sponge over flattened expanded prev challenges.
     challengesDigest :: StepField
     challengesDigest = evalPureSpongeM initialSponge do
-      for_ prevExpanded \chals -> for_ chals (absorb :: StepField -> _)
+      for_ prevExpanded \chals -> for_ chals absorb
       squeeze
 
     -- Step 4b: main sponge squeezes (xi_chal, r_chal) after absorbing
