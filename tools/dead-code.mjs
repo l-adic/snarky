@@ -183,6 +183,18 @@ function discoverInstancePrefixes(modules) {
   return [...prefixes];
 }
 
+// Class-method accessor pattern: the compiler emits each class method
+// `m` as a top-level `m = \dict -> case dict of Foo$Dict { m } -> m`,
+// i.e. an Abs whose argument is "dict" and whose body is a Case. These
+// are also invisible to reachability (they're dispatched through the
+// dictionary at call sites).
+function isClassMethodAccessor(decl) {
+  if (decl.bindType !== 'NonRec') return false;
+  const e = decl.expression;
+  if (!e || e.type !== 'Abs' || e.argument !== 'dict') return false;
+  return e.body?.type === 'Case';
+}
+
 // Return a map ident → expression for every top-level bind in a module's decls.
 function declMap(mod) {
   const m = new Map();
@@ -270,13 +282,18 @@ function main() {
     if (PACKAGE_FILTER && origin.pkg !== PACKAGE_FILTER) continue;
 
     const decls = declMap(mod);
+    // Pre-index class-method accessors for filtering
+    const classMethods = new Set();
+    for (const d of mod.decls) {
+      if (isClassMethodAccessor(d)) classMethods.add(d.identifier);
+    }
     let totalExports = 0;
     const dead = [];
     for (const exp of mod.exports) {
       if (!decls.has(exp)) continue;
       totalExports++;
       if (!reachable.has(keyOf(modName, exp))) {
-        if (!INCLUDE_ALL && looksLikeInstance(exp, extraInstancePrefixes)) continue;
+        if (!INCLUDE_ALL && (looksLikeInstance(exp, extraInstancePrefixes) || classMethods.has(exp))) continue;
         dead.push(exp);
       } else {
         liveInternalCount++;
