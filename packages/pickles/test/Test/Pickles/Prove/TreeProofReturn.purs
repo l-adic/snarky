@@ -46,7 +46,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw, throwException) as Exc
+import Control.Monad.Except (runExceptT)
+import Data.Either (Either(..))
+import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -54,8 +56,8 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
+import Pickles.Prove.Step (StepAdvice(..), StepRule, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -195,11 +197,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: vestaSrs
         }
 
-      treePlaceholderAdvice = buildStepAdvice @TreeProofReturnPrevsSpec
-        { publicInput: unit
-        , wrapDomainLog2: treeWrapDomainLog2
-        }
-
     -- outputSize = len*32 + 1 + len = 2*32 + 1 + 2 = 67 for N=2.
     -- Base case: is_base_case=true; NRR's output is zero (see
     -- assertion in OCaml dump_tree_proof_return.ml:78); prev=s_neg_one
@@ -220,7 +217,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         treeCtx
         (treeProofReturnRule baseRuleArgs)
-        treePlaceholderAdvice
 
     -- Emit Tree step VK + compile metadata (same shape as NRR Producer).
     let treeStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 treeStepCR.proverIndex
@@ -259,7 +255,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
     treeWrapCR <- liftEffect $
       wrapCompile @1 @(Slots2 0 2) treeWrapCtx
-        (zeroWrapAdvice :: WrapAdvice 2 _)
 
     -- Emit Tree wrap CS + VK traces.
     let treeWrapCSDomainLog2 = ProofFFI.vestaProverIndexDomainLog2 treeWrapCR.proverIndex
@@ -555,7 +550,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         }
 
-    treeStepResult <- liftEffect $
+    treeStepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
@@ -565,11 +560,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
-        (\e -> Exc.throw ("tree stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule baseRuleArgs)
         treeStepCR
         treeRealAdvice
+    treeStepResult <- case treeStepRes of
+      Left e -> liftEffect $ Exc.throw ("tree stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple treeStepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("step.proof.public_input." <> show i) x
@@ -953,11 +950,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Trace.string "diag.kimchi.before_beta.mode" kimchiBetaState.spongeMode
       Trace.int "diag.kimchi.before_beta.mode_count" kimchiBetaState.modeCount
 
-    treeWrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots2 0 2)
-        (\e -> Exc.throwException e)
-        treeWrapProveCtx
-        treeWrapCR
+    treeWrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots2 0 2) treeWrapProveCtx treeWrapCR
+    treeWrapResult <- case treeWrapRes of
+      Left e -> liftEffect $ Exc.throw ("tree wrapSolveAndProve b0: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple treeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("wrap.proof.public_input." <> show i) x
@@ -1157,7 +1154,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         }
 
-    b1StepResult <- liftEffect $
+    b1StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
@@ -1167,11 +1164,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
-        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b1RuleArgs)
         treeStepCR
         treeB1Advice
+    b1StepResult <- case b1StepRes of
+      Left e -> liftEffect $ Exc.throw ("b1 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b1StepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b1.step.proof.public_input." <> show i) x
@@ -1414,11 +1413,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                 Vector.nil
         }
 
-    b1TreeWrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots2 0 2)
-        (\e -> Exc.throwException e)
-        b1TreeWrapProveCtx
-        treeWrapCR
+    b1TreeWrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots2 0 2) b1TreeWrapProveCtx treeWrapCR
+    b1TreeWrapResult <- case b1TreeWrapRes of
+      Left e -> liftEffect $ Exc.throw ("b1 tree wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b1TreeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b1.wrap.proof.public_input." <> show i) x
@@ -1556,7 +1555,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         }
 
-    b2StepResult <- liftEffect $
+    b2StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
@@ -1566,11 +1565,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
-        (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b2RuleArgs)
         treeStepCR
         treeB2Advice
+    b2StepResult <- case b2StepRes of
+      Left e -> liftEffect $ Exc.throw ("b2 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b2StepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b2.step.proof.public_input." <> show i) x
@@ -1800,11 +1801,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                 Vector.nil
         }
 
-    b2TreeWrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots2 0 2)
-        (\e -> Exc.throwException e)
-        b2TreeWrapProveCtx
-        treeWrapCR
+    b2TreeWrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots2 0 2) b2TreeWrapProveCtx treeWrapCR
+    b2TreeWrapResult <- case b2TreeWrapRes of
+      Left e -> liftEffect $ Exc.throw ("b2 tree wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b2TreeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b2.wrap.proof.public_input." <> show i) x
@@ -1939,7 +1940,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         }
 
-    b3StepResult <- liftEffect $
+    b3StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
@@ -1949,11 +1950,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
-        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b3RuleArgs)
         treeStepCR
         treeB3Advice
+    b3StepResult <- case b3StepRes of
+      Left e -> liftEffect $ Exc.throw ("b3 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b3StepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b3.step.proof.public_input." <> show i) x
@@ -2183,11 +2186,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                 Vector.nil
         }
 
-    b3TreeWrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots2 0 2)
-        (\e -> Exc.throwException e)
-        b3TreeWrapProveCtx
-        treeWrapCR
+    b3TreeWrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots2 0 2) b3TreeWrapProveCtx treeWrapCR
+    b3TreeWrapResult <- case b3TreeWrapRes of
+      Left e -> liftEffect $ Exc.throw ("b3 tree wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b3TreeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b3.wrap.proof.public_input." <> show i) x
@@ -2312,7 +2315,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
         }
 
-    b4StepResult <- liftEffect $
+    b4StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
@@ -2322,11 +2325,13 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
-        (\e -> Exc.throw ("b4 stepSolveAndProve: " <> show e))
         treeCtx
         (treeProofReturnRule b4RuleArgs)
         treeStepCR
         treeB4Advice
+    b4StepResult <- case b4StepRes of
+      Left e -> liftEffect $ Exc.throw ("b4 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b4StepResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b4.step.proof.public_input." <> show i) x
@@ -2546,11 +2551,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                 Vector.nil
         }
 
-    b4TreeWrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots2 0 2)
-        (\e -> Exc.throwException e)
-        b4TreeWrapProveCtx
-        treeWrapCR
+    b4TreeWrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots2 0 2) b4TreeWrapProveCtx treeWrapCR
+    b4TreeWrapResult <- case b4TreeWrapRes of
+      Left e -> liftEffect $ Exc.throw ("b4 tree wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     liftEffect $ for_ (Array.mapWithIndex Tuple b4TreeWrapResult.publicInputs) \(Tuple i x) ->
       Trace.field ("b4.wrap.proof.public_input." <> show i) x

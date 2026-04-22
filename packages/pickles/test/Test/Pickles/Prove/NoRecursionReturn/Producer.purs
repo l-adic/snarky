@@ -28,6 +28,8 @@ import Data.Map as Map
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Control.Monad.Except (runExceptT)
+import Data.Either (Either(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw, throwException) as Exc
@@ -38,7 +40,7 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (StepAdvice(..), StepCompileResult, StepProveResult, StepRule, buildStepAdvice, extractWrapVKCommsAdvice, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, WrapProveResult, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, WrapProveResult, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Trace as Trace
@@ -126,17 +128,11 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       , crs: vestaSrs
       }
 
-    placeholderAdvice = buildStepAdvice @PrevsSpecNil
-      { publicInput: unit
-      , wrapDomainLog2
-      }
-
   -- ===== Phase 1: compile the step circuit =====
   stepCR <- liftEffect $
     stepCompile @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
       ctx
       nrrRule
-      placeholderAdvice
 
   -- ===== Emit step VK + compile metadata =====
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
@@ -174,7 +170,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       , crs: pallasProofCrs
       }
   wrapCR <- liftEffect $
-    wrapCompile @1 @NoSlots wrapCtx (zeroWrapAdvice :: WrapAdvice 0 (Const Unit))
+    wrapCompile @1 @NoSlots wrapCtx
 
   let wrapDomainLog2' = ProofFFI.vestaProverIndexDomainLog2 wrapCR.proverIndex
   let wrapVkComms = extractWrapVKForStepHash wrapCR.verifierIndex
@@ -202,20 +198,25 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
   -- ===== Phase 3: step prove =====
   let
-    StepAdvice placeholderAdviceRec = placeholderAdvice
+    StepAdvice baseAdviceRec = buildStepAdvice @PrevsSpecNil
+      { publicInput: unit
+      , wrapDomainLog2
+      }
     realAdvice = StepAdvice
-      ( placeholderAdviceRec
+      ( baseAdviceRec
           { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex
           }
       )
 
-  stepResult <- liftEffect $
+  stepRes <- liftEffect $ runExceptT $
     stepSolveAndProve @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
-      (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
       ctx
       nrrRule
       stepCR
       realAdvice
+  stepResult <- case stepRes of
+    Left e -> liftEffect $ Exc.throw ("stepSolveAndProve: " <> show e)
+    Right r -> pure r
 
   liftEffect $ for_ (Array.mapWithIndex Tuple stepResult.publicInputs) \(Tuple i x) ->
     Trace.field ("step.proof.public_input." <> show i) x
@@ -330,11 +331,11 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
             padEntry :< padEntry :< Vector.nil
       }
 
-  wrapResult <- liftEffect $
-    wrapSolveAndProve @1 @NoSlots
-      (\e -> Exc.throwException e)
-      wrapProveCtx
-      wrapCR
+  wrapRes <- liftEffect $ runExceptT $
+    wrapSolveAndProve @1 @NoSlots wrapProveCtx wrapCR
+  wrapResult <- case wrapRes of
+    Left e -> liftEffect $ Exc.throw ("wrapSolveAndProve: " <> show e)
+    Right r -> pure r
 
   liftEffect do
     let

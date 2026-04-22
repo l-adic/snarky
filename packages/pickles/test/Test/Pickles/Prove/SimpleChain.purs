@@ -41,7 +41,9 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw, throwException) as Exc
+import Control.Monad.Except (runExceptT)
+import Data.Either (Either(..))
+import Effect.Exception (throw) as Exc
 import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
@@ -54,8 +56,8 @@ import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI (OraclesResult)
 import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
+import Pickles.Prove.Step (StepRule, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
+import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -223,19 +225,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
         , crs: vestaSrs
         }
 
-      -- Placeholder advice for `stepCompile`. Values aren't inspected
-      -- during compile — only the type shape matters — so we pass a
-      -- synthetic all-g0-VK advice here. The REAL advice (with oracles
-      -- over the compiled wrap VK) is built below for the solver.
-      placeholderAdvice = buildStepAdvice @(PrevsSpecCons 1 PrevsSpecNil)
-        { publicInput: F zero
-        , wrapDomainLog2
-        }
-
     -- ===== Phase 1: compile the step circuit =====
     -- Produces the step prover/verifier index we feed into wrap compile.
     stepCR <- liftEffect $
-      stepCompile @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one))) placeholderAdvice
+      stepCompile @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one)))
 
     -- === TRACE iter 6: compiled step VK commitments ===
     -- Mirrors OCaml `compile.ml:630-643` `step_vks` emission point.
@@ -296,8 +289,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- `Slots1 1` — one slot of width 1. PS's wrapMain is now
     -- polymorphic in the slot shape via `PadSlots`, so we just pin
     -- the slots type at the call site here.
-    let n1ZeroAdvice = (zeroWrapAdvice :: WrapAdvice 1 (Slots1 1))
-    wrapCR <- liftEffect $ wrapCompile @1 @(Slots1 1) wrapCtx n1ZeroAdvice
+    wrapCR <- liftEffect $ wrapCompile @1 @(Slots1 1) wrapCtx
 
     -- === TRACE: compiled wrap VK commitments ===
     -- Mirrors OCaml `compile.ml` `compile.wrapVK.*` emission. Diffing
@@ -419,13 +411,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
       }
 
     -- ===== Phase 4: run the step solver =====
-    result <- liftEffect $
+    stepRes0 <- liftEffect $ runExceptT $
       stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (negate one)))
         stepCR
         realAdvice
+    result <- case stepRes0 of
+      Left e -> liftEffect $ Exc.throw ("stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     -- ===== Trace the public input array =====
     -- Mirrors mina/src/lib/crypto/pickles/step.ml:828-833 which
@@ -867,11 +861,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
         Trace.field ("wrap.dbg.step_proof.w_comm." <> show i <> ".x") pt.x
         Trace.field ("wrap.dbg.step_proof.w_comm." <> show i <> ".y") pt.y
 
-    wrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots1 1)
-        (\e -> Exc.throwException e)
-        wrapProveCtx
-        wrapCR
+    wrapRes0 <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots1 1) wrapProveCtx wrapCR
+    wrapResult <- case wrapRes0 of
+      Left e -> liftEffect $ Exc.throw ("wrapSolveAndProve b0: " <> show e)
+      Right r -> pure r
 
     -- Self-verify wrap_b0 proof against its own VK. If the proof doesn't
     -- verify here, neither the next step circuit nor the batch verifier
@@ -1049,13 +1043,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
       }
 
-    b1Result <- liftEffect $
+    b1Res <- liftEffect $ runExceptT $
       stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b1 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F zero))
         stepCR
         b1Advice
+    b1Result <- case b1Res of
+      Left e -> liftEffect $ Exc.throw ("b1 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b1StepProofValid = ProofFFI.verifyOpeningProof
@@ -1312,11 +1308,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
       Trace.field "b1wrap.dbg.u_chal_oracle" (SizedF.toField b1WrapB0Oracles.uChal)
       Trace.field "b1wrap.dbg.zeta_oracle" b1WrapB0Oracles.zeta
 
-    b1WrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots1 1)
-        (\e -> Exc.throwException e)
-        b1WrapProveCtx
-        wrapCR
+    b1WrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots1 1) b1WrapProveCtx wrapCR
+    b1WrapResult <- case b1WrapRes of
+      Left e -> liftEffect $ Exc.throw ("b1 wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b1WrapProofValid = ProofFFI.verifyOpeningProof
@@ -1424,13 +1420,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
           )
       }
 
-    b2Result <- liftEffect $
+    b2Res <- liftEffect $ runExceptT $
       stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b2 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F one))
         stepCR
         b2Advice
+    b2Result <- case b2Res of
+      Left e -> liftEffect $ Exc.throw ("b2 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b2StepProofValid = ProofFFI.verifyOpeningProof
@@ -1634,11 +1632,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
               padEntry :< realEntry :< Vector.nil
         }
 
-    b2WrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots1 1)
-        (\e -> Exc.throwException e)
-        b2WrapProveCtx
-        wrapCR
+    b2WrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots1 1) b2WrapProveCtx wrapCR
+    b2WrapResult <- case b2WrapRes of
+      Left e -> liftEffect $ Exc.throw ("b2 wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b2WrapProofValid = ProofFFI.verifyOpeningProof
@@ -1738,13 +1736,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
           )
       }
 
-    b3Result <- liftEffect $
+    b3Res <- liftEffect $ runExceptT $
       stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b3 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 2 :: StepField)))
         stepCR
         b3Advice
+    b3Result <- case b3Res of
+      Left e -> liftEffect $ Exc.throw ("b3 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b3StepProofValid = ProofFFI.verifyOpeningProof
@@ -1945,11 +1945,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
               padEntry :< realEntry :< Vector.nil
         }
 
-    b3WrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots1 1)
-        (\e -> Exc.throwException e)
-        b3WrapProveCtx
-        wrapCR
+    b3WrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots1 1) b3WrapProveCtx wrapCR
+    b3WrapResult <- case b3WrapRes of
+      Left e -> liftEffect $ Exc.throw ("b3 wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b3WrapProofValid = ProofFFI.verifyOpeningProof
@@ -2047,13 +2047,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
           )
       }
 
-    b4Result <- liftEffect $
+    b4Res <- liftEffect $ runExceptT $
       stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
-        (\e -> Exc.throw ("b4 stepSolveAndProve: " <> show e))
         ctx
         (simpleChainRule (F (fromInt 3 :: StepField)))
         stepCR
         b4Advice
+    b4Result <- case b4Res of
+      Left e -> liftEffect $ Exc.throw ("b4 stepSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b4StepProofValid = ProofFFI.verifyOpeningProof
@@ -2254,11 +2256,11 @@ spec = describe "Pickles.Prove.SimpleChain" do
               padEntry :< realEntry :< Vector.nil
         }
 
-    b4WrapResult <- liftEffect $
-      wrapSolveAndProve @1 @(Slots1 1)
-        (\e -> Exc.throwException e)
-        b4WrapProveCtx
-        wrapCR
+    b4WrapRes <- liftEffect $ runExceptT $
+      wrapSolveAndProve @1 @(Slots1 1) b4WrapProveCtx wrapCR
+    b4WrapResult <- case b4WrapRes of
+      Left e -> liftEffect $ Exc.throw ("b4 wrapSolveAndProve: " <> show e)
+      Right r -> pure r
 
     let
       b4WrapProofValid = ProofFFI.verifyOpeningProof

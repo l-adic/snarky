@@ -47,7 +47,9 @@ module Pickles.Prove.Step
 
 import Prelude
 
+import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -61,7 +63,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (Error, error)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -96,7 +97,7 @@ import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitnes
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
-import Snarky.Circuit.CVar (Variable)
+import Snarky.Circuit.CVar (EvaluationError(..), Variable)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
@@ -1697,14 +1698,110 @@ instance
     StepProverT $ map (\(StepAdvice r) -> r.publicUnfinalizedProofs) ask
 
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
--- | in the `StepProverT` monad and takes a `StepAdvice`. The circuit
--- | shape only depends on `prevsSpec` / `len` / `carrier`; advice
--- | VALUES aren't inspected during compile.
+-- | in `Effect`, which dispatches to the `StepWitnessM`/`StepSlotsM`
+-- | `Effect` instances — every advice method there throws. The
+-- | circuit shape only depends on `prevsSpec` / `len` / `carrier`;
+-- | anything that escapes the throw instance is a bug.
 -- |
 -- | `stepSolveAndProve` / `stepProve` are not yet added — they need
 -- | per-slot kimchi-prev-challenges data in StepAdvice that we
 -- | haven't introduced yet.
 stepCompile
+  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       pad unfsTotal digestPlusUnfs
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => StepProveContext len
+  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> Effect StepCompileResult
+stepCompile ctx rule = do
+  builtState <-
+    compile
+      (Proxy @Unit)
+      (Proxy @(Vector outputSize (F StepField)))
+      (Proxy @(KimchiConstraint StepField))
+      ( \_ ->
+          stepMain
+            @prevsSpec
+            @outputSize
+            @inputVal
+            @input
+            @outputVal
+            @output
+            @prevInputVal
+            @prevInput
+            rule
+            ctx.srsData
+            ctx.dummySg
+      )
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+
+  let
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @len)
+      }
+
+    endo :: StepField
+    endo =
+      let EndoBase e = (endoBase :: EndoBase StepField) in e
+
+    proverIndex =
+      createProverIndex @StepField @VestaG
+        { endo, constraintSystem, crs: ctx.crs }
+
+    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+
+  pure
+    { proverIndex
+    , verifierIndex
+    , constraintSystem
+    , builtState
+    , constraints
+    }
+
+-- | V2 solve phase — parallel to `stepSolveAndProve` but uses
+-- | `StepProverT` / `StepAdvice` / `stepMain`. `prevChallenges` for
+-- | `pallasCreateProofWithPrev` come from the uniform
+-- | `kimchiPrevChallenges` field on `StepAdvice` (sized `len`).
+-- | Errors surface through `ExceptT EvaluationError m` — the same
+-- | error type the underlying `SolverT` uses. Constraint-system-
+-- | unsatisfied failures are reported as `FailedAssertion`.
+stepSolveAndProve
   :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
        len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
@@ -1743,111 +1840,10 @@ stepCompile
   => Monad m
   => StepProveContext len
   -> StepRule len inputVal input outputVal output prevInputVal prevInput
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
-  -> m StepCompileResult
-stepCompile ctx rule advice = do
-  let
-    compileAction
-      :: StepProverT prevsSpec StepIPARounds WrapIPARounds inputVal len carrier m
-           (CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
-    compileAction =
-      compile
-        (Proxy @Unit)
-        (Proxy @(Vector outputSize (F StepField)))
-        (Proxy @(KimchiConstraint StepField))
-        ( \_ ->
-            stepMain
-              @prevsSpec
-              @outputSize
-              @inputVal
-              @input
-              @outputVal
-              @output
-              @prevInputVal
-              @prevInput
-              rule
-              ctx.srsData
-              ctx.dummySg
-        )
-        (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
-
-  builtState <- runStepProverT advice compileAction
-
-  let
-    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
-    { constraintSystem, constraints } = makeConstraintSystemWithPrevChallenges @StepField
-      { constraints: kimchiRows
-      , publicInputs: builtState.publicInputs
-      , unionFind: (un AuxState builtState.aux).wireState.unionFind
-      , prevChallengesCount: reflectType (Proxy @len)
-      }
-
-    endo :: StepField
-    endo =
-      let EndoBase e = (endoBase :: EndoBase StepField) in e
-
-    proverIndex =
-      createProverIndex @StepField @VestaG
-        { endo, constraintSystem, crs: ctx.crs }
-
-    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
-
-  pure
-    { proverIndex
-    , verifierIndex
-    , constraintSystem
-    , builtState
-    , constraints
-    }
-
--- | V2 solve phase — parallel to `stepSolveAndProve` but uses
--- | `StepProverT` / `StepAdvice` / `stepMain`. `prevChallenges` for
--- | `pallasCreateProofWithPrev` come from the uniform
--- | `kimchiPrevChallenges` field on `StepAdvice` (sized `len`).
-stepSolveAndProve
-  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
-       pad unfsTotal digestPlusUnfs m
-   . CircuitGateConstructor StepField VestaG
-  => Reflectable len Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
-  => CircuitType StepField inputVal input
-  => CircuitType StepField outputVal output
-  => CircuitType StepField prevInputVal prevInput
-  => CircuitType StepField carrier carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierVar
-  => PrevsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       len
-       carrier
-  => PrevsCarrier
-       prevsSpec
-       StepIPARounds
-       WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       len
-       carrierVar
-  => CheckedType StepField (KimchiConstraint StepField) input
-  => Monad m
-  => (Error -> m (StepProveResult outputSize))
-  -> StepProveContext len
-  -> StepRule len inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
-  -> m (StepProveResult outputSize)
-stepSolveAndProve onError ctx rule compileResult advice = do
+  -> ExceptT EvaluationError m (StepProveResult outputSize)
+stepSolveAndProve ctx rule compileResult advice = do
   let
     StepAdvice adv = advice
 
@@ -1878,11 +1874,11 @@ stepSolveAndProve onError ctx rule compileResult advice = do
               ctx.dummySg
         )
 
-  eRes <- runStepProverT advice (runSolverT rawSolver unit)
+  eRes <- lift $ runStepProverT advice (runSolverT rawSolver unit)
 
   case eRes of
-    Left e -> onError (error ("stepProve solver: " <> show e))
-    Right (Tuple publicOutputs assignments) ->
+    Left e -> throwError (WithContext "stepProve solver" e)
+    Right (Tuple publicOutputs assignments) -> do
       let
         { witness, publicInputs } = makeWitness
           { assignments
@@ -1892,38 +1888,37 @@ stepSolveAndProve onError ctx rule compileResult advice = do
 
         csSatisfied = verifyProverIndex @StepField @VestaG
           { proverIndex: compileResult.proverIndex, witness, publicInputs }
-      in
-        if not csSatisfied then do
-          let
-            _ = unsafePerformEffect $
-              dumpRowLabels
-                (Array.length compileResult.builtState.publicInputs)
-                compileResult.builtState.constraints
-          onError (error "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
-        else
-          let
-            proof = pallasCreateProofWithPrev
-              { proverIndex: compileResult.proverIndex
-              , witness
-              , prevChallenges:
-                  map
-                    ( \r ->
-                        { sgX: r.sgX
-                        , sgY: r.sgY
-                        , challenges: Vector.toUnfoldable r.challenges
-                        }
-                    )
-                    (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
-              }
-          in
-            pure
-              { proverIndex: compileResult.proverIndex
-              , verifierIndex: compileResult.verifierIndex
-              , constraintSystem: compileResult.constraintSystem
-              , witness
-              , publicInputs
-              , publicOutputs
-              , proof
-              , assignments
-              }
+      if not csSatisfied then do
+        let
+          _ = unsafePerformEffect $
+            dumpRowLabels
+              (Array.length compileResult.builtState.publicInputs)
+              compileResult.builtState.constraints
+        throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
+      else
+        let
+          proof = pallasCreateProofWithPrev
+            { proverIndex: compileResult.proverIndex
+            , witness
+            , prevChallenges:
+                map
+                  ( \r ->
+                      { sgX: r.sgX
+                      , sgY: r.sgY
+                      , challenges: Vector.toUnfoldable r.challenges
+                      }
+                  )
+                  (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
+            }
+        in
+          pure
+            { proverIndex: compileResult.proverIndex
+            , verifierIndex: compileResult.verifierIndex
+            , constraintSystem: compileResult.constraintSystem
+            , witness
+            , publicInputs
+            , publicOutputs
+            , proof
+            , assignments
+            }
 
