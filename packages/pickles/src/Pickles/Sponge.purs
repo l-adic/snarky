@@ -20,14 +20,14 @@ module Pickles.Sponge
   , lowest128Bits
   , lowest128BitsPure
   -- In-circuit sponge monad
-  , SpongeM
+  , SpongeM(..)
   , evalSpongeM
   , liftSnarky
   , labelM
   , getSponge
   , putSponge
   -- Pure sponge monad
-  , PureSpongeM
+  , PureSpongeM(..)
   , runPureSpongeM
   , evalPureSpongeM
   , getSpongeState
