@@ -145,9 +145,9 @@ const INSTANCE_PREFIXES = [
   'traversableOneTypeclassConstructor',
 ];
 
-function looksLikeInstance(ident) {
+function looksLikeInstance(ident, extraPrefixes = []) {
   if (ident.endsWith('_')) return true;
-  for (const p of INSTANCE_PREFIXES) {
+  for (const p of INSTANCE_PREFIXES.concat(extraPrefixes)) {
     if (ident === p) return true;
     if (ident.startsWith(p)) {
       const next = ident[p.length];
@@ -155,6 +155,32 @@ function looksLikeInstance(ident) {
     }
   }
   return false;
+}
+
+// Discover project-local type class names by looking for dictionary
+// constructor decls across all modules. PureScript compiles `class Foo`
+// to a dictionary constructor decl named `Foo$Dict` with metaType
+// `IsTypeClassConstructor`. Instances of `Foo` get auto-generated names
+// starting with `foo`, so we derive the prefix by lowercasing the first
+// letter.
+function discoverInstancePrefixes(modules) {
+  const prefixes = new Set();
+  for (const mod of modules.values()) {
+    for (const decl of mod.decls) {
+      const binds = decl.bindType === 'Rec' ? decl.binds : [decl];
+      for (const b of binds) {
+        if (!b.identifier?.endsWith('$Dict')) continue;
+        // The `IsTypeClassConstructor` tag sits on the decl's own
+        // annotation.meta, not the expression's.
+        if (b.annotation?.meta?.metaType !== 'IsTypeClassConstructor') continue;
+        const className = b.identifier.slice(0, -'$Dict'.length);
+        // lowercase first letter = instance prefix
+        const prefix = className.charAt(0).toLowerCase() + className.slice(1);
+        if (prefix.length > 1) prefixes.add(prefix);
+      }
+    }
+  }
+  return [...prefixes];
 }
 
 // Return a map ident → expression for every top-level bind in a module's decls.
@@ -177,6 +203,10 @@ function keyOf(modName, ident) {
 function main() {
   const entries = findEntryPoints();
   const modules = loadModules();
+
+  // Derive instance-name prefixes from every local type class so the
+  // filter also hides project-specific instance dicts.
+  const extraInstancePrefixes = discoverInstancePrefixes(modules);
 
   if (entries.length === 0) {
     console.error('No test.main entries found. Check packages/*/spago.yaml.');
@@ -246,7 +276,7 @@ function main() {
       if (!decls.has(exp)) continue;
       totalExports++;
       if (!reachable.has(keyOf(modName, exp))) {
-        if (!INCLUDE_ALL && looksLikeInstance(exp)) continue;
+        if (!INCLUDE_ALL && looksLikeInstance(exp, extraInstancePrefixes)) continue;
         dead.push(exp);
       } else {
         liveInternalCount++;
