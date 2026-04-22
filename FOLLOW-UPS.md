@@ -2,6 +2,47 @@
 
 Tracked items for future work. Each item has a tag for searchability (grep for `TODO(<tag>)` in source).
 
+## Instrumentation cleanup
+
+The byte-identity convergence work left a lot of debug scaffolding
+sprinkled through the codebase. Things to tidy now that the core
+proofs work:
+
+- **Concentrate `unsafePerformEffect (Trace.*)` in one helper.** There
+  are ~10+ sites in `pickles/src/` of the form
+  `let _ = unsafePerformEffect (Trace.fieldF "lbl" val)` in pure code.
+  Add `Pickles.Trace.unsafeField :: String -> f -> Unit` (and siblings
+  for `int` / `string`) that perform the effect inside; call sites then
+  just call the helper, concentrating the unsafety in one module.
+- **Unify debug switches.** Today we have three independent knobs:
+  `PICKLES_TRACE_FILE` (trace emission), `KIMCHI_WITNESS_DUMP`
+  (kimchi-stubs witness dump), and `ctx.debug` (post-solve
+  `verifyProverIndex` + row-label dump). Consider a top-level
+  `PICKLES_DEBUG=1` that implies the last two at default-test
+  configuration; trace-file stays orthogonal (it's byte-identity
+  output, separate concern).
+- **`ctx.debug` default from env.** Every test-setup currently hardcodes
+  `debug: true`. A helper that reads `PICKLES_DEBUG` from env and
+  populates the field would remove the repetition and let CI disable
+  the check when not needed.
+- **Env-driven row-label dump path.** Currently hardcoded
+  `/tmp/ps_{step,wrap}_row_labels.txt`. A `PICKLES_ROW_LABELS_DIR` env
+  var (default `/tmp/`) would let multiple test runs coexist and CI
+  collect them as artifacts.
+- **Strip most `Trace.*` call sites from production code.** The ~660
+  trace lines in `pickles/src/` were there to pinpoint the first
+  divergence from OCaml during convergence. Now that the circuits
+  are stable, most of them can go. Keep a skeletal set at phase
+  boundaries (FOP entry/exit, IVP entry/exit, etc.). The files most
+  affected: `Pickles.IPA`, `Pickles.Verify`, `Pickles.Verify.FqSpongeTranscript`,
+  `Pickles.Step.MessageHash`.
+- **Squash the mina submodule WIP commits.** The submodule is at a
+  `step-wrap-ml`-era branch with 10+ WIP commits mixing real fixes
+  with instrumentation. Rebase into ≤3 clearly-named commits:
+  (a) `pickles_trace.ml` infrastructure, (b) dump executables under
+  `dump_*/`, (c) inline trace points that need to go once we're done
+  with byte-identity. Then (c) can be dropped before upstreaming.
+
 ## Multi-chunk commitments — `TODO(num_chunks)`
 
 When `num_chunks > 1` (circuits exceeding SRS polynomial degree), each polynomial commitment becomes an array of chunk points rather than a single curve point.
