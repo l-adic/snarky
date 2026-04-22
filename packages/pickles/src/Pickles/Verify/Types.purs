@@ -18,14 +18,12 @@ module Pickles.Verify.Types
   , toPlonkMinimal
   , PlonkExpanded
   , expandPlonkMinimal
-  , expandPlonkMinimalCircuit
   -- * Step Deferred Values & Unfinalized Proof
   , DeferredValues
   , UnfinalizedProof
   -- * Wrap Deferred Values
   , BranchData
   , WrapDeferredValues
-  , toStepDeferredValues
   ) where
 
 import Prelude
@@ -33,10 +31,9 @@ import Prelude
 import Data.Newtype (unwrap)
 import Data.Vector (Vector)
 import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky)
+import Snarky.Circuit.DSL (F(..), SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (toField, toFieldPure)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 
 -------------------------------------------------------------------------------
@@ -143,43 +140,6 @@ expandPlonkMinimal endo plonk =
   , zeta: unwrap $ toFieldPure plonk.zeta (F endo)
   }
 
--- | Expand PlonkMinimal scalar challenges to full field values in-circuit.
--- |
--- | Circuit version of expandPlonkMinimal that generates the appropriate
--- | constraints for endo expansion.
-expandPlonkMinimalCircuit
-  :: forall f t m
-   . PrimeField f
-  => PoseidonField f
-  => FieldSizeInBits f 255
-  => CircuitM f (KimchiConstraint f) t m
-  => FVar f -- endo coefficient
-  -> PlonkMinimal (FVar f)
-  -> Snarky (KimchiConstraint f) t m (PlonkExpanded (FVar f))
-expandPlonkMinimalCircuit endo plonk = do
-  alpha <- toField @8 plonk.alpha endo
-  zeta <- toField @8 plonk.zeta endo
-  pure
-    { alpha
-    , beta: SizedF.toField plonk.beta
-    , gamma: SizedF.toField plonk.gamma
-    , zeta
-    }
-
--------------------------------------------------------------------------------
--- | Deferred Values
--------------------------------------------------------------------------------
-
--- | Deferred scalar-field values that need to be finalized by the next circuit.
--- |
--- | When a circuit partially verifies a proof, it exposes these values in its
--- | public input so the next circuit can finalize verification.
--- |
--- | The `sf` parameter is the shifted value type:
--- | - Type1 for Step verifying Wrap (Wrap scalars < Step field)
--- | - Type2 for Wrap verifying Step (Step scalars > Wrap field)
--- |
--- | Reference: unfinalized.ml:95-101, composition_types.ml Deferred_values
 type DeferredValues d f sf =
   { plonk :: PlonkInCircuit f sf
   , combinedInnerProduct :: sf
@@ -242,13 +202,3 @@ type WrapDeferredValues d f sf b =
   , branchData :: BranchData f b
   }
 
--- | Project Wrap deferred values to Step deferred values (drops branch_data).
--- | Used when passing Wrap statement data to the IVP, which expects Step's DeferredValues.
-toStepDeferredValues :: forall d f sf b. WrapDeferredValues d f sf b -> DeferredValues d f sf
-toStepDeferredValues dv =
-  { plonk: dv.plonk
-  , combinedInnerProduct: dv.combinedInnerProduct
-  , xi: dv.xi
-  , bulletproofChallenges: dv.bulletproofChallenges
-  , b: dv.b
-  }

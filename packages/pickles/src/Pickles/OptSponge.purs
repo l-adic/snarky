@@ -12,7 +12,7 @@ module Pickles.OptSponge
   -- Stateful monad (matching OCaml's mutable Opt_sponge.t)
   , OptSpongePhase(..)
   , OptSpongeState
-  , OptSpongeM(..)
+  , OptSpongeM
   , runOptSpongeM
   , liftSnarky
   , optAbsorb

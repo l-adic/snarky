@@ -22,7 +22,7 @@ import Data.Foldable (traverse_)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.Linearization.FFI (PointEval)
-import Pickles.PlonkChecks.Permutation (PermutationInput, permScalarCircuit)
+import Pickles.PlonkChecks.Permutation (PermutationInput)
 import Pickles.Sponge (class MonadSponge, absorb)
 
 -------------------------------------------------------------------------------

@@ -22,23 +22,16 @@
 module Pickles.Trace
   ( field
   , fieldF
-  , fieldsArray
-  , point
-  , pointF
   , int
-  , bool
   , string
   ) where
 
 import Prelude
 
-import Data.Array as Array
-import Data.Foldable (for_)
 import Effect (Effect)
 import JS.BigInt as BigInt
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Curves.Class (class PrimeField, toBigInt)
-import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- | FFI: emit a single trace line `[LABEL] VALUE\n` to the trace file
 -- | named by `PICKLES_TRACE_FILE`. No-op when the env var is unset. The
@@ -59,34 +52,11 @@ field label x = emitLineImpl label (BigInt.toString (toBigInt x))
 fieldF :: forall f. PrimeField f => String -> F f -> Effect Unit
 fieldF label (F x) = field label x
 
--- | Trace an `AffinePoint f` as two lines `[LABEL.x]` and `[LABEL.y]`,
--- | matching the OCaml `tick_point` / `tock_point` output. Used for
--- | curve points in the public input or in advice (sg, step accumulators,
--- | etc.).
-point :: forall f. PrimeField f => String -> AffinePoint f -> Effect Unit
-point label pt = do
-  field (label <> ".x") pt.x
-  field (label <> ".y") pt.y
-
-pointF :: forall f. PrimeField f => String -> AffinePoint (F f) -> Effect Unit
-pointF label pt = do
-  fieldF (label <> ".x") pt.x
-  fieldF (label <> ".y") pt.y
-
--- | Trace an array of field elements as one line per element with index
--- | suffixed to the label: `[LABEL.0]`, `[LABEL.1]`, …
-fieldsArray :: forall f. PrimeField f => String -> Array f -> Effect Unit
-fieldsArray label xs =
-  for_ (Array.mapWithIndex (\i x -> { i, x }) xs) \{ i, x } ->
-    field (label <> "." <> show i) x
 
 -- | Trace a primitive int.
 int :: String -> Int -> Effect Unit
 int label x = emitLineImpl label (show x)
 
--- | Trace a boolean as `0` / `1`, matching OCaml's `Pickles_trace.bool`.
-bool :: String -> Boolean -> Effect Unit
-bool label x = emitLineImpl label (if x then "1" else "0")
 
 -- | Trace an opaque string. Useful for sentinel markers (e.g. begin/end of
 -- | a circuit phase) where the value is structural rather than numeric.

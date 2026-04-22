@@ -13,8 +13,6 @@
 -- | - Domain-dependent values (Lagrange basis, vanishing polynomial)
 module Pickles.PlonkChecks.GateConstraints
   ( GateConstraintInput
-  , checkGateConstraints
-  , evaluateGateConstraints
   -- Re-exported helpers for building environments
   , buildEvalPoint
   , buildChallenges
@@ -26,13 +24,9 @@ import Data.Fin (Finite, unsafeFinite)
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector, (!!))
 import Effect.Exception.Unsafe (unsafeThrow)
-import Pickles.Linearization.Env (EnvM, EvalPoint, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval, domainGenerator)
-import Pickles.Linearization.Interpreter (evaluateM)
-import Pickles.Linearization.Types (CurrOrNext(..), GateType(..), LinearizationPoly, runLinearizationPoly)
-import Poseidon (class PoseidonField)
-import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, assertEqual_, const_, label)
-import Snarky.Curves.Class (class HasEndo, class PrimeField)
+import Pickles.Linearization.Env (EvalPoint)
+import Pickles.Linearization.FFI (PointEval)
+import Pickles.Linearization.Types (CurrOrNext(..), GateType(..))
 
 -------------------------------------------------------------------------------
 -- | Input Types
@@ -154,90 +148,4 @@ buildChallenges { alpha, beta, gamma, jointCombiner, vanishesOnZk, lagrangeFalse
 
 -------------------------------------------------------------------------------
 -- | Core Circuit Functions
--------------------------------------------------------------------------------
 
--- | Evaluate the gate constraint polynomial in-circuit using precomputed alpha powers.
--- | Returns the computed value as a circuit variable.
--- |
--- | This matches OCaml's scalars_env (plonk_checks.ml:234-240) which precomputes
--- | alpha^0..alpha^70 and uses array lookups instead of computing pow(alpha, n)
--- | each time.
--- |
--- | This computes the linearization polynomial but does NOT assert it equals zero.
--- | Use `checkGateConstraints` for the full constraint check.
-evaluateGateConstraints
-  :: forall f f' g c t m r
-   . PrimeField f
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f c t m
-  => LinearizationFFI f g
-  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
-  -> FVar f -- ^ zeta (expanded, for computing lagrange basis)
-  -> GateConstraintInput (FVar f)
-  -> Snarky c t m (FVar f)
-evaluateGateConstraints params zeta input = label "evaluate-gate-constraints" do
-  let
-    evalPoint = buildEvalPoint
-      { witnessEvals: input.witnessEvals
-      , coeffEvals: input.coeffEvals
-      , indexEvals: input.indexEvals
-      , defaultVal: const_ zero
-      }
-
-    gen = domainGenerator @f params.domainLog2
-
-    -- Omega power constants wrapped as FVar for lagrange basis
-    omegaToMinus1 = const_ (recip gen)
-    omegaToMinus2 = const_ (recip gen * recip gen)
-    omegaToMinus3 = const_ (recip gen * recip gen * recip gen)
-    omegaToMinus4 = const_ (recip gen * recip gen * recip gen * recip gen)
-
-    omegaForLagrange { zkRows: zk, offset } =
-      if not zk && offset == 0 then const_ one
-      else if zk && offset == (-1) then omegaToMinus4
-      else if not zk && offset == 1 then const_ gen
-      else if not zk && offset == (-1) then omegaToMinus1
-      else if not zk && offset == (-2) then omegaToMinus2
-      else if zk && offset == 0 then omegaToMinus3
-      else const_ one
-
-  -- Precompute alpha^0..alpha^70 (69 R1CS constraints)
-  alphaPowers <- precomputeAlphaPowers 70 input.alpha
-
-  let
-    env :: EnvM f (Snarky c t m)
-    env = buildCircuitEnvM
-      alphaPowers
-      zeta
-      params.domainLog2
-      omegaForLagrange
-      evalPoint
-      input.vanishesOnZk
-      input.beta
-      input.gamma
-      input.jointCombiner
-
-  evaluateM (runLinearizationPoly params.linearizationPoly) env
-
--- | Check that the gate constraints are satisfied.
--- |
--- | This is the core constraint checking circuit for Kimchi/PLONK verification.
--- | It evaluates the linearization polynomial using the provided witness values
--- | and asserts the result equals zero.
--- |
--- | A valid proof will satisfy this constraint; an invalid proof will not.
-checkGateConstraints
-  :: forall f f' g c t m r
-   . PrimeField f
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f c t m
-  => LinearizationFFI f g
-  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
-  -> FVar f -- ^ zeta (expanded)
-  -> GateConstraintInput (FVar f)
-  -> Snarky c t m Unit
-checkGateConstraints params zeta input = label "check-gate-constraints" do
-  result <- evaluateGateConstraints params zeta input
-  assertEqual_ result (const_ zero)

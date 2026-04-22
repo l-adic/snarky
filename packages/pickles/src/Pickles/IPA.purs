@@ -61,10 +61,10 @@ import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
 import Snarky.Circuit.DSL (exists, readCVar) as SDSL
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
+import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, pow)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -------------------------------------------------------------------------------

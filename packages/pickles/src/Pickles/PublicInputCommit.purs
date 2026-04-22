@@ -22,7 +22,7 @@ module Pickles.PublicInputCommit
   , class RPublicInputCommit
   , class PackStatement
   , class RPackStatement
-  , PackedField(..)
+  , PackedField
   , CorrectionMode(..)
   , DeferredScaleMul(..)
   , MsmTerm(..)

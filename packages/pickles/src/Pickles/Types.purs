@@ -28,7 +28,6 @@ module Pickles.Types
   , StepPerProofWitness(..)
   , PerProofUnfinalized(..)
   , WrapPrevProofState(..)
-  , WrapOldBpChals(..)
   , WrapStatementPacked(..)
   ) where
 
@@ -913,50 +912,6 @@ instance
 -- |
 -- | OCaml's H1.Wrap_typ iterates head-to-tail over the maxes list, so slot 0
 -- | is allocated first and slot 1 second.
--- |
--- | Type parameters:
--- | - `slot0Width`: number of bulletproof-challenge vectors in slot 0
--- | - `slot1Width`: number of bulletproof-challenge vectors in slot 1
--- | - `f`: field element type (`F f` or `FVar f`)
--- |
--- | Reference: wrap_main.ml:372-404 (`Req.Old_bulletproof_challenges`).
-newtype WrapOldBpChals (slot0Width :: Int) (slot1Width :: Int) f = WrapOldBpChals
-  { slot0 :: Vector slot0Width (Vector WrapIPARounds f)
-  , slot1 :: Vector slot1Width (Vector WrapIPARounds f)
-  }
-
-instance
-  ( CircuitType f a var
-  , Reflectable slot0Width Int
-  , Reflectable slot1Width Int
-  ) =>
-  CircuitType f (WrapOldBpChals slot0Width slot1Width a) (WrapOldBpChals slot0Width slot1Width var) where
-  sizeInFields pf _ = genericSizeInFields pf
-    (Proxy @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))))
-  valueToFields (WrapOldBpChals r) = genericValueToFields (tuple2 r.slot0 r.slot1)
-  fieldsToValue fs =
-    let
-      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a))
-      tup = genericFieldsToValue fs
-    in
-      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
-  varToFields (WrapOldBpChals r) = genericVarToFields
-    @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
-    (tuple2 r.slot0 r.slot1)
-  fieldsToVar fs =
-    let
-      tup :: Tuple2 (Vector slot0Width (Vector WrapIPARounds var)) (Vector slot1Width (Vector WrapIPARounds var))
-      tup = genericFieldsToVar
-        @(Tuple2 (Vector slot0Width (Vector WrapIPARounds a)) (Vector slot1Width (Vector WrapIPARounds a)))
-        fs
-    in
-      uncurry2 (\slot0 slot1 -> WrapOldBpChals { slot0, slot1 }) tup
-
-instance
-  ( CheckedType f c var
-  ) =>
-  CheckedType f c (WrapOldBpChals slot0Width slot1Width var) where
-  check (WrapOldBpChals r) = check (tuple2 r.slot0 r.slot1)
 
 -------------------------------------------------------------------------------
 -- | Wrap statement public input (allocation-side representation)

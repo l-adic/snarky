@@ -24,9 +24,7 @@
 module Pickles.Verify.FqSpongeTranscript
   ( FqSpongeInput
   , FqSpongeOutput
-  , spongeTranscriptCircuit
   , spongeTranscriptOptCircuit
-  , spongeTranscriptPure
   ) where
 
 import Prelude
@@ -38,7 +36,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.OptSponge as OptSponge
-import Pickles.Sponge (PureSpongeM, SpongeM, getSponge, getSpongeState, putSponge, putSpongeState, squeezeScalarChallenge, squeezeScalarChallengePure)
+import Pickles.Sponge (SpongeM, getSponge, putSponge)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
@@ -73,58 +71,6 @@ type FqSpongeOutput f =
   , zetaChal :: SizedF 128 f
   , digest :: f
   }
-
--------------------------------------------------------------------------------
--- | Circuit version
--------------------------------------------------------------------------------
-
--- | Sponge transcript as a Kimchi circuit.
--- |
--- | Stays in SpongeM so the caller can continue into check_bulletproof.
--- | After this action, the sponge is in `sponge_before_evaluations` state
--- | (the digest is squeezed from a copy, then the sponge is restored).
--- |
--- | Reference: step_verifier.ml:515-560
-spongeTranscriptCircuit
-  :: forall f sgOldN chunks t m r
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => { endo :: FVar f | r }
-  -> FqSpongeInput sgOldN chunks (FVar f)
-  -> SpongeM f (KimchiConstraint f) t m (FqSpongeOutput (FVar f))
-spongeTranscriptCircuit params input = do
-  Sponge.absorb input.indexDigest
-  for_ input.sgOld Sponge.absorbPoint
-  Sponge.absorbPoint input.publicComm
-  for_ input.wComm Sponge.absorbPoint
-  beta <- squeezeScalarChallenge params
-  gamma <- squeezeScalarChallenge params
-  Sponge.absorbPoint input.zComm
-  alphaChal <- squeezeScalarChallenge params
-  for_ input.tComm Sponge.absorbPoint
-  zetaChal <- squeezeScalarChallenge params
-  -- Copy sponge before squeezing digest (step_verifier.ml:559)
-  spongeBeforeEvals <- getSponge
-  digest <- Sponge.squeeze
-  putSponge spongeBeforeEvals
-  pure { beta, gamma, alphaChal, zetaChal, digest }
-
--------------------------------------------------------------------------------
--- | OptSponge circuit version (matches OCaml's Opt_sponge exactly)
--------------------------------------------------------------------------------
-
--- | Sponge transcript using OptSponge (conditional absorption with boolean flags).
--- |
--- | Matches OCaml's wrap_verifier IVP which uses Opt_sponge for all absorptions.
--- | Even for Features.none (all flags true_), this generates different constraints
--- | than the regular sponge because OptSponge uses conditional addIn/condPermute.
--- |
--- | Returns the transcript output AND the sponge state (as a regular Sponge)
--- | so the caller can continue into checkBulletproof.
--- | Returns transcript output in SpongeM — the sponge is set to sponge_before_evaluations
--- | state so the caller can continue into checkBulletproof.
 spongeTranscriptOptCircuit
   :: forall f sgOldN chunks t m r
    . PrimeField f
@@ -191,31 +137,3 @@ spongeTranscriptOptCircuit params sgOldMask input = do
   putSponge spongeBeforeEvals
   pure { beta: result.beta, gamma: result.gamma, alphaChal: result.alphaChal, zetaChal: result.zetaChal, digest }
 
--------------------------------------------------------------------------------
--- | Pure reference implementation
--------------------------------------------------------------------------------
-
--- | Pure sponge transcript. Same sponge-copy semantics as circuit version.
-spongeTranscriptPure
-  :: forall f sgOldN chunks
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => FqSpongeInput sgOldN chunks f
-  -> PureSpongeM f (FqSpongeOutput f)
-spongeTranscriptPure input = do
-  Sponge.absorb input.indexDigest
-  for_ input.sgOld Sponge.absorbPoint
-  Sponge.absorbPoint input.publicComm
-  for_ input.wComm Sponge.absorbPoint
-  beta <- squeezeScalarChallengePure
-  gamma <- squeezeScalarChallengePure
-  Sponge.absorbPoint input.zComm
-  alphaChal <- squeezeScalarChallengePure
-  for_ input.tComm Sponge.absorbPoint
-  zetaChal <- squeezeScalarChallengePure
-  -- Copy sponge before squeezing digest (step_verifier.ml:559)
-  spongeBeforeEvals <- getSpongeState
-  digest <- Sponge.squeeze
-  putSpongeState spongeBeforeEvals
-  pure { beta, gamma, alphaChal, zetaChal, digest }
