@@ -3,11 +3,11 @@
 -- |  `mina/src/lib/crypto/pickles/dump_simple_chain/dump_simple_chain.ml`).
 -- |
 -- | Runs the exact same inductive rule (`prev + 1`) at
--- | `max_proofs_verified = N1`, base case only (self = 0), through
--- | the v2 `stepCompile` + `stepSolveAndProve` orchestrators. The
--- | trace file PureScript emits is diffed byte-for-byte against the
--- | OCaml fixture at `packages/pickles/test/fixtures/simple_chain_base_case.trace`
--- | via `tools/simple_chain_trace_diff.sh`.
+-- | `max_proofs_verified = N1` through five iterations (b0..b4), each
+-- | one using the previous wrap proof as its predecessor. Every
+-- | iteration's step + wrap proofs are validated via
+-- | `ProofFFI.verifyOpeningProof` (kimchi batch_verify); the test
+-- | fails if any iteration's proof fails to verify.
 -- |
 -- | This file is the top-level binding for the Simple_chain test —
 -- | the ONLY place concrete `prevsSpec = PrevsSpecCons 1 PrevsSpecNil`
@@ -20,8 +20,9 @@
 -- | `stepSolveAndProve` are invoked here.
 -- |
 -- | Required env vars at runtime:
--- | - `PICKLES_TRACE_FILE` — path to the trace log (truncated).
 -- | - `KIMCHI_DETERMINISTIC_SEED` — u64 seed for the patched kimchi RNG.
+-- | - (optional) `PICKLES_TRACE_FILE` — trace log path; only consumed
+-- |   by the manual `tools/simple_chain_trace_diff.sh` convergence tool.
 module Test.Pickles.Prove.SimpleChain
   ( spec
   ) where
@@ -117,7 +118,7 @@ simpleChainRule prevAppState self = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
-  it "5-iteration step+wrap chain (b0..b4) trace matches OCaml fixture" \_ -> do
+  it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
     -- Mirror OCaml dump_simple_chain.ml's begin sentinel.
     liftEffect $ Trace.string "simple_chain.begin" "base_case"
 

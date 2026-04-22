@@ -1,58 +1,43 @@
 # Pickles OCaml-side fixtures
 
-These files are dumped by the OCaml pickles implementation and pinned
-in-tree as **ground truth** for the PureScript byte-identity tests.
+## What the automated tests need
 
-## What's here
+**Nothing committed here.** The pickles test suite (`spago test -p
+pickles`) runs a full prove flow and asserts proofs validate via
+`ProofFFI.verifyOpeningProof` — it does not read any file under this
+directory. You can delete everything here and `spago test` will still
+pass.
 
-| File | Producer | What the PS side compares against |
-|---|---|---|
-| `no_recursion_return_base_case.trace` | `dump_no_recursion_return.exe` | `Test.Pickles.Prove.NoRecursionReturn` |
-| `simple_chain_base_case.trace` | `dump_simple_chain.exe` | `Test.Pickles.Prove.SimpleChain` |
-| `tree_proof_return_base_case.trace` | `dump_tree_proof_return.exe` | `Test.Pickles.Prove.TreeProofReturn` |
-| `witness/ocaml_step_b{0,1}.txt` | `dump_simple_chain.exe` + `KIMCHI_WITNESS_DUMP` | kimchi witness matrices the step proof solves |
-| `witness/ocaml_wrap_b{0,1}.txt` | same | kimchi witness matrices the wrap proof solves |
+## What's in this directory
 
-The `.trace` files are `[LABEL] DECIMAL_VALUE` lines emitted by
-`mina/src/lib/crypto/pickles/pickles_trace.ml` during a real OCaml
-prove-flow; the `Pickles.Trace` module on the PS side emits the same
-labels so the two files can be `diff`-ed.
+| Location | Contents | Consumer | Tracked in git? |
+|---|---|---|---|
+| `*.trace` | `[LABEL] VALUE` transcripts from the OCaml dumpers | `tools/*_trace_diff.sh` (manual convergence debugging) | **gitignored** — regenerate with `tools/regen-fixtures.sh trace` |
+| `witness/ocaml_{step,wrap}_b{0,1}.txt` | 15-column kimchi witness matrices from `dump_simple_chain.exe` | `tools/witness_diff.sh` | yes |
 
-## Why they're committed
-
-Regenerating them requires:
-
-- a nix environment (`mina#default` flake) to build the OCaml dumpers,
-- a cargo toolchain to build the `kimchi-stubs` static lib with the
-  deterministic-RNG patch applied,
-- the mina submodule checked out at a specific revision.
-
-None of those are available in CI. Committing the fixtures lets CI
-run the byte-identity tests without touching OCaml.
+The witness matrices are stable — they only change if Mina's circuit
+structure or the kimchi witness format changes, which is rare. They're
+committed so the convergence-debugging workflow works without a
+full OCaml build. The `.trace` transcripts change every time someone
+adds a trace point on either side; committing them creates noisy
+diffs for no test benefit.
 
 ## Regenerating
 
-Use the script at the repo root:
+All fixtures regenerate via `tools/regen-fixtures.sh`:
 
 ```sh
-tools/regen-fixtures.sh          # all fixtures
-tools/regen-fixtures.sh trace    # just the .trace files
-tools/regen-fixtures.sh witness  # just the witness matrices
-tools/regen-fixtures.sh simple   # Simple_chain trace + witness
-tools/regen-fixtures.sh tree     # Tree_proof_return trace
+tools/regen-fixtures.sh all      # everything (default)
+tools/regen-fixtures.sh trace    # just the .trace files (gitignored)
+tools/regen-fixtures.sh witness  # just the witness matrices (committed)
 tools/regen-fixtures.sh nrr      # No_recursion_return trace
+tools/regen-fixtures.sh simple   # Simple_chain trace + witnesses
+tools/regen-fixtures.sh tree     # Tree_proof_return trace
 ```
 
-Prerequisites and step-by-step setup are documented in the script's
-header comment.
+Prerequisites (nix, mina submodule, kimchi-stubs static lib) are
+documented in the script header.
 
-After a regen, review with:
-
-```sh
-git diff --stat packages/pickles/test/fixtures/
-git diff packages/pickles/test/fixtures/
-```
-
-The diff should make intuitive sense given whatever OCaml-side change
-motivated the regen. If it doesn't, something broke upstream — don't
-commit.
+If a `git diff` on `witness/` shows unexpected deltas, something
+changed in Mina's circuit layout — don't commit without understanding
+why.

@@ -14,14 +14,18 @@ import Test.Spec.Runner.Node.Config as Cfg
 
 -- | Pickles test suite.
 -- |
--- | The legacy schnorr-based test scaffolding has been removed. The new
--- | testing strategy is to reproduce, byte-for-byte, the trace of the OCaml
--- | `Simple_chain` test (mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml)
--- | as captured by `mina/.../dump_simple_chain.exe` and saved at
--- | `packages/pickles/test/fixtures/simple_chain_base_case.trace`. The
--- | PureScript-side analog at Test.Pickles.Prove.SimpleChain emits a
--- | matching trace via Pickles.Trace; the two trace files are then diffed
--- | to verify pickles correctness end-to-end.
+-- | Each test runs a full prove flow (step compile → step solve+prove →
+-- | wrap compile → wrap solve+prove, iterated for multi-step cases) and
+-- | asserts that every produced proof validates via
+-- | `ProofFFI.verifyOpeningProof` (kimchi batch_verify). That's the
+-- | actual correctness check.
+-- |
+-- | Historical note: during byte-identity convergence with OCaml, these
+-- | tests also emitted a `Pickles.Trace` transcript compared against a
+-- | committed OCaml fixture. That scaffolding is now diagnostic — the
+-- | trace fixtures live outside the git tree, regenerable via
+-- | `tools/regen-fixtures.sh`, and only consumed by the manual diff
+-- | scripts in `tools/`. Tests don't depend on any `.trace` files.
 spec :: SpecT Aff Unit Aff Unit
 spec = do
   SimpleChain.spec
