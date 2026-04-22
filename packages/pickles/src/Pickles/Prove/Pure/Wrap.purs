@@ -28,12 +28,15 @@ module Pickles.Prove.Pure.Wrap
   , wrapComputeDeferredValues
   , AssembleWrapMainInputInput
   , assembleWrapMainInput
+  , branchDataMaskWidth
+  , revOnesVector
+  , packBranchDataWrap
   ) where
 
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
@@ -404,6 +407,38 @@ crossFieldSized128
   :: SizedF 128 (F StepField)
   -> SizedF 128 (F WrapField)
 crossFieldSized128 s = wrapF (coerceViaBits (unwrapF s))
+
+-- | Width of the packed proofs-verified mask in `Branch_data.pack`.
+-- |
+-- | OCaml spells this inline as `Nat.N2.n` inside
+-- | `Branch_data.pack` / `composition_types.ml`. It's the **global
+-- | pickles cap** on `max_proofs_verified`: the mask is always
+-- | padded to this width regardless of any particular circuit's
+-- | `mpv`. Not to be confused with `Pickles.Types.MaxProofsVerified`
+-- | (a per-circuit type alias slated to become polymorphic) or
+-- | `PaddedLength` (the wrap_hack padding target). All three equal
+-- | 2 today but have independent semantics.
+branchDataMaskWidth :: Int
+branchDataMaskWidth = 2
+
+-- | Pure port of OCaml's `ones_vector ~first_zero:mostRecentWidth |>
+-- | Vector.rev`, padded to `branchDataMaskWidth`. Entry `i` is true
+-- | iff `i >= branchDataMaskWidth - mostRecentWidth`. For
+-- | `mostRecentWidth ∈ {0, 1, 2}`:
+-- |
+-- |   0 → [F, F]
+-- |   1 → [F, T]
+-- |   2 → [T, T]
+-- |
+-- | This is the `proofsVerifiedMask` field consumed by
+-- | `packBranchDataWrap`. The wrap-side `wrapMain` block1 computes
+-- | the same reversed mask in-circuit (with a different bit
+-- | convention that produces the same packed value, see the comment
+-- | there).
+revOnesVector :: Int -> Vector 2 Boolean
+revOnesVector mostRecentWidth =
+  Vector.generate @2 \i ->
+    getFinite i >= branchDataMaskWidth - mostRecentWidth
 
 -- | Port of OCaml's `Branch_data.pack` — packs the mask + log2 into a
 -- | single wrap-field element. Encoding: `4 · domain_log2 + mask[0] +

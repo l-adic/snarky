@@ -53,7 +53,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Fin (getFinite, reflectFinite, unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
@@ -78,6 +78,7 @@ import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingP
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
+import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
@@ -613,28 +614,17 @@ dummyWrapTockPublicInput input =
     bpChals :: Array WrapField
     bpChals = map sizedStepBits (Vector.toUnfoldable dv.bulletproofChallenges)
 
-    -- Packed branch_data:
-    --   4 * domainLog2 + mask0 + 2 * mask1
-    -- In the step circuit `packStatement` this is computed in step
-    -- field and absorbed as a `SizedF 10` value (10 bits are enough
-    -- for domainLog2 ∈ [0,15], mask bits). The mask follows OCaml's
-    -- `ones_vector ~first_zero:most_recent_width |> Vector.rev`
-    -- (wrap_main.ml:231-238):
-    --   N0 → [F, F] → packed = 0
-    --   N1 → [F, T] → packed = 2
-    --   N2 → [T, T] → packed = 3
+    -- Packed branch_data: `4 * domainLog2 + mask[0] + 2 * mask[1]`.
+    -- The mask is OCaml's `ones_vector ~first_zero:most_recent_width |>
+    -- Vector.rev` padded to `branchDataMaskWidth = 2`. Constructed via
+    -- the shared `revOnesVector` helper and packed via the shared
+    -- `packBranchDataWrap` (same encoder the wrap-side uses through its
+    -- own in-circuit mask construction).
     packedBranchData :: WrapField
-    packedBranchData =
-      let
-        -- `reflectFinite @n @3` witnesses `n ∈ {0, 1, 2}`, so the three
-        -- cases below are exhaustive. `unsafePartial` declares that
-        -- reliance on the type-level bound.
-        maskBits = unsafePartial case getFinite (reflectFinite @n @3) of
-          0 -> 0
-          1 -> 2
-          2 -> 3
-      in
-        Curves.fromInt (4 * input.wrapDomainLog2 + maskBits)
+    packedBranchData = packBranchDataWrap
+      { domainLog2: Curves.fromInt input.wrapDomainLog2 :: StepField
+      , proofsVerifiedMask: revOnesVector (reflectType (Proxy @n))
+      }
 
     -- Feature flags + lookup slots — all constant zero for vanilla
     -- Mina (`Features.Full.none`).
