@@ -28,6 +28,12 @@ const PACKAGES_DIR = path.join(ROOT, 'packages');
 const EMIT_JSON = process.argv.includes('--json');
 const INCLUDE_ALL = process.argv.includes('--all');
 
+// --package <name>: restrict reported deads to a single package.
+const PACKAGE_FILTER = (() => {
+  const idx = process.argv.indexOf('--package');
+  return idx !== -1 ? process.argv[idx + 1] : null;
+})();
+
 // Discover every test.main module from packages/*/spago.yaml.
 function findEntryPoints() {
   const entries = [];
@@ -68,6 +74,12 @@ function loadModules() {
 // A module is "internal" iff its source lives under packages/ (not .spago/).
 function isInternal(mod) {
   return mod.modulePath && mod.modulePath.startsWith('packages/');
+}
+
+// `packages/<pkg>/<src|test>/...` — extract both.
+function originOf(mod) {
+  const match = mod.modulePath?.match(/^packages\/([^/]+)\/(src|test)\//);
+  return match ? { pkg: match[1], origin: match[2] } : null;
 }
 
 // Walk an expression tree and yield every qualified reference
@@ -216,32 +228,53 @@ function main() {
     }
   }
 
-  // Report.
-  const deadByModule = new Map(); // modName -> [idents]
+  // Report. Collect per module: total exports w/ local decls, dead list,
+  // and origin (pkg + src|test).
+  const byModule = new Map(); // modName -> { origin, totalExports, dead }
   let liveInternalCount = 0;
-  let deadCount = 0;
 
   for (const [modName, mod] of modules) {
     if (!isInternal(mod)) continue;
+    const origin = originOf(mod);
+    if (!origin) continue;
+    if (PACKAGE_FILTER && origin.pkg !== PACKAGE_FILTER) continue;
+
     const decls = declMap(mod);
+    let totalExports = 0;
     const dead = [];
     for (const exp of mod.exports) {
-      // Only flag things that have a local decl (skip pure re-exports).
       if (!decls.has(exp)) continue;
+      totalExports++;
       if (!reachable.has(keyOf(modName, exp))) {
         if (!INCLUDE_ALL && looksLikeInstance(exp)) continue;
         dead.push(exp);
-        deadCount++;
       } else {
         liveInternalCount++;
       }
     }
-    if (dead.length > 0) deadByModule.set(modName, dead);
+    byModule.set(modName, { origin, totalExports, dead });
+  }
+
+  // Partition modules by (pkg, src|test) origin and by whether every
+  // export is dead (candidate for whole-file deletion) or just some.
+  const groups = new Map(); // "pkg/src" or "pkg/test" -> { whollyDead: [], partialDead: [] }
+  for (const [modName, info] of byModule) {
+    if (info.dead.length === 0) continue;
+    const key = `${info.origin.pkg}/${info.origin.origin}`;
+    if (!groups.has(key)) groups.set(key, { whollyDead: [], partialDead: [] });
+    const bucket = groups.get(key);
+    const whollyDead = info.dead.length === info.totalExports && info.totalExports > 0;
+    (whollyDead ? bucket.whollyDead : bucket.partialDead).push({ modName, info });
   }
 
   if (EMIT_JSON) {
     const obj = {};
-    for (const [m, idents] of deadByModule) obj[m] = idents;
+    for (const [groupKey, bucket] of groups) {
+      obj[groupKey] = {
+        whollyDead: bucket.whollyDead.map(x => ({ module: x.modName, exports: x.info.dead.sort() })),
+        partialDead: bucket.partialDead.map(x => ({ module: x.modName, exports: x.info.dead.sort() })),
+      };
+    }
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     return;
   }
@@ -250,18 +283,41 @@ function main() {
   console.log(`Entry points (test.main):`);
   for (const e of entries) console.log(`  ${e.pkg}: ${e.module}`);
   console.log();
-  console.log(`Scanned ${modules.size} modules (${Array.from(modules.values()).filter(isInternal).length} internal).`);
+  const internalModCount = Array.from(modules.values()).filter(isInternal).length;
+  console.log(`Scanned ${modules.size} modules (${internalModCount} internal)${PACKAGE_FILTER ? `, filter=--package ${PACKAGE_FILTER}` : ''}.`);
   console.log(`Reachable internal exports: ${liveInternalCount}`);
-  console.log(`Dead internal exports: ${deadCount}`);
+  const totalDead = Array.from(byModule.values()).reduce((n, x) => n + x.dead.length, 0);
+  console.log(`Dead internal exports: ${totalDead}`);
   console.log();
-  if (deadCount === 0) {
+
+  if (totalDead === 0) {
     console.log('No dead exports found.');
     return;
   }
-  const sorted = Array.from(deadByModule.keys()).sort();
-  for (const m of sorted) {
-    console.log(`${m}`);
-    for (const i of deadByModule.get(m).sort()) console.log(`    ${i}`);
+
+  const groupKeys = Array.from(groups.keys()).sort();
+  for (const groupKey of groupKeys) {
+    const bucket = groups.get(groupKey);
+    console.log(`═══ ${groupKey} ═══`);
+
+    if (bucket.whollyDead.length > 0) {
+      console.log(`  wholly dead (every export unused — candidate for file deletion):`);
+      for (const { modName, info } of bucket.whollyDead.sort((a, b) => a.modName.localeCompare(b.modName))) {
+        const mod = modules.get(modName);
+        console.log(`    ${modName}  (${mod.modulePath})`);
+        for (const ident of info.dead.sort()) console.log(`        ${ident}`);
+      }
+    }
+
+    if (bucket.partialDead.length > 0) {
+      if (bucket.whollyDead.length > 0) console.log();
+      console.log(`  partially dead:`);
+      for (const { modName, info } of bucket.partialDead.sort((a, b) => a.modName.localeCompare(b.modName))) {
+        console.log(`    ${modName}  (${info.dead.length}/${info.totalExports} exports unused)`);
+        for (const ident of info.dead.sort()) console.log(`        ${ident}`);
+      }
+    }
+    console.log();
   }
 }
 
