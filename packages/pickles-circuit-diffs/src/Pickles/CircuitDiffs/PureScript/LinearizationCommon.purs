@@ -18,11 +18,6 @@ import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, mul_, pow_, sub_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
--- | Maximum alpha power appearing in the constant_term tokens.
--- | OCaml precomputes 71 elements (0..70) but only 0..31 are used.
-maxAlphaPower :: Int
-maxAlphaPower = 70
-
 -- | Circuit that evaluates the linearization polynomial using the monadic
 -- | interpreter with compact Store/Load token stream:
 -- | - 90 input fields (matching OCaml dump_circuit_impl.ml layout)
@@ -126,7 +121,7 @@ linearizationCircuitM domLog2 tokens inputs = do
       else const_ one
 
   -- 1. Precompute alpha powers (69 R1CS constraints for successive multiplication)
-  alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+  alphaPowers <- precomputeAlphaPowers alpha
 
   -- 2. Eager zk_polynomial = (zeta - ω⁻¹)(zeta - ω⁻²)(zeta - ω⁻³)
   -- Matches OCaml plonk_checks.ml:272-279

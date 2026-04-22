@@ -19,7 +19,6 @@ module Pickles.Wrap.FinalizeOtherProof
 
 import Prelude
 
-import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
@@ -29,7 +28,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
-import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (runLinearizationPoly)
@@ -40,7 +39,6 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallenge)
 import Pickles.Step.Domain (pow2PowSquare)
 import Pickles.Step.FinalizeOtherProof (FinalizeOtherProofOutput, FinalizeOtherProofParams)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
@@ -74,10 +72,6 @@ type WrapFinalizeOtherProofInput n d fv b =
 -------------------------------------------------------------------------------
 -- | Circuit
 -------------------------------------------------------------------------------
-
--- | Maximum alpha power needed by permutation and constant_term.
-maxAlphaPower :: Int
-maxAlphaPower = 70
 
 -- | Finalize another proof's deferred values in the Wrap circuit.
 -- |
@@ -216,7 +210,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega power usage to match OCaml constraint order.
-  alphaPowers <- label "step6_alphaPowers" $ precomputeAlphaPowers maxAlphaPower alpha
+  alphaPowers <- label "step6_alphaPowers" $ precomputeAlphaPowers alpha
 
   ---------------------------------------------------------------------------
   -- Step 6: Omega powers from domain#generator (plonk_checks.ml:248-265)
@@ -241,7 +235,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     vanishingPolynomial zeta
 
   let
-    alphaPow n = fromJust' ("wrap.FinalizeOtherProof: alpha^" <> show n <> " (precomputeAlphaPowers output)") $ Array.index alphaPowers n
+    alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
     a21 = alphaPow 21
     a22 = alphaPow 22
     a23 = alphaPow 23

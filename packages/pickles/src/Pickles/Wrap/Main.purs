@@ -111,7 +111,17 @@ type WrapMainInputVar =
 -- | - stepWidths: (int, branches) Vector.t
 -- | - domainLog2s: per-branch step domain log2s (we keep them as ints)
 -- | - stepKeys: dummy step VKs (PallasG circuit variables)
--- | - allPossibleDomainLog2s: Wrap_verifier.all_possible_domains
+-- | - allPossibleDomainLog2s: Wrap_verifier.all_possible_domains.
+-- |
+-- |   Shape `Vector 3 (Finite 16)`:
+-- |   * `3` is the number of possible wrap-domain sizes
+-- |     (`num_possible_domains` in OCaml): one entry per
+-- |     `proofs_verified ∈ {0, 1, 2}`. Mirrors
+-- |     `Common.wrap_domains` which maps those to log2s
+-- |     `{13, 14, 15}`.
+-- |   * `16` is the `Finite` bound = `1 + WrapIPARounds`: each log2
+-- |     fits in `[0, wrap_SRS_log2 + 1) = [0, 16)` because wrap
+-- |     domain size ≤ wrap SRS size = 2^WrapIPARounds.
 type WrapMainConfig branches =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
@@ -554,7 +564,10 @@ wrapMain config (WrapStatementPacked stmtR) = do
     revDomains <- traverse
       ( \(Tuple slotIdx wdi) -> do
           which <- label ("block3-wrap-domain-" <> show slotIdx) $
+            -- `@3`: one-hot selector for the 3 possible wrap domains
+            -- (OCaml `num_possible_domains`).
             Pseudo.oneHotVector @3 wdi
+          -- `@16`: max wrap domain log2 + 1 = WrapIPARounds + 1.
           Pseudo.toDomain @16 domainConfig which config.allPossibleDomainLog2s
       )
       revInputs

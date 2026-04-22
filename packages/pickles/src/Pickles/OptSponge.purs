@@ -34,13 +34,13 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.List (List)
 import Data.List as List
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, unwrap, wrap)
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Pickles.Util.Fatal (fromJust')
+import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)
 import RandomOracle.Sponge as RegSponge
 import Safe.Coerce (coerce)
@@ -507,14 +507,10 @@ lowest128BitsInternal constrainLowBits endo x = do
       xBig = toBigInt xVal
 
       lo :: SizedF 128 (F f)
-      lo = fromJust'
-        "OptSponge squeezeScalar lo: `mod xBig 2^128` always fits 128 bits"
-        (SizedF.fromField @128 (fromBigInt (mod xBig two128)))
+      lo = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (mod xBig two128))
 
       hi :: SizedF 128 (F f)
-      hi = fromJust'
-        "OptSponge squeezeScalar hi: `div xBig 2^128` fits 128 bits for field-size-bounded x"
-        (SizedF.fromField @128 (fromBigInt (div xBig two128)))
+      hi = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (div xBig two128))
     pure $ UnChecked (Tuple lo hi)
   void $ EndoScalar.toField @8 hi endo
   when constrainLowBits $ void $ EndoScalar.toField @8 lo endo

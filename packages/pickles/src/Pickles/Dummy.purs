@@ -38,13 +38,14 @@ import Prelude
 import Control.Monad.State (State, evalState, get, put)
 import Data.Array as Array
 import Data.Blake2s (blake2s256Bits)
-import Data.Foldable (foldl)
+import Data.Foldable (class Foldable, foldl, foldr)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (sequence)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.IPA (bPoly, computeB)
 import Pickles.Linearization.Env (fieldEnv)
 import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts, unnormalizedLagrangeBasis)
@@ -57,9 +58,8 @@ import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
 import Pickles.Sponge (initialSponge)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (UnfinalizedProof)
-import Prim.Int (class Compare)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
@@ -96,34 +96,46 @@ initialRo = mkRo
 
 type RoM = State Ro
 
-bitsToBigInt :: Array Boolean -> BigInt.BigInt
-bitsToBigInt = Array.foldr
+bitsToBigInt :: forall f. Foldable f => f Boolean -> BigInt.BigInt
+bitsToBigInt = foldr
   (\bit acc -> acc * BigInt.fromInt 2 + (if bit then BigInt.fromInt 1 else BigInt.fromInt 0))
   (BigInt.fromInt 0)
 
-bitsRandomOracle :: Int -> String -> Array Boolean
-bitsRandomOracle length s = Array.take length (blake2s256Bits s)
+-- | `2^k` as a BigInt. Reduces BigInt.{fromInt,pow} noise at usage sites.
+pow2 :: Int -> BigInt.BigInt
+pow2 k = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt k)
+
+-- | Blake2s yields 256 bits; `@n` < 257 selects a prefix as a sized vector.
+bitsRandomOracle
+  :: forall @n _unused
+   . Reflectable n Int
+  => Add n _unused 256
+  => String
+  -> Vector n Boolean
+bitsRandomOracle s =
+  let n = reflectType (Proxy @n)
+  in unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
 
 tock :: RoM WrapField
 tock = do
   ro <- get
   let next = ro.tockCounter + 1
   put $ ro { tockCounter = next }
-  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle 255 ("fq_" <> show next)))
+  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fq_" <> show next)))
 
 tick :: RoM StepField
 tick = do
   ro <- get
   let next = ro.tickCounter + 1
   put $ ro { tickCounter = next }
-  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle 255 ("fp_" <> show next)))
+  pure $ Curves.fromBigInt (bitsToBigInt (bitsRandomOracle @255 ("fp_" <> show next)))
 
 chal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 chal = do
   ro <- get
   let next = ro.chalCounter + 1
   put $ ro { chalCounter = next }
-  pure $ fromBits $ fromJust' "Dummy chal: `bitsRandomOracle 128` yields exactly 128 bits" $ Vector.toVector @128 $ bitsRandomOracle 128 ("chal_" <> show next)
+  pure $ fromBits $ bitsRandomOracle @128 ("chal_" <> show next)
 
 scalarChal :: forall @f. Curves.FieldSizeInBits f 255 => Curves.PrimeField f => RoM (SizedF 128 f)
 scalarChal = chal
@@ -144,7 +156,7 @@ replicateChal
 replicateChal = do
   let n = reflectType (Proxy @n)
   arr <- sequence (Array.replicate n (chal :: RoM (SizedF 128 f)))
-  pure $ fromJust' "replicateChal: `Array.replicate n` followed by reverse yields length-n array" $ Vector.toVector @n (Array.reverse arr)
+  pure $ unsafePartial $ fromJust $ Vector.toVector @n (Array.reverse arr)
 
 -------------------------------------------------------------------------------
 -- | OCaml-primitive Ro-consuming dummies
@@ -247,8 +259,8 @@ dummyEvals =
       idxPoseidon <- pointEval
       idxGeneric <- pointEval
       let
-        indexEvals = fromJust' "dummyEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
-          [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+        indexEvals =
+          idxGeneric :< idxPoseidon :< idxCompleteAdd :< idxMul :< idxEmul :< idxEndomulScalar :< Vector.nil
       sigmaEvals <- pointEvalVec @6
       zEvals <- pointEval
       coeffEvals <- pointEvalVec @15
@@ -332,8 +344,8 @@ proofDummyPrevEvals =
       idxPoseidon <- pointEval
       idxGeneric <- pointEval
       let
-        indexEvals = fromJust' "proofDummyPrevEvals indexEvals: literal array of 6 selectors" $ Vector.toVector @6
-          [ idxGeneric, idxPoseidon, idxCompleteAdd, idxMul, idxEmul, idxEndomulScalar ]
+        indexEvals =
+          idxGeneric :< idxPoseidon :< idxCompleteAdd :< idxMul :< idxEmul :< idxEndomulScalar :< Vector.nil
       sigmaEvals <- pointEvalVec @6
       zEvals <- pointEval
       coeffEvals <- pointEvalVec @15
@@ -460,21 +472,25 @@ computeDummySgValues bcd pallasSrs vestaSrs =
     alphaFq = toFieldPure u.plonk.alpha wrapEndo
     zetaFq = toFieldPure u.plonk.zeta wrapEndo
 
-    wrapSgCoords = PallasImpl.pallasSrsBPolyCommitment pallasSrs
-      (Vector.toUnfoldable wrapChalExpanded)
-    wrapSg = { x: unsafeIdx wrapSgCoords 0, y: unsafeIdx wrapSgCoords 1 }
-    stepSgCoords = VestaImpl.vestaSrsBPolyCommitment vestaSrs
-      (Vector.toUnfoldable stepChalExpanded)
-    stepSg = { x: unsafeIdx stepSgCoords 0, y: unsafeIdx stepSgCoords 1 }
+    -- FFI contract: {pallas,vesta}SrsBPolyCommitment returns exactly
+    -- `[x, y]` — the affine coordinates of the `b_poly` commitment.
+    wrapSg = unsafePartial case
+      PallasImpl.pallasSrsBPolyCommitment pallasSrs (Vector.toUnfoldable wrapChalExpanded)
+      of
+      [ x, y ] -> { x, y }
+    stepSg = unsafePartial case
+      VestaImpl.vestaSrsBPolyCommitment vestaSrs (Vector.toUnfoldable stepChalExpanded)
+      of
+      [ x, y ] -> { x, y }
 
     wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
-    zetaPow = Curves.pow zetaFq (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
+    zetaPow = Curves.pow zetaFq (pow2 wrapDomainLog2)
 
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192)
+          + pow2 64
+          + pow2 128
+          + pow2 192
       )
   in
     { ipa:
@@ -494,11 +510,8 @@ computeDummySgValues bcd pallasSrs vestaSrs =
         , betaRaw: u.plonk.beta
         , gammaRaw: u.plonk.gamma
         , zetaRaw: u.plonk.zeta
-        , xiRaw: fromJust'
-            "Dummy xiRaw: dummy-challenge `1 + 2^64` fits in 128 bits"
-            ( SizedF.fromField @128
-                (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
-            )
+        , xiRaw: unsafePartial $ fromJust $ SizedF.fromField @128
+            (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
         , zetaExpanded: zetaFq
         , alphaExpanded: alphaFq
         , plonk:
@@ -511,9 +524,6 @@ computeDummySgValues bcd pallasSrs vestaSrs =
         , spongeDigest: digestDummy
         }
     }
-
-unsafeIdx :: forall a. Array a -> Int -> a
-unsafeIdx arr i = fromJust' ("Dummy.unsafeIdx: index " <> show i <> " into array of length " <> show (Array.length arr)) (Array.index arr i)
 
 -- | IPA challenges are force-order-invariant — `Dummy.Ipa.Wrap.challenges`
 -- | and `Dummy.Ipa.Step.challenges` in OCaml are eager module-init values
@@ -556,7 +566,7 @@ wrapDummyUnfinalizedProof bcd =
     wrapDomainLog2 = 15
     zkRows = 3
     omega = (domainGenerator wrapDomainLog2 :: WrapField)
-    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2)
+    n = pow2 wrapDomainLog2
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
     omegaM1 = recip omega
     omegaM2 = omegaM1 * omegaM1
@@ -579,18 +589,18 @@ wrapDummyUnfinalizedProof bcd =
       }
     perm = permScalar permInput
 
-    zetaPow = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt wrapDomainLog2))
+    zetaPow = Curves.pow zetaExpanded (pow2 wrapDomainLog2)
 
     digestDummy = Curves.fromBigInt
       ( BigInt.fromInt 1
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
-          + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 192)
+          + pow2 64
+          + pow2 128
+          + pow2 192
       )
 
     xi :: SizedF 128 (F WrapField)
-    xi = SizedF.wrapF $ fromJust' "Dummy wrap xi" $ SizedF.fromField @128
-      (Curves.fromBigInt (BigInt.fromInt 1 + BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 64)) :: WrapField)
+    xi = SizedF.wrapF $ unsafePartial $ fromJust $ SizedF.fromField @128
+      (Curves.fromBigInt (BigInt.fromInt 1 + pow2 64) :: WrapField)
   in
     { deferredValues:
         { plonk:
@@ -643,7 +653,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     zetaExpanded = toFieldPure p.zeta stepEndoScalar
     zkRows = 3
     omega = (domainGenerator domainLog2 :: StepField)
-    n = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt domainLog2)
+    n = pow2 domainLog2
     zetaw = zetaExpanded * omega
     zetaToNMinus1 = Curves.pow zetaExpanded n - one
     omegaM1 = recip omega
@@ -745,7 +755,7 @@ stepDummyUnfinalizedProof bcd { domainLog2 } bpChals =
     b = computeB expandedBpChals { zeta: zetaExpanded, zetaOmega: zetaw, evalscale: frResult.evalscale }
 
     srsLengthLog2 = reflectType (Proxy :: Proxy StepIPARounds)
-    zetaToSrsLength = Curves.pow zetaExpanded (BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt srsLengthLog2))
+    zetaToSrsLength = Curves.pow zetaExpanded (pow2 srsLengthLog2)
     zetaToDomainSize = Curves.pow zetaExpanded n
   in
     { deferredValues:

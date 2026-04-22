@@ -37,7 +37,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
-import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
@@ -50,7 +50,6 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit) as ChallengeDigest
 import Pickles.Step.Domain (domainVanishingPoly, pow2PowSquare)
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
@@ -131,10 +130,6 @@ type FinalizeOtherProofOutput d f =
 -------------------------------------------------------------------------------
 -- | Circuit
 -------------------------------------------------------------------------------
-
--- | Maximum alpha power needed by either permutation or constant_term.
-maxAlphaPower :: Int
-maxAlphaPower = 70
 
 -- | Finalize another proof's deferred values.
 -- |
@@ -298,7 +293,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega powers to match OCaml constraint order.
-  alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+  alphaPowers <- precomputeAlphaPowers alpha
 
   ---------------------------------------------------------------------------
   -- Step 10: Omega powers in-circuit
@@ -325,7 +320,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
 
   let
-    alphaPow n = fromJust' ("step.FinalizeOtherProof: alpha^" <> show n <> " (precomputeAlphaPowers output)") $ Array.index alphaPowers n
+    alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
     a21 = alphaPow 21
     a22 = alphaPow 22
     a23 = alphaPow 23

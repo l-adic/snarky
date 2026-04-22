@@ -75,6 +75,7 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (OraclesResult) as ProofFFI
 import Pickles.ProofFFI (Proof, pallasCreateProofWithPrev, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, tCommVec, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningLrVec, vestaProofOpeningPrechallenges, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaVerifierIndexCommitments, vestaVerifierIndexDigest)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
@@ -105,7 +106,7 @@ import Snarky.Constraint.Kimchi (KimchiConstraint, KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Constraint.Kimchi.Types (AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar)
-import Snarky.Curves.Class (fromBigInt, fromInt, generator, toAffine, toBigInt) as Curves
+import Snarky.Curves.Class (fromInt, generator, toAffine) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
@@ -299,10 +300,8 @@ buildStepAdvice input =
 
     digestStep :: F StepField
     digestStep =
-      let
-        F digestWrap = du.spongeDigestBeforeEvaluations
-      in
-        F (Curves.fromBigInt (Curves.toBigInt digestWrap) :: StepField)
+      let F digestWrap = du.spongeDigestBeforeEvaluations
+      in F (crossFieldDigest digestWrap)
 
     dvDu = du.deferredValues
     pDu = dvDu.plonk
@@ -519,31 +518,24 @@ dummyWrapTockPublicInput input =
     dv = fop.deferredValues
     p = dv.plonk
 
-    -- Bit-level coerce of a step-field scalar into the wrap field.
-    -- Step field fits in wrap field bits (Fp fits bits of Fq) so no
-    -- truncation — just reinterpret the integer representation.
+    -- Bit-level reinterpretation of a step-field scalar as a wrap-field
+    -- scalar (Fp → Fq). Step field bits fit in wrap field, so this is
+    -- lossless.
     stepToWrap :: F StepField -> WrapField
-    stepToWrap (F x) = Curves.fromBigInt (Curves.toBigInt x)
+    stepToWrap (F x) = crossFieldDigest x
 
-    -- Type1 (F StepField) → WrapField by taking the STORED (shifted)
-    -- inner value and coercing its bit representation. OCaml's
-    -- `Wrap.Statement.In_circuit.to_data` places the stored `t` from
-    -- `Shifted_value.Type1.Shifted_value t` into the tock public
-    -- input — NOT the unshifted original. Matching that requires
-    -- reaching through the Type1 newtype directly (equivalent to
-    -- OCaml's `let (Shifted_value t) = cip in t`).
+    -- Type1 (F StepField) → WrapField by reaching the STORED (shifted)
+    -- inner value. OCaml's `Wrap.Statement.In_circuit.to_data` places
+    -- the stored `t` from `Shifted_value.Type1.Shifted_value t` into
+    -- the tock public input — NOT the unshifted original.
     type1StepBits :: Type1 (F StepField) -> WrapField
     type1StepBits (Type1 x) = stepToWrap x
 
-    -- SizedF 128 (F StepField) → WrapField via bit coerce. Uses
-    -- the `UnChecked`-style inner newtype access through `SizedF.toField`
-    -- conversion (step → raw, raw → wrap via BigInt round-trip).
+    -- SizedF 128 (F StepField) → WrapField via type-safe bit
+    -- reinterpretation (`coerceViaBits` is bounded by `Compare 128 m LT`
+    -- on both fields' bit widths, so no value can be out of range).
     sizedStepBits :: SizedF 128 (F StepField) -> WrapField
-    sizedStepBits s =
-      let
-        F x = SizedF.toField s
-      in
-        Curves.fromBigInt (Curves.toBigInt x)
+    sizedStepBits = SizedF.toField <<< (coerceViaBits :: SizedF 128 StepField -> SizedF 128 WrapField) <<< SizedF.unwrapF
 
     -- 5 Type1 fp fields, order: cip, b, zetaToSrsLength,
     -- zetaToDomainSize, perm (matches `packStatement`).
@@ -912,8 +904,7 @@ buildStepAdviceWithOracles input = do
       }
 
     msgWrapHashStep :: F StepField
-    msgWrapHashStep =
-      F (Curves.fromBigInt (Curves.toBigInt msgWrapHash) :: StepField)
+    msgWrapHashStep = F (crossFieldDigest msgWrapHash)
 
   -- === TRACE Stage 3: the two digest hashes ===
   let
@@ -1198,7 +1189,7 @@ buildStepAdviceWithOracles input = do
           , zetaToSrsLength: wrapToStepType2 p.zetaToSrsLength
           , zetaToDomainSize: wrapToStepType2 p.zetaToDomainSize
           , perm: wrapToStepType2 p.perm
-          , spongeDigest: F (Curves.fromBigInt (Curves.toBigInt (case u.spongeDigestBeforeEvaluations of F x -> x)) :: StepField)
+          , spongeDigest: F (crossFieldDigest (case u.spongeDigestBeforeEvaluations of F x -> x))
           , beta: UnChecked (chalToStep (SizedF.unwrapF p.beta))
           , gamma: UnChecked (chalToStep (SizedF.unwrapF p.gamma))
           , alpha: UnChecked (chalToStep (SizedF.unwrapF p.alpha))
@@ -1425,10 +1416,10 @@ buildStepAdviceWithOracles input = do
     z2SplitField = case openingZ2 of Type2 sf -> sf
     sDiv2OfSf sf = case sf of SplitField { sDiv2: F d } -> d
   Trace.field ("expand_proof.opening.z1.raw_" <> tag)
-    (Curves.fromBigInt (Curves.toBigInt openingZ1Raw) :: StepField)
+    (crossFieldDigest openingZ1Raw :: StepField)
   Trace.field ("expand_proof.opening.z1.sDiv2_" <> tag) (sDiv2OfSf z1SplitField)
   Trace.field ("expand_proof.opening.z2.raw_" <> tag)
-    (Curves.fromBigInt (Curves.toBigInt openingZ2Raw) :: StepField)
+    (crossFieldDigest openingZ2Raw :: StepField)
   Trace.field ("expand_proof.opening.z2.sDiv2_" <> tag) (sDiv2OfSf z2SplitField)
 
   pure

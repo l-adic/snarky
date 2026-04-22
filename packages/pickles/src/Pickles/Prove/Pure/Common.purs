@@ -36,6 +36,8 @@ module Pickles.Prove.Pure.Common
   , derivePlonk
   , FtEval0Input
   , ftEval0
+  -- * Cross-field reinterpretation
+  , crossFieldDigest
   ) where
 
 import Prelude
@@ -61,7 +63,7 @@ import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, pow)
+import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeField, fromBigInt, pow, toBigInt)
 import Snarky.Types.Shifted (class Shifted, toShifted)
 
 --------------------------------------------------------------------------------
@@ -462,3 +464,18 @@ ftEval0 input =
     constantTerm = evaluate (runLinearizationPoly input.linearizationPoly) env
   in
     permRaw - pEval0Folded - constantTerm
+
+--------------------------------------------------------------------------------
+-- Cross-field reinterpretation
+--------------------------------------------------------------------------------
+
+-- | Reinterpret a field element's integer representation in another
+-- | field. Used for hash digests and packed-limb values that must
+-- | appear bit-identically in both curves of the Pasta cycle.
+-- |
+-- | Safe when the source value's big-int representation fits within
+-- | the target field's modulus — true for digests (hashes are bounded
+-- | by the sponge output width < both Pallas/Vesta scalar moduli) and
+-- | for limb-packed values (each limb < 2^64).
+crossFieldDigest :: forall f f'. PrimeField f => PrimeField f' => f -> f'
+crossFieldDigest = fromBigInt <<< toBigInt

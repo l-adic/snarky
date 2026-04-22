@@ -21,7 +21,6 @@ module Pickles.Step.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -38,7 +37,6 @@ import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesFor
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
-import Pickles.Util.Fatal (fromJust')
 import Pickles.Verify (ivpTrace)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
@@ -693,11 +691,10 @@ stepMain
     -- Emit the 6 "idx" commitments by OCaml's name order (generic, psm,
     -- complete_add, mul, emul, endomul_scalar) to match `List.iter
     -- idx_pts` in step_main.ml.
-    let idxNames = [ "generic", "psm", "complete_add", "mul", "emul", "endomul_scalar" ]
+    let idxNames = "generic" :< "psm" :< "complete_add" :< "mul" :< "emul" :< "endomul_scalar" :< Vector.nil
     forWithIndex_ vk.index \fi pt -> do
-      let i = getFinite fi
       let { x, y } = unwrapPt pt
-      let name = fromJust' ("step_main_outer idx name lookup at " <> show i) (Array.index idxNames i)
+      let name = Vector.index idxNames fi
       ivpTrace ("step_main_outer.vk.idx." <> name <> ".x") x
       ivpTrace ("step_main_outer.vk.idx." <> name <> ".y") y
     forWithIndex_ hashAppFields \i f ->

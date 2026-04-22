@@ -40,14 +40,14 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (OraclesResult, Proof, pallasProofOpeningPrechallengesVec, pallasProofOracles)
-import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, derivePlonk, ftEval0)
+import Pickles.Prove.Pure.Common (BulletproofBOutput, CombinedInnerProductBatchInput, DerivePlonkInput, FtEval0Input, combinedInnerProductBatch, computeBpChalsAndB, crossFieldDigest, derivePlonk, ftEval0)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked(..))
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (F(..), UnChecked(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, coerceViaBits, unsafeFromField, unwrapF, wrapF)
 import Snarky.Circuit.Kimchi (Type1, fromShifted, toShifted)
-import Snarky.Curves.Class (fromBigInt, fromInt, toBigInt)
+import Snarky.Curves.Class (fromInt)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -404,13 +404,6 @@ crossFieldSized128
   :: SizedF 128 (F StepField)
   -> SizedF 128 (F WrapField)
 crossFieldSized128 s = wrapF (coerceViaBits (unwrapF s))
-
--- | Full-field step → wrap coercion via BigInt. Lossy in general
--- | (truncates mod q_wrap) but Pickles digests are derived via
--- | `Digest.Constant.of_tick_field` which does the exact same
--- | bit-level reinterpretation.
-crossFieldDigest :: StepField -> WrapField
-crossFieldDigest x = fromBigInt (toBigInt x)
 
 -- | Port of OCaml's `Branch_data.pack` — packs the mask + log2 into a
 -- | single wrap-field element. Encoding: `4 · domain_log2 + mask[0] +
