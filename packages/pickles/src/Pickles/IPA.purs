@@ -46,10 +46,8 @@ module Pickles.IPA
 
 import Prelude
 
-import Data.Array as Array
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (fold, foldM, for_, product)
-import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)

@@ -50,9 +50,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
-import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
-import Pickles.Trace as Trace
 import Pickles.Util.Fatal (fromJust')
 import Prim.Int (class Add, class Mul)
 import Prim.Row as Row
@@ -60,7 +58,7 @@ import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, exists, if_, label, readCVar)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
 import Snarky.Circuit.Kimchi.AddComplete (addComplete)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')

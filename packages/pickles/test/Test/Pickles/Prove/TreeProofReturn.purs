@@ -34,7 +34,6 @@ module Test.Pickles.Prove.TreeProofReturn
 
 import Prelude
 
-import Control.Monad.State (evalState)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (unsafeFinite)
@@ -60,25 +59,20 @@ import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, bu
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Step.Prevs (StepSlot(..))
 import Pickles.Trace as Trace
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, StepPerProofWitness(..), WrapIPARounds)
-import Pickles.Types (StepField, WrapField)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..), FVar, add_, const_, exists, if_, not_, true_)
-import Snarky.Circuit.DSL (SizedF, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, UnChecked(..), add_, coerceViaBits, const_, exists, if_, not_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
-import Snarky.Circuit.Kimchi (SplitField, Type2)
-import Snarky.Circuit.Kimchi (toFieldPure)
+import Snarky.Circuit.Kimchi (SplitField, Type2, toFieldPure)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, fromInt, toBigInt)
-import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Snarky.Types.Shifted (Type2) as ShiftedType2
 import Snarky.Types.Shifted (fromShifted, toShifted)
 import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Test.Spec (SpecT, describe, it)
@@ -143,10 +137,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     liftEffect $ Trace.string "tree_proof_return.begin" "base_case"
 
     let
-      -- Only ipa.{wrap,step}.sg read here — both force-order-invariant.
-      setupBaseCaseDummies =
-        evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 2 }) Dummy.initialRo
-      dummySgValues = Dummy.computeDummySgValues setupBaseCaseDummies lagrangeSrs vestaSrs
+      -- Single source of truth for Tree's base-case dummies (N=2 →
+      -- Unfinalized.Constant.dummy is forced first in the Ro sequence).
+      bcd = Dummy.baseCaseDummies { maxProofsVerified: 2 }
+      dummySgValues = Dummy.computeDummySgValues bcd lagrangeSrs vestaSrs
       nrrWrapSg = dummySgValues.ipa.wrap.sg
       nrrWrapDomainLog2 = nrr.wrapDomainLog2
       -- `override_wrap_domain:N1` → wrap_domains.h = 2^14 per
@@ -201,14 +195,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , crs: vestaSrs
         }
 
-      treePlaceholderBaseCaseDummies =
-        evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 2 }) Dummy.initialRo
-
       treePlaceholderAdvice = buildStepAdvice @TreeProofReturnPrevsSpec
         { publicInput: unit
         , mostRecentWidth: 2
         , wrapDomainLog2: treeWrapDomainLog2
-        , baseCaseDummies: treePlaceholderBaseCaseDummies
         }
 
     -- outputSize = len*32 + 1 + len = 2*32 + 1 + 2 = 67 for N=2.
@@ -485,9 +475,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
-        , fopProofState: Dummy.stepDummyUnfinalizedProof treeStepCR.baseCaseDummies
+        , fopProofState: Dummy.stepDummyUnfinalizedProof bcd
             { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
-            (map SizedF.wrapF treeStepCR.baseCaseDummies.ipaStepChallenges)
+            (map SizedF.wrapF bcd.ipaStepChallenges)
         }
     { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
@@ -510,10 +500,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         , kimchiPrevSg: nrr.stepSg
         -- Slot 1 (Tree self dummy): Proof.dummy is called at runtime AFTER
         -- Tree compile, so its Ro counter is past module-init. Everything
-        -- flows from `treeStepCR.baseCaseDummies.proofDummy` — the compile's
+        -- flows from `bcd.proofDummy` — the compile's
         -- N=2 force order gives Proof.dummy's z1/z2 at fq 92/93 (OCaml RTL)
         -- and plonk.{alpha,beta,gamma,zeta} at chals 36-39.
-        , wrapProof: dummyWrapProof treeStepCR.baseCaseDummies
+        , wrapProof: dummyWrapProof bcd
         , wrapPublicInput: slot1BaseCaseWrapPI
         , prevChalPolys:
             slot1BaseCaseDummyChalPoly
@@ -521,12 +511,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
               :< Vector.nil
               :: Vector PaddedLength _
         , wrapPlonkRaw:
-            { alpha: treeStepCR.baseCaseDummies.proofDummy.plonk.alpha
-            , beta: treeStepCR.baseCaseDummies.proofDummy.plonk.beta
-            , gamma: treeStepCR.baseCaseDummies.proofDummy.plonk.gamma
-            , zeta: treeStepCR.baseCaseDummies.proofDummy.plonk.zeta
+            { alpha: bcd.proofDummy.plonk.alpha
+            , beta: bcd.proofDummy.plonk.beta
+            , gamma: bcd.proofDummy.plonk.gamma
+            , zeta: bcd.proofDummy.plonk.zeta
             }
-        , wrapPrevEvals: treeStepCR.baseCaseDummies.proofDummy.prevEvals
+        , wrapPrevEvals: bcd.proofDummy.prevEvals
         , wrapBranchData:
             { domainLog2: (fromInt treeSelfStepDomainLog2) :: StepField
             , proofsVerifiedMask: true :< true :< Vector.nil
@@ -537,10 +527,10 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Dummy.dummyIpaChallenges.wrapExpanded
               :< Dummy.dummyIpaChallenges.wrapExpanded
               :< Vector.nil
-        , fopState: Dummy.stepDummyUnfinalizedProof treeStepCR.baseCaseDummies
+        , fopState: Dummy.stepDummyUnfinalizedProof bcd
             { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 2, mostRecentWidth: 2 }
-            (map SizedF.wrapF treeStepCR.baseCaseDummies.ipaStepChallenges)
-        , stepAdvicePrevEvals: treeStepCR.baseCaseDummies.proofDummy.prevEvals
+            (map SizedF.wrapF bcd.ipaStepChallenges)
+        , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
         , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
         , prevChallengesForStepHash: Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
         }
@@ -735,13 +725,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           )
           slot0UnfRec.bulletproofChallenges
 
-      -- `dummyIpaChallenges.wrapExpanded` already has type `Vector
-      -- WrapIPARounds WrapField`; no coercion needed. (The similar
-      -- `fromBigInt <<< toBigInt` pattern in SimpleChain.purs:596 is
-      -- same-field identity and should eventually be cleaned up.)
-      msgForNextWrapDummyChals :: Vector WrapIPARounds WrapField
-      msgForNextWrapDummyChals = Dummy.dummyIpaChallenges.wrapExpanded
-
       -- slot 1's bp chals: from advice.publicUnfinalizedProofs[1]
       -- (= dummy N2 wrap's stored bp_chals, which are
       -- dummyIpaChallenges.wrapExpanded per Proof.dummy N2 N2).
@@ -872,11 +855,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           dummyChalPoly =
             { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
           o = ProofFFI.vestaProofOracles treeWrapCR.verifierIndex
-            { proof: dummyWrapProof treeStepCR.baseCaseDummies
+            { proof: dummyWrapProof bcd
             , publicInput: slot1BaseCaseWrapPI
             , prevChallenges: map toFFI [ dummyChalPoly, dummyChalPoly ]
             }
-          de = treeWrapCR.baseCaseDummies.dummyEvals
+          de = bcd.dummyEvals
           pe p = PointEval { zeta: F p.zeta, omegaTimesZeta: F p.omegaTimesZeta }
         in
           StepAllEvals
@@ -1021,12 +1004,6 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       -- messages_for_next_wrap_proof, per wrap.ml:541-556).
       b0StepOpeningSg :: AffinePoint WrapField
       b0StepOpeningSg = ProofFFI.pallasProofOpeningSg treeStepResult.proof
-
-      -- wrap-field endo (for expanding step unfinalized bp chals to wrap-field
-      -- msgForNextWrap challenges).
-      treeWrapEndoScalarB1 :: WrapField
-      treeWrapEndoScalarB1 =
-        let EndoScalar e = (endoScalar :: EndoScalar WrapField) in e
 
       -- b0's Tree step proof's unfinalized bp chals (slot 0 and slot 1),
       -- expanded via the wrap endo. These are what Tree b0 wrap hashed

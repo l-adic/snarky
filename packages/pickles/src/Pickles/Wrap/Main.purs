@@ -38,7 +38,7 @@ import Control.Monad.State.Trans (evalStateT, get, put)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.Foldable (foldl, for_)
+import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
 import Data.Reflectable (class Reflectable, reflectType)

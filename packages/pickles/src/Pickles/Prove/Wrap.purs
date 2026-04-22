@@ -39,7 +39,6 @@ module Pickles.Prove.Wrap
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
-import Control.Monad.State (evalState)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -55,7 +54,6 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (BaseCaseDummies, computeBaseCaseDummies, initialRo)
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLr, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSigmaCommLast, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexColumnComms, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
@@ -431,11 +429,6 @@ type WrapCompileResult =
   , constraintSystem :: ConstraintSystem WrapField
   , builtState :: CircuitBuilderState (KimchiGate WrapField) (AuxState WrapField)
   , constraints :: Array (KimchiRow WrapField)
-  , baseCaseDummies :: BaseCaseDummies
-  -- ^ Ro-derived base-case dummies for this circuit's prover-side
-  -- | base case. Parallel to the `baseCaseDummies` field on
-  -- | `StepCompileResult`. Sequenced per the compile's
-  -- | `max_proofs_verified`.
   }
 
 -- | Artifacts produced by `wrapProve`.
@@ -522,18 +515,12 @@ wrapCompile ctx advice = do
 
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
 
-    maxProofsVerified = reflectType (Proxy @mpv)
-
-    baseCaseDummies =
-      evalState (computeBaseCaseDummies { maxProofsVerified }) initialRo
-
   pure
     { proverIndex
     , verifierIndex
     , constraintSystem
     , builtState
     , constraints
-    , baseCaseDummies
     }
 
 -- | Solve phase of the wrap prover. Takes a previously compiled

@@ -28,11 +28,9 @@ module Test.Pickles.Prove.SimpleChain
 
 import Prelude
 
-import Control.Monad.State (evalState)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Array as Array
-import Data.Fin (getFinite)
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int.Bits as Int
@@ -48,25 +46,21 @@ import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (computeBaseCaseDummies, computeDummySgValues, dummyIpaChallenges, initialRo, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified) as Dummy
+import Pickles.Dummy (baseCaseDummies, computeDummySgValues, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified) as Dummy
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI (OraclesResult)
-import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningPrechallenges, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
+import Pickles.ProofFFI (pallasComputeUT, pallasProofCommitments, pallasProofOpeningPrechallenges, pallasProofOpeningSg, pallasProofOracles, pallasProverIndexDomainLog2, pallasSpongeCheckpointBeforeChallenges, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexDigest, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, verifyOpeningProof, vestaProofCommitments, vestaProofOpeningDelta, vestaProofOpeningSg, vestaProofOpeningZ1, vestaProofOpeningZ2, vestaProofOracles, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, assembleWrapMainInput, wrapComputeDeferredValues)
-import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Step (dummyWrapTockPublicInput)
+import Pickles.Prove.Step (StepRule, buildStepAdvice, buildStepAdviceWithOracles, dummyWrapTockPublicInput, extractWrapVKForStepHash, stepCompile, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, buildWrapAdvice, buildWrapMainConfig, extractStepVKComms, wrapCompile, wrapSolveAndProve, zeroWrapAdvice)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
-import Pickles.Types (PaddedLength, StepField)
-import Pickles.Types (PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
-import Pickles.VerificationKey (StepVK)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof, hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Safe.Coerce (coerce)
@@ -184,12 +178,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- compile-time zeros into the step constraint system, producing a
     -- step VK that diverged from OCaml's (iter 6 diagnostic confirmed).
     let
-      -- Only `ipa.{wrap,step}.sg` are read from `dummySgValues` at this
-      -- call site; both are force-order-invariant (derived from
-      -- module-init IPA challenges), so maxProofsVerified here is
-      -- irrelevant — we pick 1 to match the SimpleChain shape.
-      setupDummies = evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 1 }) Dummy.initialRo
-      dummySgValues = Dummy.computeDummySgValues setupDummies lagrangeSrs vestaSrs
+      -- Single source of truth for SimpleChain's base-case dummies
+      -- (N=1, so Proof.dummy is forced first in the Ro sequence).
+      bcd = Dummy.baseCaseDummies { maxProofsVerified: 1 }
+      dummySgValues = Dummy.computeDummySgValues bcd lagrangeSrs vestaSrs
       wrapSg = dummySgValues.ipa.wrap.sg
       stepSg = dummySgValues.ipa.step.sg
 
@@ -235,14 +227,10 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- during compile — only the type shape matters — so we pass a
       -- synthetic all-g0-VK advice here. The REAL advice (with oracles
       -- over the compiled wrap VK) is built below for the solver.
-      placeholderBaseCaseDummies =
-        evalState (Dummy.computeBaseCaseDummies { maxProofsVerified: 1 }) Dummy.initialRo
-
       placeholderAdvice = buildStepAdvice @(PrevsSpecCons 1 PrevsSpecNil)
         { publicInput: F zero
         , mostRecentWidth: 1
         , wrapDomainLog2
-        , baseCaseDummies: placeholderBaseCaseDummies
         }
 
     -- ===== Phase 1: compile the step circuit =====
@@ -378,9 +366,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
                   :< Dummy.dummyIpaChallenges.wrapExpanded
                   :< Vector.nil
             }
-        , fopProofState: Dummy.stepDummyUnfinalizedProof stepCR.baseCaseDummies
+        , fopProofState: Dummy.stepDummyUnfinalizedProof bcd
             { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1, mostRecentWidth: 1 }
-            (map SizedF.wrapF stepCR.baseCaseDummies.ipaStepChallenges)
+            (map SizedF.wrapF bcd.ipaStepChallenges)
         }
     { advice: realAdvice, challengePolynomialCommitment: b0ChalPolyComm } <- liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
       { publicInput: F zero
@@ -391,7 +379,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       , wrapVK: wrapCR.verifierIndex
       , stepOpeningSg: stepSg
       , kimchiPrevSg: stepSg
-      , wrapProof: dummyWrapProof stepCR.baseCaseDummies
+      , wrapProof: dummyWrapProof bcd
       , wrapPublicInput: baseCaseWrapPI
       , prevChalPolys:
           baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
@@ -402,12 +390,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- `proofDummy.plonk.alpha = chal 35 bits` (RTL). Consumed directly
       -- by semantic name — no swap needed.
       , wrapPlonkRaw:
-          { alpha: stepCR.baseCaseDummies.proofDummy.plonk.alpha
-          , beta: stepCR.baseCaseDummies.proofDummy.plonk.beta
-          , gamma: stepCR.baseCaseDummies.proofDummy.plonk.gamma
-          , zeta: stepCR.baseCaseDummies.proofDummy.plonk.zeta
+          { alpha: bcd.proofDummy.plonk.alpha
+          , beta: bcd.proofDummy.plonk.beta
+          , gamma: bcd.proofDummy.plonk.gamma
+          , zeta: bcd.proofDummy.plonk.zeta
           }
-      , wrapPrevEvals: stepCR.baseCaseDummies.proofDummy.prevEvals
+      , wrapPrevEvals: bcd.proofDummy.prevEvals
       , wrapBranchData:
           { domainLog2: fromInt wrapDomainLog2 :: StepField
           , proofsVerifiedMask: false :< true :< Vector.nil
@@ -419,12 +407,12 @@ spec = describe "Pickles.Prove.SimpleChain" do
           Dummy.dummyIpaChallenges.wrapExpanded
             :< Dummy.dummyIpaChallenges.wrapExpanded
             :< Vector.nil
-      , fopState: Dummy.stepDummyUnfinalizedProof stepCR.baseCaseDummies
+      , fopState: Dummy.stepDummyUnfinalizedProof bcd
           { domainLog2: Dummy.wrapDomainLog2ForProofsVerified 1, mostRecentWidth: 1 }
-          (map SizedF.wrapF stepCR.baseCaseDummies.ipaStepChallenges)
+          (map SizedF.wrapF bcd.ipaStepChallenges)
       -- b0: advice.evals mirrors the compile-time placeholder so the
       -- step_b0 witness stays byte-identical to OCaml.
-      , stepAdvicePrevEvals: stepCR.baseCaseDummies.proofDummy.prevEvals
+      , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
       -- b0: kimchi prev_challenges.challenges for prev = dummy wrap.
       -- Per proof.ml:143, dummy wrap's deferred_values.bulletproof_challenges
       -- = Dummy.Ipa.Step.challenges. Expanded via Ipa.Step.compute_challenges
@@ -469,9 +457,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- These MUST match what the wrap circuit's Req.Openings_proof sees.
     -- If they don't, the advice construction is reading wrong bytes.
     liftEffect do
-      let stepSg = ProofFFI.pallasProofOpeningSg result.proof
-      Trace.field "step.proof.opening.sg.x" stepSg.x
-      Trace.field "step.proof.opening.sg.y" stepSg.y
+      let stepSgResult = ProofFFI.pallasProofOpeningSg result.proof
+      Trace.field "step.proof.opening.sg.x" stepSgResult.x
+      Trace.field "step.proof.opening.sg.y" stepSgResult.y
       -- Dump kimchi's ground-truth 128-bit prechallenges for PS step proof.
       -- These are the pre-endo-expansion scalars — same format as the
       -- wrap circuit's `scalarChallenges` from `bulletReduceCircuit`.
@@ -481,8 +469,8 @@ spec = describe "Pickles.Prove.SimpleChain" do
           { proof: result.proof
           , publicInput: result.publicInputs
           , prevChallenges:
-              [ { sgX: stepSg.x
-                , sgY: stepSg.y
+              [ { sgX: stepSgResult.x
+                , sgY: stepSgResult.y
                 , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
                 }
               ]
@@ -730,9 +718,9 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- For the base case, the prev wrap proof IS the dummy wrap proof,
       -- whose `openings.evals` = `Dummy.evals` (dummy.ml:7-20) generated
       -- via `Ro.tock ()` = WrapField (Tock/Fq) values.
-      -- PS mirror: `wrapCR.baseCaseDummies.dummyEvals` is built from
+      -- PS mirror: `bcd.dummyEvals` is built from
       -- the same tock() sequence and is typed as `AllEvals WrapField`.
-      de_debug = wrapCR.baseCaseDummies.dummyEvals
+      de_debug = bcd.dummyEvals
 
       -- CRUCIAL FIX: publicEvals for the wrap advice must come from running
       -- vestaProofOracles on the DUMMY WRAP proof (what step.ml:402 does
@@ -747,7 +735,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         let
           toFFI r = { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
           o = ProofFFI.vestaProofOracles wrapCR.verifierIndex
-            { proof: dummyWrapProof wrapCR.baseCaseDummies
+            { proof: dummyWrapProof bcd
             , publicInput: baseCaseWrapPI
             , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
             }
@@ -757,7 +745,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       realPrevEvalsW :: StepAllEvals (F WrapField)
       realPrevEvalsW =
         let
-          de = wrapCR.baseCaseDummies.dummyEvals
+          de = bcd.dummyEvals
           pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
         in
           StepAllEvals
@@ -937,12 +925,6 @@ spec = describe "Pickles.Prove.SimpleChain" do
       -- wrapSg for b1: from b0 wrap statement's
       -- messages_for_next_step_proof.challenge_polynomial_commitments.
       -- For base case (must_verify=false), the step circuit overrode sg
-      -- to Ipa.Wrap.compute_sg(new_bp_chals) = b0ChalPolyComm (NOT
-      -- Dummy.Ipa.Wrap.sg — compute_sg over the base case's new bp_chals
-      -- gives a fresh point).
-      b1WrapSg :: AffinePoint StepField
-      b1WrapSg = b0ChalPolyComm
-
       -- wrapPrevEvals for b1 = b0 step proof's polynomial evaluations.
       b1WrapPrevEvals :: AllEvals StepField
       b1WrapPrevEvals =

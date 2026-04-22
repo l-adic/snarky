@@ -49,7 +49,6 @@ module Pickles.Prove.Step
 import Prelude
 
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
-import Control.Monad.State (evalState)
 import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Either (Either(..))
@@ -68,7 +67,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.Dummy (BaseCaseDummies, computeBaseCaseDummies, dummyIpaChallenges, initialRo, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
+import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -181,12 +180,6 @@ type BuildStepAdviceInput inputVal =
   -- | `dump_circuit_impl.ml:3721-3723`); that value is determined by
   -- | kimchi at proof-creation time, not read from advice.
   , wrapDomainLog2 :: Int
-
-  -- | Base-case dummies from the circuit's compile (`stepCR.baseCaseDummies`).
-  -- | Single source of truth for OCaml's `Unfinalized.Constant.dummy`,
-  -- | `Proof.dummy`, `Dummy.evals`, and `Dummy.Ipa.*.challenges` — ordered
-  -- | per `max_proofs_verified` to match OCaml's compile force sequence.
-  , baseCaseDummies :: BaseCaseDummies
   }
 
 -- | Build a base-case `StepAdvice` keyed on a spec-indexed per-slot
@@ -231,8 +224,9 @@ buildStepAdvice input =
     g0w :: WeierstrassAffinePoint PallasG (F StepField)
     g0w = WeierstrassAffinePoint g0
 
-    -- Ro-derived constants shared across all fields (from compile's BaseCaseDummies).
-    bcd = input.baseCaseDummies
+    -- Ro-derived constants shared across all fields. Pure function of
+    -- `mostRecentWidth` (= max_proofs_verified for the circuit's base case).
+    bcd = baseCaseDummies { maxProofsVerified: input.mostRecentWidth }
 
     -- z1 / z2 from OCaml `proof.ml:dummy` openings (Ro.tock values
     -- re-wrapped as cross-field Type2 SplitField in the step field).
@@ -1564,11 +1558,6 @@ type StepCompileResult =
   , constraintSystem :: ConstraintSystem StepField
   , builtState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField)
   , constraints :: Array (KimchiRow StepField)
-  , baseCaseDummies :: BaseCaseDummies
-  -- ^ Ro-derived base-case dummies, sequenced per `max_proofs_verified`
-  -- | to match OCaml's compile force order. Holds OCaml's three primitive
-  -- | dummy constructors (`Dummy.evals`, `Unfinalized.Constant.dummy`,
-  -- | `Proof.dummy`) plus the module-init IPA challenges.
   }
 
 -- | Artifacts produced by `stepProve` / `stepSolveAndProve`. Shape mirrors
@@ -1894,21 +1883,12 @@ stepCompile ctx rule advice = do
 
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
 
-    -- `len` = number of previous-proof slots = `max_proofs_verified`
-    -- for this circuit. Threads through `computeBaseCaseDummies` so the
-    -- Ro force order matches OCaml's compile for this N.
-    maxProofsVerified = reflectType (Proxy @len)
-
-    baseCaseDummies =
-      evalState (computeBaseCaseDummies { maxProofsVerified }) initialRo
-
   pure
     { proverIndex
     , verifierIndex
     , constraintSystem
     , builtState
     , constraints
-    , baseCaseDummies
     }
 
 -- | V2 solve phase — parallel to `stepSolveAndProve` but uses

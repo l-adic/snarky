@@ -32,6 +32,7 @@ module Pickles.Dummy
   , dummyIpaStepChallenges
   , forceOrderFor
   , computeBaseCaseDummies
+  , baseCaseDummies
   ) where
 
 import Prelude
@@ -379,6 +380,13 @@ forceOrderFor :: { maxProofsVerified :: Int } -> ForceOrder
 forceOrderFor { maxProofsVerified } = case maxProofsVerified of
   1 -> ProofDummyFirst
   _ -> UnfinalizedFirst
+
+-- | Pure top-level accessor: the `BaseCaseDummies` for a given circuit
+-- | shape. Depends ONLY on `maxProofsVerified` — a definition-time
+-- | property, not a compile-derived one. Same bits everywhere the same
+-- | N is used.
+baseCaseDummies :: { maxProofsVerified :: Int } -> BaseCaseDummies
+baseCaseDummies cfg = evalState (computeBaseCaseDummies cfg) initialRo
 
 -- | Sequences IPA challenges + the three Ro-consuming dummies in the
 -- | OCaml-correct order for the given circuit shape. Consumers read
