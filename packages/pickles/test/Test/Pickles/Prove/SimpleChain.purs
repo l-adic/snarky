@@ -19,10 +19,11 @@
 -- | + `StepSlotsM prevsSpec …` constraints when `stepCompile` /
 -- | `stepSolveAndProve` are invoked here.
 -- |
--- | Required env vars at runtime:
--- | - `KIMCHI_DETERMINISTIC_SEED` — u64 seed for the patched kimchi RNG.
--- | - (optional) `PICKLES_TRACE_FILE` — trace log path; only consumed
--- |   by the manual `tools/simple_chain_trace_diff.sh` convergence tool.
+-- | Optional env vars at runtime:
+-- | - `KIMCHI_DETERMINISTIC_SEED` — override the kimchi RNG seed
+-- |   (defaults to 42 in crypto-provider's `deterministic_rng.rs`).
+-- | - `PICKLES_TRACE_FILE` — trace log path; only consumed by the
+-- |   manual `tools/simple_chain_trace_diff.sh` convergence tool.
 module Test.Pickles.Prove.SimpleChain
   ( spec
   ) where

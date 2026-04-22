@@ -24,10 +24,11 @@
 -- |           Tree_proof_return step+wrap prove (base case)
 -- |   iter 3: witness-matrix diff vs OCaml at Rust boundary
 -- |
--- | Required env vars at runtime:
--- | - `KIMCHI_DETERMINISTIC_SEED` — u64 seed for the patched kimchi RNG.
--- | - (optional) `KIMCHI_WITNESS_DUMP` — path template for witness dump.
--- | - (optional) `PICKLES_TRACE_FILE` — trace log path.
+-- | Optional env vars at runtime:
+-- | - `KIMCHI_DETERMINISTIC_SEED` — override the kimchi RNG seed
+-- |   (defaults to 42 in crypto-provider's `deterministic_rng.rs`).
+-- | - `KIMCHI_WITNESS_DUMP` — path template for witness dump.
+-- | - `PICKLES_TRACE_FILE` — trace log path.
 module Test.Pickles.Prove.TreeProofReturn
   ( spec
   ) where

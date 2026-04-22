@@ -18,12 +18,13 @@
 -- | (Tree_proof_return verifies a No_recursion_return proof at slot 0
 -- | of its base case).
 -- |
--- | Required env vars at runtime:
--- | - `KIMCHI_DETERMINISTIC_SEED` — u64 seed for the patched kimchi RNG.
--- | - (optional) `PICKLES_TRACE_FILE` — trace log path; only for manual
--- |   convergence debugging.
--- | - (optional) `KIMCHI_WITNESS_DUMP=/tmp/nrr_%c.witness` — writes
--- |   kimchi witness matrices for `tools/no_recursion_return_witness_diff.sh`.
+-- | Optional env vars at runtime:
+-- | - `KIMCHI_DETERMINISTIC_SEED` — override the kimchi RNG seed
+-- |   (defaults to 42 in crypto-provider's `deterministic_rng.rs`).
+-- | - `PICKLES_TRACE_FILE` — trace log path; only for manual
+-- |   convergence debugging via `tools/*_trace_diff.sh`.
+-- | - `KIMCHI_WITNESS_DUMP=/tmp/nrr_%c.witness` — writes kimchi
+-- |   witness matrices for `tools/no_recursion_return_witness_diff.sh`.
 module Test.Pickles.Prove.NoRecursionReturn
   ( spec
   ) where
