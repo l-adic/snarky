@@ -45,12 +45,12 @@ import Data.Array.NonEmpty as NEA
 import Data.Either (Either(..), fromLeft)
 import Data.Foldable (foldM, foldl)
 import Data.Maybe (Maybe(..), fromJust)
-import Effect.Exception.Unsafe (unsafeThrow)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Mul)
 import Prim.Row as Row

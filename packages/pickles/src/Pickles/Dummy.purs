@@ -110,8 +110,10 @@ bitsRandomOracle
   => String
   -> Vector n Boolean
 bitsRandomOracle s =
-  let n = reflectType (Proxy @n)
-  in unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
+  let
+    n = reflectType (Proxy @n)
+  in
+    unsafePartial $ fromJust $ Vector.toVector @n (Array.take n (blake2s256Bits s))
 
 tock :: RoM WrapField
 tock = do
@@ -469,14 +471,16 @@ computeDummySgValues bcd pallasSrs vestaSrs =
 
     -- FFI contract: {pallas,vesta}SrsBPolyCommitment returns exactly
     -- `[x, y]` — the affine coordinates of the `b_poly` commitment.
-    wrapSg = unsafePartial case
-      PallasImpl.pallasSrsBPolyCommitment pallasSrs (Vector.toUnfoldable wrapChalExpanded)
-      of
-      [ x, y ] -> { x, y }
-    stepSg = unsafePartial case
-      VestaImpl.vestaSrsBPolyCommitment vestaSrs (Vector.toUnfoldable stepChalExpanded)
-      of
-      [ x, y ] -> { x, y }
+    wrapSg = unsafePartial
+      case
+        PallasImpl.pallasSrsBPolyCommitment pallasSrs (Vector.toUnfoldable wrapChalExpanded)
+        of
+        [ x, y ] -> { x, y }
+    stepSg = unsafePartial
+      case
+        VestaImpl.vestaSrsBPolyCommitment vestaSrs (Vector.toUnfoldable stepChalExpanded)
+        of
+        [ x, y ] -> { x, y }
 
     wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
     zetaPow = Curves.pow zetaFq (pow2 wrapDomainLog2)

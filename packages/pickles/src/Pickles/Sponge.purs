@@ -42,12 +42,12 @@ import Prelude
 import Control.Monad.State.Trans (StateT(..), evalStateT, get, put, runStateT)
 import Data.Foldable (class Foldable)
 import Data.Identity (Identity(..))
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un, unwrap, wrap)
 import Data.Traversable (traverse_)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Data.Maybe (fromJust)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Poseidon (class PoseidonField)

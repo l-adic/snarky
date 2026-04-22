@@ -28,8 +28,10 @@ module Test.Pickles.Prove.SimpleChain
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
@@ -41,8 +43,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Control.Monad.Except (runExceptT)
-import Data.Either (Either(..))
 import Effect.Exception (throw) as Exc
 import Node.Encoding (Encoding(..)) as Enc
 import Node.FS.Sync (writeTextFile) as FS

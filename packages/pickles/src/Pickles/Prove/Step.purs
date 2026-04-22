@@ -57,6 +57,7 @@ import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Map (Map)
+import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -66,7 +67,6 @@ import Effect (Effect)
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
-import Data.Maybe (fromJust)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
@@ -302,8 +302,10 @@ buildStepAdvice input =
 
     digestStep :: F StepField
     digestStep =
-      let F digestWrap = du.spongeDigestBeforeEvaluations
-      in F (crossFieldDigest digestWrap)
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (crossFieldDigest digestWrap)
 
     dvDu = du.deferredValues
     pDu = dvDu.plonk
@@ -426,6 +428,7 @@ extractWrapVKCommsAdvice
 extractWrapVKCommsAdvice vk =
   let
     comms = vestaVerifierIndexCommitments vk
+
     wrapPt :: AffinePoint StepField -> WeierstrassAffinePoint PallasG (F StepField)
     wrapPt pt = WeierstrassAffinePoint { x: F pt.x, y: F pt.y }
   in
@@ -1881,13 +1884,15 @@ stepSolveAndProve ctx rule compileResult advice = do
           , publicInputs: compileResult.builtState.publicInputs
           }
       when ctx.debug do
-        let csSatisfied = verifyProverIndex @StepField @VestaG
-              { proverIndex: compileResult.proverIndex, witness, publicInputs }
+        let
+          csSatisfied = verifyProverIndex @StepField @VestaG
+            { proverIndex: compileResult.proverIndex, witness, publicInputs }
         when (not csSatisfied) do
-          let _ = unsafePerformEffect $
-                dumpRowLabels
-                  (Array.length compileResult.builtState.publicInputs)
-                  compileResult.builtState.constraints
+          let
+            _ = unsafePerformEffect $
+              dumpRowLabels
+                (Array.length compileResult.builtState.publicInputs)
+                compileResult.builtState.constraints
           throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
       let
         proof = pallasCreateProofWithPrev

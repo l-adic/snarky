@@ -552,8 +552,9 @@ wrapSolveAndProve ctx compileResult = do
           }
       when ctx.debug do
         let _ = unsafePerformEffect (wrapDumpRowLabels compileResult.builtState.constraints)
-        let csSatisfied = verifyProverIndex @WrapField @PallasG
-              { proverIndex: compileResult.proverIndex, witness, publicInputs }
+        let
+          csSatisfied = verifyProverIndex @WrapField @PallasG
+            { proverIndex: compileResult.proverIndex, witness, publicInputs }
         when (not csSatisfied) $
           throwError (FailedAssertion "wrapProve: constraint system not satisfied (wrote row→label map to /tmp/ps_wrap_row_labels.txt)")
       let

@@ -34,8 +34,10 @@ module Test.Pickles.Prove.TreeProofReturn
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Foldable (for_)
 import Data.Int.Bits as Int
@@ -46,8 +48,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Control.Monad.Except (runExceptT)
-import Data.Either (Either(..))
 import Effect.Exception (throw) as Exc
 import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization

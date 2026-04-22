@@ -21,14 +21,14 @@ module Test.Pickles.Prove.NoRecursionReturn.Producer
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Data.Array as Array
+import Data.Either (Either(..))
 import Data.Foldable (for_)
 import Data.Map as Map
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
-import Control.Monad.Except (runExceptT)
-import Data.Either (Either(..))
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
