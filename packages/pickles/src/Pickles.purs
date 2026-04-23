@@ -58,7 +58,9 @@ import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Types (valueToFields)
+import Data.Reflectable (reflectType)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Type.Proxy (Proxy(..))
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
@@ -70,10 +72,15 @@ type Verifier =
   -- | Step SRS, for the stage-2 accumulator MSM (`compute_sg`).
   , vestaSrs :: CRS VestaG
   -- | Step domain log2 (= `stepProverIndex.domain.log_size_of_group`).
+  -- | Per-compiled-circuit — varies depending on constraint count;
+  -- | read via `pallasProverIndexDomainLog2` at `mkVerifier` time.
   , stepDomainLog2 :: Int
   -- | Kimchi `zkRows` (= 3 in standard Mina).
   , stepZkRows :: Int
-  -- | Step SRS size log2 (= `Max_degree.step_log2`, = 16 in Mina).
+  -- | Step SRS size log2. Protocol constant for the Pasta/Pickles cycle
+  -- | (= `Common.Max_degree.step_log2` = `StepIPARounds` = 16), NOT a
+  -- | per-circuit value — every step proof's IPA rounds are bounded by
+  -- | the SRS size, which is fixed by the cycle's design.
   , stepSrsLengthLog2 :: Int
   -- | Step domain generator `omega` (= `domain_generator stepDomainLog2`).
   , stepGenerator :: StepField
@@ -100,7 +107,7 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
   , vestaSrs
   , stepDomainLog2
   , stepZkRows: 3
-  , stepSrsLengthLog2: 16
+  , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
   , stepEndo: case (endoScalar :: EndoScalar StepField) of EndoScalar e -> e
