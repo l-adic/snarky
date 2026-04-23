@@ -33,8 +33,8 @@ import Pickles.ProofFFI (OraclesResult)
 import Pickles.ProofFFI (pallasProofOracles, pallasProverIndexDomainLog2, permutationVanishingPolynomial, proofCoefficientEvals, proofIndexEvals, proofSigmaEvals, proofWitnessEvals, proofZEvals, vestaSrsBlindingGenerator, vestaSrsLagrangeCommitmentAt) as ProofFFI
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, wrapComputeDeferredValues)
 import Pickles.Prove.Step (buildStepAdviceWithOracles, dummyWrapTockPublicInput, stepCompile, stepSolveAndProve)
-import Pickles.Prove.Wrap (buildWrapMainConfig, wrapCompile)
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
+import Pickles.Prove.Wrap (buildWrapMainConfig, wrapCompile)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (PaddedLength, StepField)
@@ -94,8 +94,14 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step compile.
   stepCR <- liftEffect $
     stepCompile @(PrevsSpecCons 1 PrevsSpecNil) @34
-      @(F StepField) @(FVar StepField) @Unit @Unit
-      @(F StepField) @(FVar StepField) ctx (simpleChainRule (F (negate one)))
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      ctx
+      (simpleChainRule (F (negate one)))
 
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
 
@@ -173,9 +179,16 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step prove.
   stepRes <- liftEffect $ runExceptT $
     stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34
-      @(F StepField) @(FVar StepField) @Unit @Unit
-      @(F StepField) @(FVar StepField)
-      ctx (simpleChainRule (F (negate one))) stepCR realAdvice
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      ctx
+      (simpleChainRule (F (negate one)))
+      stepCR
+      realAdvice
   result <- case stepRes of
     Left e -> liftEffect $ Exc.throw ("stepSolveAndProve: " <> show e)
     Right r -> pure r

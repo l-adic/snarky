@@ -45,11 +45,13 @@ foreign import vestaSrsBPolyCommitment :: CRS Vesta.G -> Array Vesta.ScalarField
 vestaSrsBPolyCommitmentPoint
   :: CRS Vesta.G -> Array Vesta.ScalarField -> AffinePoint Vesta.BaseField
 vestaSrsBPolyCommitmentPoint srs chals =
-  let xs = vestaSrsBPolyCommitment srs chals
-  in case Array.index xs 0, Array.index xs 1 of
-    Just x, Just y -> { x, y }
-    _, _ -> unsafeCrashWith
-      "vestaSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
+  let
+    xs = vestaSrsBPolyCommitment srs chals
+  in
+    case Array.index xs 0, Array.index xs 1 of
+      Just x, Just y -> { x, y }
+      _, _ -> unsafeCrashWith
+        "vestaSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
 foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 

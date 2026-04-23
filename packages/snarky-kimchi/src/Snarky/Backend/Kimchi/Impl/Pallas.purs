@@ -45,11 +45,13 @@ foreign import pallasSrsBPolyCommitment :: CRS Pallas.G -> Array Pallas.ScalarFi
 pallasSrsBPolyCommitmentPoint
   :: CRS Pallas.G -> Array Pallas.ScalarField -> AffinePoint Pallas.BaseField
 pallasSrsBPolyCommitmentPoint srs chals =
-  let xs = pallasSrsBPolyCommitment srs chals
-  in case Array.index xs 0, Array.index xs 1 of
-    Just x, Just y -> { x, y }
-    _, _ -> unsafeCrashWith
-      "pallasSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
+  let
+    xs = pallasSrsBPolyCommitment srs chals
+  in
+    case Array.index xs 0, Array.index xs 1 of
+      Just x, Just y -> { x, y }
+      _, _ -> unsafeCrashWith
+        "pallasSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 

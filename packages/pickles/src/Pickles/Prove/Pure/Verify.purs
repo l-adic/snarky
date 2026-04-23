@@ -35,12 +35,12 @@ import Pickles.Sponge (PureSpongeM, absorb, evalPureSpongeM, initialSponge, sque
 import Pickles.Types (StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkInCircuit, PlonkMinimal, ScalarChallenge)
 import RandomOracle.Sponge (Sponge)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.DSL.SizedF (SizedF, unwrapF, wrapF)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (Type1, toShifted)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Safe.Coerce (coerce)
 
 -- | Verifier-side input to `expandDeferredForVerify`. The fields split into
 -- | three groups:
@@ -149,9 +149,9 @@ expandDeferredForVerify input =
         rChal <- squeezeScalarChallengePureF
         pure { xiRawSized: xiChal, rRawSized: rChal }
       where
-        absorbPointEval pe = do
-          absorb pe.zeta
-          absorb pe.omegaTimesZeta
+      absorbPointEval pe = do
+        absorb pe.zeta
+        absorb pe.omegaTimesZeta
 
     -- Endo-expand xi and r to full field values.
     xiField :: StepField
@@ -235,11 +235,12 @@ expandDeferredForVerify input =
     -- The verifier can reconstruct every field; downstream code
     -- (assembleWrapMainInput) only reads a subset, but
     -- WrapDeferredValuesOutput expects the full record.
-    expandedPlonk = { alpha: coerce (toFieldPure input.rawPlonk.alpha (F input.endo)) :: StepField
-                   , beta: coerce (SizedF.toField input.rawPlonk.beta) :: StepField
-                   , gamma: coerce (SizedF.toField input.rawPlonk.gamma) :: StepField
-                   , zeta: zetaField
-                   }
+    expandedPlonk =
+      { alpha: coerce (toFieldPure input.rawPlonk.alpha (F input.endo)) :: StepField
+      , beta: coerce (SizedF.toField input.rawPlonk.beta) :: StepField
+      , gamma: coerce (SizedF.toField input.rawPlonk.gamma) :: StepField
+      , zeta: zetaField
+      }
 
     -- `OraclesResult f` is field-polymorphic; the existing callers use
     -- `f = StepField` (un-F-wrapped). Unwrap F from the raw sized chals.
