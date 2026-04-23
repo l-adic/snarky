@@ -92,6 +92,13 @@ type NoRecursionReturnArtifacts =
   -- | NRR's wrap public input (for feeding vestaProofOracles
   -- | downstream).
   , wrapPublicInput :: Array WrapField
+  -- | The step proof's IPA opening sg. This is `messages_for_next_wrap_proof.challenge_polynomial_commitment`
+  -- | in OCaml — the MSM target of the stage-2 accumulator check.
+  , stepProofSg :: AffinePoint WrapField
+  -- | Pre-hashed `messages_for_next_step_proof` digest (= `stepResult.publicInputs[0]`).
+  , messagesForNextStepProofDigest :: StepField
+  -- | Pre-hashed `messages_for_next_wrap_proof` digest.
+  , messagesForNextWrapProofDigest :: WrapField
   }
 
 -- | Produce the No_recursion_return base-case step + wrap proofs.
@@ -371,4 +378,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     , wrapDvInput
     , wrapDv
     , wrapPublicInput: wrapResult.publicInputs
+    , stepProofSg: wrapProofSg
+    , messagesForNextStepProofDigest: msgForNextStepDigest
+    , messagesForNextWrapProofDigest: msgForNextWrapDigest
     }
