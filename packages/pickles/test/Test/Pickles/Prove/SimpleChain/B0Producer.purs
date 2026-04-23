@@ -22,6 +22,7 @@ module Test.Pickles.Prove.SimpleChain.B0Producer
 import Prelude
 
 import Control.Monad.Except (runExceptT)
+import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (unwrap)
@@ -44,7 +45,7 @@ import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, 
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..) , StepAllEvals(..), StepField, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof, hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Safe.Coerce (coerce)
@@ -58,7 +59,6 @@ import Snarky.Curves.Class as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Data.Array as Array
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 
 type SimpleChainB0Artifacts =
@@ -138,10 +138,14 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step compile.
   stepCR <- liftEffect $
     stepCompile @(PrevsSpecCons 1 PrevsSpecNil) @34
-      @(F StepField) @(FVar StepField)
-      @Unit @Unit
-      @(F StepField) @(FVar StepField)
-      ctx (simpleChainRule (F (negate one)))
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      ctx
+      (simpleChainRule (F (negate one)))
 
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
 
@@ -220,10 +224,16 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step prove.
   stepRes <- liftEffect $ runExceptT $
     stepSolveAndProve @(PrevsSpecCons 1 PrevsSpecNil) @34
-      @(F StepField) @(FVar StepField)
-      @Unit @Unit
-      @(F StepField) @(FVar StepField)
-      ctx (simpleChainRule (F (negate one))) stepCR realAdvice
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      ctx
+      (simpleChainRule (F (negate one)))
+      stepCR
+      realAdvice
   result <- case stepRes of
     Left e -> liftEffect $ Exc.throw ("stepSolveAndProve: " <> show e)
     Right r -> pure r
@@ -304,8 +314,10 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
     msgForNextWrapWrapEndo :: WrapField
     msgForNextWrapWrapEndo =
-      let Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField
-      in e
+      let
+        Curves.EndoScalar e = Curves.endoScalar @Pallas.BaseField @WrapField
+      in
+        e
 
     msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
     msgForNextWrapRealChals =
@@ -336,7 +348,8 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
     stepPerProof
       :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
-           (F WrapField) Boolean
+           (F WrapField)
+           Boolean
     stepPerProof = PerProofUnfinalized
       { combinedInnerProduct: toShifted (fromShifted stepUnfRec.combinedInnerProduct :: F WrapField)
       , b: toShifted (fromShifted stepUnfRec.b :: F WrapField)

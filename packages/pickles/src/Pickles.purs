@@ -41,6 +41,7 @@ module Pickles
 import Prelude
 
 import Data.Array as Array
+import Data.Reflectable (reflectType)
 import Data.Vector (Vector)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -58,11 +59,10 @@ import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi (Type1)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
 import Snarky.Circuit.Types (valueToFields)
-import Data.Reflectable (reflectType)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
-import Type.Proxy (Proxy(..))
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 
 -- | Per-tag verification state. Shippable independently of provers —
 -- | closes over the wrap VK (small) + Vesta SRS (shared public params)

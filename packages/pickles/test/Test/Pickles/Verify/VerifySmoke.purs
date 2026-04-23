@@ -190,7 +190,7 @@ spec = describe "Pickles.verify (out-of-circuit)" do
       -- Slot 0 old bp chals = NRR's expanded step chals; slot 1 = dummy.
       compiledProof :: CompiledProof 2 (F StepField) (F StepField) Unit
       compiledProof = CompiledProof
-        { statement: F zero        -- base case: self = 0
+        { statement: F zero -- base case: self = 0
         , publicOutput: F zero
         , auxiliaryOutput: unit
         , wrapProof: artifacts.wrapResult.proof

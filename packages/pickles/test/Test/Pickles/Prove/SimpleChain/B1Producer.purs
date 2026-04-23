@@ -29,7 +29,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Partial.Unsafe (unsafePartial)
-import Pickles.Dummy (computeDummySgValues, dummyIpaChallenges, baseCaseDummies) as Dummy
+import Pickles.Dummy (baseCaseDummies, computeDummySgValues, dummyIpaChallenges) as Dummy
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -86,6 +86,7 @@ produceSimpleChainB1 srses = do
     -- over the b0 step proof — same value b0 itself used).
     bcd = Dummy.baseCaseDummies { maxProofsVerified: 1 }
     dummySgValues = Dummy.computeDummySgValues bcd lagrangeSrs vestaSrs
+
     dummyStepSg :: AffinePoint WrapField
     dummyStepSg = dummySgValues.ipa.step.sg
 
@@ -210,11 +211,18 @@ produceSimpleChainB1 srses = do
   -- ===== b1 step prove =====
   b1Res <- liftEffect $ runExceptT $
     stepSolveAndProve
-      @(PrevsSpecCons 1 PrevsSpecNil) @34
-      @(F StepField) @(FVar StepField)
-      @Unit @Unit
-      @(F StepField) @(FVar StepField)
-      ctx (simpleChainRule (F zero)) stepCR b1Advice
+      @(PrevsSpecCons 1 PrevsSpecNil)
+      @34
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      ctx
+      (simpleChainRule (F zero))
+      stepCR
+      b1Advice
   b1Result <- case b1Res of
     Left e -> liftEffect $ Exc.throw ("b1 stepSolveAndProve: " <> show e)
     Right r -> pure r
@@ -290,9 +298,10 @@ produceSimpleChainB1 srses = do
     b1MsgForNextWrapRealChals :: Vector WrapIPARounds WrapField
     b1MsgForNextWrapRealChals =
       map
-        (\(UnChecked v) ->
-          toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
-            msgForNextWrapWrapEndo)
+        ( \(UnChecked v) ->
+            toFieldPure (coerceViaBits v :: SizedF 128 WrapField)
+              msgForNextWrapWrapEndo
+        )
         b1StepUnfRec0.bulletproofChallenges
 
     b1MsgForNextWrapDigest :: WrapField
@@ -311,7 +320,8 @@ produceSimpleChainB1 srses = do
 
     b1StepPerProof
       :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
-           (F WrapField) Boolean
+           (F WrapField)
+           Boolean
     b1StepPerProof = PerProofUnfinalized
       { combinedInnerProduct: toShifted (fromShifted b1StepUnfRec0.combinedInnerProduct :: F WrapField)
       , b: toShifted (fromShifted b1StepUnfRec0.b :: F WrapField)
@@ -338,8 +348,9 @@ produceSimpleChainB1 srses = do
             , sgY: b0.wrapSg.y
             , challenges:
                 Vector.toUnfoldable
-                  (map (fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
-                    :: Vector WrapIPARounds WrapField)
+                  ( map (fromBigInt <<< toBigInt) Dummy.dummyIpaChallenges.wrapExpanded
+                      :: Vector WrapIPARounds WrapField
+                  )
             }
           , { sgX: b0.b0ChalPolyComm.x
             , sgY: b0.b0ChalPolyComm.y

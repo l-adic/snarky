@@ -150,8 +150,14 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- ===== Tree step compile =====
   treeStepCR <- liftEffect $
     stepCompile @TreeProofReturnPrevsSpec @67
-      @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
-      treeCtx (treeProofReturnRule baseRuleArgs)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @(F StepField)
+      @(FVar StepField)
+      treeCtx
+      (treeProofReturnRule baseRuleArgs)
 
   let treeStepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 treeStepCR.proverIndex
 
@@ -339,9 +345,18 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- ===== Tree step prove =====
   treeStepRes <- liftEffect $ runExceptT $
     stepSolveAndProve
-      @TreeProofReturnPrevsSpec @67
-      @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
-      treeCtx (treeProofReturnRule baseRuleArgs) treeStepCR treeRealAdvice
+      @TreeProofReturnPrevsSpec
+      @67
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @(F StepField)
+      @(FVar StepField)
+      treeCtx
+      (treeProofReturnRule baseRuleArgs)
+      treeStepCR
+      treeRealAdvice
   treeStepResult <- case treeStepRes of
     Left e -> liftEffect $ Exc.throw ("tree stepSolveAndProve: " <> show e)
     Right r -> pure r
@@ -473,7 +488,8 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
          , shouldFinalize :: Boolean
          }
       -> PerProofUnfinalized WrapIPARounds (Type2 (F WrapField))
-           (F WrapField) Boolean
+           (F WrapField)
+           Boolean
     convertSlotUnf r = PerProofUnfinalized
       { combinedInnerProduct: toShifted (fromShifted r.combinedInnerProduct :: F WrapField)
       , b: toShifted (fromShifted r.b :: F WrapField)
