@@ -40,7 +40,7 @@ import Pickles.Prove.Step (buildStepAdviceWithOracles, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapProveResult, buildWrapAdvice, buildWrapMainConfig, wrapSolveAndProve)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Safe.Coerce (coerce)
@@ -166,7 +166,7 @@ produceSimpleChainB1 srses = do
 
   -- ===== b1 step advice =====
   { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <-
-    liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 PrevsSpecNil)
+    liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
       { publicInput: F one
       , prevPublicInput: F zero
       , wrapDomainLog2
@@ -211,7 +211,7 @@ produceSimpleChainB1 srses = do
   -- ===== b1 step prove =====
   b1Res <- liftEffect $ runExceptT $
     stepSolveAndProve
-      @(PrevsSpecCons 1 PrevsSpecNil)
+      @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
       @34
       @(F StepField)
       @(FVar StepField)

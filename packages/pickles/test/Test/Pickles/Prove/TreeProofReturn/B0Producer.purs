@@ -43,7 +43,7 @@ import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, 
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
@@ -58,7 +58,9 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (fromShifted, toShifted)
 import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 
-type TreeProofReturnPrevsSpec = PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)
+type TreeProofReturnPrevsSpec =
+  PrevsSpecCons 0 (StatementIO Unit (F StepField))
+    (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
 
 type TreeProofReturnB0Artifacts =
   { stepCR :: StepCompileResult
@@ -253,7 +255,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       }
 
   { advice: slot0Advice, challengePolynomialCommitment: b0Slot0ChalPolyComm } <-
-    liftEffect $ buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) slot0OracleInput
+    liftEffect $ buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) slot0OracleInput
 
   -- ===== Slot-1 advice (dummy N2) =====
   let
@@ -277,7 +279,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
           (map SizedF.wrapF bcd.ipaStepChallenges)
       }
   { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <-
-    liftEffect $ buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+    liftEffect $ buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
       { publicInput: unit
       , prevPublicInput: (F (negate one)) :: F StepField
       , wrapDomainLog2: treeWrapDomainLog2

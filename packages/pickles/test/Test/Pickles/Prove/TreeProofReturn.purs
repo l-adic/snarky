@@ -63,7 +63,7 @@ import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
@@ -82,7 +82,9 @@ import Test.Spec (SpecT, describe, it)
 
 -- | Tree_proof_return prev-spec: slot 0 has width 0 (No_recursion_return
 -- | proof), slot 1 has width 2 (self).
-type TreeProofReturnPrevsSpec = PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)
+type TreeProofReturnPrevsSpec =
+  PrevsSpecCons 0 (StatementIO Unit (F StepField))
+    (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
 
 -- | Tree_proof_return rule — N=2 Output mode with heterogeneous prevs.
 -- | Mirrors OCaml test_no_sideloaded.ml:336-386 and the identical
@@ -289,7 +291,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- @inputVal=Unit and @prevInputVal=F StepField.
     --
     -- The helper replicates one slot template to ALL slots. With
-    -- PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil), slot 0 (n=0)
+    -- PrevsSpecCons 0 (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil), slot 0 (n=0)
     -- specializes prevChallenges/prevSgs to `Vector.nil`, slot 1
     -- (n=2) to two copies of the NRR-derived value. Slot-1 sppw
     -- fields end up with NRR's values rather than a dummy N2 — not
@@ -439,9 +441,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- Single-slot advice builds: slot 0 from buildStepAdviceWithOracles
     -- (real NRR data), slot 1 from buildStepAdvice (dummy N=2).
     -- We splice their carriers into Tree's heterogeneous
-    -- `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)` shape.
+    -- `PrevsSpecCons 0 (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)` shape.
     { advice: slot0Advice, challengePolynomialCommitment: b0Slot0ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) oracleInput
 
     -- Iter 2s: slot 1 dummy now built via `buildStepAdviceWithOracles`
     -- over `Pickles.Proof.Dummy.dummyWrapProof`. OCaml's `expand_proof`
@@ -473,7 +475,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             (map SizedF.wrapF bcd.ipaStepChallenges)
         }
     { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (negate one)) :: F StepField
         -- Iter 2ah: for slot 1 wrap-side derive_plonk, domain = Tree
@@ -1057,11 +1059,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     -- is identical (same NRR wrap proof, same prevPublicInput, etc).
     -- Just call buildStepAdviceWithOracles again with the SAME input.
     { advice: b1Slot0Advice, challengePolynomialCommitment: b1Slot0ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) oracleInput
 
     -- b1 slot-1 advice: NEW — verifying REAL Tree b0 wrap proof.
     { advice: b1Slot1Advice, challengePolynomialCommitment: b1Slot1ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F zero) :: F StepField -- b0 output was 0
         , wrapDomainLog2: treeWrapDomainLog2
@@ -1468,11 +1470,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     -- b2 slot-0 advice: reuse oracleInput (NRR identical across b0/b1/b2).
     { advice: b2Slot0Advice, challengePolynomialCommitment: b2Slot0ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) oracleInput
 
     -- b2 slot-1 advice: verify REAL Tree b1 wrap proof.
     { advice: b2Slot1Advice, challengePolynomialCommitment: b2Slot1ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F one) :: F StepField -- b1 output was 1
         , wrapDomainLog2: treeWrapDomainLog2
@@ -1856,11 +1858,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
 
     -- b3 slot-0 advice: reuse oracleInput (NRR identical across all bN).
     { advice: b3Slot0Advice, challengePolynomialCommitment: b3Slot0ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) oracleInput
 
     -- b3 slot-1 advice: verify REAL Tree b2 wrap proof.
     { advice: b3Slot1Advice, challengePolynomialCommitment: b3Slot1ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (fromInt 2 :: StepField)) -- b2 output = 2
         , wrapDomainLog2: treeWrapDomainLog2
@@ -2235,11 +2237,11 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           :< Vector.nil
 
     { advice: b4Slot0Advice, challengePolynomialCommitment: b4Slot0ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 PrevsSpecNil) oracleInput
+      buildStepAdviceWithOracles @0 @(PrevsSpecCons 0 (StatementIO Unit (F StepField)) PrevsSpecNil) oracleInput
 
     -- b4 slot-1 advice: verify REAL Tree b3 wrap proof.
     { advice: b4Slot1Advice, challengePolynomialCommitment: b4Slot1ChalPolyComm } <- liftEffect $
-      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 PrevsSpecNil)
+      buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
         , prevPublicInput: (F (fromInt 3 :: StepField)) -- b3 output = 3
         , wrapDomainLog2: treeWrapDomainLog2

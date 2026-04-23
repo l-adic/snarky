@@ -17,6 +17,7 @@ module Pickles.Types
   , StepStatement
   , WrapStatement
   , PointEval(..)
+  , StatementIO(..)
   , VerificationKey(..)
   , BranchData(..)
   , WrapProofMessages(..)
@@ -211,6 +212,65 @@ instance (CircuitType f a var) => CircuitType f (PointEval a) (PointEval var) wh
 
 instance (CheckedType f c var) => CheckedType f c (PointEval var) where
   check (PointEval r) = check (tuple2 r.zeta r.omegaTimesZeta)
+
+-- | The statement (public input to kimchi verify) of a Pickles rule.
+-- |
+-- | Every rule's statement has at most two components: its main-function
+-- | `input` and its returned `output`. Existing Pickles tests use three
+-- | public-input modes (`Input typ`, `Output typ`, `Input_and_output`)
+-- | captured uniformly by this single shape:
+-- |
+-- |   Input typ             → StatementIO input Unit
+-- |   Output typ            → StatementIO Unit output
+-- |   Input_and_output i o  → StatementIO i o
+-- |
+-- | `CircuitType Unit Unit` serializes to zero fields, so the "unused"
+-- | side contributes no field elements to the kimchi public-input array.
+-- | The byte layout matches OCaml's current conventions for all three
+-- | modes without special-casing.
+-- |
+-- | Field order is `input` first, then `output` — matches OCaml's
+-- | `Input_and_output` tuple convention. Record fields alphabetize via
+-- | RowList to the same order here since `input` < `output`; we still
+-- | route through explicit `Tuple2` to make the ordering contract visible
+-- | at the type-class-instance site.
+newtype StatementIO input output = StatementIO
+  { input :: input
+  , output :: output
+  }
+
+instance
+  ( CircuitType f inputVal inputVar
+  , CircuitType f outputVal outputVar
+  ) =>
+  CircuitType f
+    (StatementIO inputVal outputVal)
+    (StatementIO inputVar outputVar) where
+  sizeInFields pf _ =
+    genericSizeInFields pf (Proxy @(Tuple2 inputVal outputVal))
+  valueToFields (StatementIO r) =
+    genericValueToFields (tuple2 r.input r.output)
+  fieldsToValue fs =
+    let
+      tup :: Tuple2 inputVal outputVal
+      tup = genericFieldsToValue fs
+    in
+      uncurry2 (\input output -> StatementIO { input, output }) tup
+  varToFields (StatementIO r) =
+    genericVarToFields @(Tuple2 inputVal outputVal) (tuple2 r.input r.output)
+  fieldsToVar fs =
+    let
+      tup :: Tuple2 inputVar outputVar
+      tup = genericFieldsToVar @(Tuple2 inputVal outputVal) fs
+    in
+      uncurry2 (\input output -> StatementIO { input, output }) tup
+
+instance
+  ( CheckedType f c inputVar
+  , CheckedType f c outputVar
+  ) =>
+  CheckedType f c (StatementIO inputVar outputVar) where
+  check (StatementIO r) = check (tuple2 r.input r.output)
 
 -- | Plonk verification key: sigma(7), coefficients(15), index(6) commitments.
 -- |

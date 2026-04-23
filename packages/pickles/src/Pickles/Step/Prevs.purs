@@ -71,15 +71,25 @@ import Type.Proxy (Proxy(..))
 -- | no inhabitants (used only at the type level).
 data PrevsSpecNil
 
--- | Cons a per-prev `max_proofs_verified = n` onto the head of the
--- | list. `rest` is the spec for the remaining prevs.
+-- | Cons a per-prev `max_proofs_verified = n` + `statement` type onto
+-- | the head of the list. `rest` is the spec for the remaining prevs.
+-- |
+-- | The `statement` type is the prev rule's `StatementIO input output`
+-- | (the public input the kimchi verifier commits to when checking that
+-- | prev's proof). Input-mode prevs use `StatementIO i Unit`; Output-mode
+-- | prevs use `StatementIO Unit o`. The in-circuit var form is derived
+-- | via `CircuitType StepField statement statementVar` where needed;
+-- | carrying it as a direct spec parameter is redundant with the fundep.
 -- |
 -- | Shapes for the 4 circuit-diff fixtures:
 -- | * Add_one_return   : `PrevsSpecNil`
--- | * Simple_chain N1  : `PrevsSpecCons 1 PrevsSpecNil`
--- | * Simple_chain N2  : `PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)`
--- | * Tree_proof_return: `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)`
-data PrevsSpecCons (n :: Int) (rest :: Type)
+-- | * Simple_chain N1  : `PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil`
+-- | * Simple_chain N2  : `PrevsSpecCons 2 (StatementIO (F StepField) Unit)
+-- |                        (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)`
+-- | * Tree_proof_return: `PrevsSpecCons 0 (StatementIO Unit (F StepField))
+-- |                        (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)`
+data PrevsSpecCons :: Int -> Type -> Type -> Type
+data PrevsSpecCons n statement rest
 
 --------------------------------------------------------------------------------
 -- Per-slot payload
@@ -180,7 +190,7 @@ instance
   , Reflectable pad Int
   ) =>
   PrevsCarrier
-    (PrevsSpecCons n rest)
+    (PrevsSpecCons n statement rest)
     ds
     dw
     f
