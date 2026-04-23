@@ -26,6 +26,7 @@
 -- |   manual `tools/simple_chain_trace_diff.sh` convergence tool.
 module Test.Pickles.Prove.SimpleChain
   ( spec
+  , simpleChainRule
   ) where
 
 import Prelude

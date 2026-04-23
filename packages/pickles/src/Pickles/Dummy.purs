@@ -469,18 +469,10 @@ computeDummySgValues bcd pallasSrs vestaSrs =
     alphaFq = toFieldPure u.plonk.alpha wrapEndo
     zetaFq = toFieldPure u.plonk.zeta wrapEndo
 
-    -- FFI contract: {pallas,vesta}SrsBPolyCommitment returns exactly
-    -- `[x, y]` — the affine coordinates of the `b_poly` commitment.
-    wrapSg = unsafePartial
-      case
-        PallasImpl.pallasSrsBPolyCommitment pallasSrs (Vector.toUnfoldable wrapChalExpanded)
-        of
-        [ x, y ] -> { x, y }
-    stepSg = unsafePartial
-      case
-        VestaImpl.vestaSrsBPolyCommitment vestaSrs (Vector.toUnfoldable stepChalExpanded)
-        of
-        [ x, y ] -> { x, y }
+    wrapSg = PallasImpl.pallasSrsBPolyCommitmentPoint pallasSrs
+      (Vector.toUnfoldable wrapChalExpanded)
+    stepSg = VestaImpl.vestaSrsBPolyCommitmentPoint vestaSrs
+      (Vector.toUnfoldable stepChalExpanded)
 
     wrapDomainLog2 = reflectType (Proxy :: Proxy WrapIPARounds)
     zetaPow = Curves.pow zetaFq (pow2 wrapDomainLog2)
