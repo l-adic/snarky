@@ -2232,12 +2232,6 @@ pub fn vesta_create_proof_with_prev(
             }
         })
         .collect();
-    // DIAG: find first divergent witness row (compare col0 values row by row)
-    {
-        for (row_idx, val) in witness[0].iter().enumerate() {
-            eprintln!("[vesta_witness] row {row_idx} col0 = {val}");
-        }
-    }
     let proof = generic::create_proof_with_prev::<PallasGroup, PallasBaseSponge, PallasScalarSponge>(
         &**prover_index,
         witness,
