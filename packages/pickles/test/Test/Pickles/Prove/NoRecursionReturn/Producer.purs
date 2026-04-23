@@ -79,6 +79,11 @@ type NoRecursionReturnArtifacts =
   , stepSg :: AffinePoint WrapField -- dummy Step IPA sg (Vesta)
   , stepDomainLog2 :: Int
   , wrapDomainLog2 :: Int
+  -- | Inputs handed to `wrapComputeDeferredValues`. Exposed so tests can
+  -- | feed the same `allEvals` / `endo` / `domainLog2` / etc. into the
+  -- | verifier-side `expandDeferredForVerify` for self-consistency checks
+  -- | (see `Test.Pickles.Verify.ExpandDeferredEq`).
+  , wrapDvInput :: WrapDeferredValuesInput 0
   -- | Output of `wrapComputeDeferredValues` over NRR's step proof.
   -- | Downstream (Tree_proof_return slot-0 injection) reads this
   -- | for `wrapPlonkRaw`, `wrapBranchData`,
@@ -363,6 +368,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     , stepSg: dummySgValues.ipa.step.sg
     , stepDomainLog2
     , wrapDomainLog2
+    , wrapDvInput
     , wrapDv
     , wrapPublicInput: wrapResult.publicInputs
     }
