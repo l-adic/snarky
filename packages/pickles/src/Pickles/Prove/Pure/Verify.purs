@@ -107,34 +107,25 @@ expandDeferredForVerify
   -> WrapDeferredValuesOutput
 expandDeferredForVerify input =
   let
-    -- ===== Step 1. Minimal plonk + zeta / zetaw (field-valued). =====
-    stepPlonkMinimal :: PlonkMinimal (F StepField)
-    stepPlonkMinimal = input.rawPlonk
-
-    -- Endo-expand zeta and alpha once (needed for zetaw + scalars_env
-    -- in derivePlonk). beta, gamma stay in their raw 128-bit form.
+    -- ===== Step 1. Endo-expand zeta (needed for zetaw + scalars_env in
+    -- derivePlonk). alpha is expanded once below for oraclesReconstructed;
+    -- beta/gamma stay in their raw 128-bit form.
     zetaField :: StepField
     zetaField = coerce (toFieldPure input.rawPlonk.zeta (F input.endo))
 
     zetaw :: StepField
     zetaw = zetaField * input.generator
 
-    -- ===== Step 2. Expand old bulletproof challenges. ==================
-    -- OCaml: `Vector.map ~f:Ipa.Step.compute_challenges old_bulletproof_challenges`.
-    expandedOldBpChals :: Vector n (Vector StepIPARounds StepField)
-    expandedOldBpChals = input.oldBulletproofChallenges
-
-    -- ===== Step 3. Sponge replay to recover xi, r. ====================
+    -- ===== Step 2. Sponge replay to recover xi, r. ====================
     -- OCaml: create sponge, absorb sponge_digest_before_evaluations;
     -- then absorb challenges_digest, ft_eval1, and evals (in
     -- `to_absorption_sequence` order); squeeze xi_chal, r_chal as 128-bit.
-    cdigest :: StepField
-    cdigest = challengesDigest expandedOldBpChals
-
+    -- `input.oldBulletproofChallenges` is already `Ipa.Step.compute_challenges`-
+    -- expanded by the caller (step field elements, not raw 128-bit chals).
     { xiRawSized, rRawSized } =
       evalPureSpongeM (initialSponge :: Sponge StepField) do
         absorb input.spongeDigestBeforeEvaluations
-        absorb cdigest
+        absorb (challengesDigest input.oldBulletproofChallenges)
         absorb input.allEvals.ftEval1
         -- public_input absorb: (zeta, zeta*omega) as single-element "arrays"
         absorb input.allEvals.publicEvals.zeta
@@ -160,10 +151,10 @@ expandDeferredForVerify input =
     rField :: StepField
     rField = coerce (toFieldPure rRawSized (F input.endo))
 
-    -- ===== Step 4. Type1.derive_plonk (wrap.ml:202-208). ==============
+    -- ===== Step 3. Type1.derive_plonk (wrap.ml:202-208). ==============
     derivePlonkInput :: DerivePlonkInput StepField
     derivePlonkInput =
-      { plonkMinimal: stepPlonkMinimal
+      { plonkMinimal: input.rawPlonk
       , w: map _.zeta (Vector.take @7 input.allEvals.witnessEvals)
       , sigma: map _.zeta input.allEvals.sigmaEvals
       , zZeta: input.allEvals.zEvals.zeta
@@ -179,10 +170,10 @@ expandDeferredForVerify input =
     stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
     stepPlonkDerived = derivePlonk derivePlonkInput
 
-    -- ===== Step 5. ft_eval0 for the step field. =======================
+    -- ===== Step 4. ft_eval0 for the step field. =======================
     ftEval0Input :: FtEval0Input StepField
     ftEval0Input =
-      { plonkMinimal: stepPlonkMinimal
+      { plonkMinimal: input.rawPlonk
       , allEvals: input.allEvals
       , pEval0Chunks: input.pEval0Chunks
       , shifts: input.shifts
@@ -199,14 +190,14 @@ expandDeferredForVerify input =
     stepFtEval0 :: StepField
     stepFtEval0 = ftEval0 ftEval0Input
 
-    -- ===== Step 6. combined_inner_product (wrap.ml:22-62, 235-245). ====
+    -- ===== Step 5. combined_inner_product (wrap.ml:22-62, 235-245). ====
     cipInput :: CombinedInnerProductBatchInput n StepIPARounds StepField
     cipInput =
       { allEvals: input.allEvals
       , publicEvals: input.allEvals.publicEvals
       , ftEval0: stepFtEval0
       , ftEval1: input.allEvals.ftEval1
-      , oldBulletproofChallenges: expandedOldBpChals
+      , oldBulletproofChallenges: input.oldBulletproofChallenges
       , xi: xiField
       , r: rField
       , zeta: zetaField
@@ -216,22 +207,19 @@ expandDeferredForVerify input =
     cipActual :: StepField
     cipActual = combinedInnerProductBatch cipInput
 
-    -- ===== Step 7. new bulletproof challenges + b (wrap.ml:209-224). ===
-    -- `computeBpChalsAndB` is field-polymorphic; unwrap `F` from raw chals
-    -- so `f = StepField` agrees with `endo/zeta/zetaw/r`.
-    rawPrechalsUnwrapped :: Vector StepIPARounds (SizedF 128 StepField)
-    rawPrechalsUnwrapped = map unwrapF input.rawBulletproofChallenges
-
+    -- ===== Step 6. new bulletproof challenges + b (wrap.ml:209-224). ===
+    -- `computeBpChalsAndB` is field-polymorphic; unwrap `F` from raw
+    -- chals so `f = StepField` agrees with `endo/zeta/zetaw/r`.
     newBpResult :: BulletproofBOutput StepIPARounds StepField
     newBpResult = computeBpChalsAndB
-      { rawPrechallenges: rawPrechalsUnwrapped
+      { rawPrechallenges: map unwrapF input.rawBulletproofChallenges
       , endo: input.endo
       , zeta: zetaField
       , zetaw
       , r: rField
       }
 
-    -- ===== Step 8. oracles — fill in the full OraclesResult. ==========
+    -- ===== Step 7. oracles — fill in the full OraclesResult. ==========
     -- The verifier can reconstruct every field; downstream code
     -- (assembleWrapMainInput) only reads a subset, but
     -- WrapDeferredValuesOutput expects the full record.

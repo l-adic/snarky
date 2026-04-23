@@ -25,9 +25,9 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Pickles (CompiledProof(..), mkVerifier, verify, wrapPublicInput)
 import Pickles.Dummy as Dummy
 import Pickles.ProofFFI (pallasProverIndexDomainLog2) as ProofFFI
+import Pickles.Prove.Verify (CompiledProof(..), mkVerifier, verify, wrapPublicInput)
 import Pickles.Types (StepField)
 import Pickles.Verify.Types (toPlonkMinimal)
 import Snarky.Backend.Kimchi.Class (createCRS)

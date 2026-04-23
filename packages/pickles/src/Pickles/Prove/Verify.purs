@@ -29,7 +29,7 @@
 -- | data) mirrors how OCaml `compile_promise` returns a
 -- | `(module Proof_intf)` that wraps the verifier-needed constants plus
 -- | proofs of type `'max_proofs_verified Proof.t`.
-module Pickles
+module Pickles.Prove.Verify
   ( CompiledProof(..)
   , Verifier
   , mkVerifier
