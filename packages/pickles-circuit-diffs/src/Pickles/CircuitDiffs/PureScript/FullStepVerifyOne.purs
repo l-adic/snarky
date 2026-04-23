@@ -15,7 +15,7 @@ import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, dummyPallasPt, dummyWrapSg, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBase)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Step.VerifyOne (verifyOne)
 import Pickles.Types (StepField)
 import Safe.Coerce (coerce)
@@ -30,7 +30,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type FullStepVerifyOneParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -40,7 +40,7 @@ fullStepVerifyOneCircuit
   => FullStepVerifyOneParams
   -> Vector 286 (FVar StepField)
   -> Snarky (KimchiConstraint StepField) t m Unit
-fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
+fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
@@ -67,7 +67,7 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
     mask1 = at (proofStateBase + 27)
 
     input =
-      { appState: at 0
+      { appStateFields: [ at 0 ]
       , wComm: (Vector.generate \j -> readPt (o + 2 * getFinite j)) :: Vector 15 _
       , zComm: readPt (o + 30)
       , tComm: (Vector.generate \j -> readPt (o + 32 + 2 * getFinite j)) :: Vector 7 _
@@ -156,7 +156,7 @@ fullStepVerifyOneCircuit { lagrangeComms, blindingH } inputs = do
 
     ivpParams =
       { curveParams: curveParams (Proxy @PallasG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: PureCorrections
       , endo: stepEndo

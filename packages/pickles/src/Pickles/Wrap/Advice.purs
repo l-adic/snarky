@@ -36,17 +36,6 @@ module Pickles.Wrap.Advice
   , getWrapDomainIndices
   , getOpeningProof
   , getMessages
-  -- Legacy advice class used by the deprecated `Pickles.Wrap.Circuit`
-  -- sub-circuit and the test fixtures it powers (`createWrapProofContext`,
-  -- `WrapE2E`). Phase 7 decides whether to retire or revive this surface.
-  , class WrapSubCircuitWitnessM
-  , getStepIOFields
-  , getEvalsLegacy
-  , getMessagesLegacy
-  , getOpeningProofLegacy
-  , getUnfinalizedProofs
-  , getStepAccsLegacy
-  , getOldBpChallenges
   ) where
 
 import Prelude
@@ -55,13 +44,12 @@ import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
-import Pickles.ProofWitness (ProofWitness)
-import Pickles.Types (StepAllEvals, StepIPARounds, WrapOldBpChals, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
-import Pickles.Verify.Types (UnfinalizedProof)
+import Pickles.Types (StepAllEvals, StepIPARounds, WrapIPARounds, WrapPrevProofState, WrapProofMessages, WrapProofOpening)
+import Pickles.Wrap.Slots (class PadSlots)
 import Snarky.Circuit.DSL (F)
 import Snarky.Circuit.Kimchi (Type1, Type2)
-import Snarky.Curves.Class (class PrimeField, class WeierstrassCurve)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
+import Snarky.Curves.Class (class WeierstrassCurve)
+import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 
 -- | Advisory monad for the Wrap circuit.
 -- |
@@ -75,13 +63,26 @@ import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 -- | - `g`: commitment curve of the Step proof being verified (= `VestaG`)
 -- | - `f`: base field of `g` — uniquely determined via `WeierstrassCurve f g`
 -- |        (= `Vesta.BaseField` = `WrapField`)
--- | - `m`: base monad (Effect for compilation, WrapProverM for proving)
+-- | - `slots`: the slot-list shape, a higher-kinded type constructor
+-- |        (`Type -> Type`) from `Pickles.Wrap.Slots`. Concretely one of
+-- |        `NoSlots`, `Slots1 w`, or `Slots2 w0 w1` per library use.
+-- |        The class method `getOldBulletproofChallenges` returns a
+-- |        `slots`-shaped structure that inducts over in `wrapMain`.
+-- | - `m`: base monad (Effect for compilation, WrapProverT for proving)
 class
   ( Monad m
   , WeierstrassCurve f g
   ) <=
-  WrapWitnessM (branches :: Int) (mpv :: Int) (slot0Width :: Int) (slot1Width :: Int) g f m
-  | g -> f where
+  WrapWitnessM
+    (branches :: Int)
+    (mpv :: Int)
+    (slots :: Type -> Type)
+    g
+    f
+    m
+  | g -> f
+  , slots -> mpv
+  where
   -- | OCaml: `Req.Which_branch` (`wrap_main.ml:223`).
   getWhichBranch :: Unit -> m (F f)
 
@@ -104,11 +105,20 @@ class
   -- | accumulators (commitment-curve affine points).
   getStepAccs :: Unit -> m (Vector mpv (WeierstrassAffinePoint g (F f)))
 
-  -- | OCaml: `Req.Old_bulletproof_challenges` (`wrap_main.ml:400`). Stored as
-  -- | a pair of per-slot vectors mirroring `Max_widths_by_slot.maxes`.
+  -- | OCaml: `Req.Old_bulletproof_challenges` (`wrap_main.ml:400`). Returns
+  -- | a `slots`-shaped structure: `NoSlots` (empty), `Slots1 w` (one slot),
+  -- | or `Slots2 w0 w1` (two slots), mirroring OCaml's
+  -- | `Max_widths_by_slot.maxes`. The `PadSlots` class provides the
+  -- | structural traversal that consumes this value.
+  -- |
+  -- | The inner element type is `F f` (the value form); `exists` in
+  -- | `wrap_main` converts this to the var form
+  -- | `slots (Vector WrapIPARounds (FVar f))` via the `CircuitType`
+  -- | instances for `Product` and `Const Unit` defined in
+  -- | `Snarky.Circuit.Types`.
   getOldBulletproofChallenges
     :: Unit
-    -> m (WrapOldBpChals slot0Width slot1Width (F f))
+    -> m (slots (Vector WrapIPARounds (F f)))
 
   -- | OCaml: `Req.Evals` (`wrap_main.ml:415`). Vector of `mpv`
   -- | `StepAllEvals`, one per previous wrap proof.
@@ -145,10 +155,9 @@ instance
   ( WeierstrassCurve f g
   , Reflectable branches Int
   , Reflectable mpv Int
-  , Reflectable slot0Width Int
-  , Reflectable slot1Width Int
+  , PadSlots slots mpv
   ) =>
-  WrapWitnessM branches mpv slot0Width slot1Width g f Effect where
+  WrapWitnessM branches mpv slots g f Effect where
   getWhichBranch _ = throw "impossible! getWhichBranch called during compilation"
   getWrapProofState _ = throw "impossible! getWrapProofState called during compilation"
   getStepAccs _ = throw "impossible! getStepAccs called during compilation"
@@ -158,44 +167,3 @@ instance
   getOpeningProof _ = throw "impossible! getOpeningProof called during compilation"
   getMessages _ = throw "impossible! getMessages called during compilation"
 
--------------------------------------------------------------------------------
--- Legacy WrapSubCircuitWitnessM — used by the deprecated `wrapCircuit`
--- sub-circuit and the test fixtures around it. Kept compiling so the
--- pickles test suite still builds.
--------------------------------------------------------------------------------
-
--- | Legacy advice class for the small `wrapCircuit` sub-circuit. Methods
--- | match what the original (pre-refactor) `Pickles.Wrap.Advice` class
--- | exposed; method names are suffixed `Legacy` where they collide with the
--- | new `WrapWitnessM` to avoid ambiguous resolution.
-class Monad m <= WrapSubCircuitWitnessM (mpv :: Int) (ds :: Int) (dw :: Int) m f where
-  getStepIOFields :: Unit -> m (Array (F f))
-  getEvalsLegacy :: Unit -> m (Vector mpv (ProofWitness (F f)))
-  getMessagesLegacy
-    :: Unit
-    -> m
-         { wComm :: Vector 15 (AffinePoint (F f))
-         , zComm :: AffinePoint (F f)
-         , tComm :: Vector 7 (AffinePoint (F f))
-         }
-  getOpeningProofLegacy
-    :: Unit
-    -> m
-         { delta :: AffinePoint (F f)
-         , sg :: AffinePoint (F f)
-         , lr :: Vector ds { l :: AffinePoint (F f), r :: AffinePoint (F f) }
-         , z1 :: Type1 (F f)
-         , z2 :: Type1 (F f)
-         }
-  getUnfinalizedProofs :: Unit -> m (Vector mpv (UnfinalizedProof dw (F f) (Type2 (F f)) Boolean))
-  getStepAccsLegacy :: Unit -> m (Vector mpv (AffinePoint (F f)))
-  getOldBpChallenges :: Unit -> m (Vector mpv (Vector dw (F f)))
-
-instance (Reflectable mpv Int, Reflectable ds Int, Reflectable dw Int, PrimeField f) => WrapSubCircuitWitnessM mpv ds dw Effect f where
-  getStepIOFields _ = throw "impossible! getStepIOFields called during compilation"
-  getEvalsLegacy _ = throw "impossible! getEvalsLegacy called during compilation"
-  getMessagesLegacy _ = throw "impossible! getMessagesLegacy called during compilation"
-  getOpeningProofLegacy _ = throw "impossible! getOpeningProofLegacy called during compilation"
-  getUnfinalizedProofs _ = throw "impossible! getUnfinalizedProofs called during compilation"
-  getStepAccsLegacy _ = throw "impossible! getStepAccsLegacy called during compilation"
-  getOldBpChallenges _ = throw "impossible! getOldBpChallenges called during compilation"

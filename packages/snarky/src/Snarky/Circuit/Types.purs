@@ -80,7 +80,9 @@ module Snarky.Circuit.Types
 import Prelude
 
 import Data.Array as Array
+import Data.Const (Const(..))
 import Data.Foldable (foldMap)
+import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments(..), Product(..), from, repOf, to)
 import Data.Maybe (fromJust)
 import Data.Newtype (class Newtype)
@@ -242,6 +244,46 @@ instance
   sizeInFields = genericSizeInFields
   varToFields = genericVarToFields @(Tuple a b)
   fieldsToVar = genericFieldsToVar @(Tuple a b)
+
+-- | `Const a b` ignores its phantom `b` and carries a value of type
+-- | `a`, so its `CircuitType` instance delegates to the inner `a`.
+-- | With `a = Unit`, `Const Unit b` carries no content and the
+-- | instance is trivial via the `Unit Unit` case.
+-- |
+-- | This instance, together with the `Product` instance below, lets
+-- | higher-kinded "functor-product slot lists" (see
+-- | `Pickles.Wrap.Slots`) be allocated by `exists` without a custom
+-- | newtype wrapper.
+instance circuitTypeConst ::
+  CircuitType f a avar =>
+  CircuitType f (Const a b) (Const avar bvar) where
+  sizeInFields _ _ = sizeInFields (Proxy @f) (Proxy @a)
+  valueToFields (Const a) = valueToFields @f @a a
+  fieldsToValue fs = Const (fieldsToValue @f @a fs)
+  varToFields (Const a) = varToFields @f @a @avar a
+  fieldsToVar fs = Const (fieldsToVar @f @a @avar fs)
+
+-- | `Product f g a = Product (Tuple (f a) (g a))` delegates to the
+-- | generic Tuple instance via the newtype wrapper. Walks head-first
+-- | (matching OCaml's `H1.Wrap_typ.f` allocation order).
+-- |
+-- | The individual `CircuitType f (fc a) (fc avar)` and `CircuitType
+-- | f (gc a) (gc avar)` constraints are what this instance actually
+-- | needs; PS picks up the combined Tuple instance automatically
+-- | from the already-defined `CircuitType f (Tuple a b) ...` case.
+-- |
+-- | Qualified `FP.Product` to avoid collision with
+-- | `Data.Generic.Rep.Product` which this module also imports.
+instance
+  ( CircuitType f (fc a) (fc avar)
+  , CircuitType f (gc a) (gc avar)
+  ) =>
+  CircuitType f (FP.Product fc gc a) (FP.Product fc gc avar) where
+  sizeInFields pf _ = sizeInFields pf (Proxy :: Proxy (Tuple (fc a) (gc a)))
+  valueToFields (FP.Product t) = valueToFields @f @(Tuple (fc a) (gc a)) t
+  fieldsToValue fs = FP.Product (fieldsToValue @f @(Tuple (fc a) (gc a)) fs)
+  varToFields (FP.Product t) = varToFields @f @(Tuple (fc a) (gc a)) t
+  fieldsToVar fs = FP.Product (fieldsToVar @f @(Tuple (fc a) (gc a)) fs)
 
 instance CircuitType f a var => CircuitType f (UnChecked a) (UnChecked var) where
   valueToFields (UnChecked a) = valueToFields @f @a a

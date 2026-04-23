@@ -13,14 +13,14 @@
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:45-59
 module Pickles.Wrap.MessageHash
   ( hashMessagesForNextWrapProof
-  , hashMessagesForNextWrapProofCircuit
+  , hashMessagesForNextWrapProofPureGeneral
   , hashMessagesForNextWrapProofCircuit'
   , dummyPaddingSpongeStates
   ) where
 
 import Prelude
 
-import Data.Foldable (for_)
+import Data.Foldable (class Foldable, for_)
 import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -29,7 +29,7 @@ import Pickles.Sponge (SpongeM, absorb, absorbMany, getSpongeState, initialSpong
 import Pickles.Sponge as Pickles.Sponge
 import Poseidon (class PoseidonField, hash)
 import RandomOracle.Sponge (Sponge)
-import Snarky.Circuit.DSL (class CircuitM, FVar, const_)
+import Snarky.Circuit.DSL (class CircuitM, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -57,53 +57,42 @@ hashMessagesForNextWrapProof { sg, expandedChallenges, dummyChallenges } =
   in
     hash fields
 
--- | Circuit version: hash messages for next Wrap proof.
+-- | General pure version of OCaml `Wrap_hack.hash_messages_for_next_wrap_proof`
+-- | (`mina/src/lib/crypto/pickles/wrap_hack.ml:46-59`).
 -- |
--- | Uses the Poseidon sponge in-circuit to absorb all field elements
--- | and squeeze the digest.
-hashMessagesForNextWrapProofCircuit
-  :: forall d f t m
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => CircuitM f (KimchiConstraint f) t m
-  => Reflectable d Int
-  => { sg :: AffinePoint (FVar f)
-     , expandedChallenges :: Vector d (FVar f)
-     , dummyChallenges :: Vector d f -- compile-time constants
+-- | Accepts the challenges **already padded** (caller is responsible for
+-- | prepending dummies to reach `Wrap_hack.Padded_length.n = 2`). Each inner
+-- | vector is an expanded wrap-field bp-challenge vector of length `d`.
+-- |
+-- | Serialization order matches OCaml `Messages_for_next_wrap_proof.to_field_elements`:
+-- | flatten all padded challenge vectors, then append `sg.x`, `sg.y`.
+hashMessagesForNextWrapProofPureGeneral
+  :: forall n d f
+   . PoseidonField f
+  => { sg :: AffinePoint f
+     , paddedChallenges :: Vector n (Vector d f)
      }
-  -> SpongeM f (KimchiConstraint f) t m (FVar f)
-hashMessagesForNextWrapProofCircuit { sg, expandedChallenges, dummyChallenges } = labelM "hash-messages-for-next-wrap-proof" do
-  -- Absorb dummy challenges (constants, lifted to circuit variables)
-  Pickles.Sponge.absorbMany (map const_ dummyChallenges)
-  -- Absorb real expanded challenges
-  Pickles.Sponge.absorbMany expandedChallenges
-  -- Absorb sg point
-  absorb sg.x
-  absorb sg.y
-  -- Squeeze digest
-  squeeze
+  -> f
+hashMessagesForNextWrapProofPureGeneral { sg, paddedChallenges } =
+  let
+    outer :: Array (Vector d f)
+    outer = Vector.toUnfoldable paddedChallenges
 
--- | General circuit version: takes n vectors of expanded bp challenges
--- | (all as circuit variables) + sg point.
--- |
--- | Matches OCaml's Wrap_hack.Checked.hash_messages_for_next_wrap_proof
--- | with max_proofs_verified = n. No padding — all vectors are circuit inputs.
--- |
--- | Serialization order from Messages_for_next_wrap_proof.to_field_elements:
--- | [old_bulletproof_challenges (flattened), sg.x, sg.y]
--- |
--- | Reference: mina/src/lib/pickles/wrap_hack.ml:119-142
+    flatChals :: Array f
+    flatChals = outer >>= (Vector.toUnfoldable :: Vector d f -> Array f)
+  in
+    hash (flatChals <> [ sg.x, sg.y ])
+
 hashMessagesForNextWrapProofCircuit'
-  :: forall n d f t m
+  :: forall outer d f t m
    . PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
   => CircuitM f (KimchiConstraint f) t m
-  => Reflectable n Int
+  => Foldable outer
   => Reflectable d Int
   => { sg :: AffinePoint (FVar f)
-     , allChallenges :: Vector n (Vector d (FVar f))
+     , allChallenges :: outer (Vector d (FVar f))
      }
   -> SpongeM f (KimchiConstraint f) t m (FVar f)
 hashMessagesForNextWrapProofCircuit' { sg, allChallenges } = labelM "hash-messages-for-next-wrap-proof" do

@@ -23,6 +23,8 @@ module Data.Fin
   , unsafeFinite
   , reflectFinite
   , finites
+  , shiftSucc
+  , finZero
   ) where
 
 import Prelude
@@ -35,7 +37,7 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Show.Generic (genericShow)
 import Effect.Exception (error)
 import Effect.Exception.Unsafe (unsafeThrowException)
-import Prim.Int (class Compare)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Type.Proxy (Proxy(..))
 
@@ -138,3 +140,29 @@ finites =
     n = reflectType (Proxy @n)
   in
     if n <= 0 then [] else Finite <$> (0 .. (n - 1))
+
+-- | Size-polymorphic successor: increment both the VALUE and the BOUND
+-- | by one. Maps `Finite n` (values `[0, n)`) to `Finite n1` (values
+-- | `[1, n1) ⊂ [0, n1)`), with `n1 = n + 1` enforced by the `Add n 1 n1`
+-- | constraint. Safe by construction: if `k < n` then `k + 1 < n + 1 = n1`.
+-- |
+-- | Contrast with `Enum.succ :: Finite n -> Maybe (Finite n)`, which
+-- | stays in the same bound and returns `Nothing` at the top. `shiftSucc`
+-- | never fails — it accommodates the incremented value by growing the
+-- | type-level bound.
+-- |
+-- | Typical use: shifting a nested index into a larger enclosing bound,
+-- | e.g. converting a recursive-call index in `Finite restLen` to the
+-- | outer-level index in `Finite len` where `len = restLen + 1`.
+shiftSucc :: forall n n1. Add n 1 n1 => Finite n -> Finite n1
+shiftSucc (Finite k) = Finite (k + 1)
+
+-- | Zero in any bound `n1 ≥ 1`. Safe by construction: the `Add n 1 n1`
+-- | constraint forces `n1 = n + 1 ≥ 1`, so `0 < n1`.
+-- |
+-- | Useful as the local zero index when structurally recursing through
+-- | a non-empty list encoded as type-level cons, where each level needs
+-- | a `Finite len` zero with `len = restLen + 1` without going through
+-- | `unsafeFinite`.
+finZero :: forall n n1. Add n 1 n1 => Finite n1
+finZero = Finite 0

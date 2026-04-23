@@ -31,15 +31,13 @@ import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
-import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
-import Pickles.Linearization.Env (EnvM, buildCircuitEnvM, precomputeAlphaPowers)
+import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
@@ -132,10 +130,6 @@ type FinalizeOtherProofOutput d f =
 -------------------------------------------------------------------------------
 -- | Circuit
 -------------------------------------------------------------------------------
-
--- | Maximum alpha power needed by either permutation or constant_term.
-maxAlphaPower :: Int
-maxAlphaPower = 70
 
 -- | Finalize another proof's deferred values.
 -- |
@@ -260,10 +254,13 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Step 9: pow2_pows via Field.square
   -- OCaml computes pow2_pows eagerly for zeta and zetaw (generates Square
   -- constraints even though the values may not all be used directly).
+  -- Uses srsLengthLog2 (= Common.Max_degree.step_log2 = StepIPARounds = 16),
+  -- not domainLog2: matches OCaml `let n = Int.ceil_log2 Max_degree.step in
+  -- pow2_pow plonk.zeta n` in step_verifier.ml.
   -- TODO -- even if this is a no-op, void is not the right answer here
   ---------------------------------------------------------------------------
-  void $ pow2PowSquare zeta params.domainLog2
-  void $ pow2PowSquare zetaw params.domainLog2
+  void $ pow2PowSquare zeta params.srsLengthLog2
+  void $ pow2PowSquare zetaw params.srsLengthLog2
 
   ---------------------------------------------------------------------------
   -- Steps 10+11a: PlonK env + ft_eval0
@@ -296,7 +293,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega powers to match OCaml constraint order.
-  alphaPowers <- precomputeAlphaPowers maxAlphaPower alpha
+  alphaPowers <- precomputeAlphaPowers alpha
 
   ---------------------------------------------------------------------------
   -- Step 10: Omega powers in-circuit
@@ -323,7 +320,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
 
   let
-    alphaPow n = unsafePartial $ fromJust $ Array.index alphaPowers n
+    alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
     a21 = alphaPow 21
     a22 = alphaPow 22
     a23 = alphaPow 23

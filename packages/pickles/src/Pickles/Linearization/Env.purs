@@ -7,7 +7,7 @@ module Pickles.Linearization.Env
   , module ReExports
   , EvalPoint
   , Challenges
-  , circuitEnv
+  , AlphaPowersLen
   , buildCircuitEnvM
   , fieldEnv
   , lookupCell
@@ -17,10 +17,11 @@ module Pickles.Linearization.Env
 
 import Prelude
 
-import Data.Array as Array
+import Control.Monad.State (StateT, evalStateT, get, put)
+import Control.Monad.Trans.Class (lift)
 import Data.Fin (Finite, unsafeFinite)
 import Data.Int (pow) as Int
-import Data.Maybe (fromJust)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import JS.BigInt (fromInt)
 import Partial.Unsafe (unsafePartial)
@@ -32,6 +33,13 @@ import Snarky.Circuit.DSL (class CircuitM, FVar, Snarky, add_, const_, div_, lab
 import Snarky.Circuit.DSL (mul_) as Circuit
 import Snarky.Curves.Class (class HasEndo, EndoBase(..), endoBase, pow)
 import Type.Proxy (Proxy(..))
+
+-- | Number of precomputed powers of α: `α^0 .. α^70`. Drives the size
+-- | of the `alphaPowers` vector consumed by
+-- | `Pickles.Linearization.Interpreter` + the two
+-- | `FinalizeOtherProof` circuits. Matches OCaml
+-- | `Plonk_checks.scalars_env`'s max alpha exponent.
+type AlphaPowersLen = 71
 
 -- | Environment providing operations for polynomial evaluation.
 -- | The type parameter 'a' is the field type being used.
@@ -117,41 +125,6 @@ fieldEnv evalPoint challenges =
   , ifFeature: \{ onFalse } -> onFalse unit
   }
 
--- | Construct a circuit environment for evaluating linearization polynomials
-circuitEnv
-  :: forall f f' c t m
-   . CircuitM f c t m
-  => PoseidonField f
-  => HasEndo f f'
-  => EvalPoint (FVar f)
-  -> Challenges (FVar f)
-  -> Env (Snarky c t m (FVar f))
-circuitEnv evalPoint challenges =
-  { add: \x y -> add_ <$> x <*> y
-  , sub: \x y -> sub_ <$> x <*> y
-  , mul: \x y -> join (Circuit.mul_ <$> x <*> y)
-  , pow: \x n -> x >>= \v -> pow_ v n
-  , var: \col row -> pure $ lookupCell evalPoint col row
-  , cell: identity -- cell is identity since var already returns the value
-  , alphaPow: \n -> pow_ challenges.alpha n
-  , mds: \{ row, col } -> pure $ const_ $ lookupMds (Proxy :: Proxy f) row col
-  , endoCoefficient:
-      let
-        EndoBase eb = endoBase @f @f'
-      in
-        pure $ const_ eb
-  , field: \hex -> pure $ const_ $ unsafePartial parseHex hex
-  , vanishesOnZeroKnowledgeAndPreviousRows: pure challenges.vanishesOnZeroKnowledgeAndPreviousRows
-  , unnormalizedLagrangeBasis: \args -> pure $ challenges.unnormalizedLagrangeBasis args
-  , jointCombiner: pure challenges.jointCombiner
-  , beta: pure challenges.beta
-  , gamma: pure challenges.gamma
-  -- All features are treated as disabled for testing, matching Rust behavior.
-  -- SkipIfNot(feat): skip when feature disabled → use onFalse (push zero)
-  -- SkipIf(feat): don't skip when feature disabled → use onTrue (evaluated)
-  , ifFeature: \{ onFalse } -> onFalse unit
-  }
-
 -- | Monadic environment for direct-in-Snarky evaluation of linearization.
 -- | Pure operations (add, sub, var, cell, alphaPow, constants) return FVar directly.
 -- | Monadic operations (mul, pow, unnormalizedLagrangeBasis) run in monad n and create constraints.
@@ -176,23 +149,30 @@ type EnvM f n =
   , ifFeature :: forall b. { flag :: FeatureFlag, onTrue :: Unit -> b, onFalse :: Unit -> b } -> b
   }
 
--- | Precompute alpha^0..alpha^n via successive multiplication.
--- | alpha^0 = 1 (constant), alpha^1 = alpha (given), alpha^i = alpha * alpha^(i-1).
--- | Returns array of n+1 elements. Cost: (n-1) R1CS constraints.
+-- | Precompute α^0..α^70 via successive multiplication, producing a
+-- | `Vector AlphaPowersLen (FVar f)` (71 entries). Cost: 69 R1CS
+-- | constraints.
+-- |
+-- | Internals: seed with `[α^0, α^1] = [1, α]`, then generate α^2..α^70
+-- | via a StateT-threaded monadic scan (`Vector.generateA` carrying the
+-- | previous power). Each step emits one `Circuit.mul_` constraint.
+-- | Type-level `Vector.append` glues the seed and the generated tail
+-- | into the final `Vector 71` — no runtime length check needed.
 precomputeAlphaPowers
   :: forall f c t m
    . CircuitM f c t m
-  => Int -- ^ max power (inclusive)
-  -> FVar f -- ^ alpha
-  -> Snarky c t m (Array (FVar f))
-precomputeAlphaPowers maxPow alpha = label "precompute-alpha-powers" $ go 2 [ const_ one, alpha ]
-  where
-  go i acc
-    | i > maxPow = pure acc
-    | otherwise = do
-        let prev = unsafePartial $ fromJust $ Array.last acc
-        next <- Circuit.mul_ alpha prev
-        go (i + 1) (Array.snoc acc next)
+  => FVar f -- ^ alpha
+  -> Snarky c t m (Vector AlphaPowersLen (FVar f))
+precomputeAlphaPowers alpha = label "precompute-alpha-powers" do
+  let
+    step :: Finite 69 -> StateT (FVar f) (Snarky c t m) (FVar f)
+    step _ = do
+      prev <- get
+      next <- lift (Circuit.mul_ alpha prev)
+      put next
+      pure next
+  rest <- evalStateT (Vector.generateA @69 step) alpha
+  pure (Vector.append (const_ one :< alpha :< Vector.nil) rest)
 
 -- | Construct a monadic circuit environment for evaluating linearization polynomials.
 -- | Unlike `circuitEnv`, this environment operates directly on `FVar f` values,
@@ -205,7 +185,7 @@ buildCircuitEnvM
    . CircuitM f c t m
   => PoseidonField f
   => HasEndo f f'
-  => Array (FVar f) -- ^ precomputed alpha powers (alpha^0 .. alpha^n)
+  => Vector AlphaPowersLen (FVar f) -- ^ precomputed alpha powers α^0..α^70
   -> FVar f -- ^ zeta
   -> Int -- ^ domainLog2 (for computing zeta^n - 1)
   -> ({ zkRows :: Boolean, offset :: Int } -> FVar f) -- ^ omega power for lagrange basis (may be circuit variable)
@@ -222,7 +202,7 @@ buildCircuitEnvM alphaPowers zeta domainLog2 omegaForLagrange evalPoint vanishes
   , pow: pow_
   , var: \col row -> lookupCell evalPoint col row
   , cell: identity
-  , alphaPow: \n -> unsafePartial $ fromJust $ Array.index alphaPowers n
+  , alphaPow: \n -> Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
   , mds: \{ row, col } -> const_ $ lookupMds (Proxy :: Proxy f) row col
   , endoCoefficient:
       let

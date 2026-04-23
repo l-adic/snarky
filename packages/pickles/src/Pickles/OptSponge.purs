@@ -20,6 +20,7 @@ module Pickles.OptSponge
   , optSqueeze
   , optChallenge
   , optScalarChallenge
+  , peekPreSqueezeState
   , toRegularSponge
   , ofSponge
   , runOptSpongeFromSponge
@@ -371,6 +372,41 @@ optSqueeze = wrap $ StateT \s -> case s.phase of
     pure $ Tuple (Vector.index newState (unsafeFinite @3 0))
       (s { state = newState, phase = OptSqueezed 1, needsFinalPermuteIfEmpty = true })
 
+-- | Diagnostic: flush pending absorbs and return the resulting 3-field
+-- | sponge state — equivalent to the state an external reference
+-- | sponge (e.g. kimchi's) would be in right before the next squeeze.
+-- |
+-- | After this call, the sponge is left in `OptSqueezed 0` phase with
+-- | state = post-consume state. The next `optSqueeze` then returns
+-- | state[0] and advances to `OptSqueezed 1` — exactly what would
+-- | happen if this peek hadn't been called AND the pending absorbs
+-- | had been consumed by that optSqueeze's own Absorbing branch.
+-- |
+-- | Safe to insert just before a `optChallenge` / `optScalarChallenge`
+-- | call for debugging without changing circuit semantics.
+peekPreSqueezeState
+  :: forall f t m
+   . PoseidonField f
+  => CircuitM f (KimchiConstraint f) t m
+  => OptSpongeM f (KimchiConstraint f) t m (Vector 3 (FVar f))
+peekPreSqueezeState = wrap $ StateT \s -> case s.phase of
+  OptSqueezed _ -> pure $ Tuple s.state s
+  Absorbing { nextIndex, xs } -> do
+    let input = Array.fromFoldable (List.reverse xs)
+    newState <- consume
+      { state: s.state
+      , pos: nextIndex
+      , needsFinalPermuteIfEmpty: s.needsFinalPermuteIfEmpty
+      }
+      input
+    pure $ Tuple newState
+      ( s
+          { state = newState
+          , phase = OptSqueezed 0
+          , needsFinalPermuteIfEmpty = true
+          }
+      )
+
 -- | Squeeze a challenge (lowest 128 bits, constrain_low_bits:true).
 -- | Matches OCaml's Opt.challenge.
 optChallenge
@@ -471,10 +507,10 @@ lowest128BitsInternal constrainLowBits endo x = do
       xBig = toBigInt xVal
 
       lo :: SizedF 128 (F f)
-      lo = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ mod xBig two128
+      lo = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (mod xBig two128))
 
       hi :: SizedF 128 (F f)
-      hi = unsafePartial fromJust $ SizedF.fromField @128 $ fromBigInt $ div xBig two128
+      hi = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (div xBig two128))
     pure $ UnChecked (Tuple lo hi)
   void $ EndoScalar.toField @8 hi endo
   when constrainLowBits $ void $ EndoScalar.toField @8 lo endo

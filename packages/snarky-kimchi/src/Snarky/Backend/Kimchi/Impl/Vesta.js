@@ -32,6 +32,14 @@ export function vestaConstraintSystemCreate(gates) {
     };
 }
 
+export function vestaConstraintSystemCreateWithPrevChallenges(gates) {
+    return function(publicInputsCount) {
+        return function(prevChallengesCount) {
+            return napi.vestaConstraintSystemCreateWithPrevChallenges(gates, publicInputsCount, prevChallengesCount);
+        };
+    };
+}
+
 export function vestaConstraintSystemToJson(cs) {
     return napi.vestaConstraintSystemToJson(cs);
 }

@@ -5,11 +5,20 @@ description: Tools for analyzing OCaml mina source code to support translation. 
 
 # OCaml Analysis Tools for Translation
 
-Three tiers of tools for understanding and verifying OCaml-to-PureScript circuit translation:
+Four tiers of tools for understanding and verifying OCaml-to-PureScript
+circuit translation:
 
-1. **Merlin type queries** — resolve types, especially which field (Fp/Fq) values belong to
-2. **Tree-sitter structural extraction** — navigate and compare operation sequences
-3. **JSON constraint system comparison** — the gold standard for circuit equality (see `kimchi-circuit-json-comparison` skill)
+1. **ocamllsp MCP** — primary tool for resolving types and documentation.
+   Much faster than merlin (no nix-develop startup) and integrated
+   directly into the tool harness. **Prefer this tier whenever a query
+   can be expressed as a hover on a known file:line:column.**
+2. **Merlin CLI queries** — fallback when the MCP is unavailable, or
+   when you need merlin's richer type-enclosing output (progressively
+   wider types).
+3. **Tree-sitter structural extraction** — navigate and compare
+   operation sequences.
+4. **JSON constraint system comparison** — the gold standard for
+   circuit equality (see `kimchi-circuit-json-comparison` skill).
 
 ## Prerequisites
 
@@ -26,7 +35,78 @@ nix develop "git+file://$(pwd)?submodules=1" --command dune build src/lib/crypto
 # This generates .cmt files needed by merlin
 ```
 
-## Tool 1: Merlin Type Queries
+## Tool 1: ocamllsp MCP (primary)
+
+**When to use**: Any time you need the type, documentation, or
+diagnostics of an OCaml expression. This is the default path.
+
+**Why it's primary**: The ocamllsp MCP speaks LSP directly to a live
+language server that has the `_build/` artifacts loaded, so queries
+return instantly — no `nix develop` startup cost per query. Hover also
+returns the docstring alongside the type, which merlin CLI doesn't.
+
+### Functions exposed
+
+- `mcp__ocamllsp__hover(filePath, line, column)` → workhorse query.
+  Returns type + docstring at the 1-indexed position. Use this for
+  "what type is `foo` at `step.ml:830:30`?"
+- `mcp__ocamllsp__diagnostics(filePath, [contextLines, showLineNumbers])`
+  → errors / warnings for a file. Use to confirm a file builds
+  cleanly before translating, or to surface any hidden errors after
+  an OCaml edit.
+- `mcp__ocamllsp__definition(symbolName)` → go-to-definition by
+  symbol name. **Reliability note**: this is symbol-name-keyed and
+  doesn't always resolve module-qualified identifiers like
+  `Pickles_trace.tick_field`. Prefer grep + hover for definition
+  lookups; reach for this only for simple top-level names.
+- `mcp__ocamllsp__references(symbolName)` → find-all-references. Same
+  reliability caveat as `definition`. Fall back to grep when it
+  returns empty.
+- `mcp__ocamllsp__edit_file(filePath, edits)` → batch line-range
+  edits. Useful for applying several changes to one file atomically.
+- `mcp__ocamllsp__rename_symbol(filePath, line, column, newName)` →
+  project-wide rename. Use when renaming touches many call sites.
+
+### Typical workflow
+
+```
+# Grep for a label / function / struct name to find its site:
+grep -n 'step.proof.public_input' mina/src/lib/crypto/pickles/step.ml
+#   => 832:              (Printf.sprintf "step.proof.public_input.%d" i)
+
+# Hover the identifier at that position to resolve its type:
+mcp__ocamllsp__hover(
+    filePath = ".../step.ml",
+    line     = 832,
+    column   = 30,
+)
+#   => string -> Pasta_bindings.Fp.t -> unit
+#      Trace a [Tick.Field.t] (= Vesta scalar field = Pallas base field = Fp).
+```
+
+### Prerequisites
+
+- `mina/_build/` must exist and be up to date. Run:
+  ```bash
+  nix develop git+file:///home/martyall/code/o1/mina\?submodules=1 -c bash -c '
+    export KIMCHI_STUBS_STATIC_LIB=/tmp/local_kimchi_stubs
+    cd mina && dune build src/lib/crypto/pickles'
+  ```
+  (Or any specific subtree of pickles you're about to query.) Without
+  a fresh build the MCP still works for textual hover but cross-file
+  type resolution may be stale.
+- The ocamllsp MCP server runs under the project — already configured.
+
+### When to fall back to merlin CLI
+
+- The query needs the **full enclosing chain** of types (merlin
+  returns a list of progressively wider types; hover returns one).
+- The symbol is in a file that hasn't been built yet and merlin's
+  in-memory parser is sufficient to extract what you need.
+- You're writing a reproducible script that can't depend on the
+  MCP tool harness.
+
+## Tool 2: Merlin Type Queries (fallback)
 
 **When to use**: You need to know the concrete type of an expression — especially which field (Tick/Fp vs Tock/Fq) a value lives in, or what functor instantiation is being used.
 
@@ -155,9 +235,14 @@ If two circuits produce identical JSON constraint systems, they are mathematical
 
 ## Workflow for Translating a Pickles Function
 
-1. **Read the OCaml** with ppx expansion to see the real code
-2. **Query merlin** on any expression whose field/type is ambiguous
-3. **Extract the operation sequence** with tree-sitter to see the high-level structure
-4. **Translate** to PureScript
-5. **Compare constraint systems** via JSON to verify correctness
-6. If mismatch: use `diffCircuits` to find which gate differs, then use merlin + tree-sitter to investigate why
+1. **Read the OCaml** with ppx expansion to see the real code.
+2. **Hover via `mcp__ocamllsp__hover`** on any expression whose
+   field/type is ambiguous. Grep first to get the file:line:column,
+   then call hover — this is the primary type-resolution path. Fall
+   back to merlin CLI only if the MCP can't answer.
+3. **Extract the operation sequence** with tree-sitter to see the
+   high-level structure (Tool 3).
+4. **Translate** to PureScript.
+5. **Compare constraint systems** via JSON to verify correctness.
+6. If mismatch: use `diffCircuits` to find which gate differs, then
+   use hover + tree-sitter to investigate why.

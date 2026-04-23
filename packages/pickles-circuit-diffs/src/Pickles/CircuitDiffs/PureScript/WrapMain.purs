@@ -17,6 +17,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.Types (WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
+import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (F(..), const_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -25,7 +26,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 compileWrapMainN1 :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainN1 { lagrangeComms, blindingH } =
+compileWrapMainN1 { lagrangeAt, blindingH } =
   let
     { x: F dummyX, y: F dummyY } = dummyVestaPt
 
@@ -44,10 +45,15 @@ compileWrapMainN1 { lagrangeComms, blindingH } =
 
     config :: WrapMainConfig 1
     config =
+      -- domainLog2 = 14 mirrors production Simple_chain N1 (verified
+      -- via OCaml `compile.wrap_domains.h.log2` trace). This is the
+      -- step proof's eval domain that the wrap circuit's lagrange
+      -- base lookup is parameterized by. The matching OCaml fixture
+      -- in dump_circuit_impl.ml was likewise updated to ~domain_log2:14.
       { stepWidths: 1 :< Vector.nil
-      , domainLog2s: 16 :< Vector.nil
+      , domainLog2s: 14 :< Vector.nil
       , stepKeys: dummyVK :< Vector.nil
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
@@ -55,5 +61,5 @@ compileWrapMainN1 { lagrangeComms, blindingH } =
   in
     unsafePerformEffect $
       compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @1 @0 @1 config stmt)
+        (\stmt -> wrapMain @1 @(Slots2 0 1) config stmt)
         Kimchi.initialState

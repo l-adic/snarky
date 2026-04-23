@@ -12,7 +12,7 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF10, asSizedF128, unsafeIdx)
-import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBase, publicInputCommit)
+import Pickles.PublicInputCommit (class PublicInputCommit, CorrectionMode(..), LagrangeBaseLookup, publicInputCommit)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compilePure)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, SizedF, Snarky)
@@ -24,7 +24,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type XhatStepParams f =
-  { lagrangeComms :: Array (LagrangeBase f)
+  { lagrangeAt :: LagrangeBaseLookup f
   , blindingH :: AffinePoint (F f)
   }
 
@@ -67,10 +67,10 @@ xhatStepCircuit
   => XhatStepParams StepField
   -> pi
   -> Snarky (KimchiConstraint StepField) t m (AffinePoint (FVar StepField))
-xhatStepCircuit { lagrangeComms, blindingH } publicInput =
+xhatStepCircuit { lagrangeAt, blindingH } publicInput =
   publicInputCommit
     { curveParams: curveParams (Proxy @PallasG)
-    , lagrangeComms
+    , lagrangeAt
     , blindingH
     , correctionMode: PureCorrections
     }

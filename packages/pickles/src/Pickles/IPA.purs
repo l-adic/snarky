@@ -29,12 +29,9 @@ module Pickles.IPA
   , computeBCircuit
   -- Challenge extraction (returns 128-bit scalar challenges)
   , extractScalarChallenges
-  , extractScalarChallengesPure
   -- Bullet reduce (lr_prod computation)
-  , bulletReduce
   , bulletReduceCircuit
   -- Verification
-  , bCorrect
   , bCorrectCircuit
   -- Combined polynomial commitment
   , combinePolynomials
@@ -46,24 +43,28 @@ module Pickles.IPA
 
 import Prelude
 
-import Data.Fin (getFinite)
-import Data.Foldable (fold, foldM, for_, product)
+import Data.Fin (getFinite, unsafeFinite)
+import Data.Foldable (foldM, for_, product)
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
+import Effect.Unsafe (unsafePerformEffect)
 import JS.BigInt as BigInt
 import Pickles.ShiftOps (IpaScalarOps)
-import Pickles.Sponge (PureSpongeM, SpongeM, absorb, absorbPoint, labelM, liftSnarky, squeeze, squeezeScalar, squeezeScalarChallengePure)
+import Pickles.Sponge (SpongeM, absorb, absorbPoint, getSponge, labelM, liftSnarky, squeeze, squeezeScalar)
+import Pickles.Trace as Trace
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, SizedF, Snarky, add_, and_, const_, equals_, if_, label)
-import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, expandToEndoScalar, groupMapCircuit)
+import Snarky.Circuit.DSL (exists, readCVar) as SDSL
+import Snarky.Circuit.DSL.SizedF as SizedF
+import Snarky.Circuit.Kimchi (GroupMapParams, addComplete, endo, endoInv, groupMapCircuit)
 import Snarky.Circuit.Kimchi.Utils (mapAccumM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, fromAffine, pow, scalarMul)
+import Snarky.Curves.Class (class FieldSizeInBits, class FrModule, class HasEndo, class HasSqrt, class PrimeField, class WeierstrassCurve, pow)
 import Snarky.Data.EllipticCurve (AffinePoint)
 
 -------------------------------------------------------------------------------
@@ -236,42 +237,9 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
   -- squeeze_scalar with constrain_low_bits:false (matches OCaml's squeeze_scalar)
   squeezeScalar params
 
--- | Pure version of extractScalarChallenges for testing.
--- | Extracts 128-bit scalar challenges from L/R pairs using pure sponge.
-extractScalarChallengesPure
-  :: forall n f
-   . PrimeField f
-  => FieldSizeInBits f 255
-  => PoseidonField f
-  => Vector n (LrPair f)
-  -> PureSpongeM f (Vector n (SizedF 128 f))
-extractScalarChallengesPure pairs = for pairs \{ l, r } -> do
-  absorb l.x
-  absorb l.y
-  absorb r.x
-  absorb r.y
-  squeezeScalarChallengePure
-
 -------------------------------------------------------------------------------
 -- | Verification
 -------------------------------------------------------------------------------
-
--- | Pure version of b correctness check.
--- |
--- | Verifies: b == bPoly(challenges, zeta) + evalscale * bPoly(challenges, zetaOmega)
--- |
--- | This is the "b_correct" check from wrap_verifier.ml.
-bCorrect
-  :: forall n f
-   . Reflectable n Int
-  => PrimeField f
-  => BCorrectInput n f
-  -> Boolean
-bCorrect input@{ expectedB } =
-  let
-    computedB = computeB input.challenges { zeta: input.zeta, zetaOmega: input.zetaOmega, evalscale: input.evalscale }
-  in
-    computedB == expectedB
 
 -- | Circuit version of b correctness check.
 -- |
@@ -294,48 +262,6 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -------------------------------------------------------------------------------
 -- | Bullet Reduce (lr_prod computation)
 -------------------------------------------------------------------------------
-
--- | Pure version of bullet reduce.
--- |
--- | Computes: lr_prod = Σ_i [endoInv(L_i, u_i) + endo(R_i, u_i)]
--- |
--- | Where u_i are 128-bit scalar challenges and endo/endoInv apply the
--- | endomorphism-based scalar multiplication.
--- |
--- | This corresponds to `bullet_reduce` in wrap_verifier.ml / step_verifier.ml.
-bulletReduce
-  :: forall n @f f' @g _l
-   . Reflectable n Int
-  => Add 1 _l n
-  => FieldSizeInBits f' 255
-  => FieldSizeInBits f 255
-  => HasEndo f f'
-  => FrModule f' g
-  => WeierstrassCurve f g
-  => BulletReduceInput n f
-  -> g
-bulletReduce { pairs, challenges } =
-  let
-    -- Compute one term: endoInv(L, u) + endo(R, u)
-    -- where u is the full field challenge
-    computeTerm :: LrPair f -> SizedF 128 f -> g
-    computeTerm { l, r } raw128 =
-      let
-        fullChal = expandToEndoScalar raw128 :: f'
-        fullChalInv = recip fullChal
-        -- L * chal_inv
-        lPoint = fromAffine @f @g l
-        lScaled = scalarMul fullChalInv lPoint
-        -- R * chal
-        rPoint = fromAffine @f @g r
-        rScaled = scalarMul fullChal rPoint
-      in
-        lScaled <> rScaled
-
-    -- Compute all terms and sum them
-    terms = Vector.zipWith computeTerm pairs challenges
-  in
-    fold terms
 
 -- | Circuit version of bullet reduce.
 -- |
@@ -449,6 +375,28 @@ ipaFinalCheckCircuit
   -> IpaFinalCheckInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 ipaFinalCheckCircuit scalarOps params input = do
+  let
+    -- Local copy of Pickles.Verify.ivpTrace — can't import from Verify
+    -- due to cycle (Verify imports IPA). Semantics identical.
+    ivpTrace labelStr v = do
+      _ <- SDSL.exists do
+        val <- SDSL.readCVar v
+        let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+        pure val
+      pure unit
+  -- DIAG: dump IPA inputs at solve time. These are the values the wrap
+  -- circuit reads from the step proof's opening via Req.Openings_proof
+  -- + deferredValues — if any differs from OCaml, localizes the bug.
+  liftSnarky do
+    ivpTrace "ipa.dbg.sg.x" input.sg.x
+    ivpTrace "ipa.dbg.sg.y" input.sg.y
+    ivpTrace "ipa.dbg.delta.x" input.delta.x
+    ivpTrace "ipa.dbg.delta.y" input.delta.y
+    ivpTrace "ipa.dbg.cp.x" input.combinedPolynomial.x
+    ivpTrace "ipa.dbg.cp.y" input.combinedPolynomial.y
+    ivpTrace "ipa.dbg.u.x" input.u.x
+    ivpTrace "ipa.dbg.u.y" input.u.y
+
   -- 1. Extract 128-bit scalar challenges from L/R pairs
   -- OCaml: bullet_reduce starts with Array.map gammas ~f:(absorb + squeeze_scalar)
   scalarChallenges <- labelM "ipa_extract_challenges" $
@@ -484,6 +432,12 @@ ipaFinalCheckCircuit scalarOps params input = do
     absorbPoint input.delta
     squeezeScalar params
 
+  -- DIAG: dump Q + c at this point
+  liftSnarky do
+    ivpTrace "ipa.dbg.q.x" q.x
+    ivpTrace "ipa.dbg.q.y" q.y
+    ivpTrace "ipa.dbg.c" (SizedF.toField c)
+
   success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
     cQ <- label "ipa_endo_q" $ endo q c
@@ -496,6 +450,12 @@ ipaFinalCheckCircuit scalarOps params input = do
     z1Term <- label "ipa_scale_z1" $ scalarOps.scaleByShifted sgPlusBU input.z1
     z2Term <- label "ipa_scale_z2" $ scalarOps.scaleByShifted input.blindingGenerator input.z2
     { p: rhs } <- label "ipa_rhs_add" $ addComplete z1Term z2Term
+
+    -- DIAG: dump LHS + RHS at the final equation
+    ivpTrace "ipa.dbg.lhs.x" lhs.x
+    ivpTrace "ipa.dbg.lhs.y" lhs.y
+    ivpTrace "ipa.dbg.rhs.x" rhs.x
+    ivpTrace "ipa.dbg.rhs.y" rhs.y
 
     -- 9. Check LHS == RHS
     xEqual <- equals_ lhs.x rhs.x
@@ -600,11 +560,32 @@ checkBulletproof
   -> CheckBulletproofInput n (FVar f) sf
   -> SpongeM f (KimchiConstraint f) t m (IpaFinalCheckResult n f)
 checkBulletproof scalarOps params commitmentBases baseMasks input = do
+  let
+    ivpTrace' labelStr v = do
+      _ <- SDSL.exists do
+        val <- SDSL.readCVar v
+        let _ = unsafePerformEffect (Trace.fieldF labelStr val)
+        pure val
+      pure unit
+  -- Dump the sponge STATE entering check_bulletproof (pre-CIP-absorb).
+  pre <- getSponge
+  liftSnarky do
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s0" (Vector.index pre.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s1" (Vector.index pre.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.wrap_sponge_pre.s2" (Vector.index pre.state (unsafeFinite @3 2))
+
   -- 1. Absorb shift_scalar(CIP) into sponge
   -- OCaml: Other_field.Packed.absorb_shifted sponge advice.combined_inner_product
   labelM "bp_absorb_cip" $ do
     let cipFields = scalarOps.shiftedToAbsorbFields input.combinedInnerProduct
     for_ cipFields absorb
+
+  -- Dump sponge state after CIP absorb.
+  post <- getSponge
+  liftSnarky do
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s0" (Vector.index post.state (unsafeFinite @3 0))
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s1" (Vector.index post.state (unsafeFinite @3 1))
+    ivpTrace' "ipa.dbg.wrap_sponge_post.s2" (Vector.index post.state (unsafeFinite @3 2))
 
   -- 2. Derive u via group_map (squeeze BEFORE combine_poly, matching OCaml)
   -- OCaml: let u = let t = Sponge.squeeze_field sponge in group_map t

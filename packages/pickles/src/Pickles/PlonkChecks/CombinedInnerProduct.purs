@@ -9,7 +9,6 @@
 module Pickles.PlonkChecks.CombinedInnerProduct
   ( CombinedInnerProductCheckInput
   , BatchingScalars
-  , combinedInnerProductCheckCircuit
   , EvalOpt(..)
   , hornerCombine
   , buildEvalList
@@ -22,18 +21,13 @@ import Data.Array.NonEmpty (NonEmptyArray)
 import Data.Array.NonEmpty as NEA
 import Data.Foldable (foldM)
 import Data.Tuple (Tuple(..))
-import Data.Vector (Vector, (:<))
+import Data.Vector (Vector)
 import Data.Vector as Vector
-import Pickles.Commitments (combinedInnerProductCircuit)
-import Pickles.Linearization.FFI (class LinearizationFFI, PointEval)
-import Pickles.Linearization.Types (LinearizationPoly)
-import Pickles.PlonkChecks.FtEval (ftEval0Circuit)
+import Pickles.Linearization.FFI (PointEval)
 import Pickles.PlonkChecks.GateConstraints (GateConstraintInput)
 import Pickles.PlonkChecks.Permutation (PermutationInput)
-import Poseidon (class PoseidonField)
 import Prim.Int (class Add)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, if_, label)
-import Snarky.Curves.Class (class HasEndo, class PrimeField)
 
 -------------------------------------------------------------------------------
 -- | Types
@@ -87,46 +81,6 @@ type BatchingScalars f =
 -- |
 -- | Uses precomputed alpha powers for gate constraint evaluation, matching
 -- | OCaml's scalars_env approach.
-combinedInnerProductCheckCircuit
-  :: forall f f' g c t m r
-   . PrimeField f
-  => PoseidonField f
-  => HasEndo f f'
-  => CircuitM f c t m
-  => LinearizationFFI f g
-  => { linearizationPoly :: LinearizationPoly f, domainLog2 :: Int | r }
-  -> FVar f -- ^ zeta (expanded)
-  -> BatchingScalars (FVar f)
-  -> CombinedInnerProductCheckInput (FVar f)
-  -> Snarky c t m (FVar f)
-combinedInnerProductCheckCircuit params zeta scalars input = label "combined-inner-product" do
-  -- 1. Compute ftEval0 using monadic gate constraint evaluation
-  ftEval0Computed <- ftEval0Circuit params zeta
-    { permInput: input.permInput
-    , gateInput: input.gateInput
-    , publicEval: input.publicEvalForFt
-    }
-
-  -- 2. Build ft PointEval
-  let ftPointEval = { zeta: ftEval0Computed, omegaTimesZeta: input.ftEval1 }
-
-  -- 3. Build full 45-element evaluation vector
-  let
-    allEvals :: Vector 45 (PointEval (FVar f))
-    allEvals =
-      (input.publicPointEval :< ftPointEval :< input.zEvals :< Vector.nil)
-        `Vector.append` input.indexEvals
-        `Vector.append` input.witnessEvals
-        `Vector.append` input.coeffEvals
-        `Vector.append` input.sigmaEvals
-
-  -- 4. Compute combined inner product in-circuit
-  combinedInnerProductCircuit
-    { polyscale: scalars.polyscale
-    , evalscale: scalars.evalscale
-    , evals: allEvals
-    }
-
 -------------------------------------------------------------------------------
 -- | Horner-scheme CIP computation
 -------------------------------------------------------------------------------

@@ -13,28 +13,27 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Vector (Vector)
-import Data.Vector ((:<))
+import Data.Maybe (Maybe(..))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
-import Pickles.PublicInputCommit (LagrangeBase)
-import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
+import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainParams =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -61,7 +60,7 @@ simpleChainRule
    . CircuitM StepField (KimchiConstraint StepField) t m
   => SimpleChainAdvice m
   => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 1 StepField)
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 1 (FVar StepField) Unit)
 simpleChainRule appState = do
   prev <- exists $ lift $ getSimpleChainPrev unit
   isBaseCase <- equals_ (const_ zero) appState
@@ -71,10 +70,24 @@ simpleChainRule appState = do
   pure
     { prevPublicInputs: prev :< Vector.nil
     , proofMustVerify: proofMustVerify :< Vector.nil
+    , publicOutput: unit
     }
 
 compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
 compileStepMainSimpleChain params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @1 @34 simpleChainRule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    -- Step domain log2 = 14: matches OCaml's production `Fix_domains.domains`
+    -- output for the Simple_chain N1 inductive rule (small circuit; ceil_log2
+    -- of the constraint row count). The earlier value of 16 was a synthetic
+    -- mismatch that didn't validate the production compile path. Both this
+    -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
+    -- exercises the same compile config Pickles.compile_promise produces.
+    ( \_ -> stepMain @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
+        { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
+        , blindingH: params.blindingH
+        , perSlotFopDomainLog2: 14 :< Vector.nil
+        , perSlotKnownWrapKeys: Nothing :< Vector.nil
+        }
+        dummyWrapSg
+    )
     Kimchi.initialState

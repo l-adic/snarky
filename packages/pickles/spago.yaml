@@ -3,17 +3,22 @@ package:
   dependencies:
     - arrays
     - blake2
+    - const
     - curves
     - effect
     - either
     - exceptions
     - foldable-traversable
+    - functors
     - identity
     - integers
     - js-bigints
     - lists
     - maybe
     - newtype
+    - node-buffer
+    - node-fs
+    - ordered-collections
     - partial
     - pickles-linearization-types
     - poseidon
@@ -33,19 +38,8 @@ package:
     main: Test.Pickles.Main
     dependencies:
       - aff
-      - console
       - effect
-      - either
-      - exceptions
-      - identity
-      - newtype
-      - ordered-collections
-      - partial
-      - quickcheck
-      - schnorr
-      - snarky-curves
-      - snarky-kimchi
-      - snarky-test-utils
+      - node-process
+      - prelude
       - spec
       - spec-node
-      - transformers

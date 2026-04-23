@@ -23,15 +23,17 @@ import Prelude
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
 import Data.Maybe (Maybe(..))
+import Data.Newtype (class Newtype)
 import Data.Reflectable (reflectType)
 import Data.Show.Generic (genericShow)
 import Data.Traversable (for)
+import Data.TraversableWithIndex (forWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (unfoldr)
 import JS.BigInt (BigInt, fromInt)
 import JS.BigInt as BigInt
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
+import Snarky.Circuit.DSL (class CheckedType, class CircuitM, class CircuitType, Bool(..), BoolVar, F(..), FVar, Snarky, add_, and_, any_, assertEqual_, assert_, const_, equals_, exists, fieldsToValue, fieldsToVar, genericCheck, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, label, not_, readCVar, scale_, sizeInFields, sub_, valueToFields, varToFields)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, fromBigInt, modulus, pow, toBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
@@ -44,6 +46,7 @@ import Type.Proxy (Proxy(..))
 
 newtype Type1 f = Type1 f
 
+derive instance Newtype (Type1 f) _
 derive instance Functor Type1
 derive instance Eq f => Eq (Type1 f)
 derive instance Generic (Type1 f) _
@@ -120,12 +123,13 @@ instance CheckedType Vesta.ScalarField c (Type2 (SplitField (FVar Vesta.ScalarFi
     genericCheck sf
     -- For each forbidden (sDiv2, sOdd) pair, check if current matches
     -- Then assert that NONE of them match
-    matchesForbidden <- for (forbiddenSplitFieldValues @Pallas.ScalarField @Vesta.ScalarField) \{ sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } -> do
-      sDiv2Matches <- equals_ sDiv2 (const_ forbiddenDiv2)
-      let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
-      sDiv2Matches `and_` sOddMatches
-    anyMatch <- any_ matchesForbidden
-    assert_ (not_ anyMatch)
+    matchesForbidden <- forWithIndex (forbiddenSplitFieldValues @Pallas.ScalarField @Vesta.ScalarField) \idx { sDiv2: F forbiddenDiv2, sOdd: forbiddenOdd } ->
+      label ("forbidden_eq_" <> show idx) do
+        sDiv2Matches <- equals_ sDiv2 (const_ forbiddenDiv2)
+        let sOddMatches = if forbiddenOdd then sOdd else not_ sOdd
+        sDiv2Matches `and_` sOddMatches
+    anyMatch <- label "forbidden_any" (any_ matchesForbidden)
+    label "forbidden_assert_not" (assert_ (not_ anyMatch))
 
 -- | Type2 (SplitField) in Wrap circuit (Pallas.ScalarField = Fq).
 -- | Used when the Wrap circuit reads Step public inputs containing Type2 (SplitField ...).

@@ -21,7 +21,6 @@ module Pickles.Sponge
   , lowest128BitsPure
   -- In-circuit sponge monad
   , SpongeM(..)
-  , runSpongeM
   , evalSpongeM
   , liftSnarky
   , labelM
@@ -32,7 +31,6 @@ module Pickles.Sponge
   , runPureSpongeM
   , evalPureSpongeM
   , getSpongeState
-  , putSpongeState
   -- Initial state / restore
   , initialSponge
   , initialSpongeCircuit
@@ -103,15 +101,6 @@ derive newtype instance (Monad (Snarky c t m)) => Apply (SpongeM f c t m)
 derive newtype instance (Monad (Snarky c t m)) => Applicative (SpongeM f c t m)
 derive newtype instance (Monad (Snarky c t m)) => Bind (SpongeM f c t m)
 derive newtype instance (Monad (Snarky c t m)) => Monad (SpongeM f c t m)
-
--- | Run a SpongeM computation, returning both the result and final sponge state
-runSpongeM
-  :: forall f c t m a
-   . Functor (Snarky c t m)
-  => Sponge (FVar f)
-  -> SpongeM f c t m a
-  -> Snarky c t m (Tuple a (Sponge (FVar f)))
-runSpongeM initialState computation = runStateT (unwrap computation) initialState
 
 -- | Run a SpongeM computation, returning only the result
 evalSpongeM
@@ -249,10 +238,6 @@ evalPureSpongeM initialState computation =
 getSpongeState :: forall f. PureSpongeM f (Sponge f)
 getSpongeState = wrap get
 
--- | Set the sponge state (pure version)
-putSpongeState :: forall f. Sponge f -> PureSpongeM f Unit
-putSpongeState = wrap <<< put
-
 -- | MonadSponge instance for the pure sponge monad
 instance PoseidonField f => MonadSponge f (PureSpongeM f) where
   absorb x = wrap do
@@ -323,20 +308,10 @@ lowest128Bits' constrainLowBits endo x = do
       xBig = toBigInt xVal
 
       lo :: SizedF 128 (F f)
-      lo =
-        unsafePartial fromJust
-          $ SizedF.fromField @128
-          $ fromBigInt
-          $
-            mod xBig two128
+      lo = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (mod xBig two128))
 
       hi :: SizedF 128 (F f)
-      hi =
-        unsafePartial fromJust
-          $ SizedF.fromField @128
-          $ fromBigInt
-          $
-            div xBig two128
+      hi = unsafePartial $ fromJust $ SizedF.fromField @128 (fromBigInt (div xBig two128))
     pure $ UnChecked (Tuple lo hi)
   -- Range check hi via EndoScalar (discard result) — hi first, matching OCaml
   void $ EndoScalar.toField @8 hi endo
@@ -361,7 +336,7 @@ lowest128BitsPure x =
     two128 = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt 128)
     lo = fromBigInt (mod xBig two128)
   in
-    unsafePartial fromJust $ fromField @128 lo
+    unsafePartial $ fromJust (fromField @128 lo)
 
 --------------------------------------------------------------------------------
 -- | Initial States

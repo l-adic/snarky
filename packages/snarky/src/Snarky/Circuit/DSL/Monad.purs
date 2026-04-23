@@ -76,7 +76,9 @@ import Control.Apply (lift2)
 import Control.Monad.Except (ExceptT, runExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (class MonadTrans, lift)
+import Data.Const (Const)
 import Data.Either (Either)
+import Data.Functor.Product (Product(..)) as FP
 import Data.Generic.Rep (class Generic, Argument(..), Constructor(..), NoArguments, Product(..), from)
 import Data.HeytingAlgebra (ff, implies, tt)
 import Data.Identity (Identity(..))
@@ -390,6 +392,21 @@ instance BasicSystem f c => CheckedType f c (BoolVar f) where
 
 instance (CheckedType f c avar, CheckedType f c bvar) => CheckedType f c (Tuple avar bvar) where
   check = genericCheck
+
+-- | `Const Unit a` has no content to check, regardless of `a`. Used
+-- | by higher-kinded slot-list representations (see
+-- | `Pickles.Wrap.Slots`).
+instance CheckedType f c (Const Unit a) where
+  check _ = pure mempty
+
+-- | `Product f g a = Product (Tuple (f a) (g a))` checks each factor
+-- | recursively, mirroring the Tuple instance one layer up.
+instance
+  ( CheckedType f c (fc a)
+  , CheckedType f c (gc a)
+  ) =>
+  CheckedType f c (FP.Product fc gc a) where
+  check (FP.Product t) = check t
 
 instance CheckedType f c (UnChecked var) where
   check _ = pure mempty

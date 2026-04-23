@@ -33,7 +33,7 @@ wrapVerifyCircuit
   => IvpWrapParams
   -> Vector InputSize (FVar WrapField)
   -> Snarky (KimchiConstraint WrapField) t m Unit
-wrapVerifyCircuit { lagrangeComms, blindingH } inputs = do
+wrapVerifyCircuit { lagrangeAt, blindingH } inputs = do
   let
     at = unsafeIdx inputs
     readPt i = { x: at i, y: at (i + 1) }
@@ -42,7 +42,7 @@ wrapVerifyCircuit { lagrangeComms, blindingH } inputs = do
 
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
-      , lagrangeComms
+      , lagrangeAt
       , blindingH
       , correctionMode: InCircuitCorrections
       , endo: wrapEndo

@@ -14,28 +14,27 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Vector (Vector)
-import Data.Vector ((:<))
+import Data.Maybe (Maybe(..))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
-import Pickles.PublicInputCommit (LagrangeBase)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Constraint.Kimchi (KimchiGate)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Constraint.Kimchi.Types (AuxState)
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
 type StepMainSimpleChainN2Params =
-  { lagrangeComms :: Array (LagrangeBase StepField)
+  { lagrangeAt :: LagrangeBaseLookup StepField
   , blindingH :: AffinePoint (F StepField)
   }
 
@@ -63,7 +62,7 @@ simpleChainN2Rule
    . CircuitM StepField (KimchiConstraint StepField) t m
   => SimpleChainN2Advice m
   => FVar StepField
-  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 StepField)
+  -> Snarky (KimchiConstraint StepField) t m (RuleOutput 2 (FVar StepField) Unit)
 simpleChainN2Rule appState = do
   prev1 <- exists $ lift $ getSimpleChainN2Prev1 unit
   prev2 <- exists $ lift $ getSimpleChainN2Prev2 unit
@@ -74,10 +73,20 @@ simpleChainN2Rule appState = do
   pure
     { prevPublicInputs: prev1 :< prev2 :< Vector.nil
     , proofMustVerify: proofMustVerify :< proofMustVerify :< Vector.nil
+    , publicOutput: unit
     }
 
 compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
 compileStepMainSimpleChainN2 params = unsafePerformEffect $
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    (\_ -> stepMain @2 @67 simpleChainN2Rule { lagrangeComms: params.lagrangeComms, blindingH: params.blindingH } dummyWrapSg)
+    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
+    -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
+    ( \_ -> stepMain @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
+        { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
+        , blindingH: params.blindingH
+        , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil
+        , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil
+        }
+        dummyWrapSg
+    )
     Kimchi.initialState
