@@ -47,13 +47,12 @@ import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
-import Data.Maybe (Maybe(..))
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitment)
+import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F(..))
 import Snarky.Circuit.Kimchi (Type1)
@@ -198,15 +197,11 @@ verifyOne verifier (CompiledProof p) =
       map (\c -> coerce (toFieldPure c (F verifier.stepEndo)) :: StepField)
         p.rawBulletproofChallenges
 
-    computedSg :: Array WrapField
-    computedSg = vestaSrsBPolyCommitment verifier.vestaSrs expandedBpChals
+    computedSg :: AffinePoint WrapField
+    computedSg = vestaSrsBPolyCommitmentPoint verifier.vestaSrs expandedBpChals
 
     accumulatorOk :: Boolean
-    accumulatorOk = case Array.index computedSg 0, Array.index computedSg 1 of
-      Just sgX, Just sgY ->
-        sgX == p.challengePolynomialCommitment.x
-          && sgY == p.challengePolynomialCommitment.y
-      _, _ -> false
+    accumulatorOk = computedSg == p.challengePolynomialCommitment
 
     -- ===== Stage 3: kimchi batch_verify on the wrap proof. =====
     pi :: Array WrapField

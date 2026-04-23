@@ -1,9 +1,13 @@
 module Snarky.Backend.Kimchi.Impl.Vesta where
 
+import Data.Array as Array
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Vesta as Vesta
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
 foreign import vestaCircuitGateNew :: String -> GateWires -> Array Vesta.ScalarField -> Gate Vesta.ScalarField
@@ -31,7 +35,21 @@ foreign import vestaCrsSize :: CRS Vesta.G -> Int
 -- | Compute challenge polynomial commitment from Vesta SRS.
 -- | Vesta scalar field = Fp, result coords in Fq (= Pallas.ScalarField).
 -- | OCaml: SRS.Fp.b_poly_commitment (Dummy.Ipa.Step.compute_sg)
+-- |
+-- | Returns a flat `[x, y]` array by FFI contract. Prefer
+-- | `vestaSrsBPolyCommitmentPoint` for a typed `AffinePoint` result.
 foreign import vestaSrsBPolyCommitment :: CRS Vesta.G -> Array Vesta.ScalarField -> Array Vesta.BaseField
+
+-- | Typed wrapper over `vestaSrsBPolyCommitment` — returns an affine point
+-- | directly instead of the `[x, y]` array the Rust FFI produces.
+vestaSrsBPolyCommitmentPoint
+  :: CRS Vesta.G -> Array Vesta.ScalarField -> AffinePoint Vesta.BaseField
+vestaSrsBPolyCommitmentPoint srs chals =
+  let xs = vestaSrsBPolyCommitment srs chals
+  in case Array.index xs 0, Array.index xs 1 of
+    Just x, Just y -> { x, y }
+    _, _ -> unsafeCrashWith
+      "vestaSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
 foreign import vestaProverIndexCreate :: ConstraintSystem Vesta.ScalarField -> Vesta.ScalarField -> CRS Vesta.G -> ProverIndex Vesta.G Vesta.ScalarField
 

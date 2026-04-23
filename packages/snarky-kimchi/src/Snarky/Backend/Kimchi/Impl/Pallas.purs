@@ -1,9 +1,13 @@
 module Snarky.Backend.Kimchi.Impl.Pallas where
 
+import Data.Array as Array
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, Gate, GateWires, ProverIndex, VerifierIndex)
 import Snarky.Curves.Pallas as Pallas
+import Snarky.Data.EllipticCurve (AffinePoint)
 
 -- Create a new circuit gate with the given gate kind, wires, and coefficients
 foreign import pallasCircuitGateNew :: String -> GateWires -> Array Pallas.ScalarField -> Gate Pallas.ScalarField
@@ -31,7 +35,21 @@ foreign import pallasCrsSize :: CRS Pallas.G -> Int
 -- | Compute challenge polynomial commitment from Pallas SRS.
 -- | Pallas scalar field = Fq, result coords in Fp (= Vesta.ScalarField).
 -- | OCaml: SRS.Fq.b_poly_commitment (Dummy.Ipa.Wrap.compute_sg)
+-- |
+-- | Returns a flat `[x, y]` array by FFI contract. Prefer
+-- | `pallasSrsBPolyCommitmentPoint` for a typed `AffinePoint` result.
 foreign import pallasSrsBPolyCommitment :: CRS Pallas.G -> Array Pallas.ScalarField -> Array Pallas.BaseField
+
+-- | Typed wrapper over `pallasSrsBPolyCommitment` — returns an affine point
+-- | directly instead of the `[x, y]` array the Rust FFI produces.
+pallasSrsBPolyCommitmentPoint
+  :: CRS Pallas.G -> Array Pallas.ScalarField -> AffinePoint Pallas.BaseField
+pallasSrsBPolyCommitmentPoint srs chals =
+  let xs = pallasSrsBPolyCommitment srs chals
+  in case Array.index xs 0, Array.index xs 1 of
+    Just x, Just y -> { x, y }
+    _, _ -> unsafeCrashWith
+      "pallasSrsBPolyCommitmentPoint: FFI returned unexpected length (must be [x, y])"
 
 foreign import pallasProverIndexCreate :: ConstraintSystem Pallas.ScalarField -> Pallas.ScalarField -> CRS Pallas.G -> ProverIndex Pallas.G Pallas.ScalarField
 
