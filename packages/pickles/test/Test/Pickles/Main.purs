@@ -4,7 +4,7 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
+import Test.Pickles.Prove.CompileSmoke as CompileSmoke
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
@@ -31,10 +31,10 @@ import Test.Spec.Runner.Node.Config as Cfg
 spec :: SpecT Aff Unit Aff Unit
 spec = do
   SimpleChain.spec
-  NoRecursionReturn.spec
   TreeProofReturn.spec
   ExpandDeferredEq.spec
   VerifySmoke.spec
+  CompileSmoke.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'
