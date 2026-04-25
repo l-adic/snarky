@@ -21,7 +21,8 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), compile, verify)
+import Data.Newtype (un)
+import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), Tag(..), compile, verify, wrapPublicInput)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO, StepField)
@@ -50,7 +51,7 @@ spec = describe "Pickles.Prove.Compile" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    { prover, verifier } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
+    { prover, tag } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: unit
       , debug: false
@@ -61,14 +62,14 @@ spec = describe "Pickles.Prove.Compile" do
     case eResult of
       Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
       Right compiledProof ->
-        verify verifier [ compiledProof ] `shouldEqual` true
+        verify (un Tag tag).verifier [ compiledProof ] `shouldEqual` true
 
   it "compile byte-matches produceNoRecursionReturn (deterministic RNG)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
     -- Path A: via compile.
-    { prover: pA } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
+    { prover: pA, tag: tA } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: unit
       , debug: false
@@ -92,11 +93,19 @@ spec = describe "Pickles.Prove.Compile" do
     cpA.messagesForNextWrapProofDigest `shouldEqual` artifactsB.messagesForNextWrapProofDigest
     cpA.challengePolynomialCommitment `shouldEqual` artifactsB.stepProofSg
 
+    -- Verifier's wrapPublicInput helper reconstructs the kimchi wrap
+    -- publicInputs Array purely from CompiledProof fields + verifier
+    -- constants (via expandDeferredForVerify + wrapPublicInputOf). If
+    -- this reconstruction is byte-exact with what wrapSolveAndProve
+    -- actually received, InductivePrev can use this helper directly
+    -- instead of augmenting CompiledProof with a stored Array.
+    wrapPublicInput (un Tag tA).verifier compiledProofA `shouldEqual` artifactsB.wrapPublicInput
+
   it "compile + prover.step: Simple_chain b0 end-to-end verify returns true" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    { prover, verifier } <- liftEffect $ compile
+    { prover, tag } <- liftEffect $ compile
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
       @(F StepField)
       @Unit
@@ -117,4 +126,4 @@ spec = describe "Pickles.Prove.Compile" do
     case eResult of
       Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
       Right compiledProof ->
-        verify verifier [ compiledProof ] `shouldEqual` true
+        verify (un Tag tag).verifier [ compiledProof ] `shouldEqual` true

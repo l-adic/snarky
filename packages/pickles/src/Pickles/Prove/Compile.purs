@@ -26,6 +26,7 @@ module Pickles.Prove.Compile
   , ShapeCompileData
   , ShapeProveData
   , StepInputs
+  , Tag(..)
   , class CompilableSpec
   , mkStepAdvice
   , runCompile
@@ -41,6 +42,7 @@ import Control.Monad.Except (ExceptT)
 import Data.Array as Array
 import Data.Functor.Product (Product, product)
 import Data.Maybe (Maybe(..), fromJust)
+import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Type.Proxy (Proxy(..))
@@ -104,6 +106,7 @@ import Pickles.Prove.Verify
   , wrapPublicInput
   )
 import Pickles.Step.Prevs (class PrevsCarrier, PrevsSpecCons, PrevsSpecNil)
+import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Types
   ( PaddedLength
   , PerProofUnfinalized(..)
@@ -142,6 +145,36 @@ import Snarky.Types.Shifted (SplitField, Type2)
 
 type ProveError = EvaluationError
 
+-- | Identity bundle for a Pickles rule emitted by `compile`. Carries:
+-- |
+-- | * `unique` — opaque runtime token allocated fresh on every
+-- |   `compile` call (`Data.Unique`-style). Routing key for downstream
+-- |   consumers — `compileFamily`'s VK registry, side-loaded VK
+-- |   registries at prove time, or any other lookup-by-rule-identity.
+-- |   Two distinct compiles always produce distinct uniques even if
+-- |   their type signatures match.
+-- |
+-- | * `verifier` — the rule's verifier, ready to feed
+-- |   `Pickles.verify` and to extract step-side constants from
+-- |   (stepDomainLog2, stepEndo, etc.) for InductivePrev's wrap PI
+-- |   reconstruction.
+-- |
+-- | The phantom `(inputVal, outputVal, mpv)` parameters provide
+-- | structural type safety — different-shape rules' tags can't be
+-- | substituted for each other. Same-shape collisions surface at
+-- | runtime (mismatched `unique` → wrong VK in proof).
+-- |
+-- | Mirrors OCaml's `Tag.t` (`pickles/tag.mli`): the `unique` is the
+-- | analog of `Type_equal.Id.uid`, the phantom params analog of the
+-- | OCaml type parameters.
+newtype Tag :: Type -> Type -> Int -> Type
+newtype Tag inputVal outputVal mpv = Tag
+  { unique :: Unique
+  , verifier :: Verifier
+  }
+
+derive instance Newtype (Tag inputVal outputVal mpv) _
+
 -- | VK bundle downstream compiles consume as `perSlotImportedVKs`.
 type ProverVKs =
   { stepCompileResult :: StepCompileResult
@@ -164,12 +197,18 @@ type StepInputs prevsSpec inputVal prevsCarrier =
 -- |   convention is `F (negate one)`.
 -- |
 -- | * `InductivePrev` — the user has a real previous proof (typically
--- |   returned by a previous `prover.step` call). `mkStepAdvice` unpacks
--- |   statement / sg / bp-chals / evals from the `CompiledProof`.
+-- |   returned by a previous `prover.step` call) AND the `Tag` that
+-- |   identifies the rule that produced it (carrying the VK + runtime
+-- |   `Unique` for routing). For self-recursive rules the tag is the
+-- |   same one returned by the current `compile`; for external slots
+-- |   (heterogeneous shapes like Tree's NRR slot) it's the tag from
+-- |   the prev rule's compile.
 data PrevSlot :: Type -> Int -> Type -> Type -> Type
 data PrevSlot inputVal n stmt outputVal
   = BasePrev { dummyInput :: inputVal }
-  | InductivePrev (CompiledProof n stmt outputVal Unit)
+  | InductivePrev
+      (CompiledProof n stmt outputVal Unit)
+      (Tag inputVal outputVal n)
 
 -- | The prover closure returned by `compile`. `auxVal` is fixed to
 -- | `Unit` because PS `StepRule` doesn't track auxiliary outputs.
@@ -191,7 +230,7 @@ type CompileOutput
   :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
 type CompileOutput prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
   { prover :: Prover prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m
-  , verifier :: Verifier
+  , tag :: Tag inputVal outputVal mpv
   , vks :: ProverVKs
   }
 
@@ -565,7 +604,7 @@ instance
 
       prevPublicInput = case headSlot of
         BasePrev { dummyInput } -> dummyInput
-        InductivePrev _ ->
+        InductivePrev _ _ ->
           unsafeCrashWith "CompilableSpec Cons: mkStepAdvice InductivePrev TODO"
 
       baseCaseDummyChalPoly =
@@ -744,7 +783,7 @@ instance
       -- Dispatch on PrevSlot for head slot.
       _ = case headSlot of
         BasePrev _ -> unit
-        InductivePrev _ ->
+        InductivePrev _ _ ->
           unsafeCrashWith "CompilableSpec Cons: shapeProveData InductivePrev TODO"
 
       -- Recurse into rest.
@@ -864,6 +903,15 @@ runCompile cfg rule = do
     , crs: cfg.srs.pallasSrs
     }
 
+  unique <- newUnique
+
+  let
+    verifier = mkVerifier
+      { wrapVK: wrapCR.verifierIndex
+      , vestaSrs: cfg.srs.vestaSrs
+      , stepDomainLog2
+      }
+
   pure
     { prover:
         { step: runProverBody
@@ -872,11 +920,7 @@ runCompile cfg rule = do
             @m
             cfg rule shape stepCR wrapCR stepDomainLog2
         }
-    , verifier: mkVerifier
-        { wrapVK: wrapCR.verifierIndex
-        , vestaSrs: cfg.srs.vestaSrs
-        , stepDomainLog2
-        }
+    , tag: Tag { unique, verifier }
     , vks:
         { stepCompileResult: stepCR
         , wrapCompileResult: wrapCR
