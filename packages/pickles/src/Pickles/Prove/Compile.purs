@@ -1577,8 +1577,16 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
   wrapResult <- wrapSolveAndProve @1 @slots wrapCtx wrapCR
 
   let
-    publicOutput = fieldsToValue @StepField
-      (map (\(F x) -> x) (Vector.toUnfoldable stepResult.publicOutputs))
+    -- The rule's user-defined `publicOutput` value, recovered post-solve
+    -- from the FVars `stepMain` captures via Ref. Note: this is NOT
+    -- `stepResult.publicOutputs` (which is the kimchi public-output
+    -- vector = digest+unfinalized+wrap-msgs); the user's output is
+    -- hashed into the outer digest but never appears directly in that
+    -- vector. Earlier code mistakenly used `publicOutputs` here, which
+    -- corrupted `nrrCp.statement.output` to the digest value and broke
+    -- Tree b0 slot 0's IVP via wrong `appStateFields`.
+    publicOutput =
+      fieldsToValue @StepField stepResult.userPublicOutputFields
 
   pure $ CompiledProof
     { statement: StatementIO { input: appInput, output: publicOutput }

@@ -25,6 +25,7 @@ package:
     - prelude
     - random-oracle
     - record
+    - refs
     - safe-coerce
     - snarky
     - snarky-curves

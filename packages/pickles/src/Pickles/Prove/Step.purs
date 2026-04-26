@@ -58,14 +58,20 @@ import Data.Either (Either(..))
 import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
+import Data.Traversable (traverse)
 import Data.Map (Map)
-import Data.Maybe (fromJust)
+import Data.Map as Map
+import Data.Maybe (maybe)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -101,6 +107,7 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIn
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
+import Snarky.Circuit.CVar as CVar
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, F(..), FVar, SizedF, Snarky, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (toField, unwrapF, wrapF) as SizedF
@@ -1647,6 +1654,13 @@ type StepProveResult (outputSize :: Int) =
   , publicOutputs :: Vector outputSize (F StepField)
   , proof :: Proof VestaG StepField
   , assignments :: Map Variable StepField
+  -- | Field-flattened representation of the rule's user
+  -- | `publicOutput` value, recovered post-solve. Carried as a raw
+  -- | `Array StepField` (not `outputVal`) so that consumers like
+  -- | `runProverBody` apply their own `fieldsToValue @StepField
+  -- | @outputVal` and producers that don't care can ignore it.
+  -- | Empty when the rule's output type is `Unit`.
+  , userPublicOutputFields :: Array StepField
   }
 
 -- | Build a row→label_stack text dump from a compiled constraint list and
@@ -1914,6 +1928,10 @@ stepCompile
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
+  -- Compile-time callers don't need the user's publicOutput value (no
+  -- witness body executes), but stepMain's signature still requires a
+  -- Ref. Use a throw-away one.
+  unusedOutputRef <- Ref.new Nothing
   builtState <-
     compile
       (Proxy @Unit)
@@ -1933,6 +1951,7 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
+            unusedOutputRef
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2007,6 +2026,7 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
+  => MonadEffect m
   => PrevValuesCarrier prevsSpec valCarrier
   => StepProveContext len
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -2014,6 +2034,13 @@ stepSolveAndProve
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
+  -- Side-channel for capturing the rule's `publicOutput` FVars from
+  -- inside `stepMain`. After the solver runs we have the assignments
+  -- map and can evaluate the captured FVars to recover `outputVal`
+  -- (the rule's user-defined output, which never appears in the
+  -- circuit's kimchi-public-output vector — that one is digest+unfs).
+  userPublicOutputRef <- liftEffect $ Ref.new Nothing
+
   let
     StepAdvice adv = advice
 
@@ -2044,6 +2071,7 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
+              userPublicOutputRef
         )
 
   eRes <- lift $ runStepProverT advice (runSolverT rawSolver unit)
@@ -2068,6 +2096,25 @@ stepSolveAndProve ctx rule compileResult advice = do
                 (Array.length compileResult.builtState.publicInputs)
                 compileResult.builtState.constraints
           throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
+      -- Evaluate the rule's user `publicOutput` FVars against the
+      -- post-solve assignments map. If the ref is empty,
+      -- `stepMain`'s rule_main block didn't run — that's a bug; we
+      -- surface it as a FailedAssertion rather than silently
+      -- producing zeros. Raw field values are returned;
+      -- `runProverBody` applies `fieldsToValue` against the rule's
+      -- specific `outputVal`.
+      mUserOutputFields <- liftEffect $ Ref.read userPublicOutputRef
+      userPublicOutputFields <- case mUserOutputFields of
+        Nothing ->
+          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (Ref still Nothing post-solve)")
+        Just fieldVars -> do
+          let
+            evalLookup :: Variable -> Either EvaluationError StepField
+            evalLookup v =
+              maybe (Left (MissingVariable v)) Right (Map.lookup v assignments)
+          case traverse (CVar.eval evalLookup) fieldVars of
+            Left e -> throwError e
+            Right fieldVals -> pure fieldVals
       let
         proof = pallasCreateProofWithPrev
           { proverIndex: compileResult.proverIndex
@@ -2091,5 +2138,6 @@ stepSolveAndProve ctx rule compileResult advice = do
         , publicOutputs
         , proof
         , assignments
+        , userPublicOutputFields
         }
 

@@ -29,6 +29,10 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Effect (Effect)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
+import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
@@ -501,6 +505,17 @@ stepMain
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
   -> StepMainSrsData len
   -> AffinePoint StepField
+  -- | Side-channel for capturing the rule's `publicOutput` FVars. The
+  -- | step circuit's kimchi public-output vector (`outputV`) is the
+  -- | digest+unfinalized payload — NOT the rule's user-defined output.
+  -- | The user's `publicOutput :: outputVar` is hashed into the outer
+  -- | digest but never appears in `outputV` directly. To recover its
+  -- | runtime VALUE, prover code (`stepSolveAndProve`) supplies a Ref
+  -- | here; `stepMain` writes the FVars into it after `rule_main` runs;
+  -- | post-solve evaluation against the assignments map then gives
+  -- | `outputVal`. Compile-time callers (`stepCompile`) pass a throw-away
+  -- | Ref since the witness body never executes during compilation.
+  -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
@@ -509,7 +524,8 @@ stepMain
   , perSlotFopDomainLog2
   , perSlotKnownWrapKeys
   }
-  dummySg = do
+  dummySg
+  userPublicOutputRef = do
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
@@ -524,6 +540,9 @@ stepMain
     publicInputFields = varToFields @StepField @inputVal publicInput
     publicOutputFields = varToFields @StepField @outputVal publicOutput
     hashAppFields = publicInputFields <> publicOutputFields
+    -- Capture the rule's user `publicOutput` FVars so the prover can
+    -- evaluate them post-solve (see Ref docstring above).
+    _ = unsafePerformEffect (Ref.write (Just publicOutputFields) userPublicOutputRef)
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
   --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one
