@@ -50,7 +50,7 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
-import Pickles.Types (StepField, StepIPARounds, WrapField, WrapStatementPacked)
+import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
@@ -152,6 +152,24 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   -- `Pickles.Wrap.MessageHash.hashMessagesForNextWrapProofPureGeneral`.
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
+
+  -- Per-slot wrap-side bp-challenges that this proof hashed into
+  -- `messagesForNextWrapProofDigest`. Stored pre-hash (size
+  -- WrapIPARounds, wrap-field) so a downstream `InductivePrev`
+  -- consumer can feed them back into its `prevChalPolys` /
+  -- `wrapOwnPaddedBpChals` without needing to crack open the wrap
+  -- proof's bytes via FFI.
+  , msgWrapChallenges :: Vector mpv (Vector WrapIPARounds WrapField)
+
+  -- Per-slot outer-step `expandProof.sg` values (Pallas points,
+  -- StepField coords) that were used as the real-slot `sgX/sgY` in
+  -- `kimchiPrevChallenges` when this proof's wrap proof was
+  -- generated. Combined with `msgWrapChallenges`, these reproduce
+  -- the kimchi prev_challenges entries that `vestaProofOracles`
+  -- needs to recompute the wrap proof's oracle output. Required by
+  -- a downstream `InductivePrev` consumer to derive
+  -- `prevEvals` (wrap-side advice's per-slot evals).
+  , outerStepChalPolyComms :: Vector mpv (AffinePoint StepField)
   }
 
 -- | Verify one proof. Returns `true` iff all three stages pass.

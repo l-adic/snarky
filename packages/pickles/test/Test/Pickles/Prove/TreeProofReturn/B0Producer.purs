@@ -43,7 +43,7 @@ import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, 
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
@@ -71,6 +71,16 @@ type TreeProofReturnB0Artifacts =
   , stepProofSg :: AffinePoint WrapField
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
+  -- | Per-slot wrap-side bp-challenges hashed into
+  -- | `messagesForNextWrapProofDigest`. Vector 2 covering Tree's two
+  -- | slots (slot 0 = NRR external, slot 1 = self-Tree).
+  , msgWrapChallenges :: Vector 2 (Vector WrapIPARounds WrapField)
+  -- | Per-slot outer-step `expandProof.sg` values (Pallas points)
+  -- | used as the real-slot `sgX/sgY` in the wrap proof's
+  -- | `kimchiPrevChallenges`. Slot 0 (NRR external) and slot 1
+  -- | (self-Tree). Required to populate
+  -- | CompiledProof.outerStepChalPolyComms.
+  , outerStepChalPolyComms :: Vector 2 (AffinePoint StepField)
   }
 
 -- | Tree_proof_return rule — base-case variant (is_base_case = true).
@@ -78,6 +88,9 @@ type TreeProofReturnB0Artifacts =
 treeProofReturnRule
   :: { isBaseCase :: Boolean, nrrInputVal :: F StepField, prevInputVal :: F StepField }
   -> StepRule 2
+       ( Tuple (StatementIO Unit (F StepField))
+           (Tuple (StatementIO Unit (F StepField)) Unit)
+       )
        Unit
        Unit
        (F StepField)
@@ -152,6 +165,9 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- ===== Tree step compile =====
   treeStepCR <- liftEffect $
     stepCompile @TreeProofReturnPrevsSpec @67
+      @( Tuple (StatementIO Unit (F StepField))
+           (Tuple (StatementIO Unit (F StepField)) Unit)
+       )
       @Unit
       @Unit
       @(F StepField)
@@ -213,7 +229,8 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
     slot0OracleInput =
       { publicInput: unit
-      , prevPublicInput: F zero
+      -- NRR is Output-mode: prev's StatementIO has Unit input, F StepField output.
+      , prevStatement: StatementIO { input: unit, output: F zero }
       , wrapDomainLog2: nrr.wrapDomainLog2
       , stepDomainLog2: nrrStepDomainLog2
       , wrapVK: nrr.wrapCR.verifierIndex
@@ -264,7 +281,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     slot1BaseCaseWrapPI = dummyWrapTockPublicInput @2
       { wrapDomainLog2: treeSelfStepDomainLog2
       , wrapVK: treeWrapCR.verifierIndex
-      , prevPublicInput: (F (negate one)) :: F StepField
+      , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
       , wrapSg: nrrWrapSg
       , stepSg: nrr.stepSg
       , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
@@ -281,7 +298,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <-
     liftEffect $ buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
       { publicInput: unit
-      , prevPublicInput: (F (negate one)) :: F StepField
+      , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
       , wrapDomainLog2: treeWrapDomainLog2
       , stepDomainLog2: treeSelfStepDomainLog2
       , wrapVK: treeWrapCR.verifierIndex
@@ -325,7 +342,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     Tuple slot0Sppw _ = s0.perProofSlotsCarrier
     Tuple slot1Sppw _ = s1.perProofSlotsCarrier
 
-    treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+    treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
     treeRealAdvice = StepAdvice
       { perProofSlotsCarrier: Tuple slot0Sppw (Tuple slot1Sppw unit)
       , publicInput: unit
@@ -342,6 +359,11 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
           Vector.head s0.kimchiPrevChallenges
             :< Vector.head s1.kimchiPrevChallenges
             :< Vector.nil
+      , prevAppStates:
+          let
+            Tuple s0Stmt _ = s0.prevAppStates
+            Tuple s1Stmt _ = s1.prevAppStates
+          in Tuple s0Stmt (Tuple s1Stmt unit)
       }
 
   -- ===== Tree step prove =====
@@ -349,6 +371,9 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     stepSolveAndProve
       @TreeProofReturnPrevsSpec
       @67
+      @( Tuple (StatementIO Unit (F StepField))
+           (Tuple (StatementIO Unit (F StepField)) Unit)
+       )
       @Unit
       @Unit
       @(F StepField)
@@ -626,4 +651,8 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     , stepProofSg: treeWrapProofSg
     , messagesForNextStepProofDigest: msgForNextStepDigestTree
     , messagesForNextWrapProofDigest: msgForNextWrapDigestTree
+    , msgWrapChallenges:
+        slot0RealBpChalsWrap :< slot1RealBpChalsWrap :< Vector.nil
+    , outerStepChalPolyComms:
+        b0Slot0ChalPolyComm :< b0Slot1ChalPolyComm :< Vector.nil
     }

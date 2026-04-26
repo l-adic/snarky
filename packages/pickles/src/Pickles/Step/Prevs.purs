@@ -44,6 +44,7 @@ module Pickles.Step.Prevs
   , PrevsSpecCons
   , StepSlot(..)
   , class PrevsCarrier
+  , class PrevValuesCarrier
   , traversePrevsA
   , replicatePrevsCarrier
   ) where
@@ -268,3 +269,37 @@ instance
   ) =>
   CheckedType f c (StepSlot n ds dw (FVar f) sfvar (BoolVar f)) where
   check (StepSlot r) = check r.sppw
+
+--------------------------------------------------------------------------------
+-- Prev values carrier — heterogeneous, spec-indexed
+--
+-- Mirrors OCaml's `H4.T(Tag).t` prev-values list. The rule body reads
+-- per-prev statement values (StatementIO) at prove time via this
+-- carrier, sourced from a request handler in OCaml (Req.Prev_input)
+-- and from advice in the PureScript port.
+--
+-- The carrier shape is fully determined by `prevsSpec` — each slot
+-- holds the prev's `statement` type from the spec (heterogeneous per
+-- slot for rules like Tree_proof_return). Mirrors `PrevsCarrier`'s
+-- recursion structure: Nil → Unit, Cons stmt rest → Tuple stmt rest.
+--
+-- Reference: mina/src/lib/crypto/pickles/inductive_rule.ml (the
+-- `previous_proof_statements` field on Inductive_rule.t.main_return).
+--------------------------------------------------------------------------------
+
+-- | Type-level mapping `prevsSpec → valCarrier` for the heterogeneous
+-- | prev-statements carrier. Each slot's value type is the spec's
+-- | `statement` parameter for that slot — typically `StatementIO
+-- | inputVal outputVal`. The fundep `spec -> valCarrier` lets `spec`
+-- | uniquely determine the carrier shape; instances for Nil / Cons
+-- | provide the standard tuple-fold encoding.
+class PrevValuesCarrier :: Type -> Type -> Constraint
+class PrevValuesCarrier spec valCarrier | spec -> valCarrier
+
+instance PrevValuesCarrier PrevsSpecNil Unit
+
+instance
+  PrevValuesCarrier rest restValCarrier =>
+  PrevValuesCarrier
+    (PrevsSpecCons n statement rest)
+    (Tuple statement restValCarrier)

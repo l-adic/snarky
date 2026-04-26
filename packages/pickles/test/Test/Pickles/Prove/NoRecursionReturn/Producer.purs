@@ -58,7 +58,7 @@ import Snarky.Data.EllipticCurve (AffinePoint)
 -- | The No_recursion_return rule: `output = 0`, N = 0 prev proofs,
 -- | Output mode (input = Unit, output = Field).
 -- | Reference: test_no_sideloaded.ml:100-107
-nrrRule :: StepRule 0 Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
 nrrRule _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -142,7 +142,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
 
   -- ===== Phase 1: compile the step circuit =====
   stepCR <- liftEffect $
-    stepCompile @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
+    stepCompile @PrevsSpecNil @1 @Unit @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
       ctx
       nrrRule
 
@@ -213,6 +213,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     StepAdvice baseAdviceRec = buildStepAdvice @PrevsSpecNil
       { publicInput: unit
       , wrapDomainLog2
+      , prevAppStates: unit
       }
     realAdvice = StepAdvice
       ( baseAdviceRec
@@ -221,7 +222,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       )
 
   stepRes <- liftEffect $ runExceptT $
-    stepSolveAndProve @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
+    stepSolveAndProve @PrevsSpecNil @1 @Unit @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
       ctx
       nrrRule
       stepCR

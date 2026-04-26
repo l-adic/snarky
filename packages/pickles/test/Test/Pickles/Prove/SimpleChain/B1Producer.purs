@@ -23,6 +23,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (unwrap)
+import Data.Tuple (Tuple)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -40,7 +41,7 @@ import Pickles.Prove.Step (buildStepAdviceWithOracles, stepSolveAndProve)
 import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapProveResult, buildWrapAdvice, buildWrapMainConfig, wrapSolveAndProve)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Safe.Coerce (coerce)
@@ -64,6 +65,16 @@ type SimpleChainB1Artifacts =
   , stepProofSg :: AffinePoint WrapField
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
+  -- | b1's `messages_for_next_wrap_proof.old_bulletproof_challenges`,
+  -- | pre-hash. Endo-expansion of b1's stepAdvice's slot-0
+  -- | PerProofUnfinalized.bulletproofChallenges via the wrap endo.
+  -- | Required to populate b1's CompiledProof.msgWrapChallenges field.
+  , msgForNextWrapRealChals :: Vector WrapIPARounds WrapField
+  -- | b1's outer step proof's `expandProof.sg` (Pallas point) — the
+  -- | value used as the real-slot `sgX/sgY` in b1's wrap proof's
+  -- | `kimchiPrevChallenges`. Required to populate b1's
+  -- | CompiledProof.outerStepChalPolyComms field.
+  , b1ChalPolyComm :: AffinePoint StepField
   }
 
 produceSimpleChainB1
@@ -168,7 +179,7 @@ produceSimpleChainB1 srses = do
   { advice: b1Advice, challengePolynomialCommitment: b1ChalPolyComm } <-
     liftEffect $ buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
       { publicInput: F one
-      , prevPublicInput: F zero
+      , prevStatement: StatementIO { input: F zero, output: unit }
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
@@ -213,6 +224,7 @@ produceSimpleChainB1 srses = do
     stepSolveAndProve
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
       @34
+      @(Tuple (StatementIO (F StepField) Unit) Unit)
       @(F StepField)
       @(FVar StepField)
       @Unit
@@ -220,7 +232,7 @@ produceSimpleChainB1 srses = do
       @(F StepField)
       @(FVar StepField)
       ctx
-      (simpleChainRule (F zero))
+      (simpleChainRule)
       stepCR
       b1Advice
   b1Result <- case b1Res of
@@ -436,4 +448,6 @@ produceSimpleChainB1 srses = do
     , stepProofSg: b1WrapProofSg
     , messagesForNextStepProofDigest: b1MsgForNextStepDigest
     , messagesForNextWrapProofDigest: b1MsgForNextWrapDigest
+    , msgForNextWrapRealChals: b1MsgForNextWrapRealChals
+    , b1ChalPolyComm
     }

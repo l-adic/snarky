@@ -50,7 +50,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
@@ -70,6 +70,7 @@ import Pickles.ProofFFI
   , vestaSrsLagrangeCommitmentAt
   ) as ProofFFI
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap
   ( WrapDeferredValuesInput
   , assembleWrapMainInput
@@ -88,7 +89,7 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   )
-import Snarky.Circuit.DSL.SizedF (wrapF) as SizedF
+import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
 import Snarky.Curves.Class (fromInt) as Curves
 import Pickles.Prove.Wrap
   ( WrapCompileResult
@@ -105,7 +106,7 @@ import Pickles.Prove.Verify
   , verifyOne
   , wrapPublicInput
   )
-import Pickles.Step.Prevs (class PrevsCarrier, PrevsSpecCons, PrevsSpecNil)
+import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil)
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Types
   ( PaddedLength
@@ -191,10 +192,13 @@ type StepInputs prevsSpec inputVal prevsCarrier =
 -- | Per-slot prev value the user supplies at `prover.step` time.
 -- |
 -- | * `BasePrev` — no real previous proof yet (proof-level base case,
--- |   e.g. Simple_chain b0). The user supplies `dummyInput` so the
--- |   class's `mkStepAdvice` has a value of type `inputVal` to hand to
--- |   `buildStepAdviceWithOracles.prevPublicInput`. Simple_chain's
--- |   convention is `F (negate one)`.
+-- |   e.g. Simple_chain b0). The user supplies a full dummy statement
+-- |   (the prev rule's `StatementIO inputVal outputVal`) so the class's
+-- |   `mkStepAdvice` can populate the per-slot entry of `prevAppStates`
+-- |   in advice. The values are circuit-irrelevant (their slot has
+-- |   `proofMustVerify[i] = false`) but must typecheck as the prev
+-- |   rule's full statement. Simple_chain's convention is
+-- |   `StatementIO { input: F (negate one), output: unit }`.
 -- |
 -- | * `InductivePrev` — the user has a real previous proof (typically
 -- |   returned by a previous `prover.step` call) AND the `Tag` that
@@ -205,7 +209,7 @@ type StepInputs prevsSpec inputVal prevsCarrier =
 -- |   the prev rule's compile.
 data PrevSlot :: Type -> Int -> Type -> Type -> Type
 data PrevSlot inputVal n stmt outputVal
-  = BasePrev { dummyInput :: inputVal }
+  = BasePrev { dummyStatement :: stmt }
   | InductivePrev
       (CompiledProof n stmt outputVal Unit)
       (Tag inputVal outputVal n)
@@ -332,10 +336,11 @@ type ShapeProveData mpv slots =
 -- |
 -- | Fundeps `prevsSpec -> slotVKs prevsCarrier mpv slots` mean the
 -- | user only pins `prevsSpec`; the other four axes are derived.
-class CompilableSpec :: Type -> Type -> Type -> Int -> (Type -> Type) -> Constraint
+class CompilableSpec
+  :: Type -> Type -> Type -> Int -> (Type -> Type) -> Type -> Constraint
 class
-  CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots
-  | prevsSpec -> slotVKs prevsCarrier mpv slots
+  CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier
+  | prevsSpec -> slotVKs prevsCarrier mpv slots valCarrier
   where
   -- | Compile-time shape data (stepProveCtx, constants). Nil: empty
   -- | per-slot vectors + wrapDomainLog2=13 + stepWidth=0 + noSlots.
@@ -376,7 +381,9 @@ class
     -> Int
     -> Effect
          { stepAdvice ::
-             StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal mpv carrier
+             StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal mpv
+               carrier
+               valCarrier
          , challengePolynomialCommitment :: AffinePoint StepField
          , baseCaseWrapPublicInput :: Array WrapField
          }
@@ -402,11 +409,12 @@ class
 -- | because its type is polymorphic (`forall t m'. CircuitM ... => ...`)
 -- | and PS record field access can't preserve the forall/constraints.
 compile
-  :: forall @prevsSpec slotVKs prevsCarrier mpv slots
+  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier
        @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
        pad unfsTotal digestPlusUnfs outputSize carrierF carrierFVar
        branchesPred totalBases totalBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier
+  => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -446,7 +454,7 @@ compile
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> Effect
        (CompileOutput prevsSpec mpv inputVal outputVal
           (StatementIO inputVal outputVal) prevsCarrier m)
@@ -467,7 +475,7 @@ nrrDummyWrapSg pallasSrs vestaSrs =
      pallasSrs
      vestaSrs).ipa.wrap.sg
 
-instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots where
+instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit where
   shapeCompileData cfg =
     { stepProveCtx:
         { srsData:
@@ -489,7 +497,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots where
   mkStepAdvice cfg _stepCR wrapCR appInput _prevs wrapDomainLog2 =
     let
       StepAdvice base = buildStepAdvice @PrevsSpecNil
-        { publicInput: appInput, wrapDomainLog2 }
+        { publicInput: appInput, wrapDomainLog2, prevAppStates: unit }
       stepAdvice = StepAdvice
         (base { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex })
       -- Nil has no prev slots, so these sideInfo fields are never
@@ -536,7 +544,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots where
 -- | self-recursive rules (Simple_chain). Tree's heterogeneous external
 -- | NRR slot will need extension in Phase 3.
 instance
-  ( CompilableSpec rest Unit restPrevsCarrier restMpv restSlots
+  ( CompilableSpec rest Unit restPrevsCarrier restMpv restSlots Unit
   , Add restMpv 1 mpv
   , Add 1 restMpv mpv
   , Add pad mpv PaddedLength
@@ -545,7 +553,19 @@ instance
   , Reflectable pad Int
   , Compare mpv 3 LT
   , Compare 0 mpv LT
+  -- n > 0 is needed to allow `Vector.head` on a prev's per-slot
+  -- `msgWrapChallenges` in the InductivePrev branch. Excludes n=0
+  -- prev rules (NRR-style external slots). Tree slot 0 (NRR) will
+  -- need a separate instance variant when Phase 3 lands.
+  , Compare 0 n LT
   , CircuitType StepField prevHeadInput prevHeadInputVar
+  , CircuitType StepField prevHeadOutput prevHeadOutputVar
+  -- `buildStepAdviceWithOracles @(PrevsSpecCons n stmt rest)` needs
+  -- `PrevValuesCarrier (PrevsSpecCons n stmt rest) (Tuple stmt Unit)`,
+  -- which (via the Cons instance) reduces to `PrevValuesCarrier rest
+  -- Unit`. Carry that as an explicit constraint so the resolver sees
+  -- it during the recursive Cons body's call.
+  , PrevValuesCarrier rest Unit
   ) =>
   CompilableSpec
     (PrevsSpecCons n (StatementIO prevHeadInput prevHeadOutput) rest)
@@ -556,6 +576,12 @@ instance
     )
     mpv
     (Product (Vector n) restSlots)
+    -- Hardcoded singleton carrier: this instance only resolves for
+    -- specs where rest = PrevsSpecNil (so restValCarrier = Unit),
+    -- matching what `buildStepAdviceWithOracles` (a single-slot
+    -- helper) produces. Multi-slot Cons (Tree-shape) needs a
+    -- separate instance that combines per-slot advices manually.
+    (Tuple (StatementIO prevHeadInput prevHeadOutput) Unit)
   where
   shapeCompileData cfg =
     let
@@ -599,85 +625,232 @@ instance
       outerMpv = reflectType (Proxy @mpv)
       bcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-      wrapSg = dummySgs.ipa.wrap.sg
-      stepSg = dummySgs.ipa.step.sg
+      dummyWrapSg = dummySgs.ipa.wrap.sg
+      dummyStepSg = dummySgs.ipa.step.sg
 
-      prevPublicInput = case headSlot of
-        BasePrev { dummyInput } -> dummyInput
-        InductivePrev _ _ ->
-          unsafeCrashWith "CompilableSpec Cons: mkStepAdvice InductivePrev TODO"
-
-      baseCaseDummyChalPoly =
-        { sg: wrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
-
-      msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
-        { sg: stepSg
-        , paddedChallenges:
-            Dummy.dummyIpaChallenges.wrapExpanded
-              :< Dummy.dummyIpaChallenges.wrapExpanded
-              :< Vector.nil
-        }
-
-      fopProofState = Dummy.stepDummyUnfinalizedProof @mpv bcd
-        { domainLog2: Dummy.wrapDomainLog2ForProofsVerified outerMpv }
-        (map SizedF.wrapF bcd.ipaStepChallenges)
-
-      baseCaseWrapPI = dummyWrapTockPublicInput @mpv
-        { wrapDomainLog2
-        , wrapVK: wrapCR.verifierIndex
-        , prevPublicInput
-        , wrapSg
-        , stepSg
-        , msgWrapDigest
-        , fopProofState
-        }
-
-      -- Proofs-verified mask for b0 base case: same formula as at
-      -- `shapeProveData`'s top-level padding — [mpv>=2, mpv>=1].
       proofsVerifiedMask :: Vector 2 Boolean
       proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
+
+      stepEndoScalarF :: StepField
+      stepEndoScalarF =
+        let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
+
+    -- All values that vary between BasePrev (b0) and InductivePrev (b1+)
+    -- are computed in one case-dispatch block, then handed to a single
+    -- buildStepAdviceWithOracles call.
+    slotData <- case headSlot of
+      BasePrev { dummyStatement } -> do
+        let
+          baseCaseDummyChalPoly =
+            { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+
+          msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
+            { sg: dummyStepSg
+            , paddedChallenges:
+                Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Dummy.dummyIpaChallenges.wrapExpanded
+                  :< Vector.nil
+            }
+
+          fopProofState = Dummy.stepDummyUnfinalizedProof @mpv bcd
+            { domainLog2: Dummy.wrapDomainLog2ForProofsVerified outerMpv }
+            (map SizedF.wrapF bcd.ipaStepChallenges)
+
+          baseCaseWrapPI = dummyWrapTockPublicInput @mpv
+            { wrapDomainLog2
+            , wrapVK: wrapCR.verifierIndex
+            , prevStatement: dummyStatement
+            , wrapSg: dummyWrapSg
+            , stepSg: dummyStepSg
+            , msgWrapDigest
+            , fopProofState
+            }
+        pure
+          { prevStatement: dummyStatement
+          , stepOpeningSg: dummyStepSg
+          , kimchiPrevSg: dummyStepSg
+          , wrapProof: dummyWrapProof bcd
+          , wrapPublicInputArr: baseCaseWrapPI
+          , prevChalPolys:
+              baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
+          , wrapPlonkRaw:
+              { alpha: bcd.proofDummy.plonk.alpha
+              , beta: bcd.proofDummy.plonk.beta
+              , gamma: bcd.proofDummy.plonk.gamma
+              , zeta: bcd.proofDummy.plonk.zeta
+              }
+          , wrapPrevEvals: bcd.proofDummy.prevEvals
+          , wrapBranchData:
+              { domainLog2: (Curves.fromInt wrapDomainLog2 :: StepField)
+              , proofsVerifiedMask
+              }
+          , wrapSpongeDigest: (zero :: StepField)
+          , mustVerify: false
+          , wrapOwnPaddedBpChals:
+              Dummy.dummyIpaChallenges.wrapExpanded
+                :< Dummy.dummyIpaChallenges.wrapExpanded
+                :< Vector.nil
+          , fopState: fopProofState
+          , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
+          , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+          }
+      InductivePrev prevCp prevTag -> do
+        let
+          CompiledProof prev = prevCp
+          Tag { verifier: prevVerifier } = prevTag
+
+          -- Reconstruct prev's full WrapDeferredValuesOutput via the
+          -- verifier-side helper. ExpandDeferredEq proves this matches
+          -- what `wrapComputeDeferredValues` originally produced —
+          -- byte-exact source for `fopState` fields not directly
+          -- stored on CompiledProof (combinedInnerProduct, xi, b,
+          -- full plonk).
+          prevZetaField :: StepField
+          prevZetaField =
+            coerce (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
+
+          prevVanishesOnZk :: StepField
+          prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
+            { domainLog2: prevVerifier.stepDomainLog2
+            , zkRows: prevVerifier.stepZkRows
+            , pt: prevZetaField
+            }
+
+          prevDv = expandDeferredForVerify
+            { rawPlonk: prev.rawPlonk
+            , rawBulletproofChallenges: prev.rawBulletproofChallenges
+            , branchData: prev.branchData
+            , spongeDigestBeforeEvaluations: prev.spongeDigestBeforeEvaluations
+            , allEvals: prev.prevEvals
+            , pEval0Chunks: prev.pEval0Chunks
+            , oldBulletproofChallenges: prev.oldBulletproofChallenges
+            , domainLog2: prevVerifier.stepDomainLog2
+            , zkRows: prevVerifier.stepZkRows
+            , srsLengthLog2: prevVerifier.stepSrsLengthLog2
+            , generator: prevVerifier.stepGenerator
+            , shifts: prevVerifier.stepShifts
+            , vanishesOnZk: prevVanishesOnZk
+            , omegaForLagrange: \_ -> one
+            , endo: prevVerifier.stepEndo
+            , linearizationPoly: prevVerifier.linearizationPoly
+            }
+
+          -- prev wrap-side bp chals (the chals that prev hashed into
+          -- its `messages_for_next_wrap_proof_digest`), retrieved from
+          -- prev's stored `msgWrapChallenges` (head slot). For
+          -- Simple_chain b1 where prev = b0 (base case), these are
+          -- dummy chals; for deeper inductions they're real.
+          prevWrapMsgChals :: Vector WrapIPARounds WrapField
+          prevWrapMsgChals = Vector.head prev.msgWrapChallenges
+
+          -- Step-field endo expansion of prev's RAW wrap-IPA chals (the
+          -- wrap proof's own IPA), for kimchi-level prev_challenges
+          -- threading.
+          prevStepBpChalsExpanded :: Vector StepIPARounds StepField
+          prevStepBpChalsExpanded =
+            map
+              ( \sc ->
+                  toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
+                    stepEndoScalarF
+              )
+              prev.rawBulletproofChallenges
+
+          dummyChalPoly =
+            { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+
+          -- The sg that prev's `expandProof` returned and that b1's
+          -- caller threads through `prevChalPolys[real].sg` into BOTH
+          -- the step-circuit IVP `sg_old` witness AND the
+          -- `messages_for_next_step_proof.cpc` hash. Mirrors
+          -- `b0.b0ChalPolyComm` in the producer-style B1Producer (=
+          -- `buildStepAdviceWithOracles.challengePolynomialCommitment`
+          -- output, stored on the prev's CompiledProof at compile time
+          -- via runCompile's `outerStepChalPolyComms`). For mpv=1
+          -- prev, head is the only entry.
+          realChalPolySg :: AffinePoint StepField
+          realChalPolySg = Vector.head prev.outerStepChalPolyComms
+
+          realChalPoly =
+            { sg: realChalPolySg
+            , challenges: prevWrapMsgChals
+            }
+
+          fopState =
+            { deferredValues:
+                { plonk: prevDv.plonk
+                , combinedInnerProduct: prevDv.combinedInnerProduct
+                , xi: prevDv.xi
+                , bulletproofChallenges: prevDv.bulletproofPrechallenges
+                , b: prevDv.b
+                }
+            , shouldFinalize: false
+            , spongeDigestBeforeEvaluations: F prevDv.spongeDigestBeforeEvaluations
+            }
+
+          -- Reconstruct the wrap statement's serialization that
+          -- wrapSolveAndProve received as publicInputs. Verified
+          -- byte-exact in CompileSmoke's NRR byte-identity test.
+          wrapPI :: Array WrapField
+          wrapPI = wrapPublicInput prevVerifier prevCp
+        pure
+          { prevStatement: prev.statement
+          , stepOpeningSg: prev.challengePolynomialCommitment
+          , kimchiPrevSg: prev.challengePolynomialCommitment
+          , wrapProof: prev.wrapProof
+          , wrapPublicInputArr: wrapPI
+          -- For mpv=1: front-padded `[dummy, real]` (Wrap_hack pad). For
+          -- mpv=2: would be `[real_slot0, real_slot1]` — Tree case
+          -- needs separate handling.
+          , prevChalPolys: dummyChalPoly :< realChalPoly :< Vector.nil
+          , wrapPlonkRaw:
+              { alpha: SizedF.unwrapF prevDv.plonk.alpha
+              , beta: SizedF.unwrapF prevDv.plonk.beta
+              , gamma: SizedF.unwrapF prevDv.plonk.gamma
+              , zeta: SizedF.unwrapF prevDv.plonk.zeta
+              }
+          , wrapPrevEvals: prev.prevEvals
+          , wrapBranchData: prev.branchData
+          , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
+          , mustVerify: true
+          -- mpv=1: `[dummy, real]`. mpv=2 Tree: `[real_slot0, real_slot1]`.
+          , wrapOwnPaddedBpChals:
+              Dummy.dummyIpaChallenges.wrapExpanded
+                :< prevWrapMsgChals
+                :< Vector.nil
+          , fopState
+          , stepAdvicePrevEvals: prev.prevEvals
+          , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
+          }
 
     { advice, challengePolynomialCommitment } <- buildStepAdviceWithOracles
       @mpv
       @(PrevsSpecCons n (StatementIO prevHeadInput prevHeadOutput) rest)
       { publicInput: appInput
-      , prevPublicInput
+      , prevStatement: slotData.prevStatement
       , wrapDomainLog2
       , stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
-      , stepOpeningSg: stepSg
-      , kimchiPrevSg: stepSg
-      , wrapProof: dummyWrapProof bcd
-      , wrapPublicInput: baseCaseWrapPI
-      , prevChalPolys:
-          baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
-      , wrapPlonkRaw:
-          { alpha: bcd.proofDummy.plonk.alpha
-          , beta: bcd.proofDummy.plonk.beta
-          , gamma: bcd.proofDummy.plonk.gamma
-          , zeta: bcd.proofDummy.plonk.zeta
-          }
-      , wrapPrevEvals: bcd.proofDummy.prevEvals
-      , wrapBranchData:
-          { domainLog2: (Curves.fromInt wrapDomainLog2 :: StepField)
-          , proofsVerifiedMask
-          }
-      , wrapSpongeDigest: zero
-      , mustVerify: false
-      , wrapOwnPaddedBpChals:
-          Dummy.dummyIpaChallenges.wrapExpanded
-            :< Dummy.dummyIpaChallenges.wrapExpanded
-            :< Vector.nil
-      , fopState: fopProofState
-      , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
-      , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+      , stepOpeningSg: slotData.stepOpeningSg
+      , kimchiPrevSg: slotData.kimchiPrevSg
+      , wrapProof: slotData.wrapProof
+      , wrapPublicInput: slotData.wrapPublicInputArr
+      , prevChalPolys: slotData.prevChalPolys
+      , wrapPlonkRaw: slotData.wrapPlonkRaw
+      , wrapPrevEvals: slotData.wrapPrevEvals
+      , wrapBranchData: slotData.wrapBranchData
+      , wrapSpongeDigest: slotData.wrapSpongeDigest
+      , mustVerify: slotData.mustVerify
+      , wrapOwnPaddedBpChals: slotData.wrapOwnPaddedBpChals
+      , fopState: slotData.fopState
+      , stepAdvicePrevEvals: slotData.stepAdvicePrevEvals
+      , kimchiPrevChallengesExpanded: slotData.kimchiPrevChallengesExpanded
       , prevChallengesForStepHash:
           Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
       }
     pure
       { stepAdvice: advice
       , challengePolynomialCommitment
-      , baseCaseWrapPublicInput: baseCaseWrapPI
+      , baseCaseWrapPublicInput: slotData.wrapPublicInputArr
       }
 
   shapeProveData cfg wrapCR sideInfo (Tuple headSlot restPrevs) =
@@ -735,56 +908,144 @@ instance
           )
           headUnfRaw.bulletproofChallenges
 
-      -- Per-slot wrap evals for base case (BasePrev): derived from
-      -- bcd.dummyEvals + dummy wrap xhat evals from vestaProofOracles.
-      -- Using F WrapField (wrap-field form) per the target type.
-      dummyWrapOracles =
-        let
-          baseCaseDummyChalPoly =
-            { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
-          toFFI r =
-            { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
-        in
-          ProofFFI.vestaProofOracles wrapCR.verifierIndex
-            { proof: dummyWrapProof bcd
-            , publicInput: sideInfo.baseCaseWrapPublicInput
-            , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
-            }
+      stepEndoScalarF :: StepField
+      stepEndoScalarF =
+        let EndoScalar e = (endoScalar :: EndoScalar StepField) in e
 
-      dummyWrapXhatZeta :: WrapField
-      dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
-
-      dummyWrapXhatOmegaZeta :: WrapField
-      dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
-
-      headPrevEvals :: StepAllEvals (F WrapField)
-      headPrevEvals =
-        let
-          de = bcd.dummyEvals
-          pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
-        in
-          StepAllEvals
-            { ftEval1: F de.ftEval1
-            , publicEvals: PointEval
-                { zeta: F dummyWrapXhatZeta
-                , omegaTimesZeta: F dummyWrapXhatOmegaZeta
+      -- Per-slot data that differs between BasePrev (head = dummy
+      -- predecessor) and InductivePrev (head = real prev CompiledProof).
+      slotData ::
+        { stepOraclesPrevChalEntry ::
+            { sgX :: WrapField, sgY :: WrapField, challenges :: Array StepField }
+        , prevSg :: AffinePoint WrapField
+        , prevStepChals :: Vector StepIPARounds StepField
+        , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+        , headPrevEvals :: StepAllEvals (F WrapField)
+        , headSlotWrapBpChals :: Vector WrapIPARounds (F WrapField)
+        }
+      slotData = case headSlot of
+        BasePrev _ ->
+          let
+            baseCaseDummyChalPoly =
+              { sg: wrapSgD, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
+            toFFI r =
+              { sgX: r.sg.x, sgY: r.sg.y, challenges: Vector.toUnfoldable r.challenges }
+            dummyWrapOracles =
+              ProofFFI.vestaProofOracles wrapCR.verifierIndex
+                { proof: dummyWrapProof bcd
+                , publicInput: sideInfo.baseCaseWrapPublicInput
+                , prevChallenges: map toFFI [ baseCaseDummyChalPoly, baseCaseDummyChalPoly ]
                 }
-            , zEvals: pe de.zEvals
-            , witnessEvals: map pe de.witnessEvals
-            , coeffEvals: map pe de.coeffEvals
-            , sigmaEvals: map pe de.sigmaEvals
-            , indexEvals: map pe de.indexEvals
+            dummyWrapXhatZeta = dummyWrapOracles.publicEvalZeta
+            dummyWrapXhatOmegaZeta = dummyWrapOracles.publicEvalZetaOmega
+            de = bcd.dummyEvals
+            pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+            headPrevEvals = StepAllEvals
+              { ftEval1: F de.ftEval1
+              , publicEvals: PointEval
+                  { zeta: F dummyWrapXhatZeta
+                  , omegaTimesZeta: F dummyWrapXhatOmegaZeta
+                  }
+              , zEvals: pe de.zEvals
+              , witnessEvals: map pe de.witnessEvals
+              , coeffEvals: map pe de.coeffEvals
+              , sigmaEvals: map pe de.sigmaEvals
+              , indexEvals: map pe de.indexEvals
+              }
+          in
+            { stepOraclesPrevChalEntry:
+                { sgX: stepSgD.x
+                , sgY: stepSgD.y
+                , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
+                }
+            , prevSg: stepSgD
+            , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
+            , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
+            , headPrevEvals
+            , headSlotWrapBpChals: map F Dummy.dummyIpaChallenges.wrapExpanded
             }
+        InductivePrev prevCp prevTag ->
+          let
+            CompiledProof prev = prevCp
+            Tag { verifier: prevVerifier } = prevTag
 
-      -- Head slot's wrap bp-chals (dummy for BasePrev).
-      headSlotWrapBpChals :: Vector WrapIPARounds (F WrapField)
-      headSlotWrapBpChals = map F Dummy.dummyIpaChallenges.wrapExpanded
+            -- Step-field endo expansion of prev's RAW wrap-IPA chals
+            -- (matches mkStepAdvice's `kimchiPrevChallengesExpanded`).
+            prevStepBpChalsExpanded :: Vector StepIPARounds StepField
+            prevStepBpChalsExpanded =
+              map
+                ( \sc ->
+                    toFieldPure (coerceViaBits sc :: SizedF 128 StepField)
+                      stepEndoScalarF
+                )
+                prev.rawBulletproofChallenges
 
-      -- Dispatch on PrevSlot for head slot.
-      _ = case headSlot of
-        BasePrev _ -> unit
-        InductivePrev _ _ ->
-          unsafeCrashWith "CompilableSpec Cons: shapeProveData InductivePrev TODO"
+            -- Reproduce the kimchi prev_challenges that were used to
+            -- generate prev.wrapProof. Each of prev's `n` slots
+            -- contributes a real entry; front-pad with dummies to
+            -- reach PaddedLength=2 (matches `runCompile`'s padding).
+            dummyKimchiArrayEntry =
+              { sgX: wrapSgD.x
+              , sgY: wrapSgD.y
+              , challenges:
+                  (Vector.toUnfoldable Dummy.dummyIpaChallenges.wrapExpanded :: Array WrapField)
+              }
+            prevRealEntries =
+              Vector.toUnfoldable $ Vector.zipWith
+                ( \sg chs ->
+                    { sgX: sg.x
+                    , sgY: sg.y
+                    , challenges: (Vector.toUnfoldable chs :: Array WrapField)
+                    }
+                )
+                prev.outerStepChalPolyComms
+                prev.msgWrapChallenges
+            prevPadCount = 2 - reflectType (Proxy @n)
+            prevWrapKimchiPrevChals =
+              Array.replicate prevPadCount dummyKimchiArrayEntry <> prevRealEntries
+
+            prevWrapPI :: Array WrapField
+            prevWrapPI = wrapPublicInput prevVerifier prevCp
+
+            prevWrapOracles =
+              ProofFFI.vestaProofOracles wrapCR.verifierIndex
+                { proof: prev.wrapProof
+                , publicInput: prevWrapPI
+                , prevChallenges: prevWrapKimchiPrevChals
+                }
+
+            peWF pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+            prevHeadPrevEvals = StepAllEvals
+              { ftEval1: F prevWrapOracles.ftEval1
+              , publicEvals: PointEval
+                  { zeta: F prevWrapOracles.publicEvalZeta
+                  , omegaTimesZeta: F prevWrapOracles.publicEvalZetaOmega
+                  }
+              , zEvals: peWF (ProofFFI.proofZEvals prev.wrapProof)
+              , witnessEvals: map peWF (ProofFFI.proofWitnessEvals prev.wrapProof)
+              , coeffEvals: map peWF (ProofFFI.proofCoefficientEvals prev.wrapProof)
+              , sigmaEvals: map peWF (ProofFFI.proofSigmaEvals prev.wrapProof)
+              , indexEvals: map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
+              }
+          in
+            { stepOraclesPrevChalEntry:
+                { sgX: prev.challengePolynomialCommitment.x
+                , sgY: prev.challengePolynomialCommitment.y
+                , challenges: Vector.toUnfoldable prevStepBpChalsExpanded
+                }
+            , prevSg: prev.challengePolynomialCommitment
+            , prevStepChals: prevStepBpChalsExpanded
+            , prevStepAcc: WeierstrassAffinePoint
+                { x: F prev.challengePolynomialCommitment.x
+                , y: F prev.challengePolynomialCommitment.y
+                }
+            , headPrevEvals: prevHeadPrevEvals
+            -- Prev's first slot's bp-chals (= what prev hashed into
+            -- `messages_for_next_wrap_proof` at slot 0, the chals THIS
+            -- rule's wrap circuit verifies when consuming prev's
+            -- wrap proof).
+            , headSlotWrapBpChals: map F (Vector.head prev.msgWrapChallenges)
+            }
 
       -- Recurse into rest.
       restSideInfo :: ShapeProveSideInfo restMpv
@@ -796,21 +1057,15 @@ instance
       restProveData = shapeProveData @rest cfg wrapCR restSideInfo restPrevs
     in
       { stepOraclesPrevChallenges:
-          [ { sgX: stepSgD.x
-            , sgY: stepSgD.y
-            , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
-            }
-          ] <> restProveData.stepOraclesPrevChallenges
-      , prevSgs: stepSgD :< restProveData.prevSgs
+          [ slotData.stepOraclesPrevChalEntry ] <> restProveData.stepOraclesPrevChallenges
+      , prevSgs: slotData.prevSg :< restProveData.prevSgs
       , prevStepChallenges:
-          Dummy.dummyIpaChallenges.stepExpanded :< restProveData.prevStepChallenges
+          slotData.prevStepChals :< restProveData.prevStepChallenges
       , msgWrapChallenges:
           msgForNextWrapRealChals :< restProveData.msgWrapChallenges
       , prevUnfinalizedProofs: headUnfinalizedWrap :< restProveData.prevUnfinalizedProofs
-      , prevStepAccs:
-          WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
-            :< restProveData.prevStepAccs
-      , prevEvals: headPrevEvals :< restProveData.prevEvals
+      , prevStepAccs: slotData.prevStepAcc :< restProveData.prevStepAccs
+      , prevEvals: slotData.headPrevEvals :< restProveData.prevEvals
       , prevWrapDomainIndices:
           F (Curves.fromInt slotN :: WrapField) :< restProveData.prevWrapDomainIndices
       , kimchiPrevEntries:
@@ -818,7 +1073,8 @@ instance
           , sgY: sideInfo.b0ChalPolyComm.y
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
-      , slotsValue: product (Vector.replicate @n headSlotWrapBpChals) restProveData.slotsValue
+      , slotsValue:
+          product (Vector.replicate @n slotData.headSlotWrapBpChals) restProveData.slotsValue
       }
 
 --------------------------------------------------------------------------------
@@ -837,11 +1093,12 @@ instance
 -- | in scope for visible application — not available inside a class
 -- | method instance body.
 runCompile
-  :: forall @prevsSpec slotVKs prevsCarrier mpv slots
+  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier
        @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
        pad unfsTotal digestPlusUnfs outputSize carrierF carrierFVar
        branchesPred totalBases totalBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier
+  => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -881,7 +1138,7 @@ runCompile
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> Effect
        (CompileOutput prevsSpec mpv inputVal outputVal
           (StatementIO inputVal outputVal) prevsCarrier m)
@@ -890,7 +1147,7 @@ runCompile cfg rule = do
     shape = shapeCompileData @prevsSpec cfg
 
   stepCR <- stepCompile
-    @prevsSpec @outputSize
+    @prevsSpec @outputSize @valCarrier
     @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
     shape.stepProveCtx rule
 
@@ -915,7 +1172,7 @@ runCompile cfg rule = do
   pure
     { prover:
         { step: runProverBody
-            @prevsSpec @slotVKs @prevsCarrier @mpv @slots
+            @prevsSpec @slotVKs @prevsCarrier @mpv @slots @valCarrier
             @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
             @m
             cfg rule shape stepCR wrapCR stepDomainLog2
@@ -934,11 +1191,12 @@ runCompile cfg rule = do
 -- | `shapeProveData` / `mkStepAdvice` / the pre-computed
 -- | `ShapeCompileData`.
 runProverBody
-  :: forall @prevsSpec @slotVKs @prevsCarrier @mpv @slots
+  :: forall @prevsSpec @slotVKs @prevsCarrier @mpv @slots @valCarrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @m
        pad unfsTotal digestPlusUnfs outputSize carrierF carrierFVar
        branchesPred totalBases totalBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier
+  => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -978,7 +1236,7 @@ runProverBody
   => CheckedType WrapField (KimchiConstraint WrapField)
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> ShapeCompileData mpv slots
   -> StepCompileResult
   -> WrapCompileResult
@@ -1002,7 +1260,7 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     proveData = shapeProveData @prevsSpec cfg wrapCR proveDataSideInfo prevs
 
   stepResult <- stepSolveAndProve
-    @prevsSpec @outputSize
+    @prevsSpec @outputSize @valCarrier
     @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
     shape.stepProveCtx rule stepCR stepAdvice
 
@@ -1149,4 +1407,6 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap
+    , msgWrapChallenges: proveData.msgWrapChallenges
+    , outerStepChalPolyComms: map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
     }

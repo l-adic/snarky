@@ -79,10 +79,10 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
+import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -165,7 +165,7 @@ type StepBranchData =
 -- | derived from `prevsSpec` via the `PrevsCarrier` instance), and
 -- | reified to an Int internally via `reflectType (Proxy @len)` where
 -- | needed.
-type BuildStepAdviceInput inputVal =
+type BuildStepAdviceInput inputVal valCarrier =
   { -- | Value bound to the step circuit's public input (OCaml
     -- | `Req.App_state`). Polymorphic in `inputVal` so rules with
     -- | Input-mode typ other than `Field.typ` can bind multi-field
@@ -182,6 +182,15 @@ type BuildStepAdviceInput inputVal =
   -- | `dump_circuit_impl.ml:3721-3723`); that value is determined by
   -- | kimchi at proof-creation time, not read from advice.
   , wrapDomainLog2 :: Int
+
+  -- | Heterogeneous per-slot prev statements (mirrors OCaml's
+  -- | `previous_proof_statements` argument to `Inductive_rule.t.main`).
+  -- | The carrier shape is determined by `prevsSpec` via
+  -- | `PrevValuesCarrier`. Each slot's value is the prev's
+  -- | `StatementIO inputVal outputVal` — even on the base case,
+  -- | callers supply an inhabitant of the right type (the values are
+  -- | irrelevant when `proofMustVerify[i] = false`).
+  , prevAppStates :: valCarrier
   }
 
 -- | Build a base-case `StepAdvice` keyed on a spec-indexed per-slot
@@ -198,7 +207,7 @@ type BuildStepAdviceInput inputVal =
 -- | `Vector.replicate` at `n=0` produces nil, so slots with `n_i=0`
 -- | have empty `prevChallenges` / `prevSgs` automatically.
 buildStepAdvice
-  :: forall @prevsSpec inputVal len carrier
+  :: forall @prevsSpec inputVal len carrier valCarrier
    . Reflectable len Int
   => PrevsCarrier
        prevsSpec
@@ -209,8 +218,9 @@ buildStepAdvice
        Boolean
        len
        carrier
-  => BuildStepAdviceInput inputVal
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+  => PrevValuesCarrier prevsSpec valCarrier
+  => BuildStepAdviceInput inputVal valCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
 buildStepAdvice input =
   let
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
@@ -414,6 +424,7 @@ buildStepAdvice input =
             , sgY: zero
             , challenges: Vector.replicate zero
             }
+      , prevAppStates: input.prevAppStates
       }
 
 -- | Extract sigma/coeff/index point triples from a compiled wrap
@@ -482,13 +493,20 @@ extractWrapVKForStepHash vk =
 -- | 3 scalar challenges, 3 digests, `StepIPARounds` bp challenges,
 -- | packed branch data, 8 feature flags, 2 lookup slots.
 dummyWrapTockPublicInput
-  :: forall @n inputVal input
+  :: forall @n stmt stmtVar
    . Reflectable n Int
   => Compare n 3 LT
-  => CircuitType StepField inputVal input
+  => CircuitType StepField stmt stmtVar
   => { wrapDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
-     , prevPublicInput :: inputVal
+     -- | Prev rule's full `StatementIO inputVal outputVal` value
+     -- | (matches OCaml's `Previous_proof_statement.public_input ::
+     -- | 'prev_var`). Serialized via `valueToFields` for the
+     -- | `messages_for_next_step_proof.app_state` hash field —
+     -- | concatenation of input + output fields, with Unit fields
+     -- | contributing zero so Input-mode/Output-mode prevs both
+     -- | produce the field array OCaml would.
+     , prevStatement :: stmt
      -- | `Dummy.Ipa.Wrap.sg` — Ro-derived Pallas point from
      -- | `computeDummySgValues.ipa.wrap.sg`. Used for the previous
      -- | proofs' `challenge_polynomial_commitments` in
@@ -591,7 +609,7 @@ dummyWrapTockPublicInput input =
     -- `proof.ml:168-171`:
     --   messages_for_next_step_proof.challenge_polynomial_commitments
     --     = Vector.init most_recent_width (fun _ -> Dummy.Ipa.Wrap.sg)
-    appStateFields = valueToFields @StepField @inputVal input.prevPublicInput
+    appStateFields = valueToFields @StepField @stmt input.prevStatement
 
     msgStepDigestStepField :: StepField
     msgStepDigestStepField = hashMessagesForNextStepProofPure
@@ -669,9 +687,15 @@ dummyWrapTockPublicInput input =
 -- |                      Tree_proof_return's Unit-input rule verifies
 -- |                      a No_recursion_return prev whose app_state
 -- |                      is `F StepField`).
-type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
+type BuildStepAdviceWithOraclesInput inputVal stmt =
   { publicInput :: inputVal
-  , prevPublicInput :: prevInputVal
+  -- | Prev rule's full `StatementIO inputVal outputVal` value (matches
+  -- | OCaml's `Previous_proof_statement.public_input :: 'prev_var` —
+  -- | the per-prev `app_state` per `step_main.ml:389`). This helper
+  -- | builds a single-slot StepAdvice, so callers pass one full
+  -- | statement; the resulting StepAdvice's `prevAppStates` field is
+  -- | the singleton carrier `Tuple stmt unit`.
+  , prevStatement :: stmt
   , wrapDomainLog2 :: Int
   -- | STEP-domain log2 of the proof being verified (= branch_data.domain_log2
   -- | of the wrap statement). OCaml `Wrap_deferred_values.expand_deferred`
@@ -861,13 +885,14 @@ type BuildStepAdviceWithOraclesInput inputVal prevInputVal =
 -- | public input, feeds through `expandProof`, and assembles the
 -- | per-slot rank-2 `StepSlot` dummy used by `replicatePrevsCarrier`.
 buildStepAdviceWithOracles
-  :: forall @n @prevsSpec inputVal input prevInputVal prevInput len carrier pad
+  :: forall @n @prevsSpec inputVal input prevHeadStmt prevHeadStmtVar
+       len carrier pad
    . Reflectable n Int
   => Reflectable len Int
   => Reflectable pad Int
   => Add pad n PaddedLength
   => CircuitType StepField inputVal input
-  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField prevHeadStmt prevHeadStmtVar
   => PrevsCarrier
        prevsSpec
        StepIPARounds
@@ -877,9 +902,12 @@ buildStepAdviceWithOracles
        Boolean
        len
        carrier
-  => BuildStepAdviceWithOraclesInput inputVal prevInputVal
+  => PrevValuesCarrier prevsSpec (Tuple prevHeadStmt Unit)
+  => BuildStepAdviceWithOraclesInput inputVal prevHeadStmt
   -> Effect
-       { advice :: StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+       { advice ::
+           StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+             (Tuple prevHeadStmt Unit)
        , challengePolynomialCommitment :: AffinePoint StepField
        }
 buildStepAdviceWithOracles input = do
@@ -932,7 +960,7 @@ buildStepAdviceWithOracles input = do
 
   msgStepDigestStepField <- hashMessagesForNextStepProofPureTraced
     { stepVk: wrapVkStep
-    , appState: valueToFields @StepField @prevInputVal input.prevPublicInput
+    , appState: valueToFields @StepField @prevHeadStmt input.prevStatement
     , proofs: prevProofsForHash
     }
 
@@ -1095,7 +1123,7 @@ buildStepAdviceWithOracles input = do
       , endo: stepEndoScalarF
       , linearizationPoly: Linearization.pallas
       , dlogIndex: extractWrapVKForStepHash input.wrapVK
-      , appStateFields: valueToFields @StepField @prevInputVal input.prevPublicInput
+      , appStateFields: valueToFields @StepField @prevHeadStmt input.prevStatement
       -- Per-slot `prev_challenge_polynomial_commitments :: Vector n`
       -- (OCaml step.ml:513-517). Derived once from `input.prevChalPolys`
       -- by dropping Wrap_hack front-padding — preserves distinct per-
@@ -1385,7 +1413,9 @@ buildStepAdviceWithOracles input = do
           }
       }
 
-    advice :: StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+    advice
+      :: StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+           (Tuple prevHeadStmt Unit)
     advice = StepAdvice
       { perProofSlotsCarrier: replicatePrevsCarrier @prevsSpec slotTemplate
       , publicInput: input.publicInput
@@ -1398,6 +1428,10 @@ buildStepAdviceWithOracles input = do
             , sgY: input.kimchiPrevSg.y
             , challenges: input.kimchiPrevChallengesExpanded
             }
+      -- Single-slot helper: wrap the user-provided statement into a
+      -- singleton carrier `Tuple stmt unit`, matching what
+      -- `PrevValuesCarrier (PrevsSpecCons k stmt PrevsSpecNil)` derives.
+      , prevAppStates: Tuple input.prevStatement unit
       }
 
   -- === TRACE: wrap-proof opening z1/z2 values (raw Fq + cross-field sDiv2) ===
@@ -1442,10 +1476,24 @@ buildStepAdviceWithOracles input = do
 -- | (`~public_input:(Input _)`) callers use `output = Unit`. For
 -- | Output-mode rules the computed value flows back via the rule's
 -- | returned `RuleOutput`.
-type StepRule (n :: Int) inputVal input outputVal output prevInputVal prevInput =
+-- | The `valCarrier` slot is the per-rule heterogeneous prev-statement
+-- | carrier shape that `Pickles.Step.Prevs.PrevValuesCarrier` derives
+-- | from the rule's `prevsSpec`. It mirrors the `'prev_values` axis of
+-- | OCaml's `Inductive_rule.Make.t` — what `previous_proof_statements
+-- | :: H4.T(...)` resolves to per rule. The body reads each slot's
+-- | statement via `StepPrevValuesM.getPrevAppStates`, which `stepMain`
+-- | / `runStepProverT` populate from the user-supplied advice carrier
+-- | at prove time.
+-- |
+-- | Per-rule instantiations:
+-- |   * NRR (no prevs):           `valCarrier = Unit`
+-- |   * Simple_chain (1 prev):    `valCarrier = Tuple (StatementIO …) Unit`
+-- |   * Tree_proof_return (2):    `valCarrier = Tuple stmt0 (Tuple stmt1 Unit)`
+type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal prevInput =
   forall t m'
    . CircuitM StepField (KimchiConstraint StepField) t m'
   => StepWitnessM n StepIPARounds WrapIPARounds PallasG StepField m' inputVal
+  => StepPrevValuesM m' valCarrier
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -1565,8 +1613,8 @@ dumpRowLabels publicInputSize cs = do
 -- |   element types don't depend on per-slot `n_i`.
 -- | * Singletons (`wrapVerifierIndex`, `publicInput`) stand alone.
 newtype StepAdvice
-  :: Type -> Int -> Int -> Type -> Int -> Type -> Type
-newtype StepAdvice prevsSpec ds dw inputVal len carrier =
+  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type
+newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier =
   StepAdvice
     { perProofSlotsCarrier :: carrier
     , publicInput :: inputVal
@@ -1593,49 +1641,62 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier =
           , sgY :: WrapField
           , challenges :: Vector ds StepField
           }
+    -- | Heterogeneous per-slot prev statements, in the same nested-tuple
+    -- | shape `PrevValuesCarrier prevsSpec valCarrier` derives:
+    -- |   PrevsSpecNil                            → Unit
+    -- |   PrevsSpecCons n stmt rest               → Tuple stmt restValCarrier
+    -- | Each `stmt` is the prev rule's `StatementIO inputVal outputVal`
+    -- | (the same type bundled in `PrevsSpecCons`'s second parameter).
+    -- | Mirrors OCaml's `previous_proof_statements` argument flowing into
+    -- | the rule's `main` — the rule body reads slot-specific values out
+    -- | (input for Input-mode prevs, output for Output-mode) inside its
+    -- | `exists` calls so the witness for the prev's app-state circuit
+    -- | variable is sourced from advice rather than baked into a closure.
+    , prevAppStates :: valCarrier
     }
 
 derive instance
   Newtype
-    (StepAdvice prevsSpec ds dw inputVal len carrier)
+    (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier)
     _
 
 -- | ReaderT transformer for the v2 prover stack, carrying a
 -- | `StepAdvice` over a base monad.
 newtype StepProverT
-  :: Type -> Int -> Int -> Type -> Int -> Type -> (Type -> Type) -> Type -> Type
-newtype StepProverT prevsSpec ds dw inputVal len carrier m a =
-  StepProverT (ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier) m a)
+  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> (Type -> Type) -> Type -> Type
+newtype StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a =
+  StepProverT
+    (ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier) m a)
 
 derive instance
   Newtype
-    (StepProverT prevsSpec ds dw inputVal len carrier m a)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a)
     _
 
 derive newtype instance
   Functor m =>
-  Functor (StepProverT prevsSpec ds dw inputVal len carrier m)
+  Functor (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
   Apply m =>
-  Apply (StepProverT prevsSpec ds dw inputVal len carrier m)
+  Apply (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
   Applicative m =>
-  Applicative (StepProverT prevsSpec ds dw inputVal len carrier m)
+  Applicative (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
   Bind m =>
-  Bind (StepProverT prevsSpec ds dw inputVal len carrier m)
+  Bind (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
   Monad m =>
-  Monad (StepProverT prevsSpec ds dw inputVal len carrier m)
+  Monad (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 runStepProverT
-  :: forall prevsSpec ds dw inputVal len carrier m a
-   . StepAdvice prevsSpec ds dw inputVal len carrier
-  -> StepProverT prevsSpec ds dw inputVal len carrier m a
+  :: forall prevsSpec ds dw inputVal len carrier valCarrier m a
+   . StepAdvice prevsSpec ds dw inputVal len carrier valCarrier
+  -> StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a
   -> m a
 runStepProverT advice (StepProverT m) = runReaderT m advice
 
@@ -1657,7 +1718,7 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier m)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
     len
     carrier where
   getStepSlotsCarrier _ =
@@ -1683,7 +1744,7 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier m)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
     inputVal where
 
   getMessagesForNextWrapProof _ =
@@ -1695,6 +1756,14 @@ instance
   getStepUnfinalizedProofs _ =
     StepProverT $ map (\(StepAdvice r) -> r.publicUnfinalizedProofs) ask
 
+instance
+  Monad m =>
+  StepPrevValuesM
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+    valCarrier where
+  getPrevAppStates _ =
+    StepProverT $ map (\(StepAdvice r) -> r.prevAppStates) ask
+
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in `Effect`, which dispatches to the `StepWitnessM`/`StepSlotsM`
 -- | `Effect` instances — every advice method there throws. The
@@ -1705,7 +1774,7 @@ instance
 -- | per-slot kimchi-prev-challenges data in StepAdvice that we
 -- | haven't introduced yet.
 stepCompile
-  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
        len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
@@ -1741,7 +1810,7 @@ stepCompile
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => StepProveContext len
-  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
   builtState <-
@@ -1759,6 +1828,7 @@ stepCompile ctx rule = do
             @output
             @prevInputVal
             @prevInput
+            @valCarrier
             rule
             ctx.srsData
             ctx.dummySg
@@ -1800,7 +1870,7 @@ stepCompile ctx rule = do
 -- | error type the underlying `SolverT` uses. Constraint-system-
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
-  :: forall @prevsSpec @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
        len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
@@ -1836,10 +1906,11 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
+  => PrevValuesCarrier prevsSpec valCarrier
   => StepProveContext len
-  -> StepRule len inputVal input outputVal output prevInputVal prevInput
+  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
   let
@@ -1850,6 +1921,7 @@ stepSolveAndProve ctx rule compileResult advice = do
            ( StepProverT prevsSpec StepIPARounds WrapIPARounds inputVal
                len
                carrier
+               valCarrier
                m
            )
            Unit
@@ -1867,6 +1939,7 @@ stepSolveAndProve ctx rule compileResult advice = do
               @output
               @prevInputVal
               @prevInput
+              @valCarrier
               rule
               ctx.srsData
               ctx.dummySg

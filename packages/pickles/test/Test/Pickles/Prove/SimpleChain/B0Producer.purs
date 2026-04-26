@@ -26,6 +26,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (unwrap)
+import Data.Tuple (Tuple)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -45,7 +46,7 @@ import Pickles.Prove.Wrap (BuildWrapAdviceInput, WrapAdvice, WrapCompileResult, 
 import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, WrapField, WrapIPARounds)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProof, hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots1, slots1)
 import Safe.Coerce (coerce)
@@ -138,6 +139,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step compile.
   stepCR <- liftEffect $
     stepCompile @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil) @34
+      @(Tuple (StatementIO (F StepField) Unit) Unit)
       @(F StepField)
       @(FVar StepField)
       @Unit
@@ -145,7 +147,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       @(F StepField)
       @(FVar StepField)
       ctx
-      (simpleChainRule (F (negate one)))
+      (simpleChainRule)
 
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
 
@@ -167,7 +169,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     baseCaseWrapPI = dummyWrapTockPublicInput @1
       { wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
-      , prevPublicInput: F (negate one)
+      , prevStatement: StatementIO { input: F (negate one), output: unit }
       , wrapSg
       , stepSg
       , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
@@ -185,7 +187,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     liftEffect $
       buildStepAdviceWithOracles @1 @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
         { publicInput: F zero
-        , prevPublicInput: F (negate one)
+        , prevStatement: StatementIO { input: F (negate one), output: unit }
         , wrapDomainLog2
         , stepDomainLog2: wrapDomainLog2
         , wrapVK: wrapCR.verifierIndex
@@ -224,6 +226,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   -- Step prove.
   stepRes <- liftEffect $ runExceptT $
     stepSolveAndProve @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil) @34
+      @(Tuple (StatementIO (F StepField) Unit) Unit)
       @(F StepField)
       @(FVar StepField)
       @Unit
@@ -231,7 +234,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
       @(F StepField)
       @(FVar StepField)
       ctx
-      (simpleChainRule (F (negate one)))
+      (simpleChainRule)
       stepCR
       realAdvice
   result <- case stepRes of

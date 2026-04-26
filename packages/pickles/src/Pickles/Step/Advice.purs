@@ -63,6 +63,9 @@ module Pickles.Step.Advice
   -- Parallel v2 class: provides the spec-indexed per-slot carrier.
   , class StepSlotsM
   , getStepSlotsCarrier
+  -- Prev-statement values for the rule body's `exists` calls.
+  , class StepPrevValuesM
+  , getPrevAppStates
   ) where
 
 import Prelude
@@ -203,3 +206,32 @@ instance
   ) =>
   StepSlotsM prevsSpec ds dw g f Effect len carrier where
   getStepSlotsCarrier _ = throw "impossible! getStepSlotsCarrier called during compilation"
+
+--------------------------------------------------------------------------------
+-- Prev-statement values for the rule body's `exists` calls.
+--
+-- Mirrors OCaml's `previous_proof_statements` argument to
+-- `Inductive_rule.t.main`: the rule reads the prev's statement out of
+-- this carrier (input for Input-mode prevs, output for Output-mode)
+-- when allocating the prev's app-state circuit variable. Sourcing the
+-- value via this method instead of a closure parameter is what lets
+-- the same compiled rule produce different inductive iterations —
+-- compile-time captures the rule once, prove-time supplies a fresh
+-- carrier per `prover.step` invocation.
+--
+-- The `valCarrier` shape is determined by `prevsSpec` via
+-- `Pickles.Step.Prevs.PrevValuesCarrier`. The compile-time `Effect`
+-- instance throws — Snarky's compile mode discards the witness
+-- computation, so `exists $ MT.lift $ getPrevAppStates …` is never
+-- actually evaluated when building the constraint system.
+--------------------------------------------------------------------------------
+
+class
+  ( Monad m
+  ) <=
+  StepPrevValuesM (m :: Type -> Type) valCarrier
+  | m -> valCarrier where
+  getPrevAppStates :: Unit -> m valCarrier
+
+instance StepPrevValuesM Effect valCarrier where
+  getPrevAppStates _ = throw "impossible! getPrevAppStates called during compilation"

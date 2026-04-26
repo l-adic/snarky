@@ -33,7 +33,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -469,12 +469,14 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       @valCarrier
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
+  => StepPrevValuesM m valCarrier
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput

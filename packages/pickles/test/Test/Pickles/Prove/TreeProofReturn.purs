@@ -63,7 +63,7 @@ import Pickles.Prove.Wrap (WrapCompileContext) as WP
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Trace as Trace
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO, StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Util.Fatal (fromJust')
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (Slots2, slots2)
@@ -98,6 +98,9 @@ type TreeProofReturnPrevsSpec =
 treeProofReturnRule
   :: { isBaseCase :: Boolean, nrrInputVal :: F StepField, prevInputVal :: F StepField }
   -> StepRule 2
+       ( Tuple (StatementIO Unit (F StepField))
+           (Tuple (StatementIO Unit (F StepField)) Unit)
+       )
        Unit
        Unit
        (F StepField)
@@ -213,6 +216,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         }
     treeStepCR <- liftEffect $
       stepCompile @TreeProofReturnPrevsSpec @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)
@@ -338,7 +344,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     let
       oracleInput
         :: { publicInput :: Unit
-           , prevPublicInput :: F StepField
+           , prevStatement :: StatementIO Unit (F StepField)
            , wrapDomainLog2 :: Int
            , stepDomainLog2 :: Int
            , wrapVK :: _
@@ -360,7 +366,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
            }
       oracleInput =
         { publicInput: unit
-        , prevPublicInput: F zero -- NRR's output
+        -- NRR is Output-mode: prev's StatementIO has Unit input, F StepField output.
+        , prevStatement: StatementIO { input: unit, output: F zero }
         , wrapDomainLog2: nrr.wrapDomainLog2
         -- Step domain of the NRR proof being verified. NRR's step domain
         -- log2 = 9 (from its prover index), distinct from wrap VK domain 13.
@@ -460,7 +467,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         -- branchData.domainLog2 for OCaml Proof.dummy N2 N2 ~domain_log2:15.
         { wrapDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
-        , prevPublicInput: (F (negate one)) :: F StepField
+        , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
         , wrapSg: nrrWrapSg
         , stepSg: nrr.stepSg
         , msgWrapDigest: hashMessagesForNextWrapProofPureGeneral
@@ -477,7 +484,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: slot1Advice, challengePolynomialCommitment: b0Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F (negate one)) :: F StepField
+        , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
         -- Iter 2ah: for slot 1 wrap-side derive_plonk, domain = Tree
         -- wrap VK's domain (log2=14 via override_wrap_domain=N1), NOT
         -- Tree's step domain (log2=15). Per OCaml step.ml:533-538
@@ -535,7 +542,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Tuple slot0Sppw _ = s0.perProofSlotsCarrier
       Tuple slot1Sppw _ = s1.perProofSlotsCarrier
 
-      treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeRealAdvice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
       treeRealAdvice = StepAdvice
         { perProofSlotsCarrier: Tuple slot0Sppw (Tuple slot1Sppw unit)
         , publicInput: unit
@@ -552,12 +559,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Vector.head s0.kimchiPrevChallenges
               :< Vector.head s1.kimchiPrevChallenges
               :< Vector.nil
+        , prevAppStates:
+            let
+              Tuple s0Stmt _ = s0.prevAppStates
+              Tuple s1Stmt _ = s1.prevAppStates
+            in Tuple s0Stmt (Tuple s1Stmt unit)
         }
 
     treeStepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)
@@ -1065,7 +1080,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b1Slot1Advice, challengePolynomialCommitment: b1Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F zero) :: F StepField -- b0 output was 0
+        -- b0 output was 0; Tree is Output-mode → prev's StatementIO.output = F zero.
+        , prevStatement: StatementIO { input: unit, output: F zero :: F StepField }
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -1140,7 +1156,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Tuple b1Slot0Sppw _ = b1s0.perProofSlotsCarrier
       Tuple b1Slot1Sppw _ = b1s1.perProofSlotsCarrier
 
-      treeB1Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB1Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
       treeB1Advice = StepAdvice
         { perProofSlotsCarrier: Tuple b1Slot0Sppw (Tuple b1Slot1Sppw unit)
         , publicInput: unit
@@ -1157,12 +1173,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Vector.head b1s0.kimchiPrevChallenges
               :< Vector.head b1s1.kimchiPrevChallenges
               :< Vector.nil
+        , prevAppStates:
+            let
+              Tuple s0Stmt _ = b1s0.prevAppStates
+              Tuple s1Stmt _ = b1s1.prevAppStates
+            in Tuple s0Stmt (Tuple s1Stmt unit)
         }
 
     b1StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)
@@ -1476,7 +1500,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b2Slot1Advice, challengePolynomialCommitment: b2Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F one) :: F StepField -- b1 output was 1
+        -- b1 output was 1; Tree Output-mode → prev's StatementIO.output = F one.
+        , prevStatement: StatementIO { input: unit, output: F one :: F StepField }
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -1542,7 +1567,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Tuple b2Slot0Sppw _ = b2s0.perProofSlotsCarrier
       Tuple b2Slot1Sppw _ = b2s1.perProofSlotsCarrier
 
-      treeB2Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB2Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
       treeB2Advice = StepAdvice
         { perProofSlotsCarrier: Tuple b2Slot0Sppw (Tuple b2Slot1Sppw unit)
         , publicInput: unit
@@ -1559,12 +1584,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Vector.head b2s0.kimchiPrevChallenges
               :< Vector.head b2s1.kimchiPrevChallenges
               :< Vector.nil
+        , prevAppStates:
+            let
+              Tuple s0Stmt _ = b2s0.prevAppStates
+              Tuple s1Stmt _ = b2s1.prevAppStates
+            in Tuple s0Stmt (Tuple s1Stmt unit)
         }
 
     b2StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)
@@ -1864,7 +1897,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b3Slot1Advice, challengePolynomialCommitment: b3Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F (fromInt 2 :: StepField)) -- b2 output = 2
+        -- b2 output = 2; Tree Output-mode → prev's StatementIO.output = F 2.
+        , prevStatement:
+            StatementIO { input: unit, output: F (fromInt 2 :: StepField) }
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -1928,7 +1963,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Tuple b3Slot0Sppw _ = b3s0.perProofSlotsCarrier
       Tuple b3Slot1Sppw _ = b3s1.perProofSlotsCarrier
 
-      treeB3Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB3Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
       treeB3Advice = StepAdvice
         { perProofSlotsCarrier: Tuple b3Slot0Sppw (Tuple b3Slot1Sppw unit)
         , publicInput: unit
@@ -1945,12 +1980,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Vector.head b3s0.kimchiPrevChallenges
               :< Vector.head b3s1.kimchiPrevChallenges
               :< Vector.nil
+        , prevAppStates:
+            let
+              Tuple s0Stmt _ = b3s0.prevAppStates
+              Tuple s1Stmt _ = b3s1.prevAppStates
+            in Tuple s0Stmt (Tuple s1Stmt unit)
         }
 
     b3StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)
@@ -2243,7 +2286,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     { advice: b4Slot1Advice, challengePolynomialCommitment: b4Slot1ChalPolyComm } <- liftEffect $
       buildStepAdviceWithOracles @2 @(PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
         { publicInput: unit
-        , prevPublicInput: (F (fromInt 3 :: StepField)) -- b3 output = 3
+        -- b3 output = 3; Tree Output-mode → prev's StatementIO.output = F 3.
+        , prevStatement:
+            StatementIO { input: unit, output: F (fromInt 3 :: StepField) }
         , wrapDomainLog2: treeWrapDomainLog2
         , stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
@@ -2304,7 +2349,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       Tuple b4Slot0Sppw _ = b4s0.perProofSlotsCarrier
       Tuple b4Slot1Sppw _ = b4s1.perProofSlotsCarrier
 
-      treeB4Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _
+      treeB4Advice :: StepAdvice TreeProofReturnPrevsSpec StepIPARounds WrapIPARounds Unit 2 _ _
       treeB4Advice = StepAdvice
         { perProofSlotsCarrier: Tuple b4Slot0Sppw (Tuple b4Slot1Sppw unit)
         , publicInput: unit
@@ -2321,12 +2366,20 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
             Vector.head b4s0.kimchiPrevChallenges
               :< Vector.head b4s1.kimchiPrevChallenges
               :< Vector.nil
+        , prevAppStates:
+            let
+              Tuple s0Stmt _ = b4s0.prevAppStates
+              Tuple s1Stmt _ = b4s1.prevAppStates
+            in Tuple s0Stmt (Tuple s1Stmt unit)
         }
 
     b4StepRes <- liftEffect $ runExceptT $
       stepSolveAndProve
         @TreeProofReturnPrevsSpec
         @67
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
         @Unit
         @Unit
         @(F StepField)

@@ -75,6 +75,10 @@ spec = describe "Pickles.verify (out-of-circuit)" do
         , challengePolynomialCommitment: artifacts.stepProofSg
         , messagesForNextStepProofDigest: artifacts.messagesForNextStepProofDigest
         , messagesForNextWrapProofDigest: artifacts.messagesForNextWrapProofDigest
+        , msgWrapChallenges:
+            artifacts.msgForNextWrapRealChals :< Vector.nil
+        , outerStepChalPolyComms:
+            artifacts.b0ChalPolyComm :< Vector.nil
         }
 
     wrapPublicInput verifier compiledProof `shouldEqual` artifacts.wrapResult.publicInputs
@@ -115,6 +119,10 @@ spec = describe "Pickles.verify (out-of-circuit)" do
         , challengePolynomialCommitment: artifacts.stepProofSg
         , messagesForNextStepProofDigest: artifacts.messagesForNextStepProofDigest
         , messagesForNextWrapProofDigest: artifacts.messagesForNextWrapProofDigest
+        , msgWrapChallenges:
+            artifacts.msgForNextWrapRealChals :< Vector.nil
+        , outerStepChalPolyComms:
+            artifacts.b1ChalPolyComm :< Vector.nil
         }
 
     wrapPublicInput verifier compiledProof `shouldEqual` artifacts.wrapResult.publicInputs
@@ -139,7 +147,8 @@ spec = describe "Pickles.verify (out-of-circuit)" do
       -- Slot 0 old bp chals = NRR's expanded step chals; slot 1 = dummy.
       compiledProof :: CompiledProof 2 (F StepField) (F StepField) Unit
       compiledProof = CompiledProof
-        { statement: F zero -- base case: self = 0
+        { msgWrapChallenges: artifacts.msgWrapChallenges
+        , statement: F zero -- base case: self = 0
         , publicOutput: F zero
         , auxiliaryOutput: unit
         , wrapProof: artifacts.wrapResult.proof
@@ -153,6 +162,7 @@ spec = describe "Pickles.verify (out-of-circuit)" do
         , challengePolynomialCommitment: artifacts.stepProofSg
         , messagesForNextStepProofDigest: artifacts.messagesForNextStepProofDigest
         , messagesForNextWrapProofDigest: artifacts.messagesForNextWrapProofDigest
+        , outerStepChalPolyComms: artifacts.outerStepChalPolyComms
         }
 
     wrapPublicInput verifier compiledProof `shouldEqual` artifacts.wrapResult.publicInputs

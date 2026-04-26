@@ -25,7 +25,7 @@ import Data.Newtype (un)
 import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), Tag(..), compile, verify, wrapPublicInput)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO(..), StepField)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, const_)
@@ -38,7 +38,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | Same rule body as `Test.Pickles.Prove.NoRecursionReturn.Producer.nrrRule`,
 -- | re-declared here to exercise the compile API without dragging the
 -- | producer's private definition.
-nrrRule :: StepRule 0 Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
 nrrRule _ = pure
   { prevPublicInputs: Vector.nil
   , proofMustVerify: Vector.nil
@@ -115,15 +115,57 @@ spec = describe "Pickles.Prove.Compile" do
       , perSlotImportedVKs: unit
       , debug: false
       }
-      (simpleChainRule (F (negate one)))
+      (simpleChainRule)
 
     -- b0: base case — no real prev proof, supply BasePrev with the
     -- dummy input Simple_chain convention uses (self = -1).
     eResult <- liftEffect $ runExceptT $ prover.step
       { appInput: F zero
-      , prevs: Tuple (BasePrev { dummyInput: F (negate one) }) unit
+      , prevs:
+          Tuple
+            (BasePrev { dummyStatement: StatementIO { input: F (negate one), output: unit } })
+            unit
       }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
       Right compiledProof ->
         verify (un Tag tag).verifier [ compiledProof ] `shouldEqual` true
+
+  it "compile + prover.step: Simple_chain b1 inductive end-to-end verify returns true" \_ -> do
+    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
+    vestaSrs <- liftEffect $ createCRS @StepField
+
+    { prover, tag } <- liftEffect $ compile
+      @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+      @(F StepField)
+      @Unit
+      @(F StepField)
+      @Effect
+      { srs: { vestaSrs, pallasSrs }
+      , perSlotImportedVKs: unit
+      , debug: false
+      }
+      (simpleChainRule)
+
+    -- b0: base case — produces the prev proof we'll feed into b1.
+    eResultB0 <- liftEffect $ runExceptT $ prover.step
+      { appInput: F zero
+      , prevs:
+          Tuple
+            (BasePrev { dummyStatement: StatementIO { input: F (negate one), output: unit } })
+            unit
+      }
+    compiledProofB0 <- case eResultB0 of
+      Left e -> liftEffect $ Exc.throw ("prover.step b0: " <> show e)
+      Right p -> pure p
+
+    -- b1: inductive — feed b0 as InductivePrev. Self-recursive, so the
+    -- prev's tag is the same tag this `compile` returned.
+    eResultB1 <- liftEffect $ runExceptT $ prover.step
+      { appInput: F one
+      , prevs: Tuple (InductivePrev compiledProofB0 tag) unit
+      }
+    case eResultB1 of
+      Left e -> liftEffect $ Exc.throw ("prover.step b1: " <> show e)
+      Right compiledProofB1 ->
+        verify (un Tag tag).verifier [ compiledProofB1 ] `shouldEqual` true
