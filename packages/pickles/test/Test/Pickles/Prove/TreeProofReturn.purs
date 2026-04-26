@@ -9,10 +9,20 @@
 -- |   override_wrap_domain = N1  → wrap_domains.h = 2^14
 -- |   public_input         = Output Field
 -- |
--- | Compile-API driven via `compile` + `prover.step`. Tree b0 base
--- | case: slot 0 = `InductivePrev nrrCp nrr.tag` (real NRR proof);
--- | slot 1 = `BasePrev { dummyStatement = StatementIO { input: unit,
--- | output: -1 } }` (dummy self).
+-- | Compile-API driven via `compile` + `prover.step`. Iterates the
+-- | full chain b0..b4 (matching SimpleChain's iteration depth):
+-- |
+-- |   * b0    — slot 0 = `InductivePrev nrrCp` (real NRR proof);
+-- |             slot 1 = `BasePrev { output = -1 }` (dummy self).
+-- |             Output = 0.
+-- |   * b_k+1 — slot 0 = same NRR proof reused; slot 1 = `InductivePrev
+-- |             b_k tree.tag` (the previous round's Tree proof).
+-- |             Output = k+1.
+-- |
+-- | The rule's `proofMustVerify` for slot 1 is gated on
+-- | `prevOut == -1`, so b0 skips real verification of the dummy self
+-- | prev while b1+ verify the previous Tree proof. The full chain is
+-- | handed to `verify` for kimchi-level batch verification.
 module Test.Pickles.Prove.TreeProofReturn
   ( spec
   , treeProofReturnRule
@@ -34,7 +44,8 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Prove.Compile
-  ( PrevSlot(..)
+  ( CompiledProof
+  , PrevSlot(..)
   , SlotWrapKey(..)
   , Tag(..)
   , compile
@@ -93,7 +104,7 @@ nrrRule _ = pure
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TreeProofReturn" do
-  it "Tree_proof_return base case (b0): NRR slot + dummy self slot, end-to-end verify" \_ -> do
+  it "5-iteration heterogeneous chain (b0..b4): NRR external slot + self-recursive slot, end-to-end verify" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -119,21 +130,39 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs:
           Tuple (External nrr.vks) (Tuple (SelfWithStepDomain 15) unit)
-      , debug: true
+      , debug: false
       , wrapDomainOverride: Just 14
       }
       treeProofReturnRule
 
     let
+      -- Slot 1 (Self) prev for round k+1: b_k's CompiledProof as
+      -- `InductivePrev`. Slot 0 (NRR external) reuses the same NRR
+      -- proof every round — NRR has no prevs so its proof is fixed.
+      runStep
+        :: PrevSlot Unit 2 (StatementIO Unit (F StepField)) (F StepField)
+        -> Aff (CompiledProof 2 (StatementIO Unit (F StepField)) (F StepField) Unit)
+      runStep selfPrev = do
+        eRes <- liftEffect $ runExceptT $ tree.prover.step
+          { appInput: unit
+          , prevs:
+              Tuple (InductivePrev nrrCp nrr.tag)
+                (Tuple selfPrev unit)
+          }
+        case eRes of
+          Left e -> liftEffect $ Exc.throw ("tree prover.step: " <> show e)
+          Right p -> pure p
+
+      -- BasePrev's `dummyStatement.output = -1` is the marker the rule
+      -- destructures to gate `proofMustVerify` for slot 1.
       basePrevSelf = BasePrev
         { dummyStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
         }
-    eTreeCp <- liftEffect $ runExceptT $ tree.prover.step
-      { appInput: unit
-      , prevs: Tuple (InductivePrev nrrCp nrr.tag) (Tuple basePrevSelf unit)
-      }
-    treeCp <- case eTreeCp of
-      Left e -> liftEffect $ Exc.throw ("tree prover.step: " <> show e)
-      Right p -> pure p
 
-    verify (un Tag tree.tag).verifier [ treeCp ] `shouldEqual` true
+    b0 <- runStep basePrevSelf
+    b1 <- runStep (InductivePrev b0 tree.tag)
+    b2 <- runStep (InductivePrev b1 tree.tag)
+    b3 <- runStep (InductivePrev b2 tree.tag)
+    b4 <- runStep (InductivePrev b3 tree.tag)
+
+    verify (un Tag tree.tag).verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true

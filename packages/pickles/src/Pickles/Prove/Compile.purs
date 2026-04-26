@@ -1029,6 +1029,23 @@ instance
           SelfWithStepDomain _ -> wrapCR.verifierIndex
           External vks -> vks.wrapCompileResult.verifierIndex
 
+      -- Slot's wrap domain log2: Self/SelfWithStepDomain honour the
+      -- outer rule's `wrapDomainOverride`; External slots use the
+      -- imported rule's stored wrapDomainLog2. Same logic as
+      -- `shapeCompileData`'s slotParams (lines 716-734).
+      slotWrapDomainLog2 :: Int
+      slotWrapDomainLog2 =
+        case headSlotWrapKey of
+          Self ->
+            case cfg.wrapDomainOverride of
+              Just o -> o
+              Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
+          SelfWithStepDomain _ ->
+            case cfg.wrapDomainOverride of
+              Just o -> o
+              Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
+          External vks -> vks.wrapDomainLog2
+
       -- Slot-specific dummies sized by the slot's prev rule's mpv (= n),
       -- not the outer rule's mpv. Matters for Tree-style heterogeneous
       -- slots: slot 0 (NRR, n=0) uses N=0-shaped dummies, slot 1 (Self,
@@ -1254,8 +1271,18 @@ instance
       , prevUnfinalizedProofs: headUnfinalizedWrap :< restProveData.prevUnfinalizedProofs
       , prevStepAccs: slotData.prevStepAcc :< restProveData.prevStepAccs
       , prevEvals: slotData.headPrevEvals :< restProveData.prevEvals
+      -- Wrap-domain index is `wrap_domain_log2 - 13` per the
+      -- `allPossibleDomainLog2s = [13, 14, 15]` table at
+      -- `Pickles.Prove.Wrap.purs:683`. Earlier code used `slotN`, which
+      -- only happens to coincide with the index when there's no
+      -- `wrap_domain_override` (Simple_chain). Tree with `override=14`
+      -- has `slotN=2` but log2=14 → correct index is 1, not 2. The
+      -- old formula caused the wrap circuit's slot 1 FOP to select a
+      -- domain whose generator gave a degenerate `inv_` for b1+
+      -- (b0 worked because the dummy proof short-circuits past it).
       , prevWrapDomainIndices:
-          F (Curves.fromInt slotN :: WrapField) :< restProveData.prevWrapDomainIndices
+          F (Curves.fromInt (slotWrapDomainLog2 - 13) :: WrapField)
+            :< restProveData.prevWrapDomainIndices
       , kimchiPrevEntries:
           { sgX: headChalPolyComm.x
           , sgY: headChalPolyComm.y
