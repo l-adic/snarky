@@ -693,6 +693,12 @@ instance
           , fopState: fopProofState
           , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
           , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
+          -- BasePrev: prev = dummy wrap, whose deferred.bp_chals =
+          -- `Dummy.Ipa.Step.challenges`. The hashed bp-chals vector
+          -- (= step_b's `messages_for_next_step_proof.old_bp_chals`
+          -- per slot) is the dummy expansion. Replicate to the
+          -- per-slot Vector.
+          , prevChalsForStepHashHead: Dummy.dummyIpaChallenges.stepExpanded
           }
       InductivePrev prevCp prevTag -> do
         let
@@ -758,15 +764,18 @@ instance
           dummyChalPoly =
             { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
 
-          -- The sg that prev's `expandProof` returned and that b1's
-          -- caller threads through `prevChalPolys[real].sg` into BOTH
-          -- the step-circuit IVP `sg_old` witness AND the
-          -- `messages_for_next_step_proof.cpc` hash. Mirrors
-          -- `b0.b0ChalPolyComm` in the producer-style B1Producer (=
-          -- `buildStepAdviceWithOracles.challengePolynomialCommitment`
-          -- output, stored on the prev's CompiledProof at compile time
-          -- via runCompile's `outerStepChalPolyComms`). For mpv=1
-          -- prev, head is the only entry.
+          -- The sg that prev's `expand_proof` returned at the time it
+          -- generated its own wrap proof — i.e. prev's outer step
+          -- proof's `expandProof.challenge_polynomial_commitment`
+          -- (= `vestaProofOpeningSg prev_prev.wrapProof` for prev's
+          -- inductive case, OR `compute_sg` for prev's base case).
+          -- Stored on prev's CompiledProof at compile time via
+          -- `runCompile`'s `outerStepChalPolyComms`. Fed into b1's
+          -- `prevChalPolys[real].sg` which serves DOUBLE DUTY: source
+          -- for both the in-circuit `messages_for_next_step_proof.cpc`
+          -- hash AND the `wrapOraclesPrevChallenges` sgX/sgY (= what
+          -- prev.wrapProof was generated with, so kimchi's oracle
+          -- replay matches).
           realChalPolySg :: AffinePoint StepField
           realChalPolySg = Vector.head prev.outerStepChalPolyComms
 
@@ -820,6 +829,14 @@ instance
           , fopState
           , stepAdvicePrevEvals: prev.prevEvals
           , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
+          -- InductivePrev: the value step_b_k's
+          -- `messages_for_next_step_proof.old_bp_chals` hash absorbs is
+          -- `wrap_b_{k-2}.deferred.bp_chals` step-expanded — already
+          -- stored on prev's CompiledProof as
+          -- `oldBulletproofChallenges` (set during prev's runCompile
+          -- via shapeProveData's `prevStepChals`). Vector.head extracts
+          -- the head slot for self-recursive mpv=1 rules.
+          , prevChalsForStepHashHead: Vector.head prev.oldBulletproofChallenges
           }
 
     { advice, challengePolynomialCommitment } <- buildStepAdviceWithOracles
@@ -845,7 +862,7 @@ instance
       , stepAdvicePrevEvals: slotData.stepAdvicePrevEvals
       , kimchiPrevChallengesExpanded: slotData.kimchiPrevChallengesExpanded
       , prevChallengesForStepHash:
-          Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
+          Vector.replicate slotData.prevChalsForStepHashHead
       }
     pure
       { stepAdvice: advice
