@@ -1,11 +1,17 @@
--- | Smoke test for `Pickles.Prove.Compile.compile` on the NRR shape.
+-- | Smoke tests for `Pickles.Prove.Compile.compile`.
 -- |
--- | Compiles the NRR rule via the new `compile` API, runs
--- | `prover.step`, and asserts both that `verifier.verify` accepts the
--- | resulting proof and that the wrap public-input bytes match what
--- | `produceNoRecursionReturn` generates for the same inputs. Kimchi's
--- | deterministic RNG (seed 42) guarantees the two paths produce
--- | identical proofs.
+-- | Three end-to-end cases exercising the compile API across the
+-- | spec shapes that have a `CompilableSpec` instance:
+-- |
+-- |   * NRR (`PrevsSpecNil`) — base-case Output-mode rule, no prevs.
+-- |   * Simple_chain b0 (`PrevsSpecCons 1 …`, BasePrev branch).
+-- |   * Simple_chain b1 inductive (`PrevsSpecCons 1 …`, InductivePrev
+-- |     threading `b0` as `prev` for `b1`).
+-- |
+-- | Each test compiles the rule, runs `prover.step`, and asserts the
+-- | resulting `CompiledProof` validates via `verify`. The 5-iteration
+-- | extension of Simple_chain (b0..b4) lives in
+-- | `Test.Pickles.Prove.SimpleChain`.
 module Test.Pickles.Prove.CompileSmoke
   ( spec
   ) where
@@ -22,22 +28,18 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Data.Newtype (un)
-import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), Tag(..), compile, verify, wrapPublicInput)
+import Pickles.Prove.Compile (PrevSlot(..), Tag(..), compile, verify)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.DSL (F(..), FVar, const_)
-import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 -- | The NRR inductive rule — Output mode, N=0, returns `F zero`.
--- | Same rule body as `Test.Pickles.Prove.NoRecursionReturn.Producer.nrrRule`,
--- | re-declared here to exercise the compile API without dragging the
--- | producer's private definition.
 nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
 nrrRule _ = pure
   { prevPublicInputs: Vector.nil
@@ -63,43 +65,6 @@ spec = describe "Pickles.Prove.Compile" do
       Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
       Right compiledProof ->
         verify (un Tag tag).verifier [ compiledProof ] `shouldEqual` true
-
-  it "compile byte-matches produceNoRecursionReturn (deterministic RNG)" \_ -> do
-    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
-    vestaSrs <- liftEffect $ createCRS @StepField
-
-    -- Path A: via compile.
-    { prover: pA, tag: tA } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
-      { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: unit
-      , debug: false
-      }
-      nrrRule
-    eA <- liftEffect $ runExceptT $ pA.step { appInput: unit, prevs: unit }
-    compiledProofA <- case eA of
-      Left e -> liftEffect $ Exc.throw ("compile path: " <> show e)
-      Right p -> pure p
-
-    -- Path B: via produceNoRecursionReturn.
-    artifactsB <- produceNoRecursionReturn
-      { vestaSrs, lagrangeSrs: pallasSrs, pallasProofCrs: pallasSrs }
-
-    let CompiledProof cpA = compiledProofA
-    -- The wrap proof must be byte-identical. We compare the
-    -- messages-digest fields as a sanity proxy (cheap, covers the full
-    -- statement). A mismatch here means the compile API's prove path
-    -- diverged from the producer's reference path.
-    cpA.messagesForNextStepProofDigest `shouldEqual` artifactsB.messagesForNextStepProofDigest
-    cpA.messagesForNextWrapProofDigest `shouldEqual` artifactsB.messagesForNextWrapProofDigest
-    cpA.challengePolynomialCommitment `shouldEqual` artifactsB.stepProofSg
-
-    -- Verifier's wrapPublicInput helper reconstructs the kimchi wrap
-    -- publicInputs Array purely from CompiledProof fields + verifier
-    -- constants (via expandDeferredForVerify + wrapPublicInputOf). If
-    -- this reconstruction is byte-exact with what wrapSolveAndProve
-    -- actually received, InductivePrev can use this helper directly
-    -- instead of augmenting CompiledProof with a stored Array.
-    wrapPublicInput (un Tag tA).verifier compiledProofA `shouldEqual` artifactsB.wrapPublicInput
 
   it "compile + prover.step: Simple_chain b0 end-to-end verify returns true" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
