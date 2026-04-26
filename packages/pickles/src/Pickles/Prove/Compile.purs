@@ -23,6 +23,7 @@ module Pickles.Prove.Compile
   , ProverVKs
   , ProveError
   , PrevSlot(..)
+  , SlotWrapKey(..)
   , ShapeCompileData
   , ShapeProveData
   , StepInputs
@@ -182,6 +183,31 @@ type ProverVKs =
   , wrapCompileResult :: WrapCompileResult
   , wrapDomainLog2 :: Int
   }
+
+-- | Per-slot wrap-key info supplied at compile time. Mirrors the
+-- | semantic intent of OCaml `Types_map.For_step.Optional_wrap_key.t`
+-- | (`mina/src/lib/crypto/pickles/types_map.mli:103-112`):
+-- |
+-- |   type 'branches t = 'branches known option
+-- |
+-- | OCaml encodes the dispatch as `option` because the framework
+-- | discriminates self-vs-external slots via runtime `Type_equal.Id
+-- | .same_witness self.id tag.id` (`step_main.ml:514-528`). PureScript
+-- | exposes the discriminant directly as a sum constructor:
+-- |
+-- | * `Self` — the slot points at the rule currently being compiled.
+-- |   Step compile substitutes the current rule's `dlog_plonk_index`;
+-- |   the wrap VK is read from advice (`Req.Wrap_index`) at prove
+-- |   time because at step-compile time the wrap circuit hasn't been
+-- |   compiled yet.
+-- | * `External vks` — the slot points at a previously-compiled
+-- |   external rule. The user supplies that rule's `compile` output
+-- |   (`{ stepCompileResult, wrapCompileResult, wrapDomainLog2 }`).
+-- |   Step compile bakes the external wrap VK as a constant in the
+-- |   step circuit (no advice path needed for that slot).
+data SlotWrapKey
+  = Self
+  | External ProverVKs
 
 type StepInputs :: Type -> Type -> Type -> Type
 type StepInputs prevsSpec inputVal prevsCarrier =
@@ -537,12 +563,17 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit where
 -- | `prover.step` for inductive cases (b1+).
 -- |
 -- | Phase 2: method bodies are stubs — type-level scaffolding only.
--- | Phase 2-impl will fill them in, dispatching on `BasePrev` /
--- | `InductivePrev`.
+-- | Recursive Cons instance — head slot's per-slot data lives at
+-- | the `Tuple` head; recursion threads the rest.
 -- |
--- | slotVKs is currently pinned to `Unit` — sufficient for
--- | self-recursive rules (Simple_chain). Tree's heterogeneous external
--- | NRR slot will need extension in Phase 3.
+-- | This instance only fully implements the **single-slot Self**
+-- | case (Simple_chain shape: rest = PrevsSpecNil, head slot = Self).
+-- | Phase A: the type-level shape is generalized — `slotVKs` is
+-- | `Tuple SlotWrapKey restSlotVKs`, `valCarrier` is `Tuple stmt
+-- | restValCarrier`. Phase B (per-slot advice + combiner) wires
+-- | `External` slot dispatch and arbitrary-rest support; until then
+-- | the body crashes with a TODO if anything other than Self is
+-- | reached, or rest is not PrevsSpecNil.
 instance
   ( CompilableSpec rest Unit restPrevsCarrier restMpv restSlots Unit
   , Add restMpv 1 mpv
@@ -553,39 +584,27 @@ instance
   , Reflectable pad Int
   , Compare mpv 3 LT
   , Compare 0 mpv LT
-  -- n > 0 is needed to allow `Vector.head` on a prev's per-slot
-  -- `msgWrapChallenges` in the InductivePrev branch. Excludes n=0
-  -- prev rules (NRR-style external slots). Tree slot 0 (NRR) will
-  -- need a separate instance variant when Phase 3 lands.
   , Compare 0 n LT
   , CircuitType StepField prevHeadInput prevHeadInputVar
   , CircuitType StepField prevHeadOutput prevHeadOutputVar
-  -- `buildStepAdviceWithOracles @(PrevsSpecCons n stmt rest)` needs
-  -- `PrevValuesCarrier (PrevsSpecCons n stmt rest) (Tuple stmt Unit)`,
-  -- which (via the Cons instance) reduces to `PrevValuesCarrier rest
-  -- Unit`. Carry that as an explicit constraint so the resolver sees
-  -- it during the recursive Cons body's call.
   , PrevValuesCarrier rest Unit
   ) =>
   CompilableSpec
     (PrevsSpecCons n (StatementIO prevHeadInput prevHeadOutput) rest)
-    Unit
+    (Tuple SlotWrapKey Unit)
     ( Tuple
         (PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput)
         restPrevsCarrier
     )
     mpv
     (Product (Vector n) restSlots)
-    -- Hardcoded singleton carrier: this instance only resolves for
-    -- specs where rest = PrevsSpecNil (so restValCarrier = Unit),
-    -- matching what `buildStepAdviceWithOracles` (a single-slot
-    -- helper) produces. Multi-slot Cons (Tree-shape) needs a
-    -- separate instance that combines per-slot advices manually.
     (Tuple (StatementIO prevHeadInput prevHeadOutput) Unit)
   where
   shapeCompileData cfg =
     let
-      restShape = shapeCompileData @rest cfg
+      Tuple headSlotWrapKey restSlotVKs = cfg.perSlotImportedVKs
+      restCfg = cfg { perSlotImportedVKs = restSlotVKs }
+      restShape = shapeCompileData @rest restCfg
       outerMpv = reflectType (Proxy @mpv)
       outerWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
@@ -599,6 +618,15 @@ instance
 
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
+
+      -- Self → Nothing (wrap VK comes from advice via Req.Wrap_index
+      -- at prove time). External → Just (extracted external VK
+      -- commitments). Mirrors OCaml step_main.ml:514-528 dispatch on
+      -- Type_equal.Id.same_witness self.id tag.id.
+      headKnownWrapKey =
+        case headSlotWrapKey of
+          Self -> Nothing
+          External vks -> Just (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
           { srsData:
@@ -610,7 +638,7 @@ instance
               , perSlotFopDomainLog2:
                   slotWrapDomainLog2 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2
               , perSlotKnownWrapKeys:
-                  Nothing :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
+                  headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
@@ -872,6 +900,8 @@ instance
 
   shapeProveData cfg wrapCR sideInfo (Tuple headSlot restPrevs) =
     let
+      Tuple _ restSlotVKs = cfg.perSlotImportedVKs
+      restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       outerMpv = reflectType (Proxy @mpv)
       slotN = reflectType (Proxy @n)
       bcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
@@ -1071,7 +1101,7 @@ instance
         , unfinalizedSlots: tailUnfinalized
         , baseCaseWrapPublicInput: sideInfo.baseCaseWrapPublicInput
         }
-      restProveData = shapeProveData @rest cfg wrapCR restSideInfo restPrevs
+      restProveData = shapeProveData @rest restCfg wrapCR restSideInfo restPrevs
     in
       { stepOraclesPrevChallenges:
           [ slotData.stepOraclesPrevChalEntry ] <> restProveData.stepOraclesPrevChallenges

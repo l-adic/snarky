@@ -28,7 +28,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Data.Newtype (un)
-import Pickles.Prove.Compile (PrevSlot(..), Tag(..), compile, verify)
+import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..), Tag(..), compile, verify)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField)
@@ -77,7 +77,7 @@ spec = describe "Pickles.Prove.Compile" do
       @(F StepField)
       @Effect
       { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: unit
+      , perSlotImportedVKs: Tuple Self unit
       , debug: false
       }
       (simpleChainRule)
@@ -107,7 +107,7 @@ spec = describe "Pickles.Prove.Compile" do
       @(F StepField)
       @Effect
       { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: unit
+      , perSlotImportedVKs: Tuple Self unit
       , debug: false
       }
       (simpleChainRule)
