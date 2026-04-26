@@ -465,7 +465,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
       slot1BaseCaseWrapPI = dummyWrapTockPublicInput @2
         -- branchData.domainLog2 for OCaml Proof.dummy N2 N2 ~domain_log2:15.
-        { wrapDomainLog2: treeSelfStepDomainLog2
+        { stepDomainLog2: treeSelfStepDomainLog2
         , wrapVK: treeWrapCR.verifierIndex
         , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
         , wrapSg: nrrWrapSg

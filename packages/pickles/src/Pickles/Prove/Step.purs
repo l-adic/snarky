@@ -174,16 +174,14 @@ type BuildStepAdviceInput inputVal valCarrier =
     -- | records. For Simple_chain base case this is `F zero` (self = 0).
     publicInput :: inputVal
 
-  -- | OCaml `Pickles.Proof.dummy`'s `~domain_log2` parameter. This is
-  -- | the dummy wrap proof's evaluation domain, which becomes
-  -- | `branch_data.domain_log2` inside its statement (see
-  -- | `proof.ml:140-141`), and must equal the step circuit's FOP
-  -- | `params.domainLog2` (= `wrap_domains.h` from `common.ml:25-29`).
-  -- | For Simple_chain N1 this is 14. NOTE: This is NOT the step
-  -- | circuit's own kimchi domain (= 16 per
-  -- | `dump_circuit_impl.ml:3721-3723`); that value is determined by
-  -- | kimchi at proof-creation time, not read from advice.
-  , wrapDomainLog2 :: Int
+  -- | The prev rule's STEP domain log2 (= `branch_data.domain_log2`
+  -- | of its wrap statement, per `proof.ml:140-141`). For
+  -- | self-recursive rules with `override_wrap_domain` this also equals
+  -- | `wrap_domains.h` (`common.ml:25-29`); for Simple_chain N1 this is
+  -- | 14. Distinct from the step circuit's own kimchi domain (= 16
+  -- | per `dump_circuit_impl.ml:3721-3723`); that value is determined
+  -- | by kimchi at proof-creation time, not read from advice.
+  , stepDomainLog2 :: Int
 
   -- | Heterogeneous per-slot prev statements (mirrors OCaml's
   -- | `previous_proof_statements` argument to `Inductive_rule.t.main`).
@@ -292,7 +290,7 @@ buildStepAdvice input =
       --   N0 → [F, F]
       --   N1 → [F, T]
       --   N2 → [T, T]
-      { domainLog2: F (Curves.fromInt input.wrapDomainLog2 :: StepField)
+      { domainLog2: F (Curves.fromInt input.stepDomainLog2 :: StepField)
       , mask0: mrw >= 2
       , mask1: mrw >= 1
       }
@@ -499,7 +497,12 @@ dummyWrapTockPublicInput
    . Reflectable n Int
   => Compare n 3 LT
   => CircuitType StepField stmt stmtVar
-  => { wrapDomainLog2 :: Int
+  -- The first record field is the prev rule's STEP domain log2
+  -- (= `branch_data.domain_log2` of its wrap statement, fed into
+  -- `packBranchDataWrap` below). For self-recursive rules with
+  -- `override_wrap_domain` this coincides with `wrap_domains.h`; in
+  -- general it's the prev's actual step circuit's domain.
+  => { stepDomainLog2 :: Int
      , wrapVK :: VerifierIndex PallasG WrapField
      -- | Prev rule's full `StatementIO inputVal outputVal` value
      -- | (matches OCaml's `Previous_proof_statement.public_input ::
@@ -645,7 +648,7 @@ dummyWrapTockPublicInput input =
     -- own in-circuit mask construction).
     packedBranchData :: WrapField
     packedBranchData = packBranchDataWrap
-      { domainLog2: Curves.fromInt input.wrapDomainLog2 :: StepField
+      { domainLog2: Curves.fromInt input.stepDomainLog2 :: StepField
       , proofsVerifiedMask: revOnesVector (reflectType (Proxy @n))
       }
 

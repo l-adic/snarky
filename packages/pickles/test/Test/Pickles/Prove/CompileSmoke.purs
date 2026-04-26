@@ -21,6 +21,7 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -57,6 +58,7 @@ spec = describe "Pickles.Prove.Compile" do
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: unit
       , debug: false
+      , wrapDomainOverride: Nothing
       }
       nrrRule
 
@@ -79,6 +81,7 @@ spec = describe "Pickles.Prove.Compile" do
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: Tuple Self unit
       , debug: false
+      , wrapDomainOverride: Nothing
       }
       (simpleChainRule)
 
@@ -109,6 +112,7 @@ spec = describe "Pickles.Prove.Compile" do
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: Tuple Self unit
       , debug: false
+      , wrapDomainOverride: Nothing
       }
       (simpleChainRule)
 

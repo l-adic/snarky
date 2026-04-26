@@ -28,6 +28,7 @@ import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector ((:<))
@@ -96,6 +97,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs: Tuple Self unit
       , debug: false
+      , wrapDomainOverride: Nothing
       }
       simpleChainRule
 

@@ -207,6 +207,16 @@ type ProverVKs =
 -- |   step circuit (no advice path needed for that slot).
 data SlotWrapKey
   = Self
+  -- | `Self` with an explicit step-domain hint. Required for Self
+  -- | slots when the rule has `wrapDomainOverride :: Just _` and the
+  -- | step circuit's actual domain ≠ wrap_domain. The hint must equal
+  -- | the rule's eventual `pallasProverIndexDomainLog2 stepCR.proverIndex`
+  -- | (knowable from the OCaml fixture or from a prior compile).
+  -- | Without this, the FOP's compile-time `params.domainLog2`
+  -- | (= wrap_domain) won't match the witness's `branch_data.domain_log2`
+  -- | (= step_domain), making the domain-mask false and triggering
+  -- | `inv_(0)` in `omega^-1` computation.
+  | SelfWithStepDomain Int
   | External ProverVKs
 
 type StepInputs :: Type -> Type -> Type -> Type
@@ -254,6 +264,13 @@ type CompileConfig prevsSpec slotVKs =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   , perSlotImportedVKs :: slotVKs
   , debug :: Boolean
+  -- | OCaml `override_wrap_domain` (`compile.ml`). When `Just o`, the
+  -- | rule's wrap circuit uses domain log2 `o` instead of the default
+  -- | `wrap_domains.h` (`common.ml:25-29`: N0→13, N1→14, N2→15).
+  -- | Affects the per-slot lagrange basis for self-recursive slots and
+  -- | the wrap circuit's own kimchi domain. Tree_proof_return uses
+  -- | `Just 14` (override:N1) per OCaml `dump_tree_proof_return.ml`.
+  , wrapDomainOverride :: Maybe Int
   }
 
 type CompileOutput
@@ -396,7 +413,6 @@ class
     -> WrapCompileResult
     -> inputVal
     -> prevsCarrier
-    -> Int
     -> Effect
          { stepAdvice ::
              StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal mpv
@@ -513,10 +529,16 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
     , stepWidth: 0
     }
 
-  mkStepAdvice _cfg _stepCR wrapCR appInput _prevs wrapDomainLog2 =
+  mkStepAdvice _cfg _stepCR wrapCR appInput _prevs =
     let
+      -- Nil has no prev slots, so `stepDomainLog2` is dead — the
+      -- per-slot dummy that consumes it gets replicated to a
+      -- `Vector 0` (= empty). `0` is a sentinel; any value works.
       StepAdvice base = buildStepAdvice @PrevsSpecNil
-        { publicInput: appInput, wrapDomainLog2, prevAppStates: unit }
+        { publicInput: appInput
+        , stepDomainLog2: 0
+        , prevAppStates: unit
+        }
       stepAdvice = StepAdvice
         (base { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex })
     in
@@ -581,7 +603,6 @@ instance
   , Reflectable slotPad Int
   , Compare mpv 3 LT
   , Compare 0 mpv LT
-  , Compare 0 n LT
   , Compare n 3 LT
   , CircuitType StepField prevHeadInput prevHeadInputVar
   , CircuitType StepField prevHeadOutput prevHeadOutputVar
@@ -615,10 +636,30 @@ instance
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       restShape = shapeCompileData @rest restCfg
       outerMpv = reflectType (Proxy @mpv)
-      outerWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified outerMpv
+      outerWrapDomainLog2 = case cfg.wrapDomainOverride of
+        Just o -> o
+        Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      slotN = reflectType (Proxy @n)
-      slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotN
+      -- Slot's wrap domain (drives lagrange basis for slot's IVP).
+      -- Self → outer rule's wrap_domain (with override applied);
+      -- External → imported rule's wrap_domain.
+      slotWrapDomainLog2 = case headSlotWrapKey of
+        Self -> outerWrapDomainLog2
+        SelfWithStepDomain _ -> outerWrapDomainLog2
+        External vks -> vks.wrapDomainLog2
+
+      -- Slot's STEP domain (drives FOP `params.domainLog2` for
+      -- omega/vanishing-poly computations). Distinct from wrap_domain
+      -- when the rule uses `override_wrap_domain` (= step_domain ≠
+      -- wrap_domain). For Self: use explicit hint when supplied (the
+      -- rule's eventual step_domain); otherwise fall back to
+      -- wrap_domain (correct only when no override). For External:
+      -- read from the imported rule's compiled prover index.
+      slotFopDomainLog2 = case headSlotWrapKey of
+        Self -> outerWrapDomainLog2
+        SelfWithStepDomain h -> h
+        External vks ->
+          ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
 
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
@@ -635,6 +676,7 @@ instance
       headKnownWrapKey =
         case headSlotWrapKey of
           Self -> Nothing
+          SelfWithStepDomain _ -> Nothing
           External vks -> Just (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
@@ -645,7 +687,7 @@ instance
                   (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
                     :: AffinePoint (F StepField)
               , perSlotFopDomainLog2:
-                  slotWrapDomainLog2 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2
+                  slotFopDomainLog2 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2
               , perSlotKnownWrapKeys:
                   headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
               }
@@ -657,7 +699,7 @@ instance
       , stepWidth: outerMpv
       }
 
-  mkStepAdvice cfg stepCR wrapCR appInput (Tuple headSlot restPrevs) wrapDomainLog2 = do
+  mkStepAdvice cfg stepCR wrapCR appInput (Tuple headSlot restPrevs) = do
     let
       slotN = reflectType (Proxy @n)
       Tuple headSlotWrapKey _ = cfg.perSlotImportedVKs
@@ -665,14 +707,24 @@ instance
       -- Per-slot params (PS analog of OCaml `step.ml:751-754` Self/External
       -- dispatch). `Self` slots use the OUTER rule's compile artifacts
       -- (`stepCR` / `wrapCR`); `External` slots use the imported VKs.
+      -- For `Self`: `wrapDomainLog2` honours `cfg.wrapDomainOverride`
+      -- (mirrors OCaml `override_wrap_domain`). `External`: imported
+      -- rule's wrapDomainLog2 already encodes its own override.
+      outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
+        Just o -> o
+        Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
       slotParams =
         case headSlotWrapKey of
           Self ->
             { slotWrapVK: wrapCR.verifierIndex
-            , slotWrapDomainLog2:
-                Dummy.wrapDomainLog2ForProofsVerified slotN
+            , slotWrapDomainLog2: outerOverridenWrapDomainLog2
             , slotStepDomainLog2:
                 ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
+            }
+          SelfWithStepDomain h ->
+            { slotWrapVK: wrapCR.verifierIndex
+            , slotWrapDomainLog2: outerOverridenWrapDomainLog2
+            , slotStepDomainLog2: h
             }
           External vks ->
             { slotWrapVK: vks.wrapCompileResult.verifierIndex
@@ -719,7 +771,7 @@ instance
             (map SizedF.wrapF bcd.ipaStepChallenges)
 
           baseCaseWrapPI = dummyWrapTockPublicInput @n
-            { wrapDomainLog2: slotParams.slotWrapDomainLog2
+            { stepDomainLog2: slotParams.slotStepDomainLog2
             , wrapVK: slotParams.slotWrapVK
             , prevStatement: dummyStatement
             , wrapSg: dummyWrapSg
@@ -743,7 +795,13 @@ instance
               }
           , wrapPrevEvals: bcd.proofDummy.prevEvals
           , wrapBranchData:
-              { domainLog2: (Curves.fromInt slotParams.slotWrapDomainLog2 :: StepField)
+              -- branch_data.domain_log2 of the prev's wrap statement
+              -- holds the prev's STEP domain (per OCaml
+              -- `Wrap_deferred_values.expand_deferred`'s use of
+              -- `Branch_data.domain branch_data` for `step_domain`).
+              -- For Tree slot 1 Self at b0 base, this is Tree's own
+              -- step domain (= prev = self's step domain).
+              { domainLog2: (Curves.fromInt slotParams.slotStepDomainLog2 :: StepField)
               , proofsVerifiedMask
               }
           , wrapSpongeDigest: (zero :: StepField)
@@ -756,11 +814,10 @@ instance
           , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
           , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
           -- BasePrev: prev = dummy wrap, whose deferred.bp_chals =
-          -- `Dummy.Ipa.Step.challenges`. The hashed bp-chals vector
-          -- (= step_b's `messages_for_next_step_proof.old_bp_chals`
-          -- per slot) is the dummy expansion. Replicate to the
-          -- per-slot Vector.
-          , prevChalsForStepHashHead: Dummy.dummyIpaChallenges.stepExpanded
+          -- `Dummy.Ipa.Step.challenges`. All PaddedLength entries are
+          -- the dummy step expansion.
+          , prevChallengesForStepHash:
+              Vector.replicate Dummy.dummyIpaChallenges.stepExpanded
           }
       InductivePrev prevCp prevTag -> do
         let
@@ -803,14 +860,6 @@ instance
             , linearizationPoly: prevVerifier.linearizationPoly
             }
 
-          -- prev wrap-side bp chals (the chals that prev hashed into
-          -- its `messages_for_next_wrap_proof_digest`), retrieved from
-          -- prev's stored `msgWrapChallenges` (head slot). For
-          -- Simple_chain b1 where prev = b0 (base case), these are
-          -- dummy chals; for deeper inductions they're real.
-          prevWrapMsgChals :: Vector WrapIPARounds WrapField
-          prevWrapMsgChals = Vector.head prev.msgWrapChallenges
-
           -- Step-field endo expansion of prev's RAW wrap-IPA chals (the
           -- wrap proof's own IPA), for kimchi-level prev_challenges
           -- threading.
@@ -826,25 +875,45 @@ instance
           dummyChalPoly =
             { sg: dummyWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
 
-          -- The sg that prev's `expand_proof` returned at the time it
-          -- generated its own wrap proof — i.e. prev's outer step
-          -- proof's `expandProof.challenge_polynomial_commitment`
-          -- (= `vestaProofOpeningSg prev_prev.wrapProof` for prev's
-          -- inductive case, OR `compute_sg` for prev's base case).
-          -- Stored on prev's CompiledProof at compile time via
-          -- `runCompile`'s `outerStepChalPolyComms`. Fed into b1's
-          -- `prevChalPolys[real].sg` which serves DOUBLE DUTY: source
-          -- for both the in-circuit `messages_for_next_step_proof.cpc`
-          -- hash AND the `wrapOraclesPrevChallenges` sgX/sgY (= what
-          -- prev.wrapProof was generated with, so kimchi's oracle
-          -- replay matches).
-          realChalPolySg :: AffinePoint StepField
-          realChalPolySg = Vector.head prev.outerStepChalPolyComms
+          -- Front-pad prev's per-slot vectors to PaddedLength = 2
+          -- (mirrors OCaml `step.ml:511-525` `Vector.extend_front_exn`).
+          -- For prev mpv=0 (NRR-style): all PaddedLength entries are
+          -- dummy. For prev mpv=1 (Simple_chain): 1 dummy + 1 real.
+          -- For prev mpv=2 (Tree): 2 reals, no padding.
+          prevRealEntries
+            :: Vector n
+                 { sg :: AffinePoint StepField
+                 , challenges :: Vector WrapIPARounds WrapField
+                 }
+          prevRealEntries =
+            Vector.zipWith
+              (\sg ch -> { sg, challenges: ch })
+              prev.outerStepChalPolyComms
+              prev.msgWrapChallenges
 
-          realChalPoly =
-            { sg: realChalPolySg
-            , challenges: prevWrapMsgChals
-            }
+          prevPaddedChalPolys
+            :: Vector PaddedLength
+                 { sg :: AffinePoint StepField
+                 , challenges :: Vector WrapIPARounds WrapField
+                 }
+          prevPaddedChalPolys =
+            Vector.append
+              (Vector.replicate @slotPad dummyChalPoly)
+              prevRealEntries
+
+          prevPaddedWrapBpChals
+            :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+          prevPaddedWrapBpChals =
+            Vector.append
+              (Vector.replicate @slotPad Dummy.dummyIpaChallenges.wrapExpanded)
+              prev.msgWrapChallenges
+
+          prevPaddedStepHashChals
+            :: Vector PaddedLength (Vector StepIPARounds StepField)
+          prevPaddedStepHashChals =
+            Vector.append
+              (Vector.replicate @slotPad Dummy.dummyIpaChallenges.stepExpanded)
+              prev.oldBulletproofChallenges
 
           fopState =
             { deferredValues:
@@ -869,10 +938,7 @@ instance
           , kimchiPrevSg: prev.challengePolynomialCommitment
           , wrapProof: prev.wrapProof
           , wrapPublicInputArr: wrapPI
-          -- For mpv=1: front-padded `[dummy, real]` (Wrap_hack pad). For
-          -- mpv=2: would be `[real_slot0, real_slot1]` — Tree case
-          -- needs separate handling.
-          , prevChalPolys: dummyChalPoly :< realChalPoly :< Vector.nil
+          , prevChalPolys: prevPaddedChalPolys
           , wrapPlonkRaw:
               { alpha: SizedF.unwrapF prevDv.plonk.alpha
               , beta: SizedF.unwrapF prevDv.plonk.beta
@@ -883,22 +949,11 @@ instance
           , wrapBranchData: prev.branchData
           , wrapSpongeDigest: prev.spongeDigestBeforeEvaluations
           , mustVerify: true
-          -- mpv=1: `[dummy, real]`. mpv=2 Tree: `[real_slot0, real_slot1]`.
-          , wrapOwnPaddedBpChals:
-              Dummy.dummyIpaChallenges.wrapExpanded
-                :< prevWrapMsgChals
-                :< Vector.nil
+          , wrapOwnPaddedBpChals: prevPaddedWrapBpChals
           , fopState
           , stepAdvicePrevEvals: prev.prevEvals
           , kimchiPrevChallengesExpanded: prevStepBpChalsExpanded
-          -- InductivePrev: the value step_b_k's
-          -- `messages_for_next_step_proof.old_bp_chals` hash absorbs is
-          -- `wrap_b_{k-2}.deferred.bp_chals` step-expanded — already
-          -- stored on prev's CompiledProof as
-          -- `oldBulletproofChallenges` (set during prev's runCompile
-          -- via shapeProveData's `prevStepChals`). Vector.head extracts
-          -- the head slot for self-recursive mpv=1 rules.
-          , prevChalsForStepHashHead: Vector.head prev.oldBulletproofChallenges
+          , prevChallengesForStepHash: prevPaddedStepHashChals
           }
 
     -- Per-slot helper: build THIS slot's contribution (PS analog of
@@ -925,8 +980,7 @@ instance
       , fopState: slotData.fopState
       , stepAdvicePrevEvals: slotData.stepAdvicePrevEvals
       , kimchiPrevChallengesExpanded: slotData.kimchiPrevChallengesExpanded
-      , prevChallengesForStepHash:
-          Vector.replicate slotData.prevChalsForStepHashHead
+      , prevChallengesForStepHash: slotData.prevChallengesForStepHash
       }
 
     -- Recurse on `rest`, then cons head's slot pieces onto rest's
@@ -937,7 +991,7 @@ instance
     let
       Tuple _ restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-    restResult <- mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs wrapDomainLog2
+    restResult <- mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs
 
     let
       StepAdvice restA = restResult.stepAdvice
@@ -972,6 +1026,7 @@ instance
       slotWrapVK =
         case headSlotWrapKey of
           Self -> wrapCR.verifierIndex
+          SelfWithStepDomain _ -> wrapCR.verifierIndex
           External vks -> vks.wrapCompileResult.verifierIndex
 
       -- Slot-specific dummies sized by the slot's prev rule's mpv (= n),
@@ -1048,7 +1103,11 @@ instance
         , prevStepChals :: Vector StepIPARounds StepField
         , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
         , headPrevEvals :: StepAllEvals (F WrapField)
-        , headSlotWrapBpChals :: Vector WrapIPARounds (F WrapField)
+        -- Per-slot prev wrap-IPA bp_chals (Vector n of WrapIPARounds-
+        -- sized vectors). For Cons1 self (n=1, prev's mpv=1): single
+        -- entry. For Tree slot 0 NRR (n=0, prev mpv=0): empty Vector 0.
+        -- For Tree slot 1 self (n=2, prev mpv=2): two entries.
+        , headSlotPrevWrapBpChalsVec :: Vector n (Vector WrapIPARounds (F WrapField))
         }
       slotData = case headSlot of
         BasePrev _ ->
@@ -1089,7 +1148,8 @@ instance
             , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
-            , headSlotWrapBpChals: map F Dummy.dummyIpaChallenges.wrapExpanded
+            , headSlotPrevWrapBpChalsVec:
+                Vector.replicate @n (map F Dummy.dummyIpaChallenges.wrapExpanded)
             }
         InductivePrev prevCp prevTag ->
           let
@@ -1167,11 +1227,12 @@ instance
                 , y: F prev.challengePolynomialCommitment.y
                 }
             , headPrevEvals: prevHeadPrevEvals
-            -- Prev's first slot's bp-chals (= what prev hashed into
-            -- `messages_for_next_wrap_proof` at slot 0, the chals THIS
-            -- rule's wrap circuit verifies when consuming prev's
-            -- wrap proof).
-            , headSlotWrapBpChals: map F (Vector.head prev.msgWrapChallenges)
+            -- Per-slot bp-chals from prev's msgWrapChallenges: each
+            -- entry is one of prev's slots' wrap-IPA chals (= what
+            -- prev hashed into `messages_for_next_wrap_proof.old_bp_chals`
+            -- per slot). THIS rule's wrap circuit verifies prev's wrap
+            -- proof, which proves these chals are well-formed.
+            , headSlotPrevWrapBpChalsVec: map (map F) prev.msgWrapChallenges
             }
 
       -- Recurse into rest.
@@ -1201,7 +1262,7 @@ instance
           , challenges: msgForNextWrapRealChals
           } :< restProveData.kimchiPrevEntries
       , slotsValue:
-          product (Vector.replicate @n slotData.headSlotWrapBpChals) restProveData.slotsValue
+          product slotData.headSlotPrevWrapBpChalsVec restProveData.slotsValue
       }
 
 --------------------------------------------------------------------------------
@@ -1373,7 +1434,7 @@ runProverBody
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
 runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = do
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <- liftEffect $
-    mkStepAdvice @prevsSpec cfg stepCR wrapCR appInput prevs shape.wrapDomainLog2
+    mkStepAdvice @prevsSpec cfg stepCR wrapCR appInput prevs
 
   let
     StepAdvice sa = stepAdvice

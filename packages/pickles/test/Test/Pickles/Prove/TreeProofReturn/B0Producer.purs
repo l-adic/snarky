@@ -279,7 +279,7 @@ produceTreeProofReturnB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     slot1BaseCaseDummyChalPoly =
       { sg: nrrWrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
     slot1BaseCaseWrapPI = dummyWrapTockPublicInput @2
-      { wrapDomainLog2: treeSelfStepDomainLog2
+      { stepDomainLog2: treeSelfStepDomainLog2
       , wrapVK: treeWrapCR.verifierIndex
       , prevStatement: StatementIO { input: unit, output: F (negate one) :: F StepField }
       , wrapSg: nrrWrapSg

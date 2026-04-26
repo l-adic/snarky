@@ -212,7 +212,7 @@ produceNoRecursionReturn { vestaSrs, lagrangeSrs, pallasProofCrs } = do
   let
     StepAdvice baseAdviceRec = buildStepAdvice @PrevsSpecNil
       { publicInput: unit
-      , wrapDomainLog2
+      , stepDomainLog2: wrapDomainLog2
       , prevAppStates: unit
       }
     realAdvice = StepAdvice

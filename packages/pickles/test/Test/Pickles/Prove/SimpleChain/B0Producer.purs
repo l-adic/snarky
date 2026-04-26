@@ -167,7 +167,7 @@ produceSimpleChainB0 { vestaSrs, lagrangeSrs, pallasProofCrs } = do
     baseCaseDummyChalPoly =
       { sg: wrapSg, challenges: Dummy.dummyIpaChallenges.wrapExpanded }
     baseCaseWrapPI = dummyWrapTockPublicInput @1
-      { wrapDomainLog2
+      { stepDomainLog2: wrapDomainLog2
       , wrapVK: wrapCR.verifierIndex
       , prevStatement: StatementIO { input: F (negate one), output: unit }
       , wrapSg
