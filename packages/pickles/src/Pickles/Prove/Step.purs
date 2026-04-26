@@ -39,6 +39,8 @@ module Pickles.Prove.Step
   , StepProverT(..)
   , runStepProverT
   , StepProveContext
+  , SlotAdviceContrib
+  , buildSlotAdvice
   , buildStepAdvice
   , buildStepAdviceWithOracles
   , stepCompile
@@ -82,7 +84,7 @@ import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
-import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
+import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
@@ -865,6 +867,56 @@ type BuildStepAdviceWithOraclesInput inputVal stmt =
   , prevChallengesForStepHash :: Vector PaddedLength (Vector StepIPARounds StepField)
   }
 
+-- | Per-slot output of `buildSlotAdvice`. Mirrors OCaml `expand_proof`'s
+-- | seven-tuple return (`step.ml:131-150`):
+-- |
+-- |   * `challengePolynomialCommitment` — `Sg sg`, the prev wrap
+-- |     proof's verified opening sg. Feeds the outer step proof's
+-- |     `messages_for_next_step_proof.challenge_polynomial_commitments[i]`.
+-- |   * `slotUnfinalized` — `Unfinalized.Constant.t` cross-field
+-- |     coerced to step field; feeds `publicUnfinalizedProofs[i]`.
+-- |   * `slotMsgWrapHashStep` — `messages_for_next_wrap_proof_digest`
+-- |     hash for THIS slot's wrap proof; feeds
+-- |     `messagesForNextWrapProof[i]`.
+-- |   * `slotKimchiPrevEntry` — `(sg, expanded bp_chals)` for kimchi's
+-- |     `prev_challenges` array entry; feeds `kimchiPrevChallenges[i]`.
+-- |   * `slotSppw` — single-slot witness (per-slot prev-proof
+-- |     witness data) for THIS slot's `n`. Combined into the
+-- |     `perProofSlotsCarrier` heterogeneous tuple by the assembler.
+-- |
+-- | Outputs whose values are shared across all slots (the outer rule's
+-- | `publicInput`, `wrapVerifierIndex`, etc.) live OUTSIDE this record
+-- | — the assembler in `mkStepAdvice` (or `buildStepAdviceWithOracles`'s
+-- | wrapper) plugs them in.
+-- |
+-- | Reference: mina/src/lib/crypto/pickles/step.ml:131-150 (`expand_proof`
+-- | signature) + step.ml:736-770 (the `go` recursion that conses each
+-- | per-slot output onto the rest's vectors).
+type SlotAdviceContrib :: Int -> Type
+type SlotAdviceContrib n =
+  { challengePolynomialCommitment :: AffinePoint StepField
+  , slotUnfinalized ::
+      PerProofUnfinalized
+        WrapIPARounds
+        (Type2 (SplitField (F StepField) Boolean))
+        (F StepField)
+        Boolean
+  , slotMsgWrapHashStep :: F StepField
+  , slotKimchiPrevEntry ::
+      { sgX :: WrapField
+      , sgY :: WrapField
+      , challenges :: Vector StepIPARounds StepField
+      }
+  , slotSppw ::
+      StepSlot
+        n
+        StepIPARounds
+        WrapIPARounds
+        (F StepField)
+        (Type2 (SplitField (F StepField) Boolean))
+        Boolean
+  }
+
 --------------------------------------------------------------------------------
 -- Oracle-enriched advice builder (spec-indexed per-slot carrier)
 --
@@ -1453,6 +1505,52 @@ buildStepAdviceWithOracles input = do
   pure
     { advice
     , challengePolynomialCommitment: expandProofResult.sg
+    }
+
+--------------------------------------------------------------------------------
+-- buildSlotAdvice — per-slot variant returning a `SlotAdviceContrib`
+--
+-- PS analog of OCaml's `expand_proof` (`step.ml:122-150`). Returns ONE
+-- slot's contribution; the caller (`mkStepAdvice` in
+-- `Pickles.Prove.Compile`) cons-recurses over the prev list to build
+-- the multi-slot `StepAdvice`, mirroring OCaml's `go` recursion at
+-- `step.ml:736-770`.
+--
+-- IMPLEMENTATION NOTE (transitional, removed in Phase E): the body
+-- delegates to `buildStepAdviceWithOracles` with a synthetic
+-- `PrevsSpecCons n prevHeadStmt PrevsSpecNil` spec, then extracts the
+-- per-slot pieces via `Vector.head` / `Tuple slotSppw _`. The
+-- replicate-then-take-head step is `Vector len = 1`, so the overhead is
+-- just one tuple cons.
+--
+-- When Phase E deletes producers + `buildStepAdviceWithOracles`, this
+-- wrapper's body inlines into a standalone per-slot helper with no
+-- synthetic spec.
+--------------------------------------------------------------------------------
+
+buildSlotAdvice
+  :: forall @n inputVal input prevHeadStmt prevHeadStmtVar pad
+   . Reflectable n Int
+  => Reflectable pad Int
+  => Add pad n PaddedLength
+  => CircuitType StepField inputVal input
+  => CircuitType StepField prevHeadStmt prevHeadStmtVar
+  => BuildStepAdviceWithOraclesInput inputVal prevHeadStmt
+  -> Effect (SlotAdviceContrib n)
+buildSlotAdvice input = do
+  { advice, challengePolynomialCommitment } <- buildStepAdviceWithOracles
+    @n
+    @(PrevsSpecCons n prevHeadStmt PrevsSpecNil)
+    input
+  let
+    StepAdvice s = advice
+    Tuple slotSppw _ = s.perProofSlotsCarrier
+  pure
+    { challengePolynomialCommitment
+    , slotUnfinalized: Vector.head s.publicUnfinalizedProofs
+    , slotMsgWrapHashStep: Vector.head s.messagesForNextWrapProof
+    , slotKimchiPrevEntry: Vector.head s.kimchiPrevChallenges
+    , slotSppw
     }
 
 --------------------------------------------------------------------------------
