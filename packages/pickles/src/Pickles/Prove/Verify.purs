@@ -49,7 +49,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput, assembleWrapMainInput)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
 import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Safe.Coerce (coerce)
@@ -170,6 +170,18 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   -- a downstream `InductivePrev` consumer to derive
   -- `prevEvals` (wrap-side advice's per-slot evals).
   , outerStepChalPolyComms :: Vector mpv (AffinePoint StepField)
+
+  -- The prover's `Wrap_deferred_values.t` and the inputs from which
+  -- it was computed. Surfaced for self-consistency tests that compare
+  -- the prover-side computation (`wrapComputeDeferredValues`) against
+  -- the verifier-side reconstruction (`expandDeferredForVerify`) on a
+  -- real proof — the foundational invariant that lets the
+  -- out-of-circuit verifier discharge the chain's terminal deferred
+  -- IPA accumulator check using only the wrap proof's minimal stored
+  -- skeleton (`rawPlonk` + `spongeDigestBeforeEvaluations` + raw
+  -- `bulletproofPrechallenges`). Not consumed by `verify` itself.
+  , wrapDvInput :: WrapDeferredValuesInput mpv
+  , wrapDv :: WrapDeferredValuesOutput
   }
 
 -- | Verify one proof. Returns `true` iff all three stages pass.

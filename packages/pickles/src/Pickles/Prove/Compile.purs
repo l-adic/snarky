@@ -46,7 +46,6 @@ import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (class Newtype)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
-import Type.Proxy (Proxy(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -56,6 +55,7 @@ import Pickles.Dummy as Dummy
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
+import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
   ( pallasProofOpeningSg
   , pallasProofOracles
@@ -70,14 +70,12 @@ import Pickles.ProofFFI
   , vestaSrsBlindingGenerator
   , vestaSrsLagrangeCommitmentAt
   ) as ProofFFI
-import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap
   ( WrapDeferredValuesInput
   , assembleWrapMainInput
   , wrapComputeDeferredValues
   )
-import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -90,15 +88,6 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   )
-import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
-import Snarky.Curves.Class (fromInt) as Curves
-import Pickles.Prove.Wrap
-  ( WrapCompileResult
-  , buildWrapAdvice
-  , buildWrapMainConfig
-  , wrapCompile
-  , wrapSolveAndProve
-  )
 import Pickles.Prove.Verify
   ( CompiledProof(..)
   , Verifier
@@ -107,8 +96,15 @@ import Pickles.Prove.Verify
   , verifyOne
   , wrapPublicInput
   )
+import Pickles.Prove.Wrap
+  ( WrapCompileResult
+  , buildWrapAdvice
+  , buildWrapMainConfig
+  , wrapCompile
+  , wrapSolveAndProve
+  )
+import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot)
-import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Types
   ( PaddedLength
   , PerProofUnfinalized(..)
@@ -120,6 +116,7 @@ import Pickles.Types
   , WrapField
   , WrapIPARounds
   )
+import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots)
@@ -130,16 +127,19 @@ import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL.Monad (class CheckedType)
+import Snarky.Circuit.DSL.SizedF (SizedF)
+import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (fromShifted, toShifted) as Kimchi
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Circuit.DSL.SizedF (SizedF)
-import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.Types (class CircuitType, BoolVar, fieldsToValue)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type2)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Public types
@@ -255,8 +255,9 @@ data PrevSlot inputVal n stmt outputVal
 type Prover
   :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
 type Prover prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
-  { step :: StepInputs prevsSpec inputVal prevsCarrier
-         -> ExceptT ProveError m (CompiledProof mpv stmtVal outputVal Unit)
+  { step ::
+      StepInputs prevsSpec inputVal prevsCarrier
+      -> ExceptT ProveError m (CompiledProof mpv stmtVal outputVal Unit)
   }
 
 type CompileConfig :: Type -> Type -> Type
@@ -491,11 +492,19 @@ compile
   => CompileConfig prevsSpec slotVKs
   -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> Effect
-       (CompileOutput prevsSpec mpv inputVal outputVal
-          (StatementIO inputVal outputVal) prevsCarrier m)
+       ( CompileOutput prevsSpec mpv inputVal outputVal
+           (StatementIO inputVal outputVal)
+           prevsCarrier
+           m
+       )
 compile cfg rule = runCompile
-  @prevsSpec @inputVal @outputVal @prevInputVal @m
-  cfg rule
+  @prevsSpec
+  @inputVal
+  @outputVal
+  @prevInputVal
+  @m
+  cfg
+  rule
 
 --------------------------------------------------------------------------------
 -- CompilableSpec PrevsSpecNil (N=0, NRR-shape)
@@ -505,10 +514,11 @@ compile cfg rule = runCompile
 -- | required by `stepCompile` as the sg_old padding constant.
 nrrDummyWrapSg :: CRS PallasG -> CRS VestaG -> AffinePoint StepField
 nrrDummyWrapSg pallasSrs vestaSrs =
-  (Dummy.computeDummySgValues
-     (Dummy.baseCaseDummies { maxProofsVerified: 0 })
-     pallasSrs
-     vestaSrs).ipa.wrap.sg
+  ( Dummy.computeDummySgValues
+      (Dummy.baseCaseDummies { maxProofsVerified: 0 })
+      pallasSrs
+      vestaSrs
+  ).ipa.wrap.sg
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
   shapeCompileData cfg =
@@ -1052,8 +1062,8 @@ instance
       -- n=2) uses N=2-shaped dummies.
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotN }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-      wrapSgD = dummySgs.ipa.wrap.sg   -- AffinePoint StepField
-      stepSgD = dummySgs.ipa.step.sg   -- AffinePoint WrapField
+      wrapSgD = dummySgs.ipa.wrap.sg -- AffinePoint StepField
+      stepSgD = dummySgs.ipa.step.sg -- AffinePoint WrapField
 
       PerProofUnfinalized headUnfRaw = Vector.head sideInfo.unfinalizedSlots
       tailUnfinalized = Vector.tail sideInfo.unfinalizedSlots
@@ -1113,19 +1123,19 @@ instance
 
       -- Per-slot data that differs between BasePrev (head = dummy
       -- predecessor) and InductivePrev (head = real prev CompiledProof).
-      slotData ::
-        { stepOraclesPrevChalEntry ::
-            { sgX :: WrapField, sgY :: WrapField, challenges :: Array StepField }
-        , prevSg :: AffinePoint WrapField
-        , prevStepChals :: Vector StepIPARounds StepField
-        , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
-        , headPrevEvals :: StepAllEvals (F WrapField)
-        -- Per-slot prev wrap-IPA bp_chals (Vector n of WrapIPARounds-
-        -- sized vectors). For Cons1 self (n=1, prev's mpv=1): single
-        -- entry. For Tree slot 0 NRR (n=0, prev mpv=0): empty Vector 0.
-        -- For Tree slot 1 self (n=2, prev mpv=2): two entries.
-        , headSlotPrevWrapBpChalsVec :: Vector n (Vector WrapIPARounds (F WrapField))
-        }
+      slotData
+        :: { stepOraclesPrevChalEntry ::
+               { sgX :: WrapField, sgY :: WrapField, challenges :: Array StepField }
+           , prevSg :: AffinePoint WrapField
+           , prevStepChals :: Vector StepIPARounds StepField
+           , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+           , headPrevEvals :: StepAllEvals (F WrapField)
+           -- Per-slot prev wrap-IPA bp_chals (Vector n of WrapIPARounds-
+           -- sized vectors). For Cons1 self (n=1, prev's mpv=1): single
+           -- entry. For Tree slot 0 NRR (n=0, prev mpv=0): empty Vector 0.
+           -- For Tree slot 1 self (n=2, prev mpv=2): two entries.
+           , headSlotPrevWrapBpChalsVec :: Vector n (Vector WrapIPARounds (F WrapField))
+           }
       slotData = case headSlot of
         BasePrev _ ->
           let
@@ -1355,16 +1365,27 @@ runCompile
   => CompileConfig prevsSpec slotVKs
   -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> Effect
-       (CompileOutput prevsSpec mpv inputVal outputVal
-          (StatementIO inputVal outputVal) prevsCarrier m)
+       ( CompileOutput prevsSpec mpv inputVal outputVal
+           (StatementIO inputVal outputVal)
+           prevsCarrier
+           m
+       )
 runCompile cfg rule = do
   let
     shape = shapeCompileData @prevsSpec cfg
 
   stepCR <- stepCompile
-    @prevsSpec @outputSize @valCarrier
-    @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
-    shape.stepProveCtx rule
+    @prevsSpec
+    @outputSize
+    @valCarrier
+    @inputVal
+    @inputVar
+    @outputVal
+    @outputVar
+    @prevInputVal
+    @prevInputVar
+    shape.stepProveCtx
+    rule
 
   let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
 
@@ -1387,10 +1408,26 @@ runCompile cfg rule = do
   pure
     { prover:
         { step: runProverBody
-            @prevsSpec @slotVKs @prevsCarrier @mpv @slots @valCarrier @carrier
-            @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+            @prevsSpec
+            @slotVKs
+            @prevsCarrier
+            @mpv
+            @slots
+            @valCarrier
+            @carrier
+            @inputVal
+            @inputVar
+            @outputVal
+            @outputVar
+            @prevInputVal
+            @prevInputVar
             @m
-            cfg rule shape stepCR wrapCR stepDomainLog2
+            cfg
+            rule
+            shape
+            stepCR
+            wrapCR
+            stepDomainLog2
         }
     , tag: Tag { unique, verifier }
     , vks:
@@ -1465,6 +1502,7 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
 
   let
     StepAdvice sa = stepAdvice
+
     proveDataSideInfo :: ShapeProveSideInfo mpv
     proveDataSideInfo =
       { challengePolynomialCommitments
@@ -1475,9 +1513,19 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     proveData = shapeProveData @prevsSpec cfg wrapCR proveDataSideInfo prevs
 
   stepResult <- stepSolveAndProve
-    @prevsSpec @outputSize @valCarrier
-    @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
-    shape.stepProveCtx rule stepCR stepAdvice
+    @prevsSpec
+    @outputSize
+    @valCarrier
+    @inputVal
+    @inputVar
+    @outputVal
+    @outputVar
+    @prevInputVal
+    @prevInputVar
+    shape.stepProveCtx
+    rule
+    stepCR
+    stepAdvice
 
   let
     stepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
@@ -1525,6 +1573,7 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     -- Mask is derivable from mpv alone (OCaml common.ml): N=0 → [F,F],
     -- N=1 → [F,T], N=2 → [T,T]. Written in the "slot i real" order.
     outerMpv = reflectType (Proxy @mpv)
+
     proofsVerifiedMask :: Vector 2 Boolean
     proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
 
@@ -1632,4 +1681,10 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     , messagesForNextWrapProofDigest: msgWrap
     , msgWrapChallenges: proveData.msgWrapChallenges
     , outerStepChalPolyComms: map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
+    -- Surfaced for `Test.Pickles.Verify.ExpandDeferredEq`: the
+    -- prover's `wrapComputeDeferredValues` inputs/output that must
+    -- agree with the verifier's `expandDeferredForVerify`
+    -- reconstruction at the chain terminus.
+    , wrapDvInput
+    , wrapDv
     }

@@ -4,11 +4,10 @@ import Prelude
 
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Test.Pickles.Prove.CompileSmoke as CompileSmoke
+import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
-import Test.Pickles.Verify.VerifySmoke as VerifySmoke
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -30,11 +29,10 @@ import Test.Spec.Runner.Node.Config as Cfg
 -- | scripts in `tools/`. Tests don't depend on any `.trace` files.
 spec :: SpecT Aff Unit Aff Unit
 spec = do
+  NoRecursionReturn.spec
   SimpleChain.spec
   TreeProofReturn.spec
   ExpandDeferredEq.spec
-  VerifySmoke.spec
-  CompileSmoke.spec
 
 main :: Effect Unit
 main = runSpecAndExitProcess'

@@ -82,7 +82,7 @@ cd "$REPO_ROOT"
 KIMCHI_DETERMINISTIC_SEED=$SEED \
   KIMCHI_WITNESS_DUMP=/tmp/nrr_ps_%c.witness \
   KIMCHI_WITNESS_DUMP_SIDE=ps \
-  npx spago test -p pickles -- --example "NoRecursionReturn" >/dev/null 2>&1
+  npx spago test -p pickles -- --example "NRR" >/dev/null 2>&1
 
 if [ ! -f "$PS_STEP" ]; then
   echo "FATAL: PS step witness ($PS_STEP) not produced." >&2
