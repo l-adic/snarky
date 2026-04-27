@@ -10,7 +10,6 @@
 module Pickles.Util.Unique
   ( Unique
   , newUnique
-  , uniqueToInt
   ) where
 
 import Prelude
@@ -40,9 +39,3 @@ counter = unsafePerformEffect (Ref.new 0)
 -- | from every prior return.
 newUnique :: Effect Unique
 newUnique = Unique <$> Ref.modify (_ + 1) counter
-
--- | Project a `Unique` to its underlying integer for hashing or
--- | debugging. Two unequal `Unique`s always project to different
--- | integers.
-uniqueToInt :: Unique -> Int
-uniqueToInt (Unique n) = n

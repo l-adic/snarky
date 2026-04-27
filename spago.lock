@@ -163,7 +163,6 @@
           "dependencies": [
             "aff",
             "effect",
-            "node-process",
             "prelude",
             "spec",
             "spec-node"
@@ -212,7 +211,6 @@
             "exceptions",
             "node-buffer",
             "node-fs",
-            "refs",
             "spec",
             "spec-node"
           ]

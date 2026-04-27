@@ -12,8 +12,7 @@
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:45-59
 module Pickles.Wrap.MessageHash
-  ( hashMessagesForNextWrapProof
-  , hashMessagesForNextWrapProofPureGeneral
+  ( hashMessagesForNextWrapProofPureGeneral
   , hashMessagesForNextWrapProofCircuit'
   , dummyPaddingSpongeStates
   ) where
@@ -33,29 +32,6 @@ import Snarky.Circuit.DSL (class CircuitM, FVar)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField)
 import Snarky.Data.EllipticCurve (AffinePoint)
-
--- | Pure version: hash messages for next Wrap proof.
--- |
--- | Used out-of-circuit by the test infrastructure / prover to compute
--- | the expected hash value for the WrapStatement public input.
-hashMessagesForNextWrapProof
-  :: forall d f
-   . PoseidonField f
-  => Reflectable d Int
-  => { sg :: AffinePoint f
-     , expandedChallenges :: Vector d f
-     , dummyChallenges :: Vector d f
-     }
-  -> f
-hashMessagesForNextWrapProof { sg, expandedChallenges, dummyChallenges } =
-  let
-    -- Serialization: [dummy_chals..., real_chals..., sg.x, sg.y]
-    fields =
-      Vector.toUnfoldable dummyChallenges
-        <> Vector.toUnfoldable expandedChallenges
-        <> [ sg.x, sg.y ]
-  in
-    hash fields
 
 -- | General pure version of OCaml `Wrap_hack.hash_messages_for_next_wrap_proof`
 -- | (`mina/src/lib/crypto/pickles/wrap_hack.ml:46-59`).

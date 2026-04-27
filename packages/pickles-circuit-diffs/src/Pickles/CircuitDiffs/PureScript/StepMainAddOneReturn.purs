@@ -24,7 +24,6 @@ module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
 
 import Prelude
 
-import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)

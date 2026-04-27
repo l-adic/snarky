@@ -99,9 +99,8 @@ spongeTranscriptOptCircuit params sgOldMask input = do
       -- 4. Absorb w_comm points
       for_ input.wComm OptSponge.optAbsorbPoint
       -- DIAG iter 2aa: dump circuit sponge state before beta squeeze for
-      -- direct comparison to kimchi-native ground truth (captured via
-      -- `ProofFFI.pallasSpongeStateBeforeBeta`). First divergence point
-      -- localizes whether mismatch is in absorb data or sponge math.
+      -- direct comparison to kimchi-native ground truth. First divergence
+      -- point localizes whether mismatch is in absorb data or sponge math.
       preBetaState <- OptSponge.peekPreSqueezeState
       let
         traceOne lbl v = OptSponge.liftSnarky $ do

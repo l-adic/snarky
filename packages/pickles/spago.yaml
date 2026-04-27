@@ -40,7 +40,6 @@ package:
     dependencies:
       - aff
       - effect
-      - node-process
       - prelude
       - spec
       - spec-node

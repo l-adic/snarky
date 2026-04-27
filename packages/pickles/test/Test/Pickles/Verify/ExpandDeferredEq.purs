@@ -33,7 +33,6 @@ import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -45,7 +44,7 @@ import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..), compile)
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
@@ -126,20 +125,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
 assertExpandDeferredMatches
   :: forall @n
    . { dvProver :: WrapDeferredValuesOutput
-     , dvInput ::
-         { allEvals :: AllEvals StepField
-         , pEval0Chunks :: Array StepField
-         , domainLog2 :: Int
-         , zkRows :: Int
-         , srsLengthLog2 :: Int
-         , generator :: StepField
-         , shifts :: Vector 7 StepField
-         , vanishesOnZk :: StepField
-         , omegaForLagrange :: { zkRows :: Boolean, offset :: Int } -> StepField
-         , endo :: StepField
-         , linearizationPoly :: LinearizationPoly StepField
-         | _
-         }
+     , dvInput :: WrapDeferredValuesInput n
      , oldBulletproofChallenges :: Vector n (Vector StepIPARounds StepField)
      }
   -> Aff Unit
