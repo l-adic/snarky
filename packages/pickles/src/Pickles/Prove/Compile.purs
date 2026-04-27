@@ -86,6 +86,7 @@ import Pickles.Prove.Step
   , buildStepAdvice
   , dummyWrapTockPublicInput
   , extractWrapVKCommsAdvice
+  , preComputeStepDomainLog2
   , stepCompile
   , stepSolveAndProve
   )
@@ -208,16 +209,6 @@ type ProverVKs =
 -- |   step circuit (no advice path needed for that slot).
 data SlotWrapKey
   = Self
-  -- | `Self` with an explicit step-domain hint. Required for Self
-  -- | slots when the rule has `wrapDomainOverride :: Just _` and the
-  -- | step circuit's actual domain ≠ wrap_domain. The hint must equal
-  -- | the rule's eventual `pallasProverIndexDomainLog2 stepCR.proverIndex`
-  -- | (knowable from the OCaml fixture or from a prior compile).
-  -- | Without this, the FOP's compile-time `params.domainLog2`
-  -- | (= wrap_domain) won't match the witness's `branch_data.domain_log2`
-  -- | (= step_domain), making the domain-mask false and triggering
-  -- | `inv_(0)` in `omega^-1` computation.
-  | SelfWithStepDomain Int
   | External ProverVKs
 
 type StepInputs :: Type -> Type -> Type -> Type
@@ -384,8 +375,17 @@ class
   -- | per-slot vectors + wrapDomainLog2=13 + noSlots.
   -- | Cons: populated from `perSlotImportedVKs` + `wrapDomainLog2`
   -- | for its mpv.
+  -- |
+  -- | The `selfStepDomainLog2` parameter is the rule's own step-circuit
+  -- | domain log2 — used as `slotFopDomainLog2` for `Self` slots (the
+  -- | slot's prev = the rule itself, recursing). At pre-pass time
+  -- | (gate-counting only) callers pass `20` (= OCaml `rough_domains`)
+  -- | as a placeholder; the real `compile` call passes the value
+  -- | computed by the pre-pass. `External` slots ignore this argument
+  -- | and read the imported rule's step domain from its prover index.
   shapeCompileData
     :: CompileConfig prevsSpec slotVKs
+    -> Int
     -> ShapeCompileData mpv slots
 
   -- | Step solver advice + side info. Recurses on `rest` to assemble
@@ -499,7 +499,7 @@ compile cfg rule = runCompile
 --------------------------------------------------------------------------------
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
-  shapeCompileData cfg =
+  shapeCompileData cfg _selfStepDomainLog2 =
     { stepProveCtx:
         { srsData:
             { perSlotLagrangeAt: Vector.nil
@@ -625,33 +625,32 @@ instance
         restCarrier
     )
   where
-  shapeCompileData cfg =
+  shapeCompileData cfg selfStepDomainLog2 =
     let
       Tuple headSlotWrapKey restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-      restShape = shapeCompileData @rest restCfg
+      restShape = shapeCompileData @rest restCfg selfStepDomainLog2
       outerMpv = reflectType (Proxy @mpv)
       outerWrapDomainLog2 = case cfg.wrapDomainOverride of
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
       -- Slot's wrap domain (drives lagrange basis for slot's IVP).
-      -- Self / SelfWithStepDomain → outer rule's wrap_domain (with
-      -- override applied); External → imported rule's wrap_domain.
+      -- Self → outer rule's wrap_domain (with override applied);
+      -- External → imported rule's wrap_domain.
       slotWrapDomainLog2 = case headSlotWrapKey of
         External vks -> vks.wrapDomainLog2
-        _ -> outerWrapDomainLog2
+        Self -> outerWrapDomainLog2
 
       -- Slot's STEP domain (drives FOP `params.domainLog2` for
       -- omega/vanishing-poly computations). Distinct from wrap_domain
       -- when the rule uses `override_wrap_domain` (= step_domain ≠
-      -- wrap_domain). For Self: use explicit hint when supplied (the
-      -- rule's eventual step_domain); otherwise fall back to
-      -- wrap_domain (correct only when no override). For External:
+      -- wrap_domain). For Self: use the rule's own step_domain log2,
+      -- supplied as `selfStepDomainLog2` (computed by `compile`'s
+      -- pre-pass à la OCaml `Fix_domains.domains`). For External:
       -- read from the imported rule's compiled prover index.
       slotFopDomainLog2 = case headSlotWrapKey of
-        Self -> outerWrapDomainLog2
-        SelfWithStepDomain h -> h
+        Self -> selfStepDomainLog2
         External vks ->
           ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
 
@@ -670,7 +669,6 @@ instance
       headKnownWrapKey =
         case headSlotWrapKey of
           Self -> Nothing
-          SelfWithStepDomain _ -> Nothing
           External vks -> Just (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
@@ -713,11 +711,6 @@ instance
             , slotWrapDomainLog2: outerOverridenWrapDomainLog2
             , slotStepDomainLog2:
                 ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
-            }
-          SelfWithStepDomain h ->
-            { slotWrapVK: wrapCR.verifierIndex
-            , slotWrapDomainLog2: outerOverridenWrapDomainLog2
-            , slotStepDomainLog2: h
             }
           External vks ->
             { slotWrapVK: vks.wrapCompileResult.verifierIndex
@@ -1015,13 +1008,12 @@ instance
       slotWrapVK =
         case headSlotWrapKey of
           Self -> wrapCR.verifierIndex
-          SelfWithStepDomain _ -> wrapCR.verifierIndex
           External vks -> vks.wrapCompileResult.verifierIndex
 
-      -- Slot's wrap domain log2: Self/SelfWithStepDomain honour the
-      -- outer rule's `wrapDomainOverride`; External slots use the
-      -- imported rule's stored wrapDomainLog2. Same logic as
-      -- `shapeCompileData`'s slotParams (lines 716-734).
+      -- Slot's wrap domain log2: Self honours the outer rule's
+      -- `wrapDomainOverride`; External slots use the imported rule's
+      -- stored wrapDomainLog2. Same logic as `shapeCompileData`'s
+      -- slotParams.
       outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
@@ -1328,8 +1320,27 @@ runCompile
            m
        )
 runCompile cfg rule = do
+  -- Pre-pass à la OCaml `Fix_domains.domains` (`fix_domains.ml:22-91`):
+  -- build the step CS once with placeholder `selfStepDomainLog2 = 20`
+  -- (= OCaml `rough_domains.h`) just to count gates and derive the
+  -- rule's actual step domain log2. No Rust prover-index creation
+  -- happens here, so the cost is just one CS build.
+  selfStepDomainLog2 <-
+    preComputeStepDomainLog2
+      @prevsSpec
+      @outputSize
+      @valCarrier
+      @inputVal
+      @inputVar
+      @outputVal
+      @outputVar
+      @prevInputVal
+      @prevInputVar
+      (shapeCompileData @prevsSpec cfg 20).stepProveCtx
+      rule
+
   let
-    shape = shapeCompileData @prevsSpec cfg
+    shape = shapeCompileData @prevsSpec cfg selfStepDomainLog2
 
   stepCR <- stepCompile
     @prevsSpec

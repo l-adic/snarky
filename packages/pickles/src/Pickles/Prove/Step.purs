@@ -45,6 +45,7 @@ module Pickles.Prove.Step
   , buildStepAdvice
   , buildStepAdviceWithOracles
   , stepCompile
+  , preComputeStepDomainLog2
   , stepSolveAndProve
   ) where
 
@@ -2011,6 +2012,100 @@ stepCompile ctx rule = do
     , builtState
     , constraints
     }
+
+-- | Pre-pass that builds the step constraint system (no Rust prover-
+-- | index creation) just to count gates and derive the rule's own
+-- | step-circuit domain log2. PS analog of OCaml's `Fix_domains.domains`
+-- | (`mina/src/lib/crypto/pickles/fix_domains.ml:22-91`).
+-- |
+-- | Mirrors `stepCompile`'s setup so the gate count it produces is the
+-- | same one `stepCompile` would produce given the same `ctx`. Caller
+-- | is expected to construct `ctx` with placeholder `selfStepDomainLog2 = 20`
+-- | (= OCaml `rough_domains.h`, `fix_domains.ml:6-8`) for `Self` slots,
+-- | matching OCaml's pre-pass; `External` slots use real values from
+-- | their compiled prover indices.
+-- |
+-- | Returns `ceil_log2(zk_rows + public_input_size + rows_len)` with
+-- | `zk_rows = 3` (`fix_domains.ml:4`). Lookup-table sizing
+-- | (`fix_domains.ml:28-71`) is omitted — current rules don't use
+-- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
+preComputeStepDomainLog2
+  :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
+       len carrier carrierVar
+       pad unfsTotal digestPlusUnfs
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable len Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad len PaddedLength
+  => Mul len 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs len outputSize
+  => CircuitType StepField inputVal input
+  => CircuitType StepField outputVal output
+  => CircuitType StepField prevInputVal prevInput
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       len
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       len
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) input
+  => StepProveContext len
+  -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
+  -> Effect Int
+preComputeStepDomainLog2 ctx rule = do
+  builtState <-
+    compile
+      (Proxy @Unit)
+      (Proxy @(Vector outputSize (F StepField)))
+      (Proxy @(KimchiConstraint StepField))
+      ( \_ ->
+          stepMain
+            @prevsSpec
+            @outputSize
+            @inputVal
+            @input
+            @outputVal
+            @output
+            @prevInputVal
+            @prevInput
+            @valCarrier
+            rule
+            ctx.srsData
+            ctx.dummySg
+      )
+      (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
+
+  let
+    kimchiRows :: Array (KimchiRow StepField)
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    gateCount = Array.length kimchiRows
+    piSize = Array.length builtState.publicInputs
+    zkRows = 3
+    rows = zkRows + piSize + gateCount
+  pure (ceilLog2 rows)
+  where
+  -- | `ceilLog2 n` = smallest k such that `2^k >= n`. `n = 0` and `n = 1`
+  -- | both return 0 (matching OCaml `Int.ceil_log2`).
+  ceilLog2 :: Int -> Int
+  ceilLog2 n = go 0 1
+    where
+    go acc p = if p >= n then acc else go (acc + 1) (p * 2)
 
 -- | V2 solve phase — parallel to `stepSolveAndProve` but uses
 -- | `StepProverT` / `StepAdvice` / `stepMain`. `prevChallenges` for

@@ -129,7 +129,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @Effect
       { srs: { vestaSrs, pallasSrs }
       , perSlotImportedVKs:
-          Tuple (External nrr.vks) (Tuple (SelfWithStepDomain 15) unit)
+          Tuple (External nrr.vks) (Tuple Self unit)
       , debug: false
       , wrapDomainOverride: Just 14
       }
