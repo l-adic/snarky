@@ -413,7 +413,7 @@ type WrapCompileContext (branches :: Int) =
 -- | Artifacts produced by `wrapCompile`. The prover / verifier index
 -- | are created here so callers that split compile from solve can
 -- | feed the `verifierIndex` into downstream logic (e.g. the step
--- | prover's `buildStepAdviceWithOracles`) before the solver runs.
+-- | prover's `buildSlotAdvice`) before the solver runs.
 type WrapCompileResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField

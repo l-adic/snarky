@@ -44,7 +44,7 @@ import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Prove.Compile
-  ( CompiledProof
+  ( CompiledProof(..)
   , PrevSlot(..)
   , SlotWrapKey(..)
   , Tag(..)
@@ -59,6 +59,7 @@ import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, const_, exists, if_, not_, true_)
+import Snarky.Curves.Class (fromInt)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -166,3 +167,12 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
     b4 <- runStep (InductivePrev b3 tree.tag)
 
     verify (un Tag tree.tag).verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+
+    -- The rule body computes `selfVal = if isBaseCase then 0 else
+    -- 1 + prevInput`, exposed as `publicOutput`. Base case b0 takes
+    -- `BasePrev { output = -1 }` which trips `isBaseCase` → output 0.
+    -- Each subsequent b_k+1 reads b_k's output and increments,
+    -- producing 0..4 as the running counter.
+    let outputOf (CompiledProof p) = p.publicOutput
+    map outputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
+      [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]

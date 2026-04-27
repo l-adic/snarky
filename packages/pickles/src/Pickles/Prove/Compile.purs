@@ -737,7 +737,7 @@ instance
 
     -- All values that vary between BasePrev (b0) and InductivePrev (b1+)
     -- are computed in one case-dispatch block, then handed to a single
-    -- buildStepAdviceWithOracles call.
+    -- buildSlotAdvice call.
     slotData <- case headSlot of
       BasePrev { dummyStatement } -> do
         let
@@ -1533,6 +1533,12 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
       , verifierIndex: stepCR.verifierIndex
       , publicInput: stepResult.publicInputs
       , allEvals
+      -- Singleton because we hardcode `num_chunks = 1` (matches
+      -- standard Mina). For circuits exceeding the SRS degree
+      -- (`num_chunks > 1`), each commitment splits into multiple
+      -- chunks and `pEval0Chunks` becomes a multi-element array.
+      -- See `Pickles.VerificationKey:31`, `Pickles.Verify:100-102`,
+      -- and `Pickles.Prove.Pure.Wrap:22-24` for the matching TODOs.
       , pEval0Chunks: [ stepOracles.publicEvalZeta ]
       , domainLog2: stepDomainLog2
       , zkRows: 3

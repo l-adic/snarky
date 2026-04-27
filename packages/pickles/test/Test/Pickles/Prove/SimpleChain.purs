@@ -37,7 +37,7 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.Compile (CompiledProof, PrevSlot(..), SlotWrapKey(..), Tag(..), compile, verify)
+import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..), Tag(..), compile, verify)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -123,3 +123,15 @@ spec = describe "Pickles.Prove.SimpleChain" do
     b4 <- runStep (InductivePrev b3 tag) (F (fromInt 4 :: StepField))
 
     verify (un Tag tag).verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+
+    -- Each iteration's app-state input must equal the value we
+    -- supplied as `appInput` to `prover.step`. The rule asserts
+    -- `self == prev + 1` (or `self == 0` for base), so the chain's
+    -- carried inputs are the natural numbers 0..4. SimpleChain's
+    -- `outputVal = Unit`, so `publicOutput` is uninformative — the
+    -- meaningful application state is the `statement.input`.
+    let
+      stmtInputOf (CompiledProof p) =
+        let StatementIO s = p.statement in s.input
+    map stmtInputOf [ b0, b1, b2, b3, b4 ] `shouldEqual`
+      [ F zero, F one, F (fromInt 2), F (fromInt 3), F (fromInt 4) ]
