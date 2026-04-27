@@ -293,8 +293,6 @@ type CompileOutput prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
 -- |   for Cons).
 -- | * `wrapDomainLog2` — OCaml `wrap_domains.h` (13 for N=0 in pickles,
 -- |   14 for N=1, 15 for N=2).
--- | * `stepWidth` — `buildWrapMainConfig`'s `stepWidth` argument
--- |   (= mpv).
 -- | * `slotsValue` — runtime realisation of the `slots` type
 -- |   constructor (`noSlots`, `slots1 ...`, etc.) carrying each prev's
 -- |   wrap bp-challenges.
@@ -302,7 +300,6 @@ type ShapeCompileData :: Int -> (Type -> Type) -> Type
 type ShapeCompileData mpv slots =
   { stepProveCtx :: StepProveContext mpv
   , wrapDomainLog2 :: Int
-  , stepWidth :: Int
   }
 
 -- | Side info from `mkStepAdvice`'s return that `shapeProveData` needs.
@@ -393,7 +390,7 @@ class
   | prevsSpec -> slotVKs prevsCarrier mpv slots valCarrier carrier
   where
   -- | Compile-time shape data (stepProveCtx, constants). Nil: empty
-  -- | per-slot vectors + wrapDomainLog2=13 + stepWidth=0 + noSlots.
+  -- | per-slot vectors + wrapDomainLog2=13 + noSlots.
   -- | Cons: populated from `perSlotImportedVKs` + `wrapDomainLog2`
   -- | for its mpv.
   shapeCompileData
@@ -526,7 +523,6 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
         , debug: cfg.debug
         }
     , wrapDomainLog2: 13
-    , stepWidth: 0
     }
     where
     -- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`)
@@ -704,7 +700,6 @@ instance
           , debug: cfg.debug
           }
       , wrapDomainLog2: outerWrapDomainLog2
-      , stepWidth: outerMpv
       }
 
   mkStepAdvice cfg stepCR wrapCR appInput (Tuple headSlot restPrevs) = do
@@ -1378,7 +1373,7 @@ runCompile cfg rule = do
   wrapCR <- wrapCompile @1 @slots
     { wrapMainConfig:
         buildWrapMainConfig cfg.srs.vestaSrs stepCR.verifierIndex
-          { stepWidth: shape.stepWidth, domainLog2: stepDomainLog2 }
+          { stepWidth: reflectType (Proxy @mpv), domainLog2: stepDomainLog2 }
     , crs: cfg.srs.pallasSrs
     }
 
@@ -1613,7 +1608,7 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     wrapCtx =
       { wrapMainConfig:
           buildWrapMainConfig cfg.srs.vestaSrs stepCR.verifierIndex
-            { stepWidth: shape.stepWidth, domainLog2: stepDomainLog2 }
+            { stepWidth: reflectType (Proxy @mpv), domainLog2: stepDomainLog2 }
       , crs: cfg.srs.pallasSrs
       , publicInput: assembleWrapMainInput
           { deferredValues: wrapDv
