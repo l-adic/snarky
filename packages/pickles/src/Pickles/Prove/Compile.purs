@@ -343,16 +343,7 @@ type ShapeProveSideInfo mpv =
 -- | tail from `shapeProveData @rest`.
 type ShapeProveData :: Int -> (Type -> Type) -> Type
 type ShapeProveData mpv slots =
-  { -- | Per-slot entries for `pallasProofOracles.prevChallenges`. The
-    -- | FFI takes an Array (not a Vector) so we use Array here; order
-    -- | is slot 0 first.
-    stepOraclesPrevChallenges ::
-      Array
-        { sgX :: WrapField
-        , sgY :: WrapField
-        , challenges :: Array StepField
-        }
-  , prevSgs :: Vector mpv (AffinePoint WrapField)
+  { prevSgs :: Vector mpv (AffinePoint WrapField)
   , prevStepChallenges :: Vector mpv (Vector StepIPARounds StepField)
   , msgWrapChallenges :: Vector mpv (Vector WrapIPARounds WrapField)
   , prevUnfinalizedProofs ::
@@ -555,8 +546,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
         }
 
   shapeProveData _ _ _ _ =
-    { stepOraclesPrevChallenges: []
-    , prevSgs: Vector.nil
+    { prevSgs: Vector.nil
     , prevStepChallenges: Vector.nil
     , msgWrapChallenges: Vector.nil
     , prevUnfinalizedProofs: Vector.nil
@@ -1106,9 +1096,7 @@ instance
       -- Per-slot data that differs between BasePrev (head = dummy
       -- predecessor) and InductivePrev (head = real prev CompiledProof).
       slotData
-        :: { stepOraclesPrevChalEntry ::
-               { sgX :: WrapField, sgY :: WrapField, challenges :: Array StepField }
-           , prevSg :: AffinePoint WrapField
+        :: { prevSg :: AffinePoint WrapField
            , prevStepChals :: Vector StepIPARounds StepField
            , prevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
            , headPrevEvals :: StepAllEvals (F WrapField)
@@ -1148,12 +1136,7 @@ instance
               , indexEvals: map pe de.indexEvals
               }
           in
-            { stepOraclesPrevChalEntry:
-                { sgX: stepSgD.x
-                , sgY: stepSgD.y
-                , challenges: Vector.toUnfoldable Dummy.dummyIpaChallenges.stepExpanded
-                }
-            , prevSg: stepSgD
+            { prevSg: stepSgD
             , prevStepChals: Dummy.dummyIpaChallenges.stepExpanded
             , prevStepAcc: WeierstrassAffinePoint { x: F stepSgD.x, y: F stepSgD.y }
             , headPrevEvals
@@ -1224,12 +1207,7 @@ instance
               , indexEvals: map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
               }
           in
-            { stepOraclesPrevChalEntry:
-                { sgX: prev.challengePolynomialCommitment.x
-                , sgY: prev.challengePolynomialCommitment.y
-                , challenges: Vector.toUnfoldable prevStepBpChalsExpanded
-                }
-            , prevSg: prev.challengePolynomialCommitment
+            { prevSg: prev.challengePolynomialCommitment
             , prevStepChals: prevStepBpChalsExpanded
             , prevStepAcc: WeierstrassAffinePoint
                 { x: F prev.challengePolynomialCommitment.x
@@ -1253,9 +1231,7 @@ instance
         }
       restProveData = shapeProveData @rest restCfg wrapCR restSideInfo restPrevs
     in
-      { stepOraclesPrevChallenges:
-          [ slotData.stepOraclesPrevChalEntry ] <> restProveData.stepOraclesPrevChallenges
-      , prevSgs: slotData.prevSg :< restProveData.prevSgs
+      { prevSgs: slotData.prevSg :< restProveData.prevSgs
       , prevStepChallenges:
           slotData.prevStepChals :< restProveData.prevStepChallenges
       , msgWrapChallenges:
@@ -1508,10 +1484,22 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     stepAdvice
 
   let
+    -- Assemble the FFI-shaped `prevChallenges` array from the
+    -- statically-sized `prevSgs` + `prevStepChallenges` vectors.
+    -- `pallasProofOracles` takes `Array { sgX, sgY, challenges :: Array }`
+    -- so we convert at the boundary.
+    stepOraclesPrevChals = Vector.toUnfoldable $
+      Vector.zipWith
+        ( \sg chals ->
+            { sgX: sg.x, sgY: sg.y, challenges: Vector.toUnfoldable chals }
+        )
+        proveData.prevSgs
+        proveData.prevStepChallenges
+
     stepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
       { proof: stepResult.proof
       , publicInput: stepResult.publicInputs
-      , prevChallenges: proveData.stepOraclesPrevChallenges
+      , prevChallenges: stepOraclesPrevChals
       }
 
     allEvals :: AllEvals StepField
