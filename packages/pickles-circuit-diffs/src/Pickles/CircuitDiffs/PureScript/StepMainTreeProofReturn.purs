@@ -37,13 +37,12 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StepField, VerificationKey(..))
+import Pickles.Types (StatementIO, StepField, VerificationKey(..))
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
@@ -124,8 +123,9 @@ treeProofReturnRule _ = do
     , publicOutput: self
     }
 
-compileStepMainTreeProofReturn :: StepMainTreeProofReturnParams -> CompiledCircuit StepField
-compileStepMainTreeProofReturn params = unsafePerformEffect $
+compileStepMainTreeProofReturn
+  :: StepMainTreeProofReturnParams -> Effect (CompiledCircuit StepField)
+compileStepMainTreeProofReturn params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
     -- + two msg_wrap entries). Wrap domain log2 = 14 from
@@ -154,7 +154,17 @@ compileStepMainTreeProofReturn params = unsafePerformEffect $
     --   uses `Tick.Inner_curve.one` at dump_circuit_impl.ml:3999-4009).
     -- * slot 1: Nothing — slot's prev is SELF, uses the shared
     --   `exists`-allocated VK inside stepMain.
-    ( \_ -> stepMain @(PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)) @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
+    ( \_ -> stepMain
+        @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
+            (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+        )
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         treeProofReturnRule
         { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH

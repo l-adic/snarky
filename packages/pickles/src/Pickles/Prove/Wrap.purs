@@ -413,7 +413,7 @@ type WrapCompileContext (branches :: Int) =
 -- | Artifacts produced by `wrapCompile`. The prover / verifier index
 -- | are created here so callers that split compile from solve can
 -- | feed the `verifierIndex` into downstream logic (e.g. the step
--- | prover's `buildStepAdviceWithOracles`) before the solver runs.
+-- | prover's `buildSlotAdvice`) before the solver runs.
 type WrapCompileResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField
@@ -657,9 +657,11 @@ stepVkForCircuit vk =
 -- | exactly ONE step proof regardless of that step's `max_proofs_verified`
 -- | — what differs between N=0 / N=1 / N=2 rules is:
 -- |
--- |   * `stepWidth` — the step rule's `max_proofs_verified` (OCaml's
--- |     `Widths`; 0 for No_recursion_return, 1 for Simple_chain,
--- |     2 for Simple_chain_n2 / Tree_proof_return).
+-- |   * `mpv` (type variable) — the step rule's `max_proofs_verified`
+-- |     (OCaml's `Widths`; 0 for No_recursion_return, 1 for
+-- |     Simple_chain, 2 for Simple_chain_n2 / Tree_proof_return). Bound
+-- |     at the call site via visible type application; reflected here
+-- |     into the `Vector 1 Int` shape `wrap_main` consumes.
 -- |   * `domainLog2` — the step circuit's kimchi domain log2, read
 -- |     dynamically from the compiled step prover index.
 -- |
@@ -667,12 +669,14 @@ stepVkForCircuit vk =
 -- | wrap-domains) are structural constants of the Tock SRS, independent
 -- | of N.
 buildWrapMainConfig
-  :: CRS VestaG
+  :: forall @mpv
+   . Reflectable mpv Int
+  => CRS VestaG
   -> VerifierIndex VestaG StepField
-  -> { stepWidth :: Int, domainLog2 :: Int }
+  -> { domainLog2 :: Int }
   -> WrapMainConfig 1
-buildWrapMainConfig vestaSrs stepVK { stepWidth, domainLog2 } =
-  { stepWidths: stepWidth :< Vector.nil
+buildWrapMainConfig vestaSrs stepVK { domainLog2 } =
+  { stepWidths: reflectType (Proxy @mpv) :< Vector.nil
   , domainLog2s: domainLog2 :< Vector.nil
   , stepKeys: stepVkForCircuit (extractStepVKComms stepVK) :< Vector.nil
   , lagrangeAt:

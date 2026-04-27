@@ -63,6 +63,13 @@ module Pickles.Step.Advice
   -- Parallel v2 class: provides the spec-indexed per-slot carrier.
   , class StepSlotsM
   , getStepSlotsCarrier
+  -- Prev-statement values for the rule body's `exists` calls.
+  , class StepPrevValuesM
+  , getPrevAppStates
+  -- Capture the rule's user `publicOutput` FVars so the prover can
+  -- evaluate them post-solve against the assignments map.
+  , class StepUserOutputM
+  , setUserPublicOutputFields
   ) where
 
 import Prelude
@@ -72,8 +79,8 @@ import Data.Vector (Vector)
 import Effect (Effect)
 import Effect.Exception (throw)
 import Pickles.Step.Prevs (class PrevsCarrier)
-import Pickles.Types (PerProofUnfinalized, VerificationKey)
-import Snarky.Circuit.DSL (F)
+import Pickles.Types (PerProofUnfinalized, StepField, VerificationKey)
+import Snarky.Circuit.DSL (F, FVar)
 import Snarky.Curves.Class (class WeierstrassCurve)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint)
 import Snarky.Types.Shifted (SplitField, Type2)
@@ -203,3 +210,52 @@ instance
   ) =>
   StepSlotsM prevsSpec ds dw g f Effect len carrier where
   getStepSlotsCarrier _ = throw "impossible! getStepSlotsCarrier called during compilation"
+
+--------------------------------------------------------------------------------
+-- Prev-statement values for the rule body's `exists` calls.
+--
+-- Mirrors OCaml's `previous_proof_statements` argument to
+-- `Inductive_rule.t.main`: the rule reads the prev's statement out of
+-- this carrier (input for Input-mode prevs, output for Output-mode)
+-- when allocating the prev's app-state circuit variable. Sourcing the
+-- value via this method instead of a closure parameter is what lets
+-- the same compiled rule produce different inductive iterations —
+-- compile-time captures the rule once, prove-time supplies a fresh
+-- carrier per `prover.step` invocation.
+--
+-- The `valCarrier` shape is determined by `prevsSpec` via
+-- `Pickles.Step.Prevs.PrevValuesCarrier`. The compile-time `Effect`
+-- instance throws — Snarky's compile mode discards the witness
+-- computation, so `exists $ MT.lift $ getPrevAppStates …` is never
+-- actually evaluated when building the constraint system.
+--------------------------------------------------------------------------------
+
+class
+  ( Monad m
+  ) <=
+  StepPrevValuesM (m :: Type -> Type) valCarrier
+  | m -> valCarrier where
+  getPrevAppStates :: Unit -> m valCarrier
+
+instance StepPrevValuesM Effect valCarrier where
+  getPrevAppStates _ = throw "impossible! getPrevAppStates called during compilation"
+
+-- | Side-channel for the rule's user-defined `publicOutput`. The step
+-- | circuit's kimchi public-output vector is the digest+unfinalized
+-- | payload — the user's `publicOutput :: outputVar` is hashed into
+-- | the outer digest but never appears there directly. To recover its
+-- | runtime value, the prover must capture the FVars and evaluate
+-- | them against the post-solve assignments map. This class is the
+-- | OCaml `Req.Return_value` analog (mina/src/lib/crypto/pickles/step.ml:692,
+-- | 829, 896-898) — a write request alongside the existing `get*`
+-- | reads, dispatched through the same `exists + m`-action pattern.
+-- | At compile time `exists` skips the witness body so the `Effect`
+-- | throw never fires; at solve time the `StepProverT` instance
+-- | writes to its `StepProverCapture` State slot.
+class
+  Monad m <=
+  StepUserOutputM (m :: Type -> Type) where
+  setUserPublicOutputFields :: Array (FVar StepField) -> m Unit
+
+instance StepUserOutputM Effect where
+  setUserPublicOutputFields _ = throw "impossible! setUserPublicOutputFields called during compilation"

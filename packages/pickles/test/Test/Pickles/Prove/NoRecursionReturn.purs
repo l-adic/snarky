@@ -1,55 +1,74 @@
 -- | PureScript-side analog of OCaml's `No_recursion_return` test
--- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:89-126` +
--- |  `mina/src/lib/crypto/pickles/dump_no_recursion_return/dump_no_recursion_return.ml`).
+-- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-126`).
 -- |
--- | Thin wrapper around `Test.Pickles.Prove.NoRecursionReturn.Producer`:
--- | sets up the SRS, emits the test's `begin`/`end` trace markers, and
--- | calls the producer. Asserts that the produced step + wrap proofs
--- | verify via `ProofFFI.verifyOpeningProof` (kimchi batch_verify).
+-- | The simplest pickles rule: `max_proofs_verified = N0`, no prevs,
+-- | Output mode (input = Unit, output = Field), constant output `0`.
+-- | Exercised here via the `Pickles.Prove.Compile` API end-to-end:
+-- | one `compile` call returns a `prover.step` closure; one
+-- | invocation produces a single proof; `verify` checks it.
 -- |
--- | The producer also emits `[LABEL] VALUE` lines via `Pickles.Trace`
--- | for each intermediate value; those go to `PICKLES_TRACE_FILE`
--- | when set (no-op otherwise). The manual convergence tool
--- | `tools/no_recursion_return_trace_diff.sh` compares that output
--- | against the OCaml dumper's trace, but the test itself only cares
--- | about `batch_verify`.
+-- | This is the minimal "happy path" for the compile + prover + verify
+-- | flow. Heavier shapes (Simple_chain inductive, Tree heterogeneous)
+-- | live in `Test.Pickles.Prove.SimpleChain` and
+-- | `Test.Pickles.Prove.TreeProofReturn`; this module fills in the
+-- | N0 case so all three pickles rule shapes have parallel test
+-- | coverage.
 -- |
--- | The same producer is reused from `Test.Pickles.Prove.TreeProofReturn`
--- | (Tree_proof_return verifies a No_recursion_return proof at slot 0
--- | of its base case).
--- |
--- | Optional env vars at runtime:
--- | - `KIMCHI_DETERMINISTIC_SEED` — override the kimchi RNG seed
--- |   (defaults to 42 in crypto-provider's `deterministic_rng.rs`).
--- | - `PICKLES_TRACE_FILE` — trace log path; only for manual
--- |   convergence debugging via `tools/*_trace_diff.sh`.
--- | - `KIMCHI_WITNESS_DUMP=/tmp/nrr_%c.witness` — writes kimchi
--- |   witness matrices for `tools/no_recursion_return_witness_diff.sh`.
+-- | `nrrRule` is exported because `Test.Pickles.Verify.ExpandDeferredEq`
+-- | reuses it to build a real NRR `CompiledProof` and feed
+-- | `compiledProof.wrapDv` / `wrapDvInput` to its self-consistency check.
 module Test.Pickles.Prove.NoRecursionReturn
-  ( spec
+  ( nrrRule
+  , spec
   ) where
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
+import Data.Either (Either(..))
 import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
+import Data.Vector as Vector
+import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
-import Pickles.Trace as Trace
+import Effect.Exception (throw) as Exc
+import Pickles.Prove.Compile (Tag(..), compile, verify)
+import Pickles.Prove.Step (StepRule)
+import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Test.Pickles.Prove.NoRecursionReturn.Producer (produceNoRecursionReturn)
+import Snarky.Circuit.DSL (F, FVar, const_)
 import Test.Spec (SpecT, describe, it)
+import Test.Spec.Assertions (shouldEqual)
+
+-- | The NRR inductive rule — Output mode, N=0, returns `F zero`.
+-- | Reference: `mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:100-107`.
+nrrRule :: StepRule 0 Unit Unit Unit (F StepField) (FVar StepField) Unit Unit
+nrrRule _ = pure
+  { prevPublicInputs: Vector.nil
+  , proofMustVerify: Vector.nil
+  , publicOutput: const_ zero
+  }
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.NoRecursionReturn" do
-  it "N=0 Output-mode proof: step + wrap verify via batch_verify" \_ -> do
-    liftEffect $ Trace.string "no_recursion_return.begin" "base_case"
-    let pallasWrapSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
+  it "compile + prover.step end-to-end verify returns true" \_ -> do
+    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
-    _ <- produceNoRecursionReturn
-      { vestaSrs
-      , lagrangeSrs: pallasWrapSrs
-      , pallasProofCrs: pallasWrapSrs
+
+    { prover, tag } <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
+      { srs: { vestaSrs, pallasSrs }
+      , perSlotImportedVKs: unit
+      , debug: false
+      , wrapDomainOverride: Nothing
       }
-    liftEffect $ Trace.string "no_recursion_return.end" "base_case_verified"
+      nrrRule
+
+    eResult <- liftEffect $ runExceptT $ prover.step { appInput: unit, prevs: unit }
+    case eResult of
+      Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
+      Right compiledProof ->
+        verify (un Tag tag).verifier [ compiledProof ] `shouldEqual` true

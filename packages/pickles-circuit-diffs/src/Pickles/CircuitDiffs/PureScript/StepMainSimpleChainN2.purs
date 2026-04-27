@@ -19,12 +19,11 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StepField)
+import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -76,12 +75,24 @@ simpleChainN2Rule appState = do
     , publicOutput: unit
     }
 
-compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
-compileStepMainSimpleChainN2 params = unsafePerformEffect $
+compileStepMainSimpleChainN2
+  :: StepMainSimpleChainN2Params -> Effect (CompiledCircuit StepField)
+compileStepMainSimpleChainN2 params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
-    ( \_ -> stepMain @(PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)) @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainN2Rule
+    ( \_ -> stepMain
+        @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
+            (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        )
+        @67
+        @(F StepField)
+        @(FVar StepField)
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        simpleChainN2Rule
         { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil

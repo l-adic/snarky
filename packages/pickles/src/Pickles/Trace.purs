@@ -22,8 +22,6 @@
 module Pickles.Trace
   ( field
   , fieldF
-  , int
-  , string
   ) where
 
 import Prelude
@@ -51,12 +49,3 @@ field label x = emitLineImpl label (BigInt.toString (toBigInt x))
 -- | Trace a wrapped `F f` (the snarky DSL field-value newtype).
 fieldF :: forall f. PrimeField f => String -> F f -> Effect Unit
 fieldF label (F x) = field label x
-
--- | Trace a primitive int.
-int :: String -> Int -> Effect Unit
-int label x = emitLineImpl label (show x)
-
--- | Trace an opaque string. Useful for sentinel markers (e.g. begin/end of
--- | a circuit phase) where the value is structural rather than numeric.
-string :: String -> String -> Effect Unit
-string label x = emitLineImpl label x

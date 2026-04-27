@@ -44,6 +44,7 @@ module Pickles.Step.Prevs
   , PrevsSpecCons
   , StepSlot(..)
   , class PrevsCarrier
+  , class PrevValuesCarrier
   , traversePrevsA
   , replicatePrevsCarrier
   ) where
@@ -71,15 +72,25 @@ import Type.Proxy (Proxy(..))
 -- | no inhabitants (used only at the type level).
 data PrevsSpecNil
 
--- | Cons a per-prev `max_proofs_verified = n` onto the head of the
--- | list. `rest` is the spec for the remaining prevs.
+-- | Cons a per-prev `max_proofs_verified = n` + `statement` type onto
+-- | the head of the list. `rest` is the spec for the remaining prevs.
+-- |
+-- | The `statement` type is the prev rule's `StatementIO input output`
+-- | (the public input the kimchi verifier commits to when checking that
+-- | prev's proof). Input-mode prevs use `StatementIO i Unit`; Output-mode
+-- | prevs use `StatementIO Unit o`. The in-circuit var form is derived
+-- | via `CircuitType StepField statement statementVar` where needed;
+-- | carrying it as a direct spec parameter is redundant with the fundep.
 -- |
 -- | Shapes for the 4 circuit-diff fixtures:
 -- | * Add_one_return   : `PrevsSpecNil`
--- | * Simple_chain N1  : `PrevsSpecCons 1 PrevsSpecNil`
--- | * Simple_chain N2  : `PrevsSpecCons 2 (PrevsSpecCons 2 PrevsSpecNil)`
--- | * Tree_proof_return: `PrevsSpecCons 0 (PrevsSpecCons 2 PrevsSpecNil)`
-data PrevsSpecCons (n :: Int) (rest :: Type)
+-- | * Simple_chain N1  : `PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil`
+-- | * Simple_chain N2  : `PrevsSpecCons 2 (StatementIO (F StepField) Unit)
+-- |                        (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)`
+-- | * Tree_proof_return: `PrevsSpecCons 0 (StatementIO Unit (F StepField))
+-- |                        (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)`
+data PrevsSpecCons :: Int -> Type -> Type -> Type
+data PrevsSpecCons n statement rest
 
 --------------------------------------------------------------------------------
 -- Per-slot payload
@@ -180,7 +191,7 @@ instance
   , Reflectable pad Int
   ) =>
   PrevsCarrier
-    (PrevsSpecCons n rest)
+    (PrevsSpecCons n statement rest)
     ds
     dw
     f
@@ -258,3 +269,37 @@ instance
   ) =>
   CheckedType f c (StepSlot n ds dw (FVar f) sfvar (BoolVar f)) where
   check (StepSlot r) = check r.sppw
+
+--------------------------------------------------------------------------------
+-- Prev values carrier — heterogeneous, spec-indexed
+--
+-- Mirrors OCaml's `H4.T(Tag).t` prev-values list. The rule body reads
+-- per-prev statement values (StatementIO) at prove time via this
+-- carrier, sourced from a request handler in OCaml (Req.Prev_input)
+-- and from advice in the PureScript port.
+--
+-- The carrier shape is fully determined by `prevsSpec` — each slot
+-- holds the prev's `statement` type from the spec (heterogeneous per
+-- slot for rules like Tree_proof_return). Mirrors `PrevsCarrier`'s
+-- recursion structure: Nil → Unit, Cons stmt rest → Tuple stmt rest.
+--
+-- Reference: mina/src/lib/crypto/pickles/inductive_rule.ml (the
+-- `previous_proof_statements` field on Inductive_rule.t.main_return).
+--------------------------------------------------------------------------------
+
+-- | Type-level mapping `prevsSpec → valCarrier` for the heterogeneous
+-- | prev-statements carrier. Each slot's value type is the spec's
+-- | `statement` parameter for that slot — typically `StatementIO
+-- | inputVal outputVal`. The fundep `spec -> valCarrier` lets `spec`
+-- | uniquely determine the carrier shape; instances for Nil / Cons
+-- | provide the standard tuple-fold encoding.
+class PrevValuesCarrier :: Type -> Type -> Constraint
+class PrevValuesCarrier spec valCarrier | spec -> valCarrier
+
+instance PrevValuesCarrier PrevsSpecNil Unit
+
+instance
+  PrevValuesCarrier rest restValCarrier =>
+  PrevValuesCarrier
+    (PrevsSpecCons n statement rest)
+    (Tuple statement restValCarrier)

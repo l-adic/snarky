@@ -46,8 +46,6 @@ module Pickles.Wrap.Slots
   , Slots2
   -- * Smart constructors for value-level slots
   , noSlots
-  , slots1
-  , slots2
   -- * Class machinery for structural induction
   , class PadSlots
   , slotWidthsOf
@@ -97,16 +95,6 @@ type Slots2 w0 w1 = Product (Vector w0) (Slots1 w1)
 -- | value that inhabits every `NoSlots a` type.
 noSlots :: forall a. NoSlots a
 noSlots = Const unit
-
--- | Smart constructor for `Slots1 w`. Takes the single slot's
--- | bp-challenge stack and terminates with `noSlots`.
-slots1 :: forall w a. Vector w a -> Slots1 w a
-slots1 v = product v noSlots
-
--- | Smart constructor for `Slots2 w0 w1`. Takes both slots' stacks
--- | in order (slot 0 first, slot 1 second).
-slots2 :: forall w0 w1 a. Vector w0 a -> Vector w1 a -> Slots2 w0 w1 a
-slots2 v0 v1 = product v0 (slots1 v1)
 
 --------------------------------------------------------------------------------
 -- PadSlots class: structural induction over slot lists

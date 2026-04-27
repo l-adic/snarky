@@ -149,6 +149,7 @@
             "prelude",
             "random-oracle",
             "record",
+            "refs",
             "safe-coerce",
             "snarky",
             "snarky-curves",
@@ -162,7 +163,6 @@
           "dependencies": [
             "aff",
             "effect",
-            "node-process",
             "prelude",
             "spec",
             "spec-node"
@@ -211,7 +211,6 @@
             "exceptions",
             "node-buffer",
             "node-fs",
-            "refs",
             "spec",
             "spec-node"
           ]

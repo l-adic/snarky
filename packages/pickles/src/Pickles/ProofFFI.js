@@ -207,16 +207,6 @@ export const vestaSpongeCheckpointBeforeChallenges = (verifierIndex) => ({ proof
   };
 };
 
-// Sponge state RIGHT BEFORE beta squeeze in pallas_proof_oracles.
-// Returns { state: [f, f, f], spongeMode: String, modeCount: Int }
-export const pallasSpongeStateBeforeBetaImpl = (verifierIndex) => (proof) => (publicInput) => (prevSgXs) => (prevSgYs) => (prevChals) => {
-  const checkpoint = crypto.pallasSpongeStateBeforeBeta(verifierIndex, proof, publicInput, prevSgXs, prevSgYs, prevChals);
-  return {
-    state: crypto.pallasSpongeCheckpointState(checkpoint),
-    spongeMode: crypto.pallasSpongeCheckpointMode(checkpoint),
-    modeCount: crypto.pallasSpongeCheckpointModeCount(checkpoint)
-  };
-};
 
 // Proof opening L/R pairs - parse flat array into structured points
 // Returns [{l: {x, y}, r: {x, y}}, ...]

@@ -33,7 +33,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -469,12 +469,15 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
+       @valCarrier
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
+  => StepPrevValuesM m valCarrier
+  => StepUserOutputM m
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -522,6 +525,21 @@ stepMain
     publicInputFields = varToFields @StepField @inputVal publicInput
     publicOutputFields = varToFields @StepField @outputVal publicOutput
     hashAppFields = publicInputFields <> publicOutputFields
+
+  -- Capture the rule's user `publicOutput` FVars so the prover can
+  -- evaluate them post-solve. Dispatched through the same `exists +
+  -- m`-action pattern as the other advice methods, mirroring how
+  -- OCaml sends `Req.Return_value` from inside an `exists` block
+  -- (mina/src/lib/crypto/pickles/step.ml:896-898). At compile time
+  -- `exists` skips the witness body so the `Effect` `throw` instance
+  -- never fires; at solve time the `StepProverT` instance writes to
+  -- its `StepProverCapture` State slot, which `stepSolveAndProve`
+  -- reads after the solver completes. The `exists` allocates a fresh
+  -- `Unit` var (`sizeInFields = 0`, no actual circuit slot
+  -- allocated), so this introduces no constraints.
+  _ :: Unit <- exists $ lift do
+    setUserPublicOutputFields publicOutputFields
+    pure unit
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
   --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one

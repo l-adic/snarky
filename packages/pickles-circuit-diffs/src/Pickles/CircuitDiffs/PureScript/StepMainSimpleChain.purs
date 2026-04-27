@@ -18,12 +18,11 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StepField)
+import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
@@ -73,8 +72,9 @@ simpleChainRule appState = do
     , publicOutput: unit
     }
 
-compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
-compileStepMainSimpleChain params = unsafePerformEffect $
+compileStepMainSimpleChain
+  :: StepMainSimpleChainParams -> Effect (CompiledCircuit StepField)
+compileStepMainSimpleChain params =
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 14: matches OCaml's production `Fix_domains.domains`
     -- output for the Simple_chain N1 inductive rule (small circuit; ceil_log2
@@ -82,7 +82,16 @@ compileStepMainSimpleChain params = unsafePerformEffect $
     -- mismatch that didn't validate the production compile path. Both this
     -- helper and `dump_circuit_impl.ml` now use 14 so the JSON fixture
     -- exercises the same compile config Pickles.compile_promise produces.
-    ( \_ -> stepMain @(PrevsSpecCons 1 PrevsSpecNil) @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField) simpleChainRule
+    ( \_ -> stepMain
+        @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        @34
+        @(F StepField)
+        @(FVar StepField)
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        simpleChainRule
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 14 :< Vector.nil

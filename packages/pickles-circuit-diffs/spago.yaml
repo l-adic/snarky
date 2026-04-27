@@ -38,6 +38,5 @@ package:
       - exceptions
       - node-buffer
       - node-fs
-      - refs
       - spec
       - spec-node
