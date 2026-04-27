@@ -65,6 +65,7 @@ import Snarky.Backend.Compile (compilePure)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, SizedF, all_, and_, any_, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, const_, div_, equals_, exists, if_, inv_, mul_, or_, pow_, unpack_, xor_)
 import Snarky.Circuit.DSL.Monad (class CircuitM, Snarky)
 import Snarky.Circuit.Kimchi.AddComplete (Finiteness(..), addFast)
@@ -242,6 +243,25 @@ assertEqualCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m
 assertEqualCircuit x = do
   y <- exists (pure (zero :: F Fp))
   assertEqual_ x y
+
+-- | Application body for `dump_two_phase_chain`'s branch 0
+-- | (`make_zero`): assert that the public input equals zero. PS
+-- | mirror of `app_circuit_two_phase_chain_make_zero` in
+-- | `dump_circuit_impl.ml`. Foundational for the multi-branch
+-- | trace-diff loop — if PS and OCaml disagree on the gate
+-- | sequence for this trivial body, every downstream step_main /
+-- | wrap_main / witness comparison is meaningless.
+makeZeroAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+makeZeroAppCircuit x = assertEqual_ x (const_ zero)
+
+-- | Application body for `dump_two_phase_chain`'s branch 1
+-- | (`increment`): allocate prev as a witness, assert that the
+-- | public input equals `prev + 1`. PS mirror of
+-- | `app_circuit_two_phase_chain_increment`.
+incrementAppCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
+incrementAppCircuit x = do
+  prev <- exists (pure (zero :: F Fp))
+  assertEqual_ x (CVar.add_ (const_ one) prev)
 
 assertSquareCircuit :: forall c t m. CircuitM Fp c t m => FVar Fp -> Snarky c t m Unit
 assertSquareCircuit x = do
@@ -432,6 +452,18 @@ spec =
         exactMatch "bool_all_step_circuit" (compileBB boolAllCircuit)
         exactMatch "bool_any_step_circuit" (compileBB boolAnyCircuit)
         exactMatch "bool_assert_step_circuit" (compileBU boolAssertCircuit)
+      describe "Two-phase chain application circuits" do
+        -- App-level rule bodies for `dump_two_phase_chain` (the
+        -- minimal multi-branch fixture). We byte-compare ONLY the
+        -- application bodies — without step_main scaffolding —
+        -- because rule-body parity is the foundation: if the user-
+        -- written assertions don't compile to the same gates in PS
+        -- and OCaml, every downstream comparison (witness, oracles,
+        -- deferred values, wrap_main) is rooted in noise. The full
+        -- multi-branch step_main diff comes later, once PS supports
+        -- multi-branch compile.
+        exactMatch "app_circuit_two_phase_chain_make_zero" (compileFU makeZeroAppCircuit)
+        exactMatch "app_circuit_two_phase_chain_increment" (compileFU incrementAppCircuit)
       describe "Kimchi gates" do
         exactMatch "add_complete_step_circuit" (compilePP addCompleteCircuit)
         exactMatch "endo_scalar_step_circuit" (compileKFF endoScalarCircuit)
