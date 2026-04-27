@@ -37,6 +37,7 @@ module Pickles.Prove.Step
   , StepProveResult
   , StepAdvice(..)
   , StepProverT(..)
+  , StepProverCapture
   , runStepProverT
   , StepProveContext
   , SlotAdviceContrib
@@ -51,6 +52,8 @@ import Prelude
 
 import Control.Monad.Except (ExceptT, throwError)
 import Control.Monad.Reader (ReaderT, ask, runReaderT)
+import Control.Monad.State (StateT, runStateT)
+import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array (concatMap)
 import Data.Array as Array
@@ -68,8 +71,6 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
@@ -85,7 +86,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepWitnessM)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot(..), replicatePrevsCarrier)
@@ -1773,13 +1774,32 @@ derive instance
     (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier)
     _
 
--- | ReaderT transformer for the v2 prover stack, carrying a
--- | `StepAdvice` over a base monad.
+-- | Mutable side-state captured during the rule body's structural pass.
+-- | Currently just the user's `publicOutput` FVars; callers post-run
+-- | evaluate them against the assignments map (see `stepSolveAndProve`).
+-- | Kept as a record so future captured values slot in without churn.
+type StepProverCapture =
+  { userPublicOutputFields :: Maybe (Array (FVar StepField))
+  }
+
+initialStepProverCapture :: StepProverCapture
+initialStepProverCapture =
+  { userPublicOutputFields: Nothing
+  }
+
+-- | ReaderT-over-StateT transformer for the v2 prover stack. The Reader
+-- | layer carries the read-only `StepAdvice` (advice methods like
+-- | `getStepPublicInput`); the State layer captures values written
+-- | from inside the rule body (so far: `setUserPublicOutputFields`,
+-- | the OCaml `Req.Return_value` analog).
 newtype StepProverT
   :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> (Type -> Type) -> Type -> Type
 newtype StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a =
   StepProverT
-    (ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier) m a)
+    ( ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier)
+        (StateT StepProverCapture m)
+        a
+    )
 
 derive instance
   Newtype
@@ -1791,27 +1811,33 @@ derive newtype instance
   Functor (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
-  Apply m =>
+  Monad m =>
   Apply (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
-  Applicative m =>
+  Monad m =>
   Applicative (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
-  Bind m =>
+  Monad m =>
   Bind (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
 derive newtype instance
   Monad m =>
   Monad (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
 
+-- | Run a `StepProverT` action with the supplied advice. Returns both
+-- | the action's result AND the post-run `StepProverCapture` so the
+-- | caller can read whatever the rule body wrote (e.g. the user's
+-- | `publicOutput` FVars).
 runStepProverT
   :: forall prevsSpec ds dw inputVal len carrier valCarrier m a
-   . StepAdvice prevsSpec ds dw inputVal len carrier valCarrier
+   . Monad m
+  => StepAdvice prevsSpec ds dw inputVal len carrier valCarrier
   -> StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a
-  -> m a
-runStepProverT advice (StepProverT m) = runReaderT m advice
+  -> m (Tuple a StepProverCapture)
+runStepProverT advice (StepProverT m) =
+  runStateT (runReaderT m advice) initialStepProverCapture
 
 instance
   ( Monad m
@@ -1877,6 +1903,17 @@ instance
   getPrevAppStates _ =
     StepProverT $ map (\(StepAdvice r) -> r.prevAppStates) ask
 
+-- | Write to the State layer of the StepProverT stack. The OCaml
+-- | analog is the `Req.Return_value` handler at step.ml:896-898 which
+-- | does `return_value := Some res`.
+instance
+  Monad m =>
+  StepUserOutputM
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m) where
+  setUserPublicOutputFields fields =
+    StepProverT $ lift $ State.modify_ \s ->
+      s { userPublicOutputFields = Just fields }
+
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in `Effect`, which dispatches to the `StepWitnessM`/`StepSlotsM`
 -- | `Effect` instances — every advice method there throws. The
@@ -1926,10 +1963,6 @@ stepCompile
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
-  -- Compile-time callers don't need the user's publicOutput value (no
-  -- witness body executes), but stepMain's signature still requires a
-  -- Ref. Use a throw-away one.
-  unusedOutputRef <- Ref.new Nothing
   builtState <-
     compile
       (Proxy @Unit)
@@ -1949,7 +1982,6 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            unusedOutputRef
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2024,7 +2056,6 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
-  => MonadEffect m
   => PrevValuesCarrier prevsSpec valCarrier
   => StepProveContext len
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -2032,13 +2063,6 @@ stepSolveAndProve
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
-  -- Side-channel for capturing the rule's `publicOutput` FVars from
-  -- inside `stepMain`. After the solver runs we have the assignments
-  -- map and can evaluate the captured FVars to recover `outputVal`
-  -- (the rule's user-defined output, which never appears in the
-  -- circuit's kimchi-public-output vector — that one is digest+unfs).
-  userPublicOutputRef <- liftEffect $ Ref.new Nothing
-
   let
     StepAdvice adv = advice
 
@@ -2069,10 +2093,13 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
-              userPublicOutputRef
         )
 
-  eRes <- lift $ runStepProverT advice (runSolverT rawSolver unit)
+  -- `runStepProverT` returns the solver result paired with the
+  -- `StepProverCapture` State accumulated by the rule body — in
+  -- particular the FVars `setUserPublicOutputFields` wrote.
+  Tuple eRes capturedState <- lift $
+    runStepProverT advice (runSolverT rawSolver unit)
 
   case eRes of
     Left e -> throwError (WithContext "stepProve solver" e)
@@ -2094,17 +2121,17 @@ stepSolveAndProve ctx rule compileResult advice = do
                 (Array.length compileResult.builtState.publicInputs)
                 compileResult.builtState.constraints
           throwError (FailedAssertion "stepProve: constraint system not satisfied (wrote row→label map to /tmp/ps_step_row_labels.txt)")
-      -- Evaluate the rule's user `publicOutput` FVars against the
-      -- post-solve assignments map. If the ref is empty,
+      -- Evaluate the rule's user `publicOutput` FVars (captured by
+      -- `setUserPublicOutputFields` in the StepProverT State) against
+      -- the post-solve assignments map. If the State slot is empty,
       -- `stepMain`'s rule_main block didn't run — that's a bug; we
       -- surface it as a FailedAssertion rather than silently
       -- producing zeros. Raw field values are returned;
       -- `runProverBody` applies `fieldsToValue` against the rule's
       -- specific `outputVal`.
-      mUserOutputFields <- liftEffect $ Ref.read userPublicOutputRef
-      userPublicOutputFields <- case mUserOutputFields of
+      userPublicOutputFields <- case capturedState.userPublicOutputFields of
         Nothing ->
-          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (Ref still Nothing post-solve)")
+          throwError (FailedAssertion "stepProve: stepMain did not capture publicOutput FVars (StepProverT.State.userPublicOutputFields was Nothing post-solve)")
         Just fieldVars -> do
           let
             evalLookup :: Variable -> Either EvaluationError StepField

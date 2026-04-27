@@ -29,14 +29,11 @@ import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Effect.Ref (Ref)
-import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -480,6 +477,7 @@ stepMain
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
   => StepPrevValuesM m valCarrier
+  => StepUserOutputM m
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -504,17 +502,6 @@ stepMain
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
   -> StepMainSrsData len
   -> AffinePoint StepField
-  -- | Side-channel for capturing the rule's `publicOutput` FVars. The
-  -- | step circuit's kimchi public-output vector (`outputV`) is the
-  -- | digest+unfinalized payload — NOT the rule's user-defined output.
-  -- | The user's `publicOutput :: outputVar` is hashed into the outer
-  -- | digest but never appears in `outputV` directly. To recover its
-  -- | runtime VALUE, prover code (`stepSolveAndProve`) supplies a Ref
-  -- | here; `stepMain` writes the FVars into it after `rule_main` runs;
-  -- | post-solve evaluation against the assignments map then gives
-  -- | `outputVal`. Compile-time callers (`stepCompile`) pass a throw-away
-  -- | Ref since the witness body never executes during compilation.
-  -> Ref (Maybe (Array (FVar StepField)))
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
@@ -523,8 +510,7 @@ stepMain
   , perSlotFopDomainLog2
   , perSlotKnownWrapKeys
   }
-  dummySg
-  userPublicOutputRef = do
+  dummySg = do
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
@@ -539,9 +525,21 @@ stepMain
     publicInputFields = varToFields @StepField @inputVal publicInput
     publicOutputFields = varToFields @StepField @outputVal publicOutput
     hashAppFields = publicInputFields <> publicOutputFields
-    -- Capture the rule's user `publicOutput` FVars so the prover can
-    -- evaluate them post-solve (see Ref docstring above).
-    _ = unsafePerformEffect (Ref.write (Just publicOutputFields) userPublicOutputRef)
+
+  -- Capture the rule's user `publicOutput` FVars so the prover can
+  -- evaluate them post-solve. Dispatched through the same `exists +
+  -- m`-action pattern as the other advice methods, mirroring how
+  -- OCaml sends `Req.Return_value` from inside an `exists` block
+  -- (mina/src/lib/crypto/pickles/step.ml:896-898). At compile time
+  -- `exists` skips the witness body so the `Effect` `throw` instance
+  -- never fires; at solve time the `StepProverT` instance writes to
+  -- its `StepProverCapture` State slot, which `stepSolveAndProve`
+  -- reads after the solver completes. The `exists` allocates a fresh
+  -- `Unit` var (`sizeInFields = 0`, no actual circuit slot
+  -- allocated), so this introduces no constraints.
+  _ :: Unit <- exists $ lift do
+    setUserPublicOutputFields publicOutputFields
+    pure unit
 
   -- 3. exists: SHARED VK via Req.Wrap_index.
   --    Mirrors OCaml's `dlog_plonk_index` (step_main.ml:498) — one
