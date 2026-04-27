@@ -24,9 +24,9 @@ module Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Data.Maybe (Maybe(..))
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)

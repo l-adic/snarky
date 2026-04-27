@@ -14,11 +14,11 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..))
-import Effect.Ref as Ref
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
@@ -86,7 +86,13 @@ compileStepMainSimpleChain params = unsafePerformEffect do
     -- exercises the same compile config Pickles.compile_promise produces.
     ( \_ -> stepMain
         @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        @34 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+        @34
+        @(F StepField)
+        @(FVar StepField)
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
         simpleChainRule
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH

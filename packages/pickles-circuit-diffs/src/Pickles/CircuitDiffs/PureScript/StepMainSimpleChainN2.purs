@@ -85,9 +85,15 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect do
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
     ( \_ -> stepMain
         @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
-             (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
-         )
-        @67 @(F StepField) @(FVar StepField) @Unit @Unit @(F StepField) @(FVar StepField)
+            (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        )
+        @67
+        @(F StepField)
+        @(FVar StepField)
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
         simpleChainN2Rule
         { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH

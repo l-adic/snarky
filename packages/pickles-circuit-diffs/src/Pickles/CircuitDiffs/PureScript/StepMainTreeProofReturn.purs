@@ -158,9 +158,15 @@ compileStepMainTreeProofReturn params = unsafePerformEffect do
     --   `exists`-allocated VK inside stepMain.
     ( \_ -> stepMain
         @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
-             (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
-         )
-        @67 @Unit @Unit @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField)
+            (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
+        )
+        @67
+        @Unit
+        @Unit
+        @(F StepField)
+        @(FVar StepField)
+        @(F StepField)
+        @(FVar StepField)
         treeProofReturnRule
         { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH
