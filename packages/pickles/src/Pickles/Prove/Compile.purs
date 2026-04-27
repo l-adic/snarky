@@ -1372,8 +1372,8 @@ runCompile cfg rule = do
 
   wrapCR <- wrapCompile @1 @slots
     { wrapMainConfig:
-        buildWrapMainConfig cfg.srs.vestaSrs stepCR.verifierIndex
-          { stepWidth: reflectType (Proxy @mpv), domainLog2: stepDomainLog2 }
+        buildWrapMainConfig @mpv cfg.srs.vestaSrs stepCR.verifierIndex
+          { domainLog2: stepDomainLog2 }
     , crs: cfg.srs.pallasSrs
     }
 
@@ -1607,8 +1607,8 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
 
     wrapCtx =
       { wrapMainConfig:
-          buildWrapMainConfig cfg.srs.vestaSrs stepCR.verifierIndex
-            { stepWidth: reflectType (Proxy @mpv), domainLog2: stepDomainLog2 }
+          buildWrapMainConfig @mpv cfg.srs.vestaSrs stepCR.verifierIndex
+            { domainLog2: stepDomainLog2 }
       , crs: cfg.srs.pallasSrs
       , publicInput: assembleWrapMainInput
           { deferredValues: wrapDv
