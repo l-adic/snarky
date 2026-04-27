@@ -43,7 +43,7 @@ import Control.Monad.Except (ExceptT)
 import Data.Array as Array
 import Data.Functor.Product (Product, product)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Newtype (class Newtype)
+import Data.Newtype (class Newtype, over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -70,6 +70,7 @@ import Pickles.ProofFFI
   , vestaSrsBlindingGenerator
   , vestaSrsLagrangeCommitmentAt
   ) as ProofFFI
+import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap
   ( WrapDeferredValuesInput
@@ -447,8 +448,8 @@ class
 compile
   :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
        @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
-       pad unfsTotal digestPlusUnfs outputSize carrierFVar
-       branchesPred totalBases totalBasesPred
+       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
+       totalIpaCommitmentBases totalIpaCommitmentBasesPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
   => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
@@ -458,13 +459,12 @@ compile
   => Reflectable pad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => Mul mpv 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
+  => Mul mpv 32 unfinalizedFieldsTotal
+  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpv outputSize
   => Compare mpv 3 LT
-  => Add mpv 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => Add 1 branchesPred 1
+  => Add mpv 45 totalIpaCommitmentBases
+  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
   => PadSlots slots mpv
   => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
        (F StepField)
@@ -510,16 +510,6 @@ compile cfg rule = runCompile
 -- CompilableSpec PrevsSpecNil (N=0, NRR-shape)
 --------------------------------------------------------------------------------
 
--- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`) but
--- | required by `stepCompile` as the sg_old padding constant.
-nrrDummyWrapSg :: CRS PallasG -> CRS VestaG -> AffinePoint StepField
-nrrDummyWrapSg pallasSrs vestaSrs =
-  ( Dummy.computeDummySgValues
-      (Dummy.baseCaseDummies { maxProofsVerified: 0 })
-      pallasSrs
-      vestaSrs
-  ).ipa.wrap.sg
-
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
   shapeCompileData cfg =
     { stepProveCtx:
@@ -538,8 +528,17 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
     , wrapDomainLog2: 13
     , stepWidth: 0
     }
+    where
+    -- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`)
+    -- | but required by `stepCompile` as the sg_old padding constant.
+    nrrDummyWrapSg pallasSrs vestaSrs =
+      ( Dummy.computeDummySgValues
+          (Dummy.baseCaseDummies { maxProofsVerified: 0 })
+          pallasSrs
+          vestaSrs
+      ).ipa.wrap.sg
 
-  mkStepAdvice _cfg _stepCR wrapCR appInput _prevs =
+  mkStepAdvice _ _ wrapCR appInput _ =
     let
       -- Nil has no prev slots, so `stepDomainLog2` is dead — the
       -- per-slot dummy that consumes it gets replicated to a
@@ -559,7 +558,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
         , baseCaseWrapPublicInputs: Vector.nil
         }
 
-  shapeProveData _cfg _wrapCR _sideInfo _prevs =
+  shapeProveData _ _ _ _ =
     { stepOraclesPrevChallenges: []
     , prevSgs: Vector.nil
     , prevStepChallenges: Vector.nil
@@ -651,12 +650,11 @@ instance
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
       -- Slot's wrap domain (drives lagrange basis for slot's IVP).
-      -- Self → outer rule's wrap_domain (with override applied);
-      -- External → imported rule's wrap_domain.
+      -- Self / SelfWithStepDomain → outer rule's wrap_domain (with
+      -- override applied); External → imported rule's wrap_domain.
       slotWrapDomainLog2 = case headSlotWrapKey of
-        Self -> outerWrapDomainLog2
-        SelfWithStepDomain _ -> outerWrapDomainLog2
         External vks -> vks.wrapDomainLog2
+        _ -> outerWrapDomainLog2
 
       -- Slot's STEP domain (drives FOP `params.domainLog2` for
       -- omega/vanishing-poly computations). Distinct from wrap_domain
@@ -771,9 +769,7 @@ instance
           msgWrapDigest = hashMessagesForNextWrapProofPureGeneral
             { sg: dummyStepSg
             , paddedChallenges:
-                Dummy.dummyIpaChallenges.wrapExpanded
-                  :< Dummy.dummyIpaChallenges.wrapExpanded
-                  :< Vector.nil
+                Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
             }
 
           fopProofState = Dummy.stepDummyUnfinalizedProof @n bcd
@@ -796,7 +792,7 @@ instance
           , wrapProof: dummyWrapProof bcd
           , wrapPublicInputArr: baseCaseWrapPI
           , prevChalPolys:
-              baseCaseDummyChalPoly :< baseCaseDummyChalPoly :< Vector.nil
+              Vector.replicate @2 baseCaseDummyChalPoly
           , wrapPlonkRaw:
               { alpha: bcd.proofDummy.plonk.alpha
               , beta: bcd.proofDummy.plonk.beta
@@ -817,9 +813,7 @@ instance
           , wrapSpongeDigest: (zero :: StepField)
           , mustVerify: false
           , wrapOwnPaddedBpChals:
-              Dummy.dummyIpaChallenges.wrapExpanded
-                :< Dummy.dummyIpaChallenges.wrapExpanded
-                :< Vector.nil
+              Vector.replicate @2 Dummy.dummyIpaChallenges.wrapExpanded
           , fopState: fopProofState
           , stepAdvicePrevEvals: bcd.proofDummy.prevEvals
           , kimchiPrevChallengesExpanded: Dummy.dummyIpaChallenges.stepExpanded
@@ -1043,18 +1037,14 @@ instance
       -- outer rule's `wrapDomainOverride`; External slots use the
       -- imported rule's stored wrapDomainLog2. Same logic as
       -- `shapeCompileData`'s slotParams (lines 716-734).
+      outerOverridenWrapDomainLog2 = case cfg.wrapDomainOverride of
+        Just o -> o
+        Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
+
       slotWrapDomainLog2 :: Int
-      slotWrapDomainLog2 =
-        case headSlotWrapKey of
-          Self ->
-            case cfg.wrapDomainOverride of
-              Just o -> o
-              Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
-          SelfWithStepDomain _ ->
-            case cfg.wrapDomainOverride of
-              Just o -> o
-              Nothing -> Dummy.wrapDomainLog2ForProofsVerified slotN
-          External vks -> vks.wrapDomainLog2
+      slotWrapDomainLog2 = case headSlotWrapKey of
+        External vks -> vks.wrapDomainLog2
+        _ -> outerOverridenWrapDomainLog2
 
       -- Slot-specific dummies sized by the slot's prev rule's mpv (= n),
       -- not the outer rule's mpv. Matters for Tree-style heterogeneous
@@ -1065,14 +1055,12 @@ instance
       wrapSgD = dummySgs.ipa.wrap.sg -- AffinePoint StepField
       stepSgD = dummySgs.ipa.step.sg -- AffinePoint WrapField
 
-      PerProofUnfinalized headUnfRaw = Vector.head sideInfo.unfinalizedSlots
-      tailUnfinalized = Vector.tail sideInfo.unfinalizedSlots
-
-      headChalPolyComm = Vector.head sideInfo.challengePolynomialCommitments
-      tailChalPolyComms = Vector.tail sideInfo.challengePolynomialCommitments
-
-      headBaseCaseWrapPI = Vector.head sideInfo.baseCaseWrapPublicInputs
-      tailBaseCaseWrapPIs = Vector.tail sideInfo.baseCaseWrapPublicInputs
+      { head: PerProofUnfinalized headUnfRaw, tail: tailUnfinalized } =
+        Vector.uncons sideInfo.unfinalizedSlots
+      { head: headChalPolyComm, tail: tailChalPolyComms } =
+        Vector.uncons sideInfo.challengePolynomialCommitments
+      { head: headBaseCaseWrapPI, tail: tailBaseCaseWrapPIs } =
+        Vector.uncons sideInfo.baseCaseWrapPublicInputs
 
       -- Type1→Type2 cross-field coerce of the raw step-advice unfinalized
       -- entry into the wrap-advice shape (`Type2 (F WrapField)`).
@@ -1091,15 +1079,14 @@ instance
         , spongeDigest:
             -- Digest.Constant cross-field coerce (step→wrap). Protocol-
             -- level, matches OCaml's limb packing.
-            F (fromBigInt (toBigInt (case headUnfRaw.spongeDigest of F x -> x)) :: WrapField)
-        , beta: UnChecked (coerceViaBits (case headUnfRaw.beta of UnChecked v -> v))
-        , gamma: UnChecked (coerceViaBits (case headUnfRaw.gamma of UnChecked v -> v))
-        , alpha: UnChecked (coerceViaBits (case headUnfRaw.alpha of UnChecked v -> v))
-        , zeta: UnChecked (coerceViaBits (case headUnfRaw.zeta of UnChecked v -> v))
-        , xi: UnChecked (coerceViaBits (case headUnfRaw.xi of UnChecked v -> v))
+            over F crossFieldDigest headUnfRaw.spongeDigest
+        , beta: over UnChecked coerceViaBits headUnfRaw.beta
+        , gamma: over UnChecked coerceViaBits headUnfRaw.gamma
+        , alpha: over UnChecked coerceViaBits headUnfRaw.alpha
+        , zeta: over UnChecked coerceViaBits headUnfRaw.zeta
+        , xi: over UnChecked coerceViaBits headUnfRaw.xi
         , bulletproofChallenges:
-            map (\(UnChecked v) -> UnChecked (coerceViaBits v))
-              headUnfRaw.bulletproofChallenges
+            map (over UnChecked coerceViaBits) headUnfRaw.bulletproofChallenges
         , shouldFinalize: headUnfRaw.shouldFinalize
         }
 
@@ -1320,8 +1307,8 @@ instance
 runCompile
   :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
        @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
-       pad unfsTotal digestPlusUnfs outputSize carrierFVar
-       branchesPred totalBases totalBasesPred
+       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
+       totalIpaCommitmentBases totalIpaCommitmentBasesPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
   => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
@@ -1331,13 +1318,12 @@ runCompile
   => Reflectable pad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => Mul mpv 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
+  => Mul mpv 32 unfinalizedFieldsTotal
+  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpv outputSize
   => Compare mpv 3 LT
-  => Add mpv 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => Add 1 branchesPred 1
+  => Add mpv 45 totalIpaCommitmentBases
+  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
   => PadSlots slots mpv
   => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
        (F StepField)
@@ -1445,8 +1431,8 @@ runCompile cfg rule = do
 runProverBody
   :: forall @prevsSpec @slotVKs @prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @m
-       pad unfsTotal digestPlusUnfs outputSize carrierFVar
-       branchesPred totalBases totalBasesPred
+       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
+       totalIpaCommitmentBases totalIpaCommitmentBasesPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
   => PrevValuesCarrier prevsSpec valCarrier
   => MonadEffect m
@@ -1456,13 +1442,12 @@ runProverBody
   => Reflectable pad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => Mul mpv 32 unfsTotal
-  => Add unfsTotal 1 digestPlusUnfs
+  => Mul mpv 32 unfinalizedFieldsTotal
+  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpv outputSize
   => Compare mpv 3 LT
-  => Add mpv 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => Add 1 branchesPred 1
+  => Add mpv 45 totalIpaCommitmentBases
+  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
   => PadSlots slots mpv
   => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
        (F StepField)

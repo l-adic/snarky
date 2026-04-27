@@ -19,8 +19,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -77,9 +75,9 @@ simpleChainN2Rule appState = do
     , publicOutput: unit
     }
 
-compileStepMainSimpleChainN2 :: StepMainSimpleChainN2Params -> CompiledCircuit StepField
-compileStepMainSimpleChainN2 params = unsafePerformEffect do
-  unusedOutputRef <- Ref.new Nothing
+compileStepMainSimpleChainN2
+  :: StepMainSimpleChainN2Params -> Effect (CompiledCircuit StepField)
+compileStepMainSimpleChainN2 params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
@@ -101,6 +99,5 @@ compileStepMainSimpleChainN2 params = unsafePerformEffect do
         , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil
         }
         dummyWrapSg
-        unusedOutputRef
     )
     Kimchi.initialState

@@ -18,8 +18,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -74,9 +72,9 @@ simpleChainRule appState = do
     , publicOutput: unit
     }
 
-compileStepMainSimpleChain :: StepMainSimpleChainParams -> CompiledCircuit StepField
-compileStepMainSimpleChain params = unsafePerformEffect do
-  unusedOutputRef <- Ref.new Nothing
+compileStepMainSimpleChain
+  :: StepMainSimpleChainParams -> Effect (CompiledCircuit StepField)
+compileStepMainSimpleChain params =
   compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 14: matches OCaml's production `Fix_domains.domains`
     -- output for the Simple_chain N1 inductive rule (small circuit; ceil_log2
@@ -100,6 +98,5 @@ compileStepMainSimpleChain params = unsafePerformEffect do
         , perSlotKnownWrapKeys: Nothing :< Vector.nil
         }
         dummyWrapSg
-        unusedOutputRef
     )
     Kimchi.initialState

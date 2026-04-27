@@ -32,8 +32,7 @@ import Prelude
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
+import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -78,9 +77,8 @@ noRecursionReturnRule _ = pure
   }
 
 compileStepMainNoRecursionReturn
-  :: StepMainNoRecursionReturnParams -> CompiledCircuit StepField
-compileStepMainNoRecursionReturn params = unsafePerformEffect do
-  unusedOutputRef <- Ref.new Nothing
+  :: StepMainNoRecursionReturnParams -> Effect (CompiledCircuit StepField)
+compileStepMainNoRecursionReturn params =
   compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
     -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
@@ -99,6 +97,5 @@ compileStepMainNoRecursionReturn params = unsafePerformEffect do
         , perSlotKnownWrapKeys: Vector.nil
         }
         dummyWrapSg
-        unusedOutputRef
     )
     Kimchi.initialState

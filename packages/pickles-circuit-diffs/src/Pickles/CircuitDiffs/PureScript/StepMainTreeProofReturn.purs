@@ -37,8 +37,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Effect.Ref as Ref
-import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
@@ -125,9 +123,9 @@ treeProofReturnRule _ = do
     , publicOutput: self
     }
 
-compileStepMainTreeProofReturn :: StepMainTreeProofReturnParams -> CompiledCircuit StepField
-compileStepMainTreeProofReturn params = unsafePerformEffect do
-  unusedOutputRef <- Ref.new Nothing
+compileStepMainTreeProofReturn
+  :: StepMainTreeProofReturnParams -> Effect (CompiledCircuit StepField)
+compileStepMainTreeProofReturn params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- N=2, output size = 33*2 + 1 = 67 (two unfinalized proofs + digest
     -- + two msg_wrap entries). Wrap domain log2 = 14 from
@@ -174,7 +172,6 @@ compileStepMainTreeProofReturn params = unsafePerformEffect do
         , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
         }
         dummyWrapSg
-        unusedOutputRef
     )
     Kimchi.initialState
 

@@ -367,8 +367,24 @@ stripMetadata c = c
   }
 
 exactMatch :: forall f. Ord f => SerdeHex f => PrimeField f => String -> Circuit f -> SpecT Aff Unit Aff Unit
-exactMatch name ps =
+exactMatch name ps = exactMatchEff name (pure ps)
+
+-- | Variant for circuits whose construction is `Effect`-bound (e.g. the
+-- | `compileStepMain*` helpers that thread `CircuitBuilderT` state through
+-- | a real `Effect` context). Equivalent to `exactMatch` after running the
+-- | producing action — provided so call sites don't need an
+-- | `unsafePerformEffect` shim at the boundary.
+exactMatchEff
+  :: forall f
+   . Ord f
+  => SerdeHex f
+  => PrimeField f
+  => String
+  -> Effect (Circuit f)
+  -> SpecT Aff Unit Aff Unit
+exactMatchEff name effPs =
   it (name <> " matches OCaml") do
+    ps <- liftEffect effPs
     ocaml <- liftEffect $ (loadOcamlCircuit name :: Effect (Circuit f))
     let psCircuit = comparable ps
     let ocamlCircuit = comparable ocaml
@@ -559,7 +575,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=1, Input mode. Public input layout is input field only.
-        exactMatch "step_main_simple_chain_circuit" (fromCompiledCircuit $ compileStepMainSimpleChain stepMainSrsData)
+        exactMatchEff "step_main_simple_chain_circuit" (fromCompiledCircuit <$> compileStepMainSimpleChain stepMainSrsData)
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -567,12 +583,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatch "step_main_simple_chain_n2_circuit" (fromCompiledCircuit $ compileStepMainSimpleChainN2 stepMainN2SrsData)
+        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <$> compileStepMainSimpleChainN2 stepMainN2SrsData)
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
-        exactMatch "step_main_add_one_return_circuit" (fromCompiledCircuit $ compileStepMainAddOneReturn stepMainSrsData)
+        exactMatchEff "step_main_add_one_return_circuit" (fromCompiledCircuit <$> compileStepMainAddOneReturn stepMainSrsData)
         -- N=0, Output mode — No_recursion_return. Rule returns
         -- `output = 0` with no input. Exercises the Output-mode branch
         -- of step_main.ml:566-573 (`Output _ -> ret_var`) at N=0: the
@@ -580,7 +596,7 @@ spec =
         -- field (no input contribution). Precursor to Tree_proof_return's
         -- proof-level byte-for-byte test, which consumes a real
         -- No_recursion_return proof in slot 0.
-        exactMatch "step_main_no_recursion_return_circuit" (fromCompiledCircuit $ compileStepMainNoRecursionReturn stepMainSrsData)
+        exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <$> compileStepMainNoRecursionReturn stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`PrevsSpecCons 0 (PrevsSpecCons 2 …)`)
@@ -598,7 +614,7 @@ spec =
             { perSlotLagrangeAt: lagrangeAtD13 :< lagrangeAtD14 :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
-        exactMatch "step_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileStepMainTreeProofReturn treeProofReturnSrsData)
+        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
