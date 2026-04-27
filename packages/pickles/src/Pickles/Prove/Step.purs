@@ -61,8 +61,7 @@ import Data.FoldableWithIndex (forWithIndex_)
 import Data.Traversable (traverse)
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (maybe)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -70,7 +69,6 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))

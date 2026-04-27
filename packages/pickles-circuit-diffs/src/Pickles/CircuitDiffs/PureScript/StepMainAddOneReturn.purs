@@ -26,6 +26,8 @@ import Prelude
 
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Data.Maybe (Maybe(..))
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
@@ -73,7 +75,11 @@ addOneReturnRule x = pure
   }
 
 compileStepMainAddOneReturn :: StepMainAddOneReturnParams -> CompiledCircuit StepField
-compileStepMainAddOneReturn params = unsafePerformEffect $
+compileStepMainAddOneReturn params = unsafePerformEffect do
+  -- `stepMain` requires a `Ref` side-channel (post-Phase D-2) for the
+  -- prover to recover the rule's user `publicOutput` value; circuit-
+  -- shape compilation discards it.
+  unusedOutputRef <- Ref.new Nothing
   compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
     -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
@@ -88,5 +94,6 @@ compileStepMainAddOneReturn params = unsafePerformEffect $
         , perSlotKnownWrapKeys: Vector.nil
         }
         dummyWrapSg
+        unusedOutputRef
     )
     Kimchi.initialState
