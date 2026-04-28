@@ -128,7 +128,9 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
-import Pickles.Prove.Verify (CompiledProof(..), Verifier)
+import Pickles.Prove.Verify (CompiledProof(..), Verifier, mkVerifier)
+import Pickles.Util.Unique (newUnique)
+import Data.Newtype (wrap)
 import Pickles.Prove.Wrap
   ( WrapCompileResult
   , buildWrapAdvice
@@ -1518,20 +1520,123 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
     }
 
 compileMulti
-  :: forall @inputVal @outputVal @mpvMax
-       rulesCarrier proversCarrier perBranchStepCarrier perBranchVKsCarrier
-   . CompileMultiConfig
+  :: forall @rs @inputVal @outputVal @prevInputVal @mpvMax @slots
+       branches
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       selfStepDomainLog2sCarrier
+       stepProveFnsCarrier
+       proversCarrier
+       branchesPred totalBases totalBasesPred
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       selfStepDomainLog2sCarrier
+       stepProveFnsCarrier
+       proversCarrier
+  => CircuitGateConstructor WrapField PallasG
+  => Reflectable branches Int
+  => Reflectable mpvMax Int
+  => Add 1 branchesPred branches
+  => Compare 0 branches LT
+  => Compare mpvMax 3 LT
+  => Add mpvMax 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpvMax
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CompileMultiConfig
   -> rulesCarrier
   -> Effect
        ( MultiOutput
            proversCarrier
-           perBranchStepCarrier
+           perBranchStepCompileResults
            mpvMax
            inputVal
            outputVal
-           perBranchVKsCarrier
+           Unit
        )
-compileMulti _cfg _rules = notImplemented "compileMulti"
+compileMulti cfg rules = do
+  -- Step 1: per-rule pre-pass + step compile.
+  { stepResults, log2s } <- runMultiCompileFull
+    @rs
+    @inputVal
+    @outputVal
+    @prevInputVal
+    cfg
+    rules
+
+  let
+    perBranchVec = buildWrapPerBranchVec
+      @rs
+      @inputVal
+      @outputVal
+      @prevInputVal
+      stepResults
+    -- Lagrange-domain log2: provisionally wrap_domains[mpvMax].
+    -- Same placeholder as compileMultiStepWrap; needs witness-diff
+    -- validation against dump_two_phase_chain.exe.
+    lagrangeDomainLog2 =
+      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
+
+  -- Step 2: shared wrap compile across all branches.
+  wrapResult <- wrapCompile @branches @slots
+    { wrapMainConfig:
+        buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+          { lagrangeDomainLog2, perBranch: perBranchVec }
+    , crs: cfg.srs.pallasSrs
+    }
+
+  -- Step 3: build per-branch BranchProver closures (each captures its
+  -- branchIdx for `whichBranch` baking in the wrap statement).
+  provers <- buildBranchProvers
+    @rs
+    @inputVal
+    @outputVal
+    @prevInputVal
+    0
+    cfg
+    wrapResult
+    perBranchVec
+    lagrangeDomainLog2
+    stepResults
+    log2s
+    rules
+
+  -- Step 4: shared verifier + tag.
+  unique <- newUnique
+  let
+    -- Placeholder: uses the pre-pass log2 of the FIRST branch as
+    -- the verifier's stepDomainLog2. Multi-branch verification will
+    -- need a per-branch shape; deferred to a Verifier refactor.
+    firstBranchStepDomainLog2 =
+      (Vector.head perBranchVec).stepDomainLog2
+
+    verifier :: Verifier
+    verifier = mkVerifier
+      { wrapVK: wrapResult.verifierIndex
+      , vestaSrs: cfg.srs.vestaSrs
+      , stepDomainLog2: firstBranchStepDomainLog2
+      }
+
+  pure
+    { provers
+    , tag: wrap { unique, verifier }
+    , verifier
+    , vks:
+        { wrap: wrapResult
+        , perBranchStep: stepResults
+        , wrapDomainLog2: lagrangeDomainLog2
+        }
+    , perBranchVKs: unit
+    }
 
 -- | Standard not-implemented marker — throws an `Effect` exception so
 -- | Phase 2a tests can `try` / `catchException` and surface a clean
