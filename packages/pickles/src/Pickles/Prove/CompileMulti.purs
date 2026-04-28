@@ -73,7 +73,6 @@ module Pickles.Prove.CompileMulti
 import Prelude
 
 import Control.Monad.Except (ExceptT)
-import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe, fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -107,9 +106,15 @@ import Pickles.ProofFFI
   , proofWitnessEvals
   , proofZEvals
   )
-import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, wrapComputeDeferredValues)
+import Pickles.Prove.Pure.Wrap
+  ( WrapDeferredValuesInput
+  , assembleWrapMainInput
+  , wrapComputeDeferredValues
+  )
+import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import JS.BigInt as BigInt
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Data.Array as Array
 import Partial.Unsafe (unsafePartial)
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -123,10 +128,16 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
-import Pickles.Prove.Verify (CompiledProof, Verifier)
-import Pickles.Prove.Wrap (WrapCompileResult, buildWrapMainConfigMulti, wrapCompile)
+import Pickles.Prove.Verify (CompiledProof(..), Verifier)
+import Pickles.Prove.Wrap
+  ( WrapCompileResult
+  , buildWrapAdvice
+  , buildWrapMainConfigMulti
+  , wrapCompile
+  , wrapSolveAndProve
+  )
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
-import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, StatementIO(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Dummy
   ( baseCaseDummies
@@ -140,9 +151,9 @@ import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Circuit.DSL (BoolVar, F, FVar)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
-import Snarky.Circuit.Types (class CircuitType)
+import Snarky.Circuit.Types (class CircuitType, fieldsToValue)
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Types.Shifted (SplitField, Type2)
 
@@ -626,8 +637,9 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   -- |   * step results / log2s / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
-    :: forall vecLen
+    :: forall vecLen vecLenPred
      . Reflectable vecLen Int
+    => Add 1 vecLenPred vecLen
     => Int
     -> CompileMultiConfig
     -> WrapCompileResult
@@ -1218,7 +1230,7 @@ compileMultiStepWrap cfg rules = do
 runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
-       branches
+       branches branchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        totalBases totalBasesPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
@@ -1226,6 +1238,7 @@ runMultiProverBody
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
+  => Add 1 branchesPred branches
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable outputSize Int
@@ -1420,16 +1433,79 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
       Vector.append (Vector.replicate @pad dummyKimchiEntry)
         proveData.kimchiPrevEntries
 
-    _msgWrap :: WrapField
-    _msgWrap = hashMessagesForNextWrapProofPureGeneral
+    msgWrap :: WrapField
+    msgWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: stepProofSg
       , paddedChallenges: msgWrapPadded
       }
 
-  -- Phase 2b.24i+: wrap statement+advice (with whichBranch), wrap
-  -- solver, package CompiledProof.
-  let _ = msgStep
-  lift $ notImplemented "runMultiProverBody — wrap solver (Phase 2b.24i+)"
+    wrapDv = wrapComputeDeferredValues wrapDvInput
+
+    -- Phase 2b.24i: wrap statement+advice (with whichBranch baked
+    -- per-branch via `F (fromInt branchIdx)`), wrap solver context.
+    -- Mirrors Compile.purs:1614-1637, with two changes:
+    --   * buildWrapMainConfigMulti (multi-branch) instead of
+    --     single-rule buildWrapMainConfig.
+    --   * whichBranch parameterized from the outer branchIdx.
+    wrapCtx =
+      { wrapMainConfig:
+          buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+            { lagrangeDomainLog2: _lagrangeDomainLog2
+            , perBranch: _perBranchVec
+            }
+      , crs: cfg.srs.pallasSrs
+      , publicInput: assembleWrapMainInput
+          { deferredValues: wrapDv
+          , messagesForNextStepProofDigest: msgStep
+          , messagesForNextWrapProofDigest: msgWrap
+          }
+      , advice: buildWrapAdvice
+          { stepProof: stepResult.proof
+          , whichBranch: F (fromBigInt (BigInt.fromInt _branchIdx) :: WrapField)
+          , prevUnfinalizedProofs: proveData.prevUnfinalizedProofs
+          , prevMessagesForNextStepProofHash:
+              F (fromBigInt (toBigInt msgStep) :: WrapField)
+          , prevStepAccs: proveData.prevStepAccs
+          , prevOldBpChals: proveData.slotsValue
+          , prevEvals: proveData.prevEvals
+          , prevWrapDomainIndices: proveData.prevWrapDomainIndices
+          }
+      , debug: cfg.debug
+      , kimchiPrevChallenges: _kimchiPrevPadded
+      }
+
+  wrapProveResult <- wrapSolveAndProve @branches @slots wrapCtx wrapResult
+
+  let
+    -- Recover the rule's user-defined `publicOutput` from
+    -- stepResult.userPublicOutputFields (populated post-solve via
+    -- the stepMain Ref). NOT stepResult.publicOutputs (which is
+    -- the kimchi public-output vector = digest+unfinalized+
+    -- wrap-msgs).
+    publicOutput =
+      fieldsToValue @StepField stepResult.userPublicOutputFields
+
+  pure $ CompiledProof
+    { statement: StatementIO { input: appInput, output: publicOutput }
+    , publicOutput
+    , auxiliaryOutput: unit
+    , wrapProof: wrapProveResult.proof
+    , rawPlonk: toPlonkMinimal wrapDv.plonk
+    , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
+    , branchData: wrapDv.branchData
+    , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
+    , prevEvals: allEvals
+    , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+    , oldBulletproofChallenges: proveData.prevStepChallenges
+    , challengePolynomialCommitment: stepProofSg
+    , messagesForNextStepProofDigest: msgStep
+    , messagesForNextWrapProofDigest: msgWrap
+    , msgWrapChallenges: proveData.msgWrapChallenges
+    , outerStepChalPolyComms:
+        map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
+    , wrapDvInput
+    , wrapDv
+    }
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
