@@ -59,6 +59,8 @@ module Pickles.Prove.CompileMulti
   , buildBranchProvers
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
+  -- * Multi-branch prover body skeleton (Phase 2b.24a)
+  , runMultiProverBody
   -- * End-to-end step + carrier conversion (Phase 2b.17)
   , compileMultiStepWrap
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
@@ -617,6 +619,7 @@ instance
       restStepCompileResults restLog2s restStepProveFns restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
+  , PrevValuesCarrier prevsSpec valCarrier
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
       inputVal outputVal prevInputVal branches mpvMax
@@ -711,13 +714,22 @@ instance
     (Tuple _headStepCR restStepResults)
     (Tuple _headLog2 restLog2s)
     (Tuple (RuleEntry _r) restEntries) = do
-    -- Phase 2b.23: branchIdx threaded through. Per-branch closure
-    -- captures it for wrap-statement `whichBranch` (Phase 2b.24).
+    -- Phase 2b.24a: closure body still a stub that captures branchIdx.
+    -- The intended body delegates to `runMultiProverBody @prevsSpec
+    -- @ruleMpv …` but PS's instance resolution at the Cons body's
+    -- call site can't pin all the auxiliary type vars (slots,
+    -- carrierFVar, pad/unfs/etc. — funDep-derivable in principle but
+    -- PS doesn't propagate them through CompilableSpec's funDep
+    -- here). Phase 2b.24b will plumb additional class constraints
+    -- (PadSlots, the wrap-side CircuitType, etc.) into the Cons
+    -- instance head so PS has them in scope.
     let
       thisBranch = branchIdx
       headProver = \_stepInputs ->
         lift $ notImplemented
-          ("buildBranchProvers head closure (branch " <> show thisBranch <> ")")
+          ("buildBranchProvers head closure (branch "
+            <> show thisBranch
+            <> ") — runMultiProverBody wiring deferred")
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
@@ -1102,6 +1114,80 @@ compileMultiStepWrap cfg rules = do
     , crs: cfg.srs.pallasSrs
     }
   pure { stepResults, wrapResult, perBranchVec }
+
+--------------------------------------------------------------------------------
+-- runMultiProverBody — Phase 2b.24 skeleton: per-branch prover body
+-- analog of single-rule `Pickles.Prove.Compile.runProverBody`.
+--
+-- The full implementation will mirror runProverBody (Compile.purs:1466+):
+--   1. mkStepAdvice @prevsSpec cfg stepCR wrapResult appInput prevs
+--   2. shapeProveData @prevsSpec cfg wrapResult sideInfo prevs
+--   3. stepProveFn ctx stepCR stepAdvice  (was stepSolveAndProve in single-rule)
+--   4. compute step oracles + allEvals
+--   5. wrapComputeDeferredValues
+--   6. wrapSolveAndProve with `whichBranch: F (fromInt branchIdx)`
+--   7. package CompiledProof
+--
+-- Phase 2b.24a (this commit): notImplemented body. Phase 2b.24b+ will
+-- fill in the steps incrementally, each verified by typechecking.
+--
+-- Why a top-level function (vs class method): the body uses many
+-- per-rule type vars + constraints, and writing it inside a class
+-- method body forces all those vars/constraints onto the class
+-- instance head — which we just split apart in Phase 2b.20 to
+-- minimize. Keeping it top-level localizes the constraints to this
+-- function.
+--
+-- The class method `buildBranchProvers` calls this at each per-branch
+-- closure, passing the captured `branchIdx` + per-branch step result.
+--------------------------------------------------------------------------------
+
+runMultiProverBody
+  :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
+       @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+       pad unfsTotal digestPlusUnfs outputSize carrierFVar
+       totalBases totalBasesPred
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
+  => PrevValuesCarrier prevsSpec valCarrier
+  => CircuitGateConstructor StepField VestaG
+  => CircuitGateConstructor WrapField PallasG
+  => Reflectable mpv Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad mpv PaddedLength
+  => Mul mpv 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs mpv outputSize
+  => Compare mpv 3 LT
+  => Add mpv 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpv
+  => CircuitType StepField inputVal inputVar
+  => CircuitType StepField outputVal outputVar
+  => CircuitType StepField prevInputVal prevInputVar
+  => CircuitType StepField carrier carrierFVar
+  => CheckedType StepField (KimchiConstraint StepField) inputVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierFVar
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => Int
+  -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
+  -> CompileMultiConfig
+  -> WrapCompileResult
+  -> PProveStep.StepCompileResult
+  -- ^ this branch's step compile result
+  -> Int
+  -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
+  -> RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs
+  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> ExceptT ProveError Effect
+       (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
+runMultiProverBody _branchIdx _cfg _wrapResult _stepCR _selfStepDomainLog2
+  _entry _stepInputs =
+  lift $ notImplemented "runMultiProverBody"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
