@@ -47,6 +47,9 @@ module Pickles.Prove.CompileMulti
   , compileMulti
   -- * Carrier class (Phase 2b.2 — class signature only, bodies stubbed)
   , class CompilableRulesSpec
+  -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
+  , RuleEntry(..)
+  , mkRuleEntry
   -- * Misc
   , notImplemented
   ) where
@@ -58,6 +61,7 @@ import Data.Maybe (Maybe)
 import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Pickles.Prove.Compile (ProveError, StepInputs, Tag)
+import Pickles.Prove.Step (StepRule) as PProveStep
 import Pickles.Prove.Verify (CompiledProof, Verifier)
 import Pickles.Prove.Wrap (WrapCompileResult)
 import Pickles.Types (StatementIO)
@@ -241,6 +245,80 @@ instance
     inputVal outputVal prevInputVal
     branches
     mpvMax
+
+--------------------------------------------------------------------------------
+-- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
+-- carrier shape.
+--
+-- Phase 2b.1 found: storing `StepRule mpv …` (a rank-2 forall over
+-- `t` and `m'`) in a record field rejected by PS — the same wall PR
+-- #126 hit.
+--
+-- Probe hypothesis: capture the rank-2 rule INSIDE a closure whose
+-- outer type is monomorphic. `RuleEntry` holds Effect-typed action
+-- closures (compile / prove) that internally use the rule's rank-2
+-- nature when invoked, but the stored field types are non-rank-2.
+-- PS rejects rank-2 *storage* but should be fine with rank-2 *use
+-- inside a closure body*.
+--
+-- If this probe compiles, we have the path forward for `compileMulti`'s
+-- input shape: a Tuple chain of `RuleEntry`s. If it doesn't, the
+-- rank-2 wall is even higher than thought and we need a typeclass-
+-- based dispatch instead.
+--
+-- For Phase 2b.4 the bodies are stubbed (`notImplemented`) — we're
+-- testing only that the SIGNATURES type-check.
+--------------------------------------------------------------------------------
+
+-- | Per-rule entry packaged for storage in a multi-branch carrier.
+-- |
+-- | Stored fields are intentionally NOT the rank-2 `StepRule` —
+-- | instead, monomorphic Effect-typed closures that capture the
+-- | rule when constructed via `mkRuleEntry`. PS handles the rank-2
+-- | nature at the closure body's call site (where the rule is
+-- | applied to specific `t` / `m'`), not at the record-field level.
+-- |
+-- | Type variables documented for the eventual type-class wiring:
+-- |
+-- |   * `mpv` — this branch's `max_proofs_verified`.
+-- |   * `valCarrier` — this branch's prev-statements tuple shape.
+-- |   * `slotVKs` — this branch's per-prev-slot VK carrier.
+-- |
+-- | Phase 2b.5 fills in the closure bodies; for now just placeholder
+-- | shapes proving the storage is acceptable.
+data RuleEntry
+  :: Int -> Type -> Type -> Type
+data RuleEntry mpv valCarrier slotVKs = RuleEntry
+  { stepCompileFn :: Unit -> Effect Unit          -- placeholder shape
+  , stepProveFn :: Unit -> Effect Unit             -- placeholder shape
+  , slotVKs :: slotVKs
+  }
+
+-- | Smart constructor: takes the user's rank-2 `StepRule` value and
+-- | produces a `RuleEntry` with Effect-typed closures capturing it.
+-- |
+-- | Phase 2b.4 body: throws notImplemented. The point is to test
+-- | whether PS accepts the rank-2 input at the SIGNATURE level. If
+-- | yes, Phase 2b.5 wires the closure bodies to delegate to
+-- | `stepCompile` / `stepSolveAndProve` with the captured rule.
+-- |
+-- | (We import `StepRule` for the signature even though we only
+-- | placeholder it; this proves PS at least lets us TYPE the
+-- | argument as a rank-2 value passed positionally to a function.)
+mkRuleEntry
+  :: forall @mpv @valCarrier @slotVKs
+       inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+   . PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  -> slotVKs
+  -> Effect (RuleEntry mpv valCarrier slotVKs)
+mkRuleEntry _rule _slotVKs = notImplemented "mkRuleEntry"
+
+-- Local alias to avoid naming collision in imports if `StepRule`
+-- appears elsewhere; the existing rank-2 type alias from
+-- `Pickles.Prove.Step`. Defined as a type synonym to avoid an
+-- import-cycle headache during this exploratory probe.
+type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
+  PProveStep.StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
 
 --------------------------------------------------------------------------------
 -- compileMulti — Phase 2a stub
