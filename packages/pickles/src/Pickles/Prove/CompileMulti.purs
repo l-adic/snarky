@@ -325,6 +325,7 @@ class CompilableRulesSpec
   -> Type
   -> Int
   -> Int
+  -> (Type -> Type)
   -> Type
   -> Type
   -> Type
@@ -333,7 +334,7 @@ class CompilableRulesSpec
   -> Type
   -> Constraint
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slotsMax
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
@@ -415,8 +416,12 @@ class
          , stepVK :: VerifierIndex VestaG StepField
          }
 
+-- | Nil instance is polymorphic in `slotsMax` — Phase 2b.31b step (b)
+-- | adds `slotsMax` to the class head; the Nil case returns unit-shaped
+-- | carriers regardless, so any `slotsMax` works.
 instance
-  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit Unit
+  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 slotsMax Unit
+    Unit
     Unit
     Unit
     Unit
@@ -435,7 +440,7 @@ instance
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      restBranches restMpvMax restCarrier restStepCompileFns restCtxs
+      restBranches restMpvMax slotsMax restCarrier restStepCompileFns restCtxs
       restStepCompileResults restLog2s restStepProveFns
   , Add restBranches 1 branches
   , PrevsCarrier
@@ -458,6 +463,7 @@ instance
     inputVal outputVal prevInputVal
     branches
     mpvMax
+    slotsMax
     ( Tuple
         ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
             slotVKs
@@ -491,6 +497,7 @@ instance
       @prevInputVal
       @restBranches
       @restMpvMax
+      @slotsMax
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -507,6 +514,7 @@ instance
           @prevInputVal
           @restBranches
           @restMpvMax
+          @slotsMax
           @restCarrier
           @restStepCompileFns
           @restCtxs
@@ -524,6 +532,7 @@ instance
       @prevInputVal
       @restBranches
       @restMpvMax
+      @slotsMax
       @restCarrier
       @restStepCompileFns
       @restCtxs
@@ -547,6 +556,7 @@ instance
         @prevInputVal
         @restBranches
         @restMpvMax
+        @slotsMax
         @restCarrier
         @restStepCompileFns
         @restCtxs
@@ -565,6 +575,7 @@ instance
           @prevInputVal
           @restBranches
           @restMpvMax
+          @slotsMax
           @restCarrier
           @restStepCompileFns
           @restCtxs
@@ -596,11 +607,11 @@ instance
 -- (CompilableSpec methods).
 --------------------------------------------------------------------------------
 
-class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slotsMax
         rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
         perBranchStepCompileResults selfStepDomainLog2sCarrier
         stepProveFnsCarrier
-   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
+   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slotsMax
         rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
         perBranchStepCompileResults selfStepDomainLog2sCarrier
         stepProveFnsCarrier
@@ -667,9 +678,11 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
     -> rulesCarrier
     -> Effect proversCarrier
 
+-- | Nil shape instance is polymorphic in `slotsMax` (parallels the
+-- | structural Nil instance).
 instance
   CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 0
-    Unit Unit Unit Unit Unit Unit Unit
+    slotsMax Unit Unit Unit Unit Unit Unit Unit
   where
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure { stepResults: unit, log2s: unit }
@@ -677,7 +690,7 @@ instance
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
-      restBranches restMpvMax restCarrier restStepCompileFns restCtxs
+      restBranches restMpvMax slotsMax restCarrier restStepCompileFns restCtxs
       restStepCompileResults restLog2s restStepProveFns restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
@@ -693,10 +706,20 @@ instance
   , Mul ruleMpv 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs ruleMpv outputSize
-  , Compare ruleMpv 3 LT
-  , Add ruleMpv 45 totalBases
-  , Add 1 totalBasesPred totalBases
   , PadSlots slots ruleMpv
+  -- Phase 2b.31b step (b): wrap-stage constraints on `mpvMax`/`slotsMax`
+  -- (the wrap circuit's wider shape). Step (a) ran the wrap stage at
+  -- the rule's `ruleMpv`/`slots` shape (identity `PadProveDataMpv`);
+  -- step (b) runs it at `mpvMax`/`slotsMax` and uses the general
+  -- `PadProveDataMpv` instance to convert.
+  , Reflectable mpvMax Int
+  , Reflectable padMax Int
+  , Add padMax mpvMax PaddedLength
+  , Compare mpvMax 3 LT
+  , Add mpvMax 45 totalBasesMax
+  , Add 1 totalBasesMaxPred totalBasesMax
+  , PadSlots slotsMax mpvMax
+  , PadProveDataMpv ruleMpv slots mpvMax slotsMax
   , CircuitType StepField inputVal inputVar
   , CircuitType StepField outputVal outputVar
   , CircuitType StepField prevInputVal prevInputVar
@@ -704,13 +727,13 @@ instance
   , CheckedType StepField (KimchiConstraint StepField) inputVar
   , CheckedType StepField (KimchiConstraint StepField) carrierFVar
   , CircuitType WrapField
-      (slots (Vector WrapIPARounds (F WrapField)))
-      (slots (Vector WrapIPARounds (FVar WrapField)))
+      (slotsMax (Vector WrapIPARounds (F WrapField)))
+      (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   , CheckedType WrapField (KimchiConstraint WrapField)
-      (slots (Vector WrapIPARounds (FVar WrapField)))
+      (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
-      inputVal outputVal prevInputVal branches mpvMax
+      inputVal outputVal prevInputVal branches mpvMax slotsMax
       ( Tuple
           ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
               slotVKs
@@ -739,7 +762,7 @@ instance
   CompilableRulesSpecShape
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
     inputVal outputVal prevInputVal
-    branches mpvMax
+    branches mpvMax slotsMax
     ( Tuple
         ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
             slotVKs
@@ -780,7 +803,7 @@ instance
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax
+      @restBranches @restMpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
@@ -796,7 +819,7 @@ instance
     headResult <- r.stepCompileFn realCtx
     tail <- runMultiCompileFull
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax
+      @restBranches @restMpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
@@ -824,15 +847,16 @@ instance
           @outputVar
           @prevInputVal
           @prevInputVar
-          -- Phase 2b.31b step (a): pass rule's `ruleMpv`/`slots` as
-          -- the wrap stage's mpvMax/slotsMax. Identity instance of
-          -- `PadProveDataMpv` fires; wrap stage operates at rule's
-          -- shape (= correct behavior when ruleMpv = mpvMax, the
-          -- single-rule case). Step (b) will rebind these to the
-          -- wrap circuit's actual mpvMax/slotsMax and the general
-          -- instance will do real padding.
-          @ruleMpv
-          @slots
+          -- Phase 2b.31b step (b): pass the wrap circuit's
+          -- `mpvMax`/`slotsMax` (from the class instance head). For
+          -- single-rule callers `ruleMpv = mpvMax` and `slots =
+          -- slotsMax`, so the identity `PadProveDataMpv` instance
+          -- fires (witness byte-identical with single-rule path).
+          -- For multi-rule callers with mismatched shapes, the
+          -- general instance fires and front-pads `proveData` to the
+          -- wrap circuit's wider shape via `Dummy.*` values.
+          @mpvMax
+          @slotsMax
           thisBranch
           cfg
           wrapResult
@@ -843,7 +867,7 @@ instance
           stepInputs
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax
+      @restBranches @restMpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       (branchIdx + 1)
@@ -1165,7 +1189,7 @@ compileMultiStepWrap
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -1204,6 +1228,9 @@ compileMultiStepWrap cfg rules = do
     @inputVal
     @outputVal
     @prevInputVal
+    @branches
+    @mpvMax
+    @slots
     cfg
     rules
   let
@@ -1212,6 +1239,9 @@ compileMultiStepWrap cfg rules = do
       @inputVal
       @outputVal
       @prevInputVal
+      @branches
+      @mpvMax
+      @slots
       stepResults
   wrapResult <- wrapCompile @branches @slots
     { wrapMainConfig:
@@ -1553,7 +1583,7 @@ compileMulti
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -1593,6 +1623,9 @@ compileMulti cfg rules = do
     @inputVal
     @outputVal
     @prevInputVal
+    @branches
+    @mpvMax
+    @slots
     cfg
     rules
 
@@ -1602,6 +1635,9 @@ compileMulti cfg rules = do
       @inputVal
       @outputVal
       @prevInputVal
+      @branches
+      @mpvMax
+      @slots
       stepResults
 
   -- Step 2: shared wrap compile across all branches.
@@ -1619,6 +1655,9 @@ compileMulti cfg rules = do
     @inputVal
     @outputVal
     @prevInputVal
+    @branches
+    @mpvMax
+    @slots
     0
     cfg
     wrapResult
