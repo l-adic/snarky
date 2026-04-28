@@ -761,11 +761,13 @@ instance
         restStepProveFns
     )
     -- Phase 2b.26: BranchProver type alias is INLINED here. PS's
-    -- funDep coverage check doesn't unfold type aliases — using the
-    -- alias `BranchProver prevsSpec ruleMpv prevsCarrier …` left
-    -- proversCarrier opaque to funDep dispatch at call sites.
-    -- Inlining the function-type structure exposes prevsCarrier in
-    -- the instance head so PS can derive proversCarrier from rs.
+    -- funDep coverage check breaks when this position uses the
+    -- alias (instance dispatch fails at call sites). Empirically
+    -- isolated trigger: the BranchProver alias body has the
+    -- combination of (function arg using inputVal/prevsCarrier,
+    -- ExceptT-wrapped result, StatementIO inputVal outputVal
+    -- inside CompiledProof, separate outputVal arg). Inlining
+    -- exposes the structure to PS's coverage check.
     ( Tuple
         ( StepInputs prevsSpec inputVal prevsCarrier
           -> ExceptT ProveError Effect
