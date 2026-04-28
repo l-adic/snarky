@@ -85,6 +85,7 @@ import Type.Proxy (Proxy(..))
 import Pickles.Prove.Compile
   ( class CompilableSpec
   , class PadProveDataMpv
+  , PadProveDataDummies
   , padShapeProveData
   , ProveError
   , ShapeProveData
@@ -121,7 +122,7 @@ import JS.BigInt as BigInt
 import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Data.Array as Array
 import Partial.Unsafe (unsafePartial)
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -143,13 +144,14 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
-import Pickles.Types (PaddedLength, StatementIO(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Wrap.Slots (class PadSlots)
 import Pickles.Dummy
   ( baseCaseDummies
   , computeDummySgValues
   , dummyIpaChallenges
   , wrapDomainLog2ForProofsVerified
+  , wrapDummyUnfinalizedProof
   )
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
@@ -157,7 +159,7 @@ import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Circuit.DSL (BoolVar, F(..), FVar)
+import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..))
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue)
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -1374,11 +1376,93 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
 
     -- Pad rule's mpv/slots-shaped proveData to the wrap circuit's
     -- mpvMax/slotsMax shape. Identity for single-rule callers
-    -- (mpv = mpvMax, slots = slotsMax); will throw at runtime for
-    -- mixed-mpv multi-rule until Phase 2b.31b step (b) implements
-    -- the real per-field padding.
+    -- (mpv = mpvMax, slots = slotsMax); the general
+    -- `PadProveDataMpv` instance front-pads with dummies for
+    -- multi-rule callers where the rule's mpv < wrap's mpvMax.
+    --
+    -- Dummies sized at the wrap circuit's `mpvMax` mirror OCaml
+    -- `step.ml:736-770`'s `extend_front ... Unfinalized.dummy` and
+    -- the surrounding per-prev fields' analogous front-pad calls.
+    outerMpvMax = reflectType (Proxy @mpvMax)
+    bcdMax = baseCaseDummies { maxProofsVerified: outerMpvMax }
+    dummySgsMax = computeDummySgValues bcdMax cfg.srs.pallasSrs cfg.srs.vestaSrs
+    -- `ipa.step.sg :: AffinePoint WrapField` is what `prevSgs` /
+    -- `prevStepAccs` consume (the prev WRAP proof's IPA opening sg
+    -- lives on Pallas, with WrapField coords). `ipa.wrap.sg ::
+    -- AffinePoint StepField` lives on Vesta with StepField coords
+    -- — used for `kimchiPrevEntries.sgX`/`sgY`.
+    dummyStepSgInWrapField = dummySgsMax.ipa.step.sg -- AffinePoint WrapField
+    dummyWrapSgInStepField = dummySgsMax.ipa.wrap.sg -- AffinePoint StepField
+
+    -- Flatten `wrapDummyUnfinalizedProof`'s nested
+    -- `UnfinalizedProof { deferredValues, … }` shape into the flat
+    -- `PerProofUnfinalized` record `ShapeProveData` carries. Both
+    -- sides are already wrap-field (`Type2 (F WrapField)` /
+    -- `F WrapField`) — no cross-field coerce needed.
+    dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
+    dummyUnfDv = dummyUnfRaw.deferredValues
+    dummyPlonk = dummyUnfDv.plonk
+    dummyPpu :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean
+    dummyPpu = PerProofUnfinalized
+      { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
+      , b: dummyUnfDv.b
+      , zetaToSrsLength: dummyPlonk.zetaToSrsLength
+      , zetaToDomainSize: dummyPlonk.zetaToDomainSize
+      , perm: dummyPlonk.perm
+      , spongeDigest: dummyUnfRaw.spongeDigestBeforeEvaluations
+      , beta: UnChecked dummyPlonk.beta
+      , gamma: UnChecked dummyPlonk.gamma
+      , alpha: UnChecked dummyPlonk.alpha
+      , zeta: UnChecked dummyPlonk.zeta
+      , xi: UnChecked dummyUnfDv.xi
+      , bulletproofChallenges: map UnChecked dummyUnfDv.bulletproofChallenges
+      , shouldFinalize: dummyUnfRaw.shouldFinalize
+      }
+
+    -- StepAllEvals (F WrapField) from bcd.dummyEvals (AllEvals WrapField).
+    -- publicEvals get zero placeholders — the dummy entry's
+    -- `shouldFinalize: false` flag bypasses verification, so the real
+    -- wrap-oracles-derived publicEvals (which would need a per-slot
+    -- VK + PI here, not available in this padding context) aren't
+    -- needed.
+    de = bcdMax.dummyEvals
+    pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+    dummyPrevEvalsMax :: StepAllEvals (F WrapField)
+    dummyPrevEvalsMax = StepAllEvals
+      { ftEval1: F de.ftEval1
+      , publicEvals: PointEval { zeta: F zero, omegaTimesZeta: F zero }
+      , zEvals: pe de.zEvals
+      , witnessEvals: map pe de.witnessEvals
+      , coeffEvals: map pe de.coeffEvals
+      , sigmaEvals: map pe de.sigmaEvals
+      , indexEvals: map pe de.indexEvals
+      }
+
+    padDummies :: PadProveDataDummies
+    padDummies =
+      { dummyPrevSg: dummyStepSgInWrapField
+      , dummyPrevStepChals: dummyIpaChallenges.stepExpanded
+      , dummyMsgWrapChal: dummyIpaChallenges.wrapExpanded
+      , dummyPrevUnfinalizedProof: dummyPpu
+      , dummyPrevStepAcc:
+          WeierstrassAffinePoint
+            { x: F dummyStepSgInWrapField.x, y: F dummyStepSgInWrapField.y }
+      , dummyPrevEvals: dummyPrevEvalsMax
+      -- All_possible_domains[0] = 13 = Wrap_inner_curve.size base
+      -- (mirrors OCaml `wrap_verifier.ml:683`'s domain table). The
+      -- dummy entries' wrap-domain-index defaults to 0 (no
+      -- meaningful prev to hash).
+      , dummyPrevWrapDomainIdx: F zero
+      , dummyKimchiPrevEntry:
+          { sgX: dummyWrapSgInStepField.x
+          , sgY: dummyWrapSgInStepField.y
+          , challenges: dummyIpaChallenges.wrapExpanded
+          }
+      , dummySlotChal: map F dummyIpaChallenges.wrapExpanded
+      }
+
     proveDataMax :: ShapeProveData mpvMax slotsMax
-    proveDataMax = padShapeProveData proveData
+    proveDataMax = padShapeProveData padDummies proveData
 
   stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
 

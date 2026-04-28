@@ -30,7 +30,10 @@ module Pickles.Prove.Compile
   , StepInputs
   , Tag(..)
   , class CompilableSpec
+  , class ConvertSlots
+  , convertSlots
   , class PadProveDataMpv
+  , PadProveDataDummies
   , padShapeProveData
   , mkStepAdvice
   , runCompile
@@ -53,7 +56,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
-import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
 import Pickles.Linearization (pallas) as Linearization
@@ -128,7 +130,7 @@ import Pickles.Types
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots)
+import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
@@ -366,12 +368,10 @@ type ShapeProveData mpv slots =
 -- mpvMax slotsMax. Mirrors the rule's actual mpv/slots shape (driven by
 -- prevsSpec) up to the wrap circuit's wider mpvMax/slotsMax.
 --
--- Phase 2b.31b step (a): only the identity instance is implemented
--- (fast path: `mpv = mpvMax, slots = slotsMax`), preserving the
--- single-rule path's byte-identical witness. The general instance
--- (when mpv ≠ mpvMax) throws at runtime; Phase 2b.31b step (b) will
--- replace it with the real per-field padding logic mirroring OCaml
--- `step.ml:736-770`'s `extend_front` calls.
+-- Phase 2b.31b step (a): identity instance only (fast path).
+-- Phase 2b.31b step (b): general instance using `PadProveDataDummies`
+-- + `ConvertSlots` to front-pad each Vector field and convert the
+-- slots carrier.
 --
 -- The two-instance chain uses `else instance` (PS overlapping-instance
 -- syntax). PS picks the first matching instance, so the identity head
@@ -381,32 +381,119 @@ type ShapeProveData mpv slots =
 -- `slots = slotsMax`.
 --------------------------------------------------------------------------------
 
+-- | Per-entry dummy values for padding. Each field is one entry's
+-- | worth — the general `PadProveDataMpv` instance front-pads each
+-- | `Vector mpv` field with `(mpvMax - mpv)` copies of the
+-- | corresponding dummy.
+-- |
+-- | Constructed by the caller (`runMultiProverBody`) from the wrap
+-- | circuit's `mpvMax`-sized `BaseCaseDummies` + SRS-derived sg
+-- | values. Mirrors OCaml `step.ml:736-770`'s `extend_front` calls
+-- | which use `Unfinalized.dummy`, dummy `Wrap_proof_state`, and
+-- | dummy IPA challenges.
+type PadProveDataDummies =
+  { dummyPrevSg :: AffinePoint WrapField
+  , dummyPrevStepChals :: Vector StepIPARounds StepField
+  , dummyMsgWrapChal :: Vector WrapIPARounds WrapField
+  , dummyPrevUnfinalizedProof ::
+      PerProofUnfinalized
+        WrapIPARounds
+        (Type2 (F WrapField))
+        (F WrapField)
+        Boolean
+  , dummyPrevStepAcc :: WeierstrassAffinePoint VestaG (F WrapField)
+  , dummyPrevEvals :: StepAllEvals (F WrapField)
+  , dummyPrevWrapDomainIdx :: F WrapField
+  , dummyKimchiPrevEntry ::
+      { sgX :: StepField
+      , sgY :: StepField
+      , challenges :: Vector WrapIPARounds WrapField
+      }
+  , dummySlotChal :: Vector WrapIPARounds (F WrapField)
+  }
+
+-- | Convert one slots-carrier shape to another, filling any new slots
+-- | with the supplied dummy. Two instances:
+-- |
+-- |   * Identity (`slotsSrc = slotsDst`) — pass through.
+-- |   * Fallback for `slotsSrc = NoSlots`: produce a fresh `slotsDst a`
+-- |     populated by `replicateSlots` from `Pickles.Wrap.Slots`.
+-- |
+-- | The `NoSlots → slotsDst` case is what TwoPhaseChain b0 needs (rule
+-- | has 0 prev proofs, wrap circuit has 1 slot of width 1). Other
+-- | conversions (e.g. `Slots1 1 → Slots2 1 2`) are not yet implemented
+-- | — adding them needs structural induction on `slotsDst`'s widths.
+class ConvertSlots (slotsSrc :: Type -> Type) (slotsDst :: Type -> Type) where
+  convertSlots :: forall a. a -> slotsSrc a -> slotsDst a
+
+instance ConvertSlots slotsSrc slotsSrc where
+  convertSlots _ = identity
+
+else instance
+  ( PadSlots slotsDst mpvDst
+  , Reflectable mpvDst Int
+  ) =>
+  ConvertSlots NoSlots slotsDst where
+  convertSlots dummy _ = replicateSlots dummy
+
 -- | Pad a `ShapeProveData mpv slots` to `ShapeProveData mpvMax slotsMax`.
 -- |
 -- | When `mpv = mpvMax` and `slots = slotsMax`, the conversion is the
 -- | identity (the fast-path instance below). Otherwise the rule's mpv
 -- | is strictly less than the wrap circuit's mpvMax; the prov-data
 -- | needs front-padding with `Dummy.*` values to match the wrap
--- | circuit's expected shape — implemented in Phase 2b.31b step (b).
+-- | circuit's expected shape (the general instance below).
 class PadProveDataMpv (mpv :: Int) (slots :: Type -> Type) (mpvMax :: Int) (slotsMax :: Type -> Type) where
-  padShapeProveData :: ShapeProveData mpv slots -> ShapeProveData mpvMax slotsMax
+  padShapeProveData
+    :: PadProveDataDummies
+    -> ShapeProveData mpv slots
+    -> ShapeProveData mpvMax slotsMax
 
 -- | Fast-path: rule's mpv/slots equal the wrap circuit's mpvMax/slotsMax.
 -- | Identity. Single-rule callers all hit this — preserves byte-identical
 -- | witness (the cast is a tautology since both sides are the same type).
 instance PadProveDataMpv mpv slots mpv slots where
-  padShapeProveData = identity
+  padShapeProveData _ = identity
 
--- | General fallback: rule's mpv ≠ mpvMax (multi-rule with differing
--- | per-rule mpvs). Currently throws at runtime — Phase 2b.31b step
--- | (b) will replace this with the real per-field `extend_front`
--- | padding (prevSgs, prevStepChallenges, msgWrapChallenges,
--- | prevUnfinalizedProofs, prevStepAccs, prevEvals,
--- | prevWrapDomainIndices, kimchiPrevEntries, slotsValue) using
--- | `Dummy.*` values.
-else instance PadProveDataMpv mpv slots mpvMax slotsMax where
-  padShapeProveData _ =
-    unsafeThrow "Pickles.Prove.Compile.PadProveDataMpv: general instance not yet implemented (Phase 2b.31b step b)"
+-- | General fallback: rule's mpv < wrap's mpvMax. Front-pads each
+-- | `Vector mpv` field with `mpvPad = mpvMax - mpv` copies of the
+-- | corresponding dummy, and converts the slots carrier via
+-- | `ConvertSlots`. Mirrors OCaml `step.ml:736-770`'s `extend_front
+-- | unfinalized_proofs ... Unfinalized.dummy` and analog padding for
+-- | the other per-prev fields.
+else instance
+  ( ConvertSlots slots slotsMax
+  , Add mpvPad mpv mpvMax
+  , Reflectable mpvPad Int
+  ) =>
+  PadProveDataMpv mpv slots mpvMax slotsMax where
+  padShapeProveData dummies sd =
+    { prevSgs:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevSg)
+          sd.prevSgs
+    , prevStepChallenges:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepChals)
+          sd.prevStepChallenges
+    , msgWrapChallenges:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyMsgWrapChal)
+          sd.msgWrapChallenges
+    , prevUnfinalizedProofs:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevUnfinalizedProof)
+          sd.prevUnfinalizedProofs
+    , prevStepAccs:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevStepAcc)
+          sd.prevStepAccs
+    , prevEvals:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevEvals)
+          sd.prevEvals
+    , prevWrapDomainIndices:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyPrevWrapDomainIdx)
+          sd.prevWrapDomainIndices
+    , kimchiPrevEntries:
+        Vector.append (Vector.replicate @mpvPad dummies.dummyKimchiPrevEntry)
+          sd.kimchiPrevEntries
+    , slotsValue: convertSlots dummies.dummySlotChal sd.slotsValue
+    }
 
 --------------------------------------------------------------------------------
 -- CompilableSpec — the shape-dependent dispatch class
