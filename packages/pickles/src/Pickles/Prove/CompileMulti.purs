@@ -45,10 +45,11 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.16 — buildWrapPerBranchVec for wrap integration)
+  -- * Carrier class (Phase 2b.19 — extractStepProveFns)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
+  , extractStepProveFns
   , runStepCompiles
   , runMultiCompile
   , runMultiCompileFull
@@ -276,6 +277,7 @@ class CompilableRulesSpec
   -> Type
   -> Type
   -> Type
+  -> Type
   -> Constraint
 class
   CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
@@ -284,9 +286,11 @@ class
     perBranchCtxsCarrier
     perBranchStepCompileResults
     selfStepDomainLog2sCarrier
+    stepProveFnsCarrier
   | rs ->
       branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
         perBranchStepCompileResults selfStepDomainLog2sCarrier
+        stepProveFnsCarrier
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -361,6 +365,19 @@ class
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
+  -- | Symmetric to `extractStepCompileFns`: pull each entry's
+  -- | `stepProveFn` into a Tuple chain. The per-branch thunk type:
+  -- |
+  -- |   StepProveContext mpv
+  -- |   -> StepCompileResult
+  -- |   -> StepAdvice prevsSpec _ _ inputVal mpv carrier valCarrier
+  -- |   -> ExceptT EvaluationError Effect (StepProveResult outputSize)
+  -- |
+  -- | Used downstream (Phase 2b.20+) to build per-branch
+  -- | `BranchProver` closures by composing stepSolveAndProve with the
+  -- | wrap solve+prove flow.
+  extractStepProveFns :: rulesCarrier -> stepProveFnsCarrier
+
   -- | Convert the per-branch `StepCompileResult` Tuple chain into the
   -- | `Vector branches { mpv, stepDomainLog2, stepVK }` shape that
   -- | `buildWrapMainConfigMulti` expects.
@@ -387,12 +404,14 @@ instance
     Unit
     Unit
     Unit
+    Unit
   where
   branchCount _ = 0
   extractStepCompileFns _ = unit
   runStepCompiles _ _ = pure unit
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure unit
+  extractStepProveFns _ = unit
   buildWrapPerBranchVec _ = Vector.nil
 
 -- | Cons instance: per-rule branch increments the running count via
@@ -403,7 +422,7 @@ instance
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
       restBranches restMpvMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restLog2s
+      restStepCompileResults restLog2s restStepProveFns
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -441,6 +460,16 @@ instance
     (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
     (Tuple Int restLog2s)
+    ( Tuple
+        ( PProveStep.StepProveContext ruleMpv
+          -> PProveStep.StepCompileResult
+          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+               inputVal ruleMpv carrier valCarrier
+          -> ExceptT EvaluationError Effect
+               (PProveStep.StepProveResult outputSize)
+        )
+        restStepProveFns
+    )
   where
   branchCount _ =
     1 + branchCount
@@ -455,6 +484,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restLog2s
+      @restStepProveFns
       (Proxy :: Proxy rest)
   extractStepCompileFns (Tuple (RuleEntry r) rest) =
     Tuple r.stepCompileFn
@@ -470,6 +500,7 @@ instance
           @restCtxs
           @restStepCompileResults
           @restLog2s
+          @restStepProveFns
           rest
       )
   runStepCompiles (Tuple ctx restCtxs) (Tuple (RuleEntry r) restEntries) = do
@@ -486,6 +517,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restLog2s
+      @restStepProveFns
       restCtxs
       restEntries
     pure (Tuple headResult tailResults)
@@ -505,6 +537,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restLog2s
+      @restStepProveFns
       cfg
       restLog2s
       restEntries
@@ -531,6 +564,7 @@ instance
       @restCtxs
       @restStepCompileResults
       @restLog2s
+      @restStepProveFns
       cfg
       restEntries
     pure (Tuple headResult tailResults)
@@ -553,9 +587,27 @@ instance
         @restCtxs
         @restStepCompileResults
         @restLog2s
+        @restStepProveFns
         restResults
     in
       headRecord :< restVec
+  extractStepProveFns (Tuple (RuleEntry r) rest) =
+    Tuple r.stepProveFn
+      ( extractStepProveFns
+          @rest
+          @inputVal
+          @outputVal
+          @prevInputVal
+          @restBranches
+          @restMpvMax
+          @restCarrier
+          @restStepCompileFns
+          @restCtxs
+          @restStepCompileResults
+          @restLog2s
+          @restStepProveFns
+          rest
+      )
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
@@ -864,6 +916,7 @@ compileMultiStepWrap
        perBranchCtxsCarrier
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
+       stepProveFnsCarrier
        branchesPred totalBases totalBasesPred
    . CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
        rulesCarrier
@@ -871,6 +924,7 @@ compileMultiStepWrap
        perBranchCtxsCarrier
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
+       stepProveFnsCarrier
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpvMax Int
