@@ -1419,18 +1419,18 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
       , shouldFinalize: dummyUnfRaw.shouldFinalize
       }
 
-    -- StepAllEvals (F WrapField) from bcd.dummyEvals (AllEvals WrapField).
-    -- publicEvals get zero placeholders — the dummy entry's
-    -- `shouldFinalize: false` flag bypasses verification, so the real
-    -- wrap-oracles-derived publicEvals (which would need a per-slot
-    -- VK + PI here, not available in this padding context) aren't
-    -- needed.
+    -- `StepAllEvals (F WrapField)` lifted from `bcd.dummyEvals`
+    -- (`AllEvals WrapField`). Mirrors OCaml `dummy.ml:7-20`'s
+    -- `Dummy.evals` — every field, including `publicEvals`, is
+    -- populated by `Ro.tock ()` draws (NOT zero placeholders). The
+    -- `Ro` stream is already advanced consistently with OCaml via
+    -- `baseCaseDummies { maxProofsVerified: mpvMax }`.
     de = bcdMax.dummyEvals
     pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
     dummyPrevEvalsMax :: StepAllEvals (F WrapField)
     dummyPrevEvalsMax = StepAllEvals
       { ftEval1: F de.ftEval1
-      , publicEvals: PointEval { zeta: F zero, omegaTimesZeta: F zero }
+      , publicEvals: pe de.publicEvals
       , zEvals: pe de.zEvals
       , witnessEvals: map pe de.witnessEvals
       , coeffEvals: map pe de.coeffEvals
@@ -1448,11 +1448,13 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
           WeierstrassAffinePoint
             { x: F dummyStepSgInWrapField.x, y: F dummyStepSgInWrapField.y }
       , dummyPrevEvals: dummyPrevEvalsMax
-      -- All_possible_domains[0] = 13 = Wrap_inner_curve.size base
-      -- (mirrors OCaml `wrap_verifier.ml:683`'s domain table). The
-      -- dummy entries' wrap-domain-index defaults to 0 (no
-      -- meaningful prev to hash).
-      , dummyPrevWrapDomainIdx: F zero
+      -- OCaml `wrap.ml:412-414` pads `wrap_domain_indices` with
+      -- `Tock.Field.one` (NOT zero) when actualProofsVerified <
+      -- maxProofsVerified. This matches the wrap circuit's
+      -- expectation for `branch_data.domain` of a dummy slot
+      -- (encodes `Pow_2_roots_of_unity 14` = the wrap circuit's own
+      -- domain, all_possible_domains[1]).
+      , dummyPrevWrapDomainIdx: F one
       , dummyKimchiPrevEntry:
           { sgX: dummyWrapSgInStepField.x
           , sgY: dummyWrapSgInStepField.y
@@ -1550,23 +1552,24 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
     dummyWrapExpanded :: Vector WrapIPARounds WrapField
     dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
+    -- Phase 2b.31c: use the wrap circuit's `mpvMax`-derived bcd (same
+    -- one feeding `padDummies` above) so the front-pad dummies and
+    -- the `padShapeProveData` dummies share an Ro stream. Single-rule
+    -- callers have `mpv = mpvMax` so this binds the same value as
+    -- before — no witness regression. Multi-rule callers (e.g.
+    -- TwoPhaseChain b0 with mpv=0, mpvMax=1) now match — was using
+    -- bcd at rule's mpv vs. bcdMax at mpvMax, leaving the wrap
+    -- circuit's permutation argument open.
     dummyKimchiEntry
       :: { sgX :: StepField
          , sgY :: StepField
          , challenges :: Vector WrapIPARounds WrapField
          }
     dummyKimchiEntry =
-      let
-        dummyBundle = computeDummySgValues
-          (baseCaseDummies { maxProofsVerified: outerMpv })
-          cfg.srs.pallasSrs
-          cfg.srs.vestaSrs
-        wrapSg = dummyBundle.ipa.wrap.sg
-      in
-        { sgX: wrapSg.x
-        , sgY: wrapSg.y
-        , challenges: dummyIpaChallenges.wrapExpanded
-        }
+      { sgX: dummyWrapSgInStepField.x
+      , sgY: dummyWrapSgInStepField.y
+      , challenges: dummyIpaChallenges.wrapExpanded
+      }
 
     msgWrapPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
     msgWrapPadded =
