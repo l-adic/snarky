@@ -56,6 +56,7 @@ module Pickles.Prove.CompileMulti
   , class CompilableRulesSpecShape
   , runMultiCompile
   , runMultiCompileFull
+  , buildBranchProvers
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
   -- * End-to-end step + carrier conversion (Phase 2b.17)
@@ -553,8 +554,10 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
         rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
         perBranchStepCompileResults selfStepDomainLog2sCarrier
         stepProveFnsCarrier
+        proversCarrier
   | rs -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
         perBranchStepCompileResults selfStepDomainLog2sCarrier stepProveFnsCarrier
+        proversCarrier
   where
   -- | High-level per-branch compile with caller-supplied per-rule
   -- | `selfStepDomainLog2`s. Walks the rules carrier and calls each
@@ -574,17 +577,36 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
+  -- | Build per-branch `BranchProver` Tuple chain. Each closure runs
+  -- | step solve+prove (via the rule's `stepProveFn`) and wrap
+  -- | solve+prove with `whichBranch = branchIdx`.
+  -- |
+  -- | Phase 2b.21: signature only — body throws `notImplemented`
+  -- | until the multi-branch `runProverBody` analog lands. The full
+  -- | implementation needs `mkStepAdvice @prevsSpec` (in scope via
+  -- | the `CompilableSpec` constraint), `shapeProveData @prevsSpec`,
+  -- | `stepSolveAndProve` (via the rule's `stepProveFn`), and
+  -- | `wrapSolveAndProve` with branch-index-baked statement.
+  buildBranchProvers
+    :: CompileMultiConfig
+    -> WrapCompileResult
+    -> perBranchStepCompileResults
+    -> selfStepDomainLog2sCarrier
+    -> rulesCarrier
+    -> Effect proversCarrier
+
 instance
   CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 0
-    Unit Unit Unit Unit Unit Unit
+    Unit Unit Unit Unit Unit Unit Unit
   where
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
       restBranches restMpvMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restLog2s restStepProveFns
+      restStepCompileResults restLog2s restStepProveFns restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
   , CompilableRulesSpec
@@ -643,6 +665,11 @@ instance
         )
         restStepProveFns
     )
+    ( Tuple
+        ( BranchProver prevsSpec ruleMpv prevsCarrier inputVal outputVal Effect
+        )
+        restProvers
+    )
   where
   runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
     let
@@ -652,7 +679,7 @@ instance
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
       @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restLog2s @restStepProveFns
+      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
       restLog2s
       restEntries
@@ -668,10 +695,12 @@ instance
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
       @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restLog2s @restStepProveFns
+      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
       restEntries
     pure (Tuple headResult tailResults)
+  buildBranchProvers _cfg _wrapResult _stepResults _log2s _rules =
+    notImplemented "buildBranchProvers"
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
@@ -981,6 +1010,7 @@ compileMultiStepWrap
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
        stepProveFnsCarrier
+       proversCarrier
        branchesPred totalBases totalBasesPred
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
        rulesCarrier
@@ -989,6 +1019,7 @@ compileMultiStepWrap
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
        stepProveFnsCarrier
+       proversCarrier
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Reflectable mpvMax Int
