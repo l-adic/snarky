@@ -38,7 +38,7 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Tuple (Tuple(..))
-import Data.Vector ((:<))
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
@@ -47,10 +47,18 @@ import Pickles.Prove.CompileMulti
   , RulesCons
   , RulesNil
   , branchCount
+  , compileMulti
   , extractStepCompileFns
   , mkRuleEntry
   )
 import Type.Proxy (Proxy(..))
+import Data.Functor.Product (Product)
+import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..))
+import Effect.Class (liftEffect)
+import Pickles.Wrap.Slots (NoSlots)
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Pickles.Prove.Compile (SlotWrapKey(..))
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
@@ -59,7 +67,7 @@ import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F, FVar, assertEqual_, const_, exists, true_)
 import Snarky.Types.Shifted (SplitField, Type2)
-import Test.Spec (SpecT, describe, pending)
+import Test.Spec (SpecT, describe, it, pending)
 
 --------------------------------------------------------------------------------
 -- Rule bodies
@@ -315,10 +323,33 @@ probeExtractStepCompileFns = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
-  -- Phase 2b.2: implement compileMulti's body, then switch to `it`
-  -- and use `tools/two_phase_chain_witness_diff.sh` to validate
-  -- byte-identical OCaml ↔ PS witnesses (counter 0 = b0_step).
-  pending "b0 (make_zero) — compile + prover.step + witness dump (Phase 2b.2)"
+  -- Phase 2b.26: smoke that compileMulti dispatches at the test
+  -- call site after the BranchProver-inlining fix unblocked PS's
+  -- funDep coverage for proversCarrier. This actually runs the
+  -- multi-branch step+wrap compile + builds per-branch BranchProver
+  -- closures. (The closures are never called here — that's a
+  -- separate test once we add prover.step invocations.)
+  it "compileMulti type-resolves and runs through" \_ -> do
+    let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
+    vestaSrs <- liftEffect $ createCRS @StepField
+
+    let cfg =
+          { srs: { vestaSrs, pallasSrs }
+          , debug: false
+          , wrapDomainOverride: Nothing
+          }
+
+    rules <- liftEffect probeRulesCarrier
+    _output <- liftEffect $ compileMulti
+      @TwoPhaseChainRules
+      @(F StepField)
+      @Unit
+      @(F StepField)
+      @1
+      @(Product (Vector 1) NoSlots)
+      cfg
+      rules
+    pure unit
   -- Phase 2b.3+:
   pending "b0 (make_zero) wrap proof — verify under shared wrap VK"
   pending "b1 (increment, prev = b0 from branch 0) — multi-branch dispatch step"
