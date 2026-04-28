@@ -26,6 +26,7 @@ module Pickles.Prove.Compile
   , SlotWrapKey(..)
   , ShapeCompileData
   , ShapeProveData
+  , ShapeProveSideInfo
   , StepInputs
   , Tag(..)
   , class CompilableSpec

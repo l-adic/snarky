@@ -85,13 +85,17 @@ import Type.Proxy (Proxy(..))
 import Pickles.Prove.Compile
   ( class CompilableSpec
   , ProveError
+  , ShapeProveSideInfo
   , StepInputs
   , Tag
+  , mkStepAdvice
   , shapeCompileData
+  , shapeProveData
   )
+import Effect.Class (liftEffect)
 import Pickles.ProofFFI (pallasProverIndexDomainLog2)
 import Pickles.Prove.Step
-  ( StepAdvice
+  ( StepAdvice(..)
   , StepCompileResult
   , StepProveContext
   , StepProveResult
@@ -1222,9 +1226,42 @@ runMultiProverBody
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
-runMultiProverBody _branchIdx _cfg _wrapResult _stepCR _selfStepDomainLog2
-  _entry _stepInputs =
-  lift $ notImplemented "runMultiProverBody"
+runMultiProverBody _branchIdx cfg wrapResult stepCR selfStepDomainLog2
+  (RuleEntry r) { appInput, prevs } = do
+  -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
+  -- step solve+prove. Wrap half (oracles, deferred values, wrap
+  -- solver) deferred to Phase 2b.24d.
+  let
+    perRuleCfg =
+      { srs: cfg.srs
+      , perSlotImportedVKs: r.slotVKs
+      , debug: cfg.debug
+      , wrapDomainOverride: cfg.wrapDomainOverride
+      }
+    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2
+
+  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
+    liftEffect $ mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
+      prevs
+
+  let
+    PProveStep.StepAdvice sa = stepAdvice
+    proveDataSideInfo :: ShapeProveSideInfo mpv
+    proveDataSideInfo =
+      { challengePolynomialCommitments
+      , unfinalizedSlots: sa.publicUnfinalizedProofs
+      , baseCaseWrapPublicInputs
+      }
+    _proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
+      proveDataSideInfo
+      prevs
+
+  _stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
+
+  -- Phase 2b.24d: compute step oracles, deferred values, run wrap
+  -- solver+prover with `whichBranch = F (fromInt branchIdx)`,
+  -- package CompiledProof.
+  lift $ notImplemented "runMultiProverBody — wrap half (Phase 2b.24d)"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
