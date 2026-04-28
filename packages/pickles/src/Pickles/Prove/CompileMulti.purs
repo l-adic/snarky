@@ -71,6 +71,7 @@ module Pickles.Prove.CompileMulti
 import Prelude
 
 import Control.Monad.Except (ExceptT)
+import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -699,8 +700,25 @@ instance
       cfg
       restEntries
     pure (Tuple headResult tailResults)
-  buildBranchProvers _cfg _wrapResult _stepResults _log2s _rules =
-    notImplemented "buildBranchProvers"
+  buildBranchProvers cfg wrapResult (Tuple _headStepCR restStepResults)
+    (Tuple _headLog2 restLog2s) (Tuple (RuleEntry _r) restEntries) = do
+    -- Phase 2b.22: structural recursion in place; per-branch
+    -- closure body deferred to Phase 2b.23 (multi-branch
+    -- runProverBody analog).
+    let
+      headProver = \_stepInputs ->
+        lift $ notImplemented "buildBranchProvers head closure"
+    restProvers <- buildBranchProvers
+      @rest @inputVal @outputVal @prevInputVal
+      @restBranches @restMpvMax
+      @restCarrier @restStepCompileFns @restCtxs
+      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
+      cfg
+      wrapResult
+      restStepResults
+      restLog2s
+      restEntries
+    pure (Tuple headProver restProvers)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
