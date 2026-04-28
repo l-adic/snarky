@@ -45,15 +45,17 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.19 — extractStepProveFns)
+  -- * Structural carrier class (Phase 2b.20 split — light, no shape data)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
   , extractStepProveFns
   , runStepCompiles
+  , buildWrapPerBranchVec
+  -- * Shape-data class (Phase 2b.20 split — heavy, demands CompilableSpec)
+  , class CompilableRulesSpecShape
   , runMultiCompile
   , runMultiCompileFull
-  , buildWrapPerBranchVec
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
   -- * End-to-end step + carrier conversion (Phase 2b.17)
@@ -328,43 +330,6 @@ class
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
-  -- | High-level per-branch compile: take a `CompileMultiConfig`
-  -- | (shared) and a Tuple chain of per-rule `selfStepDomainLog2`s,
-  -- | derive each rule's `StepProveContext` internally via
-  -- | `buildStepProveCtx`, and dispatch each entry's `stepCompileFn`.
-  -- |
-  -- | This is the multi-branch analog of single-rule `runCompile`'s
-  -- | shapeData → stepCompile flow with caller-supplied log2s.
-  -- | `runMultiCompileFull` (added Phase 2b.15) does the same plus
-  -- | internalizes the pre-pass.
-  runMultiCompile
-    :: CompileMultiConfig
-    -> selfStepDomainLog2sCarrier
-    -> rulesCarrier
-    -> Effect perBranchStepCompileResults
-
-  -- | Phase 2b.15: end-to-end per-branch compile with the pre-pass
-  -- | INTERNALIZED. Caller supplies just `CompileMultiConfig`; per-rule
-  -- | `selfStepDomainLog2`s come from each entry's
-  -- | `preComputeStepDomainLog2Fn`. Per-rule flow:
-  -- |
-  -- |   1. Build placeholder ctx with log2=20 (OCaml `rough_domains`)
-  -- |   2. Call `entry.preComputeStepDomainLog2Fn placeholderCtx` →
-  -- |      real selfStepDomainLog2.
-  -- |   3. Build real ctx with that log2 via `buildStepProveCtx`.
-  -- |   4. Call `entry.stepCompileFn realCtx` → StepCompileResult.
-  -- |
-  -- | Mirrors single-rule `runCompile`'s opening:
-  -- |
-  -- |   selfStepDomainLog2 <- preComputeStepDomainLog2 …
-  -- |     (shapeCompileData @prevsSpec cfg 20).stepProveCtx rule
-  -- |   stepCR <- stepCompile … (shapeCompileData @prevsSpec cfg
-  -- |     selfStepDomainLog2).stepProveCtx rule
-  runMultiCompileFull
-    :: CompileMultiConfig
-    -> rulesCarrier
-    -> Effect perBranchStepCompileResults
-
   -- | Symmetric to `extractStepCompileFns`: pull each entry's
   -- | `stepProveFn` into a Tuple chain. The per-branch thunk type:
   -- |
@@ -409,8 +374,6 @@ instance
   branchCount _ = 0
   extractStepCompileFns _ = unit
   runStepCompiles _ _ = pure unit
-  runMultiCompile _ _ _ = pure unit
-  runMultiCompileFull _ _ = pure unit
   extractStepProveFns _ = unit
   buildWrapPerBranchVec _ = Vector.nil
 
@@ -436,8 +399,6 @@ instance
   , Mul ruleMpv 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs ruleMpv outputSize
-  , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
-      carrier
   , Reflectable ruleMpv Int
   -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
@@ -521,53 +482,6 @@ instance
       restCtxs
       restEntries
     pure (Tuple headResult tailResults)
-  runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
-    let
-      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2
-    headResult <- r.stepCompileFn ctx
-    tailResults <- runMultiCompile
-      @rest
-      @inputVal
-      @outputVal
-      @prevInputVal
-      @restBranches
-      @restMpvMax
-      @restCarrier
-      @restStepCompileFns
-      @restCtxs
-      @restStepCompileResults
-      @restLog2s
-      @restStepProveFns
-      cfg
-      restLog2s
-      restEntries
-    pure (Tuple headResult tailResults)
-  runMultiCompileFull cfg (Tuple (RuleEntry r) restEntries) = do
-    let
-      -- OCaml `rough_domains.h = 20` (see fix_domains.ml:6-8) — the
-      -- placeholder log2 fed into the pre-pass's CS-build, large
-      -- enough that any rule's circuit fits without overflow.
-      placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs 20
-    selfStepDomainLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
-    let
-      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs selfStepDomainLog2
-    headResult <- r.stepCompileFn realCtx
-    tailResults <- runMultiCompileFull
-      @rest
-      @inputVal
-      @outputVal
-      @prevInputVal
-      @restBranches
-      @restMpvMax
-      @restCarrier
-      @restStepCompileFns
-      @restCtxs
-      @restStepCompileResults
-      @restLog2s
-      @restStepProveFns
-      cfg
-      restEntries
-    pure (Tuple headResult tailResults)
   buildWrapPerBranchVec (Tuple headResult restResults) =
     let
       headRecord =
@@ -608,6 +522,156 @@ instance
           @restStepProveFns
           rest
       )
+
+--------------------------------------------------------------------------------
+-- CompilableRulesSpecShape — Phase 2b.20 split: shape-data methods.
+--
+-- Why a separate class: the structural class above must NOT carry a
+-- `CompilableSpec` super-constraint on its Cons instance, because PS
+-- can't always discharge it at call sites (some sub-constraint on
+-- PrevsSpecCons fails to dispatch from caller context, which cascades
+-- through the funDep chain and leaves all class params unresolved).
+-- Empirically verified: removing the constraint unblocks the
+-- structural test probe.
+--
+-- This class extends `CompilableRulesSpec` with the shape-data
+-- methods (runMultiCompile, runMultiCompileFull). The Cons instance
+-- here DOES require `CompilableSpec prevsSpec ...`. Callers of these
+-- methods opt in to the heavier discharge requirement; structural
+-- methods stay light.
+--
+-- The split mirrors how single-rule `compile` separates structural
+-- helpers (PrevsCarrier traversal) from shape-data computation
+-- (CompilableSpec methods).
+--------------------------------------------------------------------------------
+
+class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+        rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+        perBranchStepCompileResults selfStepDomainLog2sCarrier
+        stepProveFnsCarrier
+   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
+        rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+        perBranchStepCompileResults selfStepDomainLog2sCarrier
+        stepProveFnsCarrier
+  | rs -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+        perBranchStepCompileResults selfStepDomainLog2sCarrier stepProveFnsCarrier
+  where
+  -- | High-level per-branch compile with caller-supplied per-rule
+  -- | `selfStepDomainLog2`s. Walks the rules carrier and calls each
+  -- | entry's `stepCompileFn` with a `StepProveContext` derived via
+  -- | `buildStepProveCtx @prevsSpec`.
+  runMultiCompile
+    :: CompileMultiConfig
+    -> selfStepDomainLog2sCarrier
+    -> rulesCarrier
+    -> Effect perBranchStepCompileResults
+
+  -- | End-to-end per-branch compile with the pre-pass internalized.
+  -- | Per-rule flow: build placeholder ctx with log2=20, run pre-pass
+  -- | to get real selfStepDomainLog2, build real ctx, call stepCompile.
+  runMultiCompileFull
+    :: CompileMultiConfig
+    -> rulesCarrier
+    -> Effect perBranchStepCompileResults
+
+instance
+  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 0
+    Unit Unit Unit Unit Unit Unit
+  where
+  runMultiCompile _ _ _ = pure unit
+  runMultiCompileFull _ _ = pure unit
+
+instance
+  ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
+      restBranches restMpvMax restCarrier restStepCompileFns restCtxs
+      restStepCompileResults restLog2s restStepProveFns
+  , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
+      carrier
+  , CompilableRulesSpec
+      (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
+      inputVal outputVal prevInputVal branches mpvMax
+      ( Tuple
+          ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+              slotVKs
+          )
+          restCarrier
+      )
+      ( Tuple
+          ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+          )
+          restStepCompileFns
+      )
+      (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+      (Tuple PProveStep.StepCompileResult restStepCompileResults)
+      (Tuple Int restLog2s)
+      ( Tuple
+          ( PProveStep.StepProveContext ruleMpv
+            -> PProveStep.StepCompileResult
+            -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+                 inputVal ruleMpv carrier valCarrier
+            -> ExceptT EvaluationError Effect
+                 (PProveStep.StepProveResult outputSize)
+          )
+          restStepProveFns
+      )
+  ) =>
+  CompilableRulesSpecShape
+    (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
+    inputVal outputVal prevInputVal
+    branches mpvMax
+    ( Tuple
+        ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+            slotVKs
+        )
+        restCarrier
+    )
+    ( Tuple
+        ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+        )
+        restStepCompileFns
+    )
+    (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+    (Tuple PProveStep.StepCompileResult restStepCompileResults)
+    (Tuple Int restLog2s)
+    ( Tuple
+        ( PProveStep.StepProveContext ruleMpv
+          -> PProveStep.StepCompileResult
+          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+               inputVal ruleMpv carrier valCarrier
+          -> ExceptT EvaluationError Effect
+               (PProveStep.StepProveResult outputSize)
+        )
+        restStepProveFns
+    )
+  where
+  runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
+    let
+      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2
+    headResult <- r.stepCompileFn ctx
+    tailResults <- runMultiCompile
+      @rest @inputVal @outputVal @prevInputVal
+      @restBranches @restMpvMax
+      @restCarrier @restStepCompileFns @restCtxs
+      @restStepCompileResults @restLog2s @restStepProveFns
+      cfg
+      restLog2s
+      restEntries
+    pure (Tuple headResult tailResults)
+  runMultiCompileFull cfg (Tuple (RuleEntry r) restEntries) = do
+    let
+      placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs 20
+    selfStepDomainLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
+    let
+      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs selfStepDomainLog2
+    headResult <- r.stepCompileFn realCtx
+    tailResults <- runMultiCompileFull
+      @rest @inputVal @outputVal @prevInputVal
+      @restBranches @restMpvMax
+      @restCarrier @restStepCompileFns @restCtxs
+      @restStepCompileResults @restLog2s @restStepProveFns
+      cfg
+      restEntries
+    pure (Tuple headResult tailResults)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
@@ -918,7 +982,7 @@ compileMultiStepWrap
        selfStepDomainLog2sCarrier
        stepProveFnsCarrier
        branchesPred totalBases totalBasesPred
-   . CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
