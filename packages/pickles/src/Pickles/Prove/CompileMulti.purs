@@ -50,6 +50,8 @@ module Pickles.Prove.CompileMulti
   , branchCount
   , extractStepCompileFns
   , runStepCompiles
+  -- * Per-rule context construction (Phase 2b.13)
+  , buildStepProveCtx
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -66,7 +68,13 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Type.Proxy (Proxy(..))
-import Pickles.Prove.Compile (ProveError, StepInputs, Tag)
+import Pickles.Prove.Compile
+  ( class CompilableSpec
+  , ProveError
+  , StepInputs
+  , Tag
+  , shapeCompileData
+  )
 import Pickles.Prove.Step
   ( StepAdvice
   , StepCompileResult
@@ -606,6 +614,56 @@ type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal
 -- | They'll all be visible-type-applicable at the call site (matching
 -- | single-rule `compile`'s `@inputVal @outputVal @prevInputVal @m`
 -- | pattern).
+--------------------------------------------------------------------------------
+-- buildStepProveCtx — derive a per-rule StepProveContext from
+-- CompileMultiConfig + slotVKs + selfStepDomainLog2.
+--
+-- Wraps the existing single-rule `shapeCompileData @prevsSpec` in a
+-- multi-branch-friendly interface: instead of taking a single-rule
+-- `CompileConfig prevsSpec slotVKs`, take a `CompileMultiConfig`
+-- (shared) plus the per-rule `slotVKs` (from the entry).
+--
+-- Phase 2b.14 will lift this call into a `CompilableRulesSpec` class
+-- method that walks the rules carrier and threads per-branch contexts
+-- into `runStepCompiles`.
+--
+-- Pre-pass (preComputeStepDomainLog2) is the caller's responsibility
+-- for now — the pre-pass requires the rule's rank-2 forall, so it's
+-- naturally another `RuleEntry` closure (Phase 2b.15). For initial
+-- bring-up, callers can pass the OCaml `rough_domains` placeholder
+-- value `20` and accept that the resulting circuit will use the
+-- placeholder (overshoots real size; corrected by the pre-pass once
+-- it lands).
+--------------------------------------------------------------------------------
+
+-- | Build a per-rule `StepProveContext` from the multi-branch config,
+-- | the rule's `slotVKs`, and its `selfStepDomainLog2`. Used inside
+-- | `CompilableRulesSpec`'s recursion to feed `runStepCompiles`.
+-- |
+-- | The per-rule `CompileConfig` is constructed by combining the
+-- | shared `srs` / `debug` / `wrapDomainOverride` from the multi
+-- | config with the rule's own `slotVKs`. `shapeCompileData
+-- | @prevsSpec` then handles the per-prev-spec layout (per-slot
+-- | lagrange basis, blinding H, FOP domains).
+buildStepProveCtx
+  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
+   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
+  => CompileMultiConfig
+  -> slotVKs
+  -> Int
+  -> PProveStep.StepProveContext mpv
+buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
+  let
+    perRuleCfg =
+      { srs: cfg.srs
+      , perSlotImportedVKs: slotVKs
+      , debug: cfg.debug
+      , wrapDomainOverride: cfg.wrapDomainOverride
+      }
+    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2
+  in
+    shape.stepProveCtx
+
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
        rulesCarrier proversCarrier perBranchStepCarrier perBranchVKsCarrier
