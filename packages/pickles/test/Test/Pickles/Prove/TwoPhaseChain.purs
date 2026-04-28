@@ -27,6 +27,8 @@ module Test.Pickles.Prove.TwoPhaseChain
   ( spec
   , makeZeroRule
   , incrementRule
+  , probeMakeZero
+  , probeIncrement
   ) where
 
 import Prelude
@@ -35,7 +37,9 @@ import Control.Monad.Trans.Class (lift) as MT
 import Data.Tuple (Tuple(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
+import Effect (Effect)
 import Effect.Aff (Aff)
+import Pickles.Prove.CompileMulti (RuleEntry, mkRuleEntry)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Types (StatementIO(..), StepField)
@@ -102,23 +106,45 @@ incrementRule self = do
     }
 
 --------------------------------------------------------------------------------
--- Phase 2b.1 NOTE: storing the rules in a Tuple-shaped value-level
--- carrier doesn't work directly. PS rejects record fields holding
--- the existing `StepRule`'s rank-2 forall (`forall t m'. … =>
--- input -> Snarky …`) — the same wall PR #126 hit when trying to
--- newtype-wrap StepRule's inner forall. Putting `{ rule:
--- makeZeroRule, … }` in a record doesn't typecheck because PS can't
--- unify the rank-2 stored shape with the eventual call-site shape.
+-- Phase 2b.5 probes — call sites that exercise `mkRuleEntry` with the
+-- two real rank-2 rules above. If both compile, the smart-constructor
+-- approach in Pickles.Prove.CompileMulti is viable end-to-end:
 --
--- So the rules carrier shape is deferred to Phase 2b.2 alongside
--- the implementation. The likely answer: a typeclass-based carrier
--- (`class RulesCarrier (rs :: RulesSpec) m | rs -> m where …`) where
--- per-rule data lives inside instance methods rather than in a
--- shared-record value. Each instance is monomorphic (no forall in
--- storage) so PS handles it fine.
+--   * `mkRuleEntry` accepts a rank-2 `StepRule` value as a positional
+--     argument (proven Phase 2b.4).
+--   * `mkRuleEntry`'s body constructs a `RuleEntry` value with closures
+--     that *could* capture the rule (currently placeholder — Phase
+--     2b.6 wires real `stepCompile` / `stepSolveAndProve` calls into
+--     those bodies).
+--   * Real call sites — the rule values flowing IN from this module —
+--     typecheck. This is the unification-of-rank-2 test PR #126
+--     stumbled on; the smart-constructor closure approach is meant to
+--     sidestep it.
 --
--- For now, the rule bodies above are committed as the source of
--- truth for what the bodies LOOK LIKE. Phase 2b.2 wires them up.
+-- These probes do nothing at runtime (the closure bodies are
+-- placeholder `pure unit` returners) — they're SIGNATURE-LEVEL
+-- evidence only. Once Phase 2b.6 lands real bodies, calling them
+-- will actually drive a step compile / prove.
+--------------------------------------------------------------------------------
+
+-- | Probe: `makeZeroRule` (mpv=0, no prevs, valCarrier=Unit). Smoke
+-- | test of `mkRuleEntry`'s rank-2 input acceptance with the simplest
+-- | possible rule shape.
+probeMakeZero :: Effect (RuleEntry 0 Unit Unit)
+probeMakeZero = mkRuleEntry @0 @Unit @Unit makeZeroRule unit
+
+-- | Probe: `incrementRule` (mpv=1, one self-referential prev,
+-- | `valCarrier = Tuple (StatementIO (F StepField) Unit) Unit`).
+-- | Verifies `mkRuleEntry` works with a non-trivial valCarrier
+-- | shape — the real test of whether the smart-constructor pattern
+-- | can carry the variation across rules.
+probeIncrement
+  :: Effect (RuleEntry 1 (Tuple (StatementIO (F StepField) Unit) Unit) Unit)
+probeIncrement =
+  mkRuleEntry @1 @(Tuple (StatementIO (F StepField) Unit) Unit) @Unit
+    incrementRule
+    unit
+
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body
 --------------------------------------------------------------------------------

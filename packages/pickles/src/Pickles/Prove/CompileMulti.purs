@@ -311,7 +311,11 @@ mkRuleEntry
    . PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
   -> Effect (RuleEntry mpv valCarrier slotVKs)
-mkRuleEntry _rule _slotVKs = notImplemented "mkRuleEntry"
+mkRuleEntry _rule slotVKs = pure $ RuleEntry
+  { stepCompileFn: \_ -> pure unit
+  , stepProveFn: \_ -> pure unit
+  , slotVKs
+  }
 
 -- Local alias to avoid naming collision in imports if `StepRule`
 -- appears elsewhere; the existing rank-2 type alias from
