@@ -45,9 +45,10 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.9 — branchCount method wired)
+  -- * Carrier class (Phase 2b.10 — carrier-consuming method)
   , class CompilableRulesSpec
   , branchCount
+  , collectSlotVKs
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -60,6 +61,7 @@ import Prelude
 import Control.Monad.Except (ExceptT)
 import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Type.Proxy (Proxy(..))
@@ -242,10 +244,10 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
 --------------------------------------------------------------------------------
 
 class CompilableRulesSpec
-  :: RulesSpec -> Type -> Type -> Type -> Int -> Int -> Constraint
+  :: RulesSpec -> Type -> Type -> Type -> Int -> Int -> Type -> Constraint
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
-  | rs -> branches mpvMax
+  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax rulesCarrier
+  | rs -> branches mpvMax rulesCarrier
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -254,15 +256,46 @@ class
   -- | would, but via direct class-method dispatch.
   branchCount :: forall proxy. proxy rs -> Int
 
-instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 where
+  -- | Walk the value-level rules carrier, extracting each entry's
+  -- | `slotVKs` into a heterogeneous Tuple chain. Pure structural
+  -- | recursion — pattern-matches the Tuple, descends. Validates
+  -- | that the class instance head correctly ties the Tuple shape
+  -- | (with `RuleEntry`'s 7 type params) to the type-level
+  -- | `RulesCons` encoding (with 4 params).
+  -- |
+  -- | Per-rule type vars (`carrier`, `outputSize`) that aren't in
+  -- | `RulesCons` are pinned by class constraints (`PrevsCarrier` /
+  -- | `Add`) in the Cons instance head, satisfying the funDep
+  -- | `rs -> rulesCarrier` via constraint-driven inference.
+  -- |
+  -- | Output shape mirrors the input: `Tuple slotVKs0 (Tuple slotVKs1 …)`.
+  collectSlotVKs :: rulesCarrier -> Effect Unit
+
+instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit where
   branchCount _ = 0
+  collectSlotVKs _ = pure unit
 
 -- | Cons instance: per-rule branch increments the running count via
--- | `Add restBranches 1 branches`. Per-rule mpv contributes to mpvMax
--- | (TODO: wire via Compare-driven type-level max relation).
+-- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
+-- | by `PrevsCarrier prevsSpec … carrier` (carrier from prevsSpec) and
+-- | by Add chains (outputSize from mpv). These constraints feed back
+-- | into the funDep `rs -> rulesCarrier` resolution.
 instance
-  ( CompilableRulesSpec rest inputVal outputVal prevInputVal restBranches restMpvMax
+  ( CompilableRulesSpec rest inputVal outputVal prevInputVal
+      restBranches restMpvMax restCarrier
   , Add restBranches 1 branches
+  , PrevsCarrier
+      prevsSpec
+      StepIPARounds
+      WrapIPARounds
+      (F StepField)
+      (Type2 (SplitField (F StepField) Boolean))
+      Boolean
+      ruleMpv
+      carrier
+  , Mul ruleMpv 32 unfsTotal
+  , Add unfsTotal 1 digestPlusUnfs
+  , Add digestPlusUnfs ruleMpv outputSize
   -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
   CompilableRulesSpec
@@ -270,10 +303,33 @@ instance
     inputVal outputVal prevInputVal
     branches
     mpvMax
+    ( Tuple
+        ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+            slotVKs
+        )
+        restCarrier
+    )
   where
   branchCount _ =
-    1 + branchCount @rest @inputVal @outputVal @prevInputVal @restBranches @restMpvMax
-          (Proxy :: Proxy rest)
+    1 + branchCount
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @restBranches
+      @restMpvMax
+      @restCarrier
+      (Proxy :: Proxy rest)
+  collectSlotVKs (Tuple _entry rest) =
+    collectSlotVKs
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @restBranches
+      @restMpvMax
+      @restCarrier
+      rest
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side

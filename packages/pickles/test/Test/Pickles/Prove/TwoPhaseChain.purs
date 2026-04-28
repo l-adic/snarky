@@ -31,6 +31,7 @@ module Test.Pickles.Prove.TwoPhaseChain
   , probeIncrement
   , probeRulesCarrier
   , probeBranchCount
+  , probeCollectSlotVKs
   ) where
 
 import Prelude
@@ -41,7 +42,14 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Pickles.Prove.CompileMulti (RuleEntry, RulesCons, RulesNil, branchCount, mkRuleEntry)
+import Pickles.Prove.CompileMulti
+  ( RuleEntry
+  , RulesCons
+  , RulesNil
+  , branchCount
+  , collectSlotVKs
+  , mkRuleEntry
+  )
 import Type.Proxy (Proxy(..))
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
@@ -270,6 +278,21 @@ probeBranchCount =
     @Unit
     @(F StepField)
     (Proxy :: Proxy TwoPhaseChainRules)
+
+-- | Phase 2b.10 probe: validate that `collectSlotVKs` correctly walks
+-- | the value-level rules carrier. Reuses `probeRulesCarrier` to
+-- | construct a real Tuple chain and dispatches the class method to
+-- | descend through it. Body returns Unit — the test is that PS
+-- | resolves the Cons instance and pattern-matches the Tuple shape.
+probeCollectSlotVKs :: Effect Unit
+probeCollectSlotVKs = do
+  carrier <- probeRulesCarrier
+  collectSlotVKs
+    @TwoPhaseChainRules
+    @(F StepField)
+    @Unit
+    @(F StepField)
+    carrier
 
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body
