@@ -45,6 +45,8 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
+  -- * Carrier class (Phase 2b.2 — class signature only, bodies stubbed)
+  , class CompilableRulesSpec
   -- * Misc
   , notImplemented
   ) where
@@ -187,6 +189,58 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
   -- | branch of transaction_snark).
   , perBranchVKs :: perBranchVKsCarrier
   }
+
+--------------------------------------------------------------------------------
+-- CompilableRulesSpec — Phase 2b.2 carrier class (signature sketched)
+--
+-- Mirror of `Pickles.Step.Prevs.PrevsCarrier` at the rules level
+-- (one level up from per-prev-slot). Drives multi-branch compile
+-- via per-rule dispatch.
+--
+-- Why class-method dispatch (vs. tuple-stored rules): PS rejects
+-- record fields holding `StepRule`'s rank-2 forall (PR #126's wall +
+-- Phase 2b.1's experiment confirmed). Class-method dispatch sidesteps
+-- this — each instance is monomorphic, so the user's rank-2 rule
+-- value gets *used* inside the method body (calling `stepCompile` /
+-- `stepSolveAndProve`) without ever being *stored* as a record value.
+--
+-- The funDep `rs -> branches mpvMax` says: the type-level rules spec
+-- determines (a) the branch count and (b) the max mpv across rules.
+-- Phase 2b.2 derives both via recursion through the instance chain.
+--
+-- Method signatures intentionally omitted from this commit. Filling
+-- them is Phase 2b.3 — by then, having implemented the runtime
+-- semantics of multi-branch compile, we'll know what shape the
+-- methods need (e.g. a `compileBranches` that returns a per-branch
+-- StepCompileResult Vector, vs. multiple smaller methods).
+--------------------------------------------------------------------------------
+
+class CompilableRulesSpec
+  :: RulesSpec -> Type -> Type -> Type -> Int -> Int -> Constraint
+class
+  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+  | rs -> branches mpvMax
+
+instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0
+
+-- The Cons instance: per-rule mpv contributes to the running mpvMax,
+-- per-rule branch increments the running branches count. Concrete
+-- recurrence relations (Add restBranches 1 branches; Max ruleMpv
+-- restMpvMax mpvMax) wired in Phase 2b.3.
+instance
+  ( CompilableRulesSpec rest inputVal outputVal prevInputVal restBranches restMpvMax
+  -- TODO Phase 2b.3:
+  --   * Add restBranches 1 branches
+  --   * Max ruleMpv restMpvMax mpvMax
+  -- For now, instance head doesn't constrain `branches` / `mpvMax`,
+  -- making this instance unusable until those are added — but
+  -- declaring it here documents the shape.
+  ) =>
+  CompilableRulesSpec
+    (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
+    inputVal outputVal prevInputVal
+    branches
+    mpvMax
 
 --------------------------------------------------------------------------------
 -- compileMulti — Phase 2a stub
