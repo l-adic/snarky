@@ -19,6 +19,8 @@ module Pickles.Step.Main
   , liftDummyPerProofUnfinalized
   , stepMain
   -- * mpvMax-padding (Phase 2b.31a)
+  , class IntEq
+  , class MpvPaddingDispatch
   , class MpvPadding
   , mpvFrontPad
   ) where
@@ -45,6 +47,7 @@ import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
+import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Mul)
 import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
@@ -190,32 +193,55 @@ stepEndoVal :: StepField
 stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 
 --------------------------------------------------------------------------------
--- MpvPadding class (Phase 2b.31a)
+-- MpvPadding class (Phase 2b.31a, IntEq dispatch refactor 2b.31c)
 --
 -- Relates `mpvPad + len = mpvMax` at the type level for step PI
 -- mpvMax-padding (mirroring OCaml `step.ml:782-787`'s
 -- `Vector.extend_front unfinalized_proofs ... Unfinalized.dummy`).
 --
--- The fast-path instance `MpvPadding 0 len len` is what lets PS
--- discharge the constraint at single-rule call sites where `len`
--- (= the rule's mpv) is an abstract type variable. The general
--- instance defers to `Prim.Int.Add`, which PS resolves only when at
--- least one position is concrete (e.g., from a multi-branch caller
--- pinning `mpvMax` to a literal).
+-- Implementation dispatches on `IntEq len mpvMax` — both positions
+-- are always concrete at use sites (from caller @-args), so the
+-- Boolean is determined cleanly. The True branch (`len = mpvMax`)
+-- pins `mpvPad = 0` via the head pattern; the False branch defers
+-- to `Prim.Int.Add` for the actual relation.
 --
--- This class is library-internal: only the two instances below exist
--- (closed by `else`), so the runtime check inside `mpvFrontPad` is a
--- tautology — it can fail only if these instances lie about the size,
--- and they don't.
+-- The asymmetric formulations we tried earlier (literal `0` in head,
+-- IsZero-gated dispatch) all hit corners of PureScript's instance
+-- resolution where `else` chains don't fall through cleanly. Keying
+-- the dispatch on `IntEq len mpvMax` works because `len` and
+-- `mpvMax` are *always* both concrete at the points PS needs to
+-- discharge the constraint:
+--
+--   * abstract `MpvPadding 0 a a`: IntEq a a → True ✓
+--   * concrete distinct `MpvPadding 1 0 1`: IntEq 0 1 → False, defers
+--     to Add 1 0 1 ✓
+--   * fundep-derived `MpvPadding ? 1 1`: IntEq 1 1 → True, pins
+--     mpvPad = 0 ✓
 --------------------------------------------------------------------------------
+
+class IntEq (a :: Int) (b :: Int) (res :: Boolean) | a b -> res
+
+instance IntEq a a True
+else instance IntEq a b False
+
+class MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+   | isEqual mpvPad len -> mpvMax
+   , isEqual len mpvMax -> mpvPad
+   , isEqual mpvPad mpvMax -> len
+
+instance MpvPaddingDispatch True 0 len len
+instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax
 
 class MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
    | mpvPad len -> mpvMax
    , len mpvMax -> mpvPad
    , mpvPad mpvMax -> len
 
-instance MpvPadding 0 len len
-else instance Add mpvPad len mpvMax => MpvPadding mpvPad len mpvMax
+instance
+  ( IntEq len mpvMax isEqual
+  , MpvPaddingDispatch isEqual mpvPad len mpvMax
+  ) =>
+  MpvPadding mpvPad len mpvMax
 
 -- | Front-pad a `Vector len a` with `mpvPad` copies of a dummy value
 -- | to produce a `Vector mpvMax a`. The `MpvPadding mpvPad len mpvMax`

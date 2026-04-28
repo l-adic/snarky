@@ -1502,6 +1502,8 @@ runCompile cfg rule = do
       @outputVar
       @prevInputVal
       @prevInputVar
+      @mpv
+      @0
       (shapeCompileData @prevsSpec cfg 20).stepProveCtx
       rule
 
@@ -1518,6 +1520,8 @@ runCompile cfg rule = do
     @outputVar
     @prevInputVal
     @prevInputVar
+    @mpv
+    @0
     shape.stepProveCtx
     rule
 
@@ -1655,6 +1659,8 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     @outputVar
     @prevInputVal
     @prevInputVar
+    @mpv     -- mpvMax = mpv (single-rule path)
+    @0       -- mpvPad = 0
     shape.stepProveCtx
     rule
     stepCR

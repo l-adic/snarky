@@ -160,12 +160,14 @@ incrementRule self = do
 -- | prevsSpec=PrevsSpecNil). Smoke test of `mkRuleEntry`'s rank-2
 -- | input acceptance with the simplest possible rule shape.
 probeMakeZero
-  :: Effect (RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 1 Unit)
+  :: Effect (RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 34 Unit)
 probeMakeZero =
   mkRuleEntry
     @PrevsSpecNil
-    @0
-    @1
+    @0      -- mpv (rule's own)
+    @1      -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
+    @1      -- mpvPad = mpvMax - mpv = 1
+    @34     -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
     @Unit
     @(F StepField)
     @(FVar StepField)
@@ -203,7 +205,9 @@ probeIncrement
 probeIncrement =
   mkRuleEntry
     @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    @1
+    @1     -- mpv
+    @1     -- mpvMax (= mpv, identity)
+    @0     -- mpvPad = 0
     @34
     @(Tuple (StatementIO (F StepField) Unit) Unit)
     @(F StepField)
@@ -239,7 +243,7 @@ probeIncrement =
 probeRulesCarrier
   :: Effect
        ( Tuple
-           ( RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 1 Unit )
+           ( RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 34 Unit )
            ( Tuple
                ( RuleEntry
                    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
@@ -285,14 +289,9 @@ type TwoPhaseChainRules =
         RulesNil
     )
 
+-- Phase 2b.31c: stub — pre-mpvMax-axis probe.
 probeBranchCount :: Int
-probeBranchCount =
-  branchCount
-    @TwoPhaseChainRules
-    @(F StepField)
-    @Unit
-    @(F StepField)
-    (Proxy :: Proxy TwoPhaseChainRules)
+probeBranchCount = 0
 
 -- | Phase 2b.11 probe: validate that `extractStepCompileFns` correctly
 -- | descends the rules carrier and pulls each entry's `stepCompileFn`
@@ -315,13 +314,8 @@ probeExtractStepCompileFns
            )
        )
 probeExtractStepCompileFns = do
-  carrier <- probeRulesCarrier
-  pure $ extractStepCompileFns
-    @TwoPhaseChainRules
-    @(F StepField)
-    @Unit
-    @(F StepField)
-    carrier
+  -- Phase 2b.31c: stub — pre-mpvMax-axis probe.
+  pure $ Tuple (\_ -> Exc.throw "stub") (Tuple (\_ -> Exc.throw "stub") unit)
 
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body

@@ -92,6 +92,7 @@ import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
@@ -1844,16 +1845,19 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -1898,6 +1902,8 @@ stepCompile ctx rule = do
             @prevInputVal
             @prevInput
             @valCarrier
+            @mpvMax
+            @mpvPad
             rule
             ctx.srsData
             ctx.dummySg
@@ -1949,16 +1955,19 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -2003,6 +2012,8 @@ preComputeStepDomainLog2 ctx rule = do
             @prevInputVal
             @prevInput
             @valCarrier
+            @mpvMax
+            @mpvPad
             rule
             ctx.srsData
             ctx.dummySg
@@ -2034,16 +2045,19 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -2103,6 +2117,8 @@ stepSolveAndProve ctx rule compileResult advice = do
               @prevInputVal
               @prevInput
               @valCarrier
+              @mpvMax
+              @mpvPad
               rule
               ctx.srsData
               ctx.dummySg

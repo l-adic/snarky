@@ -123,6 +123,7 @@ import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Data.Array as Array
 import Partial.Unsafe (unsafePartial)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Pickles.Step.Main as MpvPadding
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -422,7 +423,7 @@ class
 -- | adds `slotsMax` to the class head; the Nil case returns unit-shaped
 -- | carriers regardless, so any `slotsMax` works.
 instance
-  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 slotsMax Unit
+  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 mpvMax slotsMax Unit
     Unit
     Unit
     Unit
@@ -442,7 +443,7 @@ instance
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      restBranches restMpvMax slotsMax restCarrier restStepCompileFns restCtxs
+      restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
       restStepCompileResults restLog2s restStepProveFns
   , Add restBranches 1 branches
   , PrevsCarrier
@@ -454,11 +455,13 @@ instance
       Boolean
       ruleMpv
       carrier
-  , Mul ruleMpv 32 unfsTotal
+  -- Phase 2b.31c: outputSize derives from mpvMax (the wrap circuit's
+  -- max), not the rule's mpv. Step PI is mpvMax-shaped (mirrors OCaml
+  -- step.ml:783-787).
+  , Mul mpvMax 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
-  , Add digestPlusUnfs ruleMpv outputSize
+  , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
-  -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
   CompilableRulesSpec
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
@@ -498,7 +501,7 @@ instance
       @outputVal
       @prevInputVal
       @restBranches
-      @restMpvMax
+      @mpvMax
       @slotsMax
       @restCarrier
       @restStepCompileFns
@@ -515,7 +518,7 @@ instance
           @outputVal
           @prevInputVal
           @restBranches
-          @restMpvMax
+          @mpvMax
           @slotsMax
           @restCarrier
           @restStepCompileFns
@@ -533,7 +536,7 @@ instance
       @outputVal
       @prevInputVal
       @restBranches
-      @restMpvMax
+      @mpvMax
       @slotsMax
       @restCarrier
       @restStepCompileFns
@@ -557,7 +560,7 @@ instance
         @outputVal
         @prevInputVal
         @restBranches
-        @restMpvMax
+        @mpvMax
         @slotsMax
         @restCarrier
         @restStepCompileFns
@@ -576,7 +579,7 @@ instance
           @outputVal
           @prevInputVal
           @restBranches
-          @restMpvMax
+          @mpvMax
           @slotsMax
           @restCarrier
           @restStepCompileFns
@@ -683,7 +686,7 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slo
 -- | Nil shape instance is polymorphic in `slotsMax` (parallels the
 -- | structural Nil instance).
 instance
-  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 0
+  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 mpvMax
     slotsMax Unit Unit Unit Unit Unit Unit Unit
   where
   runMultiCompile _ _ _ = pure unit
@@ -692,7 +695,7 @@ instance
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
-      restBranches restMpvMax slotsMax restCarrier restStepCompileFns restCtxs
+      restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
       restStepCompileResults restLog2s restStepProveFns restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
@@ -705,9 +708,12 @@ instance
   , Reflectable pad Int
   , Reflectable outputSize Int
   , Add pad ruleMpv PaddedLength
-  , Mul ruleMpv 32 unfsTotal
+  -- Phase 2b.31c: outputSize derives from mpvMax.
+  , Reflectable mpvPad Int
+  , MpvPadding.MpvPadding mpvPad ruleMpv mpvMax
+  , Mul mpvMax 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
-  , Add digestPlusUnfs ruleMpv outputSize
+  , Add digestPlusUnfs mpvMax outputSize
   , PadSlots slots ruleMpv
   -- Phase 2b.31b step (b): wrap-stage constraints on `mpvMax`/`slotsMax`
   -- (the wrap circuit's wider shape). Step (a) ran the wrap stage at
@@ -805,7 +811,7 @@ instance
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax @slotsMax
+      @restBranches @mpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
@@ -821,7 +827,7 @@ instance
     headResult <- r.stepCompileFn realCtx
     tail <- runMultiCompileFull
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax @slotsMax
+      @restBranches @mpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
@@ -859,6 +865,7 @@ instance
           -- wrap circuit's wider shape via `Dummy.*` values.
           @mpvMax
           @slotsMax
+          @mpvPad
           thisBranch
           cfg
           wrapResult
@@ -869,7 +876,7 @@ instance
           stepInputs
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @restMpvMax @slotsMax
+      @restBranches @mpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       (branchIdx + 1)
@@ -967,17 +974,20 @@ data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = Ru
 -- | `runCompile` (`Pickles.Prove.Compile`). If this typechecks, the
 -- | smart-constructor pattern is end-to-end viable for `compileMulti`.
 mkRuleEntry
-  :: forall @prevsSpec @mpv @outputSize @valCarrier
+  :: forall @prevsSpec @mpv @mpvMax @mpvPad @outputSize @valCarrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable mpv Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => Mul mpv 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad mpv mpvMax
+  => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpv outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar
@@ -1018,6 +1028,8 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @outputVar
         @prevInputVal
         @prevInputVar
+        @mpvMax
+        @mpvPad
         ctx
         rule
   , stepCompileFn: \ctx ->
@@ -1031,6 +1043,8 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @outputVar
         @prevInputVal
         @prevInputVar
+        @mpvMax
+        @mpvPad
         ctx
         rule
   , stepProveFn: \ctx compileResult advice ->
@@ -1044,6 +1058,8 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @outputVar
         @prevInputVal
         @prevInputVar
+        @mpvMax
+        @mpvPad
         ctx
         rule
         compileResult
@@ -1283,7 +1299,7 @@ compileMultiStepWrap cfg rules = do
 runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
-       @mpvMax @slotsMax
+       @mpvMax @slotsMax @mpvPad
        branches branchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
@@ -1295,11 +1311,13 @@ runMultiProverBody
   => Add 1 branchesPred branches
   => Reflectable mpv Int
   => Reflectable pad Int
+  => Reflectable mpvPad Int
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
-  => Mul mpv 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad mpv mpvMax
+  => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpv outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   -- Step-half constraints reference the rule's own `mpv`. The wrap
   -- circuit operates at the (possibly wider) `mpvMax`/`slotsMax`
   -- shape; constraints below mirror that — they are independent of
