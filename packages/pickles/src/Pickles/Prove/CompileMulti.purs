@@ -94,11 +94,14 @@ import Pickles.Prove.Step
   , stepSolveAndProve
   ) as PProveStep
 import Pickles.Prove.Verify (CompiledProof, Verifier)
-import Pickles.Prove.Wrap (WrapCompileResult)
+import Pickles.Prove.Wrap (WrapCompileResult, buildWrapMainConfigMulti, wrapCompile)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
-import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapIPARounds)
+import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Wrap.Slots (class PadSlots)
+import Pickles.Dummy (wrapDomainLog2ForProofsVerified)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (EvaluationError)
-import Prim.Int (class Add, class Mul)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -854,24 +857,38 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
 --------------------------------------------------------------------------------
 
 compileMultiStepWrap
-  :: forall @rs @inputVal @outputVal @prevInputVal
-       branches mpvMax
+  :: forall @rs @inputVal @outputVal @prevInputVal @mpvMax @slots
+       branches
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
+       branchesPred totalBases totalBasesPred
    . CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
        selfStepDomainLog2sCarrier
+  => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
+  => Reflectable mpvMax Int
+  => Add 1 branchesPred branches
+  => Compare mpvMax 3 LT
+  => Add mpvMax 45 totalBases
+  => Add 1 totalBasesPred totalBases
+  => PadSlots slots mpvMax
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileMultiConfig
   -> rulesCarrier
   -> Effect
        { stepResults :: perBranchStepCompileResults
+       , wrapResult :: WrapCompileResult
        , perBranchVec ::
            Vector branches
              { mpv :: Int
@@ -894,7 +911,19 @@ compileMultiStepWrap cfg rules = do
       @outputVal
       @prevInputVal
       stepResults
-  pure { stepResults, perBranchVec }
+    -- Lagrange-domain log2: provisionally the wrap circuit's own
+    -- domain log2 (= wrap_domains[mpvMax]). The
+    -- buildWrapMainConfigMulti TODO flags this for witness-diff
+    -- validation against dump_two_phase_chain.exe.
+    lagrangeDomainLog2 =
+      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
+  wrapResult <- wrapCompile @branches @slots
+    { wrapMainConfig:
+        buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
+          { lagrangeDomainLog2, perBranch: perBranchVec }
+    , crs: cfg.srs.pallasSrs
+    }
+  pure { stepResults, wrapResult, perBranchVec }
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
