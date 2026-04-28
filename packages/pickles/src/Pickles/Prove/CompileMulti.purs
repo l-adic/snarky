@@ -93,7 +93,7 @@ import Pickles.Prove.Compile
   , shapeProveData
   )
 import Effect.Class (liftEffect)
-import Pickles.ProofFFI (pallasProverIndexDomainLog2)
+import Pickles.ProofFFI (pallasProofOracles, pallasProverIndexDomainLog2)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -1273,16 +1273,36 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
       , unfinalizedSlots: sa.publicUnfinalizedProofs
       , baseCaseWrapPublicInputs
       }
-    _proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
+    proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
       proveDataSideInfo
       prevs
 
-  _stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
+  stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
 
-  -- Phase 2b.24d: compute step oracles, deferred values, run wrap
-  -- solver+prover with `whichBranch = F (fromInt branchIdx)`,
-  -- package CompiledProof.
-  lift $ notImplemented "runMultiProverBody — wrap half (Phase 2b.24d)"
+  let
+    -- Phase 2b.24e: assemble FFI-shaped `prevChallenges` for the
+    -- step proof's oracles. Same shape as single-rule
+    -- runProverBody (Compile.purs:1502-1508).
+    stepOraclesPrevChals = Vector.toUnfoldable $
+      Vector.zipWith
+        ( \sg chals ->
+            { sgX: sg.x
+            , sgY: sg.y
+            , challenges: Vector.toUnfoldable chals
+            }
+        )
+        proveData.prevSgs
+        proveData.prevStepChallenges
+
+    _stepOracles = pallasProofOracles stepCR.verifierIndex
+      { proof: stepResult.proof
+      , publicInput: stepResult.publicInputs
+      , prevChallenges: stepOraclesPrevChals
+      }
+
+  -- Phase 2b.24f: build allEvals from stepResult.proof's evals.
+  -- Phase 2b.24g+: wrapComputeDeferredValues, wrap solver, package.
+  lift $ notImplemented "runMultiProverBody — allEvals / wrap (Phase 2b.24f+)"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
