@@ -769,10 +769,24 @@ wrapMain config (WrapStatementPacked stmtR) = do
     maskedLagrangeAt :: LagrangeBaseLookup WrapField
     maskedLagrangeAt i = case config.perBranchLagrangeAt of
       Nothing ->
-        -- Fast path: identical to pre-refactor behavior. The wrap
-        -- circuit's `correctionMode = InCircuitCorrections` lifts the
-        -- constant correction via `constPt` downstream.
-        config.lagrangeAt i
+        let
+          lb = config.lagrangeAt i
+          -- OCaml's `lagrange` (used for `Cond_add` leaves) has NO
+          -- fast path — it always per-branch masks via 1-hot sum,
+          -- even when all domains are equal. `lagrange_with_correction`
+          -- (used for scalar-mul leaves) DOES have the all-equal fast
+          -- path returning pure constants. So `circuit` matches the
+          -- fast-path constants while `condAddPt` mirrors the
+          -- always-masked `lagrange` shape: `Σ_b which_branch[b] *
+          -- constant`, which equals `constant` algebraically when
+          -- which_branch is 1-hot but emits Scale-summed CVars.
+          replicatedConst = Vector.replicate @branches lb.constant
+        in
+          { constant: lb.constant
+          , circuit: lb.circuit
+          , condAddPt: sumMaskByBranch replicatedConst
+          , correctionAt: Nothing
+          }
       Just perBranchAt ->
         let
           perBranchPts = perBranchAt i
@@ -794,6 +808,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
             -- constant as a placeholder so the record typechecks.
             constant: (Vector.uncons perBranchPts).head
           , circuit: summed
+          , condAddPt: summed
           , correctionAt: Just correctionAt
           }
     ivpParams =

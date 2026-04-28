@@ -197,10 +197,18 @@ data MsmTerm f
 -- |     index. Used by `PureCorrections` mode (step verifier) and by
 -- |     `scalarMulLeaf` when computing the compile-time correction
 -- |     (single-branch / all-domains-equal fast path).
--- |   * `circuit` — the in-circuit version of the lagrange point.
--- |     For single-branch, this is `constPt constant`. For multi-branch
--- |     with differing domains, this is the 1-hot-summed circuit point
+-- |   * `circuit` — the in-circuit version of the lagrange point used
+-- |     by `scalarMulLeaf` (mirrors OCaml `lagrange_with_correction`).
+-- |     For the fast path, this is `constPt constant`. For the per-branch
+-- |     path, this is the 1-hot-summed circuit point
 -- |     `sum_b which_branch[b] * lagrange(domain[b], i)`.
+-- |   * `condAddPt` — the in-circuit lagrange point used by `CondAdd`
+-- |     leaves (mirrors OCaml `lagrange`, which has NO fast path and
+-- |     always per-branch masks). For the fast-domain case this is
+-- |     `sumMaskByBranch (replicate constant)`, producing the same
+-- |     Scale-summed CVar shape OCaml emits when all domains equal but
+-- |     `which_branch` is still a non-trivial 1-hot vector. For the
+-- |     per-branch case it equals `circuit`.
 -- |   * `correctionAt` — `Nothing` for single-branch / all-equal-domain
 -- |     path (caller computes correction from `constant` via `pow2pow`).
 -- |     `Just f` for the per-branch path: `f shift` returns the in-circuit
@@ -210,6 +218,7 @@ data MsmTerm f
 type LagrangeBase f =
   { constant :: AffinePoint (F f)
   , circuit :: AffinePoint (FVar f)
+  , condAddPt :: AffinePoint (FVar f)
   , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
   }
 
@@ -224,7 +233,12 @@ type LagrangeBaseLookup f = Int -> LagrangeBase f
 -- | value. Used in single-branch / all-domains-equal contexts where there's
 -- | no per-branch dispatch needed.
 mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
-mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt, correctionAt: Nothing }
+mkConstLagrangeBase pt =
+  { constant: pt
+  , circuit: constPt pt
+  , condAddPt: constPt pt
+  , correctionAt: Nothing
+  }
 
 -- | Build a lookup closure from a function returning the constant `i`-th
 -- | lagrange commitment. The most common shape at call sites: wrap an FFI
@@ -288,7 +302,7 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    pure { results: [ CondAdd bool base.circuit ], nextIdx: idx + 1 }
+    pure { results: [ CondAdd bool base.condAddPt ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -304,7 +318,7 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let oddBase = lookup idx1
     pure
-      { results: r1 <> [ CondAdd sOdd oddBase.circuit ]
+      { results: r1 <> [ CondAdd sOdd oddBase.condAddPt ]
       , nextIdx: idx1 + 1
       }
 
