@@ -45,12 +45,13 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.14 — runMultiCompile derives ctxs in-class)
+  -- * Carrier class (Phase 2b.15 — runMultiCompileFull internalizes pre-pass)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
   , runStepCompiles
   , runMultiCompile
+  , runMultiCompileFull
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
@@ -82,6 +83,7 @@ import Pickles.Prove.Step
   , StepProveContext
   , StepProveResult
   , StepRule
+  , preComputeStepDomainLog2
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
@@ -319,12 +321,34 @@ class
   -- | `buildStepProveCtx`, and dispatch each entry's `stepCompileFn`.
   -- |
   -- | This is the multi-branch analog of single-rule `runCompile`'s
-  -- | shapeData → stepCompile flow. The pre-pass remains caller-
-  -- | supplied (Phase 2b.15 will internalize it via a `RuleEntry`
-  -- | pre-pass closure).
+  -- | shapeData → stepCompile flow with caller-supplied log2s.
+  -- | `runMultiCompileFull` (added Phase 2b.15) does the same plus
+  -- | internalizes the pre-pass.
   runMultiCompile
     :: CompileMultiConfig
     -> selfStepDomainLog2sCarrier
+    -> rulesCarrier
+    -> Effect perBranchStepCompileResults
+
+  -- | Phase 2b.15: end-to-end per-branch compile with the pre-pass
+  -- | INTERNALIZED. Caller supplies just `CompileMultiConfig`; per-rule
+  -- | `selfStepDomainLog2`s come from each entry's
+  -- | `preComputeStepDomainLog2Fn`. Per-rule flow:
+  -- |
+  -- |   1. Build placeholder ctx with log2=20 (OCaml `rough_domains`)
+  -- |   2. Call `entry.preComputeStepDomainLog2Fn placeholderCtx` →
+  -- |      real selfStepDomainLog2.
+  -- |   3. Build real ctx with that log2 via `buildStepProveCtx`.
+  -- |   4. Call `entry.stepCompileFn realCtx` → StepCompileResult.
+  -- |
+  -- | Mirrors single-rule `runCompile`'s opening:
+  -- |
+  -- |   selfStepDomainLog2 <- preComputeStepDomainLog2 …
+  -- |     (shapeCompileData @prevsSpec cfg 20).stepProveCtx rule
+  -- |   stepCR <- stepCompile … (shapeCompileData @prevsSpec cfg
+  -- |     selfStepDomainLog2).stepProveCtx rule
+  runMultiCompileFull
+    :: CompileMultiConfig
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
@@ -338,6 +362,7 @@ instance
   extractStepCompileFns _ = unit
   runStepCompiles _ _ = pure unit
   runMultiCompile _ _ _ = pure unit
+  runMultiCompileFull _ _ = pure unit
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
@@ -452,6 +477,31 @@ instance
       restLog2s
       restEntries
     pure (Tuple headResult tailResults)
+  runMultiCompileFull cfg (Tuple (RuleEntry r) restEntries) = do
+    let
+      -- OCaml `rough_domains.h = 20` (see fix_domains.ml:6-8) — the
+      -- placeholder log2 fed into the pre-pass's CS-build, large
+      -- enough that any rule's circuit fits without overflow.
+      placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs 20
+    selfStepDomainLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
+    let
+      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs selfStepDomainLog2
+    headResult <- r.stepCompileFn realCtx
+    tailResults <- runMultiCompileFull
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @restBranches
+      @restMpvMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restLog2s
+      cfg
+      restEntries
+    pure (Tuple headResult tailResults)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
@@ -511,7 +561,14 @@ data RuleEntry
   -> Type
   -> Type
 data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = RuleEntry
-  { stepCompileFn ::
+  { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
+    -- | with OCaml `rough_domains` log2=20) and returns the actual
+    -- | `selfStepDomainLog2` derived by counting gates in a one-shot
+    -- | constraint-system build. Phase 2b.15 — analog of OCaml's
+    -- | `Fix_domains.domains` per-rule.
+    preComputeStepDomainLog2Fn ::
+      PProveStep.StepProveContext mpv -> Effect Int
+  , stepCompileFn ::
       PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
   , stepProveFn ::
       PProveStep.StepProveContext mpv
@@ -572,7 +629,20 @@ mkRuleEntry
   -> slotVKs
   -> Effect (RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs)
 mkRuleEntry rule slotVKs = pure $ RuleEntry
-  { stepCompileFn: \ctx ->
+  { preComputeStepDomainLog2Fn: \ctx ->
+      PProveStep.preComputeStepDomainLog2
+        @prevsSpec
+        @outputSize
+        @valCarrier
+        @inputVal
+        @inputVar
+        @outputVal
+        @outputVar
+        @prevInputVal
+        @prevInputVar
+        ctx
+        rule
+  , stepCompileFn: \ctx ->
       PProveStep.stepCompile
         @prevsSpec
         @outputSize
