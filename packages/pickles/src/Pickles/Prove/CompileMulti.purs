@@ -74,7 +74,7 @@ import Prelude
 
 import Control.Monad.Except (ExceptT)
 import Control.Monad.Trans.Class (lift)
-import Data.Maybe (Maybe)
+import Data.Maybe (Maybe, fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
@@ -97,7 +97,8 @@ import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI
-  ( pallasProofOracles
+  ( pallasProofOpeningSg
+  , pallasProofOracles
   , pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
   , proofCoefficientEvals
@@ -107,7 +108,11 @@ import Pickles.ProofFFI
   , proofZEvals
   )
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, wrapComputeDeferredValues)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Snarky.Curves.Class (EndoScalar(..), endoScalar)
+import Data.Array as Array
+import Partial.Unsafe (unsafePartial)
+import Snarky.Data.EllipticCurve (AffinePoint)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -123,7 +128,12 @@ import Pickles.Prove.Wrap (WrapCompileResult, buildWrapMainConfigMulti, wrapComp
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
 import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Wrap.Slots (class PadSlots)
-import Pickles.Dummy (wrapDomainLog2ForProofsVerified)
+import Pickles.Dummy
+  ( baseCaseDummies
+  , computeDummySgValues
+  , dummyIpaChallenges
+  , wrapDomainLog2ForProofsVerified
+  )
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (EvaluationError)
@@ -1365,9 +1375,61 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
 
     _wrapDv = wrapComputeDeferredValues wrapDvInput
 
-  -- Phase 2b.24h+: msg hashes, wrap statement+advice (with
-  -- whichBranch), wrap solver, package CompiledProof.
-  lift $ notImplemented "runMultiProverBody — msg hashes / wrap solver (Phase 2b.24h+)"
+    -- Phase 2b.24h: msgStep / stepProofSg / msgWrap + paddings.
+    -- Mirrors Compile.purs:1568-1612.
+    msgStep :: StepField
+    msgStep = unsafePartial $ fromJust $
+      Array.index stepResult.publicInputs (outerMpv * 32)
+
+    stepProofSg :: AffinePoint WrapField
+    stepProofSg = pallasProofOpeningSg stepResult.proof
+
+    dummyWrapExpanded :: Vector WrapIPARounds WrapField
+    dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
+
+    dummyKimchiEntry
+      :: { sgX :: StepField
+         , sgY :: StepField
+         , challenges :: Vector WrapIPARounds WrapField
+         }
+    dummyKimchiEntry =
+      let
+        dummyBundle = computeDummySgValues
+          (baseCaseDummies { maxProofsVerified: outerMpv })
+          cfg.srs.pallasSrs
+          cfg.srs.vestaSrs
+        wrapSg = dummyBundle.ipa.wrap.sg
+      in
+        { sgX: wrapSg.x
+        , sgY: wrapSg.y
+        , challenges: dummyIpaChallenges.wrapExpanded
+        }
+
+    msgWrapPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+    msgWrapPadded =
+      Vector.append (Vector.replicate @pad dummyWrapExpanded)
+        proveData.msgWrapChallenges
+
+    _kimchiPrevPadded
+      :: Vector PaddedLength
+           { sgX :: StepField
+           , sgY :: StepField
+           , challenges :: Vector WrapIPARounds WrapField
+           }
+    _kimchiPrevPadded =
+      Vector.append (Vector.replicate @pad dummyKimchiEntry)
+        proveData.kimchiPrevEntries
+
+    _msgWrap :: WrapField
+    _msgWrap = hashMessagesForNextWrapProofPureGeneral
+      { sg: stepProofSg
+      , paddedChallenges: msgWrapPadded
+      }
+
+  -- Phase 2b.24i+: wrap statement+advice (with whichBranch), wrap
+  -- solver, package CompiledProof.
+  let _ = msgStep
+  lift $ notImplemented "runMultiProverBody — wrap solver (Phase 2b.24i+)"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
