@@ -58,15 +58,29 @@ import Prelude
 
 import Control.Monad.Except (ExceptT)
 import Data.Maybe (Maybe)
+import Data.Reflectable (class Reflectable)
 import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Pickles.Prove.Compile (ProveError, StepInputs, Tag)
-import Pickles.Prove.Step (StepRule) as PProveStep
+import Pickles.Prove.Step
+  ( StepRule
+  , StepCompileResult
+  , StepProveContext
+  , stepCompile
+  ) as PProveStep
 import Pickles.Prove.Verify (CompiledProof, Verifier)
 import Pickles.Prove.Wrap (WrapCompileResult)
-import Pickles.Types (StatementIO)
+import Pickles.Step.Prevs (class PrevsCarrier)
+import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapIPARounds)
+import Prim.Int (class Add, class Mul)
+import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Circuit.DSL (BoolVar, F, FVar)
+import Snarky.Circuit.DSL.Monad (class CheckedType)
+import Snarky.Circuit.Types (class CircuitType)
 import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Types.Shifted (SplitField, Type2)
 
 --------------------------------------------------------------------------------
 -- Type-level rules spec
@@ -278,41 +292,81 @@ instance
 -- | nature at the closure body's call site (where the rule is
 -- | applied to specific `t` / `m'`), not at the record-field level.
 -- |
--- | Type variables documented for the eventual type-class wiring:
--- |
--- |   * `mpv` — this branch's `max_proofs_verified`.
--- |   * `valCarrier` — this branch's prev-statements tuple shape.
--- |   * `slotVKs` — this branch's per-prev-slot VK carrier.
--- |
--- | Phase 2b.5 fills in the closure bodies; for now just placeholder
--- | shapes proving the storage is acceptable.
+-- | Phase 2b.6: `stepCompileFn` carries the real signature — the
+-- | closure body delegates to `stepCompile` with the captured rule,
+-- | exercising rank-2 use (not just rank-2 storage). The prove-time
+-- | closure remains a placeholder until Phase 2b.7 (it needs more
+-- | type vars threaded through; one rank-2 closure at a time).
 data RuleEntry
   :: Int -> Type -> Type -> Type
 data RuleEntry mpv valCarrier slotVKs = RuleEntry
-  { stepCompileFn :: Unit -> Effect Unit          -- placeholder shape
+  { stepCompileFn :: PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
   , stepProveFn :: Unit -> Effect Unit             -- placeholder shape
   , slotVKs :: slotVKs
   }
 
 -- | Smart constructor: takes the user's rank-2 `StepRule` value and
--- | produces a `RuleEntry` with Effect-typed closures capturing it.
+-- | produces a `RuleEntry` with closures capturing it.
 -- |
--- | Phase 2b.4 body: throws notImplemented. The point is to test
--- | whether PS accepts the rank-2 input at the SIGNATURE level. If
--- | yes, Phase 2b.5 wires the closure bodies to delegate to
--- | `stepCompile` / `stepSolveAndProve` with the captured rule.
--- |
--- | (We import `StepRule` for the signature even though we only
--- | placeholder it; this proves PS at least lets us TYPE the
--- | argument as a rank-2 value passed positionally to a function.)
+-- | Phase 2b.6 body: `stepCompileFn` calls `stepCompile` with the
+-- | captured rule (the actual rank-2-use test). All visible-type
+-- | applications and constraints needed by `stepCompile` are
+-- | propagated through this signature, mirroring single-rule
+-- | `runCompile` (`Pickles.Prove.Compile`). If this typechecks, the
+-- | smart-constructor pattern is end-to-end viable for `compileMulti`.
 mkRuleEntry
-  :: forall @mpv @valCarrier @slotVKs
-       inputVal inputVar outputVal outputVar prevInputVal prevInputVar
-   . PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
+  :: forall @prevsSpec @mpv @outputSize @valCarrier
+       @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
+       carrier carrierVar pad unfsTotal digestPlusUnfs
+   . CircuitGateConstructor StepField VestaG
+  => Reflectable mpv Int
+  => Reflectable pad Int
+  => Reflectable outputSize Int
+  => Add pad mpv PaddedLength
+  => Mul mpv 32 unfsTotal
+  => Add unfsTotal 1 digestPlusUnfs
+  => Add digestPlusUnfs mpv outputSize
+  => CircuitType StepField inputVal inputVar
+  => CircuitType StepField outputVal outputVar
+  => CircuitType StepField prevInputVal prevInputVar
+  => CircuitType StepField carrier carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) carrierVar
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (F StepField)
+       (Type2 (SplitField (F StepField) Boolean))
+       Boolean
+       mpv
+       carrier
+  => PrevsCarrier
+       prevsSpec
+       StepIPARounds
+       WrapIPARounds
+       (FVar StepField)
+       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
+       (BoolVar StepField)
+       mpv
+       carrierVar
+  => CheckedType StepField (KimchiConstraint StepField) inputVar
+  => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
   -> Effect (RuleEntry mpv valCarrier slotVKs)
-mkRuleEntry _rule slotVKs = pure $ RuleEntry
-  { stepCompileFn: \_ -> pure unit
+mkRuleEntry rule slotVKs = pure $ RuleEntry
+  { stepCompileFn: \ctx ->
+      PProveStep.stepCompile
+        @prevsSpec
+        @outputSize
+        @valCarrier
+        @inputVal
+        @inputVar
+        @outputVal
+        @outputVar
+        @prevInputVal
+        @prevInputVar
+        ctx
+        rule
   , stepProveFn: \_ -> pure unit
   , slotVKs
   }
