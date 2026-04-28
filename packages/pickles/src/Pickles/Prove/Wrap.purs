@@ -32,6 +32,7 @@ module Pickles.Prove.Wrap
   , extractStepVKComms
   , stepVkForCircuit
   , buildWrapMainConfig
+  , buildWrapMainConfigMulti
   ) where
 
 import Prelude
@@ -682,6 +683,52 @@ buildWrapMainConfig vestaSrs stepVK { domainLog2 } =
   , lagrangeAt:
       mkConstLagrangeBaseLookup \i ->
         (coerce (pallasSrsLagrangeCommitmentAt vestaSrs domainLog2 i))
+          :: AffinePoint (F WrapField)
+  , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
+  , allPossibleDomainLog2s:
+      unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+  }
+
+-- | Multi-branch generalization of `buildWrapMainConfig`. Takes
+-- | per-branch data (`Vector branches { mpv, stepDomainLog2, stepVK }`)
+-- | and produces a `WrapMainConfig branches` that the wrap circuit's
+-- | `Pseudo.choose whichBranch` machinery dispatches over at proof
+-- | time.
+-- |
+-- | The single-branch `buildWrapMainConfig` is degenerate-case sugar
+-- | for `buildWrapMainConfigMulti @1` with a one-element vector;
+-- | both produce the same `WrapMainConfig` structurally.
+-- |
+-- | TODO: validate via two_phase_chain witness diff that
+-- | `lagrangeAt` should use a SHARED lagrange-domain (probably the
+-- | wrap circuit's own domain log2) rather than per-branch step
+-- | domains. The single-branch version uses `domainLog2` (step) for
+-- | both `domainLog2s` and `lagrangeAt`, which works for single-rule
+-- | because step ≡ wrap when no override; multi-branch has
+-- | distinct per-branch step domains, so this needs a separate
+-- | parameter. Provisionally takes `lagrangeDomainLog2` as an
+-- | explicit input until we can verify against
+-- | `dump_two_phase_chain.exe`'s witness.
+buildWrapMainConfigMulti
+  :: forall @branches
+   . Reflectable branches Int
+  => CRS VestaG
+  -> { lagrangeDomainLog2 :: Int
+     , perBranch :: Vector branches
+         { mpv :: Int
+         , stepDomainLog2 :: Int
+         , stepVK :: VerifierIndex VestaG StepField
+         }
+     }
+  -> WrapMainConfig branches
+buildWrapMainConfigMulti vestaSrs { lagrangeDomainLog2, perBranch } =
+  { stepWidths: map _.mpv perBranch
+  , domainLog2s: map _.stepDomainLog2 perBranch
+  , stepKeys:
+      map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
+  , lagrangeAt:
+      mkConstLagrangeBaseLookup \i ->
+        (coerce (pallasSrsLagrangeCommitmentAt vestaSrs lagrangeDomainLog2 i))
           :: AffinePoint (F WrapField)
   , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s:
