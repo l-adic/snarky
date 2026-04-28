@@ -620,6 +620,32 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
   , PrevValuesCarrier prevsSpec valCarrier
+  -- Phase 2b.24b: per-rule wrap+step constraints needed by
+  -- runMultiProverBody, in scope for the Cons body's call.
+  , CircuitGateConstructor StepField VestaG
+  , CircuitGateConstructor WrapField PallasG
+  , Reflectable ruleMpv Int
+  , Reflectable pad Int
+  , Reflectable outputSize Int
+  , Add pad ruleMpv PaddedLength
+  , Mul ruleMpv 32 unfsTotal
+  , Add unfsTotal 1 digestPlusUnfs
+  , Add digestPlusUnfs ruleMpv outputSize
+  , Compare ruleMpv 3 LT
+  , Add ruleMpv 45 totalBases
+  , Add 1 totalBasesPred totalBases
+  , PadSlots slots ruleMpv
+  , CircuitType StepField inputVal inputVar
+  , CircuitType StepField outputVal outputVar
+  , CircuitType StepField prevInputVal prevInputVar
+  , CircuitType StepField carrier carrierFVar
+  , CheckedType StepField (KimchiConstraint StepField) inputVar
+  , CheckedType StepField (KimchiConstraint StepField) carrierFVar
+  , CircuitType WrapField
+      (slots (Vector WrapIPARounds (F WrapField)))
+      (slots (Vector WrapIPARounds (FVar WrapField)))
+  , CheckedType WrapField (KimchiConstraint WrapField)
+      (slots (Vector WrapIPARounds (FVar WrapField)))
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
       inputVal outputVal prevInputVal branches mpvMax
@@ -711,25 +737,36 @@ instance
       restEntries
     pure (Tuple headResult tailResults)
   buildBranchProvers branchIdx cfg wrapResult
-    (Tuple _headStepCR restStepResults)
-    (Tuple _headLog2 restLog2s)
-    (Tuple (RuleEntry _r) restEntries) = do
-    -- Phase 2b.24a: closure body still a stub that captures branchIdx.
-    -- The intended body delegates to `runMultiProverBody @prevsSpec
-    -- @ruleMpv …` but PS's instance resolution at the Cons body's
-    -- call site can't pin all the auxiliary type vars (slots,
-    -- carrierFVar, pad/unfs/etc. — funDep-derivable in principle but
-    -- PS doesn't propagate them through CompilableSpec's funDep
-    -- here). Phase 2b.24b will plumb additional class constraints
-    -- (PadSlots, the wrap-side CircuitType, etc.) into the Cons
-    -- instance head so PS has them in scope.
+    (Tuple headStepCR restStepResults)
+    (Tuple headLog2 restLog2s)
+    (Tuple headEntry restEntries) = do
+    -- Phase 2b.24b: dispatch runMultiProverBody. All required
+    -- per-rule constraints (PadSlots, CircuitGateConstructor,
+    -- Reflectable, CircuitType / CheckedType, etc.) are now in
+    -- scope via the Cons instance head. runMultiProverBody itself
+    -- is still notImplemented internally — Phase 2b.24c+ fills it.
     let
       thisBranch = branchIdx
-      headProver = \_stepInputs ->
-        lift $ notImplemented
-          ("buildBranchProvers head closure (branch "
-            <> show thisBranch
-            <> ") — runMultiProverBody wiring deferred")
+      headProver = \stepInputs ->
+        runMultiProverBody
+          @prevsSpec
+          @ruleMpv
+          @slots
+          @valCarrier
+          @carrier
+          @inputVal
+          @inputVar
+          @outputVal
+          @outputVar
+          @prevInputVal
+          @prevInputVar
+          thisBranch
+          cfg
+          wrapResult
+          headStepCR
+          headLog2
+          headEntry
+          stepInputs
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
