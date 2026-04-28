@@ -588,22 +588,31 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   -- | step solve+prove (via the rule's `stepProveFn`) and wrap
   -- | solve+prove with `whichBranch = branchIdx`.
   -- |
-  -- | The leading `Int` is the BRANCH INDEX of the head entry. Top-
-  -- | level callers pass `0`; the Cons body recurses with `idx + 1`
-  -- | so each branch's closure can capture the right `whichBranch`
-  -- | value for its wrap statement.
-  -- |
-  -- | Closure body is `notImplemented` until Phase 2b.24 (the
-  -- | multi-branch runProverBody analog). The full implementation
-  -- | needs `mkStepAdvice @prevsSpec` (in scope via the
-  -- | `CompilableSpec` constraint), `shapeProveData @prevsSpec`,
-  -- | `stepSolveAndProve` (via the rule's `stepProveFn`), and
-  -- | `wrapSolveAndProve` with the captured branch index baked into
-  -- | the wrap statement.
+  -- | Args:
+  -- |   * `branchIdx` — branch index of the head entry; top-level
+  -- |     callers pass `0`. Cons body recurses with `idx + 1`.
+  -- |   * `cfg` — shared CompileMultiConfig.
+  -- |   * `wrapResult` — single shared wrap CompileResult.
+  -- |   * `perBranchVec` — full Vector of `{ mpv, stepDomainLog2,
+  -- |     stepVK }` (shared across all branches; same vector used
+  -- |     at wrap compile time via `buildWrapMainConfigMulti`).
+  -- |     Each closure rebuilds the wrap-side WrapMainConfig from
+  -- |     this when invoked.
+  -- |   * `lagrangeDomainLog2` — shared (= wrap_domains[mpvMax]).
+  -- |   * step results / log2s / rules carriers — per-branch Tuple
+  -- |     chains walked in sync with the recursion.
   buildBranchProvers
-    :: Int
+    :: forall vecLen
+     . Reflectable vecLen Int
+    => Int
     -> CompileMultiConfig
     -> WrapCompileResult
+    -> Vector vecLen
+         { mpv :: Int
+         , stepDomainLog2 :: Int
+         , stepVK :: VerifierIndex VestaG StepField
+         }
+    -> Int
     -> perBranchStepCompileResults
     -> selfStepDomainLog2sCarrier
     -> rulesCarrier
@@ -615,7 +624,7 @@ instance
   where
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure unit
-  buildBranchProvers _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
@@ -740,15 +749,10 @@ instance
       cfg
       restEntries
     pure (Tuple headResult tailResults)
-  buildBranchProvers branchIdx cfg wrapResult
+  buildBranchProvers branchIdx cfg wrapResult perBranchVec lagrangeDomainLog2
     (Tuple headStepCR restStepResults)
     (Tuple headLog2 restLog2s)
     (Tuple headEntry restEntries) = do
-    -- Phase 2b.24b: dispatch runMultiProverBody. All required
-    -- per-rule constraints (PadSlots, CircuitGateConstructor,
-    -- Reflectable, CircuitType / CheckedType, etc.) are now in
-    -- scope via the Cons instance head. runMultiProverBody itself
-    -- is still notImplemented internally — Phase 2b.24c+ fills it.
     let
       thisBranch = branchIdx
       headProver = \stepInputs ->
@@ -767,6 +771,8 @@ instance
           thisBranch
           cfg
           wrapResult
+          perBranchVec
+          lagrangeDomainLog2
           headStepCR
           headLog2
           headEntry
@@ -779,6 +785,8 @@ instance
       (branchIdx + 1)
       cfg
       wrapResult
+      perBranchVec
+      lagrangeDomainLog2
       restStepResults
       restLog2s
       restEntries
@@ -1186,12 +1194,14 @@ compileMultiStepWrap cfg rules = do
 runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+       branches
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        totalBases totalBasesPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
   => PrevValuesCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
+  => Reflectable branches Int
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable outputSize Int
@@ -1218,6 +1228,16 @@ runMultiProverBody
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
   -> WrapCompileResult
+  -> Vector branches
+       { mpv :: Int
+       , stepDomainLog2 :: Int
+       , stepVK :: VerifierIndex VestaG StepField
+       }
+  -- ^ shared per-branch wrap config inputs (same vector used at
+  --   wrap compile time via `buildWrapMainConfigMulti`); the wrap
+  --   solver here rebuilds the same `WrapMainConfig` from this.
+  -> Int
+  -- ^ shared lagrangeDomainLog2 (= wrap_domains[mpvMax]).
   -> PProveStep.StepCompileResult
   -- ^ this branch's step compile result
   -> Int
@@ -1226,7 +1246,8 @@ runMultiProverBody
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
-runMultiProverBody _branchIdx cfg wrapResult stepCR selfStepDomainLog2
+runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
+  stepCR selfStepDomainLog2
   (RuleEntry r) { appInput, prevs } = do
   -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
   -- step solve+prove. Wrap half (oracles, deferred values, wrap
