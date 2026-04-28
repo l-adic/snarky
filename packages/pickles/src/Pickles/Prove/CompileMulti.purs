@@ -55,6 +55,8 @@ module Pickles.Prove.CompileMulti
   , buildWrapPerBranchVec
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
+  -- * End-to-end step + carrier conversion (Phase 2b.17)
+  , compileMultiStepWrap
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -828,6 +830,71 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
     shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2
   in
     shape.stepProveCtx
+
+--------------------------------------------------------------------------------
+-- compileMultiStepWrap — Phase 2b.17 step + wrap end-to-end helper
+--
+-- Combines the per-branch step compile (`runMultiCompileFull`),
+-- carrier conversion (`buildWrapPerBranchVec`), wrap config
+-- construction (`buildWrapMainConfigMulti`), and wrap compile
+-- (`wrapCompile`) into one shot.
+--
+-- Output: the per-branch step CompileResult Tuple chain + the
+-- single shared WrapCompileResult.
+--
+-- Phase 2b.18 will wrap this in the full `compileMulti` API
+-- (provers / tag / verifier / perBranchVKs).
+--
+-- The `lagrangeDomainLog2` is currently the wrap circuit's own
+-- domain log2 (= `wrapDomainLog2`). The
+-- `buildWrapMainConfigMulti` doc TODO flags this for witness-diff
+-- validation against `dump_two_phase_chain.exe`. Single-rule
+-- worked because step ≡ wrap when no override; multi-rule may
+-- need a different choice — to be confirmed.
+--------------------------------------------------------------------------------
+
+compileMultiStepWrap
+  :: forall @rs @inputVal @outputVal @prevInputVal
+       branches mpvMax
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       selfStepDomainLog2sCarrier
+   . CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       selfStepDomainLog2sCarrier
+  => Reflectable branches Int
+  => CompileMultiConfig
+  -> rulesCarrier
+  -> Effect
+       { stepResults :: perBranchStepCompileResults
+       , perBranchVec ::
+           Vector branches
+             { mpv :: Int
+             , stepDomainLog2 :: Int
+             , stepVK :: VerifierIndex VestaG StepField
+             }
+       }
+compileMultiStepWrap cfg rules = do
+  stepResults <- runMultiCompileFull
+    @rs
+    @inputVal
+    @outputVal
+    @prevInputVal
+    cfg
+    rules
+  let
+    perBranchVec = buildWrapPerBranchVec
+      @rs
+      @inputVal
+      @outputVal
+      @prevInputVal
+      stepResults
+  pure { stepResults, perBranchVec }
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
