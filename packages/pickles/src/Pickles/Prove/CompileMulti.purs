@@ -93,7 +93,16 @@ import Pickles.Prove.Compile
   , shapeProveData
   )
 import Effect.Class (liftEffect)
-import Pickles.ProofFFI (pallasProofOracles, pallasProverIndexDomainLog2)
+import Pickles.PlonkChecks (AllEvals)
+import Pickles.ProofFFI
+  ( pallasProofOracles
+  , pallasProverIndexDomainLog2
+  , proofCoefficientEvals
+  , proofIndexEvals
+  , proofSigmaEvals
+  , proofWitnessEvals
+  , proofZEvals
+  )
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -1294,15 +1303,31 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
         proveData.prevSgs
         proveData.prevStepChallenges
 
-    _stepOracles = pallasProofOracles stepCR.verifierIndex
+    stepOracles = pallasProofOracles stepCR.verifierIndex
       { proof: stepResult.proof
       , publicInput: stepResult.publicInputs
       , prevChallenges: stepOraclesPrevChals
       }
 
-  -- Phase 2b.24f: build allEvals from stepResult.proof's evals.
-  -- Phase 2b.24g+: wrapComputeDeferredValues, wrap solver, package.
-  lift $ notImplemented "runMultiProverBody — allEvals / wrap (Phase 2b.24f+)"
+    -- Phase 2b.24f: AllEvals struct, mirroring single-rule
+    -- runProverBody (Compile.purs:1517-1529).
+    _allEvals :: AllEvals StepField
+    _allEvals =
+      { ftEval1: stepOracles.ftEval1
+      , publicEvals:
+          { zeta: stepOracles.publicEvalZeta
+          , omegaTimesZeta: stepOracles.publicEvalZetaOmega
+          }
+      , zEvals: proofZEvals stepResult.proof
+      , witnessEvals: proofWitnessEvals stepResult.proof
+      , coeffEvals: proofCoefficientEvals stepResult.proof
+      , sigmaEvals: proofSigmaEvals stepResult.proof
+      , indexEvals: proofIndexEvals stepResult.proof
+      }
+
+  -- Phase 2b.24g+: wrapComputeDeferredValues, msg hashes, wrap
+  -- statement+advice (with whichBranch), wrap solver, package.
+  lift $ notImplemented "runMultiProverBody — wrap deferred + solver (Phase 2b.24g+)"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
