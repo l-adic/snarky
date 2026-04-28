@@ -45,11 +45,12 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.12 — runStepCompiles dispatches per-rule)
+  -- * Carrier class (Phase 2b.14 — runMultiCompile derives ctxs in-class)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
   , runStepCompiles
+  , runMultiCompile
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
@@ -263,6 +264,7 @@ class CompilableRulesSpec
   -> Type
   -> Type
   -> Type
+  -> Type
   -> Constraint
 class
   CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
@@ -270,9 +272,10 @@ class
     stepCompileFnsCarrier
     perBranchCtxsCarrier
     perBranchStepCompileResults
+    selfStepDomainLog2sCarrier
   | rs ->
       branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults
+        perBranchStepCompileResults selfStepDomainLog2sCarrier
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -310,14 +313,31 @@ class
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
+  -- | High-level per-branch compile: take a `CompileMultiConfig`
+  -- | (shared) and a Tuple chain of per-rule `selfStepDomainLog2`s,
+  -- | derive each rule's `StepProveContext` internally via
+  -- | `buildStepProveCtx`, and dispatch each entry's `stepCompileFn`.
+  -- |
+  -- | This is the multi-branch analog of single-rule `runCompile`'s
+  -- | shapeData → stepCompile flow. The pre-pass remains caller-
+  -- | supplied (Phase 2b.15 will internalize it via a `RuleEntry`
+  -- | pre-pass closure).
+  runMultiCompile
+    :: CompileMultiConfig
+    -> selfStepDomainLog2sCarrier
+    -> rulesCarrier
+    -> Effect perBranchStepCompileResults
+
 instance
   CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit Unit
+    Unit
     Unit
     Unit
   where
   branchCount _ = 0
   extractStepCompileFns _ = unit
   runStepCompiles _ _ = pure unit
+  runMultiCompile _ _ _ = pure unit
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
@@ -327,7 +347,7 @@ instance
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
       restBranches restMpvMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults
+      restStepCompileResults restLog2s
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -341,6 +361,8 @@ instance
   , Mul ruleMpv 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs ruleMpv outputSize
+  , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
+      carrier
   -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
   CompilableRulesSpec
@@ -361,6 +383,7 @@ instance
     )
     (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
+    (Tuple Int restLog2s)
   where
   branchCount _ =
     1 + branchCount
@@ -374,6 +397,7 @@ instance
       @restStepCompileFns
       @restCtxs
       @restStepCompileResults
+      @restLog2s
       (Proxy :: Proxy rest)
   extractStepCompileFns (Tuple (RuleEntry r) rest) =
     Tuple r.stepCompileFn
@@ -388,6 +412,7 @@ instance
           @restStepCompileFns
           @restCtxs
           @restStepCompileResults
+          @restLog2s
           rest
       )
   runStepCompiles (Tuple ctx restCtxs) (Tuple (RuleEntry r) restEntries) = do
@@ -403,7 +428,28 @@ instance
       @restStepCompileFns
       @restCtxs
       @restStepCompileResults
+      @restLog2s
       restCtxs
+      restEntries
+    pure (Tuple headResult tailResults)
+  runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
+    let
+      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2
+    headResult <- r.stepCompileFn ctx
+    tailResults <- runMultiCompile
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @restBranches
+      @restMpvMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restLog2s
+      cfg
+      restLog2s
       restEntries
     pure (Tuple headResult tailResults)
 

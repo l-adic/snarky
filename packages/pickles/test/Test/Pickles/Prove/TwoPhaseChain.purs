@@ -51,6 +51,7 @@ import Pickles.Prove.CompileMulti
   , mkRuleEntry
   )
 import Type.Proxy (Proxy(..))
+import Pickles.Prove.Compile (SlotWrapKey(..))
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
@@ -183,7 +184,7 @@ probeIncrement
                Unit
            )
            34
-           Unit
+           (Tuple SlotWrapKey Unit)
        )
 probeIncrement =
   mkRuleEntry
@@ -197,9 +198,9 @@ probeIncrement =
     @Unit
     @(F StepField)
     @(FVar StepField)
-    @Unit
+    @(Tuple SlotWrapKey Unit)
     incrementRule
-    unit
+    (Tuple Self unit)
 
 -- | Phase 2b.8 probe: the eventual rules carrier shape that
 -- | `compileMulti` will receive — a Tuple chain of `RuleEntry`s.
@@ -239,7 +240,7 @@ probeRulesCarrier
                        Unit
                    )
                    34
-                   Unit
+                   (Tuple SlotWrapKey Unit)
                )
                Unit
            )
@@ -266,7 +267,7 @@ type TwoPhaseChainRules =
     ( RulesCons 1
         (Tuple (StatementIO (F StepField) Unit) Unit)
         (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        Unit
+        (Tuple SlotWrapKey Unit)
         RulesNil
     )
 
