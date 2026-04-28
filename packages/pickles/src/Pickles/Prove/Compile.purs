@@ -30,6 +30,8 @@ module Pickles.Prove.Compile
   , StepInputs
   , Tag(..)
   , class CompilableSpec
+  , class PadProveDataMpv
+  , padShapeProveData
   , mkStepAdvice
   , runCompile
   , shapeCompileData
@@ -51,6 +53,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (class MonadEffect, liftEffect)
+import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
 import Pickles.Linearization (pallas) as Linearization
@@ -357,6 +360,53 @@ type ShapeProveData mpv slots =
   -- | each prev's wrap bp-challenges.
   , slotsValue :: slots (Vector WrapIPARounds (F WrapField))
   }
+
+--------------------------------------------------------------------------------
+-- PadProveDataMpv — convert ShapeProveData mpv slots → ShapeProveData
+-- mpvMax slotsMax. Mirrors the rule's actual mpv/slots shape (driven by
+-- prevsSpec) up to the wrap circuit's wider mpvMax/slotsMax.
+--
+-- Phase 2b.31b step (a): only the identity instance is implemented
+-- (fast path: `mpv = mpvMax, slots = slotsMax`), preserving the
+-- single-rule path's byte-identical witness. The general instance
+-- (when mpv ≠ mpvMax) throws at runtime; Phase 2b.31b step (b) will
+-- replace it with the real per-field padding logic mirroring OCaml
+-- `step.ml:736-770`'s `extend_front` calls.
+--
+-- The two-instance chain uses `else instance` (PS overlapping-instance
+-- syntax). PS picks the first matching instance, so the identity head
+-- with repeated vars (`mpv slots mpv slots`) fires whenever the types
+-- align — which they do for every single-rule caller (NRR, Tree, both
+-- per-branch SimpleChain rules) because `mpv = mpvMax` and
+-- `slots = slotsMax`.
+--------------------------------------------------------------------------------
+
+-- | Pad a `ShapeProveData mpv slots` to `ShapeProveData mpvMax slotsMax`.
+-- |
+-- | When `mpv = mpvMax` and `slots = slotsMax`, the conversion is the
+-- | identity (the fast-path instance below). Otherwise the rule's mpv
+-- | is strictly less than the wrap circuit's mpvMax; the prov-data
+-- | needs front-padding with `Dummy.*` values to match the wrap
+-- | circuit's expected shape — implemented in Phase 2b.31b step (b).
+class PadProveDataMpv (mpv :: Int) (slots :: Type -> Type) (mpvMax :: Int) (slotsMax :: Type -> Type) where
+  padShapeProveData :: ShapeProveData mpv slots -> ShapeProveData mpvMax slotsMax
+
+-- | Fast-path: rule's mpv/slots equal the wrap circuit's mpvMax/slotsMax.
+-- | Identity. Single-rule callers all hit this — preserves byte-identical
+-- | witness (the cast is a tautology since both sides are the same type).
+instance PadProveDataMpv mpv slots mpv slots where
+  padShapeProveData = identity
+
+-- | General fallback: rule's mpv ≠ mpvMax (multi-rule with differing
+-- | per-rule mpvs). Currently throws at runtime — Phase 2b.31b step
+-- | (b) will replace this with the real per-field `extend_front`
+-- | padding (prevSgs, prevStepChallenges, msgWrapChallenges,
+-- | prevUnfinalizedProofs, prevStepAccs, prevEvals,
+-- | prevWrapDomainIndices, kimchiPrevEntries, slotsValue) using
+-- | `Dummy.*` values.
+else instance PadProveDataMpv mpv slots mpvMax slotsMax where
+  padShapeProveData _ =
+    unsafeThrow "Pickles.Prove.Compile.PadProveDataMpv: general instance not yet implemented (Phase 2b.31b step b)"
 
 --------------------------------------------------------------------------------
 -- CompilableSpec — the shape-dependent dispatch class

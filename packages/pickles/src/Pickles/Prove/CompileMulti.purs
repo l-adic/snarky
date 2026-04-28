@@ -84,7 +84,10 @@ import Effect.Exception (error, throwException)
 import Type.Proxy (Proxy(..))
 import Pickles.Prove.Compile
   ( class CompilableSpec
+  , class PadProveDataMpv
+  , padShapeProveData
   , ProveError
+  , ShapeProveData
   , ShapeProveSideInfo
   , StepInputs
   , Tag
@@ -821,6 +824,15 @@ instance
           @outputVar
           @prevInputVal
           @prevInputVar
+          -- Phase 2b.31b step (a): pass rule's `ruleMpv`/`slots` as
+          -- the wrap stage's mpvMax/slotsMax. Identity instance of
+          -- `PadProveDataMpv` fires; wrap stage operates at rule's
+          -- shape (= correct behavior when ruleMpv = mpvMax, the
+          -- single-rule case). Step (b) will rebind these to the
+          -- wrap circuit's actual mpvMax/slotsMax and the general
+          -- instance will do real padding.
+          @ruleMpv
+          @slots
           thisBranch
           cfg
           wrapResult
@@ -1239,9 +1251,10 @@ compileMultiStepWrap cfg rules = do
 runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+       @mpvMax @slotsMax
        branches branchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
-       totalBases totalBasesPred
+       padMax totalBasesMax totalBasesMaxPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
   => PrevValuesCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
@@ -1255,10 +1268,18 @@ runMultiProverBody
   => Mul mpv 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpv outputSize
-  => Compare mpv 3 LT
-  => Add mpv 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => PadSlots slots mpv
+  -- Step-half constraints reference the rule's own `mpv`. The wrap
+  -- circuit operates at the (possibly wider) `mpvMax`/`slotsMax`
+  -- shape; constraints below mirror that — they are independent of
+  -- the rule's `mpv` / `slots`.
+  => Reflectable mpvMax Int
+  => Reflectable padMax Int
+  => Add padMax mpvMax PaddedLength
+  => Compare mpvMax 3 LT
+  => Add mpvMax 45 totalBasesMax
+  => Add 1 totalBasesMaxPred totalBasesMax
+  => PadSlots slotsMax mpvMax
+  => PadProveDataMpv mpv slots mpvMax slotsMax
   => CircuitType StepField inputVal inputVar
   => CircuitType StepField outputVal outputVar
   => CircuitType StepField prevInputVal prevInputVar
@@ -1266,10 +1287,10 @@ runMultiProverBody
   => CheckedType StepField (KimchiConstraint StepField) inputVar
   => CheckedType StepField (KimchiConstraint StepField) carrierFVar
   => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
+       (slotsMax (Vector WrapIPARounds (F WrapField)))
+       (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
+       (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   => Int
   -- ^ branchIdx — baked into the wrap statement's `whichBranch`.
   -> CompileMultiConfig
@@ -1320,6 +1341,14 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
     proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
       proveDataSideInfo
       prevs
+
+    -- Pad rule's mpv/slots-shaped proveData to the wrap circuit's
+    -- mpvMax/slotsMax shape. Identity for single-rule callers
+    -- (mpv = mpvMax, slots = slotsMax); will throw at runtime for
+    -- mixed-mpv multi-rule until Phase 2b.31b step (b) implements
+    -- the real per-field padding.
+    proveDataMax :: ShapeProveData mpvMax slotsMax
+    proveDataMax = padShapeProveData proveData
 
   stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
 
@@ -1427,8 +1456,8 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
 
     msgWrapPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
     msgWrapPadded =
-      Vector.append (Vector.replicate @pad dummyWrapExpanded)
-        proveData.msgWrapChallenges
+      Vector.append (Vector.replicate @padMax dummyWrapExpanded)
+        proveDataMax.msgWrapChallenges
 
     _kimchiPrevPadded
       :: Vector PaddedLength
@@ -1437,8 +1466,8 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
            , challenges :: Vector WrapIPARounds WrapField
            }
     _kimchiPrevPadded =
-      Vector.append (Vector.replicate @pad dummyKimchiEntry)
-        proveData.kimchiPrevEntries
+      Vector.append (Vector.replicate @padMax dummyKimchiEntry)
+        proveDataMax.kimchiPrevEntries
 
     msgWrap :: WrapField
     msgWrap = hashMessagesForNextWrapProofPureGeneral
@@ -1468,19 +1497,19 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
       , advice: buildWrapAdvice
           { stepProof: stepResult.proof
           , whichBranch: F (fromBigInt (BigInt.fromInt _branchIdx) :: WrapField)
-          , prevUnfinalizedProofs: proveData.prevUnfinalizedProofs
+          , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
           , prevMessagesForNextStepProofHash:
               F (fromBigInt (toBigInt msgStep) :: WrapField)
-          , prevStepAccs: proveData.prevStepAccs
-          , prevOldBpChals: proveData.slotsValue
-          , prevEvals: proveData.prevEvals
-          , prevWrapDomainIndices: proveData.prevWrapDomainIndices
+          , prevStepAccs: proveDataMax.prevStepAccs
+          , prevOldBpChals: proveDataMax.slotsValue
+          , prevEvals: proveDataMax.prevEvals
+          , prevWrapDomainIndices: proveDataMax.prevWrapDomainIndices
           }
       , debug: cfg.debug
       , kimchiPrevChallenges: _kimchiPrevPadded
       }
 
-  wrapProveResult <- wrapSolveAndProve @branches @slots wrapCtx wrapResult
+  wrapProveResult <- wrapSolveAndProve @branches @slotsMax wrapCtx wrapResult
 
   let
     -- Recover the rule's user-defined `publicOutput` from
