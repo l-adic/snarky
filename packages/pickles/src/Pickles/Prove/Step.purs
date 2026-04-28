@@ -46,6 +46,9 @@ module Pickles.Prove.Step
   , stepCompile
   , preComputeStepDomainLog2
   , stepSolveAndProve
+  -- mpvMax-padding helpers (Phase 2b.31a)
+  , mkDummyPerProofUnfinalized
+  , mkDummyMsgWrapHash
   ) where
 
 import Prelude
@@ -75,6 +78,7 @@ import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Partial.Unsafe (unsafePartial)
+import Pickles.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -476,6 +480,83 @@ extractWrapVKForStepHash vk =
     , emulComm: Vector.index comms.index (unsafeFinite @6 4)
     , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
+
+--------------------------------------------------------------------------------
+-- mpvMax-padding dummies (Phase 2b.31a)
+--
+-- Mirror OCaml `Unfinalized.Constant.dummy` (unfinalized.ml:25-104)
+-- and the prover-side `pad` function for `messages_for_next_wrap_proof`
+-- (step.ml:868-875). Used by `stepMain` to front-pad the step PI from
+-- `len` (rule's actual mpv) to `mpvMax` (compile-wide max). For
+-- single-rule callers `mpvMax = len → mpvPad = 0`, so the dummies
+-- are unused.
+--------------------------------------------------------------------------------
+
+-- | Cross-field-encoded step-side dummy `PerProofUnfinalized` (value
+-- | level). Extracts to a top-level helper the local
+-- | `dummyPublicUnfinalized` defined inside `dummyAdviceShape`.
+mkDummyPerProofUnfinalized
+  :: Dummy.BaseCaseDummies
+  -> PerProofUnfinalized
+       WrapIPARounds
+       (Type2 (SplitField (F StepField) Boolean))
+       (F StepField)
+       Boolean
+mkDummyPerProofUnfinalized bcd =
+  let
+    du = wrapDummyUnfinalizedProof bcd
+    dvDu = du.deferredValues
+    pDu = dvDu.plonk
+
+    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+
+    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
+
+    digestStep :: F StepField
+    digestStep =
+      let F digestWrap = du.spongeDigestBeforeEvaluations
+      in F (crossFieldDigest digestWrap)
+  in
+    PerProofUnfinalized
+      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
+      , b: t2toT2sf dvDu.b
+      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
+      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
+      , perm: t2toT2sf pDu.perm
+      , spongeDigest: digestStep
+      , beta: UnChecked (chalToStep pDu.beta)
+      , gamma: UnChecked (chalToStep pDu.gamma)
+      , alpha: UnChecked (chalToStep pDu.alpha)
+      , zeta: UnChecked (chalToStep pDu.zeta)
+      , xi: UnChecked (chalToStep dvDu.xi)
+      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
+      , shouldFinalize: false
+      }
+
+-- | Cross-field-encoded step-side dummy `messages_for_next_wrap_proof`
+-- | digest (value level). Hashes a constant
+-- | `Messages_for_next_wrap_proof.t` (Dummy.Ipa.Step.sg + 2 copies of
+-- | Dummy.Ipa.Wrap.challenges_computed) via Tock_field_sponge then
+-- | cross-field-casts to step field, mirroring OCaml
+-- | `step.ml:868-875`'s `pad` function.
+mkDummyMsgWrapHash
+  :: Dummy.BaseCaseDummies
+  -> CRS PallasG
+  -> CRS VestaG
+  -> F StepField
+mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
+  let
+    sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
+    msgWrapHashWrap :: WrapField
+    msgWrapHashWrap = hashMessagesForNextWrapProofPureGeneral
+      { sg: sgValues.ipa.step.sg
+      , paddedChallenges:
+          Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
+      }
+  in
+    F (crossFieldDigest msgWrapHashWrap)
 
 -- | Build the `Array WrapField` the FFI oracles call receives.
 -- |

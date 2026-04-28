@@ -87,6 +87,8 @@ import Pickles.Prove.Step
   , buildStepAdvice
   , dummyWrapTockPublicInput
   , extractWrapVKCommsAdvice
+  , mkDummyMsgWrapHash
+  , mkDummyPerProofUnfinalized
   , preComputeStepDomainLog2
   , stepCompile
   , stepSolveAndProve
@@ -107,6 +109,7 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Step.Main as PStepMain
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot)
 import Pickles.Types
   ( PaddedLength
@@ -129,7 +132,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (EvaluationError)
-import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits)
+import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits, const_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
@@ -501,21 +504,38 @@ compile cfg rule = runCompile
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
   shapeCompileData cfg _selfStepDomainLog2 =
-    { stepProveCtx:
-        { srsData:
-            { perSlotLagrangeAt: Vector.nil
-            , blindingH:
-                (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
-                  :: AffinePoint (F StepField)
-            , perSlotFopDomainLog2: Vector.nil
-            , perSlotKnownWrapKeys: Vector.nil
-            }
-        , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
-        , crs: cfg.srs.vestaSrs
-        , debug: cfg.debug
-        }
-    , wrapDomainLog2: 13
-    }
+    let
+      bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
+    in
+      { stepProveCtx:
+          { srsData:
+              { perSlotLagrangeAt: Vector.nil
+              , blindingH:
+                  (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
+                    :: AffinePoint (F StepField)
+              , perSlotFopDomainLog2: Vector.nil
+              , perSlotKnownWrapKeys: Vector.nil
+              -- Phase 2b.31a: mpvMax-padding dummies. Wrapped in
+              -- `Unit ->` thunks so the (Rust-FFI-using)
+              -- computeDummySgValues call inside mkDummyMsgWrapHash
+              -- only fires when mpvFrontPad actually needs the dummy
+              -- (i.e., mpvPad > 0). Single-rule callers have
+              -- mpvPad = 0 so the thunks never fire — preserves
+              -- byte-identical witness with the pre-Phase-2b.31a
+              -- chacha8 RNG state.
+              , dummyUnfp: \_ ->
+                  PStepMain.liftDummyPerProofUnfinalized
+                    (mkDummyPerProofUnfinalized bcd)
+              , dummyMsgWrapHash: \_ ->
+                  let F x = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
+                  in const_ x
+              }
+          , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
+          , crs: cfg.srs.vestaSrs
+          , debug: cfg.debug
+          }
+      , wrapDomainLog2: 13
+      }
     where
     -- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`)
     -- | but required by `stepCompile` as the sg_old padding constant.
@@ -683,6 +703,14 @@ instance
                   slotFopDomainLog2 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2
               , perSlotKnownWrapKeys:
                   headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
+              -- Phase 2b.31a: mpvMax-padding dummies (thunks; see
+              -- Nil instance for rationale).
+              , dummyUnfp: \_ ->
+                  PStepMain.liftDummyPerProofUnfinalized
+                    (mkDummyPerProofUnfinalized outerBcd)
+              , dummyMsgWrapHash: \_ ->
+                  let F x = mkDummyMsgWrapHash outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
+                  in const_ x
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
