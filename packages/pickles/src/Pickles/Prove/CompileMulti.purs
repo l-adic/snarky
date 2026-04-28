@@ -45,13 +45,14 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.15 — runMultiCompileFull internalizes pre-pass)
+  -- * Carrier class (Phase 2b.16 — buildWrapPerBranchVec for wrap integration)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
   , runStepCompiles
   , runMultiCompile
   , runMultiCompileFull
+  , buildWrapPerBranchVec
   -- * Per-rule context construction (Phase 2b.13)
   , buildStepProveCtx
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
@@ -65,8 +66,10 @@ import Prelude
 
 import Control.Monad.Except (ExceptT)
 import Data.Maybe (Maybe)
-import Data.Reflectable (class Reflectable)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
+import Data.Vector (Vector, (:<))
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Type.Proxy (Proxy(..))
@@ -77,6 +80,7 @@ import Pickles.Prove.Compile
   , Tag
   , shapeCompileData
   )
+import Pickles.ProofFFI (pallasProverIndexDomainLog2)
 import Pickles.Prove.Step
   ( StepAdvice
   , StepCompileResult
@@ -94,7 +98,7 @@ import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapI
 import Snarky.Circuit.CVar (EvaluationError)
 import Prim.Int (class Add, class Mul)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
-import Snarky.Backend.Kimchi.Types (CRS)
+import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Circuit.DSL (BoolVar, F, FVar)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
@@ -352,6 +356,27 @@ class
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
 
+  -- | Convert the per-branch `StepCompileResult` Tuple chain into the
+  -- | `Vector branches { mpv, stepDomainLog2, stepVK }` shape that
+  -- | `buildWrapMainConfigMulti` expects.
+  -- |
+  -- | For each branch:
+  -- |   * `mpv` — reflected from the rule's type-level mpv (each Cons
+  -- |     instance has `Reflectable ruleMpv Int`).
+  -- |   * `stepDomainLog2` — extracted from the proverIndex via
+  -- |     `pallasProverIndexDomainLog2`.
+  -- |   * `stepVK` — the StepCompileResult's `verifierIndex` field.
+  -- |
+  -- | The Tuple → Vector accumulation is via `Vector.cons`. Each Cons
+  -- | instance contributes one element; Nil contributes `Vector.nil`.
+  buildWrapPerBranchVec
+    :: perBranchStepCompileResults
+    -> Vector branches
+         { mpv :: Int
+         , stepDomainLog2 :: Int
+         , stepVK :: VerifierIndex VestaG StepField
+         }
+
 instance
   CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit Unit
     Unit
@@ -363,6 +388,7 @@ instance
   runStepCompiles _ _ = pure unit
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure unit
+  buildWrapPerBranchVec _ = Vector.nil
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
@@ -388,6 +414,7 @@ instance
   , Add digestPlusUnfs ruleMpv outputSize
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
+  , Reflectable ruleMpv Int
   -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
   CompilableRulesSpec
@@ -502,6 +529,28 @@ instance
       cfg
       restEntries
     pure (Tuple headResult tailResults)
+  buildWrapPerBranchVec (Tuple headResult restResults) =
+    let
+      headRecord =
+        { mpv: reflectType (Proxy :: Proxy ruleMpv)
+        , stepDomainLog2: pallasProverIndexDomainLog2 headResult.proverIndex
+        , stepVK: headResult.verifierIndex
+        }
+      restVec = buildWrapPerBranchVec
+        @rest
+        @inputVal
+        @outputVal
+        @prevInputVal
+        @restBranches
+        @restMpvMax
+        @restCarrier
+        @restStepCompileFns
+        @restCtxs
+        @restStepCompileResults
+        @restLog2s
+        restResults
+    in
+      headRecord :< restVec
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
