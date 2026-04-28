@@ -93,16 +93,21 @@ import Pickles.Prove.Compile
   , shapeProveData
   )
 import Effect.Class (liftEffect)
+import Pickles.Linearization (pallas) as Linearization
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI
   ( pallasProofOracles
   , pallasProverIndexDomainLog2
+  , permutationVanishingPolynomial
   , proofCoefficientEvals
   , proofIndexEvals
   , proofSigmaEvals
   , proofWitnessEvals
   , proofZEvals
   )
+import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, wrapComputeDeferredValues)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -1311,8 +1316,8 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
 
     -- Phase 2b.24f: AllEvals struct, mirroring single-rule
     -- runProverBody (Compile.purs:1517-1529).
-    _allEvals :: AllEvals StepField
-    _allEvals =
+    allEvals :: AllEvals StepField
+    allEvals =
       { ftEval1: stepOracles.ftEval1
       , publicEvals:
           { zeta: stepOracles.publicEvalZeta
@@ -1325,9 +1330,44 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
       , indexEvals: proofIndexEvals stepResult.proof
       }
 
-  -- Phase 2b.24g+: wrapComputeDeferredValues, msg hashes, wrap
-  -- statement+advice (with whichBranch), wrap solver, package.
-  lift $ notImplemented "runMultiProverBody — wrap deferred + solver (Phase 2b.24g+)"
+    -- Phase 2b.24g: WrapDeferredValuesInput, mirroring single-rule
+    -- runProverBody (Compile.purs:1531-1557).
+    outerMpv = reflectType (Proxy @mpv)
+
+    proofsVerifiedMask :: Vector 2 Boolean
+    proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
+
+    wrapDvInput :: WrapDeferredValuesInput mpv
+    wrapDvInput =
+      { proof: stepResult.proof
+      , verifierIndex: stepCR.verifierIndex
+      , publicInput: stepResult.publicInputs
+      , allEvals
+      , pEval0Chunks: [ stepOracles.publicEvalZeta ]
+      , domainLog2: selfStepDomainLog2
+      , zkRows: 3
+      , srsLengthLog2: 16
+      , generator: (domainGenerator selfStepDomainLog2 :: StepField)
+      , shifts: (domainShifts selfStepDomainLog2 :: Vector 7 StepField)
+      , vanishesOnZk: permutationVanishingPolynomial
+          { domainLog2: selfStepDomainLog2
+          , zkRows: 3
+          , pt: stepOracles.zeta
+          }
+      , omegaForLagrange: \_ -> one
+      , endo:
+          let EndoScalar e = endoScalar :: EndoScalar StepField in e
+      , linearizationPoly: Linearization.pallas
+      , prevSgs: proveData.prevSgs
+      , prevChallenges: proveData.prevStepChallenges
+      , proofsVerifiedMask
+      }
+
+    _wrapDv = wrapComputeDeferredValues wrapDvInput
+
+  -- Phase 2b.24h+: msg hashes, wrap statement+advice (with
+  -- whichBranch), wrap solver, package CompiledProof.
+  lift $ notImplemented "runMultiProverBody — msg hashes / wrap solver (Phase 2b.24h+)"
 
 compileMulti
   :: forall @inputVal @outputVal @mpvMax
