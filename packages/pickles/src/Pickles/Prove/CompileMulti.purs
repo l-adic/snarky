@@ -45,8 +45,9 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.2 — class signature only, bodies stubbed)
+  -- * Carrier class (Phase 2b.9 — branchCount method wired)
   , class CompilableRulesSpec
+  , branchCount
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -61,6 +62,7 @@ import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable)
 import Effect (Effect)
 import Effect.Exception (error, throwException)
+import Type.Proxy (Proxy(..))
 import Pickles.Prove.Compile (ProveError, StepInputs, Tag)
 import Pickles.Prove.Step
   ( StepAdvice
@@ -213,7 +215,7 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
   }
 
 --------------------------------------------------------------------------------
--- CompilableRulesSpec — Phase 2b.2 carrier class (signature sketched)
+-- CompilableRulesSpec — Phase 2b.9: structural recursion enabled
 --
 -- Mirror of `Pickles.Step.Prevs.PrevsCarrier` at the rules level
 -- (one level up from per-prev-slot). Drives multi-branch compile
@@ -228,13 +230,15 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
 --
 -- The funDep `rs -> branches mpvMax` says: the type-level rules spec
 -- determines (a) the branch count and (b) the max mpv across rules.
--- Phase 2b.2 derives both via recursion through the instance chain.
+-- Phase 2b.9 wires the `Add restBranches 1 branches` recurrence so
+-- branches is computed at the type level. mpvMax (max over rules)
+-- is wired in a later phase — needs a Prim.Int.Compare-driven
+-- type-level max relation.
 --
--- Method signatures intentionally omitted from this commit. Filling
--- them is Phase 2b.3 — by then, having implemented the runtime
--- semantics of multi-branch compile, we'll know what shape the
--- methods need (e.g. a `compileBranches` that returns a per-branch
--- StepCompileResult Vector, vs. multiple smaller methods).
+-- The method `branchCount` validates the recursion is structurally
+-- sound: for `RulesCons _ _ _ _ rest`, returns 1 + countBranches @rest;
+-- for `RulesNil`, returns 0. Pure type-level recursion driving a
+-- value-level integer.
 --------------------------------------------------------------------------------
 
 class CompilableRulesSpec
@@ -242,27 +246,34 @@ class CompilableRulesSpec
 class
   CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   | rs -> branches mpvMax
+  where
+  -- | Count branches by structural recursion. Validates that
+  -- | `branches` is correctly derived as a function of `rs` and that
+  -- | the recurrence relation discharges (Cons case adds 1 to the
+  -- | rest's count). Returns the same value `Reflectable branches`
+  -- | would, but via direct class-method dispatch.
+  branchCount :: forall proxy. proxy rs -> Int
 
-instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0
+instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 where
+  branchCount _ = 0
 
--- The Cons instance: per-rule mpv contributes to the running mpvMax,
--- per-rule branch increments the running branches count. Concrete
--- recurrence relations (Add restBranches 1 branches; Max ruleMpv
--- restMpvMax mpvMax) wired in Phase 2b.3.
+-- | Cons instance: per-rule branch increments the running count via
+-- | `Add restBranches 1 branches`. Per-rule mpv contributes to mpvMax
+-- | (TODO: wire via Compare-driven type-level max relation).
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal restBranches restMpvMax
-  -- TODO Phase 2b.3:
-  --   * Add restBranches 1 branches
-  --   * Max ruleMpv restMpvMax mpvMax
-  -- For now, instance head doesn't constrain `branches` / `mpvMax`,
-  -- making this instance unusable until those are added — but
-  -- declaring it here documents the shape.
+  , Add restBranches 1 branches
+  -- TODO: Max ruleMpv restMpvMax mpvMax — needs a class encoding type-level max.
   ) =>
   CompilableRulesSpec
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
     inputVal outputVal prevInputVal
     branches
     mpvMax
+  where
+  branchCount _ =
+    1 + branchCount @rest @inputVal @outputVal @prevInputVal @restBranches @restMpvMax
+          (Proxy :: Proxy rest)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side

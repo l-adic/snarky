@@ -30,6 +30,7 @@ module Test.Pickles.Prove.TwoPhaseChain
   , probeMakeZero
   , probeIncrement
   , probeRulesCarrier
+  , probeBranchCount
   ) where
 
 import Prelude
@@ -40,7 +41,8 @@ import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
-import Pickles.Prove.CompileMulti (RuleEntry, mkRuleEntry)
+import Pickles.Prove.CompileMulti (RuleEntry, RulesCons, RulesNil, branchCount, mkRuleEntry)
+import Type.Proxy (Proxy(..))
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
@@ -238,6 +240,36 @@ probeRulesCarrier = do
   zero <- probeMakeZero
   inc <- probeIncrement
   pure (Tuple zero (Tuple inc unit))
+
+-- | Phase 2b.9 probe: validate that `branchCount` correctly recurses
+-- | over a two-rule `RulesSpec` and returns 2. The type alias spells
+-- | out the shape:
+-- |
+-- |   RulesCons 0 Unit PrevsSpecNil Unit                            (makeZero)
+-- |     (RulesCons 1 (Tuple (StatementIO …) Unit) (PrevsSpecCons 1 …) Unit  (increment)
+-- |        RulesNil)
+-- |
+-- | If `branchCount` returns 2, the type-level recursion through
+-- | `RulesSpec` AND the value-level dispatch through the class
+-- | instance chain are both wired correctly. This is the foundational
+-- | test for `compileMulti`'s eventual `compileBranches`-style method.
+type TwoPhaseChainRules =
+  RulesCons 0 Unit PrevsSpecNil Unit
+    ( RulesCons 1
+        (Tuple (StatementIO (F StepField) Unit) Unit)
+        (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+        Unit
+        RulesNil
+    )
+
+probeBranchCount :: Int
+probeBranchCount =
+  branchCount
+    @TwoPhaseChainRules
+    @(F StepField)
+    @Unit
+    @(F StepField)
+    (Proxy :: Proxy TwoPhaseChainRules)
 
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body
