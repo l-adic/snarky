@@ -7,6 +7,7 @@ import Effect.Aff (Aff)
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
+import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
 import Test.Pickles.Verify.ExpandDeferredEq as ExpandDeferredEq
 import Test.Spec (SpecT)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -32,6 +33,7 @@ spec = do
   NoRecursionReturn.spec
   SimpleChain.spec
   TreeProofReturn.spec
+  TwoPhaseChain.spec
   ExpandDeferredEq.spec
 
 main :: Effect Unit
