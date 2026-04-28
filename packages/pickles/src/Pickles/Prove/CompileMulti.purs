@@ -63,15 +63,19 @@ import Effect (Effect)
 import Effect.Exception (error, throwException)
 import Pickles.Prove.Compile (ProveError, StepInputs, Tag)
 import Pickles.Prove.Step
-  ( StepRule
+  ( StepAdvice
   , StepCompileResult
   , StepProveContext
+  , StepProveResult
+  , StepRule
   , stepCompile
+  , stepSolveAndProve
   ) as PProveStep
 import Pickles.Prove.Verify (CompiledProof, Verifier)
 import Pickles.Prove.Wrap (WrapCompileResult)
-import Pickles.Step.Prevs (class PrevsCarrier)
+import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
 import Pickles.Types (PaddedLength, StatementIO, StepField, StepIPARounds, WrapIPARounds)
+import Snarky.Circuit.CVar (EvaluationError)
 import Prim.Int (class Add, class Mul)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -287,21 +291,45 @@ instance
 -- | Per-rule entry packaged for storage in a multi-branch carrier.
 -- |
 -- | Stored fields are intentionally NOT the rank-2 `StepRule` —
--- | instead, monomorphic Effect-typed closures that capture the
--- | rule when constructed via `mkRuleEntry`. PS handles the rank-2
--- | nature at the closure body's call site (where the rule is
--- | applied to specific `t` / `m'`), not at the record-field level.
+-- | instead, monomorphic closures that capture the rule when
+-- | constructed via `mkRuleEntry`. PS handles the rank-2 nature at
+-- | the closure body's call site (where the rule is applied to
+-- | specific `t` / `m'`), not at the record-field level.
 -- |
--- | Phase 2b.6: `stepCompileFn` carries the real signature — the
--- | closure body delegates to `stepCompile` with the captured rule,
--- | exercising rank-2 use (not just rank-2 storage). The prove-time
--- | closure remains a placeholder until Phase 2b.7 (it needs more
--- | type vars threaded through; one rank-2 closure at a time).
+-- | Phase 2b.6: `stepCompileFn` body delegates to `stepCompile` with
+-- | the captured rule.
+-- | Phase 2b.7: `stepProveFn` body delegates to `stepSolveAndProve`
+-- | with the captured rule. Both rank-2-use paths typecheck — the
+-- | smart-constructor pattern is end-to-end viable.
+-- |
+-- | The kind expansion vs Phase 2b.6 — adding `prevsSpec`, `inputVal`,
+-- | `carrier`, `outputSize` — is needed because `stepProveFn`'s field
+-- | type references those (in `StepAdvice` and `StepProveResult`).
+-- | They were already pinned by `mkRuleEntry`'s outer signature in
+-- | Phase 2b.6 via class constraints; now they show in the result
+-- | type because the prove closure's signature mentions them.
+-- |
+-- | Future: if exposing 7 type params on `RuleEntry` is unergonomic
+-- | for downstream Tuple carriers, we can pack them into a single
+-- | existential newtype around `RuleEntry`. Phase 2b.8 decision.
 data RuleEntry
-  :: Int -> Type -> Type -> Type
-data RuleEntry mpv valCarrier slotVKs = RuleEntry
-  { stepCompileFn :: PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
-  , stepProveFn :: Unit -> Effect Unit             -- placeholder shape
+  :: Type
+  -> Int
+  -> Type
+  -> Type
+  -> Type
+  -> Int
+  -> Type
+  -> Type
+data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = RuleEntry
+  { stepCompileFn ::
+      PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
+  , stepProveFn ::
+      PProveStep.StepProveContext mpv
+      -> PProveStep.StepCompileResult
+      -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+           inputVal mpv carrier valCarrier
+      -> ExceptT EvaluationError Effect (PProveStep.StepProveResult outputSize)
   , slotVKs :: slotVKs
   }
 
@@ -350,9 +378,10 @@ mkRuleEntry
        mpv
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) inputVar
+  => PrevValuesCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry mpv valCarrier slotVKs)
+  -> Effect (RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs)
 mkRuleEntry rule slotVKs = pure $ RuleEntry
   { stepCompileFn: \ctx ->
       PProveStep.stepCompile
@@ -367,7 +396,21 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
         @prevInputVar
         ctx
         rule
-  , stepProveFn: \_ -> pure unit
+  , stepProveFn: \ctx compileResult advice ->
+      PProveStep.stepSolveAndProve
+        @prevsSpec
+        @outputSize
+        @valCarrier
+        @inputVal
+        @inputVar
+        @outputVal
+        @outputVar
+        @prevInputVal
+        @prevInputVar
+        ctx
+        rule
+        compileResult
+        advice
   , slotVKs
   }
 

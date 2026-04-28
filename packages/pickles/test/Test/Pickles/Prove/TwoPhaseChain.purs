@@ -42,10 +42,11 @@ import Effect.Aff (Aff)
 import Pickles.Prove.CompileMulti (RuleEntry, mkRuleEntry)
 import Pickles.Prove.Step (StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
-import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
-import Pickles.Types (StatementIO(..), StepField)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
+import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F, FVar, assertEqual_, const_, exists, true_)
+import Snarky.Types.Shifted (SplitField, Type2)
 import Test.Spec (SpecT, describe, pending)
 
 --------------------------------------------------------------------------------
@@ -132,7 +133,8 @@ incrementRule self = do
 -- | Probe: `makeZeroRule` (mpv=0, no prevs, valCarrier=Unit,
 -- | prevsSpec=PrevsSpecNil). Smoke test of `mkRuleEntry`'s rank-2
 -- | input acceptance with the simplest possible rule shape.
-probeMakeZero :: Effect (RuleEntry 0 Unit Unit)
+probeMakeZero
+  :: Effect (RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 1 Unit)
 probeMakeZero =
   mkRuleEntry
     @PrevsSpecNil
@@ -156,7 +158,22 @@ probeMakeZero =
 -- | shape — the real test of whether the smart-constructor pattern
 -- | can carry the variation across rules.
 probeIncrement
-  :: Effect (RuleEntry 1 (Tuple (StatementIO (F StepField) Unit) Unit) Unit)
+  :: Effect
+       ( RuleEntry
+           (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+           1
+           (Tuple (StatementIO (F StepField) Unit) Unit)
+           (F StepField)
+           ( Tuple
+               ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+                   (Type2 (SplitField (F StepField) Boolean))
+                   Boolean
+               )
+               Unit
+           )
+           34
+           Unit
+       )
 probeIncrement =
   mkRuleEntry
     @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
