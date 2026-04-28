@@ -29,6 +29,7 @@ module Test.Pickles.Prove.TwoPhaseChain
   , incrementRule
   , probeMakeZero
   , probeIncrement
+  , probeRulesCarrier
   ) where
 
 import Prelude
@@ -189,6 +190,54 @@ probeIncrement =
     @Unit
     incrementRule
     unit
+
+-- | Phase 2b.8 probe: the eventual rules carrier shape that
+-- | `compileMulti` will receive — a Tuple chain of `RuleEntry`s.
+-- |
+-- | Each `RuleEntry` has 7 type params; the chain shape is
+-- | `Tuple entry0 (Tuple entry1 Unit)` for two rules, mirroring the
+-- | existing `PrevsCarrier` Tuple-chain pattern at the rules level.
+-- |
+-- | If this typechecks, we know:
+-- |
+-- |   * Two `RuleEntry`s with DIFFERENT type params can sit side-by-
+-- |     side in a Tuple chain (PS doesn't reject heterogeneous
+-- |     entries).
+-- |   * The carrier value can be constructed by sequencing the
+-- |     individual `mkRuleEntry` calls — the same pattern
+-- |     `compileMulti`'s caller will use.
+-- |
+-- | Phase 2b.9 next: write a function that CONSUMES this carrier —
+-- | iterates over the Tuple chain, dispatching `stepCompileFn` for
+-- | each entry. That requires a class with one method per shape
+-- | (Nil / Cons), recursing structurally.
+probeRulesCarrier
+  :: Effect
+       ( Tuple
+           ( RuleEntry PrevsSpecNil 0 Unit (F StepField) Unit 1 Unit )
+           ( Tuple
+               ( RuleEntry
+                   (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+                   1
+                   (Tuple (StatementIO (F StepField) Unit) Unit)
+                   (F StepField)
+                   ( Tuple
+                       ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+                           (Type2 (SplitField (F StepField) Boolean))
+                           Boolean
+                       )
+                       Unit
+                   )
+                   34
+                   Unit
+               )
+               Unit
+           )
+       )
+probeRulesCarrier = do
+  zero <- probeMakeZero
+  inc <- probeIncrement
+  pure (Tuple zero (Tuple inc unit))
 
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body
