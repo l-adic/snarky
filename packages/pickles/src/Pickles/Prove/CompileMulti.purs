@@ -45,10 +45,11 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.11 — extractStepCompileFns)
+  -- * Carrier class (Phase 2b.12 — runStepCompiles dispatches per-rule)
   , class CompilableRulesSpec
   , branchCount
   , extractStepCompileFns
+  , runStepCompiles
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -252,12 +253,18 @@ class CompilableRulesSpec
   -> Int
   -> Type
   -> Type
+  -> Type
+  -> Type
   -> Constraint
 class
   CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
     rulesCarrier
     stepCompileFnsCarrier
-  | rs -> branches mpvMax rulesCarrier stepCompileFnsCarrier
+    perBranchCtxsCarrier
+    perBranchStepCompileResults
+  | rs ->
+      branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+        perBranchStepCompileResults
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -271,25 +278,38 @@ class
   -- | rewriting: each per-rule entry yields its already-captured
   -- | `StepProveContext mpv -> Effect StepCompileResult` thunk.
   -- |
-  -- | This is the value-level "shape transformer" the upcoming
-  -- | `compileMulti` body uses: given the rules carrier, produce the
-  -- | per-branch compile actions. The actions can then be sequenced
-  -- | with per-branch contexts (Phase 2b.12) to drive real per-rule
-  -- | step CompileResults.
-  -- |
   -- | The output Tuple chain is heterogeneous — branch i's thunk has
   -- | type `StepProveContext mpv_i -> Effect StepCompileResult`, where
-  -- | `mpv_i` is that branch's `max_proofs_verified`. Different
-  -- | branches with different mpvs land at different concrete thunk
-  -- | types, preserved through the Tuple structure (mirroring how the
-  -- | rules carrier preserves per-rule heterogeneity).
+  -- | `mpv_i` is that branch's `max_proofs_verified`.
   extractStepCompileFns :: rulesCarrier -> stepCompileFnsCarrier
+
+  -- | Run per-branch step compiles. Takes a Tuple chain of per-branch
+  -- | `StepProveContext mpv` (caller-supplied; Phase 2b.12 leaves
+  -- | their construction to the caller) and the rules carrier;
+  -- | sequences each entry's `stepCompileFn ctx` and returns a Tuple
+  -- | chain of `StepCompileResult`s in branch order.
+  -- |
+  -- | This is the per-branch step compile dispatch. The compile
+  -- | thunks are accessed via `RuleEntry`'s field; the per-branch
+  -- | context comes from the parallel input carrier.
+  -- |
+  -- | Phase 2b.13 will lift the context construction into the class
+  -- | itself — given `CompileMultiConfig`, derive per-branch
+  -- | `StepProveContext` via `shapeCompileData` (per-rule
+  -- | `CompilableSpec` constraint added then).
+  runStepCompiles
+    :: perBranchCtxsCarrier
+    -> rulesCarrier
+    -> Effect perBranchStepCompileResults
 
 instance
   CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit Unit
+    Unit
+    Unit
   where
   branchCount _ = 0
   extractStepCompileFns _ = unit
+  runStepCompiles _ _ = pure unit
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
@@ -298,7 +318,8 @@ instance
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      restBranches restMpvMax restCarrier restStepCompileFns
+      restBranches restMpvMax restCarrier restStepCompileFns restCtxs
+      restStepCompileResults
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -330,6 +351,8 @@ instance
         )
         restStepCompileFns
     )
+    (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+    (Tuple PProveStep.StepCompileResult restStepCompileResults)
   where
   branchCount _ =
     1 + branchCount
@@ -341,6 +364,8 @@ instance
       @restMpvMax
       @restCarrier
       @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
       (Proxy :: Proxy rest)
   extractStepCompileFns (Tuple (RuleEntry r) rest) =
     Tuple r.stepCompileFn
@@ -353,8 +378,26 @@ instance
           @restMpvMax
           @restCarrier
           @restStepCompileFns
+          @restCtxs
+          @restStepCompileResults
           rest
       )
+  runStepCompiles (Tuple ctx restCtxs) (Tuple (RuleEntry r) restEntries) = do
+    headResult <- r.stepCompileFn ctx
+    tailResults <- runStepCompiles
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @restBranches
+      @restMpvMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      restCtxs
+      restEntries
+    pure (Tuple headResult tailResults)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
