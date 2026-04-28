@@ -614,10 +614,17 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   -- | End-to-end per-branch compile with the pre-pass internalized.
   -- | Per-rule flow: build placeholder ctx with log2=20, run pre-pass
   -- | to get real selfStepDomainLog2, build real ctx, call stepCompile.
+  -- |
+  -- | Returns BOTH the per-branch step CompileResults AND the
+  -- | per-branch selfStepDomainLog2s — the latter feeds into
+  -- | `buildBranchProvers` (for runMultiProverBody's wrapDvInput).
   runMultiCompileFull
     :: CompileMultiConfig
     -> rulesCarrier
-    -> Effect perBranchStepCompileResults
+    -> Effect
+         { stepResults :: perBranchStepCompileResults
+         , log2s :: selfStepDomainLog2sCarrier
+         }
 
   -- | Build per-branch `BranchProver` Tuple chain. Each closure runs
   -- | step solve+prove (via the rule's `stepProveFn`) and wrap
@@ -659,7 +666,7 @@ instance
     Unit Unit Unit Unit Unit Unit Unit
   where
   runMultiCompile _ _ _ = pure unit
-  runMultiCompileFull _ _ = pure unit
+  runMultiCompileFull _ _ = pure { stepResults: unit, log2s: unit }
   buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
 
 instance
@@ -777,14 +784,17 @@ instance
     let
       realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs selfStepDomainLog2
     headResult <- r.stepCompileFn realCtx
-    tailResults <- runMultiCompileFull
+    tail <- runMultiCompileFull
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
       cfg
       restEntries
-    pure (Tuple headResult tailResults)
+    pure
+      { stepResults: Tuple headResult tail.stepResults
+      , log2s: Tuple selfStepDomainLog2 tail.log2s
+      }
   buildBranchProvers branchIdx cfg wrapResult perBranchVec lagrangeDomainLog2
     (Tuple headStepCR restStepResults)
     (Tuple headLog2 restLog2s)
@@ -1172,7 +1182,7 @@ compileMultiStepWrap
              }
        }
 compileMultiStepWrap cfg rules = do
-  stepResults <- runMultiCompileFull
+  { stepResults } <- runMultiCompileFull
     @rs
     @inputVal
     @outputVal
