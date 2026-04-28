@@ -41,6 +41,7 @@ import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.Foldable (foldl)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Int as Int
+import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
@@ -54,7 +55,8 @@ import Pickles.PackedStatement (PackedStepPublicInput(..))
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo (PlonkDomain)
 import Pickles.Pseudo as Pseudo
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
+import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
@@ -82,6 +84,7 @@ import Snarky.Curves.Class (curveParams, fromInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
+import Snarky.Data.EllipticCurve as EC
 import Snarky.Types.Shifted (splitFieldCircuit)
 import Type.Proxy (Proxy(..))
 
@@ -126,7 +129,19 @@ type WrapMainConfig branches =
   { stepWidths :: Vector branches Int
   , domainLog2s :: Vector branches Int
   , stepKeys :: Vector branches (StepVK (FVar WrapField))
+  -- | Single-domain lagrange basis. Used in the "all branches share
+  -- | the same step domain" fast path (mirrors OCaml
+  -- | `wrap_verifier.ml:426-428`). Always populated; for the
+  -- | per-branch path, it carries the head domain's basis as a
+  -- | placeholder (only `perBranchLagrangeAt` is consulted).
   , lagrangeAt :: LagrangeBaseLookup WrapField
+  -- | Per-branch lagrange constants per index. `Nothing` for the
+  -- | shared-domain fast path. `Just f` when branch domains differ:
+  -- | `f i` returns one constant lagrange point per branch (each at
+  -- | its branch's `stepDomainLog2`). The wrap circuit performs the
+  -- | 1-hot summation against `whichBranch` in-circuit, mirroring
+  -- | OCaml `lagrange_with_correction` (wrap_verifier.ml:382-443).
+  , perBranchLagrangeAt :: Maybe (Int -> Vector branches (AffinePoint (F WrapField)))
   , blindingH :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s :: Vector 3 (Finite 16)
   }
@@ -709,30 +724,78 @@ wrapMain config (WrapStatementPacked stmtR) = do
   let
     branchBools :: Vector branches (FVar WrapField)
     branchBools = map boolToField whichBranch
-    { head: bb0, tail: bbRest } = Vector.uncons branchBools
 
-    maskByBools :: AffinePoint (F WrapField) -> AffinePoint (FVar WrapField)
-    maskByBools { x: F x', y: F y' } =
+    -- 1-hot masked sum of `Vector branches (AffinePoint (F WrapField))`
+    -- against `branchBools`. Mirrors OCaml `lagrange ~domain:(which_branch,
+    -- domains)` (wrap_verifier.ml:334-356): per-branch points scaled by
+    -- their branch bool, summed coordinate-wise. For 1-hot which_branch,
+    -- the result is exactly the active branch's point.
+    sumMaskByBranch
+      :: Vector branches (AffinePoint (F WrapField))
+      -> AffinePoint (FVar WrapField)
+    sumMaskByBranch perBranchPts =
       let
-        scaledX0 = CVar.scale_ x' bb0
-        scaledY0 = CVar.scale_ y' bb0
-        { x: finalX, y: finalY } = foldl
-          (\acc b -> { x: CVar.add_ acc.x (CVar.scale_ x' b), y: CVar.add_ acc.y (CVar.scale_ y' b) })
-          { x: scaledX0, y: scaledY0 }
-          bbRest
+        scaledPts :: Vector branches (AffinePoint (FVar WrapField))
+        scaledPts = Vector.zipWith
+          ( \b { x: F x', y: F y' } ->
+              { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
+          )
+          branchBools
+          perBranchPts
+        { head: spHead, tail: spTail } = Vector.uncons scaledPts
       in
-        { x: finalX, y: finalY }
+        foldl
+          ( \acc pt ->
+              { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+          )
+          spHead
+          spTail
 
-    -- OCaml `lagrange_with_correction` masks each base by `which_branch`
-    -- (step_verifier.ml:435) — we compose `maskByBools` into the underlying
-    -- lookup so every `publicInputCommit` leaf that fetches at index `i`
-    -- gets a branch-masked version of that base.
+    -- Lagrange-base lookup driving `publicInputCommit`.
+    --
+    -- Two paths, mirroring OCaml `wrap_verifier.ml:382-443`
+    -- (`lagrange_with_correction`):
+    --
+    --   * Fast path (`Nothing`): all branches share the step domain (or
+    --     the wrap circuit is single-branch). The constant lagrange
+    --     basis at `config.lagrangeAt` works for every branch — no
+    --     in-circuit per-branch masking needed. Same circuit shape as
+    --     before this refactor.
+    --   * Per-branch path (`Just`): branch domains differ. For each
+    --     index `i`, fetch one constant point per branch, sum-mask via
+    --     `branchBools`, and produce an in-circuit correction at scale
+    --     `2^shift` for `scalarMulLeaf`'s use. The MSM's
+    --     `AddWithCircuitCorrection` variant carries the FVar correction.
     maskedLagrangeAt :: LagrangeBaseLookup WrapField
-    maskedLagrangeAt i =
-      let
-        lb = config.lagrangeAt i
-      in
-        { constant: lb.constant, circuit: lb.circuit, maskPt: maskByBools }
+    maskedLagrangeAt i = case config.perBranchLagrangeAt of
+      Nothing ->
+        -- Fast path: identical to pre-refactor behavior. The wrap
+        -- circuit's `correctionMode = InCircuitCorrections` lifts the
+        -- constant correction via `constPt` downstream.
+        config.lagrangeAt i
+      Just perBranchAt ->
+        let
+          perBranchPts = perBranchAt i
+          summed = sumMaskByBranch perBranchPts
+          correctionAt shift =
+            sumMaskByBranch
+              ( map
+                  ( \pt ->
+                      PIC.wrapPt $ EC.negate_ $ PIC.unwrapPt
+                        $ pow2pow (curveParams (Proxy @VestaG)) pt shift
+                  )
+                  perBranchPts
+              )
+        in
+          { -- `constant` is unused in the per-branch path (every
+            -- `scalarMulLeaf` consults `correctionAt` instead, and the
+            -- `InCircuitCorrections` extractor pulls FVar corrections
+            -- from `AddWithCircuitCorrection`). Carry the head branch's
+            -- constant as a placeholder so the record typechecks.
+            constant: (Vector.uncons perBranchPts).head
+          , circuit: summed
+          , correctionAt: Just correctionAt
+          }
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
       , lagrangeAt: maskedLagrangeAt

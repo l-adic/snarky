@@ -36,14 +36,18 @@ module Test.Pickles.Prove.TwoPhaseChain
 
 import Prelude
 
+import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
-import Data.Tuple (Tuple(..))
+import Data.Either (Either(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Effect.Exception as Exc
 import Pickles.Prove.CompileMulti
-  ( RuleEntry
+  ( BranchProver(..)
+  , RuleEntry
   , RulesCons
   , RulesNil
   , branchCount
@@ -51,6 +55,8 @@ import Pickles.Prove.CompileMulti
   , extractStepCompileFns
   , mkRuleEntry
   )
+import Pickles.Prove.Verify (verify)
+import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
 import Data.Functor.Product (Product)
 import Data.Int.Bits as Int
@@ -65,7 +71,7 @@ import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (F, FVar, assertEqual_, const_, exists, true_)
+import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Types.Shifted (SplitField, Type2)
 import Test.Spec (SpecT, describe, it, pending)
 
@@ -323,13 +329,13 @@ probeExtractStepCompileFns = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
-  -- Phase 2b.26: smoke that compileMulti dispatches at the test
-  -- call site after the BranchProver-inlining fix unblocked PS's
-  -- funDep coverage for proversCarrier. This actually runs the
-  -- multi-branch step+wrap compile + builds per-branch BranchProver
-  -- closures. (The closures are never called here — that's a
-  -- separate test once we add prover.step invocations.)
-  it "compileMulti type-resolves and runs through" \_ -> do
+  -- Phase 2b.29: b0 (make_zero, branch 0) prove + verify under the
+  -- shared wrap VK. Exercises:
+  --   * `compileMulti` end-to-end (multi-branch step+wrap compile)
+  --   * Head `BranchProver` closure invocation with PrevsSpecNil
+  --     prevsCarrier = unit
+  --   * Wrap proof verification through the shared `output.verifier`
+  it "b0 (make_zero) wrap proof — verify under shared wrap VK" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -340,7 +346,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
           }
 
     rules <- liftEffect probeRulesCarrier
-    _output <- liftEffect $ compileMulti
+    output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @(F StepField)
       @Unit
@@ -349,9 +355,15 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       @(Product (Vector 1) NoSlots)
       cfg
       rules
-    pure unit
-  -- Phase 2b.3+:
-  pending "b0 (make_zero) wrap proof — verify under shared wrap VK"
+
+    let BranchProver makeZeroProver = fst output.provers
+    eRes <- liftEffect $ runExceptT $ makeZeroProver
+      { appInput: F zero, prevs: unit }
+    b0 <- case eRes of
+      Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
+      Right p -> pure p
+
+    verify output.verifier [ b0 ] `shouldEqual` true
   pending "b1 (increment, prev = b0 from branch 0) — multi-branch dispatch step"
   pending "b1 wrap"
   pending "b2 (increment, prev = b1 from branch 1) — same-branch dispatch step"

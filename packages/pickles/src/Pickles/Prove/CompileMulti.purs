@@ -44,6 +44,7 @@ module Pickles.Prove.CompileMulti
   , CompileMultiConfig
   , MultiOutput
   , MultiVKs
+  , BranchProver(..)
   , compileMulti
   -- * Structural carrier class (Phase 2b.20 split — light, no shape data)
   , class CompilableRulesSpec
@@ -239,12 +240,14 @@ type CompileMultiConfig =
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
 -- | carrier corresponds to a `BranchProver` of that branch's shape.
 -- | Aliases the type to make per-branch carriers readable.
-type BranchProver
+newtype BranchProver
   :: Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type
-type BranchProver prevsSpec mpv prevsCarrier inputVal outputVal m =
-  StepInputs prevsSpec inputVal prevsCarrier
-  -> ExceptT ProveError m
-       (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
+newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal m =
+  BranchProver
+    ( StepInputs prevsSpec inputVal prevsCarrier
+      -> ExceptT ProveError m
+           (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
+    )
 
 -- | Shared verification keys for a multi-branch compile.
 -- |
@@ -642,7 +645,6 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   -- |     at wrap compile time via `buildWrapMainConfigMulti`).
   -- |     Each closure rebuilds the wrap-side WrapMainConfig from
   -- |     this when invoked.
-  -- |   * `lagrangeDomainLog2` — shared (= wrap_domains[mpvMax]).
   -- |   * step results / log2s / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
@@ -657,7 +659,6 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
          , stepDomainLog2 :: Int
          , stepVK :: VerifierIndex VestaG StepField
          }
-    -> Int
     -> perBranchStepCompileResults
     -> selfStepDomainLog2sCarrier
     -> rulesCarrier
@@ -669,7 +670,7 @@ instance
   where
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure { stepResults: unit, log2s: unit }
-  buildBranchProvers _ _ _ _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
@@ -760,18 +761,12 @@ instance
         )
         restStepProveFns
     )
-    -- Phase 2b.26: BranchProver type alias is INLINED here. PS's
-    -- funDep coverage check breaks when this position uses the
-    -- alias (instance dispatch fails at call sites). Empirically
-    -- isolated trigger: the BranchProver alias body has the
-    -- combination of (function arg using inputVal/prevsCarrier,
-    -- ExceptT-wrapped result, StatementIO inputVal outputVal
-    -- inside CompiledProof, separate outputVal arg). Inlining
-    -- exposes the structure to PS's coverage check.
+    -- Phase 2b.28: BranchProver is a NEWTYPE (was an alias).
+    -- PS treats newtypes as nominally rigid — instance head sees
+    -- a saturated type constructor, not an unfolded function
+    -- type. Dispatch resolves cleanly; instance head stays terse.
     ( Tuple
-        ( StepInputs prevsSpec inputVal prevsCarrier
-          -> ExceptT ProveError Effect
-               (CompiledProof ruleMpv (StatementIO inputVal outputVal) outputVal Unit)
+        ( BranchProver prevsSpec ruleMpv prevsCarrier inputVal outputVal Effect
         )
         restProvers
     )
@@ -807,13 +802,13 @@ instance
       { stepResults: Tuple headResult tail.stepResults
       , log2s: Tuple selfStepDomainLog2 tail.log2s
       }
-  buildBranchProvers branchIdx cfg wrapResult perBranchVec lagrangeDomainLog2
+  buildBranchProvers branchIdx cfg wrapResult perBranchVec
     (Tuple headStepCR restStepResults)
     (Tuple headLog2 restLog2s)
     (Tuple headEntry restEntries) = do
     let
       thisBranch = branchIdx
-      headProver = \stepInputs ->
+      headProver = BranchProver \stepInputs ->
         runMultiProverBody
           @prevsSpec
           @ruleMpv
@@ -830,7 +825,6 @@ instance
           cfg
           wrapResult
           perBranchVec
-          lagrangeDomainLog2
           headStepCR
           headLog2
           headEntry
@@ -844,7 +838,6 @@ instance
       cfg
       wrapResult
       perBranchVec
-      lagrangeDomainLog2
       restStepResults
       restLog2s
       restEntries
@@ -1208,16 +1201,10 @@ compileMultiStepWrap cfg rules = do
       @outputVal
       @prevInputVal
       stepResults
-    -- Lagrange-domain log2: provisionally the wrap circuit's own
-    -- domain log2 (= wrap_domains[mpvMax]). The
-    -- buildWrapMainConfigMulti TODO flags this for witness-diff
-    -- validation against dump_two_phase_chain.exe.
-    lagrangeDomainLog2 =
-      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
   wrapResult <- wrapCompile @branches @slots
     { wrapMainConfig:
         buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
-          { lagrangeDomainLog2, perBranch: perBranchVec }
+          { perBranch: perBranchVec }
     , crs: cfg.srs.pallasSrs
     }
   pure { stepResults, wrapResult, perBranchVec }
@@ -1295,8 +1282,6 @@ runMultiProverBody
   -- ^ shared per-branch wrap config inputs (same vector used at
   --   wrap compile time via `buildWrapMainConfigMulti`); the wrap
   --   solver here rebuilds the same `WrapMainConfig` from this.
-  -> Int
-  -- ^ shared lagrangeDomainLog2 (= wrap_domains[mpvMax]).
   -> PProveStep.StepCompileResult
   -- ^ this branch's step compile result
   -> Int
@@ -1305,7 +1290,7 @@ runMultiProverBody
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
-runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
+runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
   stepCR selfStepDomainLog2
   (RuleEntry r) { appInput, prevs } = do
   -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
@@ -1472,8 +1457,7 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec _lagrangeDomainLog2
     wrapCtx =
       { wrapMainConfig:
           buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
-            { lagrangeDomainLog2: _lagrangeDomainLog2
-            , perBranch: _perBranchVec
+            { perBranch: _perBranchVec
             }
       , crs: cfg.srs.pallasSrs
       , publicInput: assembleWrapMainInput
@@ -1590,17 +1574,12 @@ compileMulti cfg rules = do
       @outputVal
       @prevInputVal
       stepResults
-    -- Lagrange-domain log2: provisionally wrap_domains[mpvMax].
-    -- Same placeholder as compileMultiStepWrap; needs witness-diff
-    -- validation against dump_two_phase_chain.exe.
-    lagrangeDomainLog2 =
-      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
 
   -- Step 2: shared wrap compile across all branches.
   wrapResult <- wrapCompile @branches @slots
     { wrapMainConfig:
         buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
-          { lagrangeDomainLog2, perBranch: perBranchVec }
+          { perBranch: perBranchVec }
     , crs: cfg.srs.pallasSrs
     }
 
@@ -1615,7 +1594,6 @@ compileMulti cfg rules = do
     cfg
     wrapResult
     perBranchVec
-    lagrangeDomainLog2
     stepResults
     log2s
     rules
@@ -1627,7 +1605,15 @@ compileMulti cfg rules = do
     -- the verifier's stepDomainLog2. Multi-branch verification will
     -- need a per-branch shape; deferred to a Verifier refactor.
     firstBranchStepDomainLog2 =
-      (Vector.head perBranchVec).stepDomainLog2
+      (Vector.uncons perBranchVec).head.stepDomainLog2
+
+    -- Wrap circuit's own domain log2 (= wrap_domains[mpvMax]).
+    -- Used by the verifier for wrap-side proof validation; not
+    -- consumed by the wrap circuit body anymore (the wrap circuit
+    -- now picks per-branch lagrange bases from `perBranchLagrangeAt`,
+    -- mirroring OCaml `lagrange_with_correction`).
+    wrapDomainLog2Out =
+      wrapDomainLog2ForProofsVerified (reflectType (Proxy :: Proxy mpvMax))
 
     verifier :: Verifier
     verifier = mkVerifier
@@ -1643,7 +1629,7 @@ compileMulti cfg rules = do
     , vks:
         { wrap: wrapResult
         , perBranchStep: stepResults
-        , wrapDomainLog2: lagrangeDomainLog2
+        , wrapDomainLog2: wrapDomainLog2Out
         }
     , perBranchVKs: unit
     }

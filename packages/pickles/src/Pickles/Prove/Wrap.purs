@@ -45,6 +45,7 @@ import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Fin (unsafeFinite)
 import Data.Map (Map)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -684,6 +685,10 @@ buildWrapMainConfig vestaSrs stepVK { domainLog2 } =
       mkConstLagrangeBaseLookup \i ->
         (coerce (pallasSrsLagrangeCommitmentAt vestaSrs domainLog2 i))
           :: AffinePoint (F WrapField)
+  -- Single-branch: no per-branch dispatch needed; the wrap circuit
+  -- takes the fast path (mirrors OCaml's "all domains equal" case
+  -- in `lagrange_with_correction`, wrap_verifier.ml:426-428).
+  , perBranchLagrangeAt: Nothing
   , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
   , allPossibleDomainLog2s:
       unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
@@ -699,39 +704,58 @@ buildWrapMainConfig vestaSrs stepVK { domainLog2 } =
 -- | for `buildWrapMainConfigMulti @1` with a one-element vector;
 -- | both produce the same `WrapMainConfig` structurally.
 -- |
--- | TODO: validate via two_phase_chain witness diff that
--- | `lagrangeAt` should use a SHARED lagrange-domain (probably the
--- | wrap circuit's own domain log2) rather than per-branch step
--- | domains. The single-branch version uses `domainLog2` (step) for
--- | both `domainLog2s` and `lagrangeAt`, which works for single-rule
--- | because step ≡ wrap when no override; multi-branch has
--- | distinct per-branch step domains, so this needs a separate
--- | parameter. Provisionally takes `lagrangeDomainLog2` as an
--- | explicit input until we can verify against
--- | `dump_two_phase_chain.exe`'s witness.
+-- | Branch-domain dispatch mirrors OCaml's `lagrange_with_correction`
+-- | (wrap_verifier.ml:382-443):
+-- |
+-- |   * **All branches share the same step domain** (fast path,
+-- |     wrap_verifier.ml:426-428): the lagrange basis at that single
+-- |     domain works for every branch — populate `lagrangeAt` from
+-- |     it and set `perBranchLagrangeAt = Nothing`.
+-- |   * **Branch domains differ** (per-branch path,
+-- |     wrap_verifier.ml:429-443): for each index `i`, fetch one
+-- |     constant lagrange point per branch (each at its branch's
+-- |     `stepDomainLog2`); the wrap circuit performs the 1-hot sum
+-- |     against `whichBranch` in-circuit. Populate
+-- |     `perBranchLagrangeAt` from this; `lagrangeAt` is unused but
+-- |     populated from the head branch's domain to satisfy the type.
 buildWrapMainConfigMulti
-  :: forall @branches
+  :: forall @branches branchesPred
    . Reflectable branches Int
+  => Add 1 branchesPred branches
   => CRS VestaG
-  -> { lagrangeDomainLog2 :: Int
-     , perBranch :: Vector branches
+  -> { perBranch :: Vector branches
          { mpv :: Int
          , stepDomainLog2 :: Int
          , stepVK :: VerifierIndex VestaG StepField
          }
      }
   -> WrapMainConfig branches
-buildWrapMainConfigMulti vestaSrs { lagrangeDomainLog2, perBranch } =
-  { stepWidths: map _.mpv perBranch
-  , domainLog2s: map _.stepDomainLog2 perBranch
-  , stepKeys:
-      map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
-  , lagrangeAt:
-      mkConstLagrangeBaseLookup \i ->
-        (coerce (pallasSrsLagrangeCommitmentAt vestaSrs lagrangeDomainLog2 i))
-          :: AffinePoint (F WrapField)
-  , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
-  , allPossibleDomainLog2s:
-      unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-  }
+buildWrapMainConfigMulti vestaSrs { perBranch } =
+  let
+    domainLog2s = map _.stepDomainLog2 perBranch
+    headDomainLog2 = (Vector.uncons perBranch).head.stepDomainLog2
+    allEqual = Array.all (_ == headDomainLog2)
+      (Vector.toUnfoldable domainLog2s :: Array Int)
+    perBranchLookup i =
+      map
+        ( \b ->
+            (coerce (pallasSrsLagrangeCommitmentAt vestaSrs b.stepDomainLog2 i))
+              :: AffinePoint (F WrapField)
+        )
+        perBranch
+  in
+    { stepWidths: map _.mpv perBranch
+    , domainLog2s
+    , stepKeys:
+        map (\b -> stepVkForCircuit (extractStepVKComms b.stepVK)) perBranch
+    , lagrangeAt:
+        mkConstLagrangeBaseLookup \i ->
+          (coerce (pallasSrsLagrangeCommitmentAt vestaSrs headDomainLog2 i))
+            :: AffinePoint (F WrapField)
+    , perBranchLagrangeAt:
+        if allEqual then Nothing else Just perBranchLookup
+    , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
+    , allPossibleDomainLog2s:
+        unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
+    }
 
