@@ -31,7 +31,7 @@ module Test.Pickles.Prove.TwoPhaseChain
   , probeIncrement
   , probeRulesCarrier
   , probeBranchCount
-  , probeCollectSlotVKs
+  , probeExtractStepCompileFns
   ) where
 
 import Prelude
@@ -47,11 +47,11 @@ import Pickles.Prove.CompileMulti
   , RulesCons
   , RulesNil
   , branchCount
-  , collectSlotVKs
+  , extractStepCompileFns
   , mkRuleEntry
   )
 import Type.Proxy (Proxy(..))
-import Pickles.Prove.Step (StepRule)
+import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
@@ -279,15 +279,29 @@ probeBranchCount =
     @(F StepField)
     (Proxy :: Proxy TwoPhaseChainRules)
 
--- | Phase 2b.10 probe: validate that `collectSlotVKs` correctly walks
--- | the value-level rules carrier. Reuses `probeRulesCarrier` to
--- | construct a real Tuple chain and dispatches the class method to
--- | descend through it. Body returns Unit — the test is that PS
--- | resolves the Cons instance and pattern-matches the Tuple shape.
-probeCollectSlotVKs :: Effect Unit
-probeCollectSlotVKs = do
+-- | Phase 2b.11 probe: validate that `extractStepCompileFns` correctly
+-- | descends the rules carrier and pulls each entry's `stepCompileFn`
+-- | into a heterogeneous Tuple chain.
+-- |
+-- | The result type is the per-branch compile-thunk shape that
+-- | `compileMulti`'s eventual body will sequence (per-branch
+-- | `StepProveContext mpv -> Effect StepCompileResult` thunks).
+-- | Branch 0's thunk has type `StepProveContext 0 -> Effect …`
+-- | (makeZero, mpv=0); branch 1's has type `StepProveContext 1 ->
+-- | Effect …` (increment, mpv=1). The Tuple structure preserves
+-- | per-branch heterogeneity.
+probeExtractStepCompileFns
+  :: Effect
+       ( Tuple
+           (StepProveContext 0 -> Effect StepCompileResult)
+           ( Tuple
+               (StepProveContext 1 -> Effect StepCompileResult)
+               Unit
+           )
+       )
+probeExtractStepCompileFns = do
   carrier <- probeRulesCarrier
-  collectSlotVKs
+  pure $ extractStepCompileFns
     @TwoPhaseChainRules
     @(F StepField)
     @Unit

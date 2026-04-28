@@ -45,10 +45,10 @@ module Pickles.Prove.CompileMulti
   , MultiOutput
   , MultiVKs
   , compileMulti
-  -- * Carrier class (Phase 2b.10 — carrier-consuming method)
+  -- * Carrier class (Phase 2b.11 — extractStepCompileFns)
   , class CompilableRulesSpec
   , branchCount
-  , collectSlotVKs
+  , extractStepCompileFns
   -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
   , RuleEntry(..)
   , mkRuleEntry
@@ -244,10 +244,20 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
 --------------------------------------------------------------------------------
 
 class CompilableRulesSpec
-  :: RulesSpec -> Type -> Type -> Type -> Int -> Int -> Type -> Constraint
+  :: RulesSpec
+  -> Type
+  -> Type
+  -> Type
+  -> Int
+  -> Int
+  -> Type
+  -> Type
+  -> Constraint
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax rulesCarrier
-  | rs -> branches mpvMax rulesCarrier
+  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
+    rulesCarrier
+    stepCompileFnsCarrier
+  | rs -> branches mpvMax rulesCarrier stepCompileFnsCarrier
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -256,24 +266,30 @@ class
   -- | would, but via direct class-method dispatch.
   branchCount :: forall proxy. proxy rs -> Int
 
-  -- | Walk the value-level rules carrier, extracting each entry's
-  -- | `slotVKs` into a heterogeneous Tuple chain. Pure structural
-  -- | recursion — pattern-matches the Tuple, descends. Validates
-  -- | that the class instance head correctly ties the Tuple shape
-  -- | (with `RuleEntry`'s 7 type params) to the type-level
-  -- | `RulesCons` encoding (with 4 params).
+  -- | Extract each `RuleEntry`'s `stepCompileFn` field into a Tuple
+  -- | chain whose shape mirrors `rulesCarrier`. Pure value-level
+  -- | rewriting: each per-rule entry yields its already-captured
+  -- | `StepProveContext mpv -> Effect StepCompileResult` thunk.
   -- |
-  -- | Per-rule type vars (`carrier`, `outputSize`) that aren't in
-  -- | `RulesCons` are pinned by class constraints (`PrevsCarrier` /
-  -- | `Add`) in the Cons instance head, satisfying the funDep
-  -- | `rs -> rulesCarrier` via constraint-driven inference.
+  -- | This is the value-level "shape transformer" the upcoming
+  -- | `compileMulti` body uses: given the rules carrier, produce the
+  -- | per-branch compile actions. The actions can then be sequenced
+  -- | with per-branch contexts (Phase 2b.12) to drive real per-rule
+  -- | step CompileResults.
   -- |
-  -- | Output shape mirrors the input: `Tuple slotVKs0 (Tuple slotVKs1 …)`.
-  collectSlotVKs :: rulesCarrier -> Effect Unit
+  -- | The output Tuple chain is heterogeneous — branch i's thunk has
+  -- | type `StepProveContext mpv_i -> Effect StepCompileResult`, where
+  -- | `mpv_i` is that branch's `max_proofs_verified`. Different
+  -- | branches with different mpvs land at different concrete thunk
+  -- | types, preserved through the Tuple structure (mirroring how the
+  -- | rules carrier preserves per-rule heterogeneity).
+  extractStepCompileFns :: rulesCarrier -> stepCompileFnsCarrier
 
-instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit where
+instance
+  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit Unit
+  where
   branchCount _ = 0
-  collectSlotVKs _ = pure unit
+  extractStepCompileFns _ = unit
 
 -- | Cons instance: per-rule branch increments the running count via
 -- | `Add restBranches 1 branches`. The Tuple carrier shape is pinned
@@ -282,7 +298,7 @@ instance CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 0 Unit w
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      restBranches restMpvMax restCarrier
+      restBranches restMpvMax restCarrier restStepCompileFns
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -309,6 +325,11 @@ instance
         )
         restCarrier
     )
+    ( Tuple
+        ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+        )
+        restStepCompileFns
+    )
   where
   branchCount _ =
     1 + branchCount
@@ -319,17 +340,21 @@ instance
       @restBranches
       @restMpvMax
       @restCarrier
+      @restStepCompileFns
       (Proxy :: Proxy rest)
-  collectSlotVKs (Tuple _entry rest) =
-    collectSlotVKs
-      @rest
-      @inputVal
-      @outputVal
-      @prevInputVal
-      @restBranches
-      @restMpvMax
-      @restCarrier
-      rest
+  extractStepCompileFns (Tuple (RuleEntry r) rest) =
+    Tuple r.stepCompileFn
+      ( extractStepCompileFns
+          @rest
+          @inputVal
+          @outputVal
+          @prevInputVal
+          @restBranches
+          @restMpvMax
+          @restCarrier
+          @restStepCompileFns
+          rest
+      )
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
