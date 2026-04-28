@@ -582,14 +582,21 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax
   -- | step solve+prove (via the rule's `stepProveFn`) and wrap
   -- | solve+prove with `whichBranch = branchIdx`.
   -- |
-  -- | Phase 2b.21: signature only — body throws `notImplemented`
-  -- | until the multi-branch `runProverBody` analog lands. The full
-  -- | implementation needs `mkStepAdvice @prevsSpec` (in scope via
-  -- | the `CompilableSpec` constraint), `shapeProveData @prevsSpec`,
+  -- | The leading `Int` is the BRANCH INDEX of the head entry. Top-
+  -- | level callers pass `0`; the Cons body recurses with `idx + 1`
+  -- | so each branch's closure can capture the right `whichBranch`
+  -- | value for its wrap statement.
+  -- |
+  -- | Closure body is `notImplemented` until Phase 2b.24 (the
+  -- | multi-branch runProverBody analog). The full implementation
+  -- | needs `mkStepAdvice @prevsSpec` (in scope via the
+  -- | `CompilableSpec` constraint), `shapeProveData @prevsSpec`,
   -- | `stepSolveAndProve` (via the rule's `stepProveFn`), and
-  -- | `wrapSolveAndProve` with branch-index-baked statement.
+  -- | `wrapSolveAndProve` with the captured branch index baked into
+  -- | the wrap statement.
   buildBranchProvers
-    :: CompileMultiConfig
+    :: Int
+    -> CompileMultiConfig
     -> WrapCompileResult
     -> perBranchStepCompileResults
     -> selfStepDomainLog2sCarrier
@@ -602,7 +609,7 @@ instance
   where
   runMultiCompile _ _ _ = pure unit
   runMultiCompileFull _ _ = pure unit
-  buildBranchProvers _ _ _ _ _ = pure unit
+  buildBranchProvers _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
@@ -700,19 +707,23 @@ instance
       cfg
       restEntries
     pure (Tuple headResult tailResults)
-  buildBranchProvers cfg wrapResult (Tuple _headStepCR restStepResults)
-    (Tuple _headLog2 restLog2s) (Tuple (RuleEntry _r) restEntries) = do
-    -- Phase 2b.22: structural recursion in place; per-branch
-    -- closure body deferred to Phase 2b.23 (multi-branch
-    -- runProverBody analog).
+  buildBranchProvers branchIdx cfg wrapResult
+    (Tuple _headStepCR restStepResults)
+    (Tuple _headLog2 restLog2s)
+    (Tuple (RuleEntry _r) restEntries) = do
+    -- Phase 2b.23: branchIdx threaded through. Per-branch closure
+    -- captures it for wrap-statement `whichBranch` (Phase 2b.24).
     let
+      thisBranch = branchIdx
       headProver = \_stepInputs ->
-        lift $ notImplemented "buildBranchProvers head closure"
+        lift $ notImplemented
+          ("buildBranchProvers head closure (branch " <> show thisBranch <> ")")
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
       @restBranches @restMpvMax
       @restCarrier @restStepCompileFns @restCtxs
       @restStepCompileResults @restLog2s @restStepProveFns @restProvers
+      (branchIdx + 1)
       cfg
       wrapResult
       restStepResults
