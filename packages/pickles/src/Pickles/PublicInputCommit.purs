@@ -552,23 +552,32 @@ scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx
     actualShift = reflectType (Proxy @bitsUsed)
-    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
   term <- case base.correctionAt of
     Nothing ->
       let
+        scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
         correction = wrapPt $ EC.negate_ $ unwrapPt
           $ pow2pow params base.constant actualShift
       in
         pure $ AddWithCorrection { scaleMul, correction }
     Just corrFn -> do
-      -- Seal the per-branch correction here, eagerly. Mirrors OCaml
-      -- `lagrange_with_correction`'s final `Util.Wrap.seal` pass
-      -- (wrap_verifier.ml:443) which happens DURING the PI iteration —
-      -- so seal gates are interleaved with `assert_(boolean b)` calls
-      -- from sibling Cond_add entries. Without this, PS clusters all
-      -- Cond_add booleans together first and all correction seals
+      -- Seal BOTH the per-branch base and correction here, eagerly.
+      -- Mirrors OCaml `lagrange_with_correction`'s final
+      -- `Array.map ~f:(Double.map ~f:(Double.map ~f:Util.Wrap.seal))`
+      -- pass (wrap_verifier.ml:443) which seals the (base, correction)
+      -- × (x, y) tuple per chunk. The seal happens DURING the PI
+      -- iteration so seal gates interleave with `assert_(boolean b)`
+      -- calls from sibling Cond_add entries — without this, PS clusters
+      -- all Cond_add booleans together first and all correction seals
       -- after, mismatching OCaml's gate packing order.
+      -- Seal correction BEFORE base. Mirrors OCaml's right-to-left
+      -- `Double.map ~f:(Double.map ~f:seal)` over the (base, correction)
+      -- tuple at wrap_verifier.ml:443 — Tuple_lib.Double.map evaluates
+      -- the second component first, so correction.y/correction.x seal
+      -- before base.y/base.x.
       sealedCorrection <- label "seal-correction" $ sealPoint (corrFn actualShift)
+      sealedBase <- label "seal-base" $ sealPoint base.circuit
+      let scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits sealedBase scalar)
       pure $ AddWithCircuitCorrection { scaleMul, correction: sealedCorrection }
   pure
     { results: [ term ]
