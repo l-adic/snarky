@@ -8,7 +8,7 @@ module Pickles.CircuitDiffs.PureScript.FopStep
 import Prelude
 
 import Data.Fin (Finite, getFinite)
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, domainLog2, srsLengthLog2, stepEndo, unsafeIdx)
 import Pickles.Linearization as Linearization
@@ -112,11 +112,11 @@ fopStepCircuit input =
       , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
       }
     params =
-      { domain:
+      { domains:
           { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
-          }
-      , domainLog2
+          , log2: domainLog2
+          } :< Vector.nil
+      , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas

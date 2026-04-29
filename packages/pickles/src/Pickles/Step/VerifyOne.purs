@@ -26,6 +26,8 @@ import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Safe.Coerce (coerce)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF
@@ -128,9 +130,11 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall n t m r1
+  :: forall _nd nd n t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => FinalizeOtherProofParams StepField r1
+  => Add 1 _nd nd
+  => Compare 0 nd LT
+  => FinalizeOtherProofParams nd StepField r1
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()
   -> Snarky (KimchiConstraint StepField) t m (VerifyOneResult StepIPARounds (FVar StepField))

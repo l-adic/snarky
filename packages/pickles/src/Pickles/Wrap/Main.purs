@@ -70,7 +70,6 @@ import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
-import Record as Record
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.DSL (class CheckedType, class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), add_, and_, assertAny_, assertEqual_, const_, equals_, exists, label, not_, true_)
@@ -261,10 +260,13 @@ processOneSlotFopBody
   -> Snarky (KimchiConstraint WrapField) t m (Vector WrapIPARounds (FVar WrapField))
 processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals = do
   { finalized, expandedChallenges } <- wrapFinalizeOtherProofCircuit
-    ( Record.merge
-        { domain: { generator: domain.generator, shifts: domain.shifts } }
-        fopBaseParams
-    )
+    { domains:
+        { generator: domain.generator, log2: fopBaseParams.domainLog2 } :< Vector.nil
+    , shifts: domain.shifts
+    , srsLengthLog2: fopBaseParams.srsLengthLog2
+    , endo: fopBaseParams.endo
+    , linearizationPoly: fopBaseParams.linearizationPoly
+    }
     domain.vanishingPolynomial
     { unfinalized: unfView
     , witness

@@ -52,7 +52,8 @@ import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircui
 import Pickles.Step.Domain (domainVanishingPoly, pow2PowSquare)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, sub_)
@@ -69,20 +70,25 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- |
 -- | These come from the verification key / are known at circuit compile time.
 -- |
--- | - `domain`: Domain generator and shift values
--- | - `domainLog2`: Log2 of domain size (e.g. 16)
+-- | - `domains`: Per-branch `{ generator, log2 }` over the `nd` possible
+-- |   step-domain sizes the prev proof could have. For single-rule
+-- |   callers `nd = 1`. Multi-rule (e.g. TwoPhaseChain Self prev)
+-- |   passes the deduped Vector of all possible per-branch step domains.
+-- |   Mirrors OCaml `domain_for_compiled`'s `unique_domains`.
+-- | - `shifts`: kimchi permutation argument shifts. Single Vector
+-- |   because OCaml's `Pseudo.Domain.shifts` asserts shifts are
+-- |   identical across all unique domains
+-- |   (`disabled_not_the_same`).
 -- | - `srsLengthLog2`: Log2 of SRS length (e.g. 16)
 -- | - `endo`: Endomorphism coefficient for scalar challenge conversion
 -- | - `linearizationPoly`: The linearization polynomial for gate constraints
 -- |
--- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters
-type FinalizeOtherProofParams :: Type -> Row Type -> Type
-type FinalizeOtherProofParams f r =
-  { domain ::
-      { generator :: FVar f
-      , shifts :: Vector 7 (FVar f)
-      }
-  , domainLog2 :: Int
+-- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters,
+-- |            pseudo.ml `Pseudo.Domain.to_domain`
+type FinalizeOtherProofParams :: Int -> Type -> Row Type -> Type
+type FinalizeOtherProofParams nd f r =
+  { domains :: Vector nd { generator :: FVar f, log2 :: Int }
+  , shifts :: Vector 7 (FVar f)
   , srsLengthLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , linearizationPoly :: LinearizationPoly f
@@ -166,8 +172,10 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1165
 finalizeOtherProofCircuit
-  :: forall _d d n f f' g t m sf r1 r2
+  :: forall _d d _nd nd n f f' g t m sf r1 r2
    . Add 1 _d d
+  => Add 1 _nd nd
+  => Compare 0 nd LT
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -179,10 +187,17 @@ finalizeOtherProofCircuit
      , shiftedEqual :: sf -> FVar f -> Snarky (KimchiConstraint f) t m (BoolVar f)
      | r1
      }
-  -> FinalizeOtherProofParams f r2
+  -> FinalizeOtherProofParams nd f r2
   -> FinalizeOtherProofInput n d (FVar f) sf (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
+  -- Single-domain access via Vector.head. Multi-domain dispatch lands
+  -- in Commit C — for now nd=1 callers work identically to the
+  -- pre-refactor code, byte-identical gate emission preserved.
+  let
+    headDomain = Vector.head params.domains
+    domain = { generator: headDomain.generator, shifts: params.shifts }
+    domainLog2 = headDomain.log2
   let
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
@@ -204,8 +219,8 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- OCaml: gen = mask [which_bit] [gen_constant] = Scale(gen_const, which_bit)
   -- Then: zetaw = mul gen zeta → R1CS because gen is non-constant
   ---------------------------------------------------------------------------
-  domainWhich <- equals_ (const_ (fromInt params.domainLog2)) domainLog2Var
-  maskedGen <- mul_ params.domain.generator (coerce domainWhich :: FVar f)
+  domainWhich <- equals_ (const_ (fromInt domainLog2)) domainLog2Var
+  maskedGen <- mul_ domain.generator (coerce domainWhich :: FVar f)
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------
@@ -289,7 +304,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     zZeta = allEvals.zEvals.zeta
     zOmegaTimesZeta = allEvals.zEvals.omegaTimesZeta
 
-    shifts = params.domain.shifts
+    shifts = domain.shifts
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega powers to match OCaml constraint order.
@@ -317,7 +332,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 
   -- zetaToNMinus1 via domain vanishing polynomial (with domain masking)
   -- Uses domainVanishingPoly to match OCaml's step_verifier.ml constraint structure.
-  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta params.domainLog2
+  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta domainLog2
 
   let
     alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
@@ -381,7 +396,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     baseEnv = buildCircuitEnvM
       alphaPowers
       zeta
-      params.domainLog2
+      domainLog2
       omegaForLagrange
       evalPoint
       vanishesOnZk

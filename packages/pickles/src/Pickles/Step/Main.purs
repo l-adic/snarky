@@ -843,11 +843,13 @@ stepMain
               }
 
             slotFopParams =
-              { domain:
+              -- Single-domain shape (Vector 1). Multi-domain dispatch
+              -- for Self prevs in multi-rule callers lands in Commit C.
+              { domains:
                   { generator: const_ (LinFFI.domainGenerator @StepField slotFopDomainLog2)
-                  , shifts: map const_ (LinFFI.domainShifts @StepField slotFopDomainLog2)
-                  }
-              , domainLog2: slotFopDomainLog2
+                  , log2: slotFopDomainLog2
+                  } :< Vector.nil
+              , shifts: map const_ (LinFFI.domainShifts @StepField slotFopDomainLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
