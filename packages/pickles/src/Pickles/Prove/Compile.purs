@@ -666,13 +666,6 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
               , dummyMsgWrapHash: \_ ->
                   let F x = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
                   in const_ x
-              , dummyProofDataEntry: \_ ->
-                  let
-                    sgPt = (Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs).ipa.wrap.sg
-                  in
-                    { sg: WeierstrassAffinePoint { x: const_ sgPt.x, y: const_ sgPt.y }
-                    , expandedChals: map const_ Dummy.dummyIpaChallenges.stepExpanded
-                    }
               }
           , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
           , crs: cfg.srs.vestaSrs
@@ -855,13 +848,6 @@ instance
               , dummyMsgWrapHash: \_ ->
                   let F x = mkDummyMsgWrapHash outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
                   in const_ x
-              , dummyProofDataEntry: \_ ->
-                  { sg: WeierstrassAffinePoint
-                      { x: const_ outerDummySgs.ipa.wrap.sg.x
-                      , y: const_ outerDummySgs.ipa.wrap.sg.y
-                      }
-                  , expandedChals: map const_ Dummy.dummyIpaChallenges.stepExpanded
-                  }
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
