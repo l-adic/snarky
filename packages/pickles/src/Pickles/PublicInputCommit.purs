@@ -63,7 +63,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete, sealPoint)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
 import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -553,15 +553,23 @@ scalarMulLeaf params scalar lookup idx = do
     base = lookup idx
     actualShift = reflectType (Proxy @bitsUsed)
     scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
-    term = case base.correctionAt of
-      Nothing ->
-        let
-          correction = wrapPt $ EC.negate_ $ unwrapPt
-            $ pow2pow params base.constant actualShift
-        in
-          AddWithCorrection { scaleMul, correction }
-      Just corrFn ->
-        AddWithCircuitCorrection { scaleMul, correction: corrFn actualShift }
+  term <- case base.correctionAt of
+    Nothing ->
+      let
+        correction = wrapPt $ EC.negate_ $ unwrapPt
+          $ pow2pow params base.constant actualShift
+      in
+        pure $ AddWithCorrection { scaleMul, correction }
+    Just corrFn -> do
+      -- Seal the per-branch correction here, eagerly. Mirrors OCaml
+      -- `lagrange_with_correction`'s final `Util.Wrap.seal` pass
+      -- (wrap_verifier.ml:443) which happens DURING the PI iteration —
+      -- so seal gates are interleaved with `assert_(boolean b)` calls
+      -- from sibling Cond_add entries. Without this, PS clusters all
+      -- Cond_add booleans together first and all correction seals
+      -- after, mismatching OCaml's gate packing order.
+      sealedCorrection <- label "seal-correction" $ sealPoint (corrFn actualShift)
+      pure $ AddWithCircuitCorrection { scaleMul, correction: sealedCorrection }
   pure
     { results: [ term ]
     , nextIdx: idx + 1
