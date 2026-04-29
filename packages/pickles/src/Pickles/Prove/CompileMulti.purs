@@ -470,7 +470,7 @@ instance
     mpvMax
     slotsMax
     ( Tuple
-        ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+        ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
             slotVKs
         )
         restCarrier
@@ -743,7 +743,7 @@ instance
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
       inputVal outputVal prevInputVal branches mpvMax slotsMax
       ( Tuple
-          ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+          ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
               slotVKs
           )
           restCarrier
@@ -772,7 +772,7 @@ instance
     inputVal outputVal prevInputVal
     branches mpvMax slotsMax
     ( Tuple
-        ( RuleEntry prevsSpec ruleMpv valCarrier inputVal carrier outputSize
+        ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
             slotVKs
         )
         restCarrier
@@ -807,7 +807,11 @@ instance
   where
   runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
     let
-      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2
+      -- TODO Commit F: replace Vector 1 with the full
+      -- `Vector branches Int` of all branches' step domain log2s for
+      -- multi-rule Self-prev Pseudo dispatch. Currently each branch
+      -- only sees its own log2 — circuit emits single-domain dispatch.
+      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs (log2 :< Vector.nil)
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
       @rest @inputVal @outputVal @prevInputVal
@@ -820,10 +824,15 @@ instance
     pure (Tuple headResult tailResults)
   runMultiCompileFull cfg (Tuple (RuleEntry r) restEntries) = do
     let
-      placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs 20
+      -- TODO Commit F: pre-pass over all branches to collect Vector
+      -- branches Int, then compile each branch with the full vector.
+      -- Currently sequential: each branch sees only its own log2.
+      placeholderCtx =
+        buildStepProveCtx @prevsSpec cfg r.slotVKs (20 :< Vector.nil)
     selfStepDomainLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
     let
-      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs selfStepDomainLog2
+      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs
+        (selfStepDomainLog2 :< Vector.nil)
     headResult <- r.stepCompileFn realCtx
     tail <- runMultiCompileFull
       @rest @inputVal @outputVal @prevInputVal
@@ -939,24 +948,31 @@ instance
 data RuleEntry
   :: Type
   -> Int
+  -> Int
   -> Type
   -> Type
   -> Type
   -> Int
   -> Type
   -> Type
-data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = RuleEntry
+data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs = RuleEntry
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
     -- | constraint-system build. Phase 2b.15 — analog of OCaml's
     -- | `Fix_domains.domains` per-rule.
+    --
+    -- | `nd` is the compilation-wide multi-domain count. For
+    -- | single-rule callers this is 1; for multi-rule (compileMulti)
+    -- | it's the proof-system's `branches` count, used for Pseudo
+    -- | dispatch over Self-prev step domains in
+    -- | `finalizeOtherProofCircuit`.
     preComputeStepDomainLog2Fn ::
-      PProveStep.StepProveContext mpv 1 -> Effect Int
+      PProveStep.StepProveContext mpv nd -> Effect Int
   , stepCompileFn ::
-      PProveStep.StepProveContext mpv 1 -> Effect PProveStep.StepCompileResult
+      PProveStep.StepProveContext mpv nd -> Effect PProveStep.StepCompileResult
   , stepProveFn ::
-      PProveStep.StepProveContext mpv 1
+      PProveStep.StepProveContext mpv nd
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
            inputVal mpv carrier valCarrier
@@ -974,7 +990,7 @@ data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = Ru
 -- | `runCompile` (`Pickles.Prove.Compile`). If this typechecks, the
 -- | smart-constructor pattern is end-to-end viable for `compileMulti`.
 mkRuleEntry
-  :: forall @prevsSpec @mpv @mpvMax @mpvPad @outputSize @valCarrier
+  :: forall @prevsSpec @mpv @mpvMax @mpvPad @nd _nd @outputSize @valCarrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
@@ -982,6 +998,9 @@ mkRuleEntry
   => Reflectable pad Int
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
+  => Reflectable nd Int
+  => Add 1 _nd nd
+  => Compare 0 nd LT
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => MpvPadding.MpvPadding mpvPad mpv mpvMax
@@ -1015,7 +1034,7 @@ mkRuleEntry
   => PrevValuesCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs)
+  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs)
 mkRuleEntry rule slotVKs = pure $ RuleEntry
   { preComputeStepDomainLog2Fn: \ctx ->
       PProveStep.preComputeStepDomainLog2
@@ -1156,13 +1175,16 @@ type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal
 -- | @prevsSpec` then handles the per-prev-spec layout (per-slot
 -- | lagrange basis, blinding H, FOP domains).
 buildStepProveCtx
-  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
+  :: forall @prevsSpec @nd _nd slotVKs prevsCarrier mpv slots valCarrier carrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
+  => Add 1 _nd nd
+  => Compare 0 nd LT
+  => Reflectable nd Int
   => CompileMultiConfig
   -> slotVKs
-  -> Int
-  -> PProveStep.StepProveContext mpv 1
-buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
+  -> Vector nd Int
+  -> PProveStep.StepProveContext mpv nd
+buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
   let
     perRuleCfg =
       { srs: cfg.srs
@@ -1170,7 +1192,7 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
       , debug: cfg.debug
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
-    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2
+    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2s
   in
     shape.stepProveCtx
 
@@ -1357,11 +1379,11 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs
+  -> RuleEntry prevsSpec mpv 1 valCarrier inputVal carrier outputSize slotVKs
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
-runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
+runMultiProverBody _branchIdx cfg wrapResult perBranchVec
   stepCR selfStepDomainLog2
   (RuleEntry r) { appInput, prevs } = do
   -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
@@ -1374,7 +1396,16 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
       , debug: cfg.debug
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
-    shape = shapeCompileData @prevsSpec perRuleCfg selfStepDomainLog2
+    -- TODO Commit F: pass the full
+    --   `Vector branches Int` (= `map _.stepDomainLog2 perBranchVec`)
+    -- to drive multi-domain Pseudo dispatch in
+    -- `finalizeOtherProofCircuit`. Currently Vector 1 with the
+    -- branch's own step domain — circuit emits single-domain
+    -- dispatch even for multi-rule callers (TwoPhaseChain b1_step
+    -- still has the 4-Generic-gate delta).
+    selfDomainsForShape :: Vector 1 Int
+    selfDomainsForShape = selfStepDomainLog2 :< Vector.nil
+    shape = shapeCompileData @prevsSpec perRuleCfg selfDomainsForShape
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
     liftEffect $ mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
@@ -1621,7 +1652,7 @@ runMultiProverBody _branchIdx cfg wrapResult _perBranchVec
     wrapCtx =
       { wrapMainConfig:
           buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
-            { perBranch: _perBranchVec
+            { perBranch: perBranchVec
             }
       , crs: cfg.srs.pallasSrs
       , publicInput: assembleWrapMainInput

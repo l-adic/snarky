@@ -524,10 +524,22 @@ class
   -- | as a placeholder; the real `compile` call passes the value
   -- | computed by the pre-pass. `External` slots ignore this argument
   -- | and read the imported rule's step domain from its prover index.
+  -- | The `selfStepDomainLog2s :: Vector nd Int` parameter is the
+  -- | (deduped) Vector of all step-domain log2s the slot's source
+  -- | proof system could have. For single-rule callers it's
+  -- | `Vector 1 [theLog2]`; for multi-rule (CompileMulti) it's
+  -- | `Vector branches [...]`. Used to populate
+  -- | `srsData.perSlotFopDomainLog2s` for `Self` slots.
+  -- | `External` slots ignore this argument and read the imported
+  -- | rule's step domain from its prover index (Vector 1 of that).
   shapeCompileData
-    :: CompileConfig prevsSpec slotVKs
-    -> Int
-    -> ShapeCompileData mpv 1 slots
+    :: forall @nd _nd
+     . Add 1 _nd nd
+    => Compare 0 nd LT
+    => Reflectable nd Int
+    => CompileConfig prevsSpec slotVKs
+    -> Vector nd Int
+    -> ShapeCompileData mpv nd slots
 
   -- | Step solver advice + side info. Recurses on `rest` to assemble
   -- | the multi-slot StepAdvice (PS analog of OCaml `step.ml:736-770`).
@@ -786,11 +798,11 @@ instance
         restCarrier
     )
   where
-  shapeCompileData cfg selfStepDomainLog2 =
+  shapeCompileData cfg selfStepDomainLog2s =
     let
       Tuple headSlotWrapKey restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
-      restShape = shapeCompileData @rest restCfg selfStepDomainLog2
+      restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
       outerMpv = reflectType (Proxy @mpv)
       outerWrapDomainLog2 = case cfg.wrapDomainOverride of
         Just o -> o
@@ -803,17 +815,20 @@ instance
         External vks -> vks.wrapDomainLog2
         Self -> outerWrapDomainLog2
 
-      -- Slot's STEP domain (drives FOP `params.domainLog2` for
-      -- omega/vanishing-poly computations). Distinct from wrap_domain
-      -- when the rule uses `override_wrap_domain` (= step_domain ≠
-      -- wrap_domain). For Self: use the rule's own step_domain log2,
-      -- supplied as `selfStepDomainLog2` (computed by `compile`'s
-      -- pre-pass à la OCaml `Fix_domains.domains`). For External:
-      -- read from the imported rule's compiled prover index.
-      slotFopDomainLog2 = case headSlotWrapKey of
-        Self -> selfStepDomainLog2
+      -- Slot's source proof system's unique step-domain log2s
+      -- (mirrors OCaml `domain_for_compiled`'s `domains` argument):
+      --   * Self → outer rule's compilation-wide unique_domains
+      --     (passed in as `selfStepDomainLog2s`, full Vector nd).
+      --   * External → imported rule's domains. Currently we only
+      --     support External → single-rule sources, so we replicate
+      --     the imported rule's single step domain log2 across nd
+      --     slots. For our test set (TreeProofReturn NRR external
+      --     with nd=1) this gives the correct `Vector 1 [importedLog2]`.
+      slotFopDomainLog2s = case headSlotWrapKey of
+        Self -> selfStepDomainLog2s
         External vks ->
-          ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex
+          Vector.replicate
+            (ProofFFI.pallasProverIndexDomainLog2 vks.stepCompileResult.proverIndex)
 
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
@@ -840,11 +855,7 @@ instance
                   (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
                     :: AffinePoint (F StepField)
               , perSlotFopDomainLog2s:
-                  -- Single-rule slot: source has 1 branch, so the slot's
-                  -- unique_domains is `[slotFopDomainLog2]` (Vector 1).
-                  -- Multi-rule callers (CompileMulti) override this via
-                  -- their own slot-construction path with nd>1.
-                  (slotFopDomainLog2 :< Vector.nil)
+                  slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotKnownWrapKeys:
                   headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
@@ -1510,11 +1521,19 @@ runCompile cfg rule = do
       @prevInputVar
       @mpv
       @0
-      (shapeCompileData @prevsSpec cfg 20).stepProveCtx
+      -- Single-rule callers always have nd=1 (Self → 1-branch source).
+      ( let
+          prepDomains :: Vector 1 Int
+          prepDomains = 20 :< Vector.nil
+        in
+          shapeCompileData @prevsSpec cfg prepDomains
+      ).stepProveCtx
       rule
 
   let
-    shape = shapeCompileData @prevsSpec cfg selfStepDomainLog2
+    selfDomains :: Vector 1 Int
+    selfDomains = selfStepDomainLog2 :< Vector.nil
+    shape = shapeCompileData @prevsSpec cfg selfDomains
 
   stepCR <- stepCompile
     @prevsSpec
