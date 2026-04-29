@@ -11,6 +11,7 @@ module Pickles.Pseudo
   , choose
   , PlonkDomain
   , toDomain
+  , buildPow2Pows
   ) where
 
 import Prelude
