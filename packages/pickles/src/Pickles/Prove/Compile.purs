@@ -296,9 +296,9 @@ type CompileOutput prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
 -- | * `slotsValue` — runtime realisation of the `slots` type
 -- |   constructor (`noSlots`, `slots1 ...`, etc.) carrying each prev's
 -- |   wrap bp-challenges.
-type ShapeCompileData :: Int -> (Type -> Type) -> Type
-type ShapeCompileData mpv slots =
-  { stepProveCtx :: StepProveContext mpv
+type ShapeCompileData :: Int -> Int -> (Type -> Type) -> Type
+type ShapeCompileData mpv nd slots =
+  { stepProveCtx :: StepProveContext mpv nd
   , wrapDomainLog2 :: Int
   }
 
@@ -527,7 +527,7 @@ class
   shapeCompileData
     :: CompileConfig prevsSpec slotVKs
     -> Int
-    -> ShapeCompileData mpv slots
+    -> ShapeCompileData mpv 1 slots
 
   -- | Step solver advice + side info. Recurses on `rest` to assemble
   -- | the multi-slot StepAdvice (PS analog of OCaml `step.ml:736-770`).
@@ -650,7 +650,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
               , blindingH:
                   (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
                     :: AffinePoint (F StepField)
-              , perSlotFopDomainLog2: Vector.nil
+              , perSlotFopDomainLog2s: Vector.nil
               , perSlotKnownWrapKeys: Vector.nil
               -- Phase 2b.31a: mpvMax-padding dummies. Wrapped in
               -- `Unit ->` thunks so the (Rust-FFI-using)
@@ -839,8 +839,13 @@ instance
               , blindingH:
                   (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
                     :: AffinePoint (F StepField)
-              , perSlotFopDomainLog2:
-                  slotFopDomainLog2 :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2
+              , perSlotFopDomainLog2s:
+                  -- Single-rule slot: source has 1 branch, so the slot's
+                  -- unique_domains is `[slotFopDomainLog2]` (Vector 1).
+                  -- Multi-rule callers (CompileMulti) override this via
+                  -- their own slot-construction path with nd>1.
+                  (slotFopDomainLog2 :< Vector.nil)
+                    :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotKnownWrapKeys:
                   headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
               -- Phase 2b.31a: mpvMax-padding dummies (thunks; see
@@ -1627,7 +1632,7 @@ runProverBody
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => CompileConfig prevsSpec slotVKs
   -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
-  -> ShapeCompileData mpv slots
+  -> ShapeCompileData mpv 1 slots
   -> StepCompileResult
   -> WrapCompileResult
   -> Int

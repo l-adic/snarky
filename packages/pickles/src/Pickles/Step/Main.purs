@@ -50,7 +50,8 @@ import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
 import Prim.Boolean (False, True)
-import Prim.Int (class Add, class Mul)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Unsafe.Coerce (unsafeCoerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
@@ -143,7 +144,7 @@ type RuleOutput n prevInput output =
 -- |   * Simple_chain N2  : `[Nothing, Nothing]`
 -- |   * Add_one_return   : `[]` (N=0, no slots)
 -- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
-type StepMainSrsData len =
+type StepMainSrsData len nd =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -159,7 +160,15 @@ type StepMainSrsData len =
   -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
   -- | NOT per-slot.
   , blindingH :: AffinePoint (F StepField)
-  , perSlotFopDomainLog2 :: Vector len Int
+  -- | Per-slot Vector of all step-domain log2s the slot's prev
+  -- | source could have. For single-rule callers (and any slot whose
+  -- | source has a single branch) this is `Vector 1 [theLog2]`;
+  -- | for multi-rule Self prevs whose source is a `branches`-branch
+  -- | proof system this is `Vector branches [log2_0, ..., log2_{branches-1}]`.
+  -- | Mirrors OCaml `domain_for_compiled`'s `domains` Vector
+  -- | (`step_verifier.ml:879-899`), which is then deduped into
+  -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
+  , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
   , perSlotKnownWrapKeys ::
       Vector len
         (Maybe (VerificationKey (WeierstrassAffinePoint PallasG (F StepField))))
@@ -653,11 +662,14 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @valCarrier @mpvMax @mpvPad
+       @valCarrier @mpvMax @mpvPad @nd _nd
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
+  => Add 1 _nd nd
+  => Compare 0 nd LT
+  => Reflectable nd Int
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
   => StepPrevValuesM m valCarrier
@@ -691,14 +703,14 @@ stepMain
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData len
+  -> StepMainSrsData len nd
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
   { perSlotLagrangeAt
   , blindingH
-  , perSlotFopDomainLog2
+  , perSlotFopDomainLog2s
   , perSlotKnownWrapKeys
   , dummyUnfp
   }
@@ -829,7 +841,17 @@ stepMain
       ( \i (StepSlot slotRec) -> do
           pw <- allocatePerProofWitness slotRec.sppw
           let
-            slotFopDomainLog2 = perSlotFopDomainLog2 !! i
+            -- Per-slot Vector nd of all possible source-branch step domains.
+            -- For nd=1 this is `Vector 1 [theLog2]` (single-rule, External
+            -- with single-branch source, or Self with single-branch source).
+            -- For nd>1 this is the full deduped list for multi-rule Self
+            -- prevs (e.g. TwoPhaseChain Self → [9, 14]).
+            slotFopDomainLog2s = perSlotFopDomainLog2s !! i
+            -- Single-Int representative used for shifts only — OCaml's
+            -- `Pseudo.Domain.shifts` asserts shifts are constant across
+            -- all unique_domains, so any element gives the right
+            -- (constant) value.
+            slotShiftsLog2 = Vector.head slotFopDomainLog2s
             slotLagrangeAt = perSlotLagrangeAt !! i
 
             slotIvpParams =
@@ -843,13 +865,23 @@ stepMain
               }
 
             slotFopParams =
-              -- Single-domain shape (Vector 1). Multi-domain dispatch
-              -- for Self prevs in multi-rule callers lands in Commit C.
-              { domains:
-                  { generator: const_ (LinFFI.domainGenerator @StepField slotFopDomainLog2)
-                  , log2: slotFopDomainLog2
-                  } :< Vector.nil
-              , shifts: map const_ (LinFFI.domainShifts @StepField slotFopDomainLog2)
+              -- Multi-domain shape: one `{generator, log2}` per
+              -- possible source branch. For nd=1 this collapses to a
+              -- Vector 1 (byte-identical gate emission as
+              -- single-domain). For nd>1 the FOP body emits one
+              -- extra `Field.equal` and one extra mask `Field.mul`
+              -- per additional branch.
+              { domains: map
+                  ( \log2 ->
+                      { generator: const_ (LinFFI.domainGenerator @StepField log2)
+                      , log2
+                      }
+                  )
+                  slotFopDomainLog2s
+              -- shifts are constant across all unique_domains
+              -- (`disabled_not_the_same`); any branch's log2 gives the
+              -- same answer.
+              , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas

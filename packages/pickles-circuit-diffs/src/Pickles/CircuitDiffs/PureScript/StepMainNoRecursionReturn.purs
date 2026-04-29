@@ -93,11 +93,11 @@ compileStepMainNoRecursionReturn params =
     --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad
     -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
     -- output = mpvMax*32 + 1 + mpvMax = 1.
-    ( \_ -> stepMain @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0
+    ( \_ -> stepMain @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0 @1
         noRecursionReturnRule
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2: Vector.nil
+        , perSlotFopDomainLog2s: Vector.nil
         , perSlotKnownWrapKeys: Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the

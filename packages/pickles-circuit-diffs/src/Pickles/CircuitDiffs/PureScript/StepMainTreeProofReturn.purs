@@ -175,7 +175,8 @@ compileStepMainTreeProofReturn params =
         treeProofReturnRule
         { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2: 13 :< 16 :< Vector.nil
+        , perSlotFopDomainLog2s:
+            (13 :< Vector.nil) :< (16 :< Vector.nil) :< Vector.nil
         , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the

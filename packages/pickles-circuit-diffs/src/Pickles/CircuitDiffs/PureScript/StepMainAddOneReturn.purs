@@ -83,11 +83,11 @@ compileStepMainAddOneReturn params =
     -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
     -- pick any concrete CircuitType-havers; Unit works.
     -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0
+    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0 @1
         addOneReturnRule
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2: Vector.nil
+        , perSlotFopDomainLog2s: Vector.nil
         , perSlotKnownWrapKeys: Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the

@@ -102,7 +102,7 @@ compileStepMainSimpleChain params =
         simpleChainRule
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2: 14 :< Vector.nil
+        , perSlotFopDomainLog2s: (14 :< Vector.nil) :< Vector.nil
         , perSlotKnownWrapKeys: Nothing :< Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the

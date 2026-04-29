@@ -476,15 +476,15 @@ instance
         restCarrier
     )
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+        ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
         )
         restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+    (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
     (Tuple Int restLog2s)
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv
+        ( PProveStep.StepProveContext ruleMpv 1
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal ruleMpv carrier valCarrier
@@ -749,15 +749,15 @@ instance
           restCarrier
       )
       ( Tuple
-          ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+          ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
           )
           restStepCompileFns
       )
-      (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+      (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
       (Tuple PProveStep.StepCompileResult restStepCompileResults)
       (Tuple Int restLog2s)
       ( Tuple
-          ( PProveStep.StepProveContext ruleMpv
+          ( PProveStep.StepProveContext ruleMpv 1
             -> PProveStep.StepCompileResult
             -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                  inputVal ruleMpv carrier valCarrier
@@ -778,15 +778,15 @@ instance
         restCarrier
     )
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv -> Effect PProveStep.StepCompileResult
+        ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
         )
         restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv) restCtxs)
+    (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
     (Tuple Int restLog2s)
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv
+        ( PProveStep.StepProveContext ruleMpv 1
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal ruleMpv carrier valCarrier
@@ -952,11 +952,11 @@ data RuleEntry prevsSpec mpv valCarrier inputVal carrier outputSize slotVKs = Ru
     -- | constraint-system build. Phase 2b.15 — analog of OCaml's
     -- | `Fix_domains.domains` per-rule.
     preComputeStepDomainLog2Fn ::
-      PProveStep.StepProveContext mpv -> Effect Int
+      PProveStep.StepProveContext mpv 1 -> Effect Int
   , stepCompileFn ::
-      PProveStep.StepProveContext mpv -> Effect PProveStep.StepCompileResult
+      PProveStep.StepProveContext mpv 1 -> Effect PProveStep.StepCompileResult
   , stepProveFn ::
-      PProveStep.StepProveContext mpv
+      PProveStep.StepProveContext mpv 1
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
            inputVal mpv carrier valCarrier
@@ -1161,7 +1161,7 @@ buildStepProveCtx
   => CompileMultiConfig
   -> slotVKs
   -> Int
-  -> PProveStep.StepProveContext mpv
+  -> PProveStep.StepProveContext mpv 1
 buildStepProveCtx cfg slotVKs selfStepDomainLog2 =
   let
     perRuleCfg =

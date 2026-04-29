@@ -307,9 +307,9 @@ probeBranchCount = 0
 probeExtractStepCompileFns
   :: Effect
        ( Tuple
-           (StepProveContext 0 -> Effect StepCompileResult)
+           (StepProveContext 0 1 -> Effect StepCompileResult)
            ( Tuple
-               (StepProveContext 1 -> Effect StepCompileResult)
+               (StepProveContext 1 1 -> Effect StepCompileResult)
                Unit
            )
        )
