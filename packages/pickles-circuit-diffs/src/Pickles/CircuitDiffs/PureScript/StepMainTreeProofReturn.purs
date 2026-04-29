@@ -34,10 +34,11 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Vector (Vector, (:<))
+import Data.Tuple (Tuple)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -154,6 +155,7 @@ compileStepMainTreeProofReturn params =
     --   uses `Tick.Inner_curve.one` at dump_circuit_impl.ml:3999-4009).
     -- * slot 1: Nothing — slot's prev is SELF, uses the shared
     --   `exists`-allocated VK inside stepMain.
+    -- Single-rule: mpvMax = len = 2, mpvPad = 0.
     ( \_ -> stepMain
         @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
             (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
@@ -165,11 +167,21 @@ compileStepMainTreeProofReturn params =
         @(FVar StepField)
         @(F StepField)
         @(FVar StepField)
+        @( Tuple (StatementIO Unit (F StepField))
+             (Tuple (StatementIO Unit (F StepField)) Unit)
+         )
+        @2
+        @0
         treeProofReturnRule
         { perSlotLagrangeAt: params.perSlotLagrangeAt
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 13 :< 16 :< Vector.nil
         , perSlotKnownWrapKeys: Just noRecKnownWrapKey :< Nothing :< Vector.nil
+        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+        -- thunks never fire — `unsafeCrashWith` is fine.
+        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+        , dummyMsgWrapHash: \_ -> unsafeCrashWith "dummyMsgWrapHash: unused at mpvPad=0"
         }
         dummyWrapSg
     )

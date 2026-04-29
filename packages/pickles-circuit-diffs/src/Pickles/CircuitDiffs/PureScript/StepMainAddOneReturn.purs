@@ -27,6 +27,7 @@ import Prelude
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -81,12 +82,18 @@ compileStepMainAddOneReturn params =
     -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
     -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
     -- pick any concrete CircuitType-havers; Unit works.
-    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit
+    -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
+    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0
         addOneReturnRule
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: Vector.nil
         , perSlotKnownWrapKeys: Vector.nil
+        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+        -- thunks never fire — `unsafeCrashWith` is fine.
+        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+        , dummyMsgWrapHash: \_ -> unsafeCrashWith "dummyMsgWrapHash: unused at mpvPad=0"
         }
         dummyWrapSg
     )

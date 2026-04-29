@@ -53,6 +53,7 @@ import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
+import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (compileWrapMainTwoPhaseChain)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
 import Pickles.CircuitDiffs.PureScript.WrapVerifyN2 (compileWrapVerifyN2)
 import Pickles.CircuitDiffs.PureScript.Xhat (compileXhat)
@@ -553,6 +554,18 @@ spec =
         -- wrap domain 2^13. Same SRS config as Add_one_return (both
         -- use domain_log2=13).
         exactMatch "wrap_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileWrapMainTreeProofReturn wrapMainAddOneReturnSrsData)
+        -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
+        -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
+        -- domains [9; 14] differ (make_zero is tiny, increment full),
+        -- so wrap_main goes through the per-branch dispatch path.
+        -- Lagrange lookup is per-branch — needs the wrap SRS directly.
+        let
+          wrapMainTpcParams =
+            { vestaSrs: wrapSrs
+            , lagrangeAt: wrapMainSrsData.lagrangeAt
+            , blindingH: wrapMainSrsData.blindingH
+            }
+        exactMatch "wrap_main_two_phase_chain_circuit" (fromCompiledCircuit $ compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)

@@ -36,6 +36,7 @@ import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)
@@ -88,12 +89,21 @@ compileStepMainNoRecursionReturn params =
     -- outputVal/output are `F StepField` / `FVar StepField` (the returned
     -- field). Contrast Add_one_return's Input_and_output mode where
     -- inputVal/outputVal are both `F StepField`.
-    ( \_ -> stepMain @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit
+    -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
+    --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad
+    -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
+    -- output = mpvMax*32 + 1 + mpvMax = 1.
+    ( \_ -> stepMain @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0
         noRecursionReturnRule
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: Vector.nil
         , perSlotKnownWrapKeys: Vector.nil
+        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+        -- thunks never fire — `unsafeCrashWith` is fine.
+        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+        , dummyMsgWrapHash: \_ -> unsafeCrashWith "dummyMsgWrapHash: unused at mpvPad=0"
         }
         dummyWrapSg
     )

@@ -16,9 +16,11 @@ import Prelude
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..))
 import Data.Vector (Vector, (:<))
+import Data.Tuple (Tuple)
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -81,6 +83,7 @@ compileStepMainSimpleChainN2 params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
     -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
     -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
+    -- Single-rule: mpvMax = len = 2, mpvPad = 0.
     ( \_ -> stepMain
         @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
             (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
@@ -92,11 +95,21 @@ compileStepMainSimpleChainN2 params =
         @Unit
         @(F StepField)
         @(FVar StepField)
+        @( Tuple (StatementIO (F StepField) Unit)
+             (Tuple (StatementIO (F StepField) Unit) Unit)
+         )
+        @2
+        @0
         simpleChainN2Rule
         { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2: 16 :< 16 :< Vector.nil
         , perSlotKnownWrapKeys: Nothing :< Nothing :< Vector.nil
+        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+        -- thunks never fire — `unsafeCrashWith` is fine.
+        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+        , dummyMsgWrapHash: \_ -> unsafeCrashWith "dummyMsgWrapHash: unused at mpvPad=0"
         }
         dummyWrapSg
     )

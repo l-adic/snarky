@@ -21,6 +21,7 @@ module Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn
 import Prelude
 
 import Data.Fin (unsafeFinite)
+import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Unsafe (unsafePerformEffect)
@@ -62,6 +63,7 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } =
       , domainLog2s: 13 :< Vector.nil
       , stepKeys: dummyVK :< Vector.nil
       , lagrangeAt
+      , perBranchLagrangeAt: Nothing
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
