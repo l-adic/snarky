@@ -26,6 +26,7 @@ import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
 import Safe.Coerce (coerce)
+import Data.Reflectable (class Reflectable)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
@@ -134,6 +135,7 @@ verifyOne
    . CircuitM StepField (KimchiConstraint StepField) t m
   => Add 1 _nd nd
   => Compare 0 nd LT
+  => Reflectable nd Int
   => FinalizeOtherProofParams nd StepField r1
   -> VerifyOneInput n WrapIPARounds StepIPARounds (Type2 (SplitField (FVar StepField) (BoolVar StepField))) (FVar StepField) (BoolVar StepField)
   -> IncrementallyVerifyProofParams StepField ()

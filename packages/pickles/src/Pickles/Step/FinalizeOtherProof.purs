@@ -31,8 +31,10 @@ import Data.Array as Array
 import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
+import Data.Maybe (Maybe(..))
+import Data.Semigroup.Foldable as Foldable1
 import Data.Reflectable (class Reflectable)
-import Data.Traversable (for)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
@@ -49,14 +51,14 @@ import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit) as ChallengeDigest
-import Pickles.Step.Domain (domainVanishingPoly, pow2PowSquare)
+import Pickles.Pseudo as Pseudo
+import Pickles.Step.Domain (buildPow2PowsArray, pow2PowSquare)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
-import Safe.Coerce (coerce)
 import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, sub_)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -176,6 +178,7 @@ finalizeOtherProofCircuit
    . Add 1 _d d
   => Add 1 _nd nd
   => Compare 0 nd LT
+  => Reflectable nd Int
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -191,13 +194,33 @@ finalizeOtherProofCircuit
   -> FinalizeOtherProofInput n d (FVar f) sf (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenges, domainLog2Var } = label "finalize-other-proof" do
-  -- Single-domain access via Vector.head. Multi-domain dispatch lands
-  -- in Commit C — for now nd=1 callers work identically to the
-  -- pre-refactor code, byte-identical gate emission preserved.
+  -- Multi-domain compile-time dispatch via Pseudo (mirrors OCaml
+  -- `Pseudo.Domain.to_domain`, `pseudo.ml:103-128`). For nd=1
+  -- callers (single-rule), the Vector 1 of mask bits + values
+  -- collapses to identical gate emission as the pre-multi-domain
+  -- single-domain path.
+  --
+  -- For nd>1 (multi-rule callers, e.g. TwoPhaseChain b1's Self
+  -- prev), each per-branch domain contributes one extra
+  -- `Field.equal` (mask construction) and one extra `Field.mul` in
+  -- the vanishing-poly mask, matching OCaml's per-branch
+  -- `Pseudo.mask` constraint emission.
   let
-    headDomain = Vector.head params.domains
-    domain = { generator: headDomain.generator, shifts: params.shifts }
-    domainLog2 = headDomain.log2
+    -- Maximum log2 across all possible domains, used to size pow2_pows
+    -- in the vanishing polynomial. For nd=1 this equals the only
+    -- domain's log2 (no extra Square gates vs single-domain code).
+    -- Max log2 across the slot's possible domains. `Vector nd` is
+    -- `Foldable1` for nd ≥ 1 (witnessed by the `Add 1 _nd nd`
+    -- constraint), so this is total.
+    maxLog2 = Foldable1.maximum (map _.log2 params.domains)
+    -- For non-FOP-domain code paths (`buildCircuitEnvM`) that need
+    -- a single Int domain log2 — use maxLog2 (matches OCaml's
+    -- `domain#log2_size` which returns the max log2 for compiled
+    -- circuits via `Pseudo.Domain.to_domain`'s `max_log2`).
+    domainLog2 = maxLog2
+    -- shifts are constant across all unique_domains (OCaml's
+    -- `Pseudo.Domain.shifts` `disabled_not_the_same` assertion)
+    domain = { shifts: params.shifts }
   let
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
@@ -216,11 +239,17 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 
   ---------------------------------------------------------------------------
   -- Step 3: Domain masking and zetaw
-  -- OCaml: gen = mask [which_bit] [gen_constant] = Scale(gen_const, which_bit)
-  -- Then: zetaw = mul gen zeta → R1CS because gen is non-constant
+  -- OCaml: gen = mask which (Vector.map domains domain_generator)
+  --        zetaw = Field.mul gen plonk.zeta
+  -- For nd=1: mask = b₀, gen = (b₀:>t) * gen₀_const = Scale (no Generic).
+  -- For nd>1: gen = sum (b_i * gen_i_const), each Scale (no Generic), sum is linear.
+  -- In both cases gen is non-constant, so `mul_ gen zeta` emits one
+  -- R1CS Generic gate.
   ---------------------------------------------------------------------------
-  domainWhich <- equals_ (const_ (fromInt domainLog2)) domainLog2Var
-  maskedGen <- mul_ domain.generator (coerce domainWhich :: FVar f)
+  domainWhiches <- traverse
+    (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
+    params.domains
+  maskedGen <- Pseudo.mask domainWhiches (map _.generator params.domains)
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------
@@ -330,9 +359,26 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     t1 <- mul_ (zeta `sub_` omegaM1) (zeta `sub_` omegaZkP1)
     mul_ t1 (zeta `sub_` omegaZk)
 
-  -- zetaToNMinus1 via domain vanishing polynomial (with domain masking)
-  -- Uses domainVanishingPoly to match OCaml's step_verifier.ml constraint structure.
-  zetaToNMinus1 <- domainVanishingPoly domainWhich zeta domainLog2
+  -- zetaToNMinus1 via multi-domain vanishing polynomial.
+  -- Mirrors OCaml `Pseudo.Domain.to_domain.vanishing_polynomial` (`pseudo.ml:118-127`):
+  --   pow2_pows[0..maxLog2] = [zeta, zeta^2, ..., zeta^(2^maxLog2)]
+  --   masked = mask whichBits (Vector.map domains pow2_pows[d.log2])
+  --   result = seal (masked - 1)
+  -- For nd=1 emits same gate count as the previous single-domain
+  -- `domainVanishingPoly`. For nd>1 emits one extra Generic per
+  -- additional domain (mask multiplication).
+  zetaToNMinus1 <- label "domain-vanishing-poly" do
+    pow2PowsArr <- buildPow2PowsArray zeta maxLog2
+    let
+      pow2AtLog2 :: Vector nd (FVar f)
+      pow2AtLog2 = map
+        ( \d -> case Array.index pow2PowsArr d.log2 of
+            Just v -> v
+            Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
+        )
+        params.domains
+    masked <- Pseudo.mask domainWhiches pow2AtLog2
+    label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
 
   let
     alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)

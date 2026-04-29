@@ -83,6 +83,7 @@ wrapFinalizeOtherProofCircuit
   => Add 1 _n n
   => Add 1 _nd nd
   => Compare 0 nd LT
+  => Reflectable nd Int
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
