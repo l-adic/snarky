@@ -109,7 +109,6 @@ compileStepMainSimpleChainN2 params =
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
         -- thunks never fire — `unsafeCrashWith` is fine.
         , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        , dummyMsgWrapHash: \_ -> unsafeCrashWith "dummyMsgWrapHash: unused at mpvPad=0"
         }
         dummyWrapSg
     )

@@ -137,7 +137,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (EvaluationError)
-import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits, const_)
+import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
@@ -663,9 +663,6 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
               , dummyUnfp: \_ ->
                   PStepMain.liftDummyPerProofUnfinalized
                     (mkDummyPerProofUnfinalized bcd)
-              , dummyMsgWrapHash: \_ ->
-                  let F x = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-                  in const_ x
               }
           , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
           , crs: cfg.srs.vestaSrs
@@ -683,7 +680,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
           vestaSrs
       ).ipa.wrap.sg
 
-  mkStepAdvice _ _ wrapCR appInput _ =
+  mkStepAdvice cfg _ wrapCR appInput _ =
     let
       -- Nil has no prev slots, so `stepDomainLog2` is dead — the
       -- per-slot dummy that consumes it gets replicated to a
@@ -693,8 +690,14 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
         , stepDomainLog2: 0
         , prevAppStates: unit
         }
+      bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
+      dummyHash = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
       stepAdvice = StepAdvice
-        (base { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex })
+        ( base
+            { wrapVerifierIndex = extractWrapVKCommsAdvice wrapCR.verifierIndex
+            , messagesForNextWrapProofDummyHash = dummyHash
+            }
+        )
     in
       pure
         { stepAdvice
@@ -845,9 +848,6 @@ instance
               , dummyUnfp: \_ ->
                   PStepMain.liftDummyPerProofUnfinalized
                     (mkDummyPerProofUnfinalized outerBcd)
-              , dummyMsgWrapHash: \_ ->
-                  let F x = mkDummyMsgWrapHash outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
-                  in const_ x
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
@@ -1150,6 +1150,7 @@ instance
             contrib.slotUnfinalized :< restA.publicUnfinalizedProofs
         , messagesForNextWrapProof:
             contrib.slotMsgWrapHashStep :< restA.messagesForNextWrapProof
+        , messagesForNextWrapProofDummyHash: restA.messagesForNextWrapProofDummyHash
         , wrapVerifierIndex: extractWrapVKCommsAdvice wrapCR.verifierIndex
         , kimchiPrevChallenges:
             contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges

@@ -423,6 +423,7 @@ buildStepAdvice input =
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
+      , messagesForNextWrapProofDummyHash: F zero
       , wrapVerifierIndex:
           VerificationKey
             { sigma: Vector.generate (const g0w)
@@ -1661,6 +1662,12 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier =
               Boolean
           )
     , messagesForNextWrapProof :: Vector len (F StepField)
+    -- | Dummy hash value used to pad `messagesForNextWrapProof` from
+    -- | `len` to `mpvMax` at solve time. Mirrors OCaml's
+    -- | `Reduced_messages_for_next_proof_over_same_field.Wrap.dummy.hash`
+    -- | which the prover supplies for padding positions in
+    -- | `Req.Messages_for_next_wrap_proof` (step_main.ml:368-370).
+    , messagesForNextWrapProofDummyHash :: F StepField
     , wrapVerifierIndex ::
         VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
     -- | Kimchi-level prev_challenges threaded to
@@ -1808,6 +1815,8 @@ instance
 
   getMessagesForNextWrapProof _ =
     StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProof) ask
+  getMessagesForNextWrapProofDummyHash _ =
+    StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProofDummyHash) ask
   getWrapVerifierIndex _ =
     StepProverT $ map (\(StepAdvice r) -> r.wrapVerifierIndex) ask
   getStepPublicInput _ =

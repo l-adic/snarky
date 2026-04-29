@@ -21,8 +21,10 @@ module Pickles.Step.Main
   -- * mpvMax-padding (Phase 2b.31a)
   , class IntEq
   , class MpvPaddingDispatch
+  , mpvFrontPadVecD
   , class MpvPadding
   , mpvFrontPad
+  , mpvFrontPadVec
   ) where
 
 import Prelude
@@ -42,7 +44,7 @@ import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -175,11 +177,6 @@ type StepMainSrsData len =
   -- | only when `mpvPad > 0` keeps the single-rule path
   -- | byte-identical with the pre-Phase-2b.31a witness.
   , dummyUnfp :: Unit -> UnfinalizedProof
-  -- | Thunk producing the dummy `messages_for_next_wrap_proof`
-  -- | digest (in step field, lifted to FVar) used to front-pad
-  -- | msgsWrap. Mirrors OCaml `step.ml:868-875`. See `dummyUnfp`
-  -- | above for why it's a thunk.
-  , dummyMsgWrapHash :: Unit -> FVar StepField
   }
 
 -------------------------------------------------------------------------------
@@ -228,20 +225,33 @@ class MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvM
    | isEqual mpvPad len -> mpvMax
    , isEqual len mpvMax -> mpvPad
    , isEqual mpvPad mpvMax -> len
+   where
+  mpvFrontPadVecD :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
 
-instance MpvPaddingDispatch True 0 len len
-instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax
+instance MpvPaddingDispatch True 0 len len where
+  mpvFrontPadVecD _ real = real
+
+instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax where
+  mpvFrontPadVecD padding real = Vector.append padding real
 
 class MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
    | mpvPad len -> mpvMax
    , len mpvMax -> mpvPad
    , mpvPad mpvMax -> len
+   where
+  -- | Concatenate a padding vector with a real vector to produce the
+  -- | full mpvMax-sized vector. Dispatches through `MpvPaddingDispatch`:
+  -- | when `mpvPad = 0` the True instance returns `real` directly (no
+  -- | `Add 0 len len` constraint needed); otherwise the False instance
+  -- | uses `Vector.append`.
+  mpvFrontPadVec :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
 
 instance
   ( IntEq len mpvMax isEqual
   , MpvPaddingDispatch isEqual mpvPad len mpvMax
   ) =>
-  MpvPadding mpvPad len mpvMax
+  MpvPadding mpvPad len mpvMax where
+  mpvFrontPadVec = mpvFrontPadVecD @isEqual
 
 -- | Front-pad a `Vector len a` with `mpvPad` copies of a dummy value
 -- | to produce a `Vector mpvMax a`. The `MpvPadding mpvPad len mpvMax`
@@ -279,6 +289,7 @@ mpvFrontPad mkDummy real =
             <> (Vector.toUnfoldable real :: Array a)
       in
         unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
+
 
 -------------------------------------------------------------------------------
 -- | Per-proof witness allocation
@@ -690,7 +701,6 @@ stepMain
   , perSlotFopDomainLog2
   , perSlotKnownWrapKeys
   , dummyUnfp
-  , dummyMsgWrapHash
   }
   dummySg = do
   -- 1. exists: public input via Req.App_state.
@@ -759,8 +769,26 @@ stepMain
     $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @PallasG unit
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
-  -- 6. exists: messages_for_next_wrap_proof (uniform Vector len).
-  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+  -- 6. exists: messages_for_next_wrap_proof.
+  --    Mirrors OCaml step_main.ml:368-370 which allocates
+  --    `Vector.typ Digest.typ Max_proofs_verified.n` via `exists` —
+  --    the prover supplies real values for the rule's actual prev
+  --    count and dummy values for padding positions.
+  --
+  --    PS does this in two `exists` (real + padding) and concatenates
+  --    via `mpvFrontPadVec`. Each padding entry is a fresh Var (not a
+  --    `const_` Constant), so the output→PI assertEqual_ on padded
+  --    slots permutation-ties (no extra Generic gate). Total Var
+  --    count is `len + mpvPad = mpvMax`, matching OCaml's single
+  --    mpvMax allocation.
+  msgsWrapReal <- exists $ lift
+    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+  msgsWrapPadding <- exists $ lift do
+    dummyHash <- getMessagesForNextWrapProofDummyHash
+      @len @StepIPARounds @WrapIPARounds @PallasG unit
+    pure (Vector.replicate @mpvPad dummyHash)
+  let msgsWrap :: Vector mpvMax (FVar StepField)
+      msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal
 
   let
     -- Lift a value-side VK to const_ FVars. Used when a slot has
@@ -851,7 +879,7 @@ stepMain
               (varToFields @StepField @prevInputVal prevInputVar)
               (proofMustVerify !! i)
               (unfinalizedProofs !! i)
-              (msgsWrap !! i)
+              (msgsWrapReal !! i)
               slotVkComms
               constDummySg
           r <- verifyOne slotFopParams input slotIvpParams
@@ -940,18 +968,17 @@ stepMain
     pure digest
 
   -- 10. Build output: mpvMax × 32 (unfinalized) + 1 (step msg) + mpvMax (wrap msgs).
-  --     Front-pad `unfinalizedProofs` and `msgsWrap` from `len` to
-  --     `mpvMax` with the rule-wide dummies (mirrors OCaml
-  --     `step.ml:782-787` `Vector.extend_front ... Unfinalized.dummy`
-  --     and `step.ml:868-875` for messages_for_next_wrap_proof).
-  --     For single-rule callers `mpvMax = len` so `mpvFrontPad`
-  --     short-circuits to `unsafeCoerce real` and emits no work.
+  --     Front-pad `unfinalizedProofs` from `len` to `mpvMax` with const_
+  --     dummies (mirrors OCaml `step.ml:782-787`'s
+  --     `Vector.extend_front ... Unfinalized.dummy`). `msgsWrap` is
+  --     already mpvMax-sized: padding entries were exists-allocated at
+  --     step 6 (mirroring OCaml step_main.ml:368-370), so its dummy
+  --     positions are circuit Vars (not Constants) and the
+  --     output→PI assertEqual_ permutation-ties without emitting an
+  --     extra Generic gate.
   let
     unfinalizedProofsPadded :: Vector mpvMax UnfinalizedProof
     unfinalizedProofsPadded = mpvFrontPad dummyUnfp unfinalizedProofs
-
-    msgsWrapPadded :: Vector mpvMax (FVar StepField)
-    msgsWrapPadded = mpvFrontPad dummyMsgWrapHash msgsWrap
 
     unfsFlat :: Vector unfsTotal (FVar StepField)
     unfsFlat = Vector.concat (map unfFields unfinalizedProofsPadded)
@@ -960,7 +987,7 @@ stepMain
     digestVec = outerDigest :< Vector.nil
 
     outputV :: Vector outputSize (FVar StepField)
-    outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrapPadded
+    outputV = unfsFlat `Vector.append` digestVec `Vector.append` msgsWrap
 
   pure outputV
 
