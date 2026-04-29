@@ -73,10 +73,14 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Data.String (Pattern(..), Replacement(..))
+import Data.String as String
 import Effect (Effect)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
+import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
@@ -1607,15 +1611,37 @@ dumpRowLabels
   :: Int -- ^ publicInputSize — number of rows kimchi reserves for PI
   -> Array (Labeled (KimchiGate StepField))
   -> Effect Unit
-dumpRowLabels publicInputSize cs = do
+dumpRowLabels = writeRowLabelsTo "/tmp/ps_step_row_labels.txt"
+
+-- | Monotonic counter for `KIMCHI_STEP_LABELS_DUMP` filename
+-- | templating. Mirrors the AtomicUsize counter on the Rust side for
+-- | `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`.
+stepLabelsCounter :: Ref.Ref Int
+stepLabelsCounter = unsafePerformEffect (Ref.new 0)
+
+bumpStepLabelsCounter :: Effect Int
+bumpStepLabelsCounter = do
+  n <- Ref.read stepLabelsCounter
+  Ref.write (n + 1) stepLabelsCounter
+  pure n
+
+-- | Variant of `dumpRowLabels` that takes a destination path. Used
+-- | by the `KIMCHI_STEP_LABELS_DUMP` env-var-gated dump in
+-- | `stepCompile` so each branch's CS labels go to a distinct file.
+writeRowLabelsTo
+  :: String
+  -> Int
+  -> Array (Labeled (KimchiGate StepField))
+  -> Effect Unit
+writeRowLabelsTo path publicInputSize cs = do
   let
     { out, row: finalRow } = Array.foldl
       ( \{ row, out } lc ->
           let
             nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow StepField))
             endRow = row + nRows - 1
-            path = Array.intercalate "/" lc.context
-            line = show row <> ".." <> show endRow <> "\t" <> path
+            ctxPath = Array.intercalate "/" lc.context
+            line = show row <> ".." <> show endRow <> "\t" <> ctxPath
           in
             { row: row + nRows, out: out <> [ line ] }
       )
@@ -1626,7 +1652,7 @@ dumpRowLabels publicInputSize cs = do
         <> " constraintRowsEnd="
         <> show finalRow
         <> " (kimchi witness row = offset + publicInputSize)"
-  FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
+  FS.writeTextFile UTF8 path
     (header <> "\n" <> Array.intercalate "\n" out <> "\n")
 
 --------------------------------------------------------------------------------
@@ -1937,6 +1963,21 @@ stepCompile ctx rule = do
         { endo, constraintSystem, crs: ctx.crs }
 
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+
+  -- Optional compile-time dump of the row→label map, gated on the
+  -- `KIMCHI_STEP_LABELS_DUMP` env var. Filename template uses `%c`
+  -- (replaced with a monotonic counter) so multi-rule compileMulti
+  -- writes one file per branch — same convention as
+  -- `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`. Useful for localizing
+  -- multi-rule per-branch CS divergences without going through prove.
+  Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
+    Nothing -> pure unit
+    Just pathTmpl -> do
+      counter <- bumpStepLabelsCounter
+      let
+        path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
+        publicInputSize = Array.length builtState.publicInputs
+      writeRowLabelsTo path publicInputSize builtState.constraints
 
   pure
     { proverIndex
