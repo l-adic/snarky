@@ -180,6 +180,22 @@ type StepMainSrsData len =
   -- | msgsWrap. Mirrors OCaml `step.ml:868-875`. See `dummyUnfp`
   -- | above for why it's a thunk.
   , dummyMsgWrapHash :: Unit -> FVar StepField
+  -- | Thunk producing the dummy `{ sg, expandedChals }` used to
+  -- | front-pad `proofData` (the per-prev sg + expanded step-IPA
+  -- | challenges that get absorbed into `hash_messages_for_next_step_proof`)
+  -- | from `len` to `mpvMax`. Mirrors OCaml's outer absorb loop in
+  -- | step_main.ml: even when the rule has fewer real prevs than
+  -- | the wrap circuit's mpvMax, the outer hash absorbs mpvMax
+  -- | entries — using `Dummy.Ipa.Wrap.sg` and
+  -- | `Dummy.Ipa.Step.challenges_computed` for padding slots.
+  -- |
+  -- | Wrapped in `Unit ->` like the other dummies — fast path
+  -- | (mpvPad=0) skips evaluation.
+  , dummyProofDataEntry ::
+      Unit ->
+        { sg :: WeierstrassAffinePoint PallasG (FVar StepField)
+        , expandedChals :: Vector StepIPARounds (FVar StepField)
+        }
   }
 
 -------------------------------------------------------------------------------
@@ -691,6 +707,7 @@ stepMain
   , perSlotKnownWrapKeys
   , dummyUnfp
   , dummyMsgWrapHash
+  , dummyProofDataEntry
   }
   dummySg = do
   -- 1. exists: public input via Req.App_state.
@@ -909,8 +926,16 @@ stepMain
 
     s1 <- foldM (flip Sponge.absorb) spongeAfterIndex hashAppFields
 
-    let proofData = map (\r -> { sg: r.sg, expandedChals: r.expandedChallenges }) results
-    forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
+    let
+      proofData = map (\r -> { sg: r.sg, expandedChals: r.expandedChallenges }) results
+
+      proofDataPadded
+        :: Vector mpvMax
+             { sg :: WeierstrassAffinePoint PallasG (FVar StepField)
+             , expandedChals :: Vector StepIPARounds (FVar StepField)
+             }
+      proofDataPadded = mpvFrontPad dummyProofDataEntry proofData
+    forWithIndex_ proofDataPadded \fi { sg: sgPt, expandedChals } -> do
       let i = getFinite fi
       let pt = unwrapPt sgPt
       ivpTrace ("step_main_outer.proof." <> show i <> ".sg.x") pt.x
@@ -925,7 +950,7 @@ stepMain
           foldM (\s' c -> Sponge.absorb c s') s3 expandedChals
       )
       s1
-      proofData
+      proofDataPadded
 
     { result: digest } <- Sponge.squeeze sAfterProofs
     ivpTrace "step_main_outer.digest" digest
