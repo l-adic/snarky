@@ -65,6 +65,7 @@ import Effect.Class (liftEffect)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
+import Snarky.Curves.Class (fromInt) as Curves
 import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..))
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
@@ -377,10 +378,31 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
             (InductivePrev b0 output.tag)
             unit
       }
-    _b1 <- case eB1 of
+    b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> pure p
+    -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev
+    -- (prev rule is increment, same as the calling rule). b1 ::
+    -- CompiledProof 1 (= mpvMax) matches the slot directly.
+    eB2 <- liftEffect $ runExceptT $ incrementProver
+      { appInput: F (Curves.fromInt 2 :: StepField)
+      , prevs:
+          Tuple
+            (InductivePrev b1 output.tag)
+            unit
+      }
+    b2 <- case eB2 of
+      Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
+      Right p -> pure p
+    -- b3 = increment(b2); appInput = 2 + 1 = 3. Continues the chain.
+    eB3 <- liftEffect $ runExceptT $ incrementProver
+      { appInput: F (Curves.fromInt 3 :: StepField)
+      , prevs:
+          Tuple
+            (InductivePrev b2 output.tag)
+            unit
+      }
+    _b3 <- case eB3 of
+      Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)
+      Right p -> pure p
     pure unit
-  pending "b1 wrap"
-  pending "b2 (increment, prev = b1 from branch 1) — same-branch dispatch step"
-  pending "b2 wrap"
