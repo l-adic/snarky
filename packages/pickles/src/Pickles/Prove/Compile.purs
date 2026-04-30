@@ -46,7 +46,7 @@ import Data.Functor.Product (Product, product)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -669,29 +669,26 @@ instance
   ) =>
   CompilableSpec
     (PrevsSpecCons n (StatementIO prevHeadInput prevHeadOutput) rest)
-    (Tuple SlotWrapKey restSlotVKs)
-    ( Tuple
-        (PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput)
-        restPrevsCarrier
+    (SlotWrapKey /\ restSlotVKs)
+    ( PrevSlot prevHeadInput n (StatementIO prevHeadInput prevHeadOutput) prevHeadOutput
+        /\ restPrevsCarrier
     )
     mpv
     (Product (Vector n) restSlots)
-    (Tuple (StatementIO prevHeadInput prevHeadOutput) restValCarrier)
-    ( Tuple
-        ( StepSlot
-            n
-            StepIPARounds
-            WrapIPARounds
-            (F StepField)
-            (Type2 (SplitField (F StepField) Boolean))
-            Boolean
-        )
-        restCarrier
+    (StatementIO prevHeadInput prevHeadOutput /\ restValCarrier)
+    ( StepSlot
+        n
+        StepIPARounds
+        WrapIPARounds
+        (F StepField)
+        (Type2 (SplitField (F StepField) Boolean))
+        Boolean
+        /\ restCarrier
     )
   where
   shapeCompileData cfg selfStepDomainLog2s =
     let
-      Tuple headSlotWrapKey restSlotVKs = cfg.perSlotImportedVKs
+      headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
       outerMpv = reflectType (Proxy @mpv)
@@ -763,10 +760,10 @@ instance
       , wrapDomainLog2: outerWrapDomainLog2
       }
 
-  mkStepAdvice cfg stepCR wrapCR appInput (Tuple headSlot restPrevs) = do
+  mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) = do
     let
       slotN = reflectType (Proxy @n)
-      Tuple headSlotWrapKey _ = cfg.perSlotImportedVKs
+      headSlotWrapKey /\ _ = cfg.perSlotImportedVKs
 
       -- Per-slot params (PS analog of OCaml `step.ml:751-754` Self/External
       -- dispatch). `Self` slots use the OUTER rule's compile artifacts
@@ -1042,17 +1039,17 @@ instance
     -- Recurse on `rest`, then cons head's slot pieces onto rest's
     -- per-slot vectors. Mirrors OCaml `step.ml:756-769` consing each
     -- per-slot output onto the rest's vectors. Carrier and valCarrier
-    -- assemble heterogeneously: `Tuple slotSppw restCarrier`,
-    -- `Tuple stmt restValCarrier`.
+    -- assemble heterogeneously: `slotSppw /\ restCarrier`,
+    -- `stmt /\ restValCarrier`.
     let
-      Tuple _ restSlotVKs = cfg.perSlotImportedVKs
+      _ /\ restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
     restResult <- mkStepAdvice @rest restCfg stepCR wrapCR appInput restPrevs
 
     let
       StepAdvice restA = restResult.stepAdvice
       combinedAdvice = StepAdvice
-        { perProofSlotsCarrier: Tuple contrib.slotSppw restA.perProofSlotsCarrier
+        { perProofSlotsCarrier: contrib.slotSppw /\ restA.perProofSlotsCarrier
         , publicInput: appInput
         , publicUnfinalizedProofs:
             contrib.slotUnfinalized :< restA.publicUnfinalizedProofs
@@ -1062,7 +1059,7 @@ instance
         , wrapVerifierIndex: extractWrapVKCommsAdvice wrapCR.verifierIndex
         , kimchiPrevChallenges:
             contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
-        , prevAppStates: Tuple slotData.prevStatement restA.prevAppStates
+        , prevAppStates: slotData.prevStatement /\ restA.prevAppStates
         }
     pure
       { stepAdvice: combinedAdvice
@@ -1072,9 +1069,9 @@ instance
           slotData.wrapPublicInputArr :< restResult.baseCaseWrapPublicInputs
       }
 
-  shapeProveData cfg wrapCR sideInfo (Tuple headSlot restPrevs) =
+  shapeProveData cfg wrapCR sideInfo (headSlot /\ restPrevs) =
     let
-      Tuple headSlotWrapKey restSlotVKs = cfg.perSlotImportedVKs
+      headSlotWrapKey /\ restSlotVKs = cfg.perSlotImportedVKs
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       slotN = reflectType (Proxy @n)
 

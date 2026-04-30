@@ -79,7 +79,7 @@ import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe)
 import Data.Newtype (wrap)
 import Data.Reflectable (class Reflectable, reflectType)
-import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -506,22 +506,17 @@ instance
     branches
     mpvMax
     slotsMax
-    ( Tuple
-        ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
-            slotVKs
-        )
-        restCarrier
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+        /\ restCarrier
     )
-    ( Tuple
-        ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches
           -> Effect PProveStep.StepCompileResult
-        )
-        restStepCompileFns
+      )
+        /\ restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
-    (Tuple PProveStep.StepCompileResult restStepCompileResults)
-    ( Tuple
-        ( PProveStep.StepProveContext ruleMpv topBranches
+    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepCompileResult /\ restStepCompileResults)
+    ( ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal
@@ -530,8 +525,8 @@ instance
                valCarrier
           -> ExceptT EvaluationError Effect
                (PProveStep.StepProveResult outputSize)
-        )
-        restStepProveFns
+      )
+        /\ restStepProveFns
     )
   where
   branchCount _ =
@@ -550,25 +545,24 @@ instance
       @restStepCompileResults
       @restStepProveFns
       (Proxy :: Proxy rest)
-  extractStepCompileFns (Tuple (RuleEntry r) rest) =
-    Tuple r.stepCompileFn
-      ( extractStepCompileFns
-          @rest
-          @inputVal
-          @outputVal
-          @prevInputVal
-          @topBranches
-          @restBranches
-          @mpvMax
-          @slotsMax
-          @restCarrier
-          @restStepCompileFns
-          @restCtxs
-          @restStepCompileResults
-          @restStepProveFns
-          rest
-      )
-  runStepCompiles (Tuple ctx restCtxs) (Tuple (RuleEntry r) restEntries) = do
+  extractStepCompileFns (RuleEntry r /\ rest) =
+    r.stepCompileFn
+      /\ extractStepCompileFns
+        @rest
+        @inputVal
+        @outputVal
+        @prevInputVal
+        @topBranches
+        @restBranches
+        @mpvMax
+        @slotsMax
+        @restCarrier
+        @restStepCompileFns
+        @restCtxs
+        @restStepCompileResults
+        @restStepProveFns
+        rest
+  runStepCompiles (ctx /\ restCtxs) (RuleEntry r /\ restEntries) = do
     headResult <- r.stepCompileFn ctx
     tailResults <- runStepCompiles
       @rest
@@ -586,8 +580,8 @@ instance
       @restStepProveFns
       restCtxs
       restEntries
-    pure (Tuple headResult tailResults)
-  buildWrapPerBranchVec (Tuple headResult restResults) =
+    pure (headResult /\ tailResults)
+  buildWrapPerBranchVec (headResult /\ restResults) =
     let
       headRecord =
         { mpv: reflectType (Proxy :: Proxy ruleMpv)
@@ -611,24 +605,23 @@ instance
         restResults
     in
       headRecord :< restVec
-  extractStepProveFns (Tuple (RuleEntry r) rest) =
-    Tuple r.stepProveFn
-      ( extractStepProveFns
-          @rest
-          @inputVal
-          @outputVal
-          @prevInputVal
-          @topBranches
-          @restBranches
-          @mpvMax
-          @slotsMax
-          @restCarrier
-          @restStepCompileFns
-          @restCtxs
-          @restStepCompileResults
-          @restStepProveFns
-          rest
-      )
+  extractStepProveFns (RuleEntry r /\ rest) =
+    r.stepProveFn
+      /\ extractStepProveFns
+        @rest
+        @inputVal
+        @outputVal
+        @prevInputVal
+        @topBranches
+        @restBranches
+        @mpvMax
+        @slotsMax
+        @restCarrier
+        @restStepCompileFns
+        @restCtxs
+        @restStepCompileResults
+        @restStepProveFns
+        rest
 
 --------------------------------------------------------------------------------
 -- CompilableRulesSpecShape — Phase 2b.20 split: shape-data methods.
@@ -920,22 +913,17 @@ instance
       branches
       mpvMax
       slotsMax
-      ( Tuple
-          ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
-              slotVKs
-          )
-          restCarrier
+      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+          /\ restCarrier
       )
-      ( Tuple
-          ( PProveStep.StepProveContext ruleMpv topBranches
+      ( ( PProveStep.StepProveContext ruleMpv topBranches
             -> Effect PProveStep.StepCompileResult
-          )
-          restStepCompileFns
+        )
+          /\ restStepCompileFns
       )
-      (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
-      (Tuple PProveStep.StepCompileResult restStepCompileResults)
-      ( Tuple
-          ( PProveStep.StepProveContext ruleMpv topBranches
+      (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+      (PProveStep.StepCompileResult /\ restStepCompileResults)
+      ( ( PProveStep.StepProveContext ruleMpv topBranches
             -> PProveStep.StepCompileResult
             -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                  inputVal
@@ -944,8 +932,8 @@ instance
                  valCarrier
             -> ExceptT EvaluationError Effect
                  (PProveStep.StepProveResult outputSize)
-          )
-          restStepProveFns
+        )
+          /\ restStepProveFns
       )
   , Add 1 restBranches branches
   -- `Vector.cons` (`(:<)`) needs `Add n 1 nInc`; here n=restBranches,
@@ -962,22 +950,17 @@ instance
     branches
     mpvMax
     slotsMax
-    ( Tuple
-        ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
-            slotVKs
-        )
-        restCarrier
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+        /\ restCarrier
     )
-    ( Tuple
-        ( PProveStep.StepProveContext ruleMpv topBranches
+    ( ( PProveStep.StepProveContext ruleMpv topBranches
           -> Effect PProveStep.StepCompileResult
-        )
-        restStepCompileFns
+      )
+        /\ restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
-    (Tuple PProveStep.StepCompileResult restStepCompileResults)
-    ( Tuple
-        ( PProveStep.StepProveContext ruleMpv topBranches
+    (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
+    (PProveStep.StepCompileResult /\ restStepCompileResults)
+    ( ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal
@@ -986,8 +969,8 @@ instance
                valCarrier
           -> ExceptT EvaluationError Effect
                (PProveStep.StepProveResult outputSize)
-        )
-        restStepProveFns
+      )
+        /\ restStepProveFns
     )
     -- Phase 2b.28: BranchProver is a NEWTYPE (was an alias).
     -- PS treats newtypes as nominally rigid — instance head sees
@@ -999,13 +982,11 @@ instance
     -- mpvMax`. Mirrors OCaml `Pickles.compile_promise`'s output: all
     -- proofs share `'mlmb` (= wrap's max), with the per-branch actual
     -- width hidden inside `CompiledProof.widthData`'s GADT-existential.
-    ( Tuple
-        ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal Effect
-        )
-        restProvers
+    ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal Effect
+        /\ restProvers
     )
   where
-  prePassDomainLog2s cfg placeholder (Tuple (RuleEntry r) restEntries) = do
+  prePassDomainLog2s cfg placeholder (RuleEntry r /\ restEntries) = do
     let placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs placeholder
     headLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
     restVec <- prePassDomainLog2s
@@ -1027,7 +1008,7 @@ instance
       placeholder
       restEntries
     pure (headLog2 :< restVec)
-  runMultiCompile cfg log2s (Tuple (RuleEntry r) restEntries) = do
+  runMultiCompile cfg log2s (RuleEntry r /\ restEntries) = do
     let ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2s
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
@@ -1048,15 +1029,15 @@ instance
       cfg
       log2s
       restEntries
-    pure (Tuple headResult tailResults)
+    pure (headResult /\ tailResults)
   buildBranchProvers
     branchIdx
     cfg
     wrapResult
     perBranchVec
     allStepDomainLog2s
-    (Tuple headStepCR restStepResults)
-    (Tuple headEntry restEntries) = do
+    (headStepCR /\ restStepResults)
+    (headEntry /\ restEntries) = do
     let
       thisBranch = branchIdx
       -- Extract THIS branch's selfStepDomainLog2 from the FULL
@@ -1122,7 +1103,7 @@ instance
       allStepDomainLog2s
       restStepResults
       restEntries
-    pure (Tuple headProver restProvers)
+    pure (headProver /\ restProvers)
 
 --------------------------------------------------------------------------------
 -- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
