@@ -1528,7 +1528,15 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     -- `step.ml:736-770`'s `extend_front ... Unfinalized.dummy` and
     -- the surrounding per-prev fields' analogous front-pad calls.
     outerMpvMax = reflectType (Proxy @mpvMax)
-    bcdMax = baseCaseDummies { maxProofsVerified: outerMpvMax }
+    -- EXPERIMENT: `Unfinalized.Constant.dummy` in OCaml is a SHARED
+    -- singleton lazy, forced once globally; its alpha/beta/gamma/zeta
+    -- consume Ro counters chal_1..4 (relative to the lazy's first
+    -- force). PS's `baseCaseDummies` walks Ro in a SEQUENCE governed
+    -- by `forceOrderFor`; for mpv=0 it's UnfinalizedFirst (= consume
+    -- unfinalizedConstantDummy first → chal counters 1..4). Use mpv=0
+    -- here so PS's chal_1..4 in `unfinalizedConstantDummy` line up
+    -- with OCaml's lazy-force-from-clean-state semantics.
+    bcdMax = baseCaseDummies { maxProofsVerified: 0 }
     dummySgsMax = computeDummySgValues bcdMax cfg.srs.pallasSrs cfg.srs.vestaSrs
     -- `ipa.step.sg :: AffinePoint WrapField` is what `prevSgs` /
     -- `prevStepAccs` consume (the prev WRAP proof's IPA opening sg
