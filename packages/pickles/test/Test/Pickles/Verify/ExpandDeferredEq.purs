@@ -34,28 +34,45 @@ import Data.Either (Either(..))
 import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
-import Data.Vector as Vector
-import Effect (Effect)
-import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..), compile)
+import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..))
+import Pickles.Prove.CompileMulti
+  ( BranchProver(..)
+  , RulesCons
+  , RulesNil
+  , compileMulti
+  , mkRuleEntry
+  )
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
+import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.DSL (F(..), FVar)
 import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Effect.Exception (throw) as Exc
+
+type NrrRules =
+  RulesCons 0 Unit PrevsSpecNil Unit
+    RulesNil
+
+type SimpleChainRules =
+  RulesCons 1
+    (Tuple (StatementIO (F StepField) Unit) Unit)
+    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Tuple SlotWrapKey Unit)
+    RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Pure.Verify" do
@@ -63,15 +80,19 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    nrr <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
-      { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: unit
-      , debug: false
-      , wrapDomainOverride: Nothing
-      }
-      nrrRule
+    nrrEntry <- liftEffect $ mkRuleEntry
+      @PrevsSpecNil
+      @0 @0 @0 @1 @1
+      @Unit @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit
+      nrrRule unit
 
-    eCp <- liftEffect $ runExceptT $ nrr.prover.step { appInput: unit, prevs: unit }
+    nrr <- liftEffect $ compileMulti
+      @NrrRules @Unit @(F StepField) @Unit @0 @NoSlots
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      (Tuple nrrEntry unit)
+
+    let BranchProver nrrProver = fst nrr.provers
+    eCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("nrr prover.step: " <> show e)
       Right p -> pure p
@@ -95,23 +116,26 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    { prover } <- liftEffect $ compile
+    chainEntry <- liftEffect $ mkRuleEntry
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-      @(F StepField)
-      @Unit
-      @(F StepField)
-      @Effect
-      { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: Tuple Self unit
-      , debug: false
-      , wrapDomainOverride: Nothing
-      }
+      @1 @1 @0 @1 @34
+      @(Tuple (StatementIO (F StepField) Unit) Unit)
+      @(F StepField) @(FVar StepField)
+      @Unit @Unit
+      @(F StepField) @(FVar StepField)
+      @(Tuple SlotWrapKey Unit)
       simpleChainRule
+      (Tuple Self unit)
 
-    let
-      basePrev = BasePrev
-        { dummyStatement: StatementIO { input: F (negate one), output: unit } }
-    eCp <- liftEffect $ runExceptT $ prover.step
+    chain <- liftEffect $ compileMulti
+      @SimpleChainRules @(F StepField) @Unit @(F StepField) @1 @(Slots1 1)
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      (Tuple chainEntry unit)
+
+    let BranchProver chainProver = fst chain.provers
+        basePrev = BasePrev
+          { dummyStatement: StatementIO { input: F (negate one), output: unit } }
+    eCp <- liftEffect $ runExceptT $ chainProver
       { appInput: F zero, prevs: Tuple basePrev unit }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("simple_chain prover.step: " <> show e)
