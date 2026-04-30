@@ -1686,9 +1686,17 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
 
     -- Phase 2b.24h: msgStep / stepProofSg / msgWrap + paddings.
     -- Mirrors Compile.purs:1568-1612.
+    --
+    -- Step PI is `mpvMax`-shaped (Phase 2b.31a front-padded the
+    -- unfinalized proofs from `len` to `mpvMax`), so the outer-hash
+    -- digest sits at offset `mpvMax * 32`, NOT the rule's own `mpv *
+    -- 32`. For single-rule callers `mpv = mpvMax` so both expressions
+    -- coincide; for multi-rule callers with `mpv < mpvMax` (e.g.
+    -- TwoPhaseChain b0 with mpv=0, mpvMax=1) the rule-mpv version
+    -- selects the wrong PI entry — Task #181 root cause.
     msgStep :: StepField
     msgStep = unsafePartial $ fromJust $
-      Array.index stepResult.publicInputs (outerMpv * 32)
+      Array.index stepResult.publicInputs (outerMpvMax * 32)
 
     stepProofSg :: AffinePoint WrapField
     stepProofSg = pallasProofOpeningSg stepResult.proof
