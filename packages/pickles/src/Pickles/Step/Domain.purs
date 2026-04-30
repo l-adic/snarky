@@ -116,13 +116,13 @@ domainVanishingPoly whichBit x log2Size = label "domain-vanishing-poly" do
 -- |
 -- | Reference: `mina/src/lib/crypto/pickles/pseudo/pseudo.ml:118-127`
 domainVanishingPolyMulti
-  :: forall @maxLog2 _maxPred n f t m
+  :: forall @maxLog2 maxPred n f t m
    . CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => Reflectable n Int
   => Reflectable maxLog2 Int
-  => Add 1 _maxPred maxLog2
-  => Add _maxPred 1 maxLog2
+  => Add 1 maxPred maxLog2
+  => Add maxPred 1 maxLog2
   => Compare 0 n LT
   => Vector n (BoolVar f)
   -> Vector n (Finite maxLog2)

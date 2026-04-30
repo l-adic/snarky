@@ -162,7 +162,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN totalBases d f f' @g sf t m _l3 _l4 r
+  :: forall publicInput sgOldN totalBases d f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -175,9 +175,9 @@ incrementallyVerifyProof
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int
-  => Add 1 _l3 d
+  => Add 1 _ d
   => Add sgOldN 45 totalBases
-  => Add 1 _l4 totalBases
+  => Add 1 _ totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf

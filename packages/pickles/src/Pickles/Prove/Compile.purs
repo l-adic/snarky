@@ -549,8 +549,8 @@ class
   -- | `External` slots ignore this argument and read the imported
   -- | rule's step domain from its prover index (Vector 1 of that).
   shapeCompileData
-    :: forall @nd _nd
-     . Add 1 _nd nd
+    :: forall @nd ndPred
+     . Add 1 ndPred nd
     => Compare 0 nd LT
     => Reflectable nd Int
     => CompileConfig prevsSpec slotVKs
@@ -598,7 +598,7 @@ class
 --------------------------------------------------------------------------------
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
-  shapeCompileData cfg _selfStepDomainLog2 =
+  shapeCompileData cfg _ =
     let
       bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
     in
@@ -2323,7 +2323,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @prevsSpec @mpv @mpvMax @mpvPad @nd _nd @outputSize @valCarrier
+  :: forall @prevsSpec @mpv @mpvMax @mpvPad @nd ndPred @outputSize @valCarrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
@@ -2332,7 +2332,7 @@ mkRuleEntry
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Reflectable nd Int
-  => Add 1 _nd nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
@@ -2458,9 +2458,9 @@ type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal
 -- | `shapeCompileData @prevsSpec` for the per-prev-spec layout
 -- | (per-slot lagrange basis, blinding H, FOP domains).
 buildStepProveCtx
-  :: forall @prevsSpec @nd _nd slotVKs prevsCarrier mpv slots valCarrier carrier
+  :: forall @prevsSpec @nd ndPred slotVKs prevsCarrier mpv slots valCarrier carrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-  => Add 1 _nd nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => CompileMultiConfig
@@ -2578,7 +2578,7 @@ runMultiProverBody
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
 runMultiProverBody
-  _branchIdx
+  branchIdx
   cfg
   wrapResult
   perBranchVec
@@ -2785,8 +2785,6 @@ runMultiProverBody
       , proofsVerifiedMask
       }
 
-    _wrapDv = wrapComputeDeferredValues wrapDvInput
-
     -- Step PI is `mpvMax`-shaped (the unfinalized-proofs vector is
     -- front-padded from the rule's `len` up to `mpvMax`), so the
     -- outer-hash digest sits at offset `mpvMax * 32`, NOT the rule's
@@ -2830,13 +2828,13 @@ runMultiProverBody
       Vector.append (Vector.replicate @padMax dummyWrapExpanded)
         proveDataMax.msgWrapChallenges
 
-    _kimchiPrevPadded
+    kimchiPrevPadded
       :: Vector PaddedLength
            { sgX :: StepField
            , sgY :: StepField
            , challenges :: Vector WrapIPARounds WrapField
            }
-    _kimchiPrevPadded =
+    kimchiPrevPadded =
       Vector.append (Vector.replicate @padMax dummyKimchiEntry)
         proveDataMax.kimchiPrevEntries
 
@@ -2863,7 +2861,7 @@ runMultiProverBody
           }
       , advice: buildWrapAdvice
           { stepProof: stepResult.proof
-          , whichBranch: F (fromBigInt (BigInt.fromInt _branchIdx) :: WrapField)
+          , whichBranch: F (fromBigInt (BigInt.fromInt branchIdx) :: WrapField)
           , prevUnfinalizedProofs: proveDataMax.prevUnfinalizedProofs
           , prevMessagesForNextStepProofHash:
               F (fromBigInt (toBigInt msgStep) :: WrapField)
@@ -2873,7 +2871,7 @@ runMultiProverBody
           , prevWrapDomainIndices: proveDataMax.prevWrapDomainIndices
           }
       , debug: cfg.debug
-      , kimchiPrevChallenges: _kimchiPrevPadded
+      , kimchiPrevChallenges: kimchiPrevPadded
       }
 
   wrapProveResult <- wrapSolveAndProve @branches @slotsMax wrapCtx wrapResult

@@ -1883,7 +1883,7 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd _nd len carrier carrierVar
+       @mpvMax @mpvPad @nd len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -1892,7 +1892,7 @@ stepCompile
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _nd nd
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
@@ -2011,7 +2011,7 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd _nd len carrier carrierVar
+       @mpvMax @mpvPad @nd len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -2020,7 +2020,7 @@ preComputeStepDomainLog2
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _nd nd
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
@@ -2104,7 +2104,7 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd _nd len carrier carrierVar
+       @mpvMax @mpvPad @nd len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -2113,7 +2113,7 @@ stepSolveAndProve
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _nd nd
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax

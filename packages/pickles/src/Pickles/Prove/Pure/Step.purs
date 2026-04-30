@@ -540,8 +540,8 @@ expandProof input =
     -- step.ml:236-241 (`Wrap_deferred_values.expand_deferred`) into
     -- a single call, because `expandDeferred` internally does the
     -- same `derive_plonk` OCaml redundantly recomputes locally.
-    _deferredStep :: ExpandDeferredOutput StepIPARounds
-    _deferredStep = expandDeferred
+    deferredStep :: ExpandDeferredOutput StepIPARounds
+    deferredStep = expandDeferred
       { zkRows: input.zkRows
       , srsLengthLog2: input.srsLengthLog2
       , allEvals: input.allEvals
@@ -826,7 +826,7 @@ expandProof input =
     -- values, flattened into `FopProofState`, plus `BranchData`.
     -- Matches OCaml step.ml:266-285.
     stepPlonkDerived :: PlonkInCircuit (F StepField) (Type1 (F StepField))
-    stepPlonkDerived = _deferredStep.plonk
+    stepPlonkDerived = deferredStep.plonk
 
     -- Convert the `Verify.Types.BranchData` record (flat with
     -- `proofsVerifiedMask :: Vector 2 _`) into the
@@ -835,12 +835,12 @@ expandProof input =
     stepBranchData :: PT.BranchData (F StepField) Boolean
     stepBranchData =
       let
-        v = _deferredStep.branchData.proofsVerifiedMask
+        v = deferredStep.branchData.proofsVerifiedMask
       in
         PT.BranchData
           { mask0: v !! unsafeFinite @2 0
           , mask1: v !! unsafeFinite @2 1
-          , domainLog2: F _deferredStep.branchData.domainLog2
+          , domainLog2: F deferredStep.branchData.domainLog2
           }
 
     stepProofState :: StepProofState StepIPARounds (F StepField) Boolean
@@ -851,8 +851,8 @@ expandProof input =
       -- `Pickles.Prove.Step.getStepPerProofWitnesses` for why we do
       -- NOT call `fromShifted` here.
       { fopState: FopProofState
-          { combinedInnerProduct: unwrap _deferredStep.combinedInnerProduct
-          , b: unwrap _deferredStep.b
+          { combinedInnerProduct: unwrap deferredStep.combinedInnerProduct
+          , b: unwrap deferredStep.b
           , zetaToSrsLength: unwrap stepPlonkDerived.zetaToSrsLength
           , zetaToDomainSize: unwrap stepPlonkDerived.zetaToDomainSize
           , perm: unwrap stepPlonkDerived.perm
@@ -861,7 +861,7 @@ expandProof input =
           , gamma: UnChecked stepPlonkDerived.gamma
           , alpha: UnChecked stepPlonkDerived.alpha
           , zeta: UnChecked stepPlonkDerived.zeta
-          , xi: UnChecked _deferredStep.xi
+          , xi: UnChecked deferredStep.xi
           , bulletproofChallenges: map UnChecked input.rawBulletproofChallenges
           }
       , branchData: stepBranchData
@@ -885,7 +885,7 @@ expandProof input =
   in
     { sg: challengePolynomialCommitment
     , unfinalized: wrapUnfinalized
-    , deferredStep: _deferredStep
+    , deferredStep: deferredStep
     , rawPrechallenges: Vector.toUnfoldable (map SizedF.toField rawPrechalsVec)
     , xHat:
         { zeta: oraclesResult.publicEvalZeta

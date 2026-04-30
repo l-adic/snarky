@@ -131,9 +131,9 @@ type VerifyOneResult tickD fv =
 -- | Full verify_one matching OCaml step_main.ml:17-148.
 -- | Specialized to the Step field (Vesta scalar field = Fp).
 verifyOne
-  :: forall _nd nd n t m r1
+  :: forall nd n t m r1
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Add 1 _nd nd
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => FinalizeOtherProofParams nd StepField r1

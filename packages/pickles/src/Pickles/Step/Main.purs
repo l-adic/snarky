@@ -667,12 +667,12 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @valCarrier @mpvMax @mpvPad @nd _nd
+       @valCarrier @mpvMax @mpvPad @nd
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Add 1 _nd nd
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal

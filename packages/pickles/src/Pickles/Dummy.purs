@@ -104,9 +104,9 @@ pow2 k = BigInt.pow (BigInt.fromInt 2) (BigInt.fromInt k)
 
 -- | Blake2s yields 256 bits; `@n` < 257 selects a prefix as a sized vector.
 bitsRandomOracle
-  :: forall @n _unused
+  :: forall @n
    . Reflectable n Int
-  => Add n _unused 256
+  => Add n _ 256
   => String
   -> Vector n Boolean
 bitsRandomOracle s =

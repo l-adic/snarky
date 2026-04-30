@@ -78,10 +78,10 @@ type WrapFinalizeOtherProofInput n d fv b =
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783
 wrapFinalizeOtherProofCircuit
-  :: forall _d d _n n _nd nd f f' g t m r2
-   . Add 1 _d d
-  => Add 1 _n n
-  => Add 1 _nd nd
+  :: forall d n nd f f' g t m r2
+   . Add 1 _ d
+  => Add 1 _ n
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => PrimeField f

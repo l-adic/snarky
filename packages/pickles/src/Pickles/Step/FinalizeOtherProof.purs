@@ -172,9 +172,9 @@ type FinalizeOtherProofOutput d f =
 -- |
 -- | Reference: step_verifier.ml:823-1165
 finalizeOtherProofCircuit
-  :: forall _d d _nd nd n f f' g t m sf r1 r2
-   . Add 1 _d d
-  => Add 1 _nd nd
+  :: forall d nd n f f' g t m sf r1 r2
+   . Add 1 _ d
+  => Add 1 _ nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => PrimeField f
