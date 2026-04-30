@@ -18,8 +18,6 @@
 -- | Phases 2/3 add `PrevsSpecCons` cases without touching `compile`.
 module Pickles.Prove.Compile
   ( CompileConfig
-  , CompileOutput
-  , Prover
   , ProverVKs
   , ProveError
   , PrevSlot(..)
@@ -36,16 +34,13 @@ module Pickles.Prove.Compile
   , PadProveDataDummies
   , padShapeProveData
   , mkStepAdvice
-  , runCompile
   , shapeCompileData
   , shapeProveData
-  , compile
   , module Pickles.Prove.Verify
   ) where
 
 import Prelude
 
-import Control.Monad.Except (ExceptT)
 import Data.Array as Array
 import Data.Exists (runExists)
 import Data.Functor.Product (Product, product)
@@ -56,17 +51,12 @@ import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Class (class MonadEffect, liftEffect)
 import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
-import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
-import Pickles.PlonkChecks (AllEvals)
 import Pickles.Proof.Dummy (dummyWrapProof)
 import Pickles.ProofFFI
-  ( pallasProofOpeningSg
-  , pallasProofOracles
-  , pallasProverIndexDomainLog2
+  ( pallasProverIndexDomainLog2
   , permutationVanishingPolynomial
   , proofCoefficientEvals
   , proofIndexEvals
@@ -79,25 +69,16 @@ import Pickles.ProofFFI
   ) as ProofFFI
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
-import Pickles.Prove.Pure.Wrap
-  ( WrapDeferredValuesInput
-  , assembleWrapMainInput
-  , wrapComputeDeferredValues
-  )
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
   , StepProveContext
-  , StepRule
   , buildSlotAdvice
   , buildStepAdvice
   , dummyWrapTockPublicInput
   , extractWrapVKCommsAdvice
   , mkDummyMsgWrapHash
   , mkDummyPerProofUnfinalized
-  , preComputeStepDomainLog2
-  , stepCompile
-  , stepSolveAndProve
   )
 import Pickles.Prove.Verify
   ( CompiledProof(..)
@@ -110,46 +91,36 @@ import Pickles.Prove.Verify
   , verifyOne
   , wrapPublicInput
   )
-import Pickles.Prove.Wrap
-  ( WrapCompileResult
-  , buildWrapAdvice
-  , buildWrapMainConfig
-  , wrapCompile
-  , wrapSolveAndProve
-  )
+import Pickles.Prove.Wrap (WrapCompileResult)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Main as PStepMain
-import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot)
+import Pickles.Step.Prevs (class PrevValuesCarrier, PrevsSpecCons, PrevsSpecNil, StepSlot)
 import Pickles.Types
   ( PaddedLength
   , PerProofUnfinalized(..)
   , PointEval(..)
-  , StatementIO(..)
+  , StatementIO
   , StepAllEvals(..)
   , StepField
   , StepIPARounds
   , WrapField
   , WrapIPARounds
   )
-import Pickles.Util.Unique (Unique, newUnique)
-import Pickles.Verify.Types (toPlonkMinimal)
+import Pickles.Util.Unique (Unique)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
-import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.CVar (EvaluationError)
-import Snarky.Circuit.DSL (F(..), FVar, UnChecked(..), coerceViaBits)
-import Snarky.Circuit.DSL.Monad (class CheckedType)
+import Snarky.Circuit.DSL (F(..), UnChecked(..), coerceViaBits)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF (unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (fromShifted, toShifted) as Kimchi
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
-import Snarky.Circuit.Types (class CircuitType, BoolVar, fieldsToValue)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
+import Snarky.Circuit.Types (class CircuitType)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
@@ -261,16 +232,6 @@ data PrevSlot inputVal n stmt outputVal
       (CompiledProof n stmt outputVal Unit)
       (Tag inputVal outputVal n)
 
--- | The prover closure returned by `compile`. `auxVal` is fixed to
--- | `Unit` because PS `StepRule` doesn't track auxiliary outputs.
-type Prover
-  :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
-type Prover prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
-  { step ::
-      StepInputs prevsSpec inputVal prevsCarrier
-      -> ExceptT ProveError m (CompiledProof mpv stmtVal outputVal Unit)
-  }
-
 type CompileConfig :: Type -> Type -> Type
 type CompileConfig prevsSpec slotVKs =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
@@ -283,14 +244,6 @@ type CompileConfig prevsSpec slotVKs =
   -- | the wrap circuit's own kimchi domain. Tree_proof_return uses
   -- | `Just 14` (override:N1) per OCaml `dump_tree_proof_return.ml`.
   , wrapDomainOverride :: Maybe Int
-  }
-
-type CompileOutput
-  :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
-type CompileOutput prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m =
-  { prover :: Prover prevsSpec mpv inputVal outputVal stmtVal prevsCarrier m
-  , tag :: Tag inputVal outputVal mpv
-  , vks :: ProverVKs
   }
 
 -- | Shape-constant compile-time data, provided by the `CompilableSpec`
@@ -586,76 +539,6 @@ class
     -> ShapeProveSideInfo mpv
     -> prevsCarrier
     -> ShapeProveData mpv slots
-
---------------------------------------------------------------------------------
--- compile — shape-polymorphic entry point
---------------------------------------------------------------------------------
-
--- | Compile a Pickles rule into a `Prover` + `Verifier` + VK bundle.
--- |
--- | `rule` is passed as a direct argument (not through `CompileConfig`)
--- | because its type is polymorphic (`forall t m'. CircuitM ... => ...`)
--- | and PS record field access can't preserve the forall/constraints.
-compile
-  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-       @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
-       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
-       totalIpaCommitmentBases totalIpaCommitmentBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-  => PrevValuesCarrier prevsSpec valCarrier
-  => MonadEffect m
-  => CircuitGateConstructor StepField VestaG
-  => CircuitGateConstructor WrapField PallasG
-  => Reflectable mpv Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad mpv PaddedLength
-  => Mul mpv 32 unfinalizedFieldsTotal
-  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpv outputSize
-  => Compare mpv 3 LT
-  => Add mpv 45 totalIpaCommitmentBases
-  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
-  => PadSlots slots mpv
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       mpv
-       carrier
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       mpv
-       carrierFVar
-  => CircuitType StepField inputVal inputVar
-  => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierFVar
-  => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierFVar
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
-  -> Effect
-       ( CompileOutput prevsSpec mpv inputVal outputVal
-           (StatementIO inputVal outputVal)
-           prevsCarrier
-           m
-       )
-compile cfg rule = runCompile
-  @prevsSpec
-  @inputVal
-  @outputVal
-  @prevInputVal
-  @m
-  cfg
-  rule
 
 --------------------------------------------------------------------------------
 -- CompilableSpec PrevsSpecNil (N=0, NRR-shape)
@@ -1505,446 +1388,3 @@ instance
           product slotData.headSlotPrevWrapBpChalsVec restProveData.slotsValue
       }
 
---------------------------------------------------------------------------------
--- Polymorphic compile flow
---------------------------------------------------------------------------------
-
--- | Shape-polymorphic compile flow. Dispatches all shape-specific
--- | data through `CompilableSpec`'s methods (`shapeCompileData`,
--- | `shapeProveData`, `mkStepAdvice`) and uses arithmetic-constraint
--- | resolution to carry `mpv`-derived sizes (outputSize = 33*mpv+1,
--- | etc.) to `stepCompile` / `stepSolveAndProve`.
--- |
--- | All visible type applications on `stepCompile` / `stepSolveAndProve`
--- | / `wrapCompile` / `wrapSolveAndProve` happen in this top-level
--- | function's body where the forall-introduced type variables are
--- | in scope for visible application — not available inside a class
--- | method instance body.
-runCompile
-  :: forall @prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-       @inputVal inputVar @outputVal outputVar @prevInputVal prevInputVar @m
-       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
-       totalIpaCommitmentBases totalIpaCommitmentBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-  => PrevValuesCarrier prevsSpec valCarrier
-  => MonadEffect m
-  => CircuitGateConstructor StepField VestaG
-  => CircuitGateConstructor WrapField PallasG
-  => Reflectable mpv Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad mpv PaddedLength
-  => Mul mpv 32 unfinalizedFieldsTotal
-  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpv outputSize
-  => Compare mpv 3 LT
-  => Add mpv 45 totalIpaCommitmentBases
-  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
-  => PadSlots slots mpv
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       mpv
-       carrier
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       mpv
-       carrierFVar
-  => CircuitType StepField inputVal inputVar
-  => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierFVar
-  => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierFVar
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
-  -> Effect
-       ( CompileOutput prevsSpec mpv inputVal outputVal
-           (StatementIO inputVal outputVal)
-           prevsCarrier
-           m
-       )
-runCompile cfg rule = do
-  -- Pre-pass à la OCaml `Fix_domains.domains` (`fix_domains.ml:22-91`):
-  -- build the step CS once with placeholder `selfStepDomainLog2 = 20`
-  -- (= OCaml `rough_domains.h`) just to count gates and derive the
-  -- rule's actual step domain log2. No Rust prover-index creation
-  -- happens here, so the cost is just one CS build.
-  selfStepDomainLog2 <-
-    preComputeStepDomainLog2
-      @prevsSpec
-      @outputSize
-      @valCarrier
-      @inputVal
-      @inputVar
-      @outputVal
-      @outputVar
-      @prevInputVal
-      @prevInputVar
-      @mpv
-      @0
-      -- Single-rule callers always have nd=1 (Self → 1-branch source).
-      ( let
-          prepDomains :: Vector 1 Int
-          prepDomains = 20 :< Vector.nil
-        in
-          shapeCompileData @prevsSpec cfg prepDomains
-      ).stepProveCtx
-      rule
-
-  let
-    selfDomains :: Vector 1 Int
-    selfDomains = selfStepDomainLog2 :< Vector.nil
-    shape = shapeCompileData @prevsSpec cfg selfDomains
-
-  stepCR <- stepCompile
-    @prevsSpec
-    @outputSize
-    @valCarrier
-    @inputVal
-    @inputVar
-    @outputVal
-    @outputVar
-    @prevInputVal
-    @prevInputVar
-    @mpv
-    @0
-    shape.stepProveCtx
-    rule
-
-  let stepDomainLog2 = ProofFFI.pallasProverIndexDomainLog2 stepCR.proverIndex
-
-  wrapCR <- wrapCompile @1 @slots
-    { wrapMainConfig:
-        buildWrapMainConfig @mpv cfg.srs.vestaSrs stepCR.verifierIndex
-          { domainLog2: stepDomainLog2 }
-    , crs: cfg.srs.pallasSrs
-    }
-
-  unique <- newUnique
-
-  let
-    verifier = mkVerifier
-      { wrapVK: wrapCR.verifierIndex
-      , vestaSrs: cfg.srs.vestaSrs
-      , stepDomainLog2
-      }
-
-  pure
-    { prover:
-        { step: runProverBody
-            @prevsSpec
-            @slotVKs
-            @prevsCarrier
-            @mpv
-            @slots
-            @valCarrier
-            @carrier
-            @inputVal
-            @inputVar
-            @outputVal
-            @outputVar
-            @prevInputVal
-            @prevInputVar
-            @m
-            cfg
-            rule
-            shape
-            stepCR
-            wrapCR
-            stepDomainLog2
-        }
-    , tag: Tag { unique, verifier }
-    , vks:
-        { stepCompileResult: stepCR
-        , wrapCompileResult: wrapCR
-        , wrapDomainLog2: shape.wrapDomainLog2
-        }
-    }
-
--- | Shape-polymorphic prover closure body. Runs the step solver,
--- | computes wrap-side deferred values, runs the wrap solver, and
--- | packages the result. All shape-specific bits come from
--- | `shapeProveData` / `mkStepAdvice` / the pre-computed
--- | `ShapeCompileData`.
-runProverBody
-  :: forall @prevsSpec @slotVKs @prevsCarrier @mpv @slots @valCarrier @carrier
-       @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @m
-       pad unfinalizedFieldsTotal digestPlusUnfs outputSize carrierFVar
-       totalIpaCommitmentBases totalIpaCommitmentBasesPred
-   . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
-  => PrevValuesCarrier prevsSpec valCarrier
-  => MonadEffect m
-  => CircuitGateConstructor StepField VestaG
-  => CircuitGateConstructor WrapField PallasG
-  => Reflectable mpv Int
-  => Reflectable pad Int
-  => Reflectable outputSize Int
-  => Add pad mpv PaddedLength
-  => Mul mpv 32 unfinalizedFieldsTotal
-  => Add unfinalizedFieldsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs mpv outputSize
-  => Compare mpv 3 LT
-  => Add mpv 45 totalIpaCommitmentBases
-  => Add 1 totalIpaCommitmentBasesPred totalIpaCommitmentBases
-  => PadSlots slots mpv
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (F StepField)
-       (Type2 (SplitField (F StepField) Boolean))
-       Boolean
-       mpv
-       carrier
-  => PrevsCarrier prevsSpec StepIPARounds WrapIPARounds
-       (FVar StepField)
-       (Type2 (SplitField (FVar StepField) (BoolVar StepField)))
-       (BoolVar StepField)
-       mpv
-       carrierFVar
-  => CircuitType StepField inputVal inputVar
-  => CircuitType StepField outputVal outputVar
-  => CircuitType StepField prevInputVal prevInputVar
-  => CircuitType StepField carrier carrierFVar
-  => CheckedType StepField (KimchiConstraint StepField) inputVar
-  => CheckedType StepField (KimchiConstraint StepField) carrierFVar
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CompileConfig prevsSpec slotVKs
-  -> StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
-  -> ShapeCompileData mpv 1 slots
-  -> StepCompileResult
-  -> WrapCompileResult
-  -> Int
-  -> StepInputs prevsSpec inputVal prevsCarrier
-  -> ExceptT ProveError m
-       (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
-runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = do
-  { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <- liftEffect $
-    mkStepAdvice @prevsSpec cfg stepCR wrapCR appInput prevs
-
-  let
-    StepAdvice sa = stepAdvice
-
-    proveDataSideInfo :: ShapeProveSideInfo mpv
-    proveDataSideInfo =
-      { challengePolynomialCommitments
-      , unfinalizedSlots: sa.publicUnfinalizedProofs
-      , baseCaseWrapPublicInputs
-      }
-
-    proveData = shapeProveData @prevsSpec cfg wrapCR proveDataSideInfo prevs
-
-  stepResult <- stepSolveAndProve
-    @prevsSpec
-    @outputSize
-    @valCarrier
-    @inputVal
-    @inputVar
-    @outputVal
-    @outputVar
-    @prevInputVal
-    @prevInputVar
-    @mpv -- mpvMax = mpv (single-rule path)
-    @0 -- mpvPad = 0
-    shape.stepProveCtx
-    rule
-    stepCR
-    stepAdvice
-
-  let
-    -- Assemble the FFI-shaped `prevChallenges` array from the
-    -- statically-sized `prevSgs` + `prevStepChallenges` vectors.
-    -- `pallasProofOracles` takes `Array { sgX, sgY, challenges :: Array }`
-    -- so we convert at the boundary.
-    stepOraclesPrevChals = Vector.toUnfoldable $
-      Vector.zipWith
-        ( \sg chals ->
-            { sgX: sg.x, sgY: sg.y, challenges: Vector.toUnfoldable chals }
-        )
-        proveData.prevSgs
-        proveData.prevStepChallenges
-
-    stepOracles = ProofFFI.pallasProofOracles stepCR.verifierIndex
-      { proof: stepResult.proof
-      , publicInput: stepResult.publicInputs
-      , prevChallenges: stepOraclesPrevChals
-      }
-
-    allEvals :: AllEvals StepField
-    allEvals =
-      { ftEval1: stepOracles.ftEval1
-      , publicEvals:
-          { zeta: stepOracles.publicEvalZeta
-          , omegaTimesZeta: stepOracles.publicEvalZetaOmega
-          }
-      , zEvals: ProofFFI.proofZEvals stepResult.proof
-      , witnessEvals: ProofFFI.proofWitnessEvals stepResult.proof
-      , coeffEvals: ProofFFI.proofCoefficientEvals stepResult.proof
-      , sigmaEvals: ProofFFI.proofSigmaEvals stepResult.proof
-      , indexEvals: ProofFFI.proofIndexEvals stepResult.proof
-      }
-
-    wrapDvInput :: WrapDeferredValuesInput mpv
-    wrapDvInput =
-      { proof: stepResult.proof
-      , verifierIndex: stepCR.verifierIndex
-      , publicInput: stepResult.publicInputs
-      , allEvals
-      -- Singleton because we hardcode `num_chunks = 1` (matches
-      -- standard Mina). For circuits exceeding the SRS degree
-      -- (`num_chunks > 1`), each commitment splits into multiple
-      -- chunks and `pEval0Chunks` becomes a multi-element array.
-      -- See `Pickles.VerificationKey:31`, `Pickles.Verify:100-102`,
-      -- and `Pickles.Prove.Pure.Wrap:22-24` for the matching TODOs.
-      , pEval0Chunks: [ stepOracles.publicEvalZeta ]
-      , domainLog2: stepDomainLog2
-      , zkRows: 3
-      , srsLengthLog2: 16
-      , generator: (domainGenerator stepDomainLog2 :: StepField)
-      , shifts: (domainShifts stepDomainLog2 :: Vector 7 StepField)
-      , vanishesOnZk: ProofFFI.permutationVanishingPolynomial
-          { domainLog2: stepDomainLog2, zkRows: 3, pt: stepOracles.zeta }
-      , omegaForLagrange: \_ -> one
-      , endo: let EndoScalar e = endoScalar :: EndoScalar StepField in e
-      , linearizationPoly: Linearization.pallas
-      , prevSgs: proveData.prevSgs
-      , prevChallenges: proveData.prevStepChallenges
-      , proofsVerifiedMask: proofsVerifiedMask
-      }
-
-    -- Mask is derivable from mpv alone (OCaml common.ml): N=0 → [F,F],
-    -- N=1 → [F,T], N=2 → [T,T]. Written in the "slot i real" order.
-    outerMpv = reflectType (Proxy @mpv)
-
-    proofsVerifiedMask :: Vector 2 Boolean
-    proofsVerifiedMask = (outerMpv >= 2) :< (outerMpv >= 1) :< Vector.nil
-
-    -- Dummy entries used to front-pad msgWrapChallenges and
-    -- kimchiPrevEntries from Vector mpv up to Vector PaddedLength=2.
-    dummyWrapExpanded :: Vector WrapIPARounds WrapField
-    dummyWrapExpanded = Dummy.dummyIpaChallenges.wrapExpanded
-
-    dummyKimchiEntry
-      :: { sgX :: StepField, sgY :: StepField, challenges :: Vector WrapIPARounds WrapField }
-    dummyKimchiEntry =
-      let
-        dummyBundle = Dummy.computeDummySgValues
-          (Dummy.baseCaseDummies { maxProofsVerified: outerMpv })
-          cfg.srs.pallasSrs
-          cfg.srs.vestaSrs
-        wrapSg = dummyBundle.ipa.wrap.sg
-      in
-        { sgX: wrapSg.x
-        , sgY: wrapSg.y
-        , challenges: Dummy.dummyIpaChallenges.wrapExpanded
-        }
-
-    msgWrapPadded :: Vector 2 (Vector WrapIPARounds WrapField)
-    msgWrapPadded =
-      Vector.append (Vector.replicate @pad dummyWrapExpanded) proveData.msgWrapChallenges
-
-    kimchiPrevPadded
-      :: Vector 2 { sgX :: StepField, sgY :: StepField, challenges :: Vector WrapIPARounds WrapField }
-    kimchiPrevPadded =
-      Vector.append (Vector.replicate @pad dummyKimchiEntry) proveData.kimchiPrevEntries
-
-    wrapDv = wrapComputeDeferredValues wrapDvInput
-
-    msgStep :: StepField
-    -- Outer-hash digest lives at step PI index `mpv * 32` — the layout
-    -- puts the `mpv` unfinalized-proof slots (32 fields each) first,
-    -- then the outer hash, then `mpv` width-padding fields. NRR mpv=0
-    -- → PI[0]; Simple_chain mpv=1 → PI[32]; Tree mpv=2 → PI[64].
-    msgStep = unsafePartial $ fromJust $
-      Array.index stepResult.publicInputs (reflectType (Proxy @mpv) * 32)
-
-    stepProofSg :: AffinePoint WrapField
-    stepProofSg = ProofFFI.pallasProofOpeningSg stepResult.proof
-
-    msgWrap :: WrapField
-    msgWrap = hashMessagesForNextWrapProofPureGeneral
-      { sg: stepProofSg
-      , paddedChallenges: msgWrapPadded
-      }
-
-    wrapCtx =
-      { wrapMainConfig:
-          buildWrapMainConfig @mpv cfg.srs.vestaSrs stepCR.verifierIndex
-            { domainLog2: stepDomainLog2 }
-      , crs: cfg.srs.pallasSrs
-      , publicInput: assembleWrapMainInput
-          { deferredValues: wrapDv
-          , messagesForNextStepProofDigest: msgStep
-          , messagesForNextWrapProofDigest: msgWrap
-          }
-      , advice: buildWrapAdvice
-          { stepProof: stepResult.proof
-          , whichBranch: F zero
-          , prevUnfinalizedProofs: proveData.prevUnfinalizedProofs
-          , prevMessagesForNextStepProofHash:
-              F (fromBigInt (toBigInt msgStep) :: WrapField)
-          , prevStepAccs: proveData.prevStepAccs
-          , prevOldBpChals: proveData.slotsValue
-          , prevEvals: proveData.prevEvals
-          , prevWrapDomainIndices: proveData.prevWrapDomainIndices
-          }
-      , debug: cfg.debug
-      , kimchiPrevChallenges: kimchiPrevPadded
-      }
-
-  wrapResult <- wrapSolveAndProve @1 @slots wrapCtx wrapCR
-
-  let
-    -- The rule's user-defined `publicOutput` value, recovered post-solve
-    -- from the FVars `stepMain` captures via Ref. Note: this is NOT
-    -- `stepResult.publicOutputs` (which is the kimchi public-output
-    -- vector = digest+unfinalized+wrap-msgs); the user's output is
-    -- hashed into the outer digest but never appears directly in that
-    -- vector. Earlier code mistakenly used `publicOutputs` here, which
-    -- corrupted `nrrCp.statement.output` to the digest value and broke
-    -- Tree b0 slot 0's IVP via wrong `appStateFields`.
-    publicOutput =
-      fieldsToValue @StepField stepResult.userPublicOutputFields
-
-  let
-    widthData :: SomeCompiledProofWidthData
-    widthData = mkSomeCompiledProofWidthData @mpv
-      { oldBulletproofChallenges: proveData.prevStepChallenges
-      , msgWrapChallenges: proveData.msgWrapChallenges
-      , outerStepChalPolyComms:
-          map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
-      , wrapDvInput
-      }
-
-  pure $ CompiledProof
-    { statement: StatementIO { input: appInput, output: publicOutput }
-    , publicOutput
-    , auxiliaryOutput: unit
-    , wrapProof: wrapResult.proof
-    , rawPlonk: toPlonkMinimal wrapDv.plonk
-    , rawBulletproofChallenges: wrapDv.bulletproofPrechallenges
-    , branchData: wrapDv.branchData
-    , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
-    , prevEvals: allEvals
-    , pEval0Chunks: [ stepOracles.publicEvalZeta ]
-    , challengePolynomialCommitment: stepProofSg
-    , messagesForNextStepProofDigest: msgStep
-    , messagesForNextWrapProofDigest: msgWrap
-    -- Surfaced for `Test.Pickles.Verify.ExpandDeferredEq`: the
-    -- prover's `wrapComputeDeferredValues` inputs/output that must
-    -- agree with the verifier's `expandDeferredForVerify`
-    -- reconstruction at the chain terminus.
-    , widthData
-    , stepDomainLog2
-    , wrapDv
-    }

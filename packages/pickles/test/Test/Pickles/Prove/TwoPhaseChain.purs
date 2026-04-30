@@ -55,9 +55,7 @@ import Pickles.Prove.CompileMulti
   , RuleEntry
   , RulesCons
   , RulesNil
-  , branchCount
   , compileMulti
-  , extractStepCompileFns
   , mkRuleEntry
   )
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
@@ -72,9 +70,8 @@ import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
 import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Types.Shifted (SplitField, Type2)
-import Test.Spec (SpecT, describe, it, pending)
+import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Rule bodies
