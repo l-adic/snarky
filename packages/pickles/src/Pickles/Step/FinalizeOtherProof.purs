@@ -246,9 +246,18 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- In both cases gen is non-constant, so `mul_ gen zeta` emits one
   -- R1CS Generic gate.
   ---------------------------------------------------------------------------
-  domainWhiches <- traverse
+  -- OCaml `step_verifier.ml:880-893` does `Vector.map unique_domains
+  -- ~f:(equals branch_data.domain_log2)` — Vector.map evaluates
+  -- right-to-left, so for domains [9, 14] OCaml emits the `equals 14`
+  -- gate (constant 14 in coeffs[4]) BEFORE the `equals 9` gate. PS's
+  -- `traverse` is left-to-right, so we mirror OCaml by reversing the
+  -- input, traversing, and reversing the output back. Without this,
+  -- the b1_step CS has the constants swapped (PS gate 348 const=9 vs
+  -- OCaml gate 348 const=14) — see Task #193.
+  domainWhichesRev <- traverse
     (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
-    params.domains
+    (Vector.reverse params.domains)
+  let domainWhiches = Vector.reverse domainWhichesRev
   maskedGen <- Pseudo.mask domainWhiches (map _.generator params.domains)
   zetaw <- mul_ maskedGen zeta
 
