@@ -28,7 +28,7 @@ import Data.Vector as Vector
 import Pickles.Dummy (dummyIpaChallenges)
 import Pickles.PublicInputCommit (class PublicInputCommit)
 import Pickles.Sponge (evalSpongeM, initialSpongeCircuit, spongeFromConstants)
-import Pickles.Types (WrapField, WrapIPARounds)
+import Pickles.Types (WrapField, WrapIPARounds, WrapIvpBaseline)
 import Pickles.Verify (IncrementallyVerifyProofInput, IncrementallyVerifyProofParams, incrementallyVerifyProof)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.OtherField as WrapOtherField
@@ -62,16 +62,16 @@ type WrapVerifyInput n d fv =
 -- | Wrap_hack.Checked approach: for n < MaxProofsVerified, (2-n) dummy
 -- | challenge vectors are absorbed offline into the sponge state.
 wrapVerify
-  :: forall publicInput sgOldN totalBases d n t m r
+  :: forall publicInput sgOldN totalBases totalBasesPred d dPred n t m r
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   => PublicInputCommit publicInput WrapField
   => Reflectable d Int
   => Reflectable n Int
   => Reflectable sgOldN Int
   => Compare n 3 LT
-  => Add 1 _ d
-  => Add sgOldN 45 totalBases
-  => Add 1 _ totalBases
+  => Add 1 dPred d
+  => Add sgOldN WrapIvpBaseline totalBases
+  => Add 1 totalBasesPred totalBases
   => IncrementallyVerifyProofParams WrapField r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar WrapField) (Type1 (FVar WrapField))
   -> WrapVerifyInput n d (FVar WrapField)

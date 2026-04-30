@@ -534,10 +534,10 @@ publicInputCommit params input = label "public-input-commit" do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks @sDiv2Bits f n bitsUsed t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining t m
    . FieldSizeInBits f n
-  => Add bitsUsed _ n
-  => Add sDiv2Bits _ n
+  => Add bitsUsed bitsRemaining n
+  => Add sDiv2Bits sDiv2Remaining n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int

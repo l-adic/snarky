@@ -52,11 +52,11 @@ type StepVK f =
 -- |
 -- | Reference: wrap_verifier.ml:212-310
 chooseKey
-  :: forall n f t m
+  :: forall n nPred f t m
    . CircuitM f (KimchiConstraint f) t m
   => PrimeField f
   => Reflectable n Int
-  => Add 1 _ n
+  => Add 1 nPred n
   => Vector n (BoolVar f)
   -> Vector n (StepVK (FVar f))
   -> Snarky (KimchiConstraint f) t m (StepVK (FVar f))

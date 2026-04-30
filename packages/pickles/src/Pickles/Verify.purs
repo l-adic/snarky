@@ -36,6 +36,7 @@ import Pickles.ShiftOps (IpaScalarOps)
 import Pickles.Sponge (SpongeM, initialSpongeCircuit, labelM, liftSnarky)
 import Pickles.Sponge as Sponge
 import Pickles.Trace as Trace
+import Pickles.Types (WrapIvpBaseline)
 import Pickles.Verify.FqSpongeTranscript (spongeTranscriptOptCircuit)
 import Pickles.Verify.Types (BulletproofChallenges, DeferredValues, WrapDeferredValues, toPlonkMinimal)
 import Poseidon (class PoseidonField)
@@ -162,7 +163,7 @@ ivpTrace labelStr v = do
   pure unit
 
 incrementallyVerifyProof
-  :: forall publicInput sgOldN totalBases d f f' @g sf t m r
+  :: forall publicInput sgOldN totalBases totalBasesPred d dPred f f' @g sf t m r
    . PrimeField f
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
@@ -175,9 +176,9 @@ incrementallyVerifyProof
   => PublicInputCommit publicInput f
   => Reflectable d Int
   => Reflectable sgOldN Int
-  => Add 1 _ d
-  => Add sgOldN 45 totalBases
-  => Add 1 _ totalBases
+  => Add 1 dPred d
+  => Add sgOldN WrapIvpBaseline totalBases
+  => Add 1 totalBasesPred totalBases
   => IpaScalarOps f t m sf
   -> IncrementallyVerifyProofParams f r
   -> IncrementallyVerifyProofInput publicInput sgOldN d (FVar f) sf

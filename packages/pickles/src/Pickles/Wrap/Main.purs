@@ -58,7 +58,7 @@ import Pickles.Pseudo as Pseudo
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, pow2pow)
 import Pickles.PublicInputCommit (unwrapPt, wrapPt) as PIC
 import Pickles.Sponge (evalSpongeM, spongeFromConstants)
-import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
+import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepIPARounds, WrapField, WrapIPARounds, WrapIvpBaseline, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked(..))
 import Pickles.VerificationKey (StepVK, chooseKey)
 import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof)
@@ -349,7 +349,7 @@ splitPerProofUnfinalized (PerProofUnfinalized r) = do
 -------------------------------------------------------------------------------
 
 wrapMain
-  :: forall @branches @slots mpv totalBases t m
+  :: forall @branches @slots mpv branchesPred totalBases totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m
   -- `slots` carries the per-slot widths; `mpv` is derived via the
   -- `slots -> mpv` fundep on `PadSlots`. Concrete instantiations
@@ -371,13 +371,14 @@ wrapMain
        (slots (Vector WrapIPARounds (FVar WrapField)))
   => Reflectable branches Int
   => Reflectable mpv Int
-  => Add 1 _ branches
+  => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  -- Forwarded to `wrapVerify` (which needs `Add sgOldN 45 totalBases`
-  -- and `Add 1 _ totalBases`). With `sgOldN = mpv`, these collapse to
-  -- the constraints below.
-  => Add mpv 45 totalBases
-  => Add 1 _ totalBases
+  -- Forwarded to `wrapVerify` (which needs
+  -- `Add sgOldN WrapIvpBaseline totalBases` and
+  -- `Add 1 totalBasesPred totalBases`). With `sgOldN = mpv`, these
+  -- collapse to the constraints below.
+  => Add mpv WrapIvpBaseline totalBases
+  => Add 1 totalBasesPred totalBases
   => WrapMainConfig branches
   -> WrapMainInputVar
   -> Snarky (KimchiConstraint WrapField) t m Unit

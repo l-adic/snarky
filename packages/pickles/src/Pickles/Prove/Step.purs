@@ -82,6 +82,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
+import Pickles.Constants (zkRows)
 import Pickles.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
@@ -100,7 +101,7 @@ import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
@@ -1166,7 +1167,7 @@ buildSlotAdvice input = do
     stepFopVanishesOnZk :: StepField
     stepFopVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
-        { domainLog2: input.stepDomainLog2, zkRows: 3, pt: zetaExpandedStep }
+        { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
 
     wrapAllEvalsW :: AllEvals WrapField
     wrapAllEvalsW =
@@ -1188,7 +1189,7 @@ buildSlotAdvice input = do
     wrapVanishesOnZkW :: WrapField
     wrapVanishesOnZkW =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
-        { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: oracles.zeta }
+        { domainLog2: input.wrapDomainLog2, zkRows, pt: oracles.zeta }
 
     wrapPrevEvalsF :: StepAllEvals (F StepField)
     wrapPrevEvalsF =
@@ -1209,8 +1210,8 @@ buildSlotAdvice input = do
     expandProofInputRec :: PureStep.ExpandProofInput n 2
     expandProofInputRec =
       { mustVerify: input.mustVerify
-      , zkRows: 3
-      , srsLengthLog2: 16
+      , zkRows
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , allEvals: input.wrapPrevEvals
       , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
       , oldBulletproofChallenges: Vector.replicate @n dummyStepBpChalsRaw
@@ -1239,8 +1240,8 @@ buildSlotAdvice input = do
       , wrapAllEvals: wrapAllEvalsW
       , wrapPEval0Chunks: [ oracles.publicEvalZeta ]
       , wrapShifts: wrapShiftsW
-      , wrapZkRows: 3
-      , wrapSrsLengthLog2: 15
+      , wrapZkRows: zkRows
+      , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
       , wrapVanishesOnZk: wrapVanishesOnZkW
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
@@ -1883,7 +1884,7 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -1892,11 +1893,11 @@ stepCompile
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _ nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
@@ -2011,7 +2012,7 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -2020,11 +2021,11 @@ preComputeStepDomainLog2
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _ nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
@@ -2104,7 +2105,7 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
@@ -2113,11 +2114,11 @@ stepSolveAndProve
   => Reflectable mpvPad Int
   => Reflectable nd Int
   => Reflectable outputSize Int
-  => Add 1 _ nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Add pad len PaddedLength
   => MpvPadding.MpvPadding mpvPad len mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
@@ -2243,7 +2244,13 @@ stepSolveAndProve ctx rule compileResult advice = do
                     , challenges: Vector.toUnfoldable r.challenges
                     }
                 )
-                (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
+                ( Vector.toUnfoldable adv.kimchiPrevChallenges
+                    :: Array
+                         { sgX :: WrapField
+                         , sgY :: WrapField
+                         , challenges :: Vector StepIPARounds StepField
+                         }
+                )
           }
       pure
         { proverIndex: compileResult.proverIndex

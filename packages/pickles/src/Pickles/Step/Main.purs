@@ -47,7 +47,7 @@ import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
 import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
@@ -667,12 +667,12 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @valCarrier @mpvMax @mpvPad @nd
+       @valCarrier @mpvMax @mpvPad @nd ndPred
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
-  => Add 1 _ nd
+  => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
@@ -703,7 +703,7 @@ stepMain
   -- emits nothing (circuit shape unchanged). When `mpvPad > 0`,
   -- `mpvFrontPad` prepends that many dummy entries.
   => MpvPadding mpvPad len mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))

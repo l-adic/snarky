@@ -51,7 +51,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
+import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapIvpBaseline, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
 import Pickles.VerificationKey (StepVK)
 import Pickles.Wrap.Advice (class WrapWitnessM)
 import Pickles.Wrap.Main (WrapMainConfig, wrapMain)
@@ -445,7 +445,7 @@ wrapCompile
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv 45 totalBases
+  => Add mpv WrapIvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField
@@ -512,7 +512,7 @@ wrapSolveAndProve
   => Reflectable mpv Int
   => Add 1 branchesPred branches
   => Compare mpv 3 LT
-  => Add mpv 45 totalBases
+  => Add mpv WrapIvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpv
   => CircuitType WrapField

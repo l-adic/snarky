@@ -63,6 +63,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import JS.BigInt as BigInt
+import Pickles.Constants (roughDomainsLog2, zkRows)
 import Pickles.Dummy
   ( baseCaseDummies
   , computeDummySgValues
@@ -156,8 +157,10 @@ import Pickles.Types
   , StepAllEvals(..)
   , StepField
   , StepIPARounds
+  , UnfinalizedFieldCount
   , WrapField
   , WrapIPARounds
+  , WrapIvpBaseline
   )
 import Pickles.Util.Unique (Unique, newUnique)
 import Pickles.Verify.Types (toPlonkMinimal)
@@ -625,7 +628,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
           , crs: cfg.srs.vestaSrs
           , debug: cfg.debug
           }
-      , wrapDomainLog2: 13
+      , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
       }
     where
     -- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`)
@@ -1674,7 +1677,7 @@ instance
   -- outputSize derives from mpvMax (the wrap circuit's max), not the
   -- rule's mpv: step PI is mpvMax-shaped (mirrors OCaml
   -- step.ml:783-787).
-  , Mul mpvMax 32 unfsTotal
+  , Mul mpvMax UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
@@ -1848,7 +1851,8 @@ class
   -- | recursion-level count). Each rule's `preComputeStepDomainLog2Fn`
   -- | is invoked with a placeholder `StepProveContext` built from the
   -- | supplied `Vector topBranches Int` placeholder (caller passes
-  -- | `Vector.replicate 20`, matching OCaml `Fix_domains.rough_domains`).
+  -- | `Vector.replicate roughDomainsLog2`, matching OCaml
+  -- | `Fix_domains.rough_domains`).
   -- |
   -- | Mirrors OCaml `compile.ml:533-547`'s pre-pass over branches
   -- | producing `step_domains : (Domains.t, 'branches) Vector.t
@@ -1951,7 +1955,7 @@ runMultiCompileFull
 runMultiCompileFull cfg rules = do
   let
     placeholder :: Vector topBranches Int
-    placeholder = Vector.replicate 20
+    placeholder = Vector.replicate roughDomainsLog2
   log2s <- prePassDomainLog2s
     @rs
     @inputVal
@@ -2042,7 +2046,7 @@ instance
   -- outputSize derives from mpvMax (the wrap circuit's max).
   , Reflectable mpvPad Int
   , MpvPadding.MpvPadding mpvPad ruleMpv mpvMax
-  , Mul mpvMax 32 unfsTotal
+  , Mul mpvMax UnfinalizedFieldCount unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , PadSlots slots ruleMpv
@@ -2053,7 +2057,7 @@ instance
   , Reflectable padMax Int
   , Add padMax mpvMax PaddedLength
   , Compare mpvMax 3 LT
-  , Add mpvMax 45 totalBasesMax
+  , Add mpvMax WrapIvpBaseline totalBasesMax
   , Add 1 totalBasesMaxPred totalBasesMax
   , PadSlots slotsMax mpvMax
   , PadProveDataMpv ruleMpv slots mpvMax slotsMax
@@ -2337,7 +2341,7 @@ mkRuleEntry
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => MpvPadding.MpvPadding mpvPad mpv mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal inputVar
@@ -2526,7 +2530,7 @@ runMultiProverBody
   => Reflectable outputSize Int
   => Add pad mpv PaddedLength
   => MpvPadding.MpvPadding mpvPad mpv mpvMax
-  => Mul mpvMax 32 unfsTotal
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
   => Add digestPlusUnfs mpvMax outputSize
   -- Step-half constraints reference the rule's own `mpv`. The wrap
@@ -2537,7 +2541,7 @@ runMultiProverBody
   => Reflectable padMax Int
   => Add padMax mpvMax PaddedLength
   => Compare mpvMax 3 LT
-  => Add mpvMax 45 totalBasesMax
+  => Add mpvMax WrapIvpBaseline totalBasesMax
   => Add 1 totalBasesMaxPred totalBasesMax
   => PadSlots slotsMax mpvMax
   => PadProveDataMpv mpv slots mpvMax slotsMax
@@ -2767,13 +2771,13 @@ runMultiProverBody
       , allEvals
       , pEval0Chunks: [ stepOracles.publicEvalZeta ]
       , domainLog2: selfStepDomainLog2
-      , zkRows: 3
-      , srsLengthLog2: 16
+      , zkRows
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , generator: (domainGenerator selfStepDomainLog2 :: StepField)
       , shifts: (domainShifts selfStepDomainLog2 :: Vector 7 StepField)
       , vanishesOnZk: permutationVanishingPolynomial
           { domainLog2: selfStepDomainLog2
-          , zkRows: 3
+          , zkRows
           , pt: stepOracles.zeta
           }
       , omegaForLagrange: \_ -> one
@@ -2951,7 +2955,7 @@ compileMulti
   => Add 1 branchesPred branches
   => Compare 0 branches LT
   => Compare mpvMax 3 LT
-  => Add mpvMax 45 totalBases
+  => Add mpvMax WrapIvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpvMax
   => CircuitType WrapField

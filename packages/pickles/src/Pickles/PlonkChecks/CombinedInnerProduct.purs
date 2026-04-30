@@ -155,8 +155,8 @@ buildEvalList x =
 -- | Used by the Wrap FOP where all previous proofs are always present
 -- | (no proofs-verified mask).
 buildEvalListUnmasked
-  :: forall n f
-   . Add 1 _ n
+  :: forall n nPred f
+   . Add 1 nPred n
   => { sgEvals :: Vector n (FVar f)
      , publicInput :: FVar f
      , ftEval :: FVar f
