@@ -510,21 +510,21 @@ instance
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext ruleMpv topBranches
-          -> Effect PProveStep.StepCompileResult
+        -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
     (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( PProveStep.StepProveContext ruleMpv topBranches
-          -> PProveStep.StepCompileResult
-          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-               inputVal
-               ruleMpv
-               carrier
-               valCarrier
-          -> ExceptT EvaluationError Effect
-               (PProveStep.StepProveResult outputSize)
+        -> PProveStep.StepCompileResult
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+             inputVal
+             ruleMpv
+             carrier
+             valCarrier
+        -> ExceptT EvaluationError Effect
+             (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
     )
@@ -917,21 +917,21 @@ instance
           /\ restCarrier
       )
       ( ( PProveStep.StepProveContext ruleMpv topBranches
-            -> Effect PProveStep.StepCompileResult
+          -> Effect PProveStep.StepCompileResult
         )
           /\ restStepCompileFns
       )
       (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
       (PProveStep.StepCompileResult /\ restStepCompileResults)
       ( ( PProveStep.StepProveContext ruleMpv topBranches
-            -> PProveStep.StepCompileResult
-            -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-                 inputVal
-                 ruleMpv
-                 carrier
-                 valCarrier
-            -> ExceptT EvaluationError Effect
-                 (PProveStep.StepProveResult outputSize)
+          -> PProveStep.StepCompileResult
+          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+               inputVal
+               ruleMpv
+               carrier
+               valCarrier
+          -> ExceptT EvaluationError Effect
+               (PProveStep.StepProveResult outputSize)
         )
           /\ restStepProveFns
       )
@@ -954,21 +954,21 @@ instance
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext ruleMpv topBranches
-          -> Effect PProveStep.StepCompileResult
+        -> Effect PProveStep.StepCompileResult
       )
         /\ restStepCompileFns
     )
     (PProveStep.StepProveContext ruleMpv topBranches /\ restCtxs)
     (PProveStep.StepCompileResult /\ restStepCompileResults)
     ( ( PProveStep.StepProveContext ruleMpv topBranches
-          -> PProveStep.StepCompileResult
-          -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-               inputVal
-               ruleMpv
-               carrier
-               valCarrier
-          -> ExceptT EvaluationError Effect
-               (PProveStep.StepProveResult outputSize)
+        -> PProveStep.StepCompileResult
+        -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
+             inputVal
+             ruleMpv
+             carrier
+             valCarrier
+        -> ExceptT EvaluationError Effect
+             (PProveStep.StepProveResult outputSize)
       )
         /\ restStepProveFns
     )
