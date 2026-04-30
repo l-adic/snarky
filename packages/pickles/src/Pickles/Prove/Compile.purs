@@ -1038,9 +1038,21 @@ instance
                   coerce
                     (toFieldPure prev.rawPlonk.zeta (F prevVerifier.stepEndo))
 
+                -- The prev's branch-specific step domain. The shared
+                -- `prevVerifier.stepDomainLog2` is a placeholder (first
+                -- branch's); use the proof's own `stepDomainLog2` so
+                -- multi-branch dispatch picks the right domain for each
+                -- prev. Mirrors OCaml `branch_data.domain_log2` driving
+                -- `step_domain` inside `expand_deferred`.
+                prevStepGenerator :: StepField
+                prevStepGenerator = domainGenerator prev.stepDomainLog2
+
+                prevStepShifts :: Vector 7 StepField
+                prevStepShifts = domainShifts prev.stepDomainLog2
+
                 prevVanishesOnZk :: StepField
                 prevVanishesOnZk = ProofFFI.permutationVanishingPolynomial
-                  { domainLog2: prevVerifier.stepDomainLog2
+                  { domainLog2: prev.stepDomainLog2
                   , zkRows: prevVerifier.stepZkRows
                   , pt: prevZetaField
                   }
@@ -1054,11 +1066,11 @@ instance
                   , allEvals: prev.prevEvals
                   , pEval0Chunks: prev.pEval0Chunks
                   , oldBulletproofChallenges: wd.oldBulletproofChallenges
-                  , domainLog2: prevVerifier.stepDomainLog2
+                  , domainLog2: prev.stepDomainLog2
                   , zkRows: prevVerifier.stepZkRows
                   , srsLengthLog2: prevVerifier.stepSrsLengthLog2
-                  , generator: prevVerifier.stepGenerator
-                  , shifts: prevVerifier.stepShifts
+                  , generator: prevStepGenerator
+                  , shifts: prevStepShifts
                   , vanishesOnZk: prevVanishesOnZk
                   , omegaForLagrange: \_ -> one
                   , endo: prevVerifier.stepEndo
@@ -1931,5 +1943,6 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     -- agree with the verifier's `expandDeferredForVerify`
     -- reconstruction at the chain terminus.
     , widthData
+    , stepDomainLog2
     , wrapDv
     }

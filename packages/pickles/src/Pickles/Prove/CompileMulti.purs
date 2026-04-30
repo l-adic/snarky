@@ -1828,6 +1828,7 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap
     , widthData
+    , stepDomainLog2: selfStepDomainLog2
     , wrapDv
     }
 

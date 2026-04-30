@@ -232,6 +232,15 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   -- `Proof.with_data` GADT existential.
   , widthData :: SomeCompiledProofWidthData
 
+  -- This proof's actual STEP domain log2 (= the proof's branch's
+  -- step circuit domain log2). For multi-branch compiled outputs the
+  -- shared `Verifier`'s `stepDomainLog2` is a placeholder (the first
+  -- branch's), but verifying / re-expanding deferred values for a
+  -- specific proof requires its branch's domain log2. Mirrors
+  -- OCaml `branch_data.domain_log2` carried in
+  -- `proof_state.deferred_values.branch_data`.
+  , stepDomainLog2 :: Int
+
   -- The prover's `Wrap_deferred_values.t`. Surfaced for
   -- self-consistency tests that compare the prover-side computation
   -- (`wrapComputeDeferredValues`) against the verifier-side
@@ -253,9 +262,19 @@ verifyOne verifier (CompiledProof p) =
     zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
+    -- Per-proof step domain (= the proof's branch's step circuit
+    -- domain log2). For multi-branch compiled outputs the shared
+    -- verifier's `stepDomainLog2` is a placeholder; the proof's own
+    -- `stepDomainLog2` is authoritative.
+    pStepGenerator :: StepField
+    pStepGenerator = domainGenerator p.stepDomainLog2
+
+    pStepShifts :: Vector 7 StepField
+    pStepShifts = domainShifts p.stepDomainLog2
+
     vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: verifier.stepDomainLog2
+      { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
@@ -277,11 +296,11 @@ verifyOne verifier (CompiledProof p) =
             , allEvals: p.prevEvals
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
-            , domainLog2: verifier.stepDomainLog2
+            , domainLog2: p.stepDomainLog2
             , zkRows: verifier.stepZkRows
             , srsLengthLog2: verifier.stepSrsLengthLog2
-            , generator: verifier.stepGenerator
-            , shifts: verifier.stepShifts
+            , generator: pStepGenerator
+            , shifts: pStepShifts
             , vanishesOnZk: vanishesOnZkAtZeta
             , omegaForLagrange: \_ -> one
             , endo: verifier.stepEndo
@@ -341,9 +360,15 @@ wrapPublicInput verifier (CompiledProof p) =
     zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
+    pStepGenerator :: StepField
+    pStepGenerator = domainGenerator p.stepDomainLog2
+
+    pStepShifts :: Vector 7 StepField
+    pStepShifts = domainShifts p.stepDomainLog2
+
     vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: verifier.stepDomainLog2
+      { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
@@ -363,11 +388,11 @@ wrapPublicInput verifier (CompiledProof p) =
             , allEvals: p.prevEvals
             , pEval0Chunks: p.pEval0Chunks
             , oldBulletproofChallenges: wd.oldBulletproofChallenges
-            , domainLog2: verifier.stepDomainLog2
+            , domainLog2: p.stepDomainLog2
             , zkRows: verifier.stepZkRows
             , srsLengthLog2: verifier.stepSrsLengthLog2
-            , generator: verifier.stepGenerator
-            , shifts: verifier.stepShifts
+            , generator: pStepGenerator
+            , shifts: pStepShifts
             , vanishesOnZk: vanishesOnZkAtZeta
             , omegaForLagrange: \_ -> one
             , endo: verifier.stepEndo
