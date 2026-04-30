@@ -75,8 +75,8 @@ module Pickles.Prove.CompileMulti
 import Prelude
 
 import Control.Monad.Except (ExceptT)
-import Data.Array as Array
-import Data.Maybe (Maybe, fromJust)
+import Data.Fin (unsafeFinite)
+import Data.Maybe (Maybe)
 import Data.Newtype (wrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
@@ -86,7 +86,6 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Exception (error, throwException)
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy
   ( baseCaseDummies
   , computeDummySgValues
@@ -1061,11 +1060,12 @@ instance
     let
       thisBranch = branchIdx
       -- Extract THIS branch's selfStepDomainLog2 from the FULL
-      -- `Vector topBranches Int`. branchIdx is a runtime Int, so we
-      -- use the unsafe Array.index path. Cons depth k has
-      -- branchIdx = k.
-      headLog2 = unsafePartial $ fromJust $
-        Array.index (Vector.toUnfoldable allStepDomainLog2s) branchIdx
+      -- `Vector topBranches Int`. branchIdx is a runtime Int (cons
+      -- depth k has branchIdx = k); the invariant `branchIdx <
+      -- topBranches` is enforced by the Cons recursion's
+      -- `Compare 0 topBranches LT` constraints.
+      headLog2 =
+        Vector.index allStepDomainLog2s (unsafeFinite @topBranches branchIdx)
       headProver = BranchProver \stepInputs ->
         runMultiProverBody
           @prevsSpec
@@ -1861,9 +1861,20 @@ runMultiProverBody
     -- coincide; for multi-rule callers with `mpv < mpvMax` (e.g.
     -- TwoPhaseChain b0 with mpv=0, mpvMax=1) the rule-mpv version
     -- selects the wrong PI entry — Task #181 root cause.
+    -- Pull the digest entry directly out of `publicOutputs` (the typed
+    -- `Vector outputSize (F StepField)` view of the step circuit's PI)
+    -- using `Vector.index`. The index `outerMpvMax * 32` is bounded by
+    -- `outputSize = mpvMax * 32 + 1 + mpvMax` from the constraint chain
+    -- in scope (`Mul mpvMax 32 unfsTotal`, `Add unfsTotal 1
+    -- digestPlusUnfs`, `Add digestPlusUnfs mpvMax outputSize`); we
+    -- enforce that bound at runtime via `unsafeFinite`.
     msgStep :: StepField
-    msgStep = unsafePartial $ fromJust $
-      Array.index stepResult.publicInputs (outerMpvMax * 32)
+    msgStep =
+      let
+        F f = Vector.index stepResult.publicOutputs
+          (unsafeFinite @outputSize (outerMpvMax * 32))
+      in
+        f
 
     stepProofSg :: AffinePoint WrapField
     stepProofSg = pallasProofOpeningSg stepResult.proof
@@ -1958,12 +1969,22 @@ runMultiProverBody
 
   let
     widthData :: SomeCompiledProofWidthData
-    widthData = mkSomeCompiledProofWidthData @mpv
+    widthData = mkSomeCompiledProofWidthData @mpv @pad
       { oldBulletproofChallenges: proveData.prevStepChallenges
       , msgWrapChallenges: proveData.msgWrapChallenges
       , outerStepChalPolyComms:
           map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
       , wrapDvInput
+      -- Front-padding dummies for the `Vector PaddedLength` views
+      -- mkSomeCompiledProofWidthData precomputes. Match what
+      -- mkStepAdvice / shapeProveData's InductivePrev case fills the
+      -- pad slots with: `Dummy.dummyIpaChallenges.stepExpanded` for
+      -- the inner step proof's prev bp-chals, the wrap-side dummy
+      -- challenge for the outer wrap-IPA bp-chals, and
+      -- `dummyWrapSgInStepField` for the outer step proof's IPA sg.
+      , dummyOldBp: dummyIpaChallenges.stepExpanded
+      , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
+      , dummyChalPolyComm: dummyWrapSgInStepField
       }
 
   pure $ CompiledProof

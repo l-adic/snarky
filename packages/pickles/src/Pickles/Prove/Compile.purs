@@ -41,17 +41,15 @@ module Pickles.Prove.Compile
 
 import Prelude
 
-import Data.Array as Array
 import Data.Exists (runExists)
 import Data.Functor.Product (Product, product)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Partial.Unsafe (unsafePartial)
 import Pickles.Dummy as Dummy
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Proof.Dummy (dummyWrapProof)
@@ -898,14 +896,6 @@ instance
           wrapPI :: Array WrapField
           wrapPI = wrapPublicInput prevVerifier prevCp
 
-          dummyChalPoly =
-            { sg: dummyWrapSg
-            , challenges: Dummy.dummyIpaChallenges.wrapExpanded
-            }
-
-          paddedLengthInt :: Int
-          paddedLengthInt = reflectType (Proxy @PaddedLength)
-
         -- The width-sized fields (oldBulletproofChallenges,
         -- msgWrapChallenges, outerStepChalPolyComms, wrapDvInput) are
         -- hidden inside prev.widthData :: SomeCompiledProofWidthData.
@@ -960,46 +950,30 @@ instance
                   , linearizationPoly: prevVerifier.linearizationPoly
                   }
 
-                runtimeSlotPad :: Int
-                runtimeSlotPad = paddedLengthInt - wd.width
-
-                prevRealEntriesArr
-                  :: Array
-                       { sg :: AffinePoint StepField
-                       , challenges :: Vector WrapIPARounds WrapField
-                       }
-                prevRealEntriesArr = Array.zipWith
-                  (\sg ch -> { sg, challenges: ch })
-                  (Vector.toUnfoldable wd.outerStepChalPolyComms)
-                  (Vector.toUnfoldable wd.msgWrapChallenges)
-
+                -- Pre-padded `Vector PaddedLength` views are computed
+                -- inside `mkSomeCompiledProofWidthData` where the
+                -- producer's `Add pad mpv PaddedLength` constraint is in
+                -- scope. Inside this `runExists` continuation `width` is
+                -- existential and we cannot form the same constraint, so
+                -- we read the padded vectors directly. `prevPaddedChalPolys`
+                -- comes from zipping the two padded sources element-wise.
                 prevPaddedChalPolys
                   :: Vector PaddedLength
                        { sg :: AffinePoint StepField
                        , challenges :: Vector WrapIPARounds WrapField
                        }
-                prevPaddedChalPolys = unsafePartial $ fromJust
-                  $ Vector.toVector @PaddedLength
-                  $ Array.replicate runtimeSlotPad dummyChalPoly
-                      <> prevRealEntriesArr
+                prevPaddedChalPolys = Vector.zipWith
+                  (\sg ch -> { sg, challenges: ch })
+                  wd.outerStepChalPolyCommsPadded
+                  wd.msgWrapChallengesPadded
 
                 prevPaddedWrapBpChals
                   :: Vector PaddedLength (Vector WrapIPARounds WrapField)
-                prevPaddedWrapBpChals = unsafePartial $ fromJust
-                  $ Vector.toVector @PaddedLength
-                  $
-                    Array.replicate runtimeSlotPad
-                      Dummy.dummyIpaChallenges.wrapExpanded
-                      <> Vector.toUnfoldable wd.msgWrapChallenges
+                prevPaddedWrapBpChals = wd.msgWrapChallengesPadded
 
                 prevPaddedStepHashChals
                   :: Vector PaddedLength (Vector StepIPARounds StepField)
-                prevPaddedStepHashChals = unsafePartial $ fromJust
-                  $ Vector.toVector @PaddedLength
-                  $
-                    Array.replicate runtimeSlotPad
-                      Dummy.dummyIpaChallenges.stepExpanded
-                      <> Vector.toUnfoldable wd.oldBulletproofChallenges
+                prevPaddedStepHashChals = wd.oldBulletproofChallengesPadded
 
                 fopState =
                   { deferredValues:
@@ -1255,44 +1229,44 @@ instance
 
             prevWrapPI :: Array WrapField
             prevWrapPI = wrapPublicInput prevVerifier prevCp
-
-            slotNInt :: Int
-            slotNInt = reflectType (Proxy @n)
           in
-            -- The width-sized fields (oldBulletproofChallenges,
-            -- msgWrapChallenges, outerStepChalPolyComms) live inside
-            -- prev.widthData :: SomeCompiledProofWidthData. runExists
-            -- recovers the typed Vector inside a polymorphic
-            -- continuation; we Array-pad both `prevWrapKimchiPrevChals`
-            -- (to PaddedLength=2 for the FFI prevChallenges arg) and
-            -- `headSlotPrevWrapBpChalsVec` (to the slot's expected `n`)
-            -- using `wd.width :: Int`.
+            -- The padded views (`Vector PaddedLength`) come pre-built
+            -- inside `prev.widthData` (computed by the producer side
+            -- where `Add pad mpv PaddedLength` is statically in scope).
+            -- We zip them once for the FFI prevChallenges argument
+            -- (single Array conversion at the FFI boundary) and use
+            -- `Vector.drop @slotPad` to take the `Vector n` view this
+            -- slot expects (with `Add slotPad n PaddedLength` from the
+            -- instance head). Mirrors OCaml's
+            -- `messages_for_next_step_proof.old_bulletproof_challenges`
+            -- threading through `step_main`.
             runExists
               ( \(CompiledProofWidthData wd) ->
                   let
-                    dummyKimchiArrayEntry =
-                      { sgX: wrapSgD.x
-                      , sgY: wrapSgD.y
-                      , challenges:
-                          ( Vector.toUnfoldable Dummy.dummyIpaChallenges.wrapExpanded
-                              :: Array WrapField
-                          )
-                      }
-                    prevRealEntries =
-                      Vector.toUnfoldable $ Vector.zipWith
-                        ( \sg chs ->
+                    -- FFI boundary: kimchi's `prev_challenges` argument
+                    -- expects a flat `Array {sgX, sgY, challenges :: Array}`
+                    -- of length PaddedLength=2. Build it from the
+                    -- pre-padded Vectors via `Vector.zipWith`, then
+                    -- convert to Array exactly once at the boundary.
+                    -- (sgX/sgY are `Vesta.ScalarField = StepField` —
+                    -- the Pallas point's coords live in Pallas's base
+                    -- field, which equals Vesta's scalar field.)
+                    prevWrapKimchiPrevChals
+                      :: Array
+                           { sgX :: StepField
+                           , sgY :: StepField
+                           , challenges :: Array WrapField
+                           }
+                    prevWrapKimchiPrevChals = Vector.toUnfoldable $
+                      Vector.zipWith
+                        ( \sg ch ->
                             { sgX: sg.x
                             , sgY: sg.y
-                            , challenges:
-                                (Vector.toUnfoldable chs :: Array WrapField)
+                            , challenges: Vector.toUnfoldable ch
                             }
                         )
-                        wd.outerStepChalPolyComms
-                        wd.msgWrapChallenges
-                    prevPadCount = 2 - wd.width
-                    prevWrapKimchiPrevChals =
-                      Array.replicate prevPadCount dummyKimchiArrayEntry
-                        <> prevRealEntries
+                        wd.outerStepChalPolyCommsPadded
+                        wd.msgWrapChallengesPadded
 
                     prevWrapOracles =
                       ProofFFI.vestaProofOracles slotWrapVK
@@ -1322,21 +1296,19 @@ instance
                           map peWF (ProofFFI.proofIndexEvals prev.wrapProof)
                       }
 
-                    -- Pad prev's `msgWrapChallenges :: Vector wd.width` to
-                    -- the slot's expected `Vector n`. For prev width <
-                    -- slot n, prepend dummies; for equal, no padding.
-                    headSlotPrevWrapBpChalsArr
-                      :: Array (Vector WrapIPARounds (F WrapField))
-                    headSlotPrevWrapBpChalsArr =
-                      Array.replicate (slotNInt - wd.width)
-                        (map F Dummy.dummyIpaChallenges.wrapExpanded)
-                        <> Vector.toUnfoldable
-                          (map (map F) wd.msgWrapChallenges)
-
+                    -- Take the slot's `Vector n` view from the padded
+                    -- `Vector PaddedLength`. Padding prepends dummies,
+                    -- so dropping the first `slotPad = PaddedLength - n`
+                    -- entries yields exactly the `n`-padded version
+                    -- this slot expects: dummies first (= PaddedLength-n
+                    -- minus pre-padded dummies; n ≥ width invariant in
+                    -- pickles), real entries last. `slotPad` is concrete
+                    -- via the instance's `Add slotPad n PaddedLength`.
                     headSlotPrevWrapBpChalsVec
                       :: Vector n (Vector WrapIPARounds (F WrapField))
-                    headSlotPrevWrapBpChalsVec = unsafePartial $ fromJust
-                      $ Vector.toVector @n headSlotPrevWrapBpChalsArr
+                    headSlotPrevWrapBpChalsVec =
+                      Vector.drop @slotPad
+                        (map (map F) wd.msgWrapChallengesPadded)
                   in
                     { prevSg: prev.challengePolynomialCommitment
                     , prevStepChals: prevStepBpChalsExpanded

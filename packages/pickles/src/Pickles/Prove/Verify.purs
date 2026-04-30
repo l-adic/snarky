@@ -47,6 +47,7 @@ import Data.Array as Array
 import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -54,8 +55,9 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
-import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
+import Pickles.Types (PaddedLength, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
+import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
@@ -128,10 +130,10 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
 -- | `T : ... -> ('s, 'mlmb) with_data` which exposes only `'mlmb`.
 data CompiledProofWidthData :: Int -> Type
 data CompiledProofWidthData width = CompiledProofWidthData
-  { -- Reified `reflectType (Proxy @width)` for runtime padding /
-    -- inspection after `runExists`. PS's `Exists` doesn't preserve
-    -- type-class instances across the existential boundary, so the
-    -- value is stored explicitly.
+  { -- Reified `reflectType (Proxy @width)` for runtime inspection
+    -- after `runExists`. PS's `Exists` doesn't preserve type-class
+    -- instances across the existential boundary, so the value is
+    -- stored explicitly.
     width :: Int
 
   -- Inner step proof's prev-proof bp challenges (carried by the
@@ -151,6 +153,22 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- The prover's deferred-values input; carries `prevSgs` and
   -- `prevChallenges` Vectors at the per-rule width.
   , wrapDvInput :: WrapDeferredValuesInput width
+
+  -- ===== Pre-padded views (front-padded with the matching dummy). =====
+  --
+  -- Inside `runExists`, `width` is rigid existential, so consumers
+  -- can't form an `Add pad width PaddedLength` constraint to pad
+  -- with `Vector.append (Vector.replicate @pad dummy) raw`. The
+  -- producer (`mkSomeCompiledProofWidthData`) HAS that constraint
+  -- (its `width = mpv` is concrete), so it pre-computes the padded
+  -- versions and stores them. Downstream callers — `mkStepAdvice` /
+  -- `shapeProveData` for `InductivePrev` — read these directly,
+  -- which makes their advice assembly Vector-only (no Array
+  -- roundtrip). Mirrors OCaml's `Vector.extend_front` of
+  -- `messages_for_next_step_proof.old_bulletproof_challenges` etc.
+  , oldBulletproofChallengesPadded :: Vector PaddedLength (Vector StepIPARounds StepField)
+  , msgWrapChallengesPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  , outerStepChalPolyCommsPadded :: Vector PaddedLength (AffinePoint StepField)
   }
 
 -- | Existentially-quantified `CompiledProofWidthData`. PS analog of
@@ -158,16 +176,26 @@ data CompiledProofWidthData width = CompiledProofWidthData
 -- | `runExists` to recover it (in continuation-passing form).
 type SomeCompiledProofWidthData = Exists CompiledProofWidthData
 
--- | Smart constructor for `SomeCompiledProofWidthData`. Stores
--- | `reflectType (Proxy @width)` so consumers see the per-rule width
--- | as an `Int` after the existential boundary.
+-- | Smart constructor for `SomeCompiledProofWidthData`. Pre-computes
+-- | the `Vector PaddedLength` views from the unpadded `Vector width`
+-- | inputs using the producer's `Add pad width PaddedLength`
+-- | constraint, then erases the per-rule `width` axis behind the
+-- | existential.
 mkSomeCompiledProofWidthData
-  :: forall @width
+  :: forall @width @pad
    . Reflectable width Int
+  => Reflectable pad Int
+  => Add pad width PaddedLength
   => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
      , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
      , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
      , wrapDvInput :: WrapDeferredValuesInput width
+     -- Front-padding dummies, one per padded view. Used to fill the
+     -- `pad` slots prepended to each `Vector width X` to lift it to
+     -- `Vector PaddedLength X`.
+     , dummyOldBp :: Vector StepIPARounds StepField
+     , dummyMsgWrap :: Vector WrapIPARounds WrapField
+     , dummyChalPolyComm :: AffinePoint StepField
      }
   -> SomeCompiledProofWidthData
 mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
@@ -176,6 +204,15 @@ mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
   , msgWrapChallenges: rec.msgWrapChallenges
   , outerStepChalPolyComms: rec.outerStepChalPolyComms
   , wrapDvInput: rec.wrapDvInput
+  , oldBulletproofChallengesPadded:
+      Vector.append (Vector.replicate @pad rec.dummyOldBp)
+        rec.oldBulletproofChallenges
+  , msgWrapChallengesPadded:
+      Vector.append (Vector.replicate @pad rec.dummyMsgWrap)
+        rec.msgWrapChallenges
+  , outerStepChalPolyCommsPadded:
+      Vector.append (Vector.replicate @pad rec.dummyChalPolyComm)
+        rec.outerStepChalPolyComms
   }
 
 -- | Everything needed to verify one proof, minus the per-tag constants
