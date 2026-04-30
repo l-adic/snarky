@@ -334,13 +334,15 @@ probeExtractStepCompileFns = do
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.TwoPhaseChain" do
-  -- Phase 2b.29: b0 (make_zero, branch 0) prove + verify under the
-  -- shared wrap VK. Exercises:
+  -- Multi-branch chain b0..b3 prove + verify under the shared wrap VK.
   --   * `compileMulti` end-to-end (multi-branch step+wrap compile)
-  --   * Head `BranchProver` closure invocation with PrevsSpecNil
-  --     prevsCarrier = unit
-  --   * Wrap proof verification through the shared `output.verifier`
-  it "b0 (make_zero) wrap proof — verify under shared wrap VK" \_ -> do
+  --   * b0 from branch 0 (make_zero), b1..b3 from branch 1 (increment),
+  --     each chained as `InductivePrev`.
+  --   * Single `verify` call discharges all four proofs against the
+  --     shared verifier — relies on per-proof `stepDomainLog2` so each
+  --     proof's deferred-values reconstruction uses its own branch's
+  --     step domain (b0=9, b1..b3=14).
+  it "b0..b3 chain prove + verify under shared wrap VK" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
@@ -371,13 +373,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
       Right p -> pure p
 
-    verify output.verifier [ b0 ] `shouldEqual` true
-    -- TEMP: drive b1 to dump witnesses for cross-branch comparison.
-    -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0. With the
-    -- `widthData`-existential refactor of `CompiledProof`, the per-rule
-    -- width is hidden inside `b0.widthData`, so b0 :: CompiledProof
-    -- mpvMax = CompiledProof 1 — directly compatible with `output.tag
-    -- :: Tag _ _ 1`. No coercion needed.
+    -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
     eB1 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F one
       , prevs:
@@ -388,9 +384,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
       Right p -> pure p
-    -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev
-    -- (prev rule is increment, same as the calling rule). b1 ::
-    -- CompiledProof 1 (= mpvMax) matches the slot directly.
+    -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     eB2 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs:
@@ -401,7 +395,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
       Right p -> pure p
-    -- b3 = increment(b2); appInput = 2 + 1 = 3. Continues the chain.
+    -- b3 = increment(b2); appInput = 2 + 1 = 3.
     eB3 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs:
@@ -409,7 +403,13 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
             (InductivePrev b2 output.tag)
             unit
       }
-    _b3 <- case eB3 of
+    b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)
       Right p -> pure p
-    pure unit
+
+    -- Verify all four proofs (b0 from branch 0, b1..b3 from branch 1)
+    -- against the shared multi-branch verifier. Per-proof
+    -- `stepDomainLog2` carried by `CompiledProof` lets each proof's
+    -- deferred-values reconstruction pick the right branch's step
+    -- domain.
+    verify output.verifier [ b0, b1, b2, b3 ] `shouldEqual` true
