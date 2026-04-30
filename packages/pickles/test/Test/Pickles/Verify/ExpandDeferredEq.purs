@@ -34,7 +34,8 @@ import Data.Either (Either(..))
 import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (fst)
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -69,9 +70,9 @@ type NrrRules =
 
 type SimpleChainRules =
   RulesCons 1
-    (Tuple (StatementIO (F StepField) Unit) Unit)
+    (Tuple1 (StatementIO (F StepField) Unit))
     (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    (Tuple SlotWrapKey Unit)
+    (Tuple1 SlotWrapKey)
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
@@ -106,7 +107,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @0
       @NoSlots
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
-      (Tuple nrrEntry unit)
+      (tuple1 nrrEntry)
 
     let BranchProver nrrProver = fst nrr.provers
     eCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
@@ -140,16 +141,16 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @0
       @1
       @34
-      @(Tuple (StatementIO (F StepField) Unit) Unit)
+      @(Tuple1 (StatementIO (F StepField) Unit))
       @(F StepField)
       @(FVar StepField)
       @Unit
       @Unit
       @(F StepField)
       @(FVar StepField)
-      @(Tuple SlotWrapKey Unit)
+      @(Tuple1 SlotWrapKey)
       simpleChainRule
-      (Tuple Self unit)
+      (tuple1 Self)
 
     chain <- liftEffect $ compileMulti
       @SimpleChainRules
@@ -159,14 +160,14 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       @1
       @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
-      (Tuple chainEntry unit)
+      (tuple1 chainEntry)
 
     let
       BranchProver chainProver = fst chain.provers
       basePrev = BasePrev
         { dummyStatement: StatementIO { input: F (negate one), output: unit } }
     eCp <- liftEffect $ runExceptT $ chainProver
-      { appInput: F zero, prevs: Tuple basePrev unit }
+      { appInput: F zero, prevs: tuple1 basePrev }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("simple_chain prover.step: " <> show e)
       Right p -> pure p

@@ -22,7 +22,8 @@ import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (fst)
+import Data.Tuple.Nested (tuple1)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -87,7 +88,7 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       nrrRule
       unit
 
-    let rules = Tuple nrrEntry unit
+    let rules = tuple1 nrrEntry
 
     output <- liftEffect $ compileMulti
       @NrrRules

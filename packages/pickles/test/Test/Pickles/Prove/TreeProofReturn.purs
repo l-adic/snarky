@@ -38,7 +38,8 @@ import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (fst)
+import Data.Tuple.Nested (Tuple2, tuple1, tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -72,9 +73,7 @@ type TreeProofReturnPrevsSpec =
 
 treeProofReturnRule
   :: StepRule 2
-       ( Tuple (StatementIO Unit (F StepField))
-           (Tuple (StatementIO Unit (F StepField)) Unit)
-       )
+       (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
        Unit
        Unit
        (F StepField)
@@ -83,13 +82,13 @@ treeProofReturnRule
        (FVar StepField)
 treeProofReturnRule _ = do
   nrrInput <- exists $ MT.lift do
-    Tuple (StatementIO { output: nrrOut }) _ <- getPrevAppStates unit
+    StatementIO { output: nrrOut } /\ _ <- getPrevAppStates unit
     pure nrrOut
   prevInput <- exists $ MT.lift do
-    Tuple _ (Tuple (StatementIO { output: prevOut }) _) <- getPrevAppStates unit
+    _ /\ StatementIO { output: prevOut } /\ _ <- getPrevAppStates unit
     pure prevOut
   isBaseCase <- exists $ MT.lift do
-    Tuple _ (Tuple (StatementIO { output: prevOut }) _) <- getPrevAppStates unit
+    _ /\ StatementIO { output: prevOut } /\ _ <- getPrevAppStates unit
     pure (prevOut == F (negate one))
   let proofMustVerifySlot1 = not_ isBaseCase
   selfVal <- if_ isBaseCase (const_ zero) (CVar.add_ (const_ one) prevInput)
@@ -116,11 +115,9 @@ type NrrRules =
 -- | (mpv=0) and a self-recursive (mpv=2).
 type TreeRules =
   RulesCons 2
-    ( Tuple (StatementIO Unit (F StepField))
-        (Tuple (StatementIO Unit (F StepField)) Unit)
-    )
+    (Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
     TreeProofReturnPrevsSpec
-    (Tuple SlotWrapKey (Tuple SlotWrapKey Unit))
+    (Tuple2 SlotWrapKey SlotWrapKey)
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
@@ -148,7 +145,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       nrrRule
       unit
 
-    let nrrRules = Tuple nrrEntry unit
+    let nrrRules = tuple1 nrrEntry
 
     nrr <- liftEffect $ compileMulti
       @NrrRules
@@ -188,20 +185,18 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @0 -- mpvPad
       @1 -- nd = topBranches (single branch)
       @67 -- outputSize = 2*32+1+2 = 67
-      @( Tuple (StatementIO Unit (F StepField))
-          (Tuple (StatementIO Unit (F StepField)) Unit)
-      )
+      @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
       @Unit
       @Unit
       @(F StepField)
       @(FVar StepField)
       @(F StepField)
       @(FVar StepField)
-      @(Tuple SlotWrapKey (Tuple SlotWrapKey Unit))
+      @(Tuple2 SlotWrapKey SlotWrapKey)
       treeProofReturnRule
-      (Tuple (External nrrProverVKs) (Tuple Self unit))
+      (tuple2 (External nrrProverVKs) Self)
 
-    let treeRules = Tuple treeEntry unit
+    let treeRules = tuple1 treeEntry
 
     tree <- liftEffect $ compileMulti
       @TreeRules
@@ -226,8 +221,7 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
         eRes <- liftEffect $ runExceptT $ treeProver
           { appInput: unit
           , prevs:
-              Tuple (InductivePrev nrrCp nrr.tag)
-                (Tuple selfPrev unit)
+              tuple2 (InductivePrev nrrCp nrr.tag) selfPrev
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)

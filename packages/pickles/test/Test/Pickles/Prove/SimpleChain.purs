@@ -21,7 +21,8 @@ import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (fst)
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -59,7 +60,7 @@ import Test.Spec.Assertions (shouldEqual)
 -- | `compiledProof.statement.input` is `b_k`'s self.
 simpleChainRule
   :: StepRule 1
-       (Tuple (StatementIO (F StepField) Unit) Unit)
+       (Tuple1 (StatementIO (F StepField) Unit))
        (F StepField)
        (FVar StepField)
        Unit
@@ -68,7 +69,7 @@ simpleChainRule
        (FVar StepField)
 simpleChainRule self = do
   prev <- exists $ MT.lift do
-    Tuple stmt _ <- getPrevAppStates unit
+    stmt /\ _ <- getPrevAppStates unit
     let StatementIO { input } = stmt
     pure input
   isBaseCase <- equals_ (const_ zero) self
@@ -85,9 +86,9 @@ simpleChainRule self = do
 -- | rule with mpv=1, one prev slot of width 1.
 type SimpleChainRules =
   RulesCons 1
-    (Tuple (StatementIO (F StepField) Unit) Unit)
+    (Tuple1 (StatementIO (F StepField) Unit))
     (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    (Tuple SlotWrapKey Unit)
+    (Tuple1 SlotWrapKey)
     RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
@@ -106,18 +107,18 @@ spec = describe "Pickles.Prove.SimpleChain" do
       @0 -- mpvPad
       @1 -- nd = topBranches (single branch)
       @34 -- outputSize
-      @(Tuple (StatementIO (F StepField) Unit) Unit)
+      @(Tuple1 (StatementIO (F StepField) Unit))
       @(F StepField)
       @(FVar StepField)
       @Unit
       @Unit
       @(F StepField)
       @(FVar StepField)
-      @(Tuple SlotWrapKey Unit)
+      @(Tuple1 SlotWrapKey)
       simpleChainRule
-      (Tuple Self unit)
+      (tuple1 Self)
 
-    let rules = Tuple chainEntry unit
+    let rules = tuple1 chainEntry
 
     output <- liftEffect $ compileMulti
       @SimpleChainRules
@@ -141,7 +142,7 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
       runStep prevSlot appInput = do
         eRes <- liftEffect $ runExceptT $ chainProver
-          { appInput, prevs: Tuple prevSlot unit }
+          { appInput, prevs: tuple1 prevSlot }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p

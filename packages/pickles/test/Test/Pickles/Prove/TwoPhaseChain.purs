@@ -42,7 +42,8 @@ import Data.Either (Either(..))
 import Data.Functor.Product (Product)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..), fst, snd)
+import Data.Tuple (fst, snd)
+import Data.Tuple.Nested (Tuple1, Tuple2, tuple1, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -114,7 +115,7 @@ makeZeroRule self = do
 -- | output").
 incrementRule
   :: StepRule 1
-       (Tuple (StatementIO (F StepField) Unit) Unit)
+       (Tuple1 (StatementIO (F StepField) Unit))
        (F StepField)
        (FVar StepField)
        Unit
@@ -123,7 +124,7 @@ incrementRule
        (FVar StepField)
 incrementRule self = do
   prev <- exists $ MT.lift do
-    Tuple stmt _ <- getPrevAppStates unit
+    stmt /\ _ <- getPrevAppStates unit
     let StatementIO { input } = stmt
     pure input
   assertEqual_ self (CVar.add_ (const_ one) prev)
@@ -196,17 +197,16 @@ probeIncrement
            (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
            1
            2
-           (Tuple (StatementIO (F StepField) Unit) Unit)
+           (Tuple1 (StatementIO (F StepField) Unit))
            (F StepField)
-           ( Tuple
+           ( Tuple1
                ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
                    (Type2 (SplitField (F StepField) Boolean))
                    Boolean
                )
-               Unit
            )
            34
-           (Tuple SlotWrapKey Unit)
+           (Tuple1 SlotWrapKey)
        )
 probeIncrement =
   mkRuleEntry
@@ -216,16 +216,16 @@ probeIncrement =
     @0 -- mpvPad = 0
     @2 -- nd = topBranches (TwoPhaseChain has 2 branches)
     @34
-    @(Tuple (StatementIO (F StepField) Unit) Unit)
+    @(Tuple1 (StatementIO (F StepField) Unit))
     @(F StepField)
     @(FVar StepField)
     @Unit
     @Unit
     @(F StepField)
     @(FVar StepField)
-    @(Tuple SlotWrapKey Unit)
+    @(Tuple1 SlotWrapKey)
     incrementRule
-    (Tuple Self unit)
+    (tuple1 Self)
 
 -- | Phase 2b.8 probe: the eventual rules carrier shape that
 -- | `compileMulti` will receive — a Tuple chain of `RuleEntry`s.
@@ -249,32 +249,28 @@ probeIncrement =
 -- | (Nil / Cons), recursing structurally.
 probeRulesCarrier
   :: Effect
-       ( Tuple
+       ( Tuple2
            (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
-           ( Tuple
-               ( RuleEntry
-                   (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-                   1
-                   2
-                   (Tuple (StatementIO (F StepField) Unit) Unit)
-                   (F StepField)
-                   ( Tuple
-                       ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
-                           (Type2 (SplitField (F StepField) Boolean))
-                           Boolean
-                       )
-                       Unit
+           ( RuleEntry
+               (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+               1
+               2
+               (Tuple1 (StatementIO (F StepField) Unit))
+               (F StepField)
+               ( Tuple1
+                   ( StepSlot 1 StepIPARounds WrapIPARounds (F StepField)
+                       (Type2 (SplitField (F StepField) Boolean))
+                       Boolean
                    )
-                   34
-                   (Tuple SlotWrapKey Unit)
                )
-               Unit
+               34
+               (Tuple1 SlotWrapKey)
            )
        )
 probeRulesCarrier = do
   zero <- probeMakeZero
   inc <- probeIncrement
-  pure (Tuple zero (Tuple inc unit))
+  pure (tuple2 zero inc)
 
 -- | Phase 2b.9 probe: validate that `branchCount` correctly recurses
 -- | over a two-rule `RulesSpec` and returns 2. The type alias spells
@@ -291,9 +287,9 @@ probeRulesCarrier = do
 type TwoPhaseChainRules =
   RulesCons 0 Unit PrevsSpecNil Unit
     ( RulesCons 1
-        (Tuple (StatementIO (F StepField) Unit) Unit)
+        (Tuple1 (StatementIO (F StepField) Unit))
         (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        (Tuple SlotWrapKey Unit)
+        (Tuple1 SlotWrapKey)
         RulesNil
     )
 
@@ -314,16 +310,13 @@ probeBranchCount = 0
 -- | per-branch heterogeneity.
 probeExtractStepCompileFns
   :: Effect
-       ( Tuple
+       ( Tuple2
            (StepProveContext 0 2 -> Effect StepCompileResult)
-           ( Tuple
-               (StepProveContext 1 2 -> Effect StepCompileResult)
-               Unit
-           )
+           (StepProveContext 1 2 -> Effect StepCompileResult)
        )
 probeExtractStepCompileFns = do
   -- Phase 2b.31c: stub — pre-mpvMax-axis probe.
-  pure $ Tuple (\_ -> Exc.throw "stub") (Tuple (\_ -> Exc.throw "stub") unit)
+  pure $ tuple2 (\_ -> Exc.throw "stub") (\_ -> Exc.throw "stub")
 
 --------------------------------------------------------------------------------
 -- Test spec — pending until Phase 2b lands compileMulti's body
@@ -373,10 +366,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0 (branch 0).
     eB1 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F one
-      , prevs:
-          Tuple
-            (InductivePrev b0 output.tag)
-            unit
+      , prevs: tuple1 (InductivePrev b0 output.tag)
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -384,10 +374,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- b2 = increment(b1); appInput = 1 + 1 = 2. Same-branch self-prev.
     eB2 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
-      , prevs:
-          Tuple
-            (InductivePrev b1 output.tag)
-            unit
+      , prevs: tuple1 (InductivePrev b1 output.tag)
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -395,10 +382,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     -- b3 = increment(b2); appInput = 2 + 1 = 3.
     eB3 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
-      , prevs:
-          Tuple
-            (InductivePrev b2 output.tag)
-            unit
+      , prevs: tuple1 (InductivePrev b2 output.tag)
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)
