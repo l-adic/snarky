@@ -1,16 +1,5 @@
--- | PureScript-side analog of OCaml's
--- | `dump_two_phase_chain.ml` — minimal multi-branch fixture, two
--- | rules sharing one wrap VK. **Currently `pending`**: the
--- | underlying `Pickles.Prove.CompileMulti.compileMulti` is a Phase
--- | 2a stub that throws `notImplemented`. This file's purpose at
--- | Phase 2b.1 is to commit the **value-level carrier shape** for the
--- | `RulesSpec`-encoded rules list, so when we fill in
--- | `compileMulti`'s body we have a concrete call site to validate
--- | against `dump_two_phase_chain.exe`'s witness.
--- |
--- | Once Phase 2b lands a working `compileMulti`, switch the
--- | `pending` markers to `it` and iterate via
--- | `tools/two_phase_chain_witness_diff.sh`.
+-- | PureScript-side analog of OCaml's `dump_two_phase_chain.ml` —
+-- | minimal multi-branch fixture, two rules sharing one wrap VK.
 -- |
 -- | The two rules:
 -- |
@@ -27,11 +16,6 @@ module Test.Pickles.Prove.TwoPhaseChain
   ( spec
   , makeZeroRule
   , incrementRule
-  , probeMakeZero
-  , probeIncrement
-  , probeRulesCarrier
-  , probeBranchCount
-  , probeExtractStepCompileFns
   ) where
 
 import Prelude
@@ -59,7 +43,7 @@ import Pickles.Prove.CompileMulti
   , compileMulti
   , mkRuleEntry
   )
-import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
+import Pickles.Prove.Step (StepRule)
 import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
@@ -139,34 +123,15 @@ incrementRule self = do
     }
 
 --------------------------------------------------------------------------------
--- Phase 2b.6 probes — call sites that exercise `mkRuleEntry` with the
--- two real rank-2 rules above. If both compile, the smart-constructor
--- approach in Pickles.Prove.CompileMulti is viable end-to-end:
---
---   * `mkRuleEntry` accepts a rank-2 `StepRule` value as a positional
---     argument (proven Phase 2b.4).
---   * `mkRuleEntry`'s body constructs a `RuleEntry` value with closures
---     that capture the rule (Phase 2b.5).
---   * `mkRuleEntry`'s `stepCompileFn` body now invokes `stepCompile`
---     with the captured rule (Phase 2b.6 — rank-2 USE inside a
---     closure body, not just rank-2 STORAGE).
---   * Real call sites — the rule values flowing IN from this module —
---     typecheck. This is the unification-of-rank-2 test PR #126
---     stumbled on; the smart-constructor closure approach is meant to
---     sidestep it.
---
--- These probes construct a `RuleEntry` value but never CALL its
--- `stepCompileFn` (no `StepProveContext` available here — that's
--- compileMulti's job). They're signature-level evidence that the
--- closure body in `mkRuleEntry` typechecks.
+-- Per-rule `RuleEntry` builders. The branch-0 (mpv=0, no prevs)
+-- entry is `Unit`-shaped; branch 1 (mpv=1, one self-prev) carries
+-- the increment rule's prev statement plus its self slotVK.
 --------------------------------------------------------------------------------
 
--- | Probe: `makeZeroRule` (mpv=0, no prevs, valCarrier=Unit,
--- | prevsSpec=PrevsSpecNil). Smoke test of `mkRuleEntry`'s rank-2
--- | input acceptance with the simplest possible rule shape.
-probeMakeZero
+-- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
+mkMakeZeroEntry
   :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
-probeMakeZero =
+mkMakeZeroEntry =
   mkRuleEntry
     @PrevsSpecNil
     @0 -- mpv (rule's own)
@@ -185,13 +150,9 @@ probeMakeZero =
     makeZeroRule
     unit
 
--- | Probe: `incrementRule` (mpv=1, one self-referential prev,
--- | `valCarrier = Tuple (StatementIO (F StepField) Unit) Unit`,
--- | prev slot's mpv=1 since `self` has mpv=1). Verifies
--- | `mkRuleEntry` works with a non-trivial valCarrier+prevsSpec
--- | shape — the real test of whether the smart-constructor pattern
--- | can carry the variation across rules.
-probeIncrement
+-- | `incrementRule` packaged: mpv=1, one self-referential prev,
+-- | valCarrier carrying the prev's `StatementIO`.
+mkIncrementEntry
   :: Effect
        ( RuleEntry
            (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
@@ -208,7 +169,7 @@ probeIncrement
            34
            (Tuple1 SlotWrapKey)
        )
-probeIncrement =
+mkIncrementEntry =
   mkRuleEntry
     @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
     @1 -- mpv
@@ -227,27 +188,9 @@ probeIncrement =
     incrementRule
     (tuple1 Self)
 
--- | Phase 2b.8 probe: the eventual rules carrier shape that
--- | `compileMulti` will receive — a Tuple chain of `RuleEntry`s.
--- |
--- | Each `RuleEntry` has 7 type params; the chain shape is
--- | `Tuple entry0 (Tuple entry1 Unit)` for two rules, mirroring the
--- | existing `PrevsCarrier` Tuple-chain pattern at the rules level.
--- |
--- | If this typechecks, we know:
--- |
--- |   * Two `RuleEntry`s with DIFFERENT type params can sit side-by-
--- |     side in a Tuple chain (PS doesn't reject heterogeneous
--- |     entries).
--- |   * The carrier value can be constructed by sequencing the
--- |     individual `mkRuleEntry` calls — the same pattern
--- |     `compileMulti`'s caller will use.
--- |
--- | Phase 2b.9 next: write a function that CONSUMES this carrier —
--- | iterates over the Tuple chain, dispatching `stepCompileFn` for
--- | each entry. That requires a class with one method per shape
--- | (Nil / Cons), recursing structurally.
-probeRulesCarrier
+-- | The full rules carrier `compileMulti` receives — a Tuple chain
+-- | of `RuleEntry`s (one per branch, heterogeneously typed).
+mkRulesCarrier
   :: Effect
        ( Tuple2
            (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
@@ -267,23 +210,15 @@ probeRulesCarrier
                (Tuple1 SlotWrapKey)
            )
        )
-probeRulesCarrier = do
-  zero <- probeMakeZero
-  inc <- probeIncrement
+mkRulesCarrier = do
+  zero <- mkMakeZeroEntry
+  inc <- mkIncrementEntry
   pure (tuple2 zero inc)
 
--- | Phase 2b.9 probe: validate that `branchCount` correctly recurses
--- | over a two-rule `RulesSpec` and returns 2. The type alias spells
--- | out the shape:
+-- | Two-branch `RulesSpec`:
 -- |
--- |   RulesCons 0 Unit PrevsSpecNil Unit                            (makeZero)
--- |     (RulesCons 1 (Tuple (StatementIO …) Unit) (PrevsSpecCons 1 …) Unit  (increment)
--- |        RulesNil)
--- |
--- | If `branchCount` returns 2, the type-level recursion through
--- | `RulesSpec` AND the value-level dispatch through the class
--- | instance chain are both wired correctly. This is the foundational
--- | test for `compileMulti`'s eventual `compileBranches`-style method.
+-- |   * branch 0: makeZero (mpv=0, no prevs)
+-- |   * branch 1: increment (mpv=1, one self-prev)
 type TwoPhaseChainRules =
   RulesCons 0 Unit PrevsSpecNil Unit
     ( RulesCons 1
@@ -293,33 +228,8 @@ type TwoPhaseChainRules =
         RulesNil
     )
 
--- Phase 2b.31c: stub — pre-mpvMax-axis probe.
-probeBranchCount :: Int
-probeBranchCount = 0
-
--- | Phase 2b.11 probe: validate that `extractStepCompileFns` correctly
--- | descends the rules carrier and pulls each entry's `stepCompileFn`
--- | into a heterogeneous Tuple chain.
--- |
--- | The result type is the per-branch compile-thunk shape that
--- | `compileMulti`'s eventual body will sequence (per-branch
--- | `StepProveContext mpv -> Effect StepCompileResult` thunks).
--- | Branch 0's thunk has type `StepProveContext 0 -> Effect …`
--- | (makeZero, mpv=0); branch 1's has type `StepProveContext 1 ->
--- | Effect …` (increment, mpv=1). The Tuple structure preserves
--- | per-branch heterogeneity.
-probeExtractStepCompileFns
-  :: Effect
-       ( Tuple2
-           (StepProveContext 0 2 -> Effect StepCompileResult)
-           (StepProveContext 1 2 -> Effect StepCompileResult)
-       )
-probeExtractStepCompileFns = do
-  -- Phase 2b.31c: stub — pre-mpvMax-axis probe.
-  pure $ tuple2 (\_ -> Exc.throw "stub") (\_ -> Exc.throw "stub")
-
 --------------------------------------------------------------------------------
--- Test spec — pending until Phase 2b lands compileMulti's body
+-- Test spec
 --------------------------------------------------------------------------------
 
 spec :: SpecT Aff Unit Aff Unit
@@ -343,7 +253,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
         , wrapDomainOverride: Nothing
         }
 
-    rules <- liftEffect probeRulesCarrier
+    rules <- liftEffect mkRulesCarrier
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
       @(F StepField)

@@ -46,7 +46,7 @@ module Pickles.Prove.Step
   , stepCompile
   , preComputeStepDomainLog2
   , stepSolveAndProve
-  -- mpvMax-padding helpers (Phase 2b.31a)
+  -- mpvMax-padding helpers
   , mkDummyPerProofUnfinalized
   , mkDummyMsgWrapHash
   ) where
@@ -488,7 +488,7 @@ extractWrapVKForStepHash vk =
     }
 
 --------------------------------------------------------------------------------
--- mpvMax-padding dummies (Phase 2b.31a)
+-- mpvMax-padding dummies
 --
 -- Mirror OCaml `Unfinalized.Constant.dummy` (unfinalized.ml:25-104)
 -- and the prover-side `pad` function for `messages_for_next_wrap_proof`

@@ -250,8 +250,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- gate (constant 14 in coeffs[4]) BEFORE the `equals 9` gate. PS's
   -- `traverse` is left-to-right, so we mirror OCaml by reversing the
   -- input, traversing, and reversing the output back. Without this,
-  -- the b1_step CS has the constants swapped (PS gate 348 const=9 vs
-  -- OCaml gate 348 const=14) — see Task #193.
+  -- the resulting CS has the constants swapped relative to OCaml.
   domainWhichesRev <- traverse
     (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
     (Vector.reverse params.domains)

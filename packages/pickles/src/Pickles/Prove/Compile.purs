@@ -1,21 +1,16 @@
--- | Top-level user-facing Pickles `compile` API.
+-- | Per-rule shape machinery: types, the `CompilableSpec` class +
+-- | its Nil / Cons instances, and supporting helpers.
 -- |
--- | Wraps `Pickles.Prove.Step` / `Pickles.Prove.Wrap` into a single
--- | `compile` call that returns a `Prover` (with `step`), a `Verifier`,
--- | and the VK bundle downstream compiles consume as
--- | `perSlotImportedVKs` when using this Prover as a prev.
+-- | The user-facing `compile` entry point lives in
+-- | `Pickles.Prove.CompileMulti` (which dispatches through the class
+-- | methods defined here). Mirrors OCaml `Pickles.compile_promise` at
+-- | a high level, modulo the advice-monad model difference (PS uses
+-- | `CircuitM t m` polymorphism; OCaml dispatches via
+-- | request/handler).
 -- |
--- | Mirrors OCaml `Pickles.compile_promise` at a high level, modulo
--- | the advice-monad model difference (PS uses `CircuitM t m`
--- | polymorphism; OCaml dispatches via request/handler).
--- |
--- | Phased implementation — see
--- | `docs/pickles-compile-prover-api-plan.md`. `compile`'s body is
--- | shape-polymorphic: everything that differs between
--- | `PrevsSpecNil` / `PrevsSpecCons` shapes lives inside
--- | `CompilableSpec` class instances, which `compile` dispatches
--- | through. Phase 1 ships the `PrevsSpecNil` instance only;
--- | Phases 2/3 add `PrevsSpecCons` cases without touching `compile`.
+-- | Everything that differs between `PrevsSpecNil` / `PrevsSpecCons`
+-- | shapes lives inside `CompilableSpec`'s instances; `compile`
+-- | dispatches through them.
 module Pickles.Prove.Compile
   ( CompileConfig
   , ProverVKs
@@ -331,17 +326,13 @@ type ShapeProveData mpv slots =
 -- mpvMax slotsMax. Mirrors the rule's actual mpv/slots shape (driven by
 -- prevsSpec) up to the wrap circuit's wider mpvMax/slotsMax.
 --
--- Phase 2b.31b step (a): identity instance only (fast path).
--- Phase 2b.31b step (b): general instance using `PadProveDataDummies`
--- + `ConvertSlots` to front-pad each Vector field and convert the
--- slots carrier.
---
 -- The two-instance chain uses `else instance` (PS overlapping-instance
 -- syntax). PS picks the first matching instance, so the identity head
 -- with repeated vars (`mpv slots mpv slots`) fires whenever the types
--- align — which they do for every single-rule caller (NRR, Tree, both
--- per-branch SimpleChain rules) because `mpv = mpvMax` and
--- `slots = slotsMax`.
+-- align (single-rule callers, where `mpv = mpvMax` and `slots =
+-- slotsMax`); otherwise the general instance front-pads each Vector
+-- field via `PadProveDataDummies` and converts the slots carrier via
+-- `ConvertSlots`.
 --------------------------------------------------------------------------------
 
 -- | Per-entry dummy values for padding. Each field is one entry's
@@ -557,14 +548,13 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
                     :: AffinePoint (F StepField)
               , perSlotFopDomainLog2s: Vector.nil
               , perSlotKnownWrapKeys: Vector.nil
-              -- Phase 2b.31a: mpvMax-padding dummies. Wrapped in
-              -- `Unit ->` thunks so the (Rust-FFI-using)
-              -- computeDummySgValues call inside mkDummyMsgWrapHash
-              -- only fires when mpvFrontPad actually needs the dummy
-              -- (i.e., mpvPad > 0). Single-rule callers have
-              -- mpvPad = 0 so the thunks never fire — preserves
-              -- byte-identical witness with the pre-Phase-2b.31a
-              -- chacha8 RNG state.
+              -- mpvMax-padding dummy. Wrapped in a `Unit ->` thunk
+              -- so the (Rust-FFI-using) `computeDummySgValues` call
+              -- inside `mkDummyMsgWrapHash` only fires when
+              -- `mpvFrontPad` actually needs the dummy (mpvPad > 0).
+              -- For single-rule callers `mpvPad = 0`, so the thunk
+              -- never fires and the chacha8 RNG state stays
+              -- consistent with the no-padding path.
               , dummyUnfp: \_ ->
                   PStepMain.liftDummyPerProofUnfinalized
                     (mkDummyPerProofUnfinalized bcd)
@@ -635,19 +625,10 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit where
 -- | user-supplied dummy input for proof-level base case (b0);
 -- | `InductivePrev` carries a real `CompiledProof` from a previous
 -- | `prover.step` for inductive cases (b1+).
--- |
--- | Phase 2: method bodies are stubs — type-level scaffolding only.
--- | Recursive Cons instance — head slot's per-slot data lives at
--- | the `Tuple` head; recursion threads the rest.
--- |
--- | This instance only fully implements the **single-slot Self**
--- | case (Simple_chain shape: rest = PrevsSpecNil, head slot = Self).
--- | Phase A: the type-level shape is generalized — `slotVKs` is
--- | `Tuple SlotWrapKey restSlotVKs`, `valCarrier` is `Tuple stmt
--- | restValCarrier`. Phase B (per-slot advice + combiner) wires
--- | `External` slot dispatch and arbitrary-rest support; until then
--- | the body crashes with a TODO if anything other than Self is
--- | reached, or rest is not PrevsSpecNil.
+
+-- | Cons instance — head slot's per-slot data lives at the `/\`
+-- | head; recursion threads the rest. Handles `Self` and `External`
+-- | slot dispatch.
 instance
   ( CompilableSpec rest restSlotVKs restPrevsCarrier restMpv restSlots restValCarrier restCarrier
   , Add restMpv 1 mpv
@@ -749,8 +730,8 @@ instance
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotKnownWrapKeys:
                   headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
-              -- Phase 2b.31a: mpvMax-padding dummies (thunks; see
-              -- Nil instance for rationale).
+              -- mpvMax-padding dummy (thunk; see Nil instance for
+              -- rationale).
               , dummyUnfp: \_ ->
                   PStepMain.liftDummyPerProofUnfinalized
                     (mkDummyPerProofUnfinalized outerBcd)

@@ -18,7 +18,7 @@ module Pickles.Step.Main
   , UnfinalizedProof
   , liftDummyPerProofUnfinalized
   , stepMain
-  -- * mpvMax-padding (Phase 2b.31a)
+  -- * mpvMax-padding
   , class IntEq
   , class MpvPaddingDispatch
   , mpvFrontPadVecD
@@ -199,7 +199,7 @@ stepEndoVal :: StepField
 stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
 
 --------------------------------------------------------------------------------
--- MpvPadding class (Phase 2b.31a, IntEq dispatch refactor 2b.31c)
+-- MpvPadding class
 --
 -- Relates `mpvPad + len = mpvMax` at the type level for step PI
 -- mpvMax-padding (mirroring OCaml `step.ml:782-787`'s
@@ -473,7 +473,7 @@ unpackUnfinalized (PerProofUnfinalized r) = pure
 -- | Lift a value-level dummy `PerProofUnfinalized` (cross-field-encoded
 -- | in step field) directly to an `UnfinalizedProof` (circuit-var,
 -- | unpacked) via `const_` / boolean-constant lifting. Pure: emits no
--- | constraints. Used by `stepMain` for mpvMax-padding (Phase 2b.31a).
+-- | constraints. Used by `stepMain` for mpvMax-padding.
 liftDummyPerProofUnfinalized
   :: PerProofUnfinalized
        WrapIPARounds
@@ -699,10 +699,9 @@ stepMain
   => Reflectable mpvMax Int
   => Reflectable mpvPad Int
   => Add pad len PaddedLength
-  -- mpvMax-padding (Phase 2b.31a). For single-rule callers
-  -- mpvMax = len so mpvPad = 0 and padding emits nothing — circuit
-  -- shape unchanged. For multi-branch callers mpvPad > 0 and
-  -- `mpvFrontPad` prepends `mpvPad` dummy entries.
+  -- mpvMax-padding. When `mpvMax = len` then `mpvPad = 0` and padding
+  -- emits nothing (circuit shape unchanged). When `mpvPad > 0`,
+  -- `mpvFrontPad` prepends that many dummy entries.
   => MpvPadding mpvPad len mpvMax
   => Mul mpvMax 32 unfsTotal
   => Add unfsTotal 1 digestPlusUnfs

@@ -12,11 +12,6 @@
 -- |   the `wrapMain` circuit body can `ask` for each advice piece.
 -- | * `runWrapProverT` — runner that supplies the advice and unwraps
 -- |   to the base monad (`Effect`).
--- |
--- | This replaces the stub `WrapMainProverM` that lived in
--- | `Test.Pickles.TestContext`; it lives in library code so the new
--- | wrap-prover pipeline (stages A/B/C in the port plan) can build on
--- | it without leaning on test-only scaffolding.
 module Pickles.Prove.Wrap
   ( WrapAdvice
   , WrapProverT(..)

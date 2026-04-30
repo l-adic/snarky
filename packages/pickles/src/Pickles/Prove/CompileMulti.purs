@@ -1,40 +1,15 @@
--- | **SCRATCH MODULE — Phase 2a skeleton for multi-branch compile.**
+-- | Multi-branch compile: N rules in one `compile` call, sharing a
+-- | single wrap VK.
 -- |
--- | This is a **stub** establishing the user-facing API surface for
--- | multi-branch (= N rules in one `Pickles.compile_promise` call
--- | sharing one wrap VK). Bodies are unimplemented; calling
--- | `compileMulti` raises `Exc.error`. Phase 2a's purpose is to commit
--- | the type signatures so we can iterate on shape before sinking
--- | implementation effort.
--- |
--- | Mirrors the existing `Pickles.Step.Prevs` pattern — that module
--- | encodes a per-prev-slot HList as a `PrevsSpec` kind plus
--- | `Tuple`-based value-level carriers; we encode the per-rule HList
--- | as a `RulesSpec` kind plus `Tuple`-based carriers in exactly the
--- | same shape, just one level up (rules list instead of prevs list).
--- | N-ary from the start; no `compileMulti2` placeholder.
+-- | Mirrors `Pickles.Step.Prevs`'s encoding pattern, just one level
+-- | up: where `Step.Prevs` encodes a per-prev-slot HList as a
+-- | `PrevsSpec` kind + `Tuple`-based value-level carrier, this module
+-- | encodes the per-rule HList as a `RulesSpec` kind + `Tuple`-based
+-- | carrier.
 -- |
 -- | OCaml reference: `Pickles.compile_promise () ~choices:(fun ~self -> [...])`
--- | where the `[...]` list is what `RulesSpec` models at the type
--- | level and `rulesCarrier` (a Tuple chain) holds at the value level.
--- | Concrete fixture: `dump_two_phase_chain.exe` (2 rules; will scale
--- | naturally to transaction-snark-shape 5-rule cases later).
--- |
--- | What Phase 2a lands:
--- |
--- |   * `RulesSpec` kind + `RulesNil` / `RulesCons` constructors.
--- |   * Tuple-based value-level rule carriers.
--- |   * `CompileMultiConfig` and `MultiOutput` types holding per-rule
--- |     `slotVKs` carriers + per-rule prover carriers.
--- |   * `compileMulti` stub that throws `notImplemented`.
--- |
--- | What Phase 2b adds:
--- |
--- |   * `CompilableRulesSpec` class methods (analog of `CompilableSpec`
--- |     for the rules level): per-rule step compile + shared wrap
--- |     compile + per-rule prover wrapping.
--- |   * `MaxMpv` / `RulesLength` type families.
--- |   * `RulesCarrier` instance for `Tuple` chains.
+-- | — the `[...]` list is what `RulesSpec` models at the type level
+-- | and the `Tuple` chain holds at the value level.
 module Pickles.Prove.CompileMulti
   ( -- * Type-level rules spec
     RulesSpec
@@ -177,8 +152,8 @@ import Type.Proxy (Proxy(..))
 data RulesSpec
 
 -- | Empty rules list. A multi-branch compile with `RulesNil` is
--- | structurally a no-op and should be rejected at the API level
--- | (Phase 2b enforces via instance unavailability).
+-- | structurally a no-op and is rejected at the API level (no
+-- | `CompilableRulesSpecShape` instance for the empty list).
 foreign import data RulesNil :: RulesSpec
 
 -- | One branch's contribution to the rules list. The four type-level
@@ -186,54 +161,17 @@ foreign import data RulesNil :: RulesSpec
 -- | slotVKs; the fifth is the rest of the list.
 foreign import data RulesCons :: Int -> Type -> Type -> Type -> RulesSpec -> RulesSpec
 
---------------------------------------------------------------------------------
--- CompileMultiConfig
---
--- The user supplies:
---
---   * Shared SRS (one wrap VK across all branches).
---   * `debug` flag.
---   * `wrapDomainOverride` (analog of single-rule `Maybe Int`).
---   * `rulesCarrier` — value-level chain of per-rule data, shaped to
---     match `rs` via `Tuple … (Tuple … Unit)`. Each entry holds:
---       - the `StepRule` value for that branch
---       - that branch's `slotVKs` (per-prev-slot VK references)
---     For a 2-rule spec `RulesCons _ _ _ _ (RulesCons _ _ _ _ RulesNil)`
---     the carrier shape is `Tuple entry1 (Tuple entry2 Unit)`.
---     Phase 2b refines `entry`'s record shape to the precise per-rule
---     contents `compile` needs — for the skeleton it's opaque.
---------------------------------------------------------------------------------
-
 -- | Multi-branch compile config. Shape is shared across all branches;
 -- | per-branch data lives in the value-level `rulesCarrier` argument
--- | passed alongside.
+-- | passed alongside (a `Tuple` chain matching the `RulesSpec` shape).
 type CompileMultiConfig =
   { srs :: { vestaSrs :: CRS VestaG, pallasSrs :: CRS PallasG }
   , debug :: Boolean
   , wrapDomainOverride :: Maybe Int
   }
 
---------------------------------------------------------------------------------
--- MultiOutput
---
--- The "one VK, N provers" multi-branch invariant in the type:
---
---   * `proversCarrier` — Tuple chain matching `rs` shape, one entry
---     per branch holding that branch's `prover.step` closure.
---   * `tag` — single shared tag for the proof system. Its `mpv`
---     parameter is the max over all rules' mpvs (Phase 2b derives via
---     a `MaxMpv rs mpvMax` family).
---   * `verifier` — single shared verifier. ANY branch's proof
---     verifies under it.
---   * `vks` — bundles the shared wrap CompileResult + per-branch
---     step CompileResults (Tuple chain).
---   * `perBranchProverVKs` — Tuple chain of per-branch `ProverVKs`
---     handles for downstream `External` references.
---------------------------------------------------------------------------------
-
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
 -- | carrier corresponds to a `BranchProver` of that branch's shape.
--- | Aliases the type to make per-branch carriers readable.
 newtype BranchProver
   :: Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type
 newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal m =
@@ -283,30 +221,23 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
   }
 
 --------------------------------------------------------------------------------
--- CompilableRulesSpec — Phase 2b.9: structural recursion enabled
+-- CompilableRulesSpec
 --
 -- Mirror of `Pickles.Step.Prevs.PrevsCarrier` at the rules level
--- (one level up from per-prev-slot). Drives multi-branch compile
--- via per-rule dispatch.
+-- (one level up from per-prev-slot). Drives multi-branch compile via
+-- per-rule dispatch.
 --
 -- Why class-method dispatch (vs. tuple-stored rules): PS rejects
--- record fields holding `StepRule`'s rank-2 forall (PR #126's wall +
--- Phase 2b.1's experiment confirmed). Class-method dispatch sidesteps
--- this — each instance is monomorphic, so the user's rank-2 rule
--- value gets *used* inside the method body (calling `stepCompile` /
--- `stepSolveAndProve`) without ever being *stored* as a record value.
+-- record fields holding `StepRule`'s rank-2 forall. Class-method
+-- dispatch sidesteps this — each instance is monomorphic, so the
+-- user's rank-2 rule value gets *used* inside the method body
+-- (calling `stepCompile` / `stepSolveAndProve`) without ever being
+-- *stored* as a record value.
 --
 -- The funDep `rs -> branches mpvMax` says: the type-level rules spec
 -- determines (a) the branch count and (b) the max mpv across rules.
--- Phase 2b.9 wires the `Add restBranches 1 branches` recurrence so
--- branches is computed at the type level. mpvMax (max over rules)
--- is wired in a later phase — needs a Prim.Int.Compare-driven
--- type-level max relation.
---
--- The method `branchCount` validates the recursion is structurally
--- sound: for `RulesCons _ _ _ _ rest`, returns 1 + countBranches @rest;
--- for `RulesNil`, returns 0. Pure type-level recursion driving a
--- value-level integer.
+-- The `Add restBranches 1 branches` recurrence computes `branches`
+-- at the type level.
 --------------------------------------------------------------------------------
 
 -- | `topBranches` is the FIXED outer-compile branch count that flows
@@ -376,19 +307,9 @@ class
   extractStepCompileFns :: rulesCarrier -> stepCompileFnsCarrier
 
   -- | Run per-branch step compiles. Takes a Tuple chain of per-branch
-  -- | `StepProveContext mpv` (caller-supplied; Phase 2b.12 leaves
-  -- | their construction to the caller) and the rules carrier;
+  -- | `StepProveContext mpv` (one per rule) plus the rules carrier;
   -- | sequences each entry's `stepCompileFn ctx` and returns a Tuple
   -- | chain of `StepCompileResult`s in branch order.
-  -- |
-  -- | This is the per-branch step compile dispatch. The compile
-  -- | thunks are accessed via `RuleEntry`'s field; the per-branch
-  -- | context comes from the parallel input carrier.
-  -- |
-  -- | Phase 2b.13 will lift the context construction into the class
-  -- | itself — given `CompileMultiConfig`, derive per-branch
-  -- | `StepProveContext` via `shapeCompileData` (per-rule
-  -- | `CompilableSpec` constraint added then).
   runStepCompiles
     :: perBranchCtxsCarrier
     -> rulesCarrier
@@ -402,9 +323,9 @@ class
   -- |   -> StepAdvice prevsSpec _ _ inputVal mpv carrier valCarrier
   -- |   -> ExceptT EvaluationError Effect (StepProveResult outputSize)
   -- |
-  -- | Used downstream (Phase 2b.20+) to build per-branch
-  -- | `BranchProver` closures by composing stepSolveAndProve with the
-  -- | wrap solve+prove flow.
+  -- | Used by `buildBranchProvers` to assemble per-branch
+  -- | `BranchProver` closures by composing each branch's
+  -- | `stepSolveAndProve` with the shared wrap solve+prove flow.
   extractStepProveFns :: rulesCarrier -> stepProveFnsCarrier
 
   -- | Convert the per-branch `StepCompileResult` Tuple chain into the
@@ -477,8 +398,8 @@ instance
       Boolean
       ruleMpv
       carrier
-  -- Phase 2b.31c: outputSize derives from mpvMax (the wrap circuit's
-  -- max), not the rule's mpv. Step PI is mpvMax-shaped (mirrors OCaml
+  -- outputSize derives from mpvMax (the wrap circuit's max), not the
+  -- rule's mpv: step PI is mpvMax-shaped (mirrors OCaml
   -- step.ml:783-787).
   , Mul mpvMax 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
@@ -612,25 +533,15 @@ instance
         rest
 
 --------------------------------------------------------------------------------
--- CompilableRulesSpecShape — Phase 2b.20 split: shape-data methods.
+-- CompilableRulesSpecShape — shape-data methods.
 --
--- Why a separate class: the structural class above must NOT carry a
--- `CompilableSpec` super-constraint on its Cons instance, because PS
--- can't always discharge it at call sites (some sub-constraint on
--- PrevsSpecCons fails to dispatch from caller context, which cascades
--- through the funDep chain and leaves all class params unresolved).
--- Empirically verified: removing the constraint unblocks the
--- structural test probe.
---
--- This class extends `CompilableRulesSpec` with the shape-data
--- methods (runMultiCompile, runMultiCompileFull). The Cons instance
--- here DOES require `CompilableSpec prevsSpec ...`. Callers of these
--- methods opt in to the heavier discharge requirement; structural
--- methods stay light.
---
--- The split mirrors how single-rule `compile` separates structural
--- helpers (PrevsCarrier traversal) from shape-data computation
--- (CompilableSpec methods).
+-- A separate class from `CompilableRulesSpec` because the structural
+-- class must NOT carry a `CompilableSpec` super-constraint on its Cons
+-- instance: PS can't always discharge it at call sites, and the failure
+-- cascades through the funDep chain and leaves all class params
+-- unresolved. Splitting lets the structural methods stay light while
+-- callers of the shape-data methods opt in to the heavier discharge
+-- requirement.
 --------------------------------------------------------------------------------
 
 class
@@ -848,26 +759,23 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
   , PrevValuesCarrier prevsSpec valCarrier
-  -- Phase 2b.24b: per-rule wrap+step constraints needed by
-  -- runMultiProverBody, in scope for the Cons body's call.
+  -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
   , CircuitGateConstructor WrapField PallasG
   , Reflectable ruleMpv Int
   , Reflectable pad Int
   , Reflectable outputSize Int
   , Add pad ruleMpv PaddedLength
-  -- Phase 2b.31c: outputSize derives from mpvMax.
+  -- outputSize derives from mpvMax (the wrap circuit's max).
   , Reflectable mpvPad Int
   , MpvPadding.MpvPadding mpvPad ruleMpv mpvMax
   , Mul mpvMax 32 unfsTotal
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , PadSlots slots ruleMpv
-  -- Phase 2b.31b step (b): wrap-stage constraints on `mpvMax`/`slotsMax`
-  -- (the wrap circuit's wider shape). Step (a) ran the wrap stage at
-  -- the rule's `ruleMpv`/`slots` shape (identity `PadProveDataMpv`);
-  -- step (b) runs it at `mpvMax`/`slotsMax` and uses the general
-  -- `PadProveDataMpv` instance to convert.
+  -- Wrap-stage constraints on `mpvMax`/`slotsMax` (the wrap circuit's
+  -- wider shape). The general `PadProveDataMpv` instance front-pads the
+  -- per-rule `ruleMpv`/`slots` shape up to `mpvMax`/`slotsMax`.
   , Reflectable mpvMax Int
   , Reflectable padMax Int
   , Add padMax mpvMax PaddedLength
@@ -876,8 +784,8 @@ instance
   , Add 1 totalBasesMaxPred totalBasesMax
   , PadSlots slotsMax mpvMax
   , PadProveDataMpv ruleMpv slots mpvMax slotsMax
-  -- Phase 2b.31c (Task #195): topBranches stays fixed across the
-  -- recursion; required by `buildStepProveCtx` and Vector dispatch.
+  -- `topBranches` stays fixed across the recursion; required by
+  -- `buildStepProveCtx` and Vector dispatch.
   , Reflectable topBranches Int
   , Compare 0 topBranches LT
   , Add 1 topBranchesPred topBranches
@@ -960,16 +868,14 @@ instance
       )
         /\ restStepProveFns
     )
-    -- Phase 2b.28: BranchProver is a NEWTYPE (was an alias).
-    -- PS treats newtypes as nominally rigid — instance head sees
-    -- a saturated type constructor, not an unfolded function
-    -- type. Dispatch resolves cleanly; instance head stays terse.
-    --
     -- BranchProver's mpv parameter is `mpvMax` (NOT `ruleMpv`) — every
     -- branch's CompiledProof presents the WRAP-LEVEL view of `mpv =
     -- mpvMax`. Mirrors OCaml `Pickles.compile_promise`'s output: all
     -- proofs share `'mlmb` (= wrap's max), with the per-branch actual
     -- width hidden inside `CompiledProof.widthData`'s GADT-existential.
+    -- BranchProver is a newtype (not an alias) so PS sees a saturated
+    -- type constructor in the instance head rather than an unfolded
+    -- function type — dispatch resolves cleanly.
     ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal Effect
         /\ restProvers
     )
@@ -1049,14 +955,11 @@ instance
           @prevInputVal
           @prevInputVar
           @topBranches
-          -- Phase 2b.31b step (b): pass the wrap circuit's
-          -- `mpvMax`/`slotsMax` (from the class instance head). For
-          -- single-rule callers `ruleMpv = mpvMax` and `slots =
-          -- slotsMax`, so the identity `PadProveDataMpv` instance
-          -- fires (witness byte-identical with single-rule path).
-          -- For multi-rule callers with mismatched shapes, the
-          -- general instance fires and front-pads `proveData` to the
-          -- wrap circuit's wider shape via `Dummy.*` values.
+          -- Pass the wrap circuit's `mpvMax`/`slotsMax`. When
+          -- `ruleMpv = mpvMax`, the identity `PadProveDataMpv`
+          -- instance fires; otherwise the general instance front-pads
+          -- the per-rule proveData up to the wrap circuit's wider
+          -- shape via `Dummy.*` values.
           @mpvMax
           @slotsMax
           @mpvPad
@@ -1094,53 +997,18 @@ instance
     pure (headProver /\ restProvers)
 
 --------------------------------------------------------------------------------
--- RuleEntry / mkRuleEntry — Phase 2b.4 probe of the rules-side
--- carrier shape.
+-- RuleEntry / mkRuleEntry — per-rule entry in the multi-branch carrier.
 --
--- Phase 2b.1 found: storing `StepRule mpv …` (a rank-2 forall over
--- `t` and `m'`) in a record field rejected by PS — the same wall PR
--- #126 hit.
---
--- Probe hypothesis: capture the rank-2 rule INSIDE a closure whose
--- outer type is monomorphic. `RuleEntry` holds Effect-typed action
--- closures (compile / prove) that internally use the rule's rank-2
--- nature when invoked, but the stored field types are non-rank-2.
--- PS rejects rank-2 *storage* but should be fine with rank-2 *use
--- inside a closure body*.
---
--- If this probe compiles, we have the path forward for `compileMulti`'s
--- input shape: a Tuple chain of `RuleEntry`s. If it doesn't, the
--- rank-2 wall is even higher than thought and we need a typeclass-
--- based dispatch instead.
---
--- For Phase 2b.4 the bodies are stubbed (`notImplemented`) — we're
--- testing only that the SIGNATURES type-check.
+-- Stored fields are intentionally NOT the rank-2 `StepRule` (PS rejects
+-- rank-2 storage at the record-field level). Instead `mkRuleEntry`
+-- packs monomorphic Effect-returning closures that capture the rule;
+-- the closure bodies use the rule's rank-2 nature when invoked, where
+-- PS handles it cleanly.
 --------------------------------------------------------------------------------
 
 -- | Per-rule entry packaged for storage in a multi-branch carrier.
--- |
--- | Stored fields are intentionally NOT the rank-2 `StepRule` —
--- | instead, monomorphic closures that capture the rule when
--- | constructed via `mkRuleEntry`. PS handles the rank-2 nature at
--- | the closure body's call site (where the rule is applied to
--- | specific `t` / `m'`), not at the record-field level.
--- |
--- | Phase 2b.6: `stepCompileFn` body delegates to `stepCompile` with
--- | the captured rule.
--- | Phase 2b.7: `stepProveFn` body delegates to `stepSolveAndProve`
--- | with the captured rule. Both rank-2-use paths typecheck — the
--- | smart-constructor pattern is end-to-end viable.
--- |
--- | The kind expansion vs Phase 2b.6 — adding `prevsSpec`, `inputVal`,
--- | `carrier`, `outputSize` — is needed because `stepProveFn`'s field
--- | type references those (in `StepAdvice` and `StepProveResult`).
--- | They were already pinned by `mkRuleEntry`'s outer signature in
--- | Phase 2b.6 via class constraints; now they show in the result
--- | type because the prove closure's signature mentions them.
--- |
--- | Future: if exposing 7 type params on `RuleEntry` is unergonomic
--- | for downstream Tuple carriers, we can pack them into a single
--- | existential newtype around `RuleEntry`. Phase 2b.8 decision.
+-- | Stored fields are monomorphic closures over the rank-2 `StepRule`
+-- | captured at `mkRuleEntry` time.
 data RuleEntry
   :: Type
   -> Int
@@ -1155,14 +1023,12 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
-    -- | constraint-system build. Phase 2b.15 — analog of OCaml's
+    -- | constraint-system build. Analog of OCaml's
     -- | `Fix_domains.domains` per-rule.
     --
-    -- | `nd` is the compilation-wide multi-domain count. For
-    -- | single-rule callers this is 1; for multi-rule (compileMulti)
-    -- | it's the proof-system's `branches` count, used for Pseudo
-    -- | dispatch over Self-prev step domains in
-    -- | `finalizeOtherProofCircuit`.
+    -- | `nd` is the compilation-wide multi-domain count = the
+    -- | proof-system's `branches` count, used for Pseudo dispatch
+    -- | over Self-prev step domains in `finalizeOtherProofCircuit`.
     preComputeStepDomainLog2Fn ::
       PProveStep.StepProveContext mpv nd -> Effect Int
   , stepCompileFn ::
@@ -1180,14 +1046,9 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
   }
 
 -- | Smart constructor: takes the user's rank-2 `StepRule` value and
--- | produces a `RuleEntry` with closures capturing it.
--- |
--- | Phase 2b.6 body: `stepCompileFn` calls `stepCompile` with the
--- | captured rule (the actual rank-2-use test). All visible-type
--- | applications and constraints needed by `stepCompile` are
--- | propagated through this signature, mirroring single-rule
--- | `runCompile` (`Pickles.Prove.Compile`). If this typechecks, the
--- | smart-constructor pattern is end-to-end viable for `compileMulti`.
+-- | produces a `RuleEntry` with closures capturing it. Each closure's
+-- | body invokes the captured rule against `stepCompile` /
+-- | `stepSolveAndProve`.
 mkRuleEntry
   :: forall @prevsSpec @mpv @mpvMax @mpvPad @nd _nd @outputSize @valCarrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
@@ -1285,94 +1146,44 @@ mkRuleEntry rule slotVKs = pure $ RuleEntry
   , slotVKs
   }
 
--- Local alias to avoid naming collision in imports if `StepRule`
--- appears elsewhere; the existing rank-2 type alias from
--- `Pickles.Prove.Step`. Defined as a type synonym to avoid an
--- import-cycle headache during this exploratory probe.
+-- Type synonym for `StepRule`, used to avoid an import-cycle in the
+-- `RuleEntry` field types.
 type PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar =
   PProveStep.StepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
 
 --------------------------------------------------------------------------------
--- compileMulti — Phase 2a stub
---------------------------------------------------------------------------------
-
--- | Compile an N-branch multi-rule proof system.
--- |
--- | Phase 2a body: throws `notImplemented`. The signature establishes
--- | the API shape; Phase 2b fills the body.
--- |
--- | Type-variable layout (mirrors single-rule `compile`'s shape):
--- |
--- |   * `rs` (kind `RulesSpec`) — per-rule HList of `(mpv, valCarrier,
--- |     prevsSpec, slotVKs)` quadruples. The user picks `rs` shape
--- |     when invoking; Phase 2b derives carrier shapes from it via
--- |     class machinery.
--- |   * `rulesCarrier`, `proversCarrier`, `perBranchStepCarrier`,
--- |     `perBranchVKsCarrier` — Tuple chains shaped to match `rs`,
--- |     each holding per-rule data of a different sort. Phase 2b
--- |     adds `RulesCarrier` class instances for `RulesNil` /
--- |     `RulesCons` that derive these shapes mechanically.
--- |   * `inputVal` / `outputVal` / `prevInputVal` — SHARED across
--- |     all branches (the wrap VK's public-input layout is the same
--- |     for any proof under it).
--- |   * `mpvMax` — max over all rules' mpvs. Phase 2b derives via a
--- |     `MaxMpv rs mpvMax` type family.
--- |
--- | Implementation roadmap (Phase 2b):
--- |
--- |   1. Walk `rs`: per-rule, run `stepCompile` independently. Each
--- |      branch's step circuit is sized by ITS OWN prevsSpec /
--- |      max_proofs_verified.
--- |   2. ONE wrap compile with `branches = N` (drop the hardcoded
--- |      `wrapCompile @1` and thread per-branch `Vector branches Int`
--- |      arrays into `WrapMainConfig.{stepWidths, domainLog2s,
--- |      stepKeys}`).
--- |   3. Per-branch prover wraps `runProverBody` with that branch's
--- |      `whichBranch` field baked into the wrap statement.
--- | Phase 2a forall is trimmed to only the type vars that actually
--- | appear in the signature's input/output (PureScript rejects
--- | "unused type vars"). Phase 2b reintroduces:
--- |
--- |   * `rs :: RulesSpec` — driver for the carrier shapes via
--- |     `RulesCarrier` class instances.
--- |   * `prevInputVal` — shared prev statement type, threaded through
--- |     once carriers expose per-branch prevs.
--- |   * `m` — the prover monad, threaded through `BranchProver`.
--- |
--- | They'll all be visible-type-applicable at the call site (matching
--- | single-rule `compile`'s `@inputVal @outputVal @prevInputVal @m`
--- | pattern).
---------------------------------------------------------------------------------
--- buildStepProveCtx — derive a per-rule StepProveContext from
--- CompileMultiConfig + slotVKs + selfStepDomainLog2.
+-- compileMulti — N-branch compile entry point.
 --
--- Wraps the existing single-rule `shapeCompileData @prevsSpec` in a
--- multi-branch-friendly interface: instead of taking a single-rule
--- `CompileConfig prevsSpec slotVKs`, take a `CompileMultiConfig`
--- (shared) plus the per-rule `slotVKs` (from the entry).
+-- Type-variable layout:
 --
--- Phase 2b.14 will lift this call into a `CompilableRulesSpec` class
--- method that walks the rules carrier and threads per-branch contexts
--- into `runStepCompiles`.
+--   * `rs` (kind `RulesSpec`) — per-rule HList of `(mpv, valCarrier,
+--     prevsSpec, slotVKs)` quadruples.
+--   * `rulesCarrier`, `proversCarrier`, `perBranchStepCarrier`,
+--     `perBranchVKsCarrier` — Tuple chains shaped to match `rs`,
+--     derived mechanically by `CompilableRulesSpec`'s instances.
+--   * `inputVal` / `outputVal` / `prevInputVal` — SHARED across all
+--     branches (the wrap VK's public-input layout is the same for any
+--     proof under it).
+--   * `mpvMax` — max over all rules' mpvs (caller-supplied).
 --
--- Pre-pass (preComputeStepDomainLog2) is the caller's responsibility
--- for now — the pre-pass requires the rule's rank-2 forall, so it's
--- naturally another `RuleEntry` closure (Phase 2b.15). For initial
--- bring-up, callers can pass the OCaml `rough_domains` placeholder
--- value `20` and accept that the resulting circuit will use the
--- placeholder (overshoots real size; corrected by the pre-pass once
--- it lands).
+-- Pipeline:
+--
+--   1. Walk `rs`: per-rule, run `stepCompile` independently. Each
+--      branch's step circuit is sized by ITS OWN prevsSpec /
+--      max_proofs_verified.
+--   2. ONE wrap compile with `branches = N`, threading per-branch
+--      `Vector branches` arrays into `WrapMainConfig.{stepWidths,
+--      domainLog2s, stepKeys}`.
+--   3. Per-branch prover wraps `runMultiProverBody` with that branch's
+--      `whichBranch` field baked into the wrap statement.
 --------------------------------------------------------------------------------
 
 -- | Build a per-rule `StepProveContext` from the multi-branch config,
--- | the rule's `slotVKs`, and its `selfStepDomainLog2`. Used inside
--- | `CompilableRulesSpec`'s recursion to feed `runStepCompiles`.
--- |
--- | The per-rule `CompileConfig` is constructed by combining the
--- | shared `srs` / `debug` / `wrapDomainOverride` from the multi
--- | config with the rule's own `slotVKs`. `shapeCompileData
--- | @prevsSpec` then handles the per-prev-spec layout (per-slot
--- | lagrange basis, blinding H, FOP domains).
+-- | the rule's `slotVKs`, and the per-branch step-domain log2 vector.
+-- | Combines the shared `srs` / `debug` / `wrapDomainOverride` with
+-- | the rule's own `slotVKs`, then feeds through
+-- | `shapeCompileData @prevsSpec` for the per-prev-spec layout
+-- | (per-slot lagrange basis, blinding H, FOP domains).
 buildStepProveCtx
   :: forall @prevsSpec @nd _nd slotVKs prevsCarrier mpv slots valCarrier carrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
@@ -1396,29 +1207,20 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
     shape.stepProveCtx
 
 --------------------------------------------------------------------------------
--- runMultiProverBody — Phase 2b.24 skeleton: per-branch prover body
--- analog of single-rule `Pickles.Prove.Compile.runProverBody`.
+-- runMultiProverBody — per-branch prover body.
 --
--- The full implementation will mirror runProverBody (Compile.purs:1466+):
+-- Pipeline (mirrors single-rule runProverBody):
 --   1. mkStepAdvice @prevsSpec cfg stepCR wrapResult appInput prevs
 --   2. shapeProveData @prevsSpec cfg wrapResult sideInfo prevs
---   3. stepProveFn ctx stepCR stepAdvice  (was stepSolveAndProve in single-rule)
+--   3. stepProveFn ctx stepCR stepAdvice
 --   4. compute step oracles + allEvals
 --   5. wrapComputeDeferredValues
 --   6. wrapSolveAndProve with `whichBranch: F (fromInt branchIdx)`
 --   7. package CompiledProof
 --
--- Phase 2b.24a (this commit): notImplemented body. Phase 2b.24b+ will
--- fill in the steps incrementally, each verified by typechecking.
---
--- Why a top-level function (vs class method): the body uses many
--- per-rule type vars + constraints, and writing it inside a class
--- method body forces all those vars/constraints onto the class
--- instance head — which we just split apart in Phase 2b.20 to
--- minimize. Keeping it top-level localizes the constraints to this
--- function.
---
--- The class method `buildBranchProvers` calls this at each per-branch
+-- Top-level (not a class method) so per-rule type vars + constraints
+-- stay localized to this function instead of leaking onto the class
+-- instance head. `buildBranchProvers` calls this at each per-branch
 -- closure, passing the captured `branchIdx` + per-branch step result.
 --------------------------------------------------------------------------------
 
@@ -1436,12 +1238,12 @@ runMultiProverBody
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Add 1 branchesPred branches
-  -- Phase 2b.31c (Task #195): topBranches is the FIXED outer count
-  -- threaded through `RuleEntry`'s `nd` and the multi-domain Vector
-  -- consumed by `finalizeOtherProofCircuit`. Stays distinct from
-  -- `branches` (the wrap circuit's per-branch lagrange + step-data
-  -- carrier count, which currently equals topBranches but is kept
-  -- separate to match the Compile.purs signature).
+  -- `topBranches` is the FIXED outer count threaded through
+  -- `RuleEntry`'s `nd` and the multi-domain Vector consumed by
+  -- `finalizeOtherProofCircuit`. Distinct from `branches` (the wrap
+  -- circuit's per-branch lagrange + step-data carrier count): they
+  -- currently coincide but stay separate type variables to match
+  -- the rule-level signature shape.
   => Reflectable topBranches Int
   => Compare 0 topBranches LT
   => Add 1 topBranchesPred topBranches
@@ -1512,9 +1314,6 @@ runMultiProverBody
   selfStepDomainLog2
   (RuleEntry r)
   { appInput, prevs } = do
-  -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
-  -- step solve+prove. Wrap half (oracles, deferred values, wrap
-  -- solver) deferred to Phase 2b.24d.
   let
     perRuleCfg =
       { srs: cfg.srs
@@ -1522,11 +1321,10 @@ runMultiProverBody
       , debug: cfg.debug
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
-    -- Phase 2b.31c (Task #195): pass the FULL `Vector topBranches Int`
-    -- of all branches' step domain log2s. Drives multi-domain Pseudo
-    -- dispatch in `finalizeOtherProofCircuit` for Self-prev slots —
-    -- mirrors OCaml step_main's `step_domains:all_step_domains`
-    -- (`compile.ml:568`).
+    -- Pass the FULL `Vector topBranches Int` of all branches' step
+    -- domain log2s. Drives multi-domain Pseudo dispatch in
+    -- `finalizeOtherProofCircuit` for Self-prev slots — mirrors OCaml
+    -- step_main's `step_domains:all_step_domains` (compile.ml:568).
     shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
@@ -1651,9 +1449,7 @@ runMultiProverBody
   stepResult <- r.stepProveFn shape.stepProveCtx stepCR stepAdvice
 
   let
-    -- Phase 2b.24e: assemble FFI-shaped `prevChallenges` for the
-    -- step proof's oracles. Same shape as single-rule
-    -- runProverBody (Compile.purs:1502-1508).
+    -- FFI-shaped `prevChallenges` for the step proof's oracles.
     stepOraclesPrevChals = Vector.toUnfoldable $
       Vector.zipWith
         ( \sg chals ->
@@ -1671,8 +1467,6 @@ runMultiProverBody
       , prevChallenges: stepOraclesPrevChals
       }
 
-    -- Phase 2b.24f: AllEvals struct, mirroring single-rule
-    -- runProverBody (Compile.purs:1517-1529).
     allEvals :: AllEvals StepField
     allEvals =
       { ftEval1: stepOracles.ftEval1
@@ -1687,8 +1481,6 @@ runMultiProverBody
       , indexEvals: proofIndexEvals stepResult.proof
       }
 
-    -- Phase 2b.24g: WrapDeferredValuesInput, mirroring single-rule
-    -- runProverBody (Compile.purs:1531-1557).
     outerMpv = reflectType (Proxy @mpv)
 
     proofsVerifiedMask :: Vector 2 Boolean
@@ -1722,23 +1514,14 @@ runMultiProverBody
 
     _wrapDv = wrapComputeDeferredValues wrapDvInput
 
-    -- Phase 2b.24h: msgStep / stepProofSg / msgWrap + paddings.
-    -- Mirrors Compile.purs:1568-1612.
-    --
-    -- Step PI is `mpvMax`-shaped (Phase 2b.31a front-padded the
-    -- unfinalized proofs from `len` to `mpvMax`), so the outer-hash
-    -- digest sits at offset `mpvMax * 32`, NOT the rule's own `mpv *
-    -- 32`. For single-rule callers `mpv = mpvMax` so both expressions
-    -- coincide; for multi-rule callers with `mpv < mpvMax` (e.g.
-    -- TwoPhaseChain b0 with mpv=0, mpvMax=1) the rule-mpv version
-    -- selects the wrong PI entry — Task #181 root cause.
-    -- Pull the digest entry directly out of `publicOutputs` (the typed
-    -- `Vector outputSize (F StepField)` view of the step circuit's PI)
-    -- using `Vector.index`. The index `outerMpvMax * 32` is bounded by
-    -- `outputSize = mpvMax * 32 + 1 + mpvMax` from the constraint chain
-    -- in scope (`Mul mpvMax 32 unfsTotal`, `Add unfsTotal 1
-    -- digestPlusUnfs`, `Add digestPlusUnfs mpvMax outputSize`); we
-    -- enforce that bound at runtime via `unsafeFinite`.
+    -- Step PI is `mpvMax`-shaped (the unfinalized-proofs vector is
+    -- front-padded from the rule's `len` up to `mpvMax`), so the
+    -- outer-hash digest sits at offset `mpvMax * 32`, NOT the rule's
+    -- own `mpv * 32`. The index is bounded by `outputSize = mpvMax *
+    -- 32 + 1 + mpvMax` from the constraint chain in scope (`Mul mpvMax
+    -- 32 unfsTotal`, `Add unfsTotal 1 digestPlusUnfs`, `Add
+    -- digestPlusUnfs mpvMax outputSize`); enforced at runtime via
+    -- `unsafeFinite`.
     msgStep :: StepField
     msgStep =
       let
@@ -1753,14 +1536,11 @@ runMultiProverBody
     dummyWrapExpanded :: Vector WrapIPARounds WrapField
     dummyWrapExpanded = dummyIpaChallenges.wrapExpanded
 
-    -- Phase 2b.31c: use the wrap circuit's `mpvMax`-derived bcd (same
-    -- one feeding `padDummies` above) so the front-pad dummies and
-    -- the `padShapeProveData` dummies share an Ro stream. Single-rule
-    -- callers have `mpv = mpvMax` so this binds the same value as
-    -- before — no witness regression. Multi-rule callers (e.g.
-    -- TwoPhaseChain b0 with mpv=0, mpvMax=1) now match — was using
-    -- bcd at rule's mpv vs. bcdMax at mpvMax, leaving the wrap
-    -- circuit's permutation argument open.
+    -- Use the wrap circuit's `mpvMax`-derived bcd (same one feeding
+    -- `padDummies` above) so the front-pad dummies and the
+    -- `padShapeProveData` dummies share an Ro stream. Required when
+    -- `mpv < mpvMax`: otherwise the wrap circuit's permutation
+    -- argument doesn't close.
     dummyKimchiEntry
       :: { sgX :: StepField
          , sgY :: StepField
@@ -1795,12 +1575,8 @@ runMultiProverBody
 
     wrapDv = wrapComputeDeferredValues wrapDvInput
 
-    -- Phase 2b.24i: wrap statement+advice (with whichBranch baked
-    -- per-branch via `F (fromInt branchIdx)`), wrap solver context.
-    -- Mirrors Compile.purs:1614-1637, with two changes:
-    --   * buildWrapMainConfigMulti (multi-branch) instead of
-    --     single-rule buildWrapMainConfig.
-    --   * whichBranch parameterized from the outer branchIdx.
+    -- Wrap statement + advice (with whichBranch baked per-branch via
+    -- `F (fromInt branchIdx)`) and the wrap solver context.
     wrapCtx =
       { wrapMainConfig:
           buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
@@ -1926,13 +1702,12 @@ compileMulti
 compileMulti cfg rules = do
   -- Step 1: per-rule pre-pass + step compile.
   --
-  -- Phase 2b.31c (Task #195): runMultiCompileFull is now a top-level
-  -- orchestrator (not a class method) that calls Class 2's
-  -- `prePassDomainLog2s` then `runMultiCompile` with the FULL
-  -- `Vector branches Int` of all branches' step domain log2s. This
-  -- delivers OCaml `compile.ml:568`'s `~step_domains:all_step_domains`
-  -- pattern: every branch's step circuit sees the full multi-domain
-  -- vector for Self-prev Pseudo dispatch.
+  -- `runMultiCompileFull` calls `prePassDomainLog2s` then
+  -- `runMultiCompile` with the FULL `Vector branches Int` of all
+  -- branches' step domain log2s, delivering OCaml `compile.ml:568`'s
+  -- `~step_domains:all_step_domains` pattern: every branch's step
+  -- circuit sees the full multi-domain vector for Self-prev Pseudo
+  -- dispatch.
   { stepResults, log2s } <- runMultiCompileFull
     @rs
     @inputVal
@@ -1965,11 +1740,10 @@ compileMulti cfg rules = do
     }
 
   -- Step 3: build per-branch BranchProver closures (each captures its
-  -- branchIdx for `whichBranch` baking in the wrap statement).
-  -- Phase 2b.31c (Task #195): pass the FULL `Vector branches Int` of
-  -- all branches' step domain log2s — same Vector consumed by every
-  -- branch's `runMultiProverBody` for `buildStepProveCtx`'s multi-
-  -- domain dispatch table.
+  -- branchIdx for `whichBranch` baking in the wrap statement). The
+  -- FULL `Vector branches Int` of step-domain log2s is shared by
+  -- every branch's `runMultiProverBody` for `buildStepProveCtx`'s
+  -- multi-domain dispatch table.
   provers <- buildBranchProvers
     @rs
     @inputVal
