@@ -31,6 +31,7 @@ import Prelude
 
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
+import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
@@ -42,7 +43,6 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Data.Exists (runExists)
 import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..), compile)
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)

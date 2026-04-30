@@ -75,29 +75,25 @@ module Pickles.Prove.CompileMulti
 import Prelude
 
 import Control.Monad.Except (ExceptT)
+import Data.Array as Array
 import Data.Maybe (Maybe, fromJust)
+import Data.Newtype (wrap)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (error, throwException)
-import Type.Proxy (Proxy(..))
-import Pickles.Prove.Compile
-  ( class CompilableSpec
-  , class PadProveDataMpv
-  , PadProveDataDummies
-  , padShapeProveData
-  , ProveError
-  , ShapeProveData
-  , ShapeProveSideInfo
-  , StepInputs
-  , Tag
-  , mkStepAdvice
-  , shapeCompileData
-  , shapeProveData
-  )
 import Effect.Class (liftEffect)
+import Effect.Exception (error, throwException)
+import JS.BigInt as BigInt
+import Partial.Unsafe (unsafePartial)
+import Pickles.Dummy
+  ( baseCaseDummies
+  , computeDummySgValues
+  , dummyIpaChallenges
+  , wrapDomainLog2ForProofsVerified
+  , wrapDummyUnfinalizedProof
+  )
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
@@ -112,19 +108,25 @@ import Pickles.ProofFFI
   , proofWitnessEvals
   , proofZEvals
   )
+import Pickles.Prove.Compile
+  ( class CompilableSpec
+  , class PadProveDataMpv
+  , PadProveDataDummies
+  , ProveError
+  , ShapeProveData
+  , ShapeProveSideInfo
+  , StepInputs
+  , Tag
+  , mkStepAdvice
+  , padShapeProveData
+  , shapeCompileData
+  , shapeProveData
+  )
 import Pickles.Prove.Pure.Wrap
   ( WrapDeferredValuesInput
   , assembleWrapMainInput
   , wrapComputeDeferredValues
   )
-import Pickles.Verify.Types (toPlonkMinimal)
-import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
-import JS.BigInt as BigInt
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
-import Data.Array as Array
-import Partial.Unsafe (unsafePartial)
-import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
-import Pickles.Step.Main as MpvPadding
 import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
@@ -136,8 +138,6 @@ import Pickles.Prove.Step
   , stepSolveAndProve
   ) as PProveStep
 import Pickles.Prove.Verify (CompiledProof(..), SomeCompiledProofWidthData, Verifier, mkSomeCompiledProofWidthData, mkVerifier)
-import Pickles.Util.Unique (newUnique)
-import Data.Newtype (wrap)
 import Pickles.Prove.Wrap
   ( WrapCompileResult
   , buildWrapAdvice
@@ -145,27 +145,27 @@ import Pickles.Prove.Wrap
   , wrapCompile
   , wrapSolveAndProve
   )
+import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier)
 import Pickles.Types (PaddedLength, PerProofUnfinalized(..), PointEval(..), StatementIO(..), StepAllEvals(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Util.Unique (newUnique)
+import Pickles.Verify.Types (toPlonkMinimal)
+import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots)
-import Pickles.Dummy
-  ( baseCaseDummies
-  , computeDummySgValues
-  , dummyIpaChallenges
-  , wrapDomainLog2ForProofsVerified
-  , wrapDummyUnfinalizedProof
-  )
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
-import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
-import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Circuit.CVar (EvaluationError)
 import Snarky.Circuit.DSL (BoolVar, F(..), FVar, UnChecked(..))
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.Types (class CircuitType, fieldsToValue)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, toBigInt)
 import Snarky.Curves.Pasta (PallasG, VestaG)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (SplitField, Type2)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Type-level rules spec
@@ -352,16 +352,24 @@ class CompilableRulesSpec
   -> Type
   -> Constraint
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
+  CompilableRulesSpec
+    rs
+    inputVal
+    outputVal
+    prevInputVal
+    topBranches
+    branches
+    mpvMax
+    slotsMax
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
     perBranchStepCompileResults
     stepProveFnsCarrier
   | rs topBranches ->
-      branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults
-        stepProveFnsCarrier
+    branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+    perBranchStepCompileResults
+    stepProveFnsCarrier
   where
   -- | Count branches by structural recursion. Validates that
   -- | `branches` is correctly derived as a function of `rs` and that
@@ -436,7 +444,14 @@ class
 -- | Nil instance is polymorphic in `slotsMax` and `topBranches` — Nil
 -- | returns unit-shaped carriers regardless of either.
 instance
-  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal topBranches 0 mpvMax slotsMax
+  CompilableRulesSpec RulesNil
+    inputVal
+    outputVal
+    prevInputVal
+    topBranches
+    0
+    mpvMax
+    slotsMax
     Unit
     Unit
     Unit
@@ -456,8 +471,15 @@ instance
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      topBranches restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restStepProveFns
+      topBranches
+      restBranches
+      mpvMax
+      slotsMax
+      restCarrier
+      restStepCompileFns
+      restCtxs
+      restStepCompileResults
+      restStepProveFns
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -478,7 +500,9 @@ instance
   ) =>
   CompilableRulesSpec
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
-    inputVal outputVal prevInputVal
+    inputVal
+    outputVal
+    prevInputVal
     topBranches
     branches
     mpvMax
@@ -501,7 +525,10 @@ instance
         ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-               inputVal ruleMpv carrier valCarrier
+               inputVal
+               ruleMpv
+               carrier
+               valCarrier
           -> ExceptT EvaluationError Effect
                (PProveStep.StepProveResult outputSize)
         )
@@ -626,18 +653,31 @@ instance
 -- (CompilableSpec methods).
 --------------------------------------------------------------------------------
 
-class CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
-        rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults
-        stepProveFnsCarrier
-   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
-        rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults
-        stepProveFnsCarrier
-        proversCarrier
+class
+  CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
+    rulesCarrier
+    stepCompileFnsCarrier
+    perBranchCtxsCarrier
+    perBranchStepCompileResults
+    stepProveFnsCarrier <=
+  CompilableRulesSpecShape
+    rs
+    inputVal
+    outputVal
+    prevInputVal
+    topBranches
+    branches
+    mpvMax
+    slotsMax
+    rulesCarrier
+    stepCompileFnsCarrier
+    perBranchCtxsCarrier
+    perBranchStepCompileResults
+    stepProveFnsCarrier
+    proversCarrier
   | rs topBranches -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults stepProveFnsCarrier
-        proversCarrier
+    perBranchStepCompileResults stepProveFnsCarrier
+    proversCarrier
   where
   -- | Pre-pass: walk the rules carrier collecting each rule's
   -- | `selfStepDomainLog2` into a `Vector branches Int` (the per-
@@ -727,7 +767,10 @@ runMultiCompileFull
        stepProveFnsCarrier
        proversCarrier
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
-       topBranches topBranches mpvMax slotsMax
+       topBranches
+       topBranches
+       mpvMax
+       slotsMax
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -746,17 +789,41 @@ runMultiCompileFull cfg rules = do
     placeholder :: Vector topBranches Int
     placeholder = Vector.replicate 20
   log2s <- prePassDomainLog2s
-    @rs @inputVal @outputVal @prevInputVal
-    @topBranches @topBranches @mpvMax @slotsMax
-    @rulesCarrier @stepCompileFnsCarrier @perBranchCtxsCarrier
-    @perBranchStepCompileResults @stepProveFnsCarrier @proversCarrier
-    cfg placeholder rules
+    @rs
+    @inputVal
+    @outputVal
+    @prevInputVal
+    @topBranches
+    @topBranches
+    @mpvMax
+    @slotsMax
+    @rulesCarrier
+    @stepCompileFnsCarrier
+    @perBranchCtxsCarrier
+    @perBranchStepCompileResults
+    @stepProveFnsCarrier
+    @proversCarrier
+    cfg
+    placeholder
+    rules
   stepResults <- runMultiCompile
-    @rs @inputVal @outputVal @prevInputVal
-    @topBranches @topBranches @mpvMax @slotsMax
-    @rulesCarrier @stepCompileFnsCarrier @perBranchCtxsCarrier
-    @perBranchStepCompileResults @stepProveFnsCarrier @proversCarrier
-    cfg log2s rules
+    @rs
+    @inputVal
+    @outputVal
+    @prevInputVal
+    @topBranches
+    @topBranches
+    @mpvMax
+    @slotsMax
+    @rulesCarrier
+    @stepCompileFnsCarrier
+    @perBranchCtxsCarrier
+    @perBranchStepCompileResults
+    @stepProveFnsCarrier
+    @proversCarrier
+    cfg
+    log2s
+    rules
   pure { stepResults, log2s }
 
 -- | Nil shape instance is polymorphic in `slotsMax` and `topBranches`
@@ -767,8 +834,20 @@ runMultiCompileFull cfg rules = do
 -- | `branches = topBranches`, so this is only reached when the user
 -- | called with empty rs.
 instance
-  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal topBranches 0 mpvMax
-    slotsMax Unit Unit Unit Unit Unit Unit
+  CompilableRulesSpecShape RulesNil
+    inputVal
+    outputVal
+    prevInputVal
+    topBranches
+    0
+    mpvMax
+    slotsMax
+    Unit
+    Unit
+    Unit
+    Unit
+    Unit
+    Unit
   where
   prePassDomainLog2s _ _ _ = pure Vector.nil
   runMultiCompile _ _ _ = pure unit
@@ -776,8 +855,16 @@ instance
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
-      topBranches restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restStepProveFns restProvers
+      topBranches
+      restBranches
+      mpvMax
+      slotsMax
+      restCarrier
+      restStepCompileFns
+      restCtxs
+      restStepCompileResults
+      restStepProveFns
+      restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
   , PrevValuesCarrier prevsSpec valCarrier
@@ -827,7 +914,13 @@ instance
       (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
-      inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
+      inputVal
+      outputVal
+      prevInputVal
+      topBranches
+      branches
+      mpvMax
+      slotsMax
       ( Tuple
           ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
               slotVKs
@@ -846,7 +939,10 @@ instance
           ( PProveStep.StepProveContext ruleMpv topBranches
             -> PProveStep.StepCompileResult
             -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-                 inputVal ruleMpv carrier valCarrier
+                 inputVal
+                 ruleMpv
+                 carrier
+                 valCarrier
             -> ExceptT EvaluationError Effect
                  (PProveStep.StepProveResult outputSize)
           )
@@ -860,8 +956,13 @@ instance
   ) =>
   CompilableRulesSpecShape
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
-    inputVal outputVal prevInputVal
-    topBranches branches mpvMax slotsMax
+    inputVal
+    outputVal
+    prevInputVal
+    topBranches
+    branches
+    mpvMax
+    slotsMax
     ( Tuple
         ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
             slotVKs
@@ -880,7 +981,10 @@ instance
         ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-               inputVal ruleMpv carrier valCarrier
+               inputVal
+               ruleMpv
+               carrier
+               valCarrier
           -> ExceptT EvaluationError Effect
                (PProveStep.StepProveResult outputSize)
         )
@@ -906,10 +1010,20 @@ instance
     let placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs placeholder
     headLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
     restVec <- prePassDomainLog2s
-      @rest @inputVal @outputVal @prevInputVal
-      @topBranches @restBranches @mpvMax @slotsMax
-      @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restStepProveFns @restProvers
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @topBranches
+      @restBranches
+      @mpvMax
+      @slotsMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restStepProveFns
+      @restProvers
       cfg
       placeholder
       restEntries
@@ -918,15 +1032,29 @@ instance
     let ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2s
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
-      @rest @inputVal @outputVal @prevInputVal
-      @topBranches @restBranches @mpvMax @slotsMax
-      @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restStepProveFns @restProvers
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @topBranches
+      @restBranches
+      @mpvMax
+      @slotsMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restStepProveFns
+      @restProvers
       cfg
       log2s
       restEntries
     pure (Tuple headResult tailResults)
-  buildBranchProvers branchIdx cfg wrapResult perBranchVec
+  buildBranchProvers
+    branchIdx
+    cfg
+    wrapResult
+    perBranchVec
     allStepDomainLog2s
     (Tuple headStepCR restStepResults)
     (Tuple headEntry restEntries) = do
@@ -973,10 +1101,20 @@ instance
           headEntry
           stepInputs
     restProvers <- buildBranchProvers
-      @rest @inputVal @outputVal @prevInputVal
-      @topBranches @restBranches @mpvMax @slotsMax
-      @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restStepProveFns @restProvers
+      @rest
+      @inputVal
+      @outputVal
+      @prevInputVal
+      @topBranches
+      @restBranches
+      @mpvMax
+      @slotsMax
+      @restCarrier
+      @restStepCompileFns
+      @restCtxs
+      @restStepCompileResults
+      @restStepProveFns
+      @restProvers
       (branchIdx + 1)
       cfg
       wrapResult
@@ -1064,7 +1202,10 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
       PProveStep.StepProveContext mpv nd
       -> PProveStep.StepCompileResult
       -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
-           inputVal mpv carrier valCarrier
+           inputVal
+           mpv
+           carrier
+           valCarrier
       -> ExceptT EvaluationError Effect (PProveStep.StepProveResult outputSize)
   , slotVKs :: slotVKs
   }
@@ -1318,7 +1459,10 @@ compileMultiStepWrap
        proversCarrier
        branchesPred totalBases totalBasesPred
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
-       branches branches mpvMax slots
+       branches
+       branches
+       mpvMax
+       slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
@@ -1487,10 +1631,16 @@ runMultiProverBody
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
-runMultiProverBody _branchIdx cfg wrapResult perBranchVec
+runMultiProverBody
+  _branchIdx
+  cfg
+  wrapResult
+  perBranchVec
   allStepDomainLog2s
-  stepCR selfStepDomainLog2
-  (RuleEntry r) { appInput, prevs } = do
+  stepCR
+  selfStepDomainLog2
+  (RuleEntry r)
+  { appInput, prevs } = do
   -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
   -- step solve+prove. Wrap half (oracles, deferred values, wrap
   -- solver) deferred to Phase 2b.24d.
@@ -1514,6 +1664,7 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
 
   let
     PProveStep.StepAdvice sa = stepAdvice
+
     proveDataSideInfo :: ShapeProveSideInfo mpv
     proveDataSideInfo =
       { challengePolynomialCommitments
@@ -1560,6 +1711,7 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     dummyUnfRaw = wrapDummyUnfinalizedProof bcdMax
     dummyUnfDv = dummyUnfRaw.deferredValues
     dummyPlonk = dummyUnfDv.plonk
+
     dummyPpu :: PerProofUnfinalized WrapIPARounds (Type2 (F WrapField)) (F WrapField) Boolean
     dummyPpu = PerProofUnfinalized
       { combinedInnerProduct: dummyUnfDv.combinedInnerProduct
@@ -1585,6 +1737,7 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     -- `baseCaseDummies { maxProofsVerified: mpvMax }`.
     de = bcdMax.dummyEvals
     pe pe' = PointEval { zeta: F pe'.zeta, omegaTimesZeta: F pe'.omegaTimesZeta }
+
     dummyPrevEvalsMax :: StepAllEvals (F WrapField)
     dummyPrevEvalsMax = StepAllEvals
       { ftEval1: F de.ftEval1
@@ -1843,7 +1996,10 @@ compileMulti
        proversCarrier
        branchesPred totalBases totalBasesPred
    . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
-       branches branches mpvMax slots
+       branches
+       branches
+       mpvMax
+       slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier

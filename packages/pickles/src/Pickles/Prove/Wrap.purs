@@ -723,11 +723,12 @@ buildWrapMainConfigMulti
    . Reflectable branches Int
   => Add 1 branchesPred branches
   => CRS VestaG
-  -> { perBranch :: Vector branches
-         { mpv :: Int
-         , stepDomainLog2 :: Int
-         , stepVK :: VerifierIndex VestaG StepField
-         }
+  -> { perBranch ::
+         Vector branches
+           { mpv :: Int
+           , stepDomainLog2 :: Int
+           , stepVK :: VerifierIndex VestaG StepField
+           }
      }
   -> WrapMainConfig branches
 buildWrapMainConfigMulti vestaSrs { perBranch } =

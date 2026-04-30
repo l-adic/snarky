@@ -103,8 +103,8 @@ import Pickles.Prove.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
   , SomeCompiledProofWidthData
-  , mkSomeCompiledProofWidthData
   , Verifier
+  , mkSomeCompiledProofWidthData
   , mkVerifier
   , verify
   , verifyOne
@@ -1104,7 +1104,8 @@ instance
                   :: Vector PaddedLength (Vector WrapIPARounds WrapField)
                 prevPaddedWrapBpChals = unsafePartial $ fromJust
                   $ Vector.toVector @PaddedLength
-                  $ Array.replicate runtimeSlotPad
+                  $
+                    Array.replicate runtimeSlotPad
                       Dummy.dummyIpaChallenges.wrapExpanded
                       <> Vector.toUnfoldable wd.msgWrapChallenges
 
@@ -1112,7 +1113,8 @@ instance
                   :: Vector PaddedLength (Vector StepIPARounds StepField)
                 prevPaddedStepHashChals = unsafePartial $ fromJust
                   $ Vector.toVector @PaddedLength
-                  $ Array.replicate runtimeSlotPad
+                  $
+                    Array.replicate runtimeSlotPad
                       Dummy.dummyIpaChallenges.stepExpanded
                       <> Vector.toUnfoldable wd.oldBulletproofChallenges
 
@@ -1752,8 +1754,8 @@ runProverBody cfg rule shape stepCR wrapCR stepDomainLog2 { appInput, prevs } = 
     @outputVar
     @prevInputVal
     @prevInputVar
-    @mpv     -- mpvMax = mpv (single-rule path)
-    @0       -- mpvPad = 0
+    @mpv -- mpvMax = mpv (single-rule path)
+    @0 -- mpvPad = 0
     shape.stepProveCtx
     rule
     stepCR

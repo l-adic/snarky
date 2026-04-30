@@ -33,8 +33,8 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Vector (Vector, (:<))
 import Data.Tuple (Tuple)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -168,8 +168,8 @@ compileStepMainTreeProofReturn params =
         @(F StepField)
         @(FVar StepField)
         @( Tuple (StatementIO Unit (F StepField))
-             (Tuple (StatementIO Unit (F StepField)) Unit)
-         )
+            (Tuple (StatementIO Unit (F StepField)) Unit)
+        )
         @2
         @0
         treeProofReturnRule

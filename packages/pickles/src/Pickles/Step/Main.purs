@@ -30,10 +30,10 @@ module Pickles.Step.Main
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Array as Array
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
@@ -53,11 +53,10 @@ import Prim.Boolean (False, True)
 import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Unsafe.Coerce (unsafeCoerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
-import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
+import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Circuit.Types (class CircuitType, varToFields)
@@ -67,6 +66,7 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Rule abstraction
@@ -230,11 +230,12 @@ class IntEq (a :: Int) (b :: Int) (res :: Boolean) | a b -> res
 instance IntEq a a True
 else instance IntEq a b False
 
-class MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-   | isEqual mpvPad len -> mpvMax
-   , isEqual len mpvMax -> mpvPad
-   , isEqual mpvPad mpvMax -> len
-   where
+class
+  MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | isEqual mpvPad len -> mpvMax
+  , isEqual len mpvMax -> mpvPad
+  , isEqual mpvPad mpvMax -> len
+  where
   mpvFrontPadVecD :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
 
 instance MpvPaddingDispatch True 0 len len where
@@ -243,11 +244,12 @@ instance MpvPaddingDispatch True 0 len len where
 instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax where
   mpvFrontPadVecD padding real = Vector.append padding real
 
-class MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-   | mpvPad len -> mpvMax
-   , len mpvMax -> mpvPad
-   , mpvPad mpvMax -> len
-   where
+class
+  MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | mpvPad len -> mpvMax
+  , len mpvMax -> mpvPad
+  , mpvPad mpvMax -> len
+  where
   -- | Concatenate a padding vector with a real vector to produce the
   -- | full mpvMax-sized vector. Dispatches through `MpvPaddingDispatch`:
   -- | when `mpvPad = 0` the True instance returns `real` directly (no
@@ -298,7 +300,6 @@ mpvFrontPad mkDummy real =
             <> (Vector.toUnfoldable real :: Array a)
       in
         unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
-
 
 -------------------------------------------------------------------------------
 -- | Per-proof witness allocation
@@ -489,17 +490,21 @@ liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
        . SizedF n (F StepField)
       -> SizedF n (FVar StepField)
     liftSizedF s =
-      let F x = toField s
-      in unsafePartial $ SizedF.unsafeFromField (const_ x)
+      let
+        F x = toField s
+      in
+        unsafePartial $ SizedF.unsafeFromField (const_ x)
 
     liftT2SF
       :: Type2 (SplitField (F StepField) Boolean)
       -> Type2 (SplitField (FVar StepField) (BoolVar StepField))
     liftT2SF (Type2 (SplitField { sDiv2: F sd, sOdd })) =
-      Type2 (SplitField
-        { sDiv2: const_ sd
-        , sOdd: if sOdd then true_ else false_
-        })
+      Type2
+        ( SplitField
+            { sDiv2: const_ sd
+            , sOdd: if sOdd then true_ else false_
+            }
+        )
 
     liftBool b = if b then true_ else false_
   in
@@ -797,10 +802,15 @@ stepMain
     $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
   msgsWrapPadding <- exists $ lift do
     dummyHash <- getMessagesForNextWrapProofDummyHash
-      @len @StepIPARounds @WrapIPARounds @PallasG unit
+      @len
+      @StepIPARounds
+      @WrapIPARounds
+      @PallasG
+      unit
     pure (Vector.replicate @mpvPad dummyHash)
-  let msgsWrap :: Vector mpvMax (FVar StepField)
-      msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal
+  let
+    msgsWrap :: Vector mpvMax (FVar StepField)
+    msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal
 
   let
     -- Lift a value-side VK to const_ FVars. Used when a slot has

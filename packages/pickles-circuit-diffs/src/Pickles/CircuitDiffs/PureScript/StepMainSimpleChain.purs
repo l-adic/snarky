@@ -14,8 +14,8 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector, (:<))
 import Data.Tuple (Tuple)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)

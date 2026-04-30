@@ -32,11 +32,11 @@ import Prelude
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, const_)

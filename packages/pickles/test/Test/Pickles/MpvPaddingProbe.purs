@@ -17,18 +17,20 @@ class IntEq (a :: Int) (b :: Int) (res :: Boolean) | a b -> res
 instance IntEq a a True
 else instance IntEq a b False
 
-class MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-   | isEqual mpvPad len -> mpvMax
-   , isEqual len mpvMax -> mpvPad
-   , isEqual mpvPad mpvMax -> len
+class
+  MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | isEqual mpvPad len -> mpvMax
+  , isEqual len mpvMax -> mpvPad
+  , isEqual mpvPad mpvMax -> len
 
 instance MpvPaddingDispatch True 0 len len
 instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax
 
-class MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
-   | mpvPad len -> mpvMax
-   , len mpvMax -> mpvPad
-   , mpvPad mpvMax -> len
+class
+  MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | mpvPad len -> mpvMax
+  , len mpvMax -> mpvPad
+  , mpvPad mpvMax -> len
 
 instance
   ( IntEq len mpvMax isEqual

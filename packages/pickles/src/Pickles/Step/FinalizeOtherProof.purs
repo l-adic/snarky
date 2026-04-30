@@ -32,8 +32,8 @@ import Data.Fin (unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
-import Data.Semigroup.Foldable as Foldable1
 import Data.Reflectable (class Reflectable)
+import Data.Semigroup.Foldable as Foldable1
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
@@ -49,9 +49,9 @@ import Pickles.PlonkChecks (absorbAllEvals, extractEvalFields)
 import Pickles.PlonkChecks.CombinedInnerProduct (buildEvalList, hornerCombine)
 import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
+import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
 import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit) as ChallengeDigest
-import Pickles.Pseudo as Pseudo
 import Pickles.Step.Domain (buildPow2PowsArray, pow2PowSquare)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)

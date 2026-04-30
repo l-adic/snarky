@@ -16,6 +16,7 @@ import Data.Fin (getFinite) as Data.Fin
 import Data.Foldable (for_)
 import Data.FoldableWithIndex (forWithIndex_)
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -25,10 +26,9 @@ import Pickles.Step.MessageHash (hashMessagesForNextStepProofOpt)
 import Pickles.Step.OtherField as StepOtherField
 import Pickles.Types (StepField, StepIPARounds, WrapIPARounds)
 import Pickles.Verify (IncrementallyVerifyProofParams, incrementallyVerifyProof, ivpTrace, packStatement)
-import Safe.Coerce (coerce)
-import Data.Reflectable (class Reflectable)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
+import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, FVar, Snarky, and_, assertEq, const_, if_, label, not_, or_)
 import Snarky.Circuit.DSL.SizedF (SizedF)
 import Snarky.Circuit.DSL.SizedF as SizedF

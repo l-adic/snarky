@@ -15,8 +15,8 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Maybe (Maybe(..))
-import Data.Vector (Vector, (:<))
 import Data.Tuple (Tuple)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
@@ -96,8 +96,8 @@ compileStepMainSimpleChainN2 params =
         @(F StepField)
         @(FVar StepField)
         @( Tuple (StatementIO (F StepField) Unit)
-             (Tuple (StatementIO (F StepField) Unit) Unit)
-         )
+            (Tuple (StatementIO (F StepField) Unit) Unit)
+        )
         @2
         @0
         simpleChainN2Rule

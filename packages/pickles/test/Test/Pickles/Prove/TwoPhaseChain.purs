@@ -39,12 +39,17 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
+import Data.Functor.Product (Product)
+import Data.Int.Bits as Int
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), fst, snd)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
 import Effect.Exception as Exc
+import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..))
 import Pickles.Prove.CompileMulti
   ( BranchProver(..)
   , RuleEntry
@@ -55,26 +60,21 @@ import Pickles.Prove.CompileMulti
   , extractStepCompileFns
   , mkRuleEntry
   )
-import Pickles.Prove.Verify (verify)
-import Test.Spec.Assertions (shouldEqual)
-import Type.Proxy (Proxy(..))
-import Data.Functor.Product (Product)
-import Data.Int.Bits as Int
-import Data.Maybe (Maybe(..))
-import Effect.Class (liftEffect)
-import Pickles.Wrap.Slots (NoSlots)
-import Snarky.Backend.Kimchi.Class (createCRS)
-import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Curves.Class (fromInt) as Curves
-import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..))
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
+import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds, WrapIPARounds)
+import Pickles.Wrap.Slots (NoSlots)
+import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
 import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_, exists, true_)
+import Snarky.Curves.Class (fromInt) as Curves
 import Snarky.Types.Shifted (SplitField, Type2)
 import Test.Spec (SpecT, describe, it, pending)
+import Test.Spec.Assertions (shouldEqual)
+import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
 -- Rule bodies
@@ -89,9 +89,12 @@ import Test.Spec (SpecT, describe, it, pending)
 -- | Mirrors `dump_two_phase_chain.ml`'s `make_zero` rule.
 makeZeroRule
   :: StepRule 0 Unit
-       (F StepField) (FVar StepField)
-       Unit Unit
-       (F StepField) (FVar StepField)
+       (F StepField)
+       (FVar StepField)
+       Unit
+       Unit
+       (F StepField)
+       (FVar StepField)
 makeZeroRule self = do
   assertEqual_ self (const_ zero)
   pure
@@ -115,9 +118,12 @@ makeZeroRule self = do
 incrementRule
   :: StepRule 1
        (Tuple (StatementIO (F StepField) Unit) Unit)
-       (F StepField) (FVar StepField)
-       Unit Unit
-       (F StepField) (FVar StepField)
+       (F StepField)
+       (FVar StepField)
+       Unit
+       Unit
+       (F StepField)
+       (FVar StepField)
 incrementRule self = do
   prev <- exists $ MT.lift do
     Tuple stmt _ <- getPrevAppStates unit
@@ -165,11 +171,11 @@ probeMakeZero
 probeMakeZero =
   mkRuleEntry
     @PrevsSpecNil
-    @0      -- mpv (rule's own)
-    @1      -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
-    @1      -- mpvPad = mpvMax - mpv = 1
-    @2      -- nd = topBranches (TwoPhaseChain has 2 branches: makeZero, increment)
-    @34     -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
+    @0 -- mpv (rule's own)
+    @1 -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
+    @1 -- mpvPad = mpvMax - mpv = 1
+    @2 -- nd = topBranches (TwoPhaseChain has 2 branches: makeZero, increment)
+    @34 -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
     @Unit
     @(F StepField)
     @(FVar StepField)
@@ -208,10 +214,10 @@ probeIncrement
 probeIncrement =
   mkRuleEntry
     @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    @1     -- mpv
-    @1     -- mpvMax (= mpv, identity)
-    @0     -- mpvPad = 0
-    @2     -- nd = topBranches (TwoPhaseChain has 2 branches)
+    @1 -- mpv
+    @1 -- mpvMax (= mpv, identity)
+    @0 -- mpvPad = 0
+    @2 -- nd = topBranches (TwoPhaseChain has 2 branches)
     @34
     @(Tuple (StatementIO (F StepField) Unit) Unit)
     @(F StepField)
@@ -247,7 +253,7 @@ probeIncrement =
 probeRulesCarrier
   :: Effect
        ( Tuple
-           ( RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit )
+           (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
            ( Tuple
                ( RuleEntry
                    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
@@ -338,11 +344,12 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    let cfg =
-          { srs: { vestaSrs, pallasSrs }
-          , debug: false
-          , wrapDomainOverride: Nothing
-          }
+    let
+      cfg =
+        { srs: { vestaSrs, pallasSrs }
+        , debug: false
+        , wrapDomainOverride: Nothing
+        }
 
     rules <- liftEffect probeRulesCarrier
     output <- liftEffect $ compileMulti

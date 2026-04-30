@@ -69,12 +69,12 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.String (Pattern(..), Replacement(..))
+import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Data.String (Pattern(..), Replacement(..))
-import Data.String as String
 import Effect (Effect)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
@@ -522,8 +522,10 @@ mkDummyPerProofUnfinalized bcd =
 
     digestStep :: F StepField
     digestStep =
-      let F digestWrap = du.spongeDigestBeforeEvaluations
-      in F (crossFieldDigest digestWrap)
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (crossFieldDigest digestWrap)
   in
     PerProofUnfinalized
       { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
@@ -555,6 +557,7 @@ mkDummyMsgWrapHash
 mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
   let
     sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
+
     msgWrapHashWrap :: WrapField
     msgWrapHashWrap = hashMessagesForNextWrapProofPureGeneral
       { sg: sgValues.ipa.step.sg
