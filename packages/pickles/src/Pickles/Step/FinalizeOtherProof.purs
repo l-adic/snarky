@@ -22,7 +22,6 @@ module Pickles.Step.FinalizeOtherProof
   , finalizeOtherProofCircuit
   -- * Component Circuits (exported for testing)
   , module PlonkChecks
-  , module ChallengeDigest
   ) where
 
 import Prelude
@@ -51,7 +50,6 @@ import Pickles.PlonkChecks.GateConstraints (buildEvalPoint)
 import Pickles.ProofWitness (ProofWitness)
 import Pickles.Pseudo as Pseudo
 import Pickles.Sponge (absorb, evalSpongeM, initialSpongeCircuit, liftSnarky, squeezeScalarChallenge)
-import Pickles.Step.ChallengeDigest (ChallengeDigestInput, challengeDigestCircuit) as ChallengeDigest
 import Pickles.Step.Domain (buildPow2PowsArray, pow2PowSquare)
 import Pickles.Verify.Types (BulletproofChallenges, UnfinalizedProof, toPlonkMinimal)
 import Poseidon (class PoseidonField)

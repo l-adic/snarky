@@ -31,7 +31,6 @@ module Pickles.Prove.Wrap
   , wrapSolveAndProve
   , extractStepVKComms
   , stepVkForCircuit
-  , buildWrapMainConfig
   , buildWrapMainConfigMulti
   ) where
 
@@ -643,60 +642,9 @@ stepVkForCircuit vk =
     , endomulScalarComm: cp vk.endomulScalarComm
     }
 
--- | Build a `WrapMainConfig 1` for a single-branch Simple_chain-style
--- | compile. Takes the compiled step verifier index, the Vesta
--- | (step-side) SRS used for the lagrange base lookup, and the step
--- | circuit's own domain log2 (= 16 for Simple_chain per
--- | `dump_circuit_impl.ml:3721-3723`).
--- |
--- | The lagrange closure calls `pallasSrsLagrangeCommitmentAt` on
--- | demand — kimchi caches the full basis after the first call, so
--- | per-index access is amortized O(1). The blinding `H` point comes
--- | from the same Vesta SRS. `allPossibleDomainLog2s` is hardcoded to
--- | `{13, 14, 15}` matching OCaml's `Wrap_verifier.all_possible_domains`
--- | for `proofs_verified ∈ {0,1,2}`.
--- | Single-branch wrap main config. The wrap circuit always verifies
--- | exactly ONE step proof regardless of that step's `max_proofs_verified`
--- | — what differs between N=0 / N=1 / N=2 rules is:
--- |
--- |   * `mpv` (type variable) — the step rule's `max_proofs_verified`
--- |     (OCaml's `Widths`; 0 for No_recursion_return, 1 for
--- |     Simple_chain, 2 for Simple_chain_n2 / Tree_proof_return). Bound
--- |     at the call site via visible type application; reflected here
--- |     into the `Vector 1 Int` shape `wrap_main` consumes.
--- |   * `domainLog2` — the step circuit's kimchi domain log2, read
--- |     dynamically from the compiled step prover index.
--- |
--- | All other fields (lagrange lookup, blinding H, the three possible
--- | wrap-domains) are structural constants of the Tock SRS, independent
--- | of N.
-buildWrapMainConfig
-  :: forall @mpv
-   . Reflectable mpv Int
-  => CRS VestaG
-  -> VerifierIndex VestaG StepField
-  -> { domainLog2 :: Int }
-  -> WrapMainConfig 1
-buildWrapMainConfig vestaSrs stepVK { domainLog2 } =
-  { stepWidths: reflectType (Proxy @mpv) :< Vector.nil
-  , domainLog2s: domainLog2 :< Vector.nil
-  , stepKeys: stepVkForCircuit (extractStepVKComms stepVK) :< Vector.nil
-  , lagrangeAt:
-      mkConstLagrangeBaseLookup \i ->
-        (coerce (pallasSrsLagrangeCommitmentAt vestaSrs domainLog2 i))
-          :: AffinePoint (F WrapField)
-  -- Single-branch: no per-branch dispatch needed; the wrap circuit
-  -- takes the fast path (mirrors OCaml's "all domains equal" case
-  -- in `lagrange_with_correction`, wrap_verifier.ml:426-428).
-  , perBranchLagrangeAt: Nothing
-  , blindingH: (coerce $ pallasSrsBlindingGenerator vestaSrs) :: AffinePoint (F WrapField)
-  , allPossibleDomainLog2s:
-      unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
-  }
-
--- | Multi-branch generalization of `buildWrapMainConfig`. Takes
--- | per-branch data (`Vector branches { mpv, stepDomainLog2, stepVK }`)
--- | and produces a `WrapMainConfig branches` that the wrap circuit's
+-- | Multi-branch wrap main config. Takes per-branch data
+-- | (`Vector branches { mpv, stepDomainLog2, stepVK }`) and produces a
+-- | `WrapMainConfig branches` that the wrap circuit's
 -- | `Pseudo.choose whichBranch` machinery dispatches over at proof
 -- | time.
 -- |
