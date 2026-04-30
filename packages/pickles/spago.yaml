@@ -8,6 +8,7 @@ package:
     - effect
     - either
     - exceptions
+    - exists
     - foldable-traversable
     - functors
     - identity
@@ -18,6 +19,7 @@ package:
     - newtype
     - node-buffer
     - node-fs
+    - node-process
     - ordered-collections
     - partial
     - pickles-linearization-types
@@ -30,8 +32,10 @@ package:
     - snarky
     - snarky-curves
     - snarky-kimchi
+    - strings
     - transformers
     - tuples
+    - unsafe-coerce
     - vector-sized
   build:
     strict: true

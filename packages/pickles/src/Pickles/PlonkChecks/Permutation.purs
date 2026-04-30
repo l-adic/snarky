@@ -4,8 +4,8 @@
 -- | linearization check. The full verification equation is:
 -- |   ft_eval0 = perm_contribution - constant_term + boundary_quotient = 0
 -- |
--- | The gate constraint module (Phase 2.1) handles `constant_term`.
--- | This module handles the permutation terms.
+-- | The gate-constraint module handles `constant_term`; this module
+-- | handles the permutation terms.
 -- |
 -- | Reference: mina/src/lib/pickles/plonk_checks/plonk_checks.ml
 -- | See: https://o1-labs.github.io/mina-book/crypto/plonk/maller_15.html

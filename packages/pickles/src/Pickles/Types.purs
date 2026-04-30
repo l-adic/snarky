@@ -11,6 +11,8 @@ module Pickles.Types
   , WrapIPARounds
   , MaxProofsVerified
   , PaddedLength
+  , UnfinalizedFieldCount
+  , WrapIvpBaseline
   , StepCommitmentCurve
   , WrapCommitmentCurve
   , StepInput
@@ -98,6 +100,20 @@ type MaxProofsVerified = 2
 -- |
 -- | Reference: mina/src/lib/pickles/wrap_hack.ml:24
 type PaddedLength = 2
+
+-- | Number of step-field scalars produced when a per-proof
+-- | `Unfinalized` is laid out into the step circuit's public input.
+-- | Used in `Mul mpvMax UnfinalizedFieldCount unfsTotal` constraints
+-- | that size the step PI's unfinalized-proofs region.
+type UnfinalizedFieldCount = 32
+
+-- | Wrap circuit's IVP MSM base count minus the per-proof `sg_old`s.
+-- | Used in `Add mpv WrapIvpBaseline totalBases` — `totalBases` is
+-- | the full count of bases the wrap IVP iterates over, and equals
+-- | `mpv` (one `sg_old` per proof) plus this baseline (everything
+-- | else: SRS commitments, sigma commitments, etc.). Mirrors OCaml
+-- | `Nat.N45.add` in `wrap_verifier.ml:1457`.
+type WrapIvpBaseline = 45
 
 -- | Step proofs commit on Vesta (scalar f = Fp = StepField).
 type StepCommitmentCurve = Vesta.G

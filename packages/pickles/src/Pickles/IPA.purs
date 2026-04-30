@@ -135,8 +135,8 @@ bPoly chals x =
 -- | This matches OCaml's challenge_polynomial (wrap_verifier.ml:35-57) exactly,
 -- | producing the same constraint ordering.
 bPolyCircuit
-  :: forall _d d f c t m
-   . Add 1 _d d
+  :: forall d dPred f c t m
+   . Add 1 dPred d
   => Reflectable d Int
   => PrimeField f
   => CircuitM f c t m
@@ -195,8 +195,8 @@ computeB chals { zeta, zetaOmega, evalscale } =
 -- | Evaluation order matches OCaml's right-to-left argument evaluation:
 -- | bPoly(zetaOmega), then evalscale * result, then bPoly(zeta).
 computeBCircuit
-  :: forall _d d f c t m r
-   . Add 1 _d d
+  :: forall d dPred f c t m r
+   . Add 1 dPred d
   => Reflectable d Int
   => PrimeField f
   => CircuitM f c t m
@@ -248,8 +248,8 @@ extractScalarChallenges params pairs = for pairs \{ l, r } -> do
 -- |
 -- | This is the in-circuit version of the "b_correct" check.
 bCorrectCircuit
-  :: forall _n n f c t m
-   . Add 1 _n n
+  :: forall n nPred f c t m
+   . Add 1 nPred n
   => Reflectable n Int
   => PrimeField f
   => CircuitM f c t m
@@ -269,9 +269,9 @@ bCorrectCircuit input@{ expectedB } = label "b-correct" do
 -- |
 -- | Uses the efficient endo/endoInv circuits for scalar multiplication.
 bulletReduceCircuit
-  :: forall n @f f' @g t m _l
+  :: forall n nPred @f f' @g t m
    . Reflectable n Int
-  => Add 1 _l n
+  => Add 1 nPred n
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => HasEndo f f'
@@ -359,9 +359,9 @@ type IpaFinalCheckResult n f =
 -- | For Pallas circuits (Fp), the commitment curve is Vesta, use Type1 for sf.
 -- | For Vesta circuits (Fq), the commitment curve is Pallas, use Type2 for sf.
 ipaFinalCheckCircuit
-  :: forall n @f f' @g sf t m _l r
+  :: forall n nPred @f f' @g sf t m r
    . Reflectable n Int
-  => Add 1 _l n
+  => Add 1 nPred n
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => HasEndo f f'
@@ -483,8 +483,8 @@ ipaFinalCheckCircuit scalarOps params input = do
 -- |   if_ keep ~then_:point ~else_:acc.point
 -- | matching Opt.Maybe handling. When Nothing, the entry is unconditional (Opt.Just).
 combinePolynomials
-  :: forall n f f' t m _l
-   . Add 1 _l n
+  :: forall n nPred f f' t m
+   . Add 1 nPred n
   => FieldSizeInBits f 255
   => HasEndo f f'
   => CircuitM f (KimchiConstraint f) t m
@@ -541,10 +541,10 @@ type CheckBulletproofInput n f sf =
 -- | Commitment bases are constant points from the verifier index / proof,
 -- | passed separately from the circuit input.
 checkBulletproof
-  :: forall numBases n @f f' @g sf t m _l _l2 r
+  :: forall numBases numBasesPred n nPred @f f' @g sf t m r
    . Reflectable n Int
-  => Add 1 _l n
-  => Add 1 _l2 numBases
+  => Add 1 nPred n
+  => Add 1 numBasesPred numBases
   => FieldSizeInBits f 255
   => FieldSizeInBits f' 255
   => HasEndo f f'

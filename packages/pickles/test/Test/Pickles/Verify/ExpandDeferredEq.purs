@@ -31,30 +31,52 @@ import Prelude
 
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
+import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
+import Data.Tuple (fst)
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector)
-import Data.Vector as Vector
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..), compile)
+import Pickles.Prove.Compile
+  ( BranchProver(..)
+  , CompiledProof(..)
+  , CompiledProofWidthData(..)
+  , PrevSlot(..)
+  , RulesCons
+  , RulesNil
+  , SlotWrapKey(..)
+  , compileMulti
+  , mkRuleEntry
+  )
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField, StepIPARounds)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
+import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.DSL (F(..), FVar)
 import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+
+type NrrRules =
+  RulesCons 0 Unit PrevsSpecNil Unit
+    RulesNil
+
+type SimpleChainRules =
+  RulesCons 1
+    (Tuple1 (StatementIO (F StepField) Unit))
+    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Tuple1 SlotWrapKey)
+    RulesNil
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.Pure.Verify" do
@@ -62,48 +84,93 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    nrr <- liftEffect $ compile @PrevsSpecNil @Unit @(F StepField) @Unit @Effect
-      { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: unit
-      , debug: false
-      , wrapDomainOverride: Nothing
-      }
+    nrrEntry <- liftEffect $ mkRuleEntry
+      @PrevsSpecNil
+      @0
+      @0
+      @0
+      @1
+      @1
+      @Unit
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @Unit
       nrrRule
+      unit
 
-    eCp <- liftEffect $ runExceptT $ nrr.prover.step { appInput: unit, prevs: unit }
+    nrr <- liftEffect $ compileMulti
+      @NrrRules
+      @Unit
+      @(F StepField)
+      @Unit
+      @0
+      @NoSlots
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      (tuple1 nrrEntry)
+
+    let BranchProver nrrProver = fst nrr.provers
+    eCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("nrr prover.step: " <> show e)
       Right p -> pure p
 
+    -- The width-sized fields (including wrapDvInput) are hidden behind
+    -- `r.widthData`'s existential after the GADT-like refactor of
+    -- `CompiledProof` (mirrors OCaml `proof.mli:97-110`). `runExists`
+    -- recovers the typed values inside a polymorphic continuation.
     let CompiledProof r = cp
-    assertExpandDeferredMatches @0
-      { dvProver: r.wrapDv
-      , dvInput: r.wrapDvInput
-      , oldBulletproofChallenges: Vector.nil
-      }
+    runExists
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.oldBulletproofChallenges
+            }
+      )
+      r.widthData
 
   it "expandDeferredForVerify matches wrapComputeDeferredValues (Simple_chain b0, n=1)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    { prover } <- liftEffect $ compile
+    chainEntry <- liftEffect $ mkRuleEntry
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+      @1
+      @1
+      @0
+      @1
+      @34
+      @(Tuple1 (StatementIO (F StepField) Unit))
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @(Tuple1 SlotWrapKey)
+      simpleChainRule
+      (tuple1 Self)
+
+    chain <- liftEffect $ compileMulti
+      @SimpleChainRules
       @(F StepField)
       @Unit
       @(F StepField)
-      @Effect
-      { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: Tuple Self unit
-      , debug: false
-      , wrapDomainOverride: Nothing
-      }
-      simpleChainRule
+      @1
+      @(Slots1 1)
+      { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
+      (tuple1 chainEntry)
 
     let
+      BranchProver chainProver = fst chain.provers
       basePrev = BasePrev
         { dummyStatement: StatementIO { input: F (negate one), output: unit } }
-    eCp <- liftEffect $ runExceptT $ prover.step
-      { appInput: F zero, prevs: Tuple basePrev unit }
+    eCp <- liftEffect $ runExceptT $ chainProver
+      { appInput: F zero, prevs: tuple1 basePrev }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("simple_chain prover.step: " <> show e)
       Right p -> pure p
@@ -112,12 +179,18 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     -- Simple_chain b0: prev proof is the dummy wrap, its step-side IPA
     -- challenges are dummyIpaChallenges.stepExpanded (already expanded
     -- to step-field elements). The compile-API surfaces these as part
-    -- of `wrapDvInput.prevChallenges`.
-    assertExpandDeferredMatches @1
-      { dvProver: r.wrapDv
-      , dvInput: r.wrapDvInput
-      , oldBulletproofChallenges: r.wrapDvInput.prevChallenges
-      }
+    -- of `wrapDvInput.prevChallenges`. Both fields hidden behind
+    -- `widthData` existential — `runExists` recovers them at the same
+    -- (existentially-bound) width.
+    runExists
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.wrapDvInput.prevChallenges
+            }
+      )
+      r.widthData
 
 -- | Build an `ExpandDeferredInput n` from the same facts the prover saw,
 -- | run `expandDeferredForVerify`, and assert field-by-field equality

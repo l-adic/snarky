@@ -15,34 +15,48 @@ module Pickles.Step.Main
     RuleOutput
   -- * Spec-indexed per-slot carrier step_main
   , StepMainSrsData
+  , UnfinalizedProof
+  , liftDummyPerProofUnfinalized
   , stepMain
+  -- * mpvMax-padding
+  , class IntEq
+  , class MpvPaddingDispatch
+  , mpvFrontPadVecD
+  , class MpvPadding
+  , mpvFrontPad
+  , mpvFrontPadVec
   ) where
 
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
+import Partial.Unsafe (unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
-import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
+import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.Verify (ivpTrace)
-import Prim.Int (class Add, class Mul)
+import Prim.Boolean (False, True)
+import Prim.Int (class Add, class Compare, class Mul)
+import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
-import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, label)
+import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, UnChecked(..), assertAll_, const_, exists, false_, label, true_)
 import Snarky.Circuit.DSL.Monad (class CheckedType)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
+import Snarky.Circuit.DSL.SizedF (unsafeFromField) as SizedF
 import Snarky.Circuit.Kimchi (SplitField(..), Type1(..), Type2(..), groupMapParams)
 import Snarky.Circuit.RandomOracle.Sponge as Sponge
 import Snarky.Circuit.Types (class CircuitType, varToFields)
@@ -52,6 +66,7 @@ import Snarky.Curves.Pasta (PallasG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
 -- | Rule abstraction
@@ -129,7 +144,7 @@ type RuleOutput n prevInput output =
 -- |   * Simple_chain N2  : `[Nothing, Nothing]`
 -- |   * Add_one_return   : `[]` (N=0, no slots)
 -- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
-type StepMainSrsData len =
+type StepMainSrsData len nd =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
     -- | (step_verifier.ml:564-571) uses the PREV's `wrap_domain`, read
@@ -145,10 +160,32 @@ type StepMainSrsData len =
   -- | (step_main_inputs.ml:182-187); a single SRS-level constant,
   -- | NOT per-slot.
   , blindingH :: AffinePoint (F StepField)
-  , perSlotFopDomainLog2 :: Vector len Int
+  -- | Per-slot Vector of all step-domain log2s the slot's prev
+  -- | source could have. For single-rule callers (and any slot whose
+  -- | source has a single branch) this is `Vector 1 [theLog2]`;
+  -- | for multi-rule Self prevs whose source is a `branches`-branch
+  -- | proof system this is `Vector branches [log2_0, ..., log2_{branches-1}]`.
+  -- | Mirrors OCaml `domain_for_compiled`'s `domains` Vector
+  -- | (`step_verifier.ml:879-899`), which is then deduped into
+  -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
+  , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
   , perSlotKnownWrapKeys ::
       Vector len
         (Maybe (VerificationKey (WeierstrassAffinePoint PallasG (F StepField))))
+  -- | Thunk producing the dummy `UnfinalizedProof` used to front-pad
+  -- | the step PI's unfinalized_proofs vector from `len` to `mpvMax`.
+  -- | Mirrors OCaml `step.ml:782-787` (`Vector.extend_front ...
+  -- | Unfinalized.dummy`). Construct via
+  -- | `liftDummyPerProofUnfinalized` applied to
+  -- | `Pickles.Prove.Step.mkDummyPerProofUnfinalized`.
+  -- |
+  -- | Wrapped in `Unit ->` because `mkDummyPerProofUnfinalized`
+  -- | indirectly calls Rust FFI (`pallasSrsBPolyCommitmentPoint`,
+  -- | `vestaSrsBPolyCommitmentPoint`) which can advance the chacha8
+  -- | RNG counter shared with the kimchi prover. Forcing the thunk
+  -- | only when `mpvPad > 0` keeps the single-rule path
+  -- | byte-identical with the pre-Phase-2b.31a witness.
+  , dummyUnfp :: Unit -> UnfinalizedProof
   }
 
 -------------------------------------------------------------------------------
@@ -160,6 +197,109 @@ unwrapPt (WeierstrassAffinePoint pt) = pt
 
 stepEndoVal :: StepField
 stepEndoVal = let EndoScalar e = endoScalar @Vesta.BaseField @StepField in e
+
+--------------------------------------------------------------------------------
+-- MpvPadding class
+--
+-- Relates `mpvPad + len = mpvMax` at the type level for step PI
+-- mpvMax-padding (mirroring OCaml `step.ml:782-787`'s
+-- `Vector.extend_front unfinalized_proofs ... Unfinalized.dummy`).
+--
+-- Implementation dispatches on `IntEq len mpvMax` — both positions
+-- are always concrete at use sites (from caller @-args), so the
+-- Boolean is determined cleanly. The True branch (`len = mpvMax`)
+-- pins `mpvPad = 0` via the head pattern; the False branch defers
+-- to `Prim.Int.Add` for the actual relation.
+--
+-- The asymmetric formulations we tried earlier (literal `0` in head,
+-- IsZero-gated dispatch) all hit corners of PureScript's instance
+-- resolution where `else` chains don't fall through cleanly. Keying
+-- the dispatch on `IntEq len mpvMax` works because `len` and
+-- `mpvMax` are *always* both concrete at the points PS needs to
+-- discharge the constraint:
+--
+--   * abstract `MpvPadding 0 a a`: IntEq a a → True ✓
+--   * concrete distinct `MpvPadding 1 0 1`: IntEq 0 1 → False, defers
+--     to Add 1 0 1 ✓
+--   * fundep-derived `MpvPadding ? 1 1`: IntEq 1 1 → True, pins
+--     mpvPad = 0 ✓
+--------------------------------------------------------------------------------
+
+class IntEq (a :: Int) (b :: Int) (res :: Boolean) | a b -> res
+
+instance IntEq a a True
+else instance IntEq a b False
+
+class
+  MpvPaddingDispatch (isEqual :: Boolean) (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | isEqual mpvPad len -> mpvMax
+  , isEqual len mpvMax -> mpvPad
+  , isEqual mpvPad mpvMax -> len
+  where
+  mpvFrontPadVecD :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
+
+instance MpvPaddingDispatch True 0 len len where
+  mpvFrontPadVecD _ real = real
+
+instance Add mpvPad len mpvMax => MpvPaddingDispatch False mpvPad len mpvMax where
+  mpvFrontPadVecD padding real = Vector.append padding real
+
+class
+  MpvPadding (mpvPad :: Int) (len :: Int) (mpvMax :: Int)
+  | mpvPad len -> mpvMax
+  , len mpvMax -> mpvPad
+  , mpvPad mpvMax -> len
+  where
+  -- | Concatenate a padding vector with a real vector to produce the
+  -- | full mpvMax-sized vector. Dispatches through `MpvPaddingDispatch`:
+  -- | when `mpvPad = 0` the True instance returns `real` directly (no
+  -- | `Add 0 len len` constraint needed); otherwise the False instance
+  -- | uses `Vector.append`.
+  mpvFrontPadVec :: forall a. Vector mpvPad a -> Vector len a -> Vector mpvMax a
+
+instance
+  ( IntEq len mpvMax isEqual
+  , MpvPaddingDispatch isEqual mpvPad len mpvMax
+  ) =>
+  MpvPadding mpvPad len mpvMax where
+  mpvFrontPadVec = mpvFrontPadVecD @isEqual
+
+-- | Front-pad a `Vector len a` with `mpvPad` copies of a dummy value
+-- | to produce a `Vector mpvMax a`. The `MpvPadding mpvPad len mpvMax`
+-- | constraint witnesses `mpvPad + len = mpvMax` at the type level.
+-- |
+-- | The dummy is a thunk so the single-rule path (`mpvPad = 0`) does
+-- | NOT force evaluation of the dummy — important because building
+-- | the dummy can trigger Rust FFI (lagrange / blinding-generator
+-- | computations) that advance shared chacha8 RNG state.
+-- |
+-- | Implementation: when `mpvPad = 0`, `MpvPadding 0 len len` instance
+-- | guarantees `mpvMax = len` so we `unsafeCoerce real` directly
+-- | (zero work, byte-identical witness). When `mpvPad > 0`, we build
+-- | a runtime-sized array and re-wrap via `Vector.toVector +
+-- | unsafePartial fromJust` (the runtime check is a tautology — array
+-- | length always equals `mpvPad + len = mpvMax`).
+mpvFrontPad
+  :: forall a mpvPad len mpvMax
+   . MpvPadding mpvPad len mpvMax
+  => Reflectable mpvPad Int
+  => Reflectable mpvMax Int
+  => (Unit -> a)
+  -> Vector len a
+  -> Vector mpvMax a
+mpvFrontPad mkDummy real =
+  let
+    n = reflectType (Proxy @mpvPad)
+  in
+    if n == 0 then unsafeCoerce real
+    else
+      let
+        dummy = mkDummy unit
+        arr =
+          Array.replicate n dummy
+            <> (Vector.toUnfoldable real :: Array a)
+      in
+        unsafePartial $ fromJust $ Vector.toVector @mpvMax arr
 
 -------------------------------------------------------------------------------
 -- | Per-proof witness allocation
@@ -330,6 +470,64 @@ unpackUnfinalized (PerProofUnfinalized r) = pure
   , claimedDigest: r.spongeDigest
   }
 
+-- | Lift a value-level dummy `PerProofUnfinalized` (cross-field-encoded
+-- | in step field) directly to an `UnfinalizedProof` (circuit-var,
+-- | unpacked) via `const_` / boolean-constant lifting. Pure: emits no
+-- | constraints. Used by `stepMain` for mpvMax-padding.
+liftDummyPerProofUnfinalized
+  :: PerProofUnfinalized
+       WrapIPARounds
+       (Type2 (SplitField (F StepField) Boolean))
+       (F StepField)
+       Boolean
+  -> UnfinalizedProof
+liftDummyPerProofUnfinalized (PerProofUnfinalized r) =
+  let
+    liftF (F x) = const_ x :: FVar StepField
+
+    liftSizedF
+      :: forall n
+       . SizedF n (F StepField)
+      -> SizedF n (FVar StepField)
+    liftSizedF s =
+      let
+        F x = toField s
+      in
+        unsafePartial $ SizedF.unsafeFromField (const_ x)
+
+    liftT2SF
+      :: Type2 (SplitField (F StepField) Boolean)
+      -> Type2 (SplitField (FVar StepField) (BoolVar StepField))
+    liftT2SF (Type2 (SplitField { sDiv2: F sd, sOdd })) =
+      Type2
+        ( SplitField
+            { sDiv2: const_ sd
+            , sOdd: if sOdd then true_ else false_
+            }
+        )
+
+    liftBool b = if b then true_ else false_
+  in
+    { deferredValues:
+        { plonk:
+            { alpha: liftSizedF (let UnChecked s = r.alpha in s)
+            , beta: liftSizedF (let UnChecked s = r.beta in s)
+            , gamma: liftSizedF (let UnChecked s = r.gamma in s)
+            , zeta: liftSizedF (let UnChecked s = r.zeta in s)
+            , perm: liftT2SF r.perm
+            , zetaToSrsLength: liftT2SF r.zetaToSrsLength
+            , zetaToDomainSize: liftT2SF r.zetaToDomainSize
+            }
+        , combinedInnerProduct: liftT2SF r.combinedInnerProduct
+        , b: liftT2SF r.b
+        , xi: liftSizedF (let UnChecked s = r.xi in s)
+        , bulletproofChallenges:
+            map (\(UnChecked s) -> liftSizedF s) r.bulletproofChallenges
+        }
+    , shouldFinalize: liftBool r.shouldFinalize
+    , claimedDigest: liftF r.spongeDigest
+    }
+
 -------------------------------------------------------------------------------
 -- | Build verify_one input from allocated witnesses
 -------------------------------------------------------------------------------
@@ -469,11 +667,14 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @valCarrier
+       @valCarrier @mpvMax @mpvPad @nd ndPred
        len carrier carrierVar
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
+  => Add 1 ndPred nd
+  => Compare 0 nd LT
+  => Reflectable nd Int
   => StepWitnessM len StepIPARounds WrapIPARounds PallasG StepField m inputVal
   => StepSlotsM prevsSpec StepIPARounds WrapIPARounds PallasG StepField m len carrier
   => StepPrevValuesM m valCarrier
@@ -495,20 +696,27 @@ stepMain
   => CheckedType StepField (KimchiConstraint StepField) input
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  -- mpvMax-padding. When `mpvMax = len` then `mpvPad = 0` and padding
+  -- emits nothing (circuit shape unchanged). When `mpvPad > 0`,
+  -- `mpvFrontPad` prepends that many dummy entries.
+  => MpvPadding mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
-  -> StepMainSrsData len
+  -> StepMainSrsData len nd
   -> AffinePoint StepField
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
   { perSlotLagrangeAt
   , blindingH
-  , perSlotFopDomainLog2
+  , perSlotFopDomainLog2s
   , perSlotKnownWrapKeys
+  , dummyUnfp
   }
   dummySg = do
   -- 1. exists: public input via Req.App_state.
@@ -577,8 +785,31 @@ stepMain
     $ getStepUnfinalizedProofs @len @StepIPARounds @WrapIPARounds @PallasG unit
   unfinalizedProofs <- traverse unpackUnfinalized rawUnfinalizedProofs
 
-  -- 6. exists: messages_for_next_wrap_proof (uniform Vector len).
-  msgsWrap <- exists $ lift $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+  -- 6. exists: messages_for_next_wrap_proof.
+  --    Mirrors OCaml step_main.ml:368-370 which allocates
+  --    `Vector.typ Digest.typ Max_proofs_verified.n` via `exists` —
+  --    the prover supplies real values for the rule's actual prev
+  --    count and dummy values for padding positions.
+  --
+  --    PS does this in two `exists` (real + padding) and concatenates
+  --    via `mpvFrontPadVec`. Each padding entry is a fresh Var (not a
+  --    `const_` Constant), so the output→PI assertEqual_ on padded
+  --    slots permutation-ties (no extra Generic gate). Total Var
+  --    count is `len + mpvPad = mpvMax`, matching OCaml's single
+  --    mpvMax allocation.
+  msgsWrapReal <- exists $ lift
+    $ getMessagesForNextWrapProof @len @StepIPARounds @WrapIPARounds @PallasG unit
+  msgsWrapPadding <- exists $ lift do
+    dummyHash <- getMessagesForNextWrapProofDummyHash
+      @len
+      @StepIPARounds
+      @WrapIPARounds
+      @PallasG
+      unit
+    pure (Vector.replicate @mpvPad dummyHash)
+  let
+    msgsWrap :: Vector mpvMax (FVar StepField)
+    msgsWrap = mpvFrontPadVec msgsWrapPadding msgsWrapReal
 
   let
     -- Lift a value-side VK to const_ FVars. Used when a slot has
@@ -619,7 +850,17 @@ stepMain
       ( \i (StepSlot slotRec) -> do
           pw <- allocatePerProofWitness slotRec.sppw
           let
-            slotFopDomainLog2 = perSlotFopDomainLog2 !! i
+            -- Per-slot Vector nd of all possible source-branch step domains.
+            -- For nd=1 this is `Vector 1 [theLog2]` (single-rule, External
+            -- with single-branch source, or Self with single-branch source).
+            -- For nd>1 this is the full deduped list for multi-rule Self
+            -- prevs (e.g. TwoPhaseChain Self → [9, 14]).
+            slotFopDomainLog2s = perSlotFopDomainLog2s !! i
+            -- Single-Int representative used for shifts only — OCaml's
+            -- `Pseudo.Domain.shifts` asserts shifts are constant across
+            -- all unique_domains, so any element gives the right
+            -- (constant) value.
+            slotShiftsLog2 = Vector.head slotFopDomainLog2s
             slotLagrangeAt = perSlotLagrangeAt !! i
 
             slotIvpParams =
@@ -633,11 +874,23 @@ stepMain
               }
 
             slotFopParams =
-              { domain:
-                  { generator: const_ (LinFFI.domainGenerator @StepField slotFopDomainLog2)
-                  , shifts: map const_ (LinFFI.domainShifts @StepField slotFopDomainLog2)
-                  }
-              , domainLog2: slotFopDomainLog2
+              -- Multi-domain shape: one `{generator, log2}` per
+              -- possible source branch. For nd=1 this collapses to a
+              -- Vector 1 (byte-identical gate emission as
+              -- single-domain). For nd>1 the FOP body emits one
+              -- extra `Field.equal` and one extra mask `Field.mul`
+              -- per additional branch.
+              { domains: map
+                  ( \log2 ->
+                      { generator: const_ (LinFFI.domainGenerator @StepField log2)
+                      , log2
+                      }
+                  )
+                  slotFopDomainLog2s
+              -- shifts are constant across all unique_domains
+              -- (`disabled_not_the_same`); any branch's log2 gives the
+              -- same answer.
+              , shifts: map const_ (LinFFI.domainShifts @StepField slotShiftsLog2)
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
@@ -669,7 +922,7 @@ stepMain
               (varToFields @StepField @prevInputVal prevInputVar)
               (proofMustVerify !! i)
               (unfinalizedProofs !! i)
-              (msgsWrap !! i)
+              (msgsWrapReal !! i)
               slotVkComms
               constDummySg
           r <- verifyOne slotFopParams input slotIvpParams
@@ -727,6 +980,14 @@ stepMain
 
     s1 <- foldM (flip Sponge.absorb) spongeAfterIndex hashAppFields
 
+    -- IMPORTANT: OCaml `step_main.ml:540-555` builds
+    -- `challenge_polynomial_commitments` from `proof_witnesses` (length =
+    -- rule's actual prev count), and the comment at L651-653 explicitly
+    -- says `(* Note: the bulletproof_challenges here are unpadded! *)`.
+    -- The mpvMax `Vector.extend_front` happens ONLY on
+    -- `unfinalized_proofs` (the output, L661-663), NOT on the inputs to
+    -- `hash_messages_for_next_step_proof`. So `proofData` here stays at
+    -- length `len` (= rule's prev count) — never padded to `mpvMax`.
     let proofData = map (\r -> { sg: r.sg, expandedChals: r.expandedChallenges }) results
     forWithIndex_ proofData \fi { sg: sgPt, expandedChals } -> do
       let i = getFinite fi
@@ -749,10 +1010,21 @@ stepMain
     ivpTrace "step_main_outer.digest" digest
     pure digest
 
-  -- 10. Build output: len × 32 (unfinalized) + 1 (step msg) + len (wrap msgs).
+  -- 10. Build output: mpvMax × 32 (unfinalized) + 1 (step msg) + mpvMax (wrap msgs).
+  --     Front-pad `unfinalizedProofs` from `len` to `mpvMax` with const_
+  --     dummies (mirrors OCaml `step.ml:782-787`'s
+  --     `Vector.extend_front ... Unfinalized.dummy`). `msgsWrap` is
+  --     already mpvMax-sized: padding entries were exists-allocated at
+  --     step 6 (mirroring OCaml step_main.ml:368-370), so its dummy
+  --     positions are circuit Vars (not Constants) and the
+  --     output→PI assertEqual_ permutation-ties without emitting an
+  --     extra Generic gate.
   let
+    unfinalizedProofsPadded :: Vector mpvMax UnfinalizedProof
+    unfinalizedProofsPadded = mpvFrontPad dummyUnfp unfinalizedProofs
+
     unfsFlat :: Vector unfsTotal (FVar StepField)
-    unfsFlat = Vector.concat (map unfFields unfinalizedProofs)
+    unfsFlat = Vector.concat (map unfFields unfinalizedProofsPadded)
 
     digestVec :: Vector 1 (FVar StepField)
     digestVec = outerDigest :< Vector.nil

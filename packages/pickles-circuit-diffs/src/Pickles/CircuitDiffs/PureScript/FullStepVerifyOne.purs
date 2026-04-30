@@ -144,11 +144,11 @@ fullStepVerifyOneCircuit { lagrangeAt, blindingH } inputs = do
 
     domainLog2 = 16
     fopParams =
-      { domain:
+      { domains:
           { generator: const_ (LinFFI.domainGenerator @StepField domainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
-          }
-      , domainLog2
+          , log2: domainLog2
+          } :< Vector.nil
+      , shifts: map const_ (LinFFI.domainShifts @StepField domainLog2)
       , srsLengthLog2: 16
       , endo: stepEndo
       , linearizationPoly: Linearization.pallas

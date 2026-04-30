@@ -53,7 +53,7 @@ import Prelude
 
 import Data.Fin (Finite, finZero, shiftSucc)
 import Data.Reflectable (class Reflectable)
-import Data.Tuple (Tuple(..))
+import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Pickles.Types (PaddedLength, StepPerProofWitness)
@@ -198,9 +198,9 @@ instance
     sf
     b
     len
-    (Tuple (StepSlot n ds dw f sf b) rcarrier)
+    (StepSlot n ds dw f sf b /\ rcarrier)
   where
-  traversePrevsA f (Tuple here rest) =
+  traversePrevsA f (here /\ rest) =
     -- `hereIdx :: Finite len` — slot 0 of `len`. `finZero`'s
     -- `Add n 1 n1` constraint discharges with `n = restLen`, `n1 = len`
     -- (so `len ≥ 1` by construction at every Cons instance).
@@ -218,7 +218,7 @@ instance
     -- `StepPerProofWitness n ds dw f sf b` (where `n` is this Cons
     -- instance's head Int), and at the recursive call it auto-specializes
     -- to each of `rest`'s per-slot Ns.
-    Tuple dummyPPW (replicatePrevsCarrier @rest dummyPPW)
+    dummyPPW /\ replicatePrevsCarrier @rest dummyPPW
 
 --------------------------------------------------------------------------------
 -- CircuitType / CheckedType instances for StepSlot
@@ -302,4 +302,4 @@ instance
   PrevValuesCarrier rest restValCarrier =>
   PrevValuesCarrier
     (PrevsSpecCons n statement rest)
-    (Tuple statement restValCarrier)
+    (statement /\ restValCarrier)

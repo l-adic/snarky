@@ -8,7 +8,7 @@ module Pickles.CircuitDiffs.PureScript.FopWrap
 import Prelude
 
 import Data.Fin (Finite, getFinite)
-import Data.Vector (Vector)
+import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, asSizedF128, unsafeIdx, wrapDomainLog2, wrapEndo, wrapSrsLengthLog2)
 import Pickles.Linearization as Linearization
@@ -108,11 +108,11 @@ fopWrapCircuit input =
       , spongeDigestBeforeEvaluations: input.spongeDigestBeforeEvaluations
       }
     params =
-      { domain:
+      { domains:
           { generator: const_ (LinFFI.domainGenerator @WrapField wrapDomainLog2)
-          , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
-          }
-      , domainLog2: wrapDomainLog2
+          , log2: wrapDomainLog2
+          } :< Vector.nil
+      , shifts: map const_ (LinFFI.domainShifts @WrapField wrapDomainLog2)
       , srsLengthLog2: wrapSrsLengthLog2
       , endo: wrapEndo
       , linearizationPoly: Linearization.vesta

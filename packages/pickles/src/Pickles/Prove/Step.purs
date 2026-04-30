@@ -46,6 +46,9 @@ module Pickles.Prove.Step
   , stepCompile
   , preComputeStepDomainLog2
   , stepSolveAndProve
+  -- mpvMax-padding helpers
+  , mkDummyPerProofUnfinalized
+  , mkDummyMsgWrapHash
   ) where
 
 import Prelude
@@ -66,15 +69,21 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromJust, maybe)
 import Data.Newtype (class Newtype, un, unwrap)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.String (Pattern(..), Replacement(..))
+import Data.String as String
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
+import Node.Process as Process
 import Partial.Unsafe (unsafePartial)
+import Pickles.Constants (zkRows)
+import Pickles.Dummy (BaseCaseDummies, computeDummySgValues) as Dummy
 import Pickles.Dummy (baseCaseDummies, dummyIpaChallenges, stepDummyUnfinalizedProof, wrapDomainLog2ForProofsVerified, wrapDummyUnfinalizedProof)
 import Pickles.Linearization (pallas, vesta) as Linearization
 import Pickles.Linearization.FFI (PointEval) as LFFI
@@ -88,10 +97,11 @@ import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
+import Pickles.Step.Main as MpvPadding
 import Pickles.Step.MessageHash (hashMessagesForNextStepProofPure, hashMessagesForNextStepProofPureTraced)
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, StepSlot(..), replicatePrevsCarrier)
 import Pickles.Trace as Trace
-import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
+import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapField, WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
 import Pickles.VerificationKey (StepVK)
 import Pickles.Verify.Types (BranchData) as VT
 import Pickles.Verify.Types (PlonkMinimal, UnfinalizedProof)
@@ -418,6 +428,7 @@ buildStepAdvice input =
       , publicInput: input.publicInput
       , publicUnfinalizedProofs: Vector.replicate dummyPublicUnfinalized
       , messagesForNextWrapProof: Vector.replicate (F zero)
+      , messagesForNextWrapProofDummyHash: F zero
       , wrapVerifierIndex:
           VerificationKey
             { sigma: Vector.generate (const g0w)
@@ -476,6 +487,86 @@ extractWrapVKForStepHash vk =
     , emulComm: Vector.index comms.index (unsafeFinite @6 4)
     , endomulScalarComm: Vector.index comms.index (unsafeFinite @6 5)
     }
+
+--------------------------------------------------------------------------------
+-- mpvMax-padding dummies
+--
+-- Mirror OCaml `Unfinalized.Constant.dummy` (unfinalized.ml:25-104)
+-- and the prover-side `pad` function for `messages_for_next_wrap_proof`
+-- (step.ml:868-875). Used by `stepMain` to front-pad the step PI from
+-- `len` (rule's actual mpv) to `mpvMax` (compile-wide max). For
+-- single-rule callers `mpvMax = len → mpvPad = 0`, so the dummies
+-- are unused.
+--------------------------------------------------------------------------------
+
+-- | Cross-field-encoded step-side dummy `PerProofUnfinalized` (value
+-- | level). Extracts to a top-level helper the local
+-- | `dummyPublicUnfinalized` defined inside `dummyAdviceShape`.
+mkDummyPerProofUnfinalized
+  :: Dummy.BaseCaseDummies
+  -> PerProofUnfinalized
+       WrapIPARounds
+       (Type2 (SplitField (F StepField) Boolean))
+       (F StepField)
+       Boolean
+mkDummyPerProofUnfinalized bcd =
+  let
+    du = wrapDummyUnfinalizedProof bcd
+    dvDu = du.deferredValues
+    pDu = dvDu.plonk
+
+    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+
+    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
+
+    digestStep :: F StepField
+    digestStep =
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (crossFieldDigest digestWrap)
+  in
+    PerProofUnfinalized
+      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
+      , b: t2toT2sf dvDu.b
+      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
+      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
+      , perm: t2toT2sf pDu.perm
+      , spongeDigest: digestStep
+      , beta: UnChecked (chalToStep pDu.beta)
+      , gamma: UnChecked (chalToStep pDu.gamma)
+      , alpha: UnChecked (chalToStep pDu.alpha)
+      , zeta: UnChecked (chalToStep pDu.zeta)
+      , xi: UnChecked (chalToStep dvDu.xi)
+      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
+      , shouldFinalize: false
+      }
+
+-- | Cross-field-encoded step-side dummy `messages_for_next_wrap_proof`
+-- | digest (value level). Hashes a constant
+-- | `Messages_for_next_wrap_proof.t` (Dummy.Ipa.Step.sg + 2 copies of
+-- | Dummy.Ipa.Wrap.challenges_computed) via Tock_field_sponge then
+-- | cross-field-casts to step field, mirroring OCaml
+-- | `step.ml:868-875`'s `pad` function.
+mkDummyMsgWrapHash
+  :: Dummy.BaseCaseDummies
+  -> CRS PallasG
+  -> CRS VestaG
+  -> F StepField
+mkDummyMsgWrapHash bcd pallasSrs vestaSrs =
+  let
+    sgValues = Dummy.computeDummySgValues bcd pallasSrs vestaSrs
+
+    msgWrapHashWrap :: WrapField
+    msgWrapHashWrap = hashMessagesForNextWrapProofPureGeneral
+      { sg: sgValues.ipa.step.sg
+      , paddedChallenges:
+          Vector.replicate @PaddedLength dummyIpaChallenges.wrapExpanded
+      }
+  in
+    F (crossFieldDigest msgWrapHashWrap)
 
 -- | Build the `Array WrapField` the FFI oracles call receives.
 -- |
@@ -1076,7 +1167,7 @@ buildSlotAdvice input = do
     stepFopVanishesOnZk :: StepField
     stepFopVanishesOnZk =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: StepField } -> StepField)
-        { domainLog2: input.stepDomainLog2, zkRows: 3, pt: zetaExpandedStep }
+        { domainLog2: input.stepDomainLog2, zkRows, pt: zetaExpandedStep }
 
     wrapAllEvalsW :: AllEvals WrapField
     wrapAllEvalsW =
@@ -1098,7 +1189,7 @@ buildSlotAdvice input = do
     wrapVanishesOnZkW :: WrapField
     wrapVanishesOnZkW =
       (permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: WrapField } -> WrapField)
-        { domainLog2: input.wrapDomainLog2, zkRows: 3, pt: oracles.zeta }
+        { domainLog2: input.wrapDomainLog2, zkRows, pt: oracles.zeta }
 
     wrapPrevEvalsF :: StepAllEvals (F StepField)
     wrapPrevEvalsF =
@@ -1119,8 +1210,8 @@ buildSlotAdvice input = do
     expandProofInputRec :: PureStep.ExpandProofInput n 2
     expandProofInputRec =
       { mustVerify: input.mustVerify
-      , zkRows: 3
-      , srsLengthLog2: 16
+      , zkRows
+      , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
       , allEvals: input.wrapPrevEvals
       , pEval0Chunks: [ input.wrapPrevEvals.publicEvals.zeta ]
       , oldBulletproofChallenges: Vector.replicate @n dummyStepBpChalsRaw
@@ -1149,8 +1240,8 @@ buildSlotAdvice input = do
       , wrapAllEvals: wrapAllEvalsW
       , wrapPEval0Chunks: [ oracles.publicEvalZeta ]
       , wrapShifts: wrapShiftsW
-      , wrapZkRows: 3
-      , wrapSrsLengthLog2: 15
+      , wrapZkRows: zkRows
+      , wrapSrsLengthLog2: reflectType (Proxy :: Proxy WrapIPARounds)
       , wrapVanishesOnZk: wrapVanishesOnZkW
       , wrapOmegaForLagrange: \_ -> one
       , wrapLinearizationPoly: Linearization.vesta
@@ -1453,8 +1544,8 @@ type StepRule (n :: Int) valCarrier inputVal input outputVal output prevInputVal
 -- |   known wrap keys) that `stepMain` consumes.
 -- | * `dummySg` — dummy sg point for sg_old padding in verify_one.
 -- | * `crs` — the step circuit's Vesta SRS.
-type StepProveContext len =
-  { srsData :: StepMainSrsData len
+type StepProveContext len nd =
+  { srsData :: StepMainSrsData len nd
   , dummySg :: AffinePoint StepField
   , crs :: CRS VestaG
   -- | When `true`, enables prover-state debug checks and runs a
@@ -1524,15 +1615,37 @@ dumpRowLabels
   :: Int -- ^ publicInputSize — number of rows kimchi reserves for PI
   -> Array (Labeled (KimchiGate StepField))
   -> Effect Unit
-dumpRowLabels publicInputSize cs = do
+dumpRowLabels = writeRowLabelsTo "/tmp/ps_step_row_labels.txt"
+
+-- | Monotonic counter for `KIMCHI_STEP_LABELS_DUMP` filename
+-- | templating. Mirrors the AtomicUsize counter on the Rust side for
+-- | `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`.
+stepLabelsCounter :: Ref.Ref Int
+stepLabelsCounter = unsafePerformEffect (Ref.new 0)
+
+bumpStepLabelsCounter :: Effect Int
+bumpStepLabelsCounter = do
+  n <- Ref.read stepLabelsCounter
+  Ref.write (n + 1) stepLabelsCounter
+  pure n
+
+-- | Variant of `dumpRowLabels` that takes a destination path. Used
+-- | by the `KIMCHI_STEP_LABELS_DUMP` env-var-gated dump in
+-- | `stepCompile` so each branch's CS labels go to a distinct file.
+writeRowLabelsTo
+  :: String
+  -> Int
+  -> Array (Labeled (KimchiGate StepField))
+  -> Effect Unit
+writeRowLabelsTo path publicInputSize cs = do
   let
     { out, row: finalRow } = Array.foldl
       ( \{ row, out } lc ->
           let
             nRows = Array.length (toKimchiRows lc.constraint :: Array (KimchiRow StepField))
             endRow = row + nRows - 1
-            path = Array.intercalate "/" lc.context
-            line = show row <> ".." <> show endRow <> "\t" <> path
+            ctxPath = Array.intercalate "/" lc.context
+            line = show row <> ".." <> show endRow <> "\t" <> ctxPath
           in
             { row: row + nRows, out: out <> [ line ] }
       )
@@ -1543,7 +1656,7 @@ dumpRowLabels publicInputSize cs = do
         <> " constraintRowsEnd="
         <> show finalRow
         <> " (kimchi witness row = offset + publicInputSize)"
-  FS.writeTextFile UTF8 "/tmp/ps_step_row_labels.txt"
+  FS.writeTextFile UTF8 path
     (header <> "\n" <> Array.intercalate "\n" out <> "\n")
 
 --------------------------------------------------------------------------------
@@ -1579,6 +1692,12 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier =
               Boolean
           )
     , messagesForNextWrapProof :: Vector len (F StepField)
+    -- | Dummy hash value used to pad `messagesForNextWrapProof` from
+    -- | `len` to `mpvMax` at solve time. Mirrors OCaml's
+    -- | `Reduced_messages_for_next_proof_over_same_field.Wrap.dummy.hash`
+    -- | which the prover supplies for padding positions in
+    -- | `Req.Messages_for_next_wrap_proof` (step_main.ml:368-370).
+    , messagesForNextWrapProofDummyHash :: F StepField
     , wrapVerifierIndex ::
         VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
     -- | Kimchi-level prev_challenges threaded to
@@ -1726,6 +1845,8 @@ instance
 
   getMessagesForNextWrapProof _ =
     StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProof) ask
+  getMessagesForNextWrapProofDummyHash _ =
+    StepProverT $ map (\(StepAdvice r) -> r.messagesForNextWrapProofDummyHash) ask
   getWrapVerifierIndex _ =
     StepProverT $ map (\(StepAdvice r) -> r.wrapVerifierIndex) ask
   getStepPublicInput _ =
@@ -1763,16 +1884,22 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Reflectable nd Int
   => Reflectable outputSize Int
+  => Add 1 ndPred nd
+  => Compare 0 nd LT
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -1797,7 +1924,7 @@ stepCompile
        len
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len
+  => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
@@ -1817,6 +1944,8 @@ stepCompile ctx rule = do
             @prevInputVal
             @prevInput
             @valCarrier
+            @mpvMax
+            @mpvPad
             rule
             ctx.srsData
             ctx.dummySg
@@ -1841,6 +1970,21 @@ stepCompile ctx rule = do
         { endo, constraintSystem, crs: ctx.crs }
 
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+
+  -- Optional compile-time dump of the row→label map, gated on the
+  -- `KIMCHI_STEP_LABELS_DUMP` env var. Filename template uses `%c`
+  -- (replaced with a monotonic counter) so multi-rule compileMulti
+  -- writes one file per branch — same convention as
+  -- `KIMCHI_WITNESS_DUMP` / `KIMCHI_CS_DUMP`. Useful for localizing
+  -- multi-rule per-branch CS divergences without going through prove.
+  Process.lookupEnv "KIMCHI_STEP_LABELS_DUMP" >>= case _ of
+    Nothing -> pure unit
+    Just pathTmpl -> do
+      counter <- bumpStepLabelsCounter
+      let
+        path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
+        publicInputSize = Array.length builtState.publicInputs
+      writeRowLabelsTo path publicInputSize builtState.constraints
 
   pure
     { proverIndex
@@ -1868,16 +2012,22 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Reflectable nd Int
   => Reflectable outputSize Int
+  => Add 1 ndPred nd
+  => Compare 0 nd LT
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -1902,7 +2052,7 @@ preComputeStepDomainLog2
        len
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
-  => StepProveContext len
+  => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
@@ -1922,6 +2072,8 @@ preComputeStepDomainLog2 ctx rule = do
             @prevInputVal
             @prevInput
             @valCarrier
+            @mpvMax
+            @mpvPad
             rule
             ctx.srsData
             ctx.dummySg
@@ -1953,16 +2105,22 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => Reflectable len Int
   => Reflectable pad Int
+  => Reflectable mpvMax Int
+  => Reflectable mpvPad Int
+  => Reflectable nd Int
   => Reflectable outputSize Int
+  => Add 1 ndPred nd
+  => Compare 0 nd LT
   => Add pad len PaddedLength
-  => Mul len 32 unfsTotal
+  => MpvPadding.MpvPadding mpvPad len mpvMax
+  => Mul mpvMax UnfinalizedFieldCount unfsTotal
   => Add unfsTotal 1 digestPlusUnfs
-  => Add digestPlusUnfs len outputSize
+  => Add digestPlusUnfs mpvMax outputSize
   => CircuitType StepField inputVal input
   => CircuitType StepField outputVal output
   => CircuitType StepField prevInputVal prevInput
@@ -1989,7 +2147,7 @@ stepSolveAndProve
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
   => PrevValuesCarrier prevsSpec valCarrier
-  => StepProveContext len
+  => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
@@ -2022,6 +2180,8 @@ stepSolveAndProve ctx rule compileResult advice = do
               @prevInputVal
               @prevInput
               @valCarrier
+              @mpvMax
+              @mpvPad
               rule
               ctx.srsData
               ctx.dummySg
@@ -2084,7 +2244,13 @@ stepSolveAndProve ctx rule compileResult advice = do
                     , challenges: Vector.toUnfoldable r.challenges
                     }
                 )
-                (Vector.toUnfoldable adv.kimchiPrevChallenges :: Array _)
+                ( Vector.toUnfoldable adv.kimchiPrevChallenges
+                    :: Array
+                         { sgX :: WrapField
+                         , sgY :: WrapField
+                         , challenges :: Vector StepIPARounds StepField
+                         }
+                )
           }
       pure
         { proverIndex: compileResult.proverIndex

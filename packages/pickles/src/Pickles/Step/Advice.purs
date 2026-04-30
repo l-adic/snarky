@@ -57,6 +57,7 @@
 module Pickles.Step.Advice
   ( class StepWitnessM
   , getMessagesForNextWrapProof
+  , getMessagesForNextWrapProofDummyHash
   , getWrapVerifierIndex
   , getStepPublicInput
   , getStepUnfinalizedProofs
@@ -113,6 +114,16 @@ class
   -- | Each digest is a hash of (sg, expanded bp_challenges) for that proof.
   getMessagesForNextWrapProof :: Unit -> m (Vector n (F f))
 
+  -- | Dummy hash value used to PRE-PAD `messages_for_next_wrap_proof`
+  -- | from the rule's actual prev count `len` up to `mpvMax`. Mirrors
+  -- | OCaml `step_main.ml:368-370` where the messages_for_next_wrap_proof
+  -- | vector is exists-allocated at full Max_proofs_verified.n size and
+  -- | the prover supplies dummy values for padding positions. We return
+  -- | a single field value here (not a vector) and let the caller
+  -- | replicate it `mpvPad` times via `Vector.replicate` — keeps the
+  -- | class's type axes minimal.
+  getMessagesForNextWrapProofDummyHash :: Unit -> m (F f)
+
   -- | Wrap verifier index (VK) as circuit variables.
   -- | In OCaml this enters via exists ~request:(Req.Wrap_index) (step_main.ml:345-348).
   -- | Wrapped in `WeierstrassAffinePoint g` so the on-curve checks run during
@@ -147,6 +158,7 @@ instance
   ) =>
   StepWitnessM n ds dw g f Effect inputVal where
   getMessagesForNextWrapProof _ = throw "impossible! getMessagesForNextWrapProof called during compilation"
+  getMessagesForNextWrapProofDummyHash _ = throw "impossible! getMessagesForNextWrapProofDummyHash called during compilation"
   getWrapVerifierIndex _ = throw "impossible! getWrapVerifierIndex called during compilation"
   getStepPublicInput _ = throw "impossible! getStepPublicInput called during compilation"
   getStepUnfinalizedProofs _ = throw "impossible! getStepUnfinalizedProofs called during compilation"

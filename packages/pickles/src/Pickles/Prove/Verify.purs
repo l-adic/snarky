@@ -31,6 +31,9 @@
 -- | proofs of type `'max_proofs_verified Proof.t`.
 module Pickles.Prove.Verify
   ( CompiledProof(..)
+  , CompiledProofWidthData(..)
+  , SomeCompiledProofWidthData
+  , mkSomeCompiledProofWidthData
   , Verifier
   , mkVerifier
   , verifyOne
@@ -41,17 +44,20 @@ module Pickles.Prove.Verify
 import Prelude
 
 import Data.Array as Array
-import Data.Reflectable (reflectType)
+import Data.Exists (Exists, mkExists, runExists)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
-import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
+import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput, assembleWrapMainInput)
-import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
+import Pickles.Types (PaddedLength, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapStatementPacked)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
+import Prim.Int (class Add)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Impl.Vesta (vestaSrsBPolyCommitmentPoint)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
@@ -114,9 +120,111 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
   , linearizationPoly: Linearization.pallas
   }
 
+-- | The five fields whose Vector size depends on the rule's *actual*
+-- | prev step proof count (= OCaml's `'most_recent_width` in
+-- | `proof.mli:97-110`). They share the same width because they all
+-- | describe per-prev-step-proof data.
+-- |
+-- | Wrapped behind `Exists` in `CompiledProof` so the per-rule width
+-- | is hidden at the outer type — mirrors OCaml's GADT existential
+-- | `T : ... -> ('s, 'mlmb) with_data` which exposes only `'mlmb`.
+data CompiledProofWidthData :: Int -> Type
+data CompiledProofWidthData width = CompiledProofWidthData
+  { -- Reified `reflectType (Proxy @width)` for runtime inspection
+    -- after `runExists`. PS's `Exists` doesn't preserve type-class
+    -- instances across the existential boundary, so the value is
+    -- stored explicitly.
+    width :: Int
+
+  -- Inner step proof's prev-proof bp challenges (carried by the
+  -- wrap proof's `messages_for_next_step_proof` field). Sized at
+  -- the rule's actual prev count.
+  , oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
+
+  -- Per-prev wrap-side bp-challenges that this proof hashed into
+  -- `messagesForNextWrapProofDigest`.
+  , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
+
+  -- Per-prev outer-step `expandProof.sg` values used as real-slot
+  -- `sgX/sgY` in `kimchiPrevChallenges` when this proof's wrap
+  -- proof was generated.
+  , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
+
+  -- The prover's deferred-values input; carries `prevSgs` and
+  -- `prevChallenges` Vectors at the per-rule width.
+  , wrapDvInput :: WrapDeferredValuesInput width
+
+  -- ===== Pre-padded views (front-padded with the matching dummy). =====
+  --
+  -- Inside `runExists`, `width` is rigid existential, so consumers
+  -- can't form an `Add pad width PaddedLength` constraint to pad
+  -- with `Vector.append (Vector.replicate @pad dummy) raw`. The
+  -- producer (`mkSomeCompiledProofWidthData`) HAS that constraint
+  -- (its `width = mpv` is concrete), so it pre-computes the padded
+  -- versions and stores them. Downstream callers — `mkStepAdvice` /
+  -- `shapeProveData` for `InductivePrev` — read these directly,
+  -- which makes their advice assembly Vector-only (no Array
+  -- roundtrip). Mirrors OCaml's `Vector.extend_front` of
+  -- `messages_for_next_step_proof.old_bulletproof_challenges` etc.
+  , oldBulletproofChallengesPadded :: Vector PaddedLength (Vector StepIPARounds StepField)
+  , msgWrapChallengesPadded :: Vector PaddedLength (Vector WrapIPARounds WrapField)
+  , outerStepChalPolyCommsPadded :: Vector PaddedLength (AffinePoint StepField)
+  }
+
+-- | Existentially-quantified `CompiledProofWidthData`. PS analog of
+-- | OCaml `Proof.with_data`'s GADT — `width` is hidden; consumers
+-- | `runExists` to recover it (in continuation-passing form).
+type SomeCompiledProofWidthData = Exists CompiledProofWidthData
+
+-- | Smart constructor for `SomeCompiledProofWidthData`. Pre-computes
+-- | the `Vector PaddedLength` views from the unpadded `Vector width`
+-- | inputs using the producer's `Add pad width PaddedLength`
+-- | constraint, then erases the per-rule `width` axis behind the
+-- | existential.
+mkSomeCompiledProofWidthData
+  :: forall @width @pad
+   . Reflectable width Int
+  => Reflectable pad Int
+  => Add pad width PaddedLength
+  => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
+     , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
+     , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
+     , wrapDvInput :: WrapDeferredValuesInput width
+     -- Front-padding dummies, one per padded view. Used to fill the
+     -- `pad` slots prepended to each `Vector width X` to lift it to
+     -- `Vector PaddedLength X`.
+     , dummyOldBp :: Vector StepIPARounds StepField
+     , dummyMsgWrap :: Vector WrapIPARounds WrapField
+     , dummyChalPolyComm :: AffinePoint StepField
+     }
+  -> SomeCompiledProofWidthData
+mkSomeCompiledProofWidthData rec = mkExists $ CompiledProofWidthData
+  { width: reflectType (Proxy @width)
+  , oldBulletproofChallenges: rec.oldBulletproofChallenges
+  , msgWrapChallenges: rec.msgWrapChallenges
+  , outerStepChalPolyComms: rec.outerStepChalPolyComms
+  , wrapDvInput: rec.wrapDvInput
+  , oldBulletproofChallengesPadded:
+      Vector.append (Vector.replicate @pad rec.dummyOldBp)
+        rec.oldBulletproofChallenges
+  , msgWrapChallengesPadded:
+      Vector.append (Vector.replicate @pad rec.dummyMsgWrap)
+        rec.msgWrapChallenges
+  , outerStepChalPolyCommsPadded:
+      Vector.append (Vector.replicate @pad rec.dummyChalPolyComm)
+        rec.outerStepChalPolyComms
+  }
+
 -- | Everything needed to verify one proof, minus the per-tag constants
--- | in `Verifier`. Mirrors the content of OCaml `'n Proof.t` (= the
+-- | in `Verifier`. Mirrors the content of OCaml `'mlmb Proof.t` (= the
 -- | carried-statement bundle + the actual kimchi opening proof).
+-- |
+-- | `mpv` is the proof system's *outer* `Max_proofs_verified.n` — the
+-- | OCaml `'mlmb` parameter. It pins `Tag _ _ mpv` (= proof system
+-- | identity); per-rule width-dependent fields are hidden inside
+-- | `widthData :: SomeCompiledProofWidthData` to mirror OCaml's
+-- | `'most_recent_width` GADT existential (`proof.mli:97-110`).
+newtype CompiledProof :: Int -> Type -> Type -> Type -> Type
 newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   { -- Application-level data.
     statement :: stmtVal
@@ -134,11 +242,10 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   , branchData :: BranchData StepField Boolean
   , spongeDigestBeforeEvaluations :: StepField
 
-  -- Inner step proof's evals + prev-proof bp challenges (carried by the
-  -- wrap proof's `prev_evals` / `messages_for_next_step_proof` fields).
+  -- Inner step proof's evals (carried by the wrap proof's `prev_evals`
+  -- field).
   , prevEvals :: AllEvals StepField
   , pEval0Chunks :: Array StepField
-  , oldBulletproofChallenges :: Vector mpv (Vector StepIPARounds StepField)
 
   -- For stage 2 (accumulator check): the inner step proof's IPA opening
   -- sg, which must equal `compute_sg(rawBulletproofChallenges)` on the
@@ -153,34 +260,29 @@ newtype CompiledProof mpv stmtVal outputVal auxVal = CompiledProof
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
 
-  -- Per-slot wrap-side bp-challenges that this proof hashed into
-  -- `messagesForNextWrapProofDigest`. Stored pre-hash (size
-  -- WrapIPARounds, wrap-field) so a downstream `InductivePrev`
-  -- consumer can feed them back into its `prevChalPolys` /
-  -- `wrapOwnPaddedBpChals` without needing to crack open the wrap
-  -- proof's bytes via FFI.
-  , msgWrapChallenges :: Vector mpv (Vector WrapIPARounds WrapField)
+  -- Per-rule width-dependent fields, hidden via existential. Bundles:
+  --   * oldBulletproofChallenges
+  --   * msgWrapChallenges
+  --   * outerStepChalPolyComms
+  --   * wrapDvInput
+  -- Mirrors OCaml's `'most_recent_width`-sized vectors hidden by the
+  -- `Proof.with_data` GADT existential.
+  , widthData :: SomeCompiledProofWidthData
 
-  -- Per-slot outer-step `expandProof.sg` values (Pallas points,
-  -- StepField coords) that were used as the real-slot `sgX/sgY` in
-  -- `kimchiPrevChallenges` when this proof's wrap proof was
-  -- generated. Combined with `msgWrapChallenges`, these reproduce
-  -- the kimchi prev_challenges entries that `vestaProofOracles`
-  -- needs to recompute the wrap proof's oracle output. Required by
-  -- a downstream `InductivePrev` consumer to derive
-  -- `prevEvals` (wrap-side advice's per-slot evals).
-  , outerStepChalPolyComms :: Vector mpv (AffinePoint StepField)
+  -- This proof's actual STEP domain log2 (= the proof's branch's
+  -- step circuit domain log2). For multi-branch compiled outputs the
+  -- shared `Verifier`'s `stepDomainLog2` is a placeholder (the first
+  -- branch's), but verifying / re-expanding deferred values for a
+  -- specific proof requires its branch's domain log2. Mirrors
+  -- OCaml `branch_data.domain_log2` carried in
+  -- `proof_state.deferred_values.branch_data`.
+  , stepDomainLog2 :: Int
 
-  -- The prover's `Wrap_deferred_values.t` and the inputs from which
-  -- it was computed. Surfaced for self-consistency tests that compare
-  -- the prover-side computation (`wrapComputeDeferredValues`) against
-  -- the verifier-side reconstruction (`expandDeferredForVerify`) on a
-  -- real proof — the foundational invariant that lets the
-  -- out-of-circuit verifier discharge the chain's terminal deferred
-  -- IPA accumulator check using only the wrap proof's minimal stored
-  -- skeleton (`rawPlonk` + `spongeDigestBeforeEvaluations` + raw
-  -- `bulletproofPrechallenges`). Not consumed by `verify` itself.
-  , wrapDvInput :: WrapDeferredValuesInput mpv
+  -- The prover's `Wrap_deferred_values.t`. Surfaced for
+  -- self-consistency tests that compare the prover-side computation
+  -- (`wrapComputeDeferredValues`) against the verifier-side
+  -- reconstruction (`expandDeferredForVerify`) on a real proof. Not
+  -- width-dependent (output type doesn't carry mpv).
   , wrapDv :: WrapDeferredValuesOutput
   }
 
@@ -197,34 +299,52 @@ verifyOne verifier (CompiledProof p) =
     zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
+    -- Per-proof step domain (= the proof's branch's step circuit
+    -- domain log2). For multi-branch compiled outputs the shared
+    -- verifier's `stepDomainLog2` is a placeholder; the proof's own
+    -- `stepDomainLog2` is authoritative.
+    pStepGenerator :: StepField
+    pStepGenerator = domainGenerator p.stepDomainLog2
+
+    pStepShifts :: Vector 7 StepField
+    pStepShifts = domainShifts p.stepDomainLog2
+
     vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: verifier.stepDomainLog2
+      { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
 
     -- ===== Stage 1: expand deferred values. =====
-    dvInput :: ExpandDeferredInput mpv
-    dvInput =
-      { rawPlonk: p.rawPlonk
-      , rawBulletproofChallenges: p.rawBulletproofChallenges
-      , branchData: p.branchData
-      , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-      , allEvals: p.prevEvals
-      , pEval0Chunks: p.pEval0Chunks
-      , oldBulletproofChallenges: p.oldBulletproofChallenges
-      , domainLog2: verifier.stepDomainLog2
-      , zkRows: verifier.stepZkRows
-      , srsLengthLog2: verifier.stepSrsLengthLog2
-      , generator: verifier.stepGenerator
-      , shifts: verifier.stepShifts
-      , vanishesOnZk: vanishesOnZkAtZeta
-      , omegaForLagrange: \_ -> one
-      , endo: verifier.stepEndo
-      , linearizationPoly: verifier.linearizationPoly
-      }
-    dv = expandDeferredForVerify dvInput
+    -- `oldBulletproofChallenges` is sized at the per-rule width
+    -- (hidden by `widthData`'s existential). `runExists` recovers
+    -- the typed Vector inside the polymorphic continuation; the
+    -- result type is `WrapDeferredValuesOutput` (no width
+    -- parameter), so the existential boundary is satisfied.
+    dv :: WrapDeferredValuesOutput
+    dv = runExists
+      ( \(CompiledProofWidthData wd) ->
+          expandDeferredForVerify
+            { rawPlonk: p.rawPlonk
+            , rawBulletproofChallenges: p.rawBulletproofChallenges
+            , branchData: p.branchData
+            , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
+            , allEvals: p.prevEvals
+            , pEval0Chunks: p.pEval0Chunks
+            , oldBulletproofChallenges: wd.oldBulletproofChallenges
+            , domainLog2: p.stepDomainLog2
+            , zkRows: verifier.stepZkRows
+            , srsLengthLog2: verifier.stepSrsLengthLog2
+            , generator: pStepGenerator
+            , shifts: pStepShifts
+            , vanishesOnZk: vanishesOnZkAtZeta
+            , omegaForLagrange: \_ -> one
+            , endo: verifier.stepEndo
+            , linearizationPoly: verifier.linearizationPoly
+            }
+      )
+      p.widthData
 
     -- ===== Stage 2: IPA step accumulator check. =====
     -- OCaml `Ipa.Step.accumulator_check`: verify
@@ -277,31 +397,46 @@ wrapPublicInput verifier (CompiledProof p) =
     zetaField :: StepField
     zetaField = coerce (toFieldPure p.rawPlonk.zeta (F verifier.stepEndo))
 
+    pStepGenerator :: StepField
+    pStepGenerator = domainGenerator p.stepDomainLog2
+
+    pStepShifts :: Vector 7 StepField
+    pStepShifts = domainShifts p.stepDomainLog2
+
     vanishesOnZkAtZeta :: StepField
     vanishesOnZkAtZeta = permutationVanishingPolynomial
-      { domainLog2: verifier.stepDomainLog2
+      { domainLog2: p.stepDomainLog2
       , zkRows: verifier.stepZkRows
       , pt: zetaField
       }
 
-    dv = expandDeferredForVerify
-      { rawPlonk: p.rawPlonk
-      , rawBulletproofChallenges: p.rawBulletproofChallenges
-      , branchData: p.branchData
-      , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
-      , allEvals: p.prevEvals
-      , pEval0Chunks: p.pEval0Chunks
-      , oldBulletproofChallenges: p.oldBulletproofChallenges
-      , domainLog2: verifier.stepDomainLog2
-      , zkRows: verifier.stepZkRows
-      , srsLengthLog2: verifier.stepSrsLengthLog2
-      , generator: verifier.stepGenerator
-      , shifts: verifier.stepShifts
-      , vanishesOnZk: vanishesOnZkAtZeta
-      , omegaForLagrange: \_ -> one
-      , endo: verifier.stepEndo
-      , linearizationPoly: verifier.linearizationPoly
-      }
+    -- Same existential-unwrap pattern as `verifyOne`: the per-rule
+    -- width is hidden in `widthData`; `runExists` recovers the typed
+    -- Vector inside a polymorphic continuation that returns
+    -- `WrapDeferredValuesOutput` (no width parameter).
+    dv :: WrapDeferredValuesOutput
+    dv = runExists
+      ( \(CompiledProofWidthData wd) ->
+          expandDeferredForVerify
+            { rawPlonk: p.rawPlonk
+            , rawBulletproofChallenges: p.rawBulletproofChallenges
+            , branchData: p.branchData
+            , spongeDigestBeforeEvaluations: p.spongeDigestBeforeEvaluations
+            , allEvals: p.prevEvals
+            , pEval0Chunks: p.pEval0Chunks
+            , oldBulletproofChallenges: wd.oldBulletproofChallenges
+            , domainLog2: p.stepDomainLog2
+            , zkRows: verifier.stepZkRows
+            , srsLengthLog2: verifier.stepSrsLengthLog2
+            , generator: pStepGenerator
+            , shifts: pStepShifts
+            , vanishesOnZk: vanishesOnZkAtZeta
+            , omegaForLagrange: \_ -> one
+            , endo: verifier.stepEndo
+            , linearizationPoly: verifier.linearizationPoly
+            }
+      )
+      p.widthData
   in
     wrapPublicInputOf dv p.messagesForNextStepProofDigest p.messagesForNextWrapProofDigest
 

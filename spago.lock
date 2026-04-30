@@ -132,6 +132,7 @@
             "effect",
             "either",
             "exceptions",
+            "exists",
             "foldable-traversable",
             "functors",
             "identity",
@@ -142,6 +143,7 @@
             "newtype",
             "node-buffer",
             "node-fs",
+            "node-process",
             "ordered-collections",
             "partial",
             "pickles-linearization-types",
@@ -154,8 +156,10 @@
             "snarky",
             "snarky-curves",
             "snarky-kimchi",
+            "strings",
             "transformers",
             "tuples",
+            "unsafe-coerce",
             "vector-sized"
           ]
         },

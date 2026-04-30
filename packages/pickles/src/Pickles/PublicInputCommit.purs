@@ -36,6 +36,9 @@ module Pickles.PublicInputCommit
   , LagrangeBaseLookup
   , mkConstLagrangeBase
   , mkConstLagrangeBaseLookup
+  , wrapPt
+  , unwrapPt
+  , pow2pow
   ) where
 
 import Prelude
@@ -60,7 +63,7 @@ import Safe.Coerce (coerce)
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
-import Snarky.Circuit.Kimchi.AddComplete (addComplete)
+import Snarky.Circuit.Kimchi.AddComplete (addComplete, sealPoint)
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast2')
 import Snarky.Constraint.Basic (boolean) as Basic
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -165,21 +168,58 @@ newtype DeferredScaleMul f = DeferredScaleMul
 -- | A single term from walking the public input structure.
 -- | Matches OCaml's `Add_with_correction` and `Cond_add` variants.
 -- |
--- | Correction is always constant (OCaml's lagrange_with_correction has a
--- | single-domain optimization that skips which_branch masking).
+-- | Two correction shapes:
+-- |
+-- |   * `AddWithCorrection` — correction is a compile-time constant,
+-- |     produced when `LagrangeBase.correctionAt` is `Nothing`. Used in
+-- |     the single-branch / all-domains-equal case (step verifier's
+-- |     `PureCorrections` and wrap verifier's degenerate single-branch
+-- |     `InCircuitCorrections`). Mirrors OCaml's
+-- |     `lagrange_with_correction` fast path
+-- |     (wrap_verifier.ml:426-428 — "all domains equal").
+-- |
+-- |   * `AddWithCircuitCorrection` — correction is an in-circuit FVar
+-- |     point (already 1-hot summed across branches). Produced when
+-- |     `LagrangeBase.correctionAt` is `Just`. Used by the wrap
+-- |     verifier when branch domains differ. Mirrors OCaml's
+-- |     `lagrange_with_correction` per-branch path
+-- |     (wrap_verifier.ml:429-443).
+-- |
 -- | CondAdd's Lagrange point is masked (OCaml's `lagrange` always masks).
 data MsmTerm f
   = AddWithCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (F f) }
+  | AddWithCircuitCorrection { scaleMul :: DeferredScaleMul f, correction :: AffinePoint (FVar f) }
   | CondAdd (BoolVar f) (AffinePoint (FVar f))
 
--- | A Lagrange base point carrying both constant (for pure correction computation)
--- | and circuit (for scaleFast2') versions. In OCaml, the circuit version comes
--- | from masking with which_branch; in standalone tests, it's just constPt.
--- | `maskPt` converts any constant point using the same masking (for CondAdd targets).
+-- | A Lagrange base point.
+-- |
+-- |   * `constant` — the compile-time constant lagrange point at this
+-- |     index. Used by `PureCorrections` mode (step verifier) and by
+-- |     `scalarMulLeaf` when computing the compile-time correction
+-- |     (single-branch / all-domains-equal fast path).
+-- |   * `circuit` — the in-circuit version of the lagrange point used
+-- |     by `scalarMulLeaf` (mirrors OCaml `lagrange_with_correction`).
+-- |     For the fast path, this is `constPt constant`. For the per-branch
+-- |     path, this is the 1-hot-summed circuit point
+-- |     `sum_b which_branch[b] * lagrange(domain[b], i)`.
+-- |   * `condAddPt` — the in-circuit lagrange point used by `CondAdd`
+-- |     leaves (mirrors OCaml `lagrange`, which has NO fast path and
+-- |     always per-branch masks). For the fast-domain case this is
+-- |     `sumMaskByBranch (replicate constant)`, producing the same
+-- |     Scale-summed CVar shape OCaml emits when all domains equal but
+-- |     `which_branch` is still a non-trivial 1-hot vector. For the
+-- |     per-branch case it equals `circuit`.
+-- |   * `correctionAt` — `Nothing` for single-branch / all-equal-domain
+-- |     path (caller computes correction from `constant` via `pow2pow`).
+-- |     `Just f` for the per-branch path: `f shift` returns the in-circuit
+-- |     correction `-sum_b which_branch[b] * [2^shift] * lagrange(domain[b], i)`.
+-- |     Set by `mkPerBranchLagrangeBase`; mirrors OCaml's per-branch
+-- |     `lagrange_with_correction`.
 type LagrangeBase f =
   { constant :: AffinePoint (F f)
   , circuit :: AffinePoint (FVar f)
-  , maskPt :: AffinePoint (F f) -> AffinePoint (FVar f)
+  , condAddPt :: AffinePoint (FVar f)
+  , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
   }
 
 -- | Index-based lookup over lagrange bases, mirroring OCaml
@@ -189,9 +229,16 @@ type LagrangeBase f =
 -- | parameter at call sites.
 type LagrangeBaseLookup f = Int -> LagrangeBase f
 
--- | Construct a LagrangeBase where both constant and circuit are the same value.
+-- | Construct a LagrangeBase where both constant and circuit are the same
+-- | value. Used in single-branch / all-domains-equal contexts where there's
+-- | no per-branch dispatch needed.
 mkConstLagrangeBase :: forall f. PrimeField f => AffinePoint (F f) -> LagrangeBase f
-mkConstLagrangeBase pt = { constant: pt, circuit: constPt pt, maskPt: constPt }
+mkConstLagrangeBase pt =
+  { constant: pt
+  , circuit: constPt pt
+  , condAddPt: constPt pt
+  , correctionAt: Nothing
+  }
 
 -- | Build a lookup closure from a function returning the constant `i`-th
 -- | lagrange commitment. The most common shape at call sites: wrap an FFI
@@ -255,7 +302,7 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    pure { results: [ CondAdd bool (base.maskPt base.constant) ], nextIdx: idx + 1 }
+    pure { results: [ CondAdd bool base.condAddPt ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -271,7 +318,7 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let oddBase = lookup idx1
     pure
-      { results: r1 <> [ CondAdd sOdd (oddBase.maskPt oddBase.constant) ]
+      { results: r1 <> [ CondAdd sOdd oddBase.condAddPt ]
       , nextIdx: idx1 + 1
       }
 
@@ -378,33 +425,36 @@ publicInputCommit params input = label "public-input-commit" do
   case NEA.fromArray results of
     Nothing -> pure (constPt params.blindingH)
     Just results' -> unsafePartial do
-      -- Separate correction points from terms
-      let
-        rawCorrectionPts = Array.mapMaybe
-          ( case _ of
-              AddWithCorrection r -> Just r.correction
-              CondAdd _ _ -> Nothing
-          )
-          (NEA.toArray results')
-
-      -- At least one AddWithCorrection is expected in every pickles public
-      -- input (full-field challenges always produce one) — all-Bool inputs
-      -- are not exercised.
-      correctionPtsN <- case NEA.fromArray rawCorrectionPts of
-        Just nea -> pure nea
-        Nothing -> unsafeThrow "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')"
-      let corrHead = NEA.head correctionPtsN
-      let corrTail = NEA.tail correctionPtsN
-
       case params.correctionMode of
         PureCorrections -> do
-          -- OCaml's step verifier: corrections are constant, add_fast on constants
-          -- generates no seal gates, and all fold CompleteAdd are deferred to the end.
+          -- OCaml's step verifier: corrections are compile-time constants,
+          -- summed via pure curve arithmetic (no seal gates), with the
+          -- final CompleteAdd deferred to the end.
+          --
+          -- Per-branch (in-circuit) corrections are not expected here —
+          -- the step circuit isn't multi-branch.
+          let
+            rawCorrectionPts = Array.mapMaybe
+              ( case _ of
+                  AddWithCorrection r -> Just r.correction
+                  AddWithCircuitCorrection _ ->
+                    unsafeThrow "PublicInputCommit: AddWithCircuitCorrection not supported in PureCorrections mode"
+                  CondAdd _ _ -> Nothing
+              )
+              (NEA.toArray results')
+          correctionPtsN <- case NEA.fromArray rawCorrectionPts of
+            Just nea -> pure nea
+            Nothing -> unsafeThrow "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')"
+          let corrHead = NEA.head correctionPtsN
+          let corrTail = NEA.tail correctionPtsN
+
           -- Phase 1: Execute all scaleFast2' calls, collecting results.
           --   This generates VarBaseMul + internal CompleteAdd gates.
           evaluated <- for results' \term -> case term of
             AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } ->
               Left <$> doScaleMul
+            AddWithCircuitCorrection _ ->
+              unsafeThrow "PublicInputCommit: AddWithCircuitCorrection not supported in PureCorrections mode"
             CondAdd b lagrangePt ->
               pure (Right { b, lagrangePt })
 
@@ -434,14 +484,30 @@ publicInputCommit params input = label "public-input-commit" do
 
         InCircuitCorrections -> do
           -- Wrap verifier: corrections summed in-circuit, fold interleaved.
-          let corrPtsN = map constPt correctionPtsN
-          let ch = NEA.head corrPtsN
-          let ct = NEA.tail corrPtsN
+          -- Constant corrections (`AddWithCorrection`) get lifted via `constPt`
+          -- to FVar form; per-branch corrections (`AddWithCircuitCorrection`)
+          -- are already FVar (1-hot summed across branches).
+          let
+            rawCorrectionPts = Array.mapMaybe
+              ( case _ of
+                  AddWithCorrection r -> Just (constPt r.correction)
+                  AddWithCircuitCorrection r -> Just r.correction
+                  CondAdd _ _ -> Nothing
+              )
+              (NEA.toArray results')
+          correctionPtsN <- case NEA.fromArray rawCorrectionPts of
+            Just nea -> pure nea
+            Nothing -> unsafeThrow "PublicInputCommit: rawCorrectionPts non-empty (≥1 AddWithCorrection expected in results')"
+          let ch = NEA.head correctionPtsN
+          let ct = NEA.tail correctionPtsN
           init <- foldM (\acc c -> _.p <$> addComplete acc c) ch ct
 
           acc <- foldM
             ( \acc term -> case term of
                 AddWithCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
+                  point <- doScaleMul
+                  _.p <$> addComplete acc point
+                AddWithCircuitCorrection { scaleMul: DeferredScaleMul doScaleMul } -> do
                   point <- doScaleMul
                   _.p <$> addComplete acc point
                 CondAdd b lagrangePt -> do
@@ -468,10 +534,10 @@ publicInputCommit params input = label "public-input-commit" do
 -- | The correction is [2^bitsUsed] * base, matching OCaml's
 -- | `lagrange_with_correction ~input_length`.
 scalarMulLeaf
-  :: forall @nChunks @sDiv2Bits f n bitsUsed _l _afterBits t m
+  :: forall @nChunks @sDiv2Bits f n bitsUsed bitsRemaining sDiv2Remaining t m
    . FieldSizeInBits f n
-  => Add bitsUsed _l n
-  => Add sDiv2Bits _afterBits n
+  => Add bitsUsed bitsRemaining n
+  => Add sDiv2Bits sDiv2Remaining n
   => Mul 5 nChunks bitsUsed
   => Reflectable bitsUsed Int
   => Reflectable sDiv2Bits Int
@@ -486,10 +552,35 @@ scalarMulLeaf params scalar lookup idx = do
   let
     base = lookup idx
     actualShift = reflectType (Proxy @bitsUsed)
-    correction = wrapPt $ EC.negate_ $ unwrapPt $ pow2pow params base.constant actualShift
-    scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
+  term <- case base.correctionAt of
+    Nothing ->
+      let
+        scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits base.circuit scalar)
+        correction = wrapPt $ EC.negate_ $ unwrapPt
+          $ pow2pow params base.constant actualShift
+      in
+        pure $ AddWithCorrection { scaleMul, correction }
+    Just corrFn -> do
+      -- Seal BOTH the per-branch base and correction here, eagerly.
+      -- Mirrors OCaml `lagrange_with_correction`'s final
+      -- `Array.map ~f:(Double.map ~f:(Double.map ~f:Util.Wrap.seal))`
+      -- pass (wrap_verifier.ml:443) which seals the (base, correction)
+      -- × (x, y) tuple per chunk. The seal happens DURING the PI
+      -- iteration so seal gates interleave with `assert_(boolean b)`
+      -- calls from sibling Cond_add entries — without this, PS clusters
+      -- all Cond_add booleans together first and all correction seals
+      -- after, mismatching OCaml's gate packing order.
+      -- Seal correction BEFORE base. Mirrors OCaml's right-to-left
+      -- `Double.map ~f:(Double.map ~f:seal)` over the (base, correction)
+      -- tuple at wrap_verifier.ml:443 — Tuple_lib.Double.map evaluates
+      -- the second component first, so correction.y/correction.x seal
+      -- before base.y/base.x.
+      sealedCorrection <- label "seal-correction" $ sealPoint (corrFn actualShift)
+      sealedBase <- label "seal-base" $ sealPoint base.circuit
+      let scaleMul = DeferredScaleMul (scaleFast2' @nChunks @sDiv2Bits sealedBase scalar)
+      pure $ AddWithCircuitCorrection { scaleMul, correction: sealedCorrection }
   pure
-    { results: [ AddWithCorrection { scaleMul, correction } ]
+    { results: [ term ]
     , nextIdx: idx + 1
     }
 

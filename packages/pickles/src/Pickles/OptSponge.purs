@@ -230,7 +230,7 @@ consume { state: initState, pos: startPos, needsFinalPermuteIfEmpty } input = do
         else pure pos
       condPermute shouldPermute state
     Just (Tuple b x) -> do
-      _posAfter <- xor_ pos b
+      void $ xor_ pos b
       xb <- mul_ x (coerce b)
       state' <- addIn state pos xb
       shouldPermute <-

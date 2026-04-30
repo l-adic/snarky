@@ -43,7 +43,8 @@ import Pickles.Verify (ivpTrace)
 import Pickles.Verify.Types (UnfinalizedProof, toPlonkMinimal)
 import Pickles.Wrap.OtherField as WrapOtherField
 import Poseidon (class PoseidonField)
-import Prim.Int (class Add)
+import Prim.Int (class Add, class Compare)
+import Prim.Ordering (LT)
 import RandomOracle.Sponge (Sponge)
 import Snarky.Circuit.CVar (negate_)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
@@ -77,9 +78,12 @@ type WrapFinalizeOtherProofInput n d fv b =
 -- |
 -- | Reference: wrap_verifier.ml:1511-1783
 wrapFinalizeOtherProofCircuit
-  :: forall _d d _n n f f' g t m r2
-   . Add 1 _d d
-  => Add 1 _n n
+  :: forall d dPred n nPred nd ndPred f f' g t m r2
+   . Add 1 dPred d
+  => Add 1 nPred n
+  => Add 1 ndPred nd
+  => Compare 0 nd LT
+  => Reflectable nd Int
   => PrimeField f
   => FieldSizeInBits f 255
   => PoseidonField f
@@ -87,16 +91,22 @@ wrapFinalizeOtherProofCircuit
   => CircuitM f (KimchiConstraint f) t m
   => LinearizationFFI f g
   => Reflectable d Int
-  => FinalizeOtherProofParams f r2
+  => FinalizeOtherProofParams nd f r2
   -> (FVar f -> Snarky (KimchiConstraint f) t m (FVar f))
   -> WrapFinalizeOtherProofInput n d (FVar f) (BoolVar f)
   -> Snarky (KimchiConstraint f) t m (FinalizeOtherProofOutput d f)
 wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness, prevChallenges } = label "wrap-finalize-other-proof" do
+  -- Wrap is currently single-domain; access via Vector.head. Multi-
+  -- domain wrap dispatch (if ever needed) would mirror Step's
+  -- Pseudo.toDomain pattern in Commit C.
   let
     ops = WrapOtherField.fopShiftOps @f @m
     deferred = unfinalized.deferredValues
     endoVar = const_ params.endo
     allEvals = witness.allEvals
+    headDomain = Vector.head params.domains
+    domain = { generator: headDomain.generator, shifts: params.shifts }
+    domainLog2 = headDomain.log2
 
   ---------------------------------------------------------------------------
   -- Step 1: map_plonk_to_field
@@ -122,7 +132,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- OCaml: zetaw = Field.mul domain#generator plonk.zeta
   -- Generator is Field.constant → scale_ produces no R1CS
   ---------------------------------------------------------------------------
-  zetaw <- mul_ params.domain.generator zeta
+  zetaw <- mul_ domain.generator zeta
 
   ---------------------------------------------------------------------------
   -- Step 3: Compute challenge polynomial evaluations (sg_evals)
@@ -179,8 +189,8 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- Square constraints even for single-chunk evals where result isn't used).
   ---------------------------------------------------------------------------
   label "step5_pow2pows" do
-    void $ pow2PowSquare zeta params.domainLog2
-    void $ pow2PowSquare zetaw params.domainLog2
+    void $ pow2PowSquare zeta domainLog2
+    void $ pow2PowSquare zetaw domainLog2
 
   ---------------------------------------------------------------------------
   -- Steps 6+7: PlonK env + ft_eval0
@@ -206,7 +216,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     zZeta = allEvals.zEvals.zeta
     zOmegaTimesZeta = allEvals.zEvals.omegaTimesZeta
 
-    shifts = params.domain.shifts
+    shifts = domain.shifts
 
   -- Precompute alpha^0..alpha^70 (shared between ft_eval0 and perm_scalar)
   -- Must come before omega power usage to match OCaml constraint order.
@@ -217,7 +227,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
   -- When generator is Const, inv_/mul_/square_ short-circuit to constants.
   -- When generator is non-constant (wrap_main dynamic domain), these generate R1CS.
   ---------------------------------------------------------------------------
-  let gen = params.domain.generator
+  let gen = domain.generator
   omegaM1 <- inv_ gen -- omega^-1 = one / gen
   omegaM2 <- mul_ omegaM1 omegaM1 -- omega^-2 (OCaml: let square x = x * x in plonk_checks)
   let omegaZkP1 = omegaM2 -- zk_rows == zk_rows_by_default → empty loop
@@ -299,7 +309,7 @@ wrapFinalizeOtherProofCircuit params vanishingPolynomial { unfinalized, witness,
     baseEnv = buildCircuitEnvM
       alphaPowers
       zeta
-      params.domainLog2
+      domainLog2
       omegaForLagrange
       evalPoint
       vanishesOnZk
