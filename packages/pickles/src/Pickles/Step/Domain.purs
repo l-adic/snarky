@@ -20,7 +20,6 @@ import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Vector (Vector)
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
 import Pickles.Pseudo as Pseudo
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
