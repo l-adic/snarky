@@ -12,42 +12,36 @@
 -- | shapes lives inside `CompilableSpec`'s instances; `compile`
 -- | dispatches through them.
 module Pickles.Prove.Compile
-  ( CompileConfig
+  ( PrevSlot(..)
+  , SlotWrapKey(..)
   , ProverVKs
   , ProveError
-  , PrevSlot(..)
-  , SlotWrapKey(..)
-  , ShapeProveData
-  , ShapeProveSideInfo
   , StepInputs
   , Tag(..)
-  , class CompilableSpec
-  , class PadProveDataMpv
-  , PadProveDataDummies
-  , padShapeProveData
-  , mkStepAdvice
-  , shapeCompileData
-  , shapeProveData
-  -- Internal helper for PadProveDataMpv's general instance — exported
-  -- because instance resolution at user call sites needs the class in
-  -- scope. Not directly callable.
-  , class ConvertSlots
-  , convertSlots
-  -- Multi-branch compile (formerly Pickles.Prove.CompileMulti).
+  , BranchProver(..)
   , RulesSpec
   , RulesNil
   , RulesCons
-  , BranchProver(..)
-  , RuleEntry(..)
+  , RuleEntry
   , mkRuleEntry
   , compileMulti
+  -- Internal classes re-exported because instance resolution at user
+  -- call sites needs them in scope. Not directly callable.
+  , class CompilableSpec
+  , shapeCompileData
+  , mkStepAdvice
+  , shapeProveData
+  , class PadProveDataMpv
+  , padShapeProveData
+  , class ConvertSlots
+  , convertSlots
   , class CompilableRulesSpec
-  , class CompilableRulesSpecShape
   , branchCount
   , extractStepCompileFns
   , extractStepProveFns
   , runStepCompiles
   , buildWrapPerBranchVec
+  , class CompilableRulesSpecShape
   , prePassDomainLog2s
   , runMultiCompile
   , buildBranchProvers
