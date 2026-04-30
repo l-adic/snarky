@@ -160,14 +160,14 @@ incrementRule self = do
 -- | prevsSpec=PrevsSpecNil). Smoke test of `mkRuleEntry`'s rank-2
 -- | input acceptance with the simplest possible rule shape.
 probeMakeZero
-  :: Effect (RuleEntry PrevsSpecNil 0 1 Unit (F StepField) Unit 34 Unit)
+  :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
 probeMakeZero =
   mkRuleEntry
     @PrevsSpecNil
     @0      -- mpv (rule's own)
     @1      -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
     @1      -- mpvPad = mpvMax - mpv = 1
-    @1      -- nd (compilation-wide multi-domain count, single-rule shim)
+    @2      -- nd = topBranches (TwoPhaseChain has 2 branches: makeZero, increment)
     @34     -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
     @Unit
     @(F StepField)
@@ -191,7 +191,7 @@ probeIncrement
        ( RuleEntry
            (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
            1
-           1
+           2
            (Tuple (StatementIO (F StepField) Unit) Unit)
            (F StepField)
            ( Tuple
@@ -210,7 +210,7 @@ probeIncrement =
     @1     -- mpv
     @1     -- mpvMax (= mpv, identity)
     @0     -- mpvPad = 0
-    @1     -- nd (single-rule shim)
+    @2     -- nd = topBranches (TwoPhaseChain has 2 branches)
     @34
     @(Tuple (StatementIO (F StepField) Unit) Unit)
     @(F StepField)
@@ -246,12 +246,12 @@ probeIncrement =
 probeRulesCarrier
   :: Effect
        ( Tuple
-           ( RuleEntry PrevsSpecNil 0 1 Unit (F StepField) Unit 34 Unit )
+           ( RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit )
            ( Tuple
                ( RuleEntry
                    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
                    1
-                   1
+                   2
                    (Tuple (StatementIO (F StepField) Unit) Unit)
                    (F StepField)
                    ( Tuple
@@ -311,9 +311,9 @@ probeBranchCount = 0
 probeExtractStepCompileFns
   :: Effect
        ( Tuple
-           (StepProveContext 0 1 -> Effect StepCompileResult)
+           (StepProveContext 0 2 -> Effect StepCompileResult)
            ( Tuple
-               (StepProveContext 1 1 -> Effect StepCompileResult)
+               (StepProveContext 1 2 -> Effect StepCompileResult)
                Unit
            )
        )

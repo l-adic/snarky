@@ -55,6 +55,7 @@ module Pickles.Prove.CompileMulti
   , buildWrapPerBranchVec
   -- * Shape-data class (Phase 2b.20 split — heavy, demands CompilableSpec)
   , class CompilableRulesSpecShape
+  , prePassDomainLog2s
   , runMultiCompile
   , runMultiCompileFull
   , buildBranchProvers
@@ -321,11 +322,26 @@ type MultiOutput proversCarrier perBranchStepCarrier mpvMax inputVal outputVal p
 -- value-level integer.
 --------------------------------------------------------------------------------
 
+-- | `topBranches` is the FIXED outer-compile branch count that flows
+-- | UNCHANGED through every recursive instance of this class. It is
+-- | distinct from `branches` (the shrinking count of the `rs`-tail at
+-- | recursion depth k). The split mirrors OCaml's
+-- | `compile.ml:533-568` where `'branches` is a single GADT-scoped
+-- | type variable (= `topBranches` here) and the per-branch
+-- | `H4.T(Branch_data).t` recursion walks element existentials
+-- | without touching `'branches`.
+-- |
+-- | `topBranches` is what `RuleEntry`'s `nd` parameter binds to, so
+-- | each rule's `preComputeStepDomainLog2Fn` / `stepCompileFn` /
+-- | `stepProveFn` see a `StepProveContext mpv topBranches` — i.e. a
+-- | per-rule context whose multi-domain Pseudo dispatch ranges over
+-- | the FULL `topBranches`-sized Vector of step-domain log2s.
 class CompilableRulesSpec
   :: RulesSpec
   -> Type
   -> Type
   -> Type
+  -> Int
   -> Int
   -> Int
   -> (Type -> Type)
@@ -334,19 +350,17 @@ class CompilableRulesSpec
   -> Type
   -> Type
   -> Type
-  -> Type
   -> Constraint
 class
-  CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slotsMax
+  CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
     rulesCarrier
     stepCompileFnsCarrier
     perBranchCtxsCarrier
     perBranchStepCompileResults
-    selfStepDomainLog2sCarrier
     stepProveFnsCarrier
-  | rs ->
+  | rs topBranches ->
       branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults selfStepDomainLog2sCarrier
+        perBranchStepCompileResults
         stepProveFnsCarrier
   where
   -- | Count branches by structural recursion. Validates that
@@ -419,11 +433,10 @@ class
          , stepVK :: VerifierIndex VestaG StepField
          }
 
--- | Nil instance is polymorphic in `slotsMax` — Phase 2b.31b step (b)
--- | adds `slotsMax` to the class head; the Nil case returns unit-shaped
--- | carriers regardless, so any `slotsMax` works.
+-- | Nil instance is polymorphic in `slotsMax` and `topBranches` — Nil
+-- | returns unit-shaped carriers regardless of either.
 instance
-  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal 0 mpvMax slotsMax Unit
+  CompilableRulesSpec RulesNil inputVal outputVal prevInputVal topBranches 0 mpvMax slotsMax
     Unit
     Unit
     Unit
@@ -443,8 +456,8 @@ instance
 -- | into the funDep `rs -> rulesCarrier` resolution.
 instance
   ( CompilableRulesSpec rest inputVal outputVal prevInputVal
-      restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restLog2s restStepProveFns
+      topBranches restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
+      restStepCompileResults restStepProveFns
   , Add restBranches 1 branches
   , PrevsCarrier
       prevsSpec
@@ -466,25 +479,26 @@ instance
   CompilableRulesSpec
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
     inputVal outputVal prevInputVal
+    topBranches
     branches
     mpvMax
     slotsMax
     ( Tuple
-        ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
+        ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
             slotVKs
         )
         restCarrier
     )
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
+        ( PProveStep.StepProveContext ruleMpv topBranches
+          -> Effect PProveStep.StepCompileResult
         )
         restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
+    (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
-    (Tuple Int restLog2s)
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv 1
+        ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal ruleMpv carrier valCarrier
@@ -500,6 +514,7 @@ instance
       @inputVal
       @outputVal
       @prevInputVal
+      @topBranches
       @restBranches
       @mpvMax
       @slotsMax
@@ -507,7 +522,6 @@ instance
       @restStepCompileFns
       @restCtxs
       @restStepCompileResults
-      @restLog2s
       @restStepProveFns
       (Proxy :: Proxy rest)
   extractStepCompileFns (Tuple (RuleEntry r) rest) =
@@ -517,6 +531,7 @@ instance
           @inputVal
           @outputVal
           @prevInputVal
+          @topBranches
           @restBranches
           @mpvMax
           @slotsMax
@@ -524,7 +539,6 @@ instance
           @restStepCompileFns
           @restCtxs
           @restStepCompileResults
-          @restLog2s
           @restStepProveFns
           rest
       )
@@ -535,6 +549,7 @@ instance
       @inputVal
       @outputVal
       @prevInputVal
+      @topBranches
       @restBranches
       @mpvMax
       @slotsMax
@@ -542,7 +557,6 @@ instance
       @restStepCompileFns
       @restCtxs
       @restStepCompileResults
-      @restLog2s
       @restStepProveFns
       restCtxs
       restEntries
@@ -559,6 +573,7 @@ instance
         @inputVal
         @outputVal
         @prevInputVal
+        @topBranches
         @restBranches
         @mpvMax
         @slotsMax
@@ -566,7 +581,6 @@ instance
         @restStepCompileFns
         @restCtxs
         @restStepCompileResults
-        @restLog2s
         @restStepProveFns
         restResults
     in
@@ -578,6 +592,7 @@ instance
           @inputVal
           @outputVal
           @prevInputVal
+          @topBranches
           @restBranches
           @mpvMax
           @slotsMax
@@ -585,7 +600,6 @@ instance
           @restStepCompileFns
           @restCtxs
           @restStepCompileResults
-          @restLog2s
           @restStepProveFns
           rest
       )
@@ -612,43 +626,48 @@ instance
 -- (CompilableSpec methods).
 --------------------------------------------------------------------------------
 
-class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slotsMax
+class CompilableRulesSpec rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
         rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults selfStepDomainLog2sCarrier
+        perBranchStepCompileResults
         stepProveFnsCarrier
-   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slotsMax
+   <= CompilableRulesSpecShape rs inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
         rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults selfStepDomainLog2sCarrier
+        perBranchStepCompileResults
         stepProveFnsCarrier
         proversCarrier
-  | rs -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
-        perBranchStepCompileResults selfStepDomainLog2sCarrier stepProveFnsCarrier
+  | rs topBranches -> branches mpvMax rulesCarrier stepCompileFnsCarrier perBranchCtxsCarrier
+        perBranchStepCompileResults stepProveFnsCarrier
         proversCarrier
   where
-  -- | High-level per-branch compile with caller-supplied per-rule
-  -- | `selfStepDomainLog2`s. Walks the rules carrier and calls each
-  -- | entry's `stepCompileFn` with a `StepProveContext` derived via
-  -- | `buildStepProveCtx @prevsSpec`.
+  -- | Pre-pass: walk the rules carrier collecting each rule's
+  -- | `selfStepDomainLog2` into a `Vector branches Int` (the per-
+  -- | recursion-level count). Each rule's `preComputeStepDomainLog2Fn`
+  -- | is invoked with a placeholder `StepProveContext` built from the
+  -- | supplied `Vector topBranches Int` placeholder (caller passes
+  -- | `Vector.replicate 20`, matching OCaml `Fix_domains.rough_domains`).
+  -- |
+  -- | Mirrors OCaml `compile.ml:533-547`'s pre-pass over branches
+  -- | producing `step_domains : (Domains.t, 'branches) Vector.t
+  -- | Promise.t`. At the top-level call `branches = topBranches`, so
+  -- | the result is a `Vector topBranches Int` of the FULL multi-
+  -- | domain vector — the analog of `promise_all step_domains`.
+  prePassDomainLog2s
+    :: CompileMultiConfig
+    -> Vector topBranches Int
+    -> rulesCarrier
+    -> Effect (Vector branches Int)
+
+  -- | High-level per-branch compile with caller-supplied multi-domain
+  -- | `Vector topBranches Int`. The SAME Vector is fed to every
+  -- | rule's `stepCompileFn` via `buildStepProveCtx`. Mirrors OCaml
+  -- | `compile.ml:568`'s `b.main ~step_domains:all_step_domains` —
+  -- | the FULL Vector across all branches lands in every branch's
+  -- | step_main call.
   runMultiCompile
     :: CompileMultiConfig
-    -> selfStepDomainLog2sCarrier
+    -> Vector topBranches Int
     -> rulesCarrier
     -> Effect perBranchStepCompileResults
-
-  -- | End-to-end per-branch compile with the pre-pass internalized.
-  -- | Per-rule flow: build placeholder ctx with log2=20, run pre-pass
-  -- | to get real selfStepDomainLog2, build real ctx, call stepCompile.
-  -- |
-  -- | Returns BOTH the per-branch step CompileResults AND the
-  -- | per-branch selfStepDomainLog2s — the latter feeds into
-  -- | `buildBranchProvers` (for runMultiProverBody's wrapDvInput).
-  runMultiCompileFull
-    :: CompileMultiConfig
-    -> rulesCarrier
-    -> Effect
-         { stepResults :: perBranchStepCompileResults
-         , log2s :: selfStepDomainLog2sCarrier
-         }
 
   -- | Build per-branch `BranchProver` Tuple chain. Each closure runs
   -- | step solve+prove (via the rule's `stepProveFn`) and wrap
@@ -664,7 +683,12 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slo
   -- |     at wrap compile time via `buildWrapMainConfigMulti`).
   -- |     Each closure rebuilds the wrap-side WrapMainConfig from
   -- |     this when invoked.
-  -- |   * step results / log2s / rules carriers — per-branch Tuple
+  -- |   * `allStepDomainLog2s` — full `Vector topBranches Int`,
+  -- |     same for every branch's prover closure (passed unchanged
+  -- |     down the recursion). Used at prove time inside
+  -- |     `runMultiProverBody` to build the per-rule
+  -- |     `StepProveContext` via `buildStepProveCtx`.
+  -- |   * step results / rules carriers — per-branch Tuple
   -- |     chains walked in sync with the recursion.
   buildBranchProvers
     :: forall vecLen vecLenPred
@@ -678,25 +702,82 @@ class CompilableRulesSpec rs inputVal outputVal prevInputVal branches mpvMax slo
          , stepDomainLog2 :: Int
          , stepVK :: VerifierIndex VestaG StepField
          }
+    -> Vector topBranches Int
     -> perBranchStepCompileResults
-    -> selfStepDomainLog2sCarrier
     -> rulesCarrier
     -> Effect proversCarrier
 
--- | Nil shape instance is polymorphic in `slotsMax` (parallels the
--- | structural Nil instance).
+-- | Top-level orchestrator: pre-pass + real-pass per-branch step
+-- | compile. Constraint `branches ~ topBranches` is achieved by
+-- | passing the SAME type variable for both class params at the
+-- | call site — at the user's outer call, the recursion's local
+-- | `branches` count equals the fixed `topBranches`.
+-- |
+-- | Inside the class instance recursion, `topBranches` stays fixed
+-- | while `branches` shrinks; the recursion still works because
+-- | `prePassDomainLog2s` returns `Vector branches Int` (which grows
+-- | via `:<` from Nil's `Vector.nil` up to `Vector topBranches Int`
+-- | at the outermost call).
+runMultiCompileFull
+  :: forall @rs @inputVal @outputVal @prevInputVal @topBranches @mpvMax @slotsMax
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       stepProveFnsCarrier
+       proversCarrier
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
+       topBranches topBranches mpvMax slotsMax
+       rulesCarrier
+       stepCompileFnsCarrier
+       perBranchCtxsCarrier
+       perBranchStepCompileResults
+       stepProveFnsCarrier
+       proversCarrier
+  => Reflectable topBranches Int
+  => CompileMultiConfig
+  -> rulesCarrier
+  -> Effect
+       { stepResults :: perBranchStepCompileResults
+       , log2s :: Vector topBranches Int
+       }
+runMultiCompileFull cfg rules = do
+  let
+    placeholder :: Vector topBranches Int
+    placeholder = Vector.replicate 20
+  log2s <- prePassDomainLog2s
+    @rs @inputVal @outputVal @prevInputVal
+    @topBranches @topBranches @mpvMax @slotsMax
+    @rulesCarrier @stepCompileFnsCarrier @perBranchCtxsCarrier
+    @perBranchStepCompileResults @stepProveFnsCarrier @proversCarrier
+    cfg placeholder rules
+  stepResults <- runMultiCompile
+    @rs @inputVal @outputVal @prevInputVal
+    @topBranches @topBranches @mpvMax @slotsMax
+    @rulesCarrier @stepCompileFnsCarrier @perBranchCtxsCarrier
+    @perBranchStepCompileResults @stepProveFnsCarrier @proversCarrier
+    cfg log2s rules
+  pure { stepResults, log2s }
+
+-- | Nil shape instance is polymorphic in `slotsMax` and `topBranches`
+-- | (parallels the structural Nil instance).
+-- |
+-- | `prePassDomainLog2s` returns `Vector.nil` (= the per-recursion-
+-- | level count `branches = 0` here). At the top-level user call,
+-- | `branches = topBranches`, so this is only reached when the user
+-- | called with empty rs.
 instance
-  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal 0 mpvMax
-    slotsMax Unit Unit Unit Unit Unit Unit Unit
+  CompilableRulesSpecShape RulesNil inputVal outputVal prevInputVal topBranches 0 mpvMax
+    slotsMax Unit Unit Unit Unit Unit Unit
   where
+  prePassDomainLog2s _ _ _ = pure Vector.nil
   runMultiCompile _ _ _ = pure unit
-  runMultiCompileFull _ _ = pure { stepResults: unit, log2s: unit }
   buildBranchProvers _ _ _ _ _ _ _ = pure unit
 
 instance
   ( CompilableRulesSpecShape rest inputVal outputVal prevInputVal
-      restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
-      restStepCompileResults restLog2s restStepProveFns restProvers
+      topBranches restBranches mpvMax slotsMax restCarrier restStepCompileFns restCtxs
+      restStepCompileResults restStepProveFns restProvers
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
   , PrevValuesCarrier prevsSpec valCarrier
@@ -728,6 +809,11 @@ instance
   , Add 1 totalBasesMaxPred totalBasesMax
   , PadSlots slotsMax mpvMax
   , PadProveDataMpv ruleMpv slots mpvMax slotsMax
+  -- Phase 2b.31c (Task #195): topBranches stays fixed across the
+  -- recursion; required by `buildStepProveCtx` and Vector dispatch.
+  , Reflectable topBranches Int
+  , Compare 0 topBranches LT
+  , Add 1 topBranchesPred topBranches
   , CircuitType StepField inputVal inputVar
   , CircuitType StepField outputVal outputVar
   , CircuitType StepField prevInputVal prevInputVar
@@ -741,23 +827,23 @@ instance
       (slotsMax (Vector WrapIPARounds (FVar WrapField)))
   , CompilableRulesSpec
       (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
-      inputVal outputVal prevInputVal branches mpvMax slotsMax
+      inputVal outputVal prevInputVal topBranches branches mpvMax slotsMax
       ( Tuple
-          ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
+          ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
               slotVKs
           )
           restCarrier
       )
       ( Tuple
-          ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
+          ( PProveStep.StepProveContext ruleMpv topBranches
+            -> Effect PProveStep.StepCompileResult
           )
           restStepCompileFns
       )
-      (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
+      (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
       (Tuple PProveStep.StepCompileResult restStepCompileResults)
-      (Tuple Int restLog2s)
       ( Tuple
-          ( PProveStep.StepProveContext ruleMpv 1
+          ( PProveStep.StepProveContext ruleMpv topBranches
             -> PProveStep.StepCompileResult
             -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                  inputVal ruleMpv carrier valCarrier
@@ -766,27 +852,32 @@ instance
           )
           restStepProveFns
       )
+  , Add 1 restBranches branches
+  -- `Vector.cons` (`(:<)`) needs `Add n 1 nInc`; here n=restBranches,
+  -- nInc=branches. PS doesn't commute `Add` automatically, so we
+  -- supply both directions.
+  , Add restBranches 1 branches
   ) =>
   CompilableRulesSpecShape
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
     inputVal outputVal prevInputVal
-    branches mpvMax slotsMax
+    topBranches branches mpvMax slotsMax
     ( Tuple
-        ( RuleEntry prevsSpec ruleMpv 1 valCarrier inputVal carrier outputSize
+        ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize
             slotVKs
         )
         restCarrier
     )
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv 1 -> Effect PProveStep.StepCompileResult
+        ( PProveStep.StepProveContext ruleMpv topBranches
+          -> Effect PProveStep.StepCompileResult
         )
         restStepCompileFns
     )
-    (Tuple (PProveStep.StepProveContext ruleMpv 1) restCtxs)
+    (Tuple (PProveStep.StepProveContext ruleMpv topBranches) restCtxs)
     (Tuple PProveStep.StepCompileResult restStepCompileResults)
-    (Tuple Int restLog2s)
     ( Tuple
-        ( PProveStep.StepProveContext ruleMpv 1
+        ( PProveStep.StepProveContext ruleMpv topBranches
           -> PProveStep.StepCompileResult
           -> PProveStep.StepAdvice prevsSpec StepIPARounds WrapIPARounds
                inputVal ruleMpv carrier valCarrier
@@ -805,52 +896,42 @@ instance
         restProvers
     )
   where
-  runMultiCompile cfg (Tuple log2 restLog2s) (Tuple (RuleEntry r) restEntries) = do
-    let
-      -- TODO Commit F: replace Vector 1 with the full
-      -- `Vector branches Int` of all branches' step domain log2s for
-      -- multi-rule Self-prev Pseudo dispatch. Currently each branch
-      -- only sees its own log2 — circuit emits single-domain dispatch.
-      ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs (log2 :< Vector.nil)
+  prePassDomainLog2s cfg placeholder (Tuple (RuleEntry r) restEntries) = do
+    let placeholderCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs placeholder
+    headLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
+    restVec <- prePassDomainLog2s
+      @rest @inputVal @outputVal @prevInputVal
+      @topBranches @restBranches @mpvMax @slotsMax
+      @restCarrier @restStepCompileFns @restCtxs
+      @restStepCompileResults @restStepProveFns @restProvers
+      cfg
+      placeholder
+      restEntries
+    pure (headLog2 :< restVec)
+  runMultiCompile cfg log2s (Tuple (RuleEntry r) restEntries) = do
+    let ctx = buildStepProveCtx @prevsSpec cfg r.slotVKs log2s
     headResult <- r.stepCompileFn ctx
     tailResults <- runMultiCompile
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @mpvMax @slotsMax
+      @topBranches @restBranches @mpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
+      @restStepCompileResults @restStepProveFns @restProvers
       cfg
-      restLog2s
+      log2s
       restEntries
     pure (Tuple headResult tailResults)
-  runMultiCompileFull cfg (Tuple (RuleEntry r) restEntries) = do
-    let
-      -- TODO Commit F: pre-pass over all branches to collect Vector
-      -- branches Int, then compile each branch with the full vector.
-      -- Currently sequential: each branch sees only its own log2.
-      placeholderCtx =
-        buildStepProveCtx @prevsSpec cfg r.slotVKs (20 :< Vector.nil)
-    selfStepDomainLog2 <- r.preComputeStepDomainLog2Fn placeholderCtx
-    let
-      realCtx = buildStepProveCtx @prevsSpec cfg r.slotVKs
-        (selfStepDomainLog2 :< Vector.nil)
-    headResult <- r.stepCompileFn realCtx
-    tail <- runMultiCompileFull
-      @rest @inputVal @outputVal @prevInputVal
-      @restBranches @mpvMax @slotsMax
-      @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
-      cfg
-      restEntries
-    pure
-      { stepResults: Tuple headResult tail.stepResults
-      , log2s: Tuple selfStepDomainLog2 tail.log2s
-      }
   buildBranchProvers branchIdx cfg wrapResult perBranchVec
+    allStepDomainLog2s
     (Tuple headStepCR restStepResults)
-    (Tuple headLog2 restLog2s)
     (Tuple headEntry restEntries) = do
     let
       thisBranch = branchIdx
+      -- Extract THIS branch's selfStepDomainLog2 from the FULL
+      -- `Vector topBranches Int`. branchIdx is a runtime Int, so we
+      -- use the unsafe Array.index path. Cons depth k has
+      -- branchIdx = k.
+      headLog2 = unsafePartial $ fromJust $
+        Array.index (Vector.toUnfoldable allStepDomainLog2s) branchIdx
       headProver = BranchProver \stepInputs ->
         runMultiProverBody
           @prevsSpec
@@ -864,6 +945,7 @@ instance
           @outputVar
           @prevInputVal
           @prevInputVar
+          @topBranches
           -- Phase 2b.31b step (b): pass the wrap circuit's
           -- `mpvMax`/`slotsMax` (from the class instance head). For
           -- single-rule callers `ruleMpv = mpvMax` and `slots =
@@ -879,21 +961,22 @@ instance
           cfg
           wrapResult
           perBranchVec
+          allStepDomainLog2s
           headStepCR
           headLog2
           headEntry
           stepInputs
     restProvers <- buildBranchProvers
       @rest @inputVal @outputVal @prevInputVal
-      @restBranches @mpvMax @slotsMax
+      @topBranches @restBranches @mpvMax @slotsMax
       @restCarrier @restStepCompileFns @restCtxs
-      @restStepCompileResults @restLog2s @restStepProveFns @restProvers
+      @restStepCompileResults @restStepProveFns @restProvers
       (branchIdx + 1)
       cfg
       wrapResult
       perBranchVec
+      allStepDomainLog2s
       restStepResults
-      restLog2s
       restEntries
     pure (Tuple headProver restProvers)
 
@@ -1225,16 +1308,15 @@ compileMultiStepWrap
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
-       selfStepDomainLog2sCarrier
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slots
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
+       branches branches mpvMax slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
-       selfStepDomainLog2sCarrier
        stepProveFnsCarrier
        proversCarrier
   => CircuitGateConstructor WrapField PallasG
@@ -1280,6 +1362,7 @@ compileMultiStepWrap cfg rules = do
       @outputVal
       @prevInputVal
       @branches
+      @branches
       @mpvMax
       @slots
       stepResults
@@ -1321,8 +1404,9 @@ compileMultiStepWrap cfg rules = do
 runMultiProverBody
   :: forall @prevsSpec slotVKs prevsCarrier @mpv @slots @valCarrier @carrier
        @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar
+       @topBranches
        @mpvMax @slotsMax @mpvPad
-       branches branchesPred
+       branches branchesPred topBranchesPred
        pad unfsTotal digestPlusUnfs outputSize carrierFVar
        padMax totalBasesMax totalBasesMaxPred
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier
@@ -1331,6 +1415,15 @@ runMultiProverBody
   => CircuitGateConstructor WrapField PallasG
   => Reflectable branches Int
   => Add 1 branchesPred branches
+  -- Phase 2b.31c (Task #195): topBranches is the FIXED outer count
+  -- threaded through `RuleEntry`'s `nd` and the multi-domain Vector
+  -- consumed by `finalizeOtherProofCircuit`. Stays distinct from
+  -- `branches` (the wrap circuit's per-branch lagrange + step-data
+  -- carrier count, which currently equals topBranches but is kept
+  -- separate to match the Compile.purs signature).
+  => Reflectable topBranches Int
+  => Compare 0 topBranches LT
+  => Add 1 topBranchesPred topBranches
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvPad Int
@@ -1375,15 +1468,21 @@ runMultiProverBody
   -- ^ shared per-branch wrap config inputs (same vector used at
   --   wrap compile time via `buildWrapMainConfigMulti`); the wrap
   --   solver here rebuilds the same `WrapMainConfig` from this.
+  -> Vector topBranches Int
+  -- ^ FULL Vector of all branches' step domain log2s. Threaded
+  --   to `buildStepProveCtx` so this rule's `finalizeOtherProofCircuit`
+  --   has the multi-domain Pseudo dispatch table for Self-prev slots.
+  --   Mirrors OCaml `compile.ml:568`'s `~step_domains:all_step_domains`.
   -> PProveStep.StepCompileResult
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv 1 valCarrier inputVal carrier outputSize slotVKs
+  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
 runMultiProverBody _branchIdx cfg wrapResult perBranchVec
+  allStepDomainLog2s
   stepCR selfStepDomainLog2
   (RuleEntry r) { appInput, prevs } = do
   -- Phase 2b.24c: step half — mkStepAdvice + shapeProveData +
@@ -1396,16 +1495,12 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
       , debug: cfg.debug
       , wrapDomainOverride: cfg.wrapDomainOverride
       }
-    -- TODO Commit F: pass the full
-    --   `Vector branches Int` (= `map _.stepDomainLog2 perBranchVec`)
-    -- to drive multi-domain Pseudo dispatch in
-    -- `finalizeOtherProofCircuit`. Currently Vector 1 with the
-    -- branch's own step domain — circuit emits single-domain
-    -- dispatch even for multi-rule callers (TwoPhaseChain b1_step
-    -- still has the 4-Generic-gate delta).
-    selfDomainsForShape :: Vector 1 Int
-    selfDomainsForShape = selfStepDomainLog2 :< Vector.nil
-    shape = shapeCompileData @prevsSpec perRuleCfg selfDomainsForShape
+    -- Phase 2b.31c (Task #195): pass the FULL `Vector topBranches Int`
+    -- of all branches' step domain log2s. Drives multi-domain Pseudo
+    -- dispatch in `finalizeOtherProofCircuit` for Self-prev slots —
+    -- mirrors OCaml step_main's `step_domains:all_step_domains`
+    -- (`compile.ml:568`).
+    shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
 
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
     liftEffect $ mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
@@ -1715,16 +1810,15 @@ compileMulti
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
-       selfStepDomainLog2sCarrier
        stepProveFnsCarrier
        proversCarrier
        branchesPred totalBases totalBasesPred
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal branches mpvMax slots
+   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
+       branches branches mpvMax slots
        rulesCarrier
        stepCompileFnsCarrier
        perBranchCtxsCarrier
        perBranchStepCompileResults
-       selfStepDomainLog2sCarrier
        stepProveFnsCarrier
        proversCarrier
   => CircuitGateConstructor WrapField PallasG
@@ -1754,6 +1848,14 @@ compileMulti
        )
 compileMulti cfg rules = do
   -- Step 1: per-rule pre-pass + step compile.
+  --
+  -- Phase 2b.31c (Task #195): runMultiCompileFull is now a top-level
+  -- orchestrator (not a class method) that calls Class 2's
+  -- `prePassDomainLog2s` then `runMultiCompile` with the FULL
+  -- `Vector branches Int` of all branches' step domain log2s. This
+  -- delivers OCaml `compile.ml:568`'s `~step_domains:all_step_domains`
+  -- pattern: every branch's step circuit sees the full multi-domain
+  -- vector for Self-prev Pseudo dispatch.
   { stepResults, log2s } <- runMultiCompileFull
     @rs
     @inputVal
@@ -1772,6 +1874,7 @@ compileMulti cfg rules = do
       @outputVal
       @prevInputVal
       @branches
+      @branches
       @mpvMax
       @slots
       stepResults
@@ -1786,11 +1889,16 @@ compileMulti cfg rules = do
 
   -- Step 3: build per-branch BranchProver closures (each captures its
   -- branchIdx for `whichBranch` baking in the wrap statement).
+  -- Phase 2b.31c (Task #195): pass the FULL `Vector branches Int` of
+  -- all branches' step domain log2s — same Vector consumed by every
+  -- branch's `runMultiProverBody` for `buildStepProveCtx`'s multi-
+  -- domain dispatch table.
   provers <- buildBranchProvers
     @rs
     @inputVal
     @outputVal
     @prevInputVal
+    @branches
     @branches
     @mpvMax
     @slots
@@ -1798,8 +1906,8 @@ compileMulti cfg rules = do
     cfg
     wrapResult
     perBranchVec
-    stepResults
     log2s
+    stepResults
     rules
 
   -- Step 4: shared verifier + tag.
