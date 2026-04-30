@@ -39,7 +39,7 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
-import Data.Tuple (Tuple(..), fst)
+import Data.Tuple (Tuple(..), fst, snd)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -65,7 +65,7 @@ import Effect.Class (liftEffect)
 import Pickles.Wrap.Slots (NoSlots)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Pickles.Prove.Compile (SlotWrapKey(..))
+import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..))
 import Pickles.Prove.Step (StepCompileResult, StepProveContext, StepRule)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, StepSlot)
@@ -354,7 +354,9 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       cfg
       rules
 
-    let BranchProver makeZeroProver = fst output.provers
+    let
+      BranchProver makeZeroProver = fst output.provers
+      BranchProver incrementProver = fst (snd output.provers)
     eRes <- liftEffect $ runExceptT $ makeZeroProver
       { appInput: F zero, prevs: unit }
     b0 <- case eRes of
@@ -362,7 +364,23 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
       Right p -> pure p
 
     verify output.verifier [ b0 ] `shouldEqual` true
-  pending "b1 (increment, prev = b0 from branch 0) — multi-branch dispatch step"
+    -- TEMP: drive b1 to dump witnesses for cross-branch comparison.
+    -- b1 = increment(b0); appInput = 0 + 1 = 1. Prev is b0. With the
+    -- `widthData`-existential refactor of `CompiledProof`, the per-rule
+    -- width is hidden inside `b0.widthData`, so b0 :: CompiledProof
+    -- mpvMax = CompiledProof 1 — directly compatible with `output.tag
+    -- :: Tag _ _ 1`. No coercion needed.
+    eB1 <- liftEffect $ runExceptT $ incrementProver
+      { appInput: F one
+      , prevs:
+          Tuple
+            (InductivePrev b0 output.tag)
+            unit
+      }
+    _b1 <- case eB1 of
+      Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
+      Right p -> pure p
+    pure unit
   pending "b1 wrap"
   pending "b2 (increment, prev = b1 from branch 1) — same-branch dispatch step"
   pending "b2 wrap"

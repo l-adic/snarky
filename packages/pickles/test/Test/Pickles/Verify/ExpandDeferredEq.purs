@@ -42,7 +42,8 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..), compile)
+import Data.Exists (runExists)
+import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..), compile)
 import Pickles.Prove.Pure.Verify (ExpandDeferredInput, expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesInput, WrapDeferredValuesOutput)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -75,12 +76,20 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       Left e -> liftEffect $ Exc.throw ("nrr prover.step: " <> show e)
       Right p -> pure p
 
+    -- The width-sized fields (including wrapDvInput) are hidden behind
+    -- `r.widthData`'s existential after the GADT-like refactor of
+    -- `CompiledProof` (mirrors OCaml `proof.mli:97-110`). `runExists`
+    -- recovers the typed values inside a polymorphic continuation.
     let CompiledProof r = cp
-    assertExpandDeferredMatches @0
-      { dvProver: r.wrapDv
-      , dvInput: r.wrapDvInput
-      , oldBulletproofChallenges: Vector.nil
-      }
+    runExists
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.oldBulletproofChallenges
+            }
+      )
+      r.widthData
 
   it "expandDeferredForVerify matches wrapComputeDeferredValues (Simple_chain b0, n=1)" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
@@ -112,12 +121,18 @@ spec = describe "Pickles.Prove.Pure.Verify" do
     -- Simple_chain b0: prev proof is the dummy wrap, its step-side IPA
     -- challenges are dummyIpaChallenges.stepExpanded (already expanded
     -- to step-field elements). The compile-API surfaces these as part
-    -- of `wrapDvInput.prevChallenges`.
-    assertExpandDeferredMatches @1
-      { dvProver: r.wrapDv
-      , dvInput: r.wrapDvInput
-      , oldBulletproofChallenges: r.wrapDvInput.prevChallenges
-      }
+    -- of `wrapDvInput.prevChallenges`. Both fields hidden behind
+    -- `widthData` existential — `runExists` recovers them at the same
+    -- (existentially-bound) width.
+    runExists
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.wrapDvInput.prevChallenges
+            }
+      )
+      r.widthData
 
 -- | Build an `ExpandDeferredInput n` from the same facts the prover saw,
 -- | run `expandDeferredForVerify`, and assert field-by-field equality

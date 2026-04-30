@@ -135,7 +135,7 @@ import Pickles.Prove.Step
   , stepCompile
   , stepSolveAndProve
   ) as PProveStep
-import Pickles.Prove.Verify (CompiledProof(..), Verifier, mkVerifier)
+import Pickles.Prove.Verify (CompiledProof(..), SomeCompiledProofWidthData, Verifier, mkSomeCompiledProofWidthData, mkVerifier)
 import Pickles.Util.Unique (newUnique)
 import Data.Newtype (wrap)
 import Pickles.Prove.Wrap
@@ -890,8 +890,14 @@ instance
     -- PS treats newtypes as nominally rigid — instance head sees
     -- a saturated type constructor, not an unfolded function
     -- type. Dispatch resolves cleanly; instance head stays terse.
+    --
+    -- BranchProver's mpv parameter is `mpvMax` (NOT `ruleMpv`) — every
+    -- branch's CompiledProof presents the WRAP-LEVEL view of `mpv =
+    -- mpvMax`. Mirrors OCaml `Pickles.compile_promise`'s output: all
+    -- proofs share `'mlmb` (= wrap's max), with the per-branch actual
+    -- width hidden inside `CompiledProof.widthData`'s GADT-existential.
     ( Tuple
-        ( BranchProver prevsSpec ruleMpv prevsCarrier inputVal outputVal Effect
+        ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal Effect
         )
         restProvers
     )
@@ -1480,7 +1486,7 @@ runMultiProverBody
   -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
-       (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
+       (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
 runMultiProverBody _branchIdx cfg wrapResult perBranchVec
   allStepDomainLog2s
   stepCR selfStepDomainLog2
@@ -1797,6 +1803,16 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     publicOutput =
       fieldsToValue @StepField stepResult.userPublicOutputFields
 
+  let
+    widthData :: SomeCompiledProofWidthData
+    widthData = mkSomeCompiledProofWidthData @mpv
+      { oldBulletproofChallenges: proveData.prevStepChallenges
+      , msgWrapChallenges: proveData.msgWrapChallenges
+      , outerStepChalPolyComms:
+          map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
+      , wrapDvInput
+      }
+
   pure $ CompiledProof
     { statement: StatementIO { input: appInput, output: publicOutput }
     , publicOutput
@@ -1808,14 +1824,10 @@ runMultiProverBody _branchIdx cfg wrapResult perBranchVec
     , spongeDigestBeforeEvaluations: wrapDv.spongeDigestBeforeEvaluations
     , prevEvals: allEvals
     , pEval0Chunks: [ stepOracles.publicEvalZeta ]
-    , oldBulletproofChallenges: proveData.prevStepChallenges
     , challengePolynomialCommitment: stepProofSg
     , messagesForNextStepProofDigest: msgStep
     , messagesForNextWrapProofDigest: msgWrap
-    , msgWrapChallenges: proveData.msgWrapChallenges
-    , outerStepChalPolyComms:
-        map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
-    , wrapDvInput
+    , widthData
     , wrapDv
     }
 
