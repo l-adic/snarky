@@ -22,20 +22,22 @@ module Pickles.Prove.Compile
   , ProveError
   , PrevSlot(..)
   , SlotWrapKey(..)
-  , ShapeCompileData
   , ShapeProveData
   , ShapeProveSideInfo
   , StepInputs
   , Tag(..)
   , class CompilableSpec
-  , class ConvertSlots
-  , convertSlots
   , class PadProveDataMpv
   , PadProveDataDummies
   , padShapeProveData
   , mkStepAdvice
   , shapeCompileData
   , shapeProveData
+  -- Internal helper for PadProveDataMpv's general instance — exported
+  -- because instance resolution at user call sites needs the class in
+  -- scope. Not directly callable.
+  , class ConvertSlots
+  , convertSlots
   , module Pickles.Prove.Verify
   ) where
 

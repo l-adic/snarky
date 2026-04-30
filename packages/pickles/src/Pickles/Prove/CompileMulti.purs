@@ -40,36 +40,25 @@ module Pickles.Prove.CompileMulti
     RulesSpec
   , RulesNil
   , RulesCons
-  -- * Public API surface (Phase 2a stubs)
-  , CompileMultiConfig
-  , MultiOutput
-  , MultiVKs
+  -- * Public API
   , BranchProver(..)
+  , RuleEntry(..)
+  , mkRuleEntry
   , compileMulti
-  -- * Structural carrier class (Phase 2b.20 split — light, no shape data)
+  -- * Internal: re-exported because `compileMulti`'s signature carries
+  --   them as constraints (PS requires every name in an exported
+  --   function's type to be exported). Not directly callable by end
+  --   users; the Cons+Nil instances cover all valid call shapes.
   , class CompilableRulesSpec
+  , class CompilableRulesSpecShape
   , branchCount
   , extractStepCompileFns
   , extractStepProveFns
   , runStepCompiles
   , buildWrapPerBranchVec
-  -- * Shape-data class (Phase 2b.20 split — heavy, demands CompilableSpec)
-  , class CompilableRulesSpecShape
   , prePassDomainLog2s
   , runMultiCompile
-  , runMultiCompileFull
   , buildBranchProvers
-  -- * Per-rule context construction (Phase 2b.13)
-  , buildStepProveCtx
-  -- * Multi-branch prover body skeleton (Phase 2b.24a)
-  , runMultiProverBody
-  -- * End-to-end step + carrier conversion (Phase 2b.17)
-  , compileMultiStepWrap
-  -- * Smart-constructor probe (Phase 2b.4 — rules-side carrier shape)
-  , RuleEntry(..)
-  , mkRuleEntry
-  -- * Misc
-  , notImplemented
   ) where
 
 import Prelude
@@ -84,7 +73,6 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Exception (error, throwException)
 import JS.BigInt as BigInt
 import Pickles.Dummy
   ( baseCaseDummies
@@ -1408,104 +1396,6 @@ buildStepProveCtx cfg slotVKs selfStepDomainLog2s =
     shape.stepProveCtx
 
 --------------------------------------------------------------------------------
--- compileMultiStepWrap — Phase 2b.17 step + wrap end-to-end helper
---
--- Combines the per-branch step compile (`runMultiCompileFull`),
--- carrier conversion (`buildWrapPerBranchVec`), wrap config
--- construction (`buildWrapMainConfigMulti`), and wrap compile
--- (`wrapCompile`) into one shot.
---
--- Output: the per-branch step CompileResult Tuple chain + the
--- single shared WrapCompileResult.
---
--- Phase 2b.18 will wrap this in the full `compileMulti` API
--- (provers / tag / verifier / perBranchVKs).
---
--- The `lagrangeDomainLog2` is currently the wrap circuit's own
--- domain log2 (= `wrapDomainLog2`). The
--- `buildWrapMainConfigMulti` doc TODO flags this for witness-diff
--- validation against `dump_two_phase_chain.exe`. Single-rule
--- worked because step ≡ wrap when no override; multi-rule may
--- need a different choice — to be confirmed.
---------------------------------------------------------------------------------
-
-compileMultiStepWrap
-  :: forall @rs @inputVal @outputVal @prevInputVal @mpvMax @slots
-       branches
-       rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
-       perBranchStepCompileResults
-       stepProveFnsCarrier
-       proversCarrier
-       branchesPred totalBases totalBasesPred
-   . CompilableRulesSpecShape rs inputVal outputVal prevInputVal
-       branches
-       branches
-       mpvMax
-       slots
-       rulesCarrier
-       stepCompileFnsCarrier
-       perBranchCtxsCarrier
-       perBranchStepCompileResults
-       stepProveFnsCarrier
-       proversCarrier
-  => CircuitGateConstructor WrapField PallasG
-  => Reflectable branches Int
-  => Reflectable mpvMax Int
-  => Add 1 branchesPred branches
-  => Compare mpvMax 3 LT
-  => Add mpvMax 45 totalBases
-  => Add 1 totalBasesPred totalBases
-  => PadSlots slots mpvMax
-  => CircuitType WrapField
-       (slots (Vector WrapIPARounds (F WrapField)))
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CheckedType WrapField (KimchiConstraint WrapField)
-       (slots (Vector WrapIPARounds (FVar WrapField)))
-  => CompileMultiConfig
-  -> rulesCarrier
-  -> Effect
-       { stepResults :: perBranchStepCompileResults
-       , wrapResult :: WrapCompileResult
-       , perBranchVec ::
-           Vector branches
-             { mpv :: Int
-             , stepDomainLog2 :: Int
-             , stepVK :: VerifierIndex VestaG StepField
-             }
-       }
-compileMultiStepWrap cfg rules = do
-  { stepResults } <- runMultiCompileFull
-    @rs
-    @inputVal
-    @outputVal
-    @prevInputVal
-    @branches
-    @mpvMax
-    @slots
-    cfg
-    rules
-  let
-    perBranchVec = buildWrapPerBranchVec
-      @rs
-      @inputVal
-      @outputVal
-      @prevInputVal
-      @branches
-      @branches
-      @mpvMax
-      @slots
-      stepResults
-  wrapResult <- wrapCompile @branches @slots
-    { wrapMainConfig:
-        buildWrapMainConfigMulti @branches cfg.srs.vestaSrs
-          { perBranch: perBranchVec }
-    , crs: cfg.srs.pallasSrs
-    }
-  pure { stepResults, wrapResult, perBranchVec }
-
---------------------------------------------------------------------------------
 -- runMultiProverBody — Phase 2b.24 skeleton: per-branch prover body
 -- analog of single-rule `Pickles.Prove.Compile.runProverBody`.
 --
@@ -2132,15 +2022,3 @@ compileMulti cfg rules = do
         }
     , perBranchVKs: unit
     }
-
--- | Standard not-implemented marker — throws an `Effect` exception so
--- | Phase 2a tests can `try` / `catchException` and surface a clean
--- | "skeleton not yet implemented" message rather than crashing the
--- | runtime opaquely.
-notImplemented :: forall a. String -> Effect a
-notImplemented label =
-  throwException $ error $
-    "Pickles.Prove.CompileMulti." <> label
-      <> ": Phase 2a skeleton — not yet implemented. "
-      <> "See module docstring + dump_two_phase_chain.ml for "
-      <> "the multi-branch semantics being approximated."
