@@ -2,21 +2,13 @@
 -- | (`mina/src/lib/crypto/pickles/test/test_no_sideloaded.ml:128-205`).
 -- |
 -- | Runs the inductive rule (`prev + 1`) at `max_proofs_verified = N1`
--- | through five iterations (b0..b4) via the `Pickles.Prove.Compile`
--- | API: a single `compile` call returns a `prover.step` closure that
--- | gets invoked once per iteration with the previous proof threaded
--- | as `InductivePrev`. The full chain is then handed to `verify` for
--- | end-to-end Pickles verification (stage 1 deferred-values expand,
--- | stage 2 IPA accumulator check, stage 3 kimchi `batch_verify`).
--- |
--- | The previous producer-style implementation (~2300 lines of manual
--- | step/wrap advice construction + trace emission) has been replaced
--- | with this compile-API-driven version. Producer-style scaffolding
--- | survives in `Test.Pickles.Prove.SimpleChain.B0Producer` /
--- | `B1Producer` (used by `Test.Pickles.Verify.VerifySmoke` and
--- | `Test.Pickles.Verify.ExpandDeferredEq` for byte-equality
--- | regression checks); those modules will be migrated once Tree-side
--- | callers also move to compile.
+-- | through five iterations (b0..b4) via the `Pickles.Prove.CompileMulti`
+-- | API: a single 1-rule `compileMulti` call returns a `BranchProver`
+-- | closure that gets invoked once per iteration with the previous
+-- | proof threaded as `InductivePrev`. The full chain is then handed
+-- | to `verify` for end-to-end Pickles verification (stage 1
+-- | deferred-values expand, stage 2 IPA accumulator check, stage 3
+-- | kimchi `batch_verify`).
 module Test.Pickles.Prove.SimpleChain
   ( spec
   , simpleChainRule
@@ -29,19 +21,26 @@ import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
-import Data.Newtype (un)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), fst)
 import Data.Vector ((:<))
 import Data.Vector as Vector
-import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..), Tag(..), compile, verify)
+import Pickles.Prove.Compile (CompiledProof(..), PrevSlot(..), SlotWrapKey(..))
+import Pickles.Prove.CompileMulti
+  ( BranchProver(..)
+  , RulesCons
+  , RulesNil
+  , compileMulti
+  , mkRuleEntry
+  )
 import Pickles.Prove.Step (StepRule)
+import Pickles.Prove.Verify (verify)
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO(..), StepField)
+import Pickles.Wrap.Slots (Slots1)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Circuit.CVar (add_) as CVar
@@ -82,24 +81,58 @@ simpleChainRule self = do
     , publicOutput: unit
     }
 
+-- | Simple_chain's 1-rule carrier shape. A single self-recursive
+-- | rule with mpv=1, one prev slot of width 1.
+type SimpleChainRules =
+  RulesCons 1
+    (Tuple (StatementIO (F StepField) Unit) Unit)
+    (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+    (Tuple SlotWrapKey Unit)
+    RulesNil
+
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SimpleChain" do
   it "5-iteration step+wrap chain (b0..b4) proves end-to-end" \_ -> do
     let pallasSrs = PallasImpl.pallasCrsCreate (1 `Int.shl` 15)
     vestaSrs <- liftEffect $ createCRS @StepField
 
-    { prover, tag } <- liftEffect $ compile
+    -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
+    -- (one prev slot); since this is the only branch, nd = 1.
+    -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
+    chainEntry <- liftEffect $ mkRuleEntry
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+      @1 -- mpv
+      @1 -- mpvMax
+      @0 -- mpvPad
+      @1 -- nd = topBranches (single branch)
+      @34 -- outputSize
+      @(Tuple (StatementIO (F StepField) Unit) Unit)
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @(Tuple SlotWrapKey Unit)
+      simpleChainRule
+      (Tuple Self unit)
+
+    let rules = Tuple chainEntry unit
+
+    output <- liftEffect $ compileMulti
+      @SimpleChainRules
       @(F StepField)
       @Unit
       @(F StepField)
-      @Effect
+      @1
+      @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }
-      , perSlotImportedVKs: Tuple Self unit
       , debug: false
       , wrapDomainOverride: Nothing
       }
-      simpleChainRule
+      rules
+
+    let BranchProver chainProver = fst output.provers
 
     let
       runStep
@@ -107,29 +140,27 @@ spec = describe "Pickles.Prove.SimpleChain" do
         -> F StepField
         -> Aff (CompiledProof 1 (StatementIO (F StepField) Unit) Unit Unit)
       runStep prevSlot appInput = do
-        eRes <- liftEffect $ runExceptT $ prover.step
+        eRes <- liftEffect $ runExceptT $ chainProver
           { appInput, prevs: Tuple prevSlot unit }
         case eRes of
-          Left e -> liftEffect $ Exc.throw ("prover.step: " <> show e)
+          Left e -> liftEffect $ Exc.throw ("chainProver: " <> show e)
           Right p -> pure p
 
       basePrev = BasePrev
         { dummyStatement: StatementIO { input: F (negate one), output: unit } }
 
     b0 <- runStep basePrev (F zero)
-    b1 <- runStep (InductivePrev b0 tag) (F one)
-    b2 <- runStep (InductivePrev b1 tag) (F (fromInt 2 :: StepField))
-    b3 <- runStep (InductivePrev b2 tag) (F (fromInt 3 :: StepField))
-    b4 <- runStep (InductivePrev b3 tag) (F (fromInt 4 :: StepField))
+    b1 <- runStep (InductivePrev b0 output.tag) (F one)
+    b2 <- runStep (InductivePrev b1 output.tag) (F (fromInt 2 :: StepField))
+    b3 <- runStep (InductivePrev b2 output.tag) (F (fromInt 3 :: StepField))
+    b4 <- runStep (InductivePrev b3 output.tag) (F (fromInt 4 :: StepField))
 
-    verify (un Tag tag).verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
+    verify output.verifier [ b0, b1, b2, b3, b4 ] `shouldEqual` true
 
     -- Each iteration's app-state input must equal the value we
-    -- supplied as `appInput` to `prover.step`. The rule asserts
+    -- supplied as `appInput` to the prover. The rule asserts
     -- `self == prev + 1` (or `self == 0` for base), so the chain's
-    -- carried inputs are the natural numbers 0..4. SimpleChain's
-    -- `outputVal = Unit`, so `publicOutput` is uninformative — the
-    -- meaningful application state is the `statement.input`.
+    -- carried inputs are the natural numbers 0..4.
     let
       stmtInputOf (CompiledProof p) =
         let StatementIO s = p.statement in s.input
