@@ -189,8 +189,8 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       @1 -- nd = topBranches (single branch)
       @67 -- outputSize = 2*32+1+2 = 67
       @( Tuple (StatementIO Unit (F StepField))
-           (Tuple (StatementIO Unit (F StepField)) Unit)
-       )
+          (Tuple (StatementIO Unit (F StepField)) Unit)
+      )
       @Unit
       @Unit
       @(F StepField)

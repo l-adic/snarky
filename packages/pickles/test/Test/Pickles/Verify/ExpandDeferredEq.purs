@@ -36,6 +36,9 @@ import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..), fst)
 import Data.Vector (Vector)
+import Effect.Aff (Aff)
+import Effect.Class (liftEffect)
+import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
 import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..))
@@ -59,9 +62,6 @@ import Test.Pickles.Prove.NoRecursionReturn (nrrRule)
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
-import Effect.Aff (Aff)
-import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exc
 
 type NrrRules =
   RulesCons 0 Unit PrevsSpecNil Unit
@@ -82,12 +82,29 @@ spec = describe "Pickles.Prove.Pure.Verify" do
 
     nrrEntry <- liftEffect $ mkRuleEntry
       @PrevsSpecNil
-      @0 @0 @0 @1 @1
-      @Unit @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit
-      nrrRule unit
+      @0
+      @0
+      @0
+      @1
+      @1
+      @Unit
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @Unit
+      nrrRule
+      unit
 
     nrr <- liftEffect $ compileMulti
-      @NrrRules @Unit @(F StepField) @Unit @0 @NoSlots
+      @NrrRules
+      @Unit
+      @(F StepField)
+      @Unit
+      @0
+      @NoSlots
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
       (Tuple nrrEntry unit)
 
@@ -118,23 +135,36 @@ spec = describe "Pickles.Prove.Pure.Verify" do
 
     chainEntry <- liftEffect $ mkRuleEntry
       @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-      @1 @1 @0 @1 @34
+      @1
+      @1
+      @0
+      @1
+      @34
       @(Tuple (StatementIO (F StepField) Unit) Unit)
-      @(F StepField) @(FVar StepField)
-      @Unit @Unit
-      @(F StepField) @(FVar StepField)
+      @(F StepField)
+      @(FVar StepField)
+      @Unit
+      @Unit
+      @(F StepField)
+      @(FVar StepField)
       @(Tuple SlotWrapKey Unit)
       simpleChainRule
       (Tuple Self unit)
 
     chain <- liftEffect $ compileMulti
-      @SimpleChainRules @(F StepField) @Unit @(F StepField) @1 @(Slots1 1)
+      @SimpleChainRules
+      @(F StepField)
+      @Unit
+      @(F StepField)
+      @1
+      @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }, debug: false, wrapDomainOverride: Nothing }
       (Tuple chainEntry unit)
 
-    let BranchProver chainProver = fst chain.provers
-        basePrev = BasePrev
-          { dummyStatement: StatementIO { input: F (negate one), output: unit } }
+    let
+      BranchProver chainProver = fst chain.provers
+      basePrev = BasePrev
+        { dummyStatement: StatementIO { input: F (negate one), output: unit } }
     eCp <- liftEffect $ runExceptT $ chainProver
       { appInput: F zero, prevs: Tuple basePrev unit }
     cp <- case eCp of
