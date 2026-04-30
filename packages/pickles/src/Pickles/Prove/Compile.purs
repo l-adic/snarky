@@ -109,6 +109,16 @@ import Pickles.Prove.Step
   ( StepAdvice(..)
   , StepCompileResult
   , StepProveContext
+  , StepProveResult
+  , StepRule
+  , preComputeStepDomainLog2
+  , stepCompile
+  , stepSolveAndProve
+  ) as PProveStep
+import Pickles.Prove.Step
+  ( StepAdvice(..)
+  , StepCompileResult
+  , StepProveContext
   , buildSlotAdvice
   , buildStepAdvice
   , dummyWrapTockPublicInput
@@ -116,16 +126,6 @@ import Pickles.Prove.Step
   , mkDummyMsgWrapHash
   , mkDummyPerProofUnfinalized
   )
-import Pickles.Prove.Step
-  ( StepAdvice(..)
-  , StepCompileResult
-  , StepProveContext
-  , StepProveResult
-  , StepRule
-  , preComputeStepDomainLog2
-  , stepCompile
-  , stepSolveAndProve
-  ) as PProveStep
 import Pickles.Prove.Verify
   ( CompiledProof(..)
   , CompiledProofWidthData(..)
@@ -1401,7 +1401,6 @@ instance
       , slotsValue:
           product slotData.headSlotPrevWrapBpChalsVec restProveData.slotsValue
       }
-
 
 --------------------------------------------------------------------------------
 -- Type-level rules spec
