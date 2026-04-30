@@ -42,11 +42,14 @@ import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
 import Pickles.Linearization.Types (LinearizationPoly)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.Prove.Compile (CompiledProof(..), CompiledProofWidthData(..), PrevSlot(..), SlotWrapKey(..))
-import Pickles.Prove.CompileMulti
+import Pickles.Prove.Compile
   ( BranchProver(..)
+  , CompiledProof(..)
+  , CompiledProofWidthData(..)
+  , PrevSlot(..)
   , RulesCons
   , RulesNil
+  , SlotWrapKey(..)
   , compileMulti
   , mkRuleEntry
   )

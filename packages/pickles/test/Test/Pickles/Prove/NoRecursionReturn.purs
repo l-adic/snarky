@@ -28,7 +28,7 @@ import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
-import Pickles.Prove.CompileMulti
+import Pickles.Prove.Compile
   ( BranchProver(..)
   , RulesCons
   , RulesNil

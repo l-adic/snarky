@@ -34,12 +34,13 @@ import Effect (Effect)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception as Exc
-import Pickles.Prove.Compile (PrevSlot(..), SlotWrapKey(..))
-import Pickles.Prove.CompileMulti
+import Pickles.Prove.Compile
   ( BranchProver(..)
+  , PrevSlot(..)
   , RuleEntry
   , RulesCons
   , RulesNil
+  , SlotWrapKey(..)
   , compileMulti
   , mkRuleEntry
   )
