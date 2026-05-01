@@ -1961,6 +1961,241 @@ pub fn vesta_verifier_index(
     External::new(prover_index.verifier_index())
 }
 
+// ----------------------------------------------------------------------------
+// Side-loading: kimchi VerifierIndex / ProverProof JSON serialization via serde
+// ----------------------------------------------------------------------------
+//
+// These mirror the OCaml-side `caml_pasta_{fp,fq}_plonk_{verifier_index,proof}_{to,of}_serde_json`
+// added in mina/src/lib/crypto/proof-systems/kimchi-stubs/. Both ends use the
+// same kimchi crate, so the JSON wire shape is bit-identical.
+//
+// `#[serde(skip)]` fields (srs, OnceCells, endo, linearization, powers_of_alpha)
+// are default-constructed on deserialize. For our PS-side use cases (round-trip
+// validation and our own pure verifier path) this is sufficient. The SRS is
+// reattached explicitly on deserialize since it's required for any kimchi-side
+// commitment operations.
+
+// Note on naming: in this file "Pallas{VerifierIndex,Proof}External" wraps
+// kimchi types parameterized over `VestaGroup` (Pallas-protocol naming, where
+// Pallas refers to the scalar-field perspective; the underlying commitments
+// live on the Vesta curve). The matching SRS is therefore `VestaCRSExternal`
+// (= `External<SRS<VestaGroup>>`). The opposite relationship holds for
+// `Vesta{VerifierIndex,Proof}External`.
+
+#[napi]
+pub fn pallas_verifier_index_to_serde_json(
+    vi: &PallasVerifierIndexExternal,
+) -> Result<String> {
+    serde_json::to_string(&**vi)
+        .map_err(|e| Error::from_reason(format!("pallas_verifier_index_to_serde_json: {}", e)))
+}
+
+/// Deserialize a Pallas-protocol (Vesta-curve commitments) `VerifierIndex`
+/// from Rust serde JSON, attaching the supplied SRS.
+///
+/// **The result is dehydrated.** `linearization` and `powers_of_alpha`
+/// are `#[serde(skip)]` on kimchi's `VerifierIndex`, so they come back
+/// from the codec as default-constructed empty values. The verify
+/// path needs them populated (otherwise it panics with "constraint
+/// Permutation was not registered" when querying the alpha registry).
+/// Callers must run the result through `pallas_hydrate_verifier_index`
+/// before passing the VK to verify; the PS-side `Dehydrated` newtype
+/// at the loader boundary makes this explicit.
+#[napi]
+pub fn pallas_verifier_index_from_serde_json(
+    json: String,
+    srs: &VestaCRSExternal,
+) -> Result<PallasVerifierIndexExternal> {
+    let mut vi: VerifierIndex<VestaGroup, OpeningProof<VestaGroup>> = serde_json::from_str(&json)
+        .map_err(|e| Error::from_reason(format!("pallas_verifier_index_from_serde_json: {}", e)))?;
+    vi.srs = Arc::new((**srs).clone());
+    Ok(External::new(vi))
+}
+
+/// Caller-supplied feature flags for VK hydration. Mirrors kimchi's
+/// `FeatureFlags` (constraints.rs:46-61) — every field is `false` for
+/// a Pickles wrap proof. `lookup` collapses kimchi's nested
+/// `LookupFeatures` since Pickles never enables it; if a non-Pickles
+/// consumer needs lookup, this struct should be widened to expose the
+/// full LookupFeatures shape.
+#[napi(object)]
+pub struct VkFeatureFlags {
+    pub range_check0: bool,
+    pub range_check1: bool,
+    pub foreign_field_add: bool,
+    pub foreign_field_mul: bool,
+    pub xor: bool,
+    pub rot: bool,
+    pub lookup: bool,
+}
+
+impl VkFeatureFlags {
+    fn to_kimchi(&self) -> kimchi::circuits::constraints::FeatureFlags {
+        use kimchi::circuits::lookup::lookups::{LookupFeatures, LookupPatterns};
+        if self.lookup {
+            // Pickles never enables lookup, so this branch should not fire
+            // in our flow; surfacing the limitation here keeps the API
+            // honest until someone widens the struct.
+            panic!("VkFeatureFlags.lookup = true is not supported (widen VkFeatureFlags to expose LookupFeatures)");
+        }
+        kimchi::circuits::constraints::FeatureFlags {
+            range_check0: self.range_check0,
+            range_check1: self.range_check1,
+            foreign_field_add: self.foreign_field_add,
+            foreign_field_mul: self.foreign_field_mul,
+            xor: self.xor,
+            rot: self.rot,
+            lookup_features: LookupFeatures {
+                patterns: LookupPatterns {
+                    xor: false,
+                    lookup: false,
+                    range_check: false,
+                    foreign_field_mul: false,
+                },
+                joint_lookup_used: false,
+                uses_runtime_tables: false,
+            },
+        }
+    }
+}
+
+/// Hydrate a deserialized Pallas-protocol VerifierIndex by recomputing
+/// `linearization` and `powers_of_alpha`. Returns a new VK External; the
+/// input is left unchanged.
+///
+/// Mirrors kimchi's own pattern (see `tests/serde.rs:91-92`) and the
+/// computation in `prover_index.rs:132`. The caller supplies:
+/// - `feature_flags`: the exact gate set the circuit uses, so the
+///   linearization is built without `IfFeature` no-ops.
+/// - `generic`: whether to include the Generic gate's constraints
+///   (`linearization.rs:164-166`). Pickles wrap proofs always have
+///   the Generic gate; pass `true`.
+#[napi]
+pub fn pallas_hydrate_verifier_index(
+    vk: &PallasVerifierIndexExternal,
+    feature_flags: VkFeatureFlags,
+    generic: bool,
+) -> Result<PallasVerifierIndexExternal> {
+    use kimchi::circuits::polynomials::permutation::{vanishes_on_last_n_rows, zk_w};
+    use kimchi::linearization::expr_linearization;
+    use once_cell::sync::OnceCell;
+    use poly_commitment::ipa::endos;
+
+    let mut hydrated: VerifierIndex<VestaGroup, OpeningProof<VestaGroup>> = (**vk).clone();
+    let flags = feature_flags.to_kimchi();
+    let (linearization, powers_of_alpha) =
+        expr_linearization::<<VestaGroup as ark_ec::AffineRepr>::ScalarField>(
+            Some(&flags),
+            generic,
+        );
+    hydrated.linearization = linearization;
+    hydrated.powers_of_alpha = powers_of_alpha;
+    // `endo` (line 141), `permutation_vanishing_polynomial_m`,
+    // `w`, `linearization`, and `powers_of_alpha` are all
+    // `#[serde(skip)]` and come back default after deserialize.
+    // `verifier_index.rs:165-313`'s `verifier_index()` populates ALL
+    // of them at construction time. Mirror that: digest equality
+    // doesn't catch missing values here (it only absorbs
+    // commitments).
+    let (endo_q_pallas, _endo_r) = endos::<PallasGroup>();
+    hydrated.endo = endo_q_pallas;
+    let pvp_cell = OnceCell::new();
+    let _ = pvp_cell.set(vanishes_on_last_n_rows(hydrated.domain, hydrated.zk_rows));
+    hydrated.permutation_vanishing_polynomial_m = pvp_cell;
+    let w_cell = OnceCell::new();
+    let _ = w_cell.set(zk_w(hydrated.domain, hydrated.zk_rows));
+    hydrated.w = w_cell;
+    Ok(External::new(hydrated))
+}
+
+#[napi]
+pub fn vesta_verifier_index_to_serde_json(
+    vi: &VestaVerifierIndexExternal,
+) -> Result<String> {
+    serde_json::to_string(&**vi)
+        .map_err(|e| Error::from_reason(format!("vesta_verifier_index_to_serde_json: {}", e)))
+}
+
+/// Deserialize a Vesta-protocol (Pallas-curve commitments) `VerifierIndex`
+/// from Rust serde JSON. See `pallas_verifier_index_from_serde_json`
+/// for the dehydrated/hydrated lifecycle — callers must run the result
+/// through `vesta_hydrate_verifier_index` before verify.
+#[napi]
+pub fn vesta_verifier_index_from_serde_json(
+    json: String,
+    srs: &PallasCRSExternal,
+) -> Result<VestaVerifierIndexExternal> {
+    let mut vi: VerifierIndex<PallasGroup, OpeningProof<PallasGroup>> = serde_json::from_str(&json)
+        .map_err(|e| Error::from_reason(format!("vesta_verifier_index_from_serde_json: {}", e)))?;
+    vi.srs = Arc::new((**srs).clone());
+    Ok(External::new(vi))
+}
+
+/// Hydrate a deserialized Vesta-protocol VerifierIndex.
+/// See `pallas_hydrate_verifier_index` for argument semantics.
+#[napi]
+pub fn vesta_hydrate_verifier_index(
+    vk: &VestaVerifierIndexExternal,
+    feature_flags: VkFeatureFlags,
+    generic: bool,
+) -> Result<VestaVerifierIndexExternal> {
+    use kimchi::circuits::polynomials::permutation::{vanishes_on_last_n_rows, zk_w};
+    use kimchi::linearization::expr_linearization;
+    use once_cell::sync::OnceCell;
+    use poly_commitment::ipa::endos;
+
+    let mut hydrated: VerifierIndex<PallasGroup, OpeningProof<PallasGroup>> = (**vk).clone();
+    let flags = feature_flags.to_kimchi();
+    let (linearization, powers_of_alpha) =
+        expr_linearization::<<PallasGroup as ark_ec::AffineRepr>::ScalarField>(
+            Some(&flags),
+            generic,
+        );
+    hydrated.linearization = linearization;
+    hydrated.powers_of_alpha = powers_of_alpha;
+    let (endo_q_vesta, _endo_r) = endos::<VestaGroup>();
+    hydrated.endo = endo_q_vesta;
+    let pvp_cell = OnceCell::new();
+    let _ = pvp_cell.set(vanishes_on_last_n_rows(hydrated.domain, hydrated.zk_rows));
+    hydrated.permutation_vanishing_polynomial_m = pvp_cell;
+    let w_cell = OnceCell::new();
+    let _ = w_cell.set(zk_w(hydrated.domain, hydrated.zk_rows));
+    hydrated.w = w_cell;
+    Ok(External::new(hydrated))
+}
+
+// Following the `pallas_create_proof`/`vesta_create_proof` naming: the
+// `pallas_proof_*` functions operate on Pallas-protocol (Fp scalar field,
+// Vesta-curve commitments → `VestaProofExternal`); the `vesta_proof_*`
+// functions operate on Vesta-protocol (Fq, Pallas-curve commitments →
+// `PallasProofExternal`).
+
+#[napi]
+pub fn pallas_proof_to_serde_json(proof: &VestaProofExternal) -> Result<String> {
+    serde_json::to_string(&**proof)
+        .map_err(|e| Error::from_reason(format!("pallas_proof_to_serde_json: {}", e)))
+}
+
+#[napi]
+pub fn pallas_proof_from_serde_json(json: String) -> Result<VestaProofExternal> {
+    let proof: ProverProof<VestaGroup, OpeningProof<VestaGroup>> = serde_json::from_str(&json)
+        .map_err(|e| Error::from_reason(format!("pallas_proof_from_serde_json: {}", e)))?;
+    Ok(External::new(proof))
+}
+
+#[napi]
+pub fn vesta_proof_to_serde_json(proof: &PallasProofExternal) -> Result<String> {
+    serde_json::to_string(&**proof)
+        .map_err(|e| Error::from_reason(format!("vesta_proof_to_serde_json: {}", e)))
+}
+
+#[napi]
+pub fn vesta_proof_from_serde_json(json: String) -> Result<PallasProofExternal> {
+    let proof: ProverProof<PallasGroup, OpeningProof<PallasGroup>> = serde_json::from_str(&json)
+        .map_err(|e| Error::from_reason(format!("vesta_proof_from_serde_json: {}", e)))?;
+    Ok(External::new(proof))
+}
+
 #[napi]
 pub fn pallas_prover_index_verify(
     prover_index: &PallasProverIndexExternal,
@@ -3731,3 +3966,4 @@ pub fn vesta_make_wire_proof(
 
     Ok(External::new(proof))
 }
+

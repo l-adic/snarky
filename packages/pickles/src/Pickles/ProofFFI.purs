@@ -78,6 +78,7 @@ module Pickles.ProofFFI
   , pallasChallengePolyCommitment
   , vestaChallengePolyCommitment
   , vestaMakeWireProof
+  , Dehydrated(..)
   , ProofCommitments
   , Proof
   , OraclesResult
@@ -304,6 +305,14 @@ foreign import vestaMakeWireProof
      , ftEval1 :: Pallas.ScalarField
      }
   -> Proof Pallas.G Vesta.BaseField
+
+-- | Tag marking a freshly-deserialized kimchi value (currently used only
+-- | for `VerifierIndex` — see `Pickles.Sideload.FFI`) whose runtime
+-- | needs further setup before use. Same runtime rep as the underlying
+-- | value; the wrapper exists only as a type-level forcing function so
+-- | callers must go through the matching `*HydrateX` step before passing
+-- | the value to verify.
+newtype Dehydrated a = Dehydrated a
 
 foreign import pallasProofBulletproofChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Array Pallas.BaseField
 foreign import vestaProofBulletproofChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Array Vesta.BaseField

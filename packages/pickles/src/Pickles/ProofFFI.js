@@ -509,7 +509,9 @@ export const pallasProofCommitments = (proof) => {
 
 // Construct a Pallas-committed kimchi proof from flat component data.
 // PureScript-side uses `vestaMakeWireProof` in ProofFFI.purs — see that
-// binding for the full field layout.
+// binding for the full field layout. Returns a *dehydrated* proof
+// (prev_challenges = []); callers must call `vestaHydrateWireProof`
+// before verify.
 export const vestaMakeWireProof = (components) =>
   crypto.vestaMakeWireProof(
     components.wComm,
@@ -523,3 +525,4 @@ export const vestaMakeWireProof = (components) =>
     components.evals,
     components.ftEval1
   );
+
