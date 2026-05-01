@@ -12,7 +12,8 @@
 -- | reuses it to build a real NRR `CompiledProof` and feed
 -- | `compiledProof.wrapDv` / `wrapDvInput` to its self-consistency check.
 module Test.Pickles.Prove.NoRecursionReturn
-  ( nrrRule
+  ( NrrRules
+  , nrrRule
   , spec
   ) where
 
@@ -70,32 +71,14 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 0
     -- (NRR rule's mpv); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 0 + 1 + 0 = 1.
-    nrrEntry <- liftEffect $ mkRuleEntry
-      @PrevsSpecNil
-      @0 -- mpv (rule's own)
-      @0 -- mpvMax (single rule, = mpv)
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @1 -- outputSize
-      @Unit
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @Unit
-      @Unit
-      @Unit
-      nrrRule
-      unit
+    nrrEntry <- liftEffect $ mkRuleEntry @0 @(F StepField) @Unit nrrRule unit
 
     let rules = tuple1 nrrEntry
 
     output <- liftEffect $ compileMulti
       @NrrRules
-      @Unit
       @(F StepField)
       @Unit
-      @0
       @NoSlots
       { srs: { vestaSrs, pallasSrs }
       , debug: false

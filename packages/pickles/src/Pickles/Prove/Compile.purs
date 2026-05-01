@@ -2327,8 +2327,9 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
 -- | body invokes the captured rule against `stepCompile` /
 -- | `stepSolveAndProve`.
 mkRuleEntry
-  :: forall @prevsSpec @mpv @mpvMax @mpvPad @nd ndPred @outputSize @valCarrier
-       @inputVal @inputVar @outputVal @outputVar @prevInputVal @prevInputVar @slotVKs
+  :: forall @mpvMax @outputVal @prevInputVal
+       prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
+       inputVal inputVar outputVar prevInputVar slotVKs
        carrier carrierVar pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => Reflectable mpv Int
@@ -2929,7 +2930,8 @@ runMultiProverBody
     }
 
 compileMulti
-  :: forall @rs @inputVal @outputVal @prevInputVal @mpvMax @slots
+  :: forall @rs @outputVal @prevInputVal @slots
+       inputVal mpvMax
        branches
        rulesCarrier
        stepCompileFnsCarrier

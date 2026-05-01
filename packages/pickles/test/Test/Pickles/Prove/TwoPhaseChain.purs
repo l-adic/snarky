@@ -132,24 +132,7 @@ incrementRule self = do
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
   :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
-mkMakeZeroEntry =
-  mkRuleEntry
-    @PrevsSpecNil
-    @0 -- mpv (rule's own)
-    @1 -- mpvMax (TwoPhaseChain wrap circuit's mpvMax)
-    @1 -- mpvPad = mpvMax - mpv = 1
-    @2 -- nd = topBranches (TwoPhaseChain has 2 branches: makeZero, increment)
-    @34 -- outputSize = mpvMax*32 + 1 + mpvMax = 1*32+1+1
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    makeZeroRule
-    unit
+mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
 -- | valCarrier carrying the prev's `StatementIO`.
@@ -170,24 +153,7 @@ mkIncrementEntry
            34
            (Tuple1 SlotWrapKey)
        )
-mkIncrementEntry =
-  mkRuleEntry
-    @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-    @1 -- mpv
-    @1 -- mpvMax (= mpv, identity)
-    @0 -- mpvPad = 0
-    @2 -- nd = topBranches (TwoPhaseChain has 2 branches)
-    @34
-    @(Tuple1 (StatementIO (F StepField) Unit))
-    @(F StepField)
-    @(FVar StepField)
-    @Unit
-    @Unit
-    @(F StepField)
-    @(FVar StepField)
-    @(Tuple1 SlotWrapKey)
-    incrementRule
-    (tuple1 Self)
+mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
 
 -- | The full rules carrier `compileMulti` receives — a Tuple chain
 -- | of `RuleEntry`s (one per branch, heterogeneously typed).
@@ -257,10 +223,8 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     rules <- liftEffect mkRulesCarrier
     output <- liftEffect $ compileMulti
       @TwoPhaseChainRules
-      @(F StepField)
       @Unit
       @(F StepField)
-      @1
       @(Product (Vector 1) NoSlots)
       cfg
       rules

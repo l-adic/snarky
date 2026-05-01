@@ -102,32 +102,14 @@ spec = describe "Pickles.Prove.SimpleChain" do
     -- Build the 1-tuple rules carrier for compileMulti. mpvMax = 1
     -- (one prev slot); since this is the only branch, nd = 1.
     -- outputSize = mpvMax*32 + 1 + mpvMax = 32 + 1 + 1 = 34.
-    chainEntry <- liftEffect $ mkRuleEntry
-      @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-      @1 -- mpv
-      @1 -- mpvMax
-      @0 -- mpvPad
-      @1 -- nd = topBranches (single branch)
-      @34 -- outputSize
-      @(Tuple1 (StatementIO (F StepField) Unit))
-      @(F StepField)
-      @(FVar StepField)
-      @Unit
-      @Unit
-      @(F StepField)
-      @(FVar StepField)
-      @(Tuple1 SlotWrapKey)
-      simpleChainRule
-      (tuple1 Self)
+    chainEntry <- liftEffect $ mkRuleEntry @1 @Unit @(F StepField) simpleChainRule (tuple1 Self)
 
     let rules = tuple1 chainEntry
 
     output <- liftEffect $ compileMulti
       @SimpleChainRules
-      @(F StepField)
       @Unit
       @(F StepField)
-      @1
       @(Slots1 1)
       { srs: { vestaSrs, pallasSrs }
       , debug: false
