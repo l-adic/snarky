@@ -152,7 +152,8 @@ import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Main as PStepMain
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, mkUnitVkCarrier)
-import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
+import Pickles.Sideload.VerificationKey (Checked(..))
+import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
 import Pickles.Types
   ( PaddedLength
@@ -1614,6 +1615,14 @@ instance
       slotMpvMax = reflectType (Proxy @mpvMax)
       _ /\ restSlotVKs = cfg.perSlotImportedVKs
 
+      -- Decode `actualWrapDomainSize` from the `Checked` shape's
+      -- length-3 one-hot bool vector. Lives in the `circuit` part of
+      -- the bundle (alongside `wrapIndex`); the runtime `wrapVk` is
+      -- the sibling field.
+      headCheckedRec = case headVk.circuit of Checked r -> r
+      headActualWrapDomainSize =
+        Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
+
       slotParams =
         { slotWrapVK: case headVk.wrapVk of
             Just kvk -> kvk
@@ -1625,7 +1634,7 @@ instance
                 \before passing to a side-loaded prover."
         , slotWrapDomainLog2:
             Dummy.wrapDomainLog2ForProofsVerified
-              (fromEnum headVk.actualWrapDomainSize)
+              (fromEnum headActualWrapDomainSize)
         , slotStepDomainLog2:
             -- Side-loaded VKs carry no step domain — that's a
             -- deliberate part of the side-loaded protocol (the step
@@ -1880,6 +1889,12 @@ instance
       restCfg = cfg { perSlotImportedVKs = restSlotVKs }
       slotMpvMax = reflectType (Proxy @mpvMax)
 
+      -- Decode actualWrapDomainSize from the bundle's `circuit` part
+      -- (a `Checked`); the runtime `wrapVk` is the sibling field.
+      headCheckedRec = case headVk.circuit of Checked r -> r
+      headActualWrapDomainSize =
+        Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
+
       slotWrapVK = case headVk.wrapVk of
         Just kvk -> kvk
         Nothing ->
@@ -1892,7 +1907,7 @@ instance
       slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 =
         Dummy.wrapDomainLog2ForProofsVerified
-          (fromEnum headVk.actualWrapDomainSize)
+          (fromEnum headActualWrapDomainSize)
 
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotMpvMax }
       dummySgs = Dummy.computeDummySgValues bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
