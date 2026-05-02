@@ -30,15 +30,25 @@ module Pickles.Sideload.Advice
   , getSideloadedVKsCarrier
   , class MkUnitVkCarrier
   , mkUnitVkCarrier
+  , class TraverseSideloadedVKsCarrier
+  , traverseSideloadedVKsCarrier
   ) where
 
 import Prelude
 
+import Data.Maybe (Maybe(..))
 import Data.Tuple.Nested (type (/\), (/\))
+import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Pickles.Sideload.VerificationKey (VerificationKey)
+import Pickles.Sideload.VerificationKey (VerificationKey, VerificationKeyVar)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Types (StepField)
+import Prim.Int (class Add)
+import Snarky.Circuit.DSL (Snarky, exists)
+import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM)
+import Snarky.Constraint.Kimchi (KimchiConstraint)
 
 --------------------------------------------------------------------------------
 -- SideloadedVKsCarrier — derive the per-slot VK carrier from the spec
@@ -129,3 +139,76 @@ instance MkUnitVkCarrier Unit where
 
 instance MkUnitVkCarrier rest => MkUnitVkCarrier (Unit /\ rest) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier
+
+--------------------------------------------------------------------------------
+-- TraverseSideloadedVKsCarrier — walk the carrier in lockstep with the spec
+-- and allocate per-slot side-loaded VK vars
+--
+-- Walks a `SideloadedVKsCarrier`-shaped value (each `PrevsSpecCons`
+-- slot is `Unit`, each `PrevsSpecSideLoadedCons` slot is a
+-- `VerificationKey` bundle), emitting a parallel `Vector len (Maybe
+-- (VerificationKeyVar StepField))`:
+--
+--   * Compiled slot (`PrevsSpecCons`) → `Nothing` (its wrap VK comes
+--     from the shared `Req.Wrap_index` allocation, not a per-slot
+--     exists).
+--   * Side-loaded slot (`PrevsSpecSideLoadedCons`) → `Just var`,
+--     where `var :: VerificationKeyVar StepField` is allocated by
+--     `exists` against the bundle's `circuit` (a `Checked Boolean
+--     …`). The existing `CircuitType (Checked b pt) (Checked bvar
+--     ptvar)` instance handles the per-bit boolean check and
+--     on-curve check on each wrap_index commitment.
+--
+-- The instance head's spec drives the dispatch; `len` is the prev
+-- count (matching `PrevsCarrier`'s `len` fundep).
+--------------------------------------------------------------------------------
+
+class TraverseSideloadedVKsCarrier
+  :: Type -> Int -> Type -> Constraint
+class TraverseSideloadedVKsCarrier spec len carrier
+  | spec -> len carrier
+  where
+  traverseSideloadedVKsCarrier
+    :: forall t m
+     . CircuitM StepField (KimchiConstraint StepField) t m
+    => CheckedType StepField (KimchiConstraint StepField) (VerificationKeyVar StepField)
+    => carrier
+    -> Snarky (KimchiConstraint StepField) t m
+         (Vector len (Maybe (VerificationKeyVar StepField)))
+
+instance TraverseSideloadedVKsCarrier PrevsSpecNil 0 Unit where
+  traverseSideloadedVKsCarrier _ = pure Vector.nil
+
+instance
+  ( TraverseSideloadedVKsCarrier rest restLen restCarrier
+  , Add restLen 1 len
+  ) =>
+  TraverseSideloadedVKsCarrier
+    (PrevsSpecCons n statement rest)
+    len
+    (Unit /\ restCarrier)
+  where
+  traverseSideloadedVKsCarrier (_ /\ rest) = do
+    restVks <- traverseSideloadedVKsCarrier @rest rest
+    pure (Vector.cons Nothing restVks)
+
+instance
+  ( TraverseSideloadedVKsCarrier rest restLen restCarrier
+  , Add restLen 1 len
+  ) =>
+  TraverseSideloadedVKsCarrier
+    (PrevsSpecSideLoadedCons mpvMax statement rest)
+    len
+    (VerificationKey /\ restCarrier)
+  where
+  traverseSideloadedVKsCarrier (headVk /\ rest) = do
+    -- `exists` against the bundle's `circuit` field — a `Checked
+    -- Boolean (WeierstrassAffinePoint Pallas.G (F StepField))` —
+    -- allocates a `VerificationKeyVar StepField` (= `Checked
+    -- (BoolVar StepField) (WeierstrassAffinePoint Pallas.G (FVar
+    -- StepField))`). The bundle's `wrapVk` field is irrelevant here
+    -- and stays in the runtime advice for `mkStepAdvice` /
+    -- `shapeProveData` consumption.
+    headVar <- exists (pure headVk.circuit)
+    restVks <- traverseSideloadedVKsCarrier @rest rest
+    pure (Vector.cons (Just headVar) restVks)

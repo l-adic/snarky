@@ -924,14 +924,18 @@ stepMain
               ConstVk constVk ->
                 let VerificationKey r = liftConstVk constVk in r
               SharedExistsVk -> sharedVkRec
-              -- TODO (Step 2d-β1.5): allocate a per-slot
-              -- exists-VK against `verificationKeyTyp`, sourced from
-              -- the side-loaded advice carrier. For now, fall back
-              -- on the shared VK so the dispatch type-checks; rules
-              -- that hit this path produce circuits that bind the
-              -- side-loaded slot to the rule's own wrap VK (which
-              -- is the wrong VK), so any side-loaded prove is
-              -- guaranteed to fail. Visible TODO marker.
+              -- TODO (Step 2d-β1.5 follow-up): allocate a per-slot
+              -- exists-VK against `verificationKeyTyp`, sourced via
+              -- `getSideloadedVKsCarrier` advice +
+              -- `traverseSideloadedVKsCarrier`. Wiring it requires
+              -- threading `SideloadedVKsM` + `TraverseSideloadedVKsCarrier`
+              -- + `MonadTrans t` constraints through stepMain and all
+              -- callers (preComputeStepDomainLog2, runMultiProverBody,
+              -- every CompilableSpec instance). Deferred to keep this
+              -- commit's scope manageable. Currently falls back on
+              -- `sharedVkRec` — wrong VK for side-loaded slots, but
+              -- type-checks; rules using SideloadedExistsVk produce
+              -- circuits that fail to verify side-loaded proofs.
               SideloadedExistsVk -> sharedVkRec
 
             slotVk =
