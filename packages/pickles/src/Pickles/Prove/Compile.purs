@@ -1504,12 +1504,92 @@ instance
     )
     (Sideload.VerificationKey /\ restVkCarrier)
   where
-  shapeCompileData _ _ =
-    unsafeCrashWith
-      "Pickles.Prove.Compile: side-loaded slot routing not yet \
-      \implemented (shapeCompileData). See Pickles.Sideload roadmap \
-      \for the wrap-domain one-hot multiplex + step-domain Pseudo \
-      \dispatch + per-slot exists-allocated VK changes required."
+  -- PLACEHOLDER body: structural mirror of the `PrevsSpecCons`
+  -- `shapeCompileData`, but the slot's compile-time choices for
+  -- wrap-domain / step-domain / lagrange basis are SUBSTITUTES for
+  -- the proper side-loaded routing:
+  --
+  --   * `slotWrapDomainLog2` → `mpvMax`-domain (the upper bound).
+  --     Real side-loaded routing needs in-circuit one-hot multiplexed
+  --     selection across {N0, N1, N2} based on the runtime VK's
+  --     `actual_wrap_domain_size` bits.
+  --   * `slotFopDomainLog2s` → outer rule's `selfStepDomainLog2s`.
+  --     Real routing needs Pseudo step-domain dispatch (OCaml
+  --     `step_domains = `Side_loaded`).
+  --   * `headKnownWrapKey = Nothing` → uses the shared
+  --     `Req.Wrap_index` exists-allocated VK. Real routing needs a
+  --     per-slot exists-allocated VK against `verificationKeyTyp`,
+  --     bound to that slot's runtime VK at `~compute` time.
+  --
+  -- These placeholders unblock the type-level path through
+  -- `compile`; rules that hit `mkStepAdvice` / `shapeProveData`
+  -- still crash with explicit messages from their own (placeholder
+  -- step-domain) sites. The follow-up that actually changes the
+  -- step verifier circuit (`Pickles.Step.Main`'s `slotVkRec`
+  -- dispatch + per-slot lagrange resolution) is Step 2d-β.
+  shapeCompileData cfg selfStepDomainLog2s =
+    let
+      _ /\ restSlotVKs = cfg.perSlotImportedVKs
+      restCfg = cfg { perSlotImportedVKs = restSlotVKs }
+      restShape = shapeCompileData @rest restCfg selfStepDomainLog2s
+      outerMpv = reflectType (Proxy @mpv)
+      slotMpvMax = reflectType (Proxy @mpvMax)
+      outerWrapDomainLog2 = case cfg.wrapDomainOverride of
+        Just o -> o
+        Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
+
+      -- PLACEHOLDER: side-loaded VK's actual wrap domain depends on
+      -- runtime `actual_wrap_domain_size`; here we hard-code the
+      -- side-loaded tag's compile-time upper bound. Lagrange tables
+      -- below are computed against this. Wrong for VKs at smaller
+      -- wrap domains; real fix is in-circuit one-hot mux.
+      slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
+
+      -- PLACEHOLDER: side-loaded `step_domains = `Side_loaded`. Real
+      -- routing dispatches via Pseudo on the prev's step domain.
+      slotFopDomainLog2s = selfStepDomainLog2s
+
+      slotLagrange =
+        mkConstLagrangeBaseLookup \i ->
+          (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
+            :: AffinePoint (F StepField)
+
+      outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
+      outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
+
+      -- PLACEHOLDER: side-loaded slots need a per-slot
+      -- exists-allocated VK (bound at the rule body via
+      -- `exists @VerificationKeyVar ~compute:(\_ -> toChecked vk)`).
+      -- The current `Just/Nothing` semantics in
+      -- `Pickles.Step.Main`'s `slotVkRec` only model
+      -- compile-time-baked vs shared-exists. Until that gains a
+      -- third state, side-loaded slots fall back to `Nothing`
+      -- (= shared `Req.Wrap_index`) — which is wrong but
+      -- type-checks.
+      headKnownWrapKey = Nothing
+    in
+      { stepProveCtx:
+          { srsData:
+              { perSlotLagrangeAt:
+                  slotLagrange :< restShape.stepProveCtx.srsData.perSlotLagrangeAt
+              , blindingH:
+                  (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
+                    :: AffinePoint (F StepField)
+              , perSlotFopDomainLog2s:
+                  slotFopDomainLog2s
+                    :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
+              , perSlotKnownWrapKeys:
+                  headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
+              , dummyUnfp: \_ ->
+                  PStepMain.liftDummyPerProofUnfinalized
+                    (mkDummyPerProofUnfinalized outerBcd)
+              }
+          , dummySg: outerDummySgs.ipa.wrap.sg
+          , crs: cfg.srs.vestaSrs
+          , debug: cfg.debug
+          }
+      , wrapDomainLog2: outerWrapDomainLog2
+      }
 
   -- Structural copy of the `PrevsSpecCons` `mkStepAdvice` body with
   -- three substitutions:
