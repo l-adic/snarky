@@ -42,6 +42,7 @@
 module Pickles.Step.Prevs
   ( PrevsSpecNil
   , PrevsSpecCons
+  , PrevsSpecSideLoadedCons
   , StepSlot(..)
   , class PrevsCarrier
   , class PrevValuesCarrier
@@ -91,6 +92,30 @@ data PrevsSpecNil
 -- |                        (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)`
 data PrevsSpecCons :: Int -> Type -> Type -> Type
 data PrevsSpecCons n statement rest
+
+-- | Cons a side-loaded prev slot. `mpvMax` is the COMPILE-TIME upper
+-- | bound on the side-loaded tag's `max_proofs_verified` (declared at
+-- | `Side_loaded.create ~max_proofs_verified:N2` in OCaml — typically
+-- | `2` for full-width Pickles). The actual mpv at prove time is read
+-- | from the side-loaded VK's one-hot bits and may be `0`, `1`, or
+-- | `mpvMax`; the verifier circuit is sized for `mpvMax` and masks out
+-- | the unused slots.
+-- |
+-- | Structurally analogous to `PrevsSpecCons` (same `statement` axis,
+-- | same `StepSlot mpvMax …` per-proof witness shape under the
+-- | corresponding `PrevsCarrier` instance) — only the routing
+-- | differs: side-loaded slots' `wrap_key` and `actual_wrap_domain`
+-- | come from a runtime `Pickles.Sideload.VerificationKey` rather than
+-- | from compile-time-baked data. Mirrors OCaml's `tag.kind =
+-- | Side_loaded` branch in `step_main.ml:520-525`.
+-- |
+-- | Concrete example (the `dump_side_loaded_main` test from OCaml):
+-- |   `prevs = [ side_loaded_tag ]` with `mpvMax = 2`, child statement
+-- |   `Field.t = StatementIO (F StepField) Unit`, →
+-- |   `PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit)
+-- |     PrevsSpecNil`.
+data PrevsSpecSideLoadedCons :: Int -> Type -> Type -> Type
+data PrevsSpecSideLoadedCons mpvMax statement rest
 
 --------------------------------------------------------------------------------
 -- Per-slot payload
@@ -220,6 +245,37 @@ instance
     -- to each of `rest`'s per-slot Ns.
     dummyPPW /\ replicatePrevsCarrier @rest dummyPPW
 
+-- | Side-loaded slot has the SAME per-proof-witness shape as a compiled
+-- | slot of the same width — only the routing of `wrap_key` /
+-- | `actual_wrap_domain` differs (the runtime side-loaded VK supplies
+-- | them; that plumbing lives outside this carrier). The slot's
+-- | `StepSlot mpvMax …` is sized at the side-loaded tag's compile-time
+-- | upper bound; the runtime mpv ≤ mpvMax masks out unused slots.
+instance
+  ( PrevsCarrier rest ds dw f sf b restLen rcarrier
+  , Add restLen 1 len
+  , Reflectable mpvMax Int
+  , Add pad mpvMax PaddedLength
+  , Reflectable pad Int
+  ) =>
+  PrevsCarrier
+    (PrevsSpecSideLoadedCons mpvMax statement rest)
+    ds
+    dw
+    f
+    sf
+    b
+    len
+    (StepSlot mpvMax ds dw f sf b /\ rcarrier)
+  where
+  traversePrevsA f (here /\ rest) =
+    Vector.cons
+      <$> f (finZero :: Finite len) here
+      <*> traversePrevsA @rest (\i' pw -> f (shiftSucc i') pw) rest
+
+  replicatePrevsCarrier dummyPPW =
+    dummyPPW /\ replicatePrevsCarrier @rest dummyPPW
+
 --------------------------------------------------------------------------------
 -- CircuitType / CheckedType instances for StepSlot
 --
@@ -302,4 +358,13 @@ instance
   PrevValuesCarrier rest restValCarrier =>
   PrevValuesCarrier
     (PrevsSpecCons n statement rest)
+    (statement /\ restValCarrier)
+
+-- | Side-loaded slots carry a prev statement just like compiled
+-- | slots; the side-loaded specifics live in the parallel
+-- | `SideloadedVKsCarrier` (Pickles.Sideload.Advice), not here.
+instance
+  PrevValuesCarrier rest restValCarrier =>
+  PrevValuesCarrier
+    (PrevsSpecSideLoadedCons mpvMax statement rest)
     (statement /\ restValCarrier)
