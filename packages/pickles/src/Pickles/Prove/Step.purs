@@ -95,6 +95,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class TraverseSideloadedVKsCarrier, mkUnitVkCarrier)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
@@ -1884,9 +1885,11 @@ instance
 -- | haven't introduced yet.
 stepCompile
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
+  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  => MkUnitVkCarrier sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1949,6 +1952,10 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
+            -- Compile-time placeholder for the side-loaded VK
+            -- carrier (Step 2d-β1.5b). `mkUnitVkCarrier` resolves
+            -- for compiled-only specs (carrier = all-Unit chain).
+            (mkUnitVkCarrier :: sideloadedVkCarrier)
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2012,9 +2019,14 @@ stepCompile ctx rule = do
 -- | `range_check` / `xor` / `lookup` / `runtime_tables` gates.
 preComputeStepDomainLog2
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
+  -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
+  -- runs at compile time; the caller synthesizes a placeholder
+  -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
+  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  => MkUnitVkCarrier sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2077,6 +2089,10 @@ preComputeStepDomainLog2 ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
+            -- Compile-time placeholder for the side-loaded VK
+            -- carrier (Step 2d-β1.5b). `mkUnitVkCarrier` resolves
+            -- for compiled-only specs (carrier = all-Unit chain).
+            (mkUnitVkCarrier :: sideloadedVkCarrier)
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2105,9 +2121,11 @@ preComputeStepDomainLog2 ctx rule = do
 -- | unsatisfied failures are reported as `FailedAssertion`.
 stepSolveAndProve
   :: forall @prevsSpec @outputSize @valCarrier @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @mpvMax @mpvPad @nd ndPred len carrier carrierVar
+       @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
+  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  => MkUnitVkCarrier sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2185,6 +2203,13 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
+              -- Side-loaded VK carrier (Step 2d-β1.5b). For the
+              -- prove-time path this would source from
+              -- `getSideloadedVKsCarrier` advice; for now we
+              -- synthesise via `mkUnitVkCarrier` (compiled-only
+              -- specs only — sourcing real side-loaded VKs from
+              -- the prover monad here is a separate task).
+              (mkUnitVkCarrier :: sideloadedVkCarrier)
         )
 
   -- `runStepProverT` returns the solver result paired with the

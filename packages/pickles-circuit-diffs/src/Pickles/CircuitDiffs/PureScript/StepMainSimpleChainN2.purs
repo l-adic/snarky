@@ -15,6 +15,7 @@ import Prelude
 
 import Control.Monad.Trans.Class (lift)
 import Data.Tuple (Tuple)
+import Data.Tuple.Nested ((/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -111,5 +112,8 @@ compileStepMainSimpleChainN2 params =
         , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
         }
         dummyWrapSg
+        -- Side-loaded VK carrier (Step 2d-β1.5b): two Cons slots,
+        -- both compiled; carrier = `Unit /\ Unit /\ Unit`.
+        (unit /\ unit /\ unit)
     )
     Kimchi.initialState

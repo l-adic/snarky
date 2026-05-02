@@ -95,5 +95,8 @@ compileStepMainAddOneReturn params =
         , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
         }
         dummyWrapSg
+        -- Side-loaded VK carrier (Step 2d-β1.5b): no side-loaded
+        -- slots in PrevsSpecNil, so the carrier is `Unit`.
+        unit
     )
     Kimchi.initialState

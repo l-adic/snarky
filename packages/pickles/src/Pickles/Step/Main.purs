@@ -35,16 +35,18 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (fromJust)
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
 import Pickles.Sponge (initialSpongeCircuit)
+import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
+import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
@@ -690,10 +692,18 @@ unfFields unf =
 stepMain
   :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
        @valCarrier @mpvMax @mpvPad @nd ndPred
-       len carrier carrierVar
+       len carrier carrierVar sideloadedVkCarrier
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
+  -- Spec-indexed walk that allocates a per-side-loaded-slot
+  -- `VerificationKeyVar StepField` via `exists` against each
+  -- bundle's `circuit` (a `Checked Boolean ...`). Compiled slots
+  -- contribute `Nothing`. Caller decides where the carrier value
+  -- comes from — for compiled-only specs the carrier is an
+  -- all-Unit chain (`mkUnitVkCarrier` synthesizes one); for specs
+  -- with side-loaded slots the caller sources from advice.
+  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -731,6 +741,7 @@ stepMain
   => (input -> Snarky (KimchiConstraint StepField) t m (RuleOutput len prevInput output))
   -> StepMainSrsData len nd
   -> AffinePoint StepField
+  -> sideloadedVkCarrier
   -> Snarky (KimchiConstraint StepField) t m (Vector outputSize (FVar StepField))
 stepMain
   rule
@@ -740,7 +751,8 @@ stepMain
   , perSlotVkSources
   , dummyUnfp
   }
-  dummySg = do
+  dummySg
+  sideloadedVkCarrier = do
   -- 1. exists: public input via Req.App_state.
   let
     requestInput :: m inputVal
@@ -791,6 +803,26 @@ stepMain
       , coeff: sharedVkRec.coeff
       , index: sharedVkRec.index
       }
+
+  -- 3b. exists: per-slot side-loaded VKs.
+  --    Walks the spec-indexed `sideloadedVkCarrier` (a chain of
+  --    `Unit /\ ... /\ VerificationKey /\ ...`); for each
+  --    `PrevsSpecSideLoadedCons` slot, allocates a
+  --    `VerificationKeyVar StepField` via `exists` against the
+  --    bundle's `circuit` field (`Checked Boolean ...`). Compiled
+  --    slots contribute `Nothing`. Result is a parallel
+  --    `Vector len (Maybe (VerificationKeyVar StepField))` aligned
+  --    slot-by-slot with `perSlotVkSources`.
+  --
+  --    Mirrors OCaml `dump_side_loaded_main.ml:142-156`:
+  --      let vk = exists Side_loaded.Verification_key.typ ~compute:...
+  --      Side_loaded.in_circuit side_loaded_tag vk
+  --
+  --    For compiled-only rules (no `PrevsSpecSideLoadedCons` in
+  --    the spec) the carrier is the all-Unit chain and the
+  --    traversal contributes no constraints.
+  perSlotSideloadedVks <- label "exists_sideloaded_vks"
+    $ traverseSideloadedVKsCarrier @prevsSpec sideloadedVkCarrier
 
   -- 4. exists: per-slot carrier via Req.Proof_with_datas — the v2
   --    spec-indexed variant. Each slot of the carrier holds a
@@ -924,19 +956,28 @@ stepMain
               ConstVk constVk ->
                 let VerificationKey r = liftConstVk constVk in r
               SharedExistsVk -> sharedVkRec
-              -- TODO (Step 2d-β1.5 follow-up): allocate a per-slot
-              -- exists-VK against `verificationKeyTyp`, sourced via
-              -- `getSideloadedVKsCarrier` advice +
-              -- `traverseSideloadedVKsCarrier`. Wiring it requires
-              -- threading `SideloadedVKsM` + `TraverseSideloadedVKsCarrier`
-              -- + `MonadTrans t` constraints through stepMain and all
-              -- callers (preComputeStepDomainLog2, runMultiProverBody,
-              -- every CompilableSpec instance). Deferred to keep this
-              -- commit's scope manageable. Currently falls back on
-              -- `sharedVkRec` — wrong VK for side-loaded slots, but
-              -- type-checks; rules using SideloadedExistsVk produce
-              -- circuits that fail to verify side-loaded proofs.
-              SideloadedExistsVk -> sharedVkRec
+              -- Side-loaded: read the per-slot exists-allocated VK
+              -- from `perSlotSideloadedVks` (built above by
+              -- `traverseSideloadedVKsCarrier`). Each `Just (Checked
+              -- sl)` contains the slot's `wrapIndex ::
+              -- PT.VerificationKey ptvar` — the same shape as
+              -- `sharedVkRec` and `liftConstVk constVk`'s output. A
+              -- `Nothing` would indicate a spec/dispatch mismatch
+              -- (the spec's `PrevsSpecSideLoadedCons` slot got
+              -- routed to `SideloadedExistsVk` here, but the
+              -- traversal class produced `Nothing` at this position
+              -- — should be impossible by construction).
+              SideloadedExistsVk ->
+                case perSlotSideloadedVks !! i of
+                  Just (Checked sl) ->
+                    let VerificationKey r = sl.wrapIndex in r
+                  Nothing ->
+                    unsafeCrashWith
+                      "Pickles.Step.Main: SideloadedExistsVk slot has \
+                      \no per-slot allocated VK — \
+                      \traverseSideloadedVKsCarrier should have \
+                      \produced a Just for every PrevsSpecSideLoadedCons \
+                      \position. Spec/dispatch mismatch."
 
             slotVk =
               { sigma: Vector.take @6 slotVkRec.sigma
