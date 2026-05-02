@@ -148,6 +148,7 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
+import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Main as PStepMain
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, mkUnitVkCarrier)
@@ -632,7 +633,7 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
                   (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
                     :: AffinePoint (F StepField)
               , perSlotFopDomainLog2s: Vector.nil
-              , perSlotKnownWrapKeys: Vector.nil
+              , perSlotVkSources: Vector.nil
               -- mpvMax-padding dummy. Wrapped in a `Unit ->` thunk
               -- so the (Rust-FFI-using) `computeDummySgValues` call
               -- inside `mkDummyMsgWrapHash` only fires when
@@ -799,14 +800,16 @@ instance
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
-      -- Self → Nothing (wrap VK comes from advice via Req.Wrap_index
-      -- at prove time). External → Just (extracted external VK
-      -- commitments). Mirrors OCaml step_main.ml:514-528 dispatch on
+      -- Self → SharedExistsVk (wrap VK comes from advice via
+      -- `Req.Wrap_index` at prove time). External → ConstVk
+      -- (extracted external VK commitments inlined as compile-time
+      -- constants). Mirrors OCaml step_main.ml:514-528 dispatch on
       -- Type_equal.Id.same_witness self.id tag.id.
-      headKnownWrapKey =
+      headSlotVkSource =
         case headSlotWrapKey of
-          Self -> Nothing
-          External vks -> Just (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
+          Self -> SharedExistsVk
+          External vks ->
+            ConstVk (extractWrapVKCommsAdvice vks.wrapCompileResult.verifierIndex)
     in
       { stepProveCtx:
           { srsData:
@@ -818,8 +821,8 @@ instance
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotKnownWrapKeys:
-                  headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
+              , perSlotVkSources:
+                  headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
               -- mpvMax-padding dummy (thunk; see Nil instance for
               -- rationale).
               , dummyUnfp: \_ ->
@@ -1557,16 +1560,12 @@ instance
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
-      -- PLACEHOLDER: side-loaded slots need a per-slot
-      -- exists-allocated VK (bound at the rule body via
-      -- `exists @VerificationKeyVar ~compute:(\_ -> toChecked vk)`).
-      -- The current `Just/Nothing` semantics in
-      -- `Pickles.Step.Main`'s `slotVkRec` only model
-      -- compile-time-baked vs shared-exists. Until that gains a
-      -- third state, side-loaded slots fall back to `Nothing`
-      -- (= shared `Req.Wrap_index`) — which is wrong but
-      -- type-checks.
-      headKnownWrapKey = Nothing
+      -- Emit `SideloadedExistsVk` — the marker for the per-slot
+      -- exists-VK path. `Pickles.Step.Main`'s dispatch currently
+      -- routes this through `sharedVkRec` as a fallback (Step 2d-β1
+      -- introduces the marker; Step 2d-β1.5 will allocate the
+      -- per-slot VK against the runtime advice).
+      headSlotVkSource = SideloadedExistsVk
     in
       { stepProveCtx:
           { srsData:
@@ -1578,8 +1577,8 @@ instance
               , perSlotFopDomainLog2s:
                   slotFopDomainLog2s
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
-              , perSlotKnownWrapKeys:
-                  headKnownWrapKey :< restShape.stepProveCtx.srsData.perSlotKnownWrapKeys
+              , perSlotVkSources:
+                  headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
               , dummyUnfp: \_ ->
                   PStepMain.liftDummyPerProofUnfinalized
                     (mkDummyPerProofUnfinalized outerBcd)

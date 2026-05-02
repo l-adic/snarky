@@ -11,8 +11,9 @@
 -- | Reference: mina/src/lib/crypto/pickles/step_main.ml
 -- |            mina/src/lib/crypto/pickles/dump_circuit_impl.ml
 module Pickles.Step.Main
-  ( -- * Rule abstraction
-    RuleOutput
+  ( SlotVkSource(..)
+  -- * Rule abstraction
+  , RuleOutput
   -- * Spec-indexed per-slot carrier step_main
   , StepMainSrsData
   , UnfinalizedProof
@@ -34,7 +35,7 @@ import Data.Array as Array
 import Data.Fin (getFinite)
 import Data.Foldable (foldM)
 import Data.FoldableWithIndex (forWithIndex_)
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (fromJust)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
@@ -101,11 +102,55 @@ type RuleOutput n prevInput output =
   }
 
 -------------------------------------------------------------------------------
+-- | Per-slot wrap VK source — three-way dispatch.
+-- |
+-- | Each prev slot's verifier-circuit wrap-VK comes from one of
+-- | three sources, mirroring OCaml `step_main.ml:513-528`'s dispatch
+-- | on `Type_equal.Id.same_witness self.id tag.id` + `tag.kind`:
+-- |
+-- |   * `ConstVk constVk` — slot's prev is a COMPILED rule whose
+-- |     wrap VK is known at step-compile time. OCaml
+-- |     `of_compiled_with_known_wrap_key` maps `~f:Inner_curve.constant`
+-- |     over the coords; the VK lives as compile-time CONSTANTS in
+-- |     the circuit (no allocation, no on-curve checks, downstream
+-- |     `mul_ const var` short-circuits to `Scale`). Used for
+-- |     External tags.
+-- |
+-- |   * `SharedExistsVk` — slot's prev is SELF. Self's wrap VK
+-- |     doesn't exist at step-compile time (chicken-and-egg with wrap
+-- |     compile), so OCaml uses `dlog_plonk_index`
+-- |     (`step_main.ml:498`) — the SHARED VK allocated ONCE at the
+-- |     top of `step_main` via `Req.Wrap_index`. Every Self slot
+-- |     reuses that single allocation. Used for Self tags.
+-- |
+-- |   * `SideloadedExistsVk` — slot's prev is a side-loaded tag
+-- |     whose wrap VK is supplied at runtime via the
+-- |     `Pickles.Sideload.Advice.SideloadedVKsCarrier`. The in-circuit
+-- |     VK is allocated PER SLOT against `verificationKeyTyp` —
+-- |     distinct from `SharedExistsVk` because each side-loaded slot
+-- |     can have a different VK and because the side-loaded VK
+-- |     carries extra fields (`max_proofs_verified` and
+-- |     `actual_wrap_domain_size` one-hot bits) for the verifier's
+-- |     proofs-verified mask + lagrange-domain mux. Mirrors OCaml
+-- |     `dump_side_loaded_main.ml:142-156`'s
+-- |     `exists Side_loaded.Verification_key.typ ~compute:` +
+-- |     `Side_loaded.in_circuit` flow.
+-- |
+-- |     NOTE: the per-slot exists allocation + binding to the
+-- |     runtime VK is not yet wired (Step 2d-β1.5). This constructor
+-- |     currently routes through `sharedVkRec` as a fallback, with
+-- |     an explicit TODO marker at the dispatch site.
+data SlotVkSource
+  = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
+  | SharedExistsVk
+  | SideloadedExistsVk
+
+-------------------------------------------------------------------------------
 -- | SRS data for step_main
 -------------------------------------------------------------------------------
 
 -- | SRS data that carries per-slot FOP domain-log2 values and
--- | per-slot known wrap verification keys.
+-- | per-slot wrap-VK sources.
 -- |
 -- | In OCaml's `step_main`, `finalize_other_proof` is called per prev
 -- | slot with `~step_domains:d.step_domains` — the PREV'S
@@ -114,36 +159,15 @@ type RuleOutput n prevInput output =
 -- | (Tree_proof_return: slot 0's prev = No_recursion_return @ 2^13;
 -- | slot 1's prev = self @ 2^16) the per-slot values differ.
 -- |
--- | Per-slot wrap VK mirrors OCaml's `~known_wrap_keys:
--- | 'branches Optional_wrap_key.t list`
--- | (= `'branches known option list`, `types_map.ml:188-196`). Each
--- | slot's entry is:
+-- | Per-slot wrap-VK source dispatched via `SlotVkSource` — see its
+-- | doc above for the semantics of each constructor.
 -- |
--- |   * `Just vk`   — slot's prev is a COMPILED rule whose wrap VK is
--- |                   known at step-compile time. OCaml's
--- |                   `Types_map.For_step.of_compiled_with_known_wrap_key`
--- |                   maps `~f:Inner_curve.constant` over the coords, so
--- |                   the VK lives as COMPILE-TIME CONSTANTS in the
--- |                   circuit — no allocation, no on-curve checks,
--- |                   downstream `mul_ const var` short-circuits to
--- |                   `Scale`.
--- |   * `Nothing`   — slot's prev is SELF. Self's wrap VK doesn't exist
--- |                   at step-compile time (chicken-and-egg with wrap
--- |                   compile), so OCaml uses `dlog_plonk_index`
--- |                   (step_main.ml:498) — the SHARED VK allocated via
--- |                   `exists` at the top of `step_main`. We mirror
--- |                   that: one shared exists-allocation, reused by
--- |                   every `Nothing` slot.
--- |
--- | Reference: step_main.ml:513-528 (the per-slot match on
--- | `self.id ?= tag.id` that dispatches to
--- | `of_compiled_with_known_wrap_key` or `self_data`).
--- |
--- | Shapes for the 4 circuit-diff fixtures:
--- |   * Simple_chain N1  : `[Nothing]`
--- |   * Simple_chain N2  : `[Nothing, Nothing]`
+-- | Shapes for the test fixtures:
+-- |   * Simple_chain N1  : `[SharedExistsVk]`
+-- |   * Simple_chain N2  : `[SharedExistsVk, SharedExistsVk]`
 -- |   * Add_one_return   : `[]` (N=0, no slots)
--- |   * Tree_proof_return: `[Just no_rec_vk, Nothing]`
+-- |   * Tree_proof_return: `[ConstVk no_rec_vk, SharedExistsVk]`
+-- |   * Side-loaded main : `[SideloadedExistsVk, …]`
 type StepMainSrsData len nd =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
@@ -169,9 +193,7 @@ type StepMainSrsData len nd =
   -- | (`step_verifier.ml:879-899`), which is then deduped into
   -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
   , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
-  , perSlotKnownWrapKeys ::
-      Vector len
-        (Maybe (VerificationKey (WeierstrassAffinePoint PallasG (F StepField))))
+  , perSlotVkSources :: Vector len SlotVkSource
   -- | Thunk producing the dummy `UnfinalizedProof` used to front-pad
   -- | the step PI's unfinalized_proofs vector from `len` to `mpvMax`.
   -- | Mirrors OCaml `step.ml:782-787` (`Vector.extend_front ...
@@ -715,7 +737,7 @@ stepMain
   { perSlotLagrangeAt
   , blindingH
   , perSlotFopDomainLog2s
-  , perSlotKnownWrapKeys
+  , perSlotVkSources
   , dummyUnfp
   }
   dummySg = do
@@ -896,12 +918,21 @@ stepMain
               , linearizationPoly: Linearization.pallas
               }
 
-            -- Per-slot VK selection: Just → inline constants, Nothing
-            -- → use shared exists-allocated VK.
-            slotVkRec = case perSlotKnownWrapKeys !! i of
-              Just constVk ->
+            -- Per-slot VK selection. See `SlotVkSource` doc above for
+            -- the semantics of each case.
+            slotVkRec = case perSlotVkSources !! i of
+              ConstVk constVk ->
                 let VerificationKey r = liftConstVk constVk in r
-              Nothing -> sharedVkRec
+              SharedExistsVk -> sharedVkRec
+              -- TODO (Step 2d-β1.5): allocate a per-slot
+              -- exists-VK against `verificationKeyTyp`, sourced from
+              -- the side-loaded advice carrier. For now, fall back
+              -- on the shared VK so the dispatch type-checks; rules
+              -- that hit this path produce circuits that bind the
+              -- side-loaded slot to the rule's own wrap VK (which
+              -- is the wrong VK), so any side-loaded prove is
+              -- guaranteed to fail. Visible TODO marker.
+              SideloadedExistsVk -> sharedVkRec
 
             slotVk =
               { sigma: Vector.take @6 slotVkRec.sigma

@@ -88,7 +88,7 @@ compileStepMainAddOneReturn params =
         { perSlotLagrangeAt: Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2s: Vector.nil
-        , perSlotKnownWrapKeys: Vector.nil
+        , perSlotVkSources: Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
         -- thunks never fire — `unsafeCrashWith` is fine.

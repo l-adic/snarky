@@ -13,7 +13,6 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
@@ -22,7 +21,7 @@ import Effect.Exception (throw)
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, stepMain)
+import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
@@ -103,7 +102,7 @@ compileStepMainSimpleChain params =
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2s: (14 :< Vector.nil) :< Vector.nil
-        , perSlotKnownWrapKeys: Nothing :< Vector.nil
+        , perSlotVkSources: SharedExistsVk :< Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
         -- thunks never fire — `unsafeCrashWith` is fine.
