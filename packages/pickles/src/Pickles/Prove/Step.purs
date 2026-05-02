@@ -95,7 +95,7 @@ import Pickles.ProofWitness (ProofWitness)
 import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class TraverseSideloadedVKsCarrier, mkUnitVkCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, class TraverseSideloadedVKsCarrier, getSideloadedVKsCarrier)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
@@ -1890,6 +1890,7 @@ stepCompile
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
   => MkUnitVkCarrier sideloadedVkCarrier
+  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1931,6 +1932,13 @@ stepCompile
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect StepCompileResult
 stepCompile ctx rule = do
+  -- Source the side-loaded VK carrier from the advice channel.
+  -- For compiled-only specs, the Effect `SideloadedVKsM` instance
+  -- synthesises an all-Unit chain via `mkUnitVkCarrier`. For specs
+  -- with side-loaded slots the constraint won't resolve unless a
+  -- different prover monad is in scope — forcing the user to wire
+  -- a real runtime-VK source.
+  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
   builtState <-
     compile
       (Proxy @Unit)
@@ -1952,10 +1960,10 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Compile-time placeholder for the side-loaded VK
-            -- carrier (Step 2d-β1.5b). `mkUnitVkCarrier` resolves
-            -- for compiled-only specs (carrier = all-Unit chain).
-            (mkUnitVkCarrier :: sideloadedVkCarrier)
+            -- Side-loaded VK carrier sourced via the
+            -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
+            -- Effect's instance synthesises for compiled-only specs.
+            sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2027,6 +2035,7 @@ preComputeStepDomainLog2
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
   => MkUnitVkCarrier sideloadedVkCarrier
+  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2068,6 +2077,8 @@ preComputeStepDomainLog2
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> Effect Int
 preComputeStepDomainLog2 ctx rule = do
+  -- See `stepCompile` for the SideloadedVKsM advice rationale.
+  sideloadedCarrier <- getSideloadedVKsCarrier @prevsSpec unit
   builtState <-
     compile
       (Proxy @Unit)
@@ -2089,10 +2100,10 @@ preComputeStepDomainLog2 ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Compile-time placeholder for the side-loaded VK
-            -- carrier (Step 2d-β1.5b). `mkUnitVkCarrier` resolves
-            -- for compiled-only specs (carrier = all-Unit chain).
-            (mkUnitVkCarrier :: sideloadedVkCarrier)
+            -- Side-loaded VK carrier sourced via the
+            -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
+            -- Effect's instance synthesises for compiled-only specs.
+            sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
 
@@ -2126,6 +2137,7 @@ stepSolveAndProve
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
   => MkUnitVkCarrier sideloadedVkCarrier
+  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2164,6 +2176,11 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
+  -- Source the side-loaded VK carrier from the prover monad. For
+  -- compiled-only specs `m = Effect`'s `SideloadedVKsM` instance
+  -- synthesises via `MkUnitVkCarrier`. Specs with side-loaded slots
+  -- need a `m` whose instance reads real runtime VKs.
+  => SideloadedVKsM prevsSpec m sideloadedVkCarrier
   => PrevValuesCarrier prevsSpec valCarrier
   => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
@@ -2171,6 +2188,11 @@ stepSolveAndProve
   -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
+  -- Source the side-loaded VK carrier from `m` and capture in the
+  -- inner Snarky lambda's closure (Step 2d-β1.5c). Routes via the
+  -- advice channel for the right semantics; for compiled-only
+  -- specs `m = Effect`'s instance synthesises an all-Unit chain.
+  sideloadedCarrier <- lift $ getSideloadedVKsCarrier @prevsSpec unit
   let
     StepAdvice adv = advice
 
@@ -2203,13 +2225,10 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
-              -- Side-loaded VK carrier (Step 2d-β1.5b). For the
-              -- prove-time path this would source from
-              -- `getSideloadedVKsCarrier` advice; for now we
-              -- synthesise via `mkUnitVkCarrier` (compiled-only
-              -- specs only — sourcing real side-loaded VKs from
-              -- the prover monad here is a separate task).
-              (mkUnitVkCarrier :: sideloadedVkCarrier)
+              -- Side-loaded VK carrier sourced via the
+              -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
+              -- Captured from the outer monad-`m` bind below.
+              sideloadedCarrier
         )
 
   -- `runStepProverT` returns the solver result paired with the

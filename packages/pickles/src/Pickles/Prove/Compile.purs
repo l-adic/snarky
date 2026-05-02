@@ -151,7 +151,7 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Main as PStepMain
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class TraverseSideloadedVKsCarrier, mkUnitVkCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier, mkUnitVkCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
@@ -3046,6 +3046,7 @@ mkRuleEntry
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec mpv sideloadedVkCarrier
   => MkUnitVkCarrier sideloadedVkCarrier
+  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
   => Reflectable mpvMax Int

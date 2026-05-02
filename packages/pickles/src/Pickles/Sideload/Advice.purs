@@ -41,7 +41,6 @@ import Data.Tuple.Nested (type (/\), (/\))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Effect.Exception (throw)
 import Pickles.Sideload.VerificationKey (VerificationKey, VerificationKeyVar)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons)
 import Pickles.Types (StepField)
@@ -106,15 +105,26 @@ class
   , m -> spec carrier where
   getSideloadedVKsCarrier :: Unit -> m carrier
 
--- | Compilation instance: never called, exists only to satisfy the
--- | constraint during `compile` which uses `Effect` as the base
--- | monad. The constraint-system pass discards `exists`'s `~compute`
--- | body, so this throw never fires.
+-- | Effect instance: synthesizes the all-Unit carrier via
+-- | `MkUnitVkCarrier`. This covers compiled-only specs (where the
+-- | carrier shape is `Unit /\ Unit /\ … /\ Unit`); specs that
+-- | contain `PrevsSpecSideLoadedCons` slots have carriers shaped
+-- | like `… /\ VerificationKey /\ …` and the `MkUnitVkCarrier`
+-- | constraint won't resolve — those callers must use a different
+-- | prover monad whose `SideloadedVKsM` instance reads real
+-- | runtime VKs from the test setup.
+-- |
+-- | Routing the synthesis through this instance (rather than
+-- | calling `mkUnitVkCarrier` directly at the use sites) keeps the
+-- | side-loaded VK source uniformly behind `getSideloadedVKsCarrier`
+-- | — the right channel for any future swap to a real
+-- | runtime-VK-providing prover monad.
 instance
-  SideloadedVKsCarrier spec carrier =>
+  ( SideloadedVKsCarrier spec carrier
+  , MkUnitVkCarrier carrier
+  ) =>
   SideloadedVKsM spec Effect carrier where
-  getSideloadedVKsCarrier _ =
-    throw "impossible! getSideloadedVKsCarrier called during compilation"
+  getSideloadedVKsCarrier _ = pure mkUnitVkCarrier
 
 --------------------------------------------------------------------------------
 -- MkUnitVkCarrier — synthesize an all-Unit VK carrier
