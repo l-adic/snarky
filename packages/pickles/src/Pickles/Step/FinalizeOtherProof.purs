@@ -599,14 +599,20 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
   actualPerm <- label "perm_actual" do
-    init' <- label "perm_init" $
-      mul_ zOmegaTimesZeta beta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-    let wSigmaPerm = zipWith Tuple (Vector.take @6 w0) s0
-    result <- label "perm_fold" $ foldM
-      ( \acc (Tuple wi si) -> do
-          betaSigma <- mul_ beta si
+    init' <- label "perm_init" do
+      t1 <- label "perm_init_1" $ mul_ zOmegaTimesZeta beta
+      t2 <- label "perm_init_2" $ mul_ t1 a21
+      label "perm_init_3" $ mul_ t2 zkPoly
+    let
+      wSigmaPerm :: Array (Tuple Int (Tuple (FVar f) (FVar f)))
+      wSigmaPerm = Array.mapWithIndex Tuple
+        $ Vector.toUnfoldable
+        $ Vector.zipWith Tuple (Vector.take @6 w0) s0
+    result <- foldM
+      ( \acc (Tuple i (Tuple wi si)) -> label ("perm_fold_" <> show i) do
+          betaSigma <- label "betaSigma" $ mul_ beta si
           let term = add_ (add_ gamma betaSigma) wi
-          mul_ acc term
+          label "acc_mul" $ mul_ acc term
       )
       init'
       wSigmaPerm
