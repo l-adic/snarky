@@ -598,10 +598,11 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- Inline perm scalar using shared alpha powers (a21, zkPoly).
   -- perm = -(z_omega * beta * alpha^21 * zkp * prod(gamma + beta*s_i + w_i))
   ---------------------------------------------------------------------------
-  actualPerm <- do
-    init' <- mul_ zOmegaTimesZeta beta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+  actualPerm <- label "perm_actual" do
+    init' <- label "perm_init" $
+      mul_ zOmegaTimesZeta beta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
     let wSigmaPerm = zipWith Tuple (Vector.take @6 w0) s0
-    result <- foldM
+    result <- label "perm_fold" $ foldM
       ( \acc (Tuple wi si) -> do
           betaSigma <- mul_ beta si
           let term = add_ (add_ gamma betaSigma) wi
@@ -612,9 +613,10 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     pure (negate_ result)
 
   -- zeta_to_srs_length computation (generates constraints even though result is voided)
-  void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
+  label "perm_pow_zeta_srs" $ void $ pow_ zeta (Int.pow 2 params.srsLengthLog2)
 
-  plonkOk <- ops.shiftedEqual deferred.plonk.perm actualPerm
+  plonkOk <- label "perm_shifted_equal"
+    $ ops.shiftedEqual deferred.plonk.perm actualPerm
 
   ---------------------------------------------------------------------------
   -- Step 14: Combine all checks
