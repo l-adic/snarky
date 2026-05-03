@@ -30,7 +30,7 @@ module Snarky.Circuit.DSL
   ) where
 
 import Snarky.Circuit.CVar (EvaluationError(..), Variable, add_, const_, negate_, scale_, sub_) as ReExports
-import Snarky.Circuit.DSL.Assert (class AssertEqual, assertAll_, assertAny_, assertEq, assertEqGeneric, assertEqual_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, isEqual, isEqualGeneric) as ReExports
+import Snarky.Circuit.DSL.Assert (class AssertEqual, assertAll_, assertAny_, assertEq, assertEqGeneric, assertEqual_, assertExactlyOne_, assertNonZero_, assertNotEqual_, assertSquare_, assert_, isEqual, isEqualGeneric) as ReExports
 import Snarky.Circuit.DSL.Bits (packPure, pack_, unpackPure, unpack_) as ReExports
 import Snarky.Circuit.DSL.Boolean (class IfThenElse, all_, any_, false_, if_, true_, xor_) as ReExports
 import Snarky.Circuit.DSL.Field (equals, equals_, neq_, pow_, square_, sum_) as ReExports

@@ -59,7 +59,7 @@ import Pickles.Types (VerificationKey(..)) as PT
 import RandomOracle.Input (Chunked)
 import RandomOracle.Input as RO
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, assertExactlyOne_)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
@@ -186,13 +186,30 @@ instance
         )
         tup
 
+-- | CheckedType specialized to the side-loaded VK's actual Var form
+-- | (`bvar = BoolVar f`). Mirrors OCaml
+-- | `Side_loaded_verification_key.Checked.typ` which composes
+-- | `One_hot.typ` (= Vector Boolean.typ + Assert.exactly_one) for both
+-- | `max_proofs_verified` and `actual_wrap_domain_size`, plus
+-- | `Plonk_verification_key_evals.typ` for `wrap_index`.
+-- |
+-- | The exactly_one constraints emit one R1CS Generic each (sum of
+-- | bools = 1) — without these, PS would silently accept non-one-hot
+-- | bitvecs.
 instance
-  ( CheckedType f c bvar
-  , CheckedType f c ptvar
+  ( CheckedType f c ptvar
+  , CheckedType f c (BoolVar f)
+  , PrimeField f
   ) =>
-  CheckedType f c (Checked bvar ptvar) where
-  check (Checked r) =
+  CheckedType f c (Checked (BoolVar f) ptvar) where
+  check (Checked r) = do
+    -- Vector Boolean.typ checks (b² = b for each bit) + wrap_index
+    -- on-curve checks via the existing tuple3 traversal.
     check (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
+    -- Boolean.Assert.exactly_one for each One_hot field
+    -- (`one_hot_vector.ml:30-40`).
+    assertExactlyOne_ (Vector.toUnfoldable r.maxProofsVerified)
+    assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
 
 --------------------------------------------------------------------------------
 -- User-facing types

@@ -11,6 +11,7 @@ module Snarky.Circuit.DSL.Assert
   , assert_
   , assertAny_
   , assertAll_
+  , assertExactlyOne_
   , class AssertEqual
   , assertEq
   , isEqual
@@ -102,6 +103,22 @@ assertAny_
   => Array (BoolVar f)
   -> Snarky c t m Unit
 assertAny_ bs = assertNonZero_ (sum_ (map boolToField bs))
+  where
+  boolToField :: BoolVar f -> FVar f
+  boolToField = coerce
+
+-- | Boolean.Assert.exactly_one: assert exactly one of the booleans is true.
+-- | Uses assertEqual(sum, 1) — emits one Generic R1CS gate.
+-- | Reference: mina/src/lib/snarky/src/base/utils.ml:393-394.
+-- | Used by `Pickles_base.Proofs_verified.One_hot.typ` to validate that
+-- | a length-N one-hot bitvec has exactly one true bit.
+assertExactlyOne_
+  :: forall f c t m
+   . CircuitM f c t m
+  => PrimeField f
+  => Array (BoolVar f)
+  -> Snarky c t m Unit
+assertExactlyOne_ bs = assertEqual_ (sum_ (map boolToField bs)) (const_ one)
   where
   boolToField :: BoolVar f -> FVar f
   boolToField = coerce
