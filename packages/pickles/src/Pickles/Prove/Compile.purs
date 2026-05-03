@@ -1616,13 +1616,19 @@ instance
   --       runtime VK's `wrapVk` field provides the kimchi VerifierIndex;
   --       `actualWrapDomainSize` (as `Int`) gives the wrap-domain log2
   --       via `Dummy.wrapDomainLog2ForProofsVerified`. The
-  --       `slotStepDomainLog2` is stubbed with `unsafeCrashWith` —
-  --       the side-loaded VK doesn't carry the prev's step domain
-  --       (in OCaml this requires Pseudo-step-domain dispatch in the
-  --       step verifier circuit; see `step_main.ml:520-525`'s
-  --       `Side_loaded.step_domains = `Side_loaded`). InductivePrev's
-  --       prev `widthData` carries enough step info to avoid this
-  --       site, but BasePrev (b0) hits it.
+  --       `slotStepDomainLog2` placeholder uses the side-loaded
+  --       tag's compile-time upper bound (= mpvMax → {N0=13, N1=14,
+  --       N2=15}) — only consumed at the BasePrev / dummy site, where
+  --       the dummy is signalled by `proofMustVerify=false` so the
+  --       value is structurally a stand-in. The full Pseudo
+  --       step-domain dispatch in the step verifier circuit
+  --       (OCaml `step_main.ml:520-525` `Side_loaded.step_domains =
+  --       `Side_loaded`) is β3 proper — the in-circuit
+  --       `Pickles.Step.FinalizeOtherProof` rewrite mirroring
+  --       `step_verifier.ml:817-840` `side_loaded_domain` (Pseudo over
+  --       [0..16] with iterative `if_/square` vanishing polynomial).
+  --       InductivePrev's prev `widthData` carries enough step info
+  --       to avoid the placeholder.
   --   (3) Rest recursion threads `restVkCarrier`.
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) = do
     let
@@ -1650,15 +1656,21 @@ instance
             Dummy.wrapDomainLog2ForProofsVerified
               (fromEnum headActualWrapDomainSize)
         , slotStepDomainLog2:
-            -- Side-loaded VKs carry no step domain — that's a
-            -- deliberate part of the side-loaded protocol (the step
-            -- circuit handles all step domains via Pseudo dispatch).
-            -- Use this only at the BasePrev / dummy site below;
-            -- InductivePrev reads its own `prev.stepDomainLog2`.
-            unsafeCrashWith
-              "Pickles.Prove.Compile: side-loaded BasePrev base case \
-              \needs step-domain dispatch (Pseudo); not yet implemented. \
-              \See Pickles.Sideload roadmap (Step 2d)."
+            -- Side-loaded VKs don't carry the prev's step domain —
+            -- the step circuit handles arbitrary step domains via
+            -- Pseudo dispatch (β3). At the prove-time BasePrev / dummy
+            -- site, only the dummy `wrapBranchData.domainLog2` and
+            -- `dummyWrapTockPublicInput`'s `stepDomainLog2` field need a
+            -- value, and only as a stand-in (the dummy is signalled by
+            -- `proofMustVerify=false`, so its FOP-domain values flow
+            -- into the per-slot `branch_data.domain_log2` PI but the
+            -- IVP mask zeros their downstream effect).
+            -- Use the side-loaded tag's compile-time upper-bound wrap
+            -- domain log2 (= mpvMax → {N0=13, N1=14, N2=15}). Mirrors
+            -- the placeholder lagrange in `shapeCompileData` for
+            -- SideLoadedCons. InductivePrev reads its own
+            -- `prev.stepDomainLog2`.
+            Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
         }
 
       bcd = Dummy.baseCaseDummies { maxProofsVerified: slotMpvMax }
