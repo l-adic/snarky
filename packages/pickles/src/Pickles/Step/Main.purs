@@ -764,9 +764,22 @@ stepMain
     requestInput = getStepPublicInput @len @StepIPARounds @WrapIPARounds @PallasG unit
   (publicInput :: input) <- exists $ lift requestInput
 
-  -- 2. rule_main
-  { prevPublicInputs, proofMustVerify, publicOutput } <-
-    label "rule_main" $ rule publicInput
+  -- 2. rule_main — wraps both the user's rule body AND the side-loaded VK
+  -- exists. Mirrors OCaml's `with_label "rule_main" (fun () -> rule.main ...)`
+  -- where the rule body itself contains `exists Side_loaded_verification_key.typ`
+  -- (dump_circuit_impl.ml:4388 inside the lambda passed to `with_label`).
+  -- For compiled-only specs the side-loaded carrier is all-Unit and
+  -- `traverseSideloadedVKsCarrier` emits no constraints.
+  { prevPublicInputs, proofMustVerify, publicOutput, perSlotSideloadedVks } <-
+    label "rule_main" do
+      vks <- traverseSideloadedVKsCarrier @prevsSpec sideloadedVkCarrier
+      result <- rule publicInput
+      pure
+        { prevPublicInputs: result.prevPublicInputs
+        , proofMustVerify: result.proofMustVerify
+        , publicOutput: result.publicOutput
+        , perSlotSideloadedVks: vks
+        }
 
   let
     publicInputFields = varToFields @StepField @inputVal publicInput
@@ -808,26 +821,6 @@ stepMain
       , coeff: sharedVkRec.coeff
       , index: sharedVkRec.index
       }
-
-  -- 3b. exists: per-slot side-loaded VKs.
-  --    Walks the spec-indexed `sideloadedVkCarrier` (a chain of
-  --    `Unit /\ ... /\ VerificationKey /\ ...`); for each
-  --    `PrevsSpecSideLoadedCons` slot, allocates a
-  --    `VerificationKeyVar StepField` via `exists` against the
-  --    bundle's `circuit` field (`Checked Boolean ...`). Compiled
-  --    slots contribute `Nothing`. Result is a parallel
-  --    `Vector len (Maybe (VerificationKeyVar StepField))` aligned
-  --    slot-by-slot with `perSlotVkSources`.
-  --
-  --    Mirrors OCaml `dump_side_loaded_main.ml:142-156`:
-  --      let vk = exists Side_loaded.Verification_key.typ ~compute:...
-  --      Side_loaded.in_circuit side_loaded_tag vk
-  --
-  --    For compiled-only rules (no `PrevsSpecSideLoadedCons` in
-  --    the spec) the carrier is the all-Unit chain and the
-  --    traversal contributes no constraints.
-  perSlotSideloadedVks <- label "exists_sideloaded_vks"
-    $ traverseSideloadedVKsCarrier @prevsSpec sideloadedVkCarrier
 
   -- 4. exists: per-slot carrier via Req.Proof_with_datas — the v2
   --    spec-indexed variant. Each slot of the carrier holds a

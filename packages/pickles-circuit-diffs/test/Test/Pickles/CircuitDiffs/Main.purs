@@ -706,14 +706,7 @@ spec =
         -- To run the diff manually:
         --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
         -- after switching `pending'` below back to `exactMatchEff`.
-        -- Total gate kind counts now match (Generic 2934=2934, all
-        -- kinds equal) after the perSlotFopDomainLog2s Vector 17 fix
-        -- (commit pending). Byte-level structural divergence remains:
-        -- gates have same kinds + totals but different wire/coeff
-        -- patterns. Switching back to `pending'` for green CI; flip
-        -- to `exactMatchEff` to drive the next iteration.
-        pending' "step_main_side_loaded_main_circuit matches OCaml" $
-          let _ = compileStepMainSideLoadedMain sideLoadedMainSrsData in pure unit
+        exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

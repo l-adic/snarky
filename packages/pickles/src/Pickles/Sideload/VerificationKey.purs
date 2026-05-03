@@ -203,13 +203,18 @@ instance
   ) =>
   CheckedType f c (Checked (BoolVar f) ptvar) where
   check (Checked r) = do
-    -- Vector Boolean.typ checks (b² = b for each bit) + wrap_index
-    -- on-curve checks via the existing tuple3 traversal.
-    check (tuple3 r.maxProofsVerified r.actualWrapDomainSize r.wrapIndex)
-    -- Boolean.Assert.exactly_one for each One_hot field
-    -- (`one_hot_vector.ml:30-40`).
+    -- Match OCaml `Side_loaded_verification_key.typ`'s field order:
+    -- each `One_hot.typ` runs its own boolean checks IMMEDIATELY
+    -- followed by `Boolean.Assert.exactly_one` (`one_hot_vector.ml:30-40`)
+    -- BEFORE moving to the next field. So the emission order is:
+    --   1. bool checks for max_proofs_verified bits, then exactly_one
+    --   2. bool checks for actual_wrap_domain_size bits, then exactly_one
+    --   3. on-curve checks for wrap_index points
+    check r.maxProofsVerified
     assertExactlyOne_ (Vector.toUnfoldable r.maxProofsVerified)
+    check r.actualWrapDomainSize
     assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
+    check r.wrapIndex
 
 --------------------------------------------------------------------------------
 -- User-facing types
