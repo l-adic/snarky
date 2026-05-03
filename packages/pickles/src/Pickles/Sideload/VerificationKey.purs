@@ -59,7 +59,7 @@ import Pickles.Types (VerificationKey(..)) as PT
 import RandomOracle.Input (Chunked)
 import RandomOracle.Input as RO
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
-import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, assertExactlyOne_)
+import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, assertExactlyOne_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
 import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFieldsToVar, genericSizeInFields, genericValueToFields, genericVarToFields, valueToFields, varToFields)
 import Snarky.Curves.Class (class PrimeField)
@@ -210,11 +210,19 @@ instance
     --   1. bool checks for max_proofs_verified bits, then exactly_one
     --   2. bool checks for actual_wrap_domain_size bits, then exactly_one
     --   3. on-curve checks for wrap_index points
-    check r.maxProofsVerified
-    assertExactlyOne_ (Vector.toUnfoldable r.maxProofsVerified)
-    check r.actualWrapDomainSize
-    assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
-    check r.wrapIndex
+    --
+    -- Labels added so the circuit-diff harness can attribute each
+    -- emitted gate to a specific check (rather than them all
+    -- appearing under the parent `rule_main` scope).
+    label "vk_max_proofs_verified" do
+      label "boolean_checks" $ check r.maxProofsVerified
+      label "exactly_one"
+        $ assertExactlyOne_ (Vector.toUnfoldable r.maxProofsVerified)
+    label "vk_actual_wrap_domain_size" do
+      label "boolean_checks" $ check r.actualWrapDomainSize
+      label "exactly_one"
+        $ assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
+    label "vk_wrap_index" $ check r.wrapIndex
 
 --------------------------------------------------------------------------------
 -- User-facing types
