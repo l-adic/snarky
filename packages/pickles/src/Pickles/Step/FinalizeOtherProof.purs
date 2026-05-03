@@ -449,44 +449,51 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     a22 = alphaPow 22
     a23 = alphaPow 23
 
-  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term
-  let w6 = w0 !! unsafeFinite @15 6
-  term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
-  let wSigma = zipWith Tuple (Vector.take @6 w0) s0
-  term1 <- foldM
-    ( \acc (Tuple wi si) -> do
-        betaSi <- mul_ beta si
-        mul_ (add_ (add_ betaSi wi) gamma) acc
-    )
-    term1Init
-    wSigma
+  -- ft_eval0: term1 - p_eval0 - term2 + boundary - constant_term.
+  -- OCaml `step_verifier.ml` calls `Plonk_checks.ft_eval0` which is
+  -- labelled `ft_eval0 / Field.Checked.mul` (~375 R1CS Generic gates
+  -- for the big perm-scalar sum + boundary). PS performs the same
+  -- arithmetic; the `ft_eval0_perm` label scopes the big mul chain so
+  -- the diff can localize any structural drift from the side-loaded
+  -- path in this region.
+  permResult <- label "ft_eval0_perm" do
+    let w6 = w0 !! unsafeFinite @15 6
+    term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+    let wSigma = zipWith Tuple (Vector.take @6 w0) s0
+    term1 <- foldM
+      ( \acc (Tuple wi si) -> do
+          betaSi <- mul_ beta si
+          mul_ (add_ (add_ betaSi wi) gamma) acc
+      )
+      term1Init
+      wSigma
 
-  let term1MinusP = sub_ term1 pEval0
+    let term1MinusP = sub_ term1 pEval0
 
-  term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
-  let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
-  term2 <- foldM
-    ( \acc (Tuple wi si) -> do
-        betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
-        mul_ acc (add_ (add_ gamma betaZetaSi) wi)
-    )
-    term2Init
-    wShifts
+    term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
+    let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
+    term2 <- foldM
+      ( \acc (Tuple wi si) -> do
+          betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
+          mul_ acc (add_ (add_ gamma betaZetaSi) wi)
+      )
+      term2Init
+      wShifts
 
-  let
-    -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant)
-    zetaMinusOmegaZk = sub_ zeta omegaZk
-    zetaMinus1 = sub_ zeta (const_ one)
+    let
+      -- OCaml: omega_to_minus_zk_rows = omega_to_zk (circuit var, not constant)
+      zetaMinusOmegaZk = sub_ zeta omegaZk
+      zetaMinus1 = sub_ zeta (const_ one)
 
-  boundary <- do
-    term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
-    term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
-    let oneMinusZ = sub_ (const_ one) zZeta
-    nominator <- mul_ (add_ term22 term23) oneMinusZ
-    denominator <- mul_ zetaMinusOmegaZk zetaMinus1
-    div_ nominator denominator
+    boundary <- do
+      term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
+      term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
+      let oneMinusZ = sub_ (const_ one) zZeta
+      nominator <- mul_ (add_ term22 term23) oneMinusZ
+      denominator <- mul_ zetaMinusOmegaZk zetaMinus1
+      div_ nominator denominator
 
-  let permResult = add_ (sub_ term1MinusP term2) boundary
+    pure $ add_ (sub_ term1MinusP term2) boundary
 
   let
     omegaForLagrange { zkRows: zk, offset } =
@@ -514,33 +521,42 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       (const_ one) -- jointCombiner (None → 1)
     env = baseEnv { computeZetaToNMinus1 = pure zetaToNMinus1 }
 
-  constantTerm <- evaluateM (runLinearizationPoly params.linearizationPoly) env
+  -- OCaml `Plonk_checks.scalars_env` evaluation labelled
+  -- `scalars_env / Field.Checked.mul / if_ / div`. PS routes the
+  -- linearization poly through `evaluateM` which performs the same
+  -- arithmetic + lookups; wrap in `scalars_env` so the diff can
+  -- localize.
+  constantTerm <- label "scalars_env" $
+    evaluateM (runLinearizationPoly params.linearizationPoly) env
 
   let ftEval0 = sub_ permResult constantTerm
 
   ---------------------------------------------------------------------------
   -- Steps 11b-c: Combined inner product
   -- OCaml right-to-left for `+`: zetaw combine computed first.
+  -- OCaml labels: `combine / Field.Checked.mul`. PS wraps the two
+  -- horner-fold evaluations in `combine` so per-label totals align.
   ---------------------------------------------------------------------------
-  combineZetaw <- hornerCombine xi $ buildEvalList
-    { sgEvals: Vector.zipWith Tuple mask sgZetaw
-    , publicInput: allEvals.publicEvals.omegaTimesZeta
-    , ftEval: allEvals.ftEval1
-    , evals: extractEvalFields _.omegaTimesZeta allEvals
-    }
+  cipCorrect <- label "combine" do
+    combineZetaw <- hornerCombine xi $ buildEvalList
+      { sgEvals: Vector.zipWith Tuple mask sgZetaw
+      , publicInput: allEvals.publicEvals.omegaTimesZeta
+      , ftEval: allEvals.ftEval1
+      , evals: extractEvalFields _.omegaTimesZeta allEvals
+      }
 
-  rTimesZetaw <- mul_ r combineZetaw
+    rTimesZetaw <- mul_ r combineZetaw
 
-  combineZeta <- hornerCombine xi $ buildEvalList
-    { sgEvals: Vector.zipWith Tuple mask sgZeta
-    , publicInput: allEvals.publicEvals.zeta
-    , ftEval: ftEval0
-    , evals: extractEvalFields _.zeta allEvals
-    }
+    combineZeta <- hornerCombine xi $ buildEvalList
+      { sgEvals: Vector.zipWith Tuple mask sgZeta
+      , publicInput: allEvals.publicEvals.zeta
+      , ftEval: ftEval0
+      , evals: extractEvalFields _.zeta allEvals
+      }
 
-  let actualCip = add_ combineZeta rTimesZetaw
-  let expectedCip = ops.unshift deferred.combinedInnerProduct
-  cipCorrect <- equals_ expectedCip actualCip
+    let actualCip = add_ combineZeta rTimesZetaw
+    let expectedCip = ops.unshift deferred.combinedInnerProduct
+    equals_ expectedCip actualCip
 
   ---------------------------------------------------------------------------
   -- Step 12: b_correct
@@ -550,7 +566,9 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   expandedRev <- for (Vector.reverse deferred.bulletproofChallenges) \c -> toField @8 c endoVar
   let expandedChallenges = Vector.reverse expandedRev
 
-  bCorrect <- bCorrectCircuit
+  -- OCaml labels: `b_correct / Field.Checked.mul` — wrap the
+  -- bCorrectCircuit body so the per-label diff aligns with OCaml.
+  bCorrect <- label "b_correct" $ bCorrectCircuit
     { challenges: expandedChallenges
     , zeta
     , zetaOmega: zetaw

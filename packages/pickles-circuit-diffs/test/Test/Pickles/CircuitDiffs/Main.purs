@@ -690,23 +690,11 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           _ = lagrangeAtD15 -- keep available in case the diff loop wants the LBL form
-        -- N=1 parent + side-loaded prev. β3 closed −146 → −65; +
-        -- assertExactlyOne_ for One_hot fields closed −65 → −63;
-        -- the residual −63 Generic gates are structural drift in
-        -- the FOP body (`prevs_verified / step_main.ml:31`) where
-        -- PS emits Poseidon absorbs at points where OCaml emits
-        -- Field.Checked.mul Generics. Sponge absorb total counts
-        -- match (Poseidon 2288 = 2288); only Generic differs by 63.
-        --
-        -- Pending until residual is diagnosed via row-anchored
-        -- bisection (would need PS-side gate label dumping
-        -- infrastructure to localize precisely).
-        --
-        -- To run the diff manually:
-        --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
-        -- after switching `pending'` below back to `exactMatchEff`.
-        pending' "step_main_side_loaded_main_circuit matches OCaml" $
-          let _ = compileStepMainSideLoadedMain sideLoadedMainSrsData in pure unit
+        -- N=1 parent + side-loaded prev. Active diff (failing) for
+        -- the convergence loop — current state −63 Generic, deficit
+        -- in FOP body (label `step2_fop` / OC `step_main.ml:L31`).
+        exactMatchEff "step_main_side_loaded_main_circuit"
+          (fromCompiledCircuit <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
