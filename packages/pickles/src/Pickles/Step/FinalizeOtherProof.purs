@@ -271,6 +271,18 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- In both cases gen is non-constant, so `mul_ gen zeta` emits one
   -- R1CS Generic gate.
   ---------------------------------------------------------------------------
+  -- OCaml `side_loaded_domain` (`step_verifier.ml:817-840`) computes
+  -- the `Utils.ones_vector` mask FIRST (16 equals + 16 `&&`), then
+  -- calls `O.of_index` (17 equals + 1 assert_any). PS mirrors that
+  -- order: ones-prefix mask first, then the domain-which traversal.
+  -- The precomputed mask is threaded down to the vanishing polynomial
+  -- via `Maybe (Vector 16 (BoolVar f))` (Just for SideLoadedMode,
+  -- Nothing for KnownDomainsMode where the compiled-path
+  -- vanishing_polynomial uses pow2_pows + Pseudo.mask instead).
+  precomputedOnesPrefix <- case params.domainMode of
+    SideLoadedMode -> Just <$> mkSideLoadedOnesPrefixMask domainLog2Var
+    KnownDomainsMode -> pure Nothing
+
   -- OCaml `step_verifier.ml:880-893` does `Vector.map unique_domains
   -- ~f:(equals branch_data.domain_log2)` — Vector.map evaluates
   -- right-to-left, so for domains [9, 14] OCaml emits the `equals 14`
@@ -429,11 +441,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       --   acc = x ;  for i = 0..15:
       --     acc = if mask[i] then square(acc) else acc
       --   result = seal (acc - 1)
-      -- The mask is built fresh here from `domainLog2Var` to mirror
-      -- `Utils.ones_vector` exactly (16 equals_ + 16 and_ ⇒ 32 R1CS
-      -- gates). The vanishing iter then emits 1 Square + 1 Generic
-      -- if_ per bit ⇒ 32 more R1CS gates.
-      onesPrefix <- mkSideLoadedOnesPrefixMask domainLog2Var
+      -- Mask was already computed at FOP entry (matching OCaml's
+      -- `Utils.ones_vector` call site INSIDE `side_loaded_domain`,
+      -- which runs BEFORE the `O.of_index` traversal). We just
+      -- consume the precomputed result here.
+      onesPrefix <- case precomputedOnesPrefix of
+        Just v -> pure v
+        Nothing -> unsafeThrow
+          "Pickles.Step.FinalizeOtherProof: SideLoadedMode reached \
+          \vanishing-poly without a precomputed ones-prefix mask — \
+          \bug in the SideLoadedMode dispatch above."
       acc <- foldM
         ( \accV bit -> do
             sq <- square_ accV
