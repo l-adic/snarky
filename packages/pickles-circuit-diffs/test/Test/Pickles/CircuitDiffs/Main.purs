@@ -44,6 +44,7 @@ import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, c
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
+import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
@@ -80,7 +81,7 @@ import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Snarky.Types.Shifted (Type1(..))
-import Test.Spec (SpecT, beforeAll_, describe, it)
+import Test.Spec (SpecT, beforeAll_, describe, it, pending')
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess')
@@ -658,6 +659,51 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
+        -- N=1 parent + single SIDE-LOADED prev (mpv=N2 upper bound).
+        -- Mirrors `dump_side_loaded_main.ml`'s Simple_chain rule. Drives
+        -- the byte-equality validation for β2 (one-hot wrap-domain
+        -- lagrange mux), β3 (pseudo step-domain dispatch), and β4
+        -- (max_proofs_verified runtime mask). The three per-domain
+        -- lagrange tables are at log2 ∈ {13, 14, 15} — the wrap-domain
+        -- log2s for `actual_wrap_domain_size ∈ {N0, N1, N2}` per
+        -- `common.ml:25-29`. OCaml's side_loaded_domain (step_verifier.ml:817)
+        -- muxes these via the runtime one-hot bits.
+        let
+          lagrangeAtD15 =
+            mkConstLagrangeBaseLookup \i ->
+              (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+          sideLoadedMainSrsData =
+            { lagrangeAt: lagrangeAtD14
+            , sideloadedPerDomainLagrangeAt:
+                ( \i ->
+                    (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 13 i)) :: AffinePoint (F Fp)
+                )
+                  :<
+                    ( \i ->
+                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+                    )
+                  :<
+                    ( \i ->
+                        (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 15 i)) :: AffinePoint (F Fp)
+                    )
+                  :< Vector.nil
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+          _ = lagrangeAtD15 -- keep available in case the diff loop wants the LBL form
+        -- N=1 parent + side-loaded prev. Currently fails: PS emits 11716
+        -- vs OCaml's 11862 gates → −146 Generic gates, all other gate
+        -- types (Poseidon, VarBaseMul, EndoMul, CompleteAdd, …) match
+        -- exactly. The −146 delta is the in-circuit cost of β3
+        -- (`side_loaded_domain` Pseudo dispatch over log2 ∈ [0..16] —
+        -- 16 ones_vector + 16 if_/square + 17 of_index + Assert.any
+        -- ≈ ~130 gates) + β4 (`max_proofs_verified` runtime mask
+        -- ≈ ~16 gates). Marking pending until those land.
+        --
+        -- To run the diff manually:
+        --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
+        -- after switching `pending'` below back to `exactMatchEff`.
+        pending' "step_main_side_loaded_main_circuit matches OCaml" $
+          let _ = compileStepMainSideLoadedMain sideLoadedMainSrsData in pure unit
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)
