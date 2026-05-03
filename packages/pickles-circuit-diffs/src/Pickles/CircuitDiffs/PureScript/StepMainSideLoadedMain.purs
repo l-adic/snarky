@@ -159,7 +159,16 @@ compileStepMainSideLoadedMain params =
         -- doesn't exercise the runtime mux yet.
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
-        , perSlotFopDomainLog2s: (14 :< Vector.nil) :< Vector.nil
+        -- For side-loaded slots, OCaml's `side_loaded_domain` calls
+        -- `O.of_index log2_size ~length:(S max_n)` where `max_n = 16`,
+        -- producing a Vector 17 of [0..16] candidate domain log2s.
+        -- `finalizeOtherProofCircuit`'s `SideLoadedMode` traverse does
+        -- `equals_` over each, contributing ~34 R1CS Generic gates +
+        -- 1 `Boolean.Assert.any`. The previous Vector 1 [14] under-emitted.
+        , perSlotFopDomainLog2s:
+            ( 0 :< 1 :< 2 :< 3 :< 4 :< 5 :< 6 :< 7 :< 8 :< 9 :< 10 :< 11
+                :< 12 :< 13 :< 14 :< 15 :< 16 :< Vector.nil
+            ) :< Vector.nil
         , perSlotVkSources:
             SideloadedExistsVk params.sideloadedPerDomainLagrangeAt
               :< Vector.nil
