@@ -18,8 +18,11 @@ module Pickles.Step.FinalizeOtherProof
     FinalizeOtherProofParams
   , FinalizeOtherProofInput
   , FinalizeOtherProofOutput
+  , DomainMode(..)
   -- * Circuit
   , finalizeOtherProofCircuit
+  -- * Helpers (exported for use by Pickles.Step.Main's side-loaded slot dispatch)
+  , mkSideLoadedOnesPrefixMask
   -- * Component Circuits (exported for testing)
   , module PlonkChecks
   ) where
@@ -56,7 +59,8 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (negate_)
-import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, const_, div_, equals_, inv_, label, mul_, pow_, seal, sub_)
+import Effect.Exception.Unsafe (unsafeThrow)
+import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, div_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -85,6 +89,28 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- |
 -- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters,
 -- |            pseudo.ml `Pseudo.Domain.to_domain`
+-- | Domain-resolution mode for `finalize_other_proof`.
+-- |
+-- | * `KnownDomainsMode` — compiled-rule path. `params.domains` is the
+-- |   compile-time `unique_domains` Vector (typically `Vector 1` for
+-- |   single-rule, larger for multi-branch self prevs). Vanishing
+-- |   polynomial uses pow2_pows + `Pseudo.mask` (compiled
+-- |   `Pseudo.Domain.to_domain.vanishing_polynomial`,
+-- |   `pseudo.ml:103-128`).
+-- | * `SideLoadedMode` — side-loaded prev. `params.domains` is the
+-- |   universe `Vector 17` of all candidate log2s ∈ [0..16]
+-- |   (= `Side_loaded_verification_key.max_domains.h`'s log2). FOP
+-- |   body builds the runtime ones-prefix mask internally from
+-- |   `input.domainLog2Var` (`Utils.ones_vector
+-- |   ~first_zero:domainLog2Var`) and uses the iterative
+-- |   `if_(mask[i], square, …)` pattern for the vanishing polynomial
+-- |   (OCaml `step_verifier.ml:796-810` + `:817-840`). FOP body also
+-- |   emits `Boolean.Assert.any` over the one-hot bits to mirror
+-- |   `O.of_index`'s constraint (`one_hot_vector.ml:23`).
+data DomainMode
+  = KnownDomainsMode
+  | SideLoadedMode
+
 type FinalizeOtherProofParams :: Int -> Type -> Row Type -> Type
 type FinalizeOtherProofParams nd f r =
   { domains :: Vector nd { generator :: FVar f, log2 :: Int }
@@ -92,6 +118,7 @@ type FinalizeOtherProofParams nd f r =
   , srsLengthLog2 :: Int
   , endo :: f -- ^ EndoScalar coefficient (= Wrap_inner_curve.scalar = Vesta.endo_scalar for Step)
   , linearizationPoly :: LinearizationPoly f
+  , domainMode :: DomainMode
   | r
   }
 
@@ -255,6 +282,14 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
     (Vector.reverse params.domains)
   let domainWhiches = Vector.reverse domainWhichesRev
+  -- Side-loaded path mirrors OCaml's `O.of_index` which calls
+  -- `Boolean.Assert.any` over its 17 one-hot bits
+  -- (`one_hot_vector.ml:23`). Compiled `Pseudo.Domain.to_domain`
+  -- doesn't enforce one-hot — caller wiring constrains the
+  -- runtime `domainLog2Var` upstream.
+  case params.domainMode of
+    SideLoadedMode -> assertAny_ (Vector.toUnfoldable domainWhiches)
+    KnownDomainsMode -> pure unit
   maskedGen <- Pseudo.mask domainWhiches (map _.generator params.domains)
   zetaw <- mul_ maskedGen zeta
 
@@ -373,18 +408,40 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- For nd=1 emits same gate count as the previous single-domain
   -- `domainVanishingPoly`. For nd>1 emits one extra Generic per
   -- additional domain (mask multiplication).
-  zetaToNMinus1 <- label "domain-vanishing-poly" do
-    pow2PowsArr <- buildPow2PowsArray zeta maxLog2
-    let
-      pow2AtLog2 :: Vector nd (FVar f)
-      pow2AtLog2 = map
-        ( \d -> case Array.index pow2PowsArr d.log2 of
-            Just v -> v
-            Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
+  zetaToNMinus1 <- label "domain-vanishing-poly" case params.domainMode of
+    KnownDomainsMode -> do
+      pow2PowsArr <- buildPow2PowsArray zeta maxLog2
+      let
+        pow2AtLog2 :: Vector nd (FVar f)
+        pow2AtLog2 = map
+          ( \d -> case Array.index pow2PowsArr d.log2 of
+              Just v -> v
+              Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
+          )
+          params.domains
+      masked <- Pseudo.mask domainWhiches pow2AtLog2
+      label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
+    SideLoadedMode -> do
+      -- Iterative side-loaded vanishing polynomial. Mirrors OCaml
+      -- `step_verifier.ml:796-810` + `:817-840`
+      -- (`side_loaded_domain.vanishing_polynomial mask`):
+      --   mask = ones_vector ~first_zero:domainLog2Var (length 16)
+      --   acc = x ;  for i = 0..15:
+      --     acc = if mask[i] then square(acc) else acc
+      --   result = seal (acc - 1)
+      -- The mask is built fresh here from `domainLog2Var` to mirror
+      -- `Utils.ones_vector` exactly (16 equals_ + 16 and_ ⇒ 32 R1CS
+      -- gates). The vanishing iter then emits 1 Square + 1 Generic
+      -- if_ per bit ⇒ 32 more R1CS gates.
+      onesPrefix <- mkSideLoadedOnesPrefixMask domainLog2Var
+      acc <- foldM
+        ( \accV bit -> do
+            sq <- square_ accV
+            if_ bit sq accV
         )
-        params.domains
-    masked <- Pseudo.mask domainWhiches pow2AtLog2
-    label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
+        zeta
+        onesPrefix
+      label "seal_domain_vanishing" $ seal (acc `sub_` const_ one)
 
   let
     alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
@@ -532,3 +589,50 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   let challenges = deferred.bulletproofChallenges
 
   pure { finalized, xiCorrect, bCorrect, cipCorrect, plonkOk, challenges, expandedChallenges }
+
+-------------------------------------------------------------------------------
+-- | Side-loaded helpers
+-------------------------------------------------------------------------------
+
+-- | Build the runtime ones-prefix mask for side-loaded vanishing
+-- | polynomial. Mirrors OCaml `util.ml:51-66`'s
+-- | `Utils.ones_vector ~first_zero:domainLog2Var (length 16)`:
+-- |
+-- |   value := true
+-- |   for i = 0..15:
+-- |     value := value && not (Field.equal first_zero (Field.of_int i))
+-- |     emit value
+-- |
+-- | Result: a length-16 vector of `BoolVar` where bit `i` is true iff
+-- | `first_zero > i` (i.e. positions strictly below the runtime
+-- | `domainLog2Var`). Each iteration emits one `equals_` and one
+-- | `and_` constraint ⇒ 32 R1CS gates total.
+-- |
+-- | Used by `finalizeOtherProofCircuit`'s `SideLoadedMode` branch
+-- | for the iterative `if_(mask[i], square, …)` vanishing polynomial
+-- | (`step_verifier.ml:796-810`).
+mkSideLoadedOnesPrefixMask
+  :: forall f t m
+   . PrimeField f
+  => CircuitM f (KimchiConstraint f) t m
+  => FVar f
+  -> Snarky (KimchiConstraint f) t m (Vector 16 (BoolVar f))
+mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
+  -- Iterate i = 0..15, threading the running `value` and collecting
+  -- it after each AND. The collected bits land in left-to-right
+  -- order; convert to Vector 16 via `unsafePartial fromJust`
+  -- (length is statically 16 by construction).
+  let
+    step :: { acc :: BoolVar f, masks :: Array (BoolVar f) } -> Int
+      -> Snarky (KimchiConstraint f) t m
+           { acc :: BoolVar f, masks :: Array (BoolVar f) }
+    step st i = do
+      eq <- equals_ first_zero (const_ (fromInt i))
+      newAcc <- (and_ st.acc) (not_ eq)
+      pure { acc: newAcc, masks: st.masks <> [ newAcc ] }
+  result <- foldM step { acc: true_, masks: [] } (Array.range 0 15)
+  case Vector.toVector result.masks of
+    Just v -> pure v
+    Nothing -> unsafeThrow
+      "Pickles.Step.FinalizeOtherProof.mkSideLoadedOnesPrefixMask: \
+      \expected exactly 16 mask bits — bug in helper construction."

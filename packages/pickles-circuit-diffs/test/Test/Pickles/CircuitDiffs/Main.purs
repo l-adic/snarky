@@ -690,20 +690,14 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
           _ = lagrangeAtD15 -- keep available in case the diff loop wants the LBL form
-        -- N=1 parent + side-loaded prev. Currently fails: PS emits 11716
-        -- vs OCaml's 11862 gates → −146 Generic gates, all other gate
-        -- types (Poseidon, VarBaseMul, EndoMul, CompleteAdd, …) match
-        -- exactly. The −146 delta is the in-circuit cost of β3
-        -- (`side_loaded_domain` Pseudo dispatch over log2 ∈ [0..16] —
-        -- 16 ones_vector + 16 if_/square + 17 of_index + Assert.any
-        -- ≈ ~130 gates) + β4 (`max_proofs_verified` runtime mask
-        -- ≈ ~16 gates). Marking pending until those land.
-        --
-        -- To run the diff manually:
-        --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
-        -- after switching `pending'` below back to `exactMatchEff`.
-        pending' "step_main_side_loaded_main_circuit matches OCaml" $
-          let _ = compileStepMainSideLoadedMain sideLoadedMainSrsData in pure unit
+        -- N=1 parent + side-loaded prev. β3 lands the side-loaded
+        -- step-domain Pseudo dispatch (ones_prefix mask + iterative
+        -- `if_(mask[i], square, …)` vanishing polynomial +
+        -- Assert.any over the 17 one-hot bits). β4 (max_proofs_verified
+        -- runtime mask) is the remaining work; if β3 alone closes
+        -- ~130 gates, β4 takes the residual.
+        exactMatchEff "step_main_side_loaded_main_circuit"
+          (fromCompiledCircuit <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

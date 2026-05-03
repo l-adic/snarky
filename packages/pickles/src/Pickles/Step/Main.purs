@@ -48,6 +48,7 @@ import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
+import Pickles.Step.FinalizeOtherProof (DomainMode(..))
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
 import Pickles.Step.VerifyOne (VerifyOneInput, verifyOne)
 import Pickles.Types (BranchData(..), FopProofState(..), PaddedLength, PerProofUnfinalized(..), PointEval(..), StepAllEvals(..), StepField, StepIPARounds, StepPerProofWitness(..), StepProofState(..), UnfinalizedFieldCount, VerificationKey(..), WrapIPARounds, WrapProof(..), WrapProofMessages(..), WrapProofOpening(..))
@@ -933,11 +934,13 @@ stepMain
               ConstVk constVk ->
                 { lagrangeAt: perSlotLagrangeAt !! i
                 , correctionMode: PureCorrections
+                , fopDomainMode: KnownDomainsMode
                 , vkRec: let VerificationKey r = liftConstVk constVk in r
                 }
               SharedExistsVk ->
                 { lagrangeAt: perSlotLagrangeAt !! i
                 , correctionMode: PureCorrections
+                , fopDomainMode: KnownDomainsMode
                 , vkRec: sharedVkRec
                 }
               -- Side-loaded: read the per-slot exists-allocated VK
@@ -960,6 +963,7 @@ stepMain
                         sl.actualWrapDomainSize
                         perDomainLagrangeAts
                     , correctionMode: InCircuitCorrections
+                    , fopDomainMode: SideLoadedMode
                     , vkRec: let VerificationKey r = sl.wrapIndex in r
                     }
                   Nothing ->
@@ -1001,6 +1005,7 @@ stepMain
               , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
               , endo: stepEndoVal
               , linearizationPoly: Linearization.pallas
+              , domainMode: slotConfig.fopDomainMode
               }
 
             slotVkRec = slotConfig.vkRec
