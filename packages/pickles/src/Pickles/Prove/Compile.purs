@@ -1542,31 +1542,45 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      -- PLACEHOLDER: side-loaded VK's actual wrap domain depends on
-      -- runtime `actual_wrap_domain_size`; here we hard-code the
-      -- side-loaded tag's compile-time upper bound. Lagrange tables
-      -- below are computed against this. Wrong for VKs at smaller
-      -- wrap domains; real fix is in-circuit one-hot mux.
-      slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
-
       -- PLACEHOLDER: side-loaded `step_domains = `Side_loaded`. Real
       -- routing dispatches via Pseudo on the prev's step domain.
       slotFopDomainLog2s = selfStepDomainLog2s
 
+      -- The per-slot lagrange lookup is unused for side-loaded slots
+      -- (Step.Main's dispatch consults the per-domain triple inside
+      -- `SideloadedExistsVk`). Carry the slotMpvMax-domain lookup as
+      -- a placeholder so the `perSlotLagrangeAt` vector still has the
+      -- right shape — `Step.Main`'s side-loaded branch never reads
+      -- it.
+      slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
           (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
             :: AffinePoint (F StepField)
 
+      -- The three per-domain lagrange tables for the side-loaded VK's
+      -- `actual_wrap_domain_size` ∈ {N0=13, N1=14, N2=15}. Step.Main
+      -- muxes among these via the in-circuit one-hot bits. Mirrors
+      -- OCaml `step_verifier.ml`'s `wrap_domain = Side_loaded …` path
+      -- (`public_input_commitment_dynamic`).
+      sideloadedPerDomainLagrangeAts ::
+        Vector 3 (Int -> AffinePoint (F StepField))
+      sideloadedPerDomainLagrangeAts = map
+        ( \log2 i ->
+            (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i))
+              :: AffinePoint (F StepField)
+        )
+        (13 :< 14 :< 15 :< Vector.nil)
+
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
-      -- Emit `SideloadedExistsVk` — the marker for the per-slot
-      -- exists-VK path. `Pickles.Step.Main`'s dispatch currently
-      -- routes this through `sharedVkRec` as a fallback (Step 2d-β1
-      -- introduces the marker; Step 2d-β1.5 will allocate the
-      -- per-slot VK against the runtime advice).
-      headSlotVkSource = SideloadedExistsVk
+      -- Emit `SideloadedExistsVk` carrying the three per-domain
+      -- lagrange tables. `Pickles.Step.Main`'s dispatch reads the
+      -- side-loaded VK's `actualWrapDomainSize` one-hot bits and
+      -- muxes among the three tables via
+      -- `mkSideloadedLagrangeLookup`.
+      headSlotVkSource = SideloadedExistsVk sideloadedPerDomainLagrangeAts
     in
       { stepProveCtx:
           { srsData:

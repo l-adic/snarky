@@ -36,6 +36,8 @@ module Pickles.PublicInputCommit
   , LagrangeBaseLookup
   , mkConstLagrangeBase
   , mkConstLagrangeBaseLookup
+  , mkSideloadedLagrangeLookup
+  , sumMaskedAffine
   , wrapPt
   , unwrapPt
   , pow2pow
@@ -53,6 +55,7 @@ import Data.Symbol (class IsSymbol)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector)
+import Data.Vector as Vector
 import Effect.Exception.Unsafe (unsafeThrow)
 import Partial.Unsafe (unsafePartial)
 import Prim.Int (class Add, class Mul)
@@ -60,6 +63,7 @@ import Prim.Row as Row
 import Prim.RowList as RL
 import Record as Record
 import Safe.Coerce (coerce)
+import Snarky.Circuit.CVar (add_, scale_) as CVar
 import Snarky.Circuit.Curves as Curves
 import Snarky.Circuit.DSL (class CircuitM, Bool(..), BoolVar, F(..), FVar, Snarky, addConstraint, const_, if_, label)
 import Snarky.Circuit.DSL.SizedF (SizedF, toField)
@@ -249,6 +253,93 @@ mkConstLagrangeBaseLookup
   => (Int -> AffinePoint (F f))
   -> LagrangeBaseLookup f
 mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
+
+-- | Sum-mask a vector of constant affine points against a vector of
+-- | one-hot booleans, producing an in-circuit affine point. For 1-hot
+-- | bits this reduces to selecting the active entry's point.
+-- |
+-- | Each coordinate is computed as `Σᵢ bᵢ * pᵢ` via pure
+-- | `CVar.scale_` + `CVar.add_` ops — no R1CS constraints emitted.
+-- | Mirrors the `sumMaskByBranch` pattern in `Pickles.Wrap.Main` and
+-- | OCaml's `select_curve_points` (`step_verifier.ml:392-407`).
+sumMaskedAffine
+  :: forall n m f
+   . PrimeField f
+  => Add 1 m n
+  => Vector n (BoolVar f)
+  -> Vector n (AffinePoint (F f))
+  -> AffinePoint (FVar f)
+sumMaskedAffine bits perBranchPts =
+  let
+    boolFvars :: Vector n (FVar f)
+    boolFvars = map (coerce :: BoolVar f -> FVar f) bits
+    scaledPts :: Vector n (AffinePoint (FVar f))
+    scaledPts = Vector.zipWith
+      ( \b { x: F x', y: F y' } ->
+          { x: CVar.scale_ x' b, y: CVar.scale_ y' b }
+      )
+      boolFvars
+      perBranchPts
+    { head: spHead, tail: spTail } = Vector.uncons scaledPts
+  in
+    foldl
+      ( \acc pt ->
+          { x: CVar.add_ acc.x pt.x, y: CVar.add_ acc.y pt.y }
+      )
+      spHead
+      spTail
+
+-- | Build a `LagrangeBaseLookup` for a side-loaded slot that muxes
+-- | among three per-domain lagrange tables based on a one-hot bitvec.
+-- |
+-- | The side-loaded VK's `actual_wrap_domain_size` is one-hot over
+-- | `{N0, N1, N2}` (i.e. the three legal wrap-domain log2s). For each
+-- | base index `i` we fetch one constant point per domain and
+-- | sum-mask via the bitvec; the correction at scale `2^shift` is
+-- | computed in-circuit by sum-masking the same way.
+-- |
+-- | Mirrors OCaml `step_verifier.ml`'s `wrap_domain = Side_loaded …`
+-- | path (`public_input_commitment_dynamic`, lines 409-456): per-domain
+-- | lagrange points are selected via `select_curve_points` over the
+-- | one-hot bit vector before each scalar mul.
+-- |
+-- | The returned `LagrangeBase` populates `correctionAt = Just …`,
+-- | which routes `scalarMulLeaf` through the per-branch path
+-- | (`AddWithCircuitCorrection`). Callers must therefore use
+-- | `InCircuitCorrections` mode for slots that consult this lookup.
+mkSideloadedLagrangeLookup
+  :: forall f
+   . PrimeField f
+  => CurveParams f
+  -> Vector 3 (BoolVar f)
+  -> Vector 3 (Int -> AffinePoint (F f))
+  -> LagrangeBaseLookup f
+mkSideloadedLagrangeLookup curveP bits perDomainAt i =
+  let
+    perDomainPts :: Vector 3 (AffinePoint (F f))
+    perDomainPts = map (\at -> at i) perDomainAt
+    summed :: AffinePoint (FVar f)
+    summed = sumMaskedAffine bits perDomainPts
+    correctionAt shift =
+      sumMaskedAffine bits
+        ( map
+            ( \pt ->
+                wrapPt $ EC.negate_ $ unwrapPt
+                  $ pow2pow curveP pt shift
+            )
+            perDomainPts
+        )
+  in
+    { -- `constant` is unused on the per-branch path: every
+      -- `scalarMulLeaf` consults `correctionAt` instead, and the
+      -- in-circuit corrections are emitted via
+      -- `AddWithCircuitCorrection`. Carry the head domain's point as a
+      -- placeholder so the record typechecks.
+      constant: (Vector.uncons perDomainPts).head
+    , circuit: summed
+    , condAddPt: summed
+    , correctionAt: Just correctionAt
+    }
 
 -- | Intermediate result from walking the structure. The `nextIdx` field is
 -- | the first lagrange-base index the caller has *not yet* consumed.

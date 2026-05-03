@@ -43,7 +43,7 @@ import Data.Vector as Vector
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
-import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup)
+import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
 import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
@@ -125,8 +125,8 @@ type RuleOutput n prevInput output =
 -- |     top of `step_main` via `Req.Wrap_index`. Every Self slot
 -- |     reuses that single allocation. Used for Self tags.
 -- |
--- |   * `SideloadedExistsVk` — slot's prev is a side-loaded tag
--- |     whose wrap VK is supplied at runtime via the
+-- |   * `SideloadedExistsVk perDomainLagrangeAts` — slot's prev is a
+-- |     side-loaded tag whose wrap VK is supplied at runtime via the
 -- |     `Pickles.Sideload.Advice.SideloadedVKsCarrier`. The in-circuit
 -- |     VK is allocated PER SLOT against `verificationKeyTyp` —
 -- |     distinct from `SharedExistsVk` because each side-loaded slot
@@ -138,14 +138,18 @@ type RuleOutput n prevInput output =
 -- |     `exists Side_loaded.Verification_key.typ ~compute:` +
 -- |     `Side_loaded.in_circuit` flow.
 -- |
--- |     NOTE: the per-slot exists allocation + binding to the
--- |     runtime VK is not yet wired (Step 2d-β1.5). This constructor
--- |     currently routes through `sharedVkRec` as a fallback, with
--- |     an explicit TODO marker at the dispatch site.
+-- |     The carried `Vector 3 (Int -> AffinePoint (F StepField))` are
+-- |     the three per-domain lagrange-base lookup tables (one each
+-- |     for `wrap_domain ∈ {N0, N1, N2}`). The IVP's
+-- |     `lagrangeAt` for this slot muxes among them via the in-circuit
+-- |     `actualWrapDomainSize` one-hot bits — see
+-- |     `Pickles.PublicInputCommit.mkSideloadedLagrangeLookup` and
+-- |     OCaml `step_verifier.ml`'s `public_input_commitment_dynamic`
+-- |     (lines 409-456).
 data SlotVkSource
   = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
-  | SideloadedExistsVk
+  | SideloadedExistsVk (Vector 3 (Int -> AffinePoint (F StepField)))
 
 -------------------------------------------------------------------------------
 -- | SRS data for step_main
@@ -915,13 +919,62 @@ stepMain
             -- all unique_domains, so any element gives the right
             -- (constant) value.
             slotShiftsLog2 = Vector.head slotFopDomainLog2s
-            slotLagrangeAt = perSlotLagrangeAt !! i
+
+            -- Per-slot config: lagrange lookup, correction mode, and
+            -- VK record. Compiled slots (ConstVk / SharedExistsVk)
+            -- use the compile-time `perSlotLagrangeAt` table with
+            -- pure (constant) corrections. Side-loaded slots mux
+            -- among three per-domain lagrange tables via the in-circuit
+            -- `actualWrapDomainSize` one-hot bits — that path produces
+            -- in-circuit FVar corrections, so it must use
+            -- `InCircuitCorrections` mode (PureCorrections rejects
+            -- `AddWithCircuitCorrection`).
+            slotConfig = case perSlotVkSources !! i of
+              ConstVk constVk ->
+                { lagrangeAt: perSlotLagrangeAt !! i
+                , correctionMode: PureCorrections
+                , vkRec: let VerificationKey r = liftConstVk constVk in r
+                }
+              SharedExistsVk ->
+                { lagrangeAt: perSlotLagrangeAt !! i
+                , correctionMode: PureCorrections
+                , vkRec: sharedVkRec
+                }
+              -- Side-loaded: read the per-slot exists-allocated VK
+              -- from `perSlotSideloadedVks` (built above by
+              -- `traverseSideloadedVKsCarrier`). Each `Just (Checked
+              -- sl)` contains the slot's `wrapIndex` and
+              -- `actualWrapDomainSize` one-hot bitvec; mux the three
+              -- per-domain lagrange tables via
+              -- `mkSideloadedLagrangeLookup`. A `Nothing` would
+              -- indicate a spec/dispatch mismatch (the spec's
+              -- `PrevsSpecSideLoadedCons` slot got routed to
+              -- `SideloadedExistsVk` here, but the traversal class
+              -- produced `Nothing` at this position — should be
+              -- impossible by construction).
+              SideloadedExistsVk perDomainLagrangeAts ->
+                case perSlotSideloadedVks !! i of
+                  Just (Checked sl) ->
+                    { lagrangeAt: mkSideloadedLagrangeLookup
+                        (curveParams (Proxy @PallasG))
+                        sl.actualWrapDomainSize
+                        perDomainLagrangeAts
+                    , correctionMode: InCircuitCorrections
+                    , vkRec: let VerificationKey r = sl.wrapIndex in r
+                    }
+                  Nothing ->
+                    unsafeCrashWith
+                      "Pickles.Step.Main: SideloadedExistsVk slot has \
+                      \no per-slot allocated VK — \
+                      \traverseSideloadedVKsCarrier should have \
+                      \produced a Just for every PrevsSpecSideLoadedCons \
+                      \position. Spec/dispatch mismatch."
 
             slotIvpParams =
               { curveParams: curveParams (Proxy @PallasG)
-              , lagrangeAt: slotLagrangeAt
+              , lagrangeAt: slotConfig.lagrangeAt
               , blindingH
-              , correctionMode: PureCorrections
+              , correctionMode: slotConfig.correctionMode
               , endo: stepEndoVal
               , groupMapParams: groupMapParams (Proxy @PallasG)
               , useOptSponge: false
@@ -950,34 +1003,7 @@ stepMain
               , linearizationPoly: Linearization.pallas
               }
 
-            -- Per-slot VK selection. See `SlotVkSource` doc above for
-            -- the semantics of each case.
-            slotVkRec = case perSlotVkSources !! i of
-              ConstVk constVk ->
-                let VerificationKey r = liftConstVk constVk in r
-              SharedExistsVk -> sharedVkRec
-              -- Side-loaded: read the per-slot exists-allocated VK
-              -- from `perSlotSideloadedVks` (built above by
-              -- `traverseSideloadedVKsCarrier`). Each `Just (Checked
-              -- sl)` contains the slot's `wrapIndex ::
-              -- PT.VerificationKey ptvar` — the same shape as
-              -- `sharedVkRec` and `liftConstVk constVk`'s output. A
-              -- `Nothing` would indicate a spec/dispatch mismatch
-              -- (the spec's `PrevsSpecSideLoadedCons` slot got
-              -- routed to `SideloadedExistsVk` here, but the
-              -- traversal class produced `Nothing` at this position
-              -- — should be impossible by construction).
-              SideloadedExistsVk ->
-                case perSlotSideloadedVks !! i of
-                  Just (Checked sl) ->
-                    let VerificationKey r = sl.wrapIndex in r
-                  Nothing ->
-                    unsafeCrashWith
-                      "Pickles.Step.Main: SideloadedExistsVk slot has \
-                      \no per-slot allocated VK — \
-                      \traverseSideloadedVKsCarrier should have \
-                      \produced a Just for every PrevsSpecSideLoadedCons \
-                      \position. Spec/dispatch mismatch."
+            slotVkRec = slotConfig.vkRec
 
             slotVk =
               { sigma: Vector.take @6 slotVkRec.sigma
