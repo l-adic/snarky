@@ -224,6 +224,17 @@ type LagrangeBase f =
   , circuit :: AffinePoint (FVar f)
   , condAddPt :: AffinePoint (FVar f)
   , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
+  -- | When `true`, the BoolVar `Cond_add` path seals `condAddPt`
+  -- | before use. Mirrors OCaml `step_verifier.ml:436`'s
+  -- | `select_curve_points` `Vector.map ~f:(Double.map ~f:Utils.seal)`
+  -- | which seals the muxed point per coordinate. Step side-loaded
+  -- | uses `select_curve_points` for both `lagrange` (Cond_add) and
+  -- | `lagrange_with_correction` (scalarMul); WRAP multi-branch
+  -- | seals only `lagrange_with_correction` (per
+  -- | `wrap_verifier.ml:443`) and leaves `lagrange` unsealed (line
+  -- | 380). So this flag is `true` only for step side-loaded; wrap
+  -- | multi-branch leaves it `false`.
+  , sealCondAddPt :: Boolean
   }
 
 -- | Index-based lookup over lagrange bases, mirroring OCaml
@@ -242,6 +253,7 @@ mkConstLagrangeBase pt =
   , circuit: constPt pt
   , condAddPt: constPt pt
   , correctionAt: Nothing
+  , sealCondAddPt: false
   }
 
 -- | Build a lookup closure from a function returning the constant `i`-th
@@ -339,6 +351,11 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
     , circuit: summed
     , condAddPt: summed
     , correctionAt: Just correctionAt
+    -- Step side-loaded muxes lagrange via `select_curve_points`
+    -- which seals each coordinate at line 436. Bool var `Cond_add`
+    -- consumers must seal before use to match OCaml gate emission
+    -- (~62 R1CS Generic across all bool vars in the slot's PI).
+    , sealCondAddPt: true
     }
 
 -- | Intermediate result from walking the structure. The `nextIdx` field is
@@ -393,7 +410,16 @@ instance PublicInputCommit (BoolVar f) f where
   scalarMuls _ bool lookup idx = do
     addConstraint (Basic.boolean (coerce bool :: FVar f))
     let base = lookup idx
-    pure { results: [ CondAdd bool base.condAddPt ], nextIdx: idx + 1 }
+    -- For step side-loaded (sealCondAddPt = true), seal each
+    -- coordinate of the muxed lagrange point before using it in
+    -- Cond_add. Mirrors OCaml `step_verifier.ml:436`'s
+    -- `Double.map ~f:seal`. Compiled rules (single-domain,
+    -- mkConstLagrangeBase) and wrap multi-branch
+    -- (mkPerBranchLagrangeBase) leave the flag false.
+    pt <-
+      if base.sealCondAddPt then sealPoint base.condAddPt
+      else pure base.condAddPt
+    pure { results: [ CondAdd bool pt ], nextIdx: idx + 1 }
 
 -- | Shifted scalar (Type1): single field element, 255 bits → 51 chunks, sDiv2Bits = 254.
 instance (FieldSizeInBits f 255) => PublicInputCommit (Type1 (FVar f)) f where
@@ -408,8 +434,19 @@ instance (FieldSizeInBits f 255, PrimeField f) => PublicInputCommit (SplitField 
     { results: r1, nextIdx: idx1 } <- scalarMulLeaf @51 @254 params sDiv2 lookup idx
     addConstraint (Basic.boolean (coerce sOdd :: FVar f))
     let oddBase = lookup idx1
+    -- For step side-loaded (sealCondAddPt = true), seal the muxed
+    -- lagrange point per coordinate before Cond_add. Mirrors OCaml
+    -- `step_verifier.ml:436`'s `Double.map ~f:Utils.seal` over
+    -- `select_curve_points`. Without this, each side-loaded sOdd
+    -- bit's Cond_add silently uses an unsealed compound CVar where
+    -- OCaml uses a sealed Var — costing 2 R1CS Generic gates per
+    -- bit (×16 bp_chals + ~9 plonk Type1/Type2 fields ≈ 50+
+    -- missing R1CS).
+    pt <-
+      if oddBase.sealCondAddPt then sealPoint oddBase.condAddPt
+      else pure oddBase.condAddPt
     pure
-      { results: r1 <> [ CondAdd sOdd oddBase.condAddPt ]
+      { results: r1 <> [ CondAdd sOdd pt ]
       , nextIdx: idx1 + 1
       }
 

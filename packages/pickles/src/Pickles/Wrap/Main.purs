@@ -793,6 +793,12 @@ wrapMain config (WrapStatementPacked stmtR) = do
           , circuit: lb.circuit
           , condAddPt: sumMaskByBranch replicatedConst
           , correctionAt: Nothing
+          -- Wrap multi-branch's `lagrange` (used for Cond_add) does
+          -- NOT seal — `wrap_verifier.ml:380`'s
+          -- `Vector.reduce_exn ~f:(... Field.( + ))` returns the
+          -- raw sum without `Util.Wrap.seal`. Only
+          -- `lagrange_with_correction` seals (line 443).
+          , sealCondAddPt: false
           }
       Just perBranchAt ->
         let
@@ -817,6 +823,9 @@ wrapMain config (WrapStatementPacked stmtR) = do
           , circuit: summed
           , condAddPt: summed
           , correctionAt: Just correctionAt
+          -- Wrap multi-branch's `lagrange` (Cond_add path) is
+          -- unsealed — see comment on the `Nothing` arm above.
+          , sealCondAddPt: false
           }
     ivpParams =
       { curveParams: curveParams (Proxy @VestaG)
