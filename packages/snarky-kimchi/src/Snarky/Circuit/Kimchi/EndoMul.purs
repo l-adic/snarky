@@ -4,11 +4,12 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (fromJust)
+import Data.Reflectable (class Reflectable)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (!!))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafePartial)
-import Prim.Int (class Compare)
+import Prim.Int (class Add, class Compare, class Mul)
 import Prim.Ordering (LT)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (class CircuitM, F(..), FVar, SizedF, Snarky, addConstraint, assertEqual_, const_, exists, label, read, readCVar, scale_, seal)
@@ -29,23 +30,26 @@ where ~ means that the LHS is a circuit which computes
 the pure function on the RHS.
 -}
 endo
-  :: forall f f' t m n
+  :: forall f f' t m n @k @l _l
    . FieldSizeInBits f n
   => HasEndo f f'
+  => Reflectable k Int
+  => Mul 4 l k
+  => Add 1 _l l
   => CircuitM f (KimchiConstraint f) t m
-  => Compare 128 n LT
+  => Compare k n LT
   => AffinePoint (FVar f)
-  -> SizedF 128 (FVar f)
+  -> SizedF k (FVar f)
   -> Snarky (KimchiConstraint f) t m
        (AffinePoint (FVar f))
 endo g scalar = label "endo" do
   msbBits <- exists do
-    vVal :: SizedF 128 (F f) <- read scalar
+    vVal :: SizedF k (F f) <- read scalar
     let lsbBits = SizedF.toBits vVal
     pure $ map (\x -> if x then (one :: F f) else zero) (Vector.reverse lsbBits)
   -- acc = [2] (g + \phi g)
   let
-    chunks :: Vector 32 (Vector 4 (FVar f))
+    chunks :: Vector l (Vector 4 (FVar f))
     chunks = Vector.chunks @4 msbBits
     EndoBase (eb :: f) = endoBase @f @f'
   accInit <- do
@@ -99,7 +103,7 @@ endo g scalar = label "endo" do
     { nAcc: const_ zero, acc: accInit }
     chunks
   assertEqual_ nAcc (SizedF.toField scalar)
-  addConstraint $ KimchiEndoMul { nAcc, s: acc, state: rounds }
+  addConstraint $ KimchiEndoMul { nAcc, s: acc, state: Vector.toUnfoldable1 rounds }
   pure acc
   where
   double x = x + x
@@ -158,7 +162,7 @@ endoInv g scalar = label "endo-inv" do
     pure $ WeierstrassAffinePoint { x: F rx, y: F ry }
 
   -- Verify: endo(result, scalar) == g
-  computed <- endo result scalar
+  computed <- endo @128 @32 result scalar
   assertEqual_ computed.x g.x
   assertEqual_ computed.y g.y
   pure result

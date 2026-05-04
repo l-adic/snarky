@@ -8,6 +8,9 @@ module Snarky.Constraint.Kimchi.EndoMul
 
 import Prelude
 
+import Data.Array (zip)
+import Data.Array.NonEmpty (NonEmptyArray)
+import Data.Array.NonEmpty as NEA
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Traversable (all, traverse)
@@ -33,15 +36,15 @@ type Round f =
   }
 
 type EndoMul f =
-  { state :: Vector 32 (Round f)
+  { state :: NEA.NonEmptyArray (Round f)
   , s :: AffinePoint f
   , nAcc :: f
   }
 
-newtype Rows f = Rows (Vector 33 (KimchiRow f))
+newtype Rows f = Rows (NonEmptyArray (KimchiRow f))
 
 instance ToKimchiRows f (Rows f) where
-  toKimchiRows (Rows as) = Vector.toUnfoldable as
+  toKimchiRows (Rows as) = NEA.toUnfoldable as
 
 eval
   :: forall @f @f' m
@@ -53,9 +56,9 @@ eval
 eval lookup (Rows rs) = do
   let rs' = map _.variables rs
   let
-    { before } = Vector.splitAt @32 rs'
-    { after } = Vector.splitAt @1 rs'
-    roundPairs = Vector.zip before after
+    { init: before } = NEA.unsnoc rs'
+    { tail: after } = NEA.uncons rs'
+    roundPairs = zip before after
   all identity <$> traverse lookupRound roundPairs
   where
   lookup' = maybe (pure zero) lookup
@@ -141,7 +144,7 @@ reduce c = do
   ys <- reduceToVariable c.s.y
   nAcc <- reduceToVariable c.nAcc
   rows <- traverse (\r -> endoMulRound <$> reduceRound r) c.state
-  pure $ Rows $ rows `Vector.snoc` finalZeroRow xs ys nAcc
+  pure $ Rows $ rows `NEA.snoc` finalZeroRow xs ys nAcc
 
   where
   reduceRound round = do

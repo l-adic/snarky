@@ -1,5 +1,6 @@
 module Snarky.Circuit.Kimchi.EndoScalar
   ( toField
+  , toFieldChecked'
   , toFieldPure
   , expandToEndoScalar
   ) where
@@ -42,6 +43,32 @@ toField
   -> FVar f
   -> Snarky (KimchiConstraint f) t m (FVar f)
 toField scalar endo = label "endo-scalar-to-field" do
+  { a, b, n } <- toFieldChecked' @rows scalar
+  assertEqual_ n (SizedF.toField scalar)
+  case endo of
+    Const e -> pure $ scale_ e a `add_` b
+    _ -> a `mul_` endo <#> add_ b
+
+-- | Emits ONLY the EC_endoscalar gate and returns the raw `(a, b, n)`
+-- | accumulators. Mirrors OCaml `Pickles.Scalar_challenge.to_field_checked'`
+-- | (scalar_challenge.ml:12-121) — the wrapper `to_field_checked` is
+-- | what asserts `n = scalar` and returns `a * endo + b`. Use this
+-- | when you want the gate without the wrapper's extra `Equal` and
+-- | `Mul`/`Scale+Add`.
+toFieldChecked'
+  :: forall @rows f t m n nBits _l
+   . FieldSizeInBits f n
+  => Mul 16 rows nBits
+  => Mul 2 _l nBits
+  => Mul 8 rows _l
+  => Reflectable rows Int
+  => Reflectable nBits Int
+  => CircuitM f (KimchiConstraint f) t m
+  => Compare nBits n LT
+  => SizedF nBits (FVar f)
+  -> Snarky (KimchiConstraint f) t m
+       { a :: FVar f, b :: FVar f, n :: FVar f }
+toFieldChecked' scalar = do
   -- Create nybble variables directly (like OCaml's `exists Field.typ`).
   -- Bits only exist in the prover — the EndoMulScalar gate constrains the nybbles.
   nibblesByRow :: Vector rows (Vector 8 (FVar f)) <- exists do
@@ -86,10 +113,7 @@ toField scalar endo = label "endo-scalar-to-field" do
     }
     nibblesByRow
   addConstraint $ KimchiEndoScalar $ Vector.toUnfoldable rowsRev
-  assertEqual_ n (SizedF.toField scalar)
-  case endo of
-    Const e -> pure $ scale_ e a `add_` b
-    _ -> a `mul_` endo <#> add_ b
+  pure { a, b, n }
 
   where
   boolToField :: Boolean -> f

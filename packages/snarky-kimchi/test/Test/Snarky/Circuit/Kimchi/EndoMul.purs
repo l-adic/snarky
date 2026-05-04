@@ -62,7 +62,7 @@ endoSpec cfg _ curveProxy curveName =
           -> SizedF 128 (FVar f)
           -> Snarky (KimchiConstraint f) t Identity (AffinePoint (FVar f))
         circuit p scalar = do
-          result <- endo p scalar
+          result <- endo @128 @32 p scalar
           pure result
 
         gen :: Gen (Tuple (AffinePoint (F f)) (SizedF 128 (F f)))

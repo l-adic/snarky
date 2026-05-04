@@ -40,11 +40,12 @@ import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationSt
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
 import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
-import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN1Step, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
+import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (compileStepMainNoRecursionReturn)
-import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
+import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
+import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
@@ -351,7 +352,7 @@ endoMulCircuit
   => Tuple (AffinePoint (FVar Fp)) (FVar Fp)
   -> Snarky (KimchiConstraint Fp) t m (AffinePoint (FVar Fp))
 endoMulCircuit (Tuple g scalar) =
-  endo g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
+  endo @128 @32 g (unsafeCoerce scalar :: SizedF 128 (FVar Fp))
 
 scaleFast2_128Circuit
   :: forall t m
@@ -707,6 +708,16 @@ spec =
         --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
         -- after switching `pending'` below back to `exactMatchEff`.
         exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
+        -- N=0, Input mode — side-loaded CHILD (No_recursion + dummy_constraints).
+        -- The inner rule whose proof gets verified by the side-loaded
+        -- parent in `dump_side_loaded_main.ml`. Full body translated:
+        -- on-curve `g`, `toFieldChecked' @1`, `scaleFast1 @1 @5` ×2,
+        -- `endo @4 @1`, then `Field.Assert.equal self Field.zero`.
+        let
+          sideLoadedChildSrsData =
+            { blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedChild sideLoadedChildSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

@@ -43,7 +43,7 @@ bulletReduceOneCircuit
   -> Snarky (KimchiConstraint WrapField) t m { p :: AffinePoint (FVar WrapField), isInfinity :: BoolVar WrapField }
 bulletReduceOneCircuit input = do
   lScaled <- endoInv @WrapField @Vesta.ScalarField @VestaG input.l input.u
-  rScaled <- endo input.r input.u
+  rScaled <- endo @128 @32 input.r input.u
   addComplete lScaled rScaled
 
 compileBulletReduceOne :: CompiledCircuit WrapField
