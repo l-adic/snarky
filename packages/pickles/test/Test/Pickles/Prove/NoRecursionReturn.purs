@@ -87,7 +87,12 @@ spec = describe "Pickles.Prove.NoRecursionReturn" do
       rules
 
     let BranchProver nrrProver = fst output.provers
-    eResult <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
+    -- Compiled-only spec (PrevsSpecNil) → spec-derived `vkCarrier =
+    -- Unit`. Mirrors OCaml's `~handler:None` for non-side-loaded
+    -- branches. Threading the field uniformly keeps the
+    -- `BranchProver` API consistent with side-loaded specs.
+    eResult <- liftEffect $ runExceptT $ nrrProver
+      { appInput: unit, prevs: unit, sideloadedVKs: unit }
     case eResult of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right compiledProof ->

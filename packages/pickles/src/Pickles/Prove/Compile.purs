@@ -151,7 +151,7 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Main as PStepMain
-import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier, mkUnitVkCarrier)
+import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
@@ -261,10 +261,19 @@ data SlotWrapKey
   = Self
   | External ProverVKs
 
-type StepInputs :: Type -> Type -> Type -> Type
-type StepInputs prevsSpec inputVal prevsCarrier =
+type StepInputs :: Type -> Type -> Type -> Type -> Type
+type StepInputs prevsSpec inputVal prevsCarrier vkCarrier =
   { appInput :: inputVal
   , prevs :: prevsCarrier
+  -- | Spec-indexed runtime side-loaded VK carrier. Compiled-only
+  -- | specs (NRR/Simple_chain/Tree/TwoPhaseChain) populate this with
+  -- | `mkUnitVkCarrier @prevsSpec` (an all-Unit chain — semantically
+  -- | identical to omitting the field). Specs containing
+  -- | `PrevsSpecSideLoadedCons` slots populate the corresponding
+  -- | slot positions with real `Pickles.Sideload.VerificationKey`
+  -- | bundles. Mirrors OCaml's per-prove `~handler`: the runtime VK
+  -- | is bound at prove time, not at compile time.
+  , sideloadedVKs :: vkCarrier
   }
 
 -- | Per-slot prev value the user supplies at `prover.step` time.
@@ -2197,10 +2206,10 @@ type CompileMultiConfig =
 -- | Per-branch prover for ONE branch. Each `RulesCons` slot in the
 -- | carrier corresponds to a `BranchProver` of that branch's shape.
 newtype BranchProver
-  :: Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type
-newtype BranchProver prevsSpec mpv prevsCarrier inputVal outputVal m =
+  :: Type -> Int -> Type -> Type -> Type -> Type -> (Type -> Type) -> Type
+newtype BranchProver prevsSpec mpv prevsCarrier vkCarrier inputVal outputVal m =
   BranchProver
-    ( StepInputs prevsSpec inputVal prevsCarrier
+    ( StepInputs prevsSpec inputVal prevsCarrier vkCarrier
       -> ExceptT ProveError m
            (CompiledProof mpv (StatementIO inputVal outputVal) outputVal Unit)
     )
@@ -2911,7 +2920,7 @@ instance
     -- BranchProver is a newtype (not an alias) so PS sees a saturated
     -- type constructor in the instance head rather than an unfolded
     -- function type — dispatch resolves cleanly.
-    ( BranchProver prevsSpec mpvMax prevsCarrier inputVal outputVal Effect
+    ( BranchProver prevsSpec mpvMax prevsCarrier vkCarrier inputVal outputVal Effect
         /\ restProvers
     )
   where
@@ -3282,7 +3291,6 @@ runMultiProverBody
        padMax totalBasesMax totalBasesMaxPred
        vkCarrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
-  => MkUnitVkCarrier prevsSpec vkCarrier
   => PrevValuesCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -3351,7 +3359,7 @@ runMultiProverBody
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
   -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
-  -> StepInputs prevsSpec inputVal prevsCarrier
+  -> StepInputs prevsSpec inputVal prevsCarrier vkCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
 runMultiProverBody
@@ -3363,7 +3371,7 @@ runMultiProverBody
   stepCR
   selfStepDomainLog2
   (RuleEntry r)
-  { appInput, prevs } = do
+  { appInput, prevs, sideloadedVKs } = do
   let
     perRuleCfg =
       { srs: cfg.srs
@@ -3377,15 +3385,16 @@ runMultiProverBody
     -- step_main's `step_domains:all_step_domains` (compile.ml:568).
     shape = shapeCompileData @prevsSpec perRuleCfg allStepDomainLog2s
 
+  -- Per-prove side-loaded VK carrier from `stepInputs`. For
+  -- compiled-only specs the caller passes `mkUnitVkCarrier @prevsSpec`
+  -- (an all-Unit chain — semantically identical to the prior
+  -- baked-in synthesis). For specs containing
+  -- `PrevsSpecSideLoadedCons`, the caller supplies the runtime VK at
+  -- the corresponding slot positions, mirroring OCaml's `~handler`.
   { stepAdvice, challengePolynomialCommitments, baseCaseWrapPublicInputs } <-
     liftEffect $ mkStepAdvice @prevsSpec perRuleCfg stepCR wrapResult appInput
       prevs
-      -- No side-loaded slots in any current rule — synthesize a
-      -- Unit-chain carrier matching the spec's all-compiled shape.
-      -- For specs containing `PrevsSpecSideLoadedCons`, this constraint
-      -- is unsatisfiable, forcing call sites to source the carrier
-      -- from `SideloadedVKsM`.
-      (mkUnitVkCarrier @prevsSpec :: vkCarrier)
+      sideloadedVKs
 
   let
     PProveStep.StepAdvice sa = stepAdvice
@@ -3399,7 +3408,7 @@ runMultiProverBody
     proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
       proveDataSideInfo
       prevs
-      (mkUnitVkCarrier @prevsSpec :: vkCarrier)
+      sideloadedVKs
 
     -- Pad rule's mpv/slots-shaped proveData to the wrap circuit's
     -- mpvMax/slotsMax shape. Identity for single-rule callers

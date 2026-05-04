@@ -145,7 +145,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
       nrrRules
 
     let BranchProver nrrProver = fst nrr.provers
-    eNrrCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
+    -- NRR has no prev slots → spec-derived `vkCarrier = Unit`.
+    eNrrCp <- liftEffect $ runExceptT $ nrrProver
+      { appInput: unit, prevs: unit, sideloadedVKs: unit }
     nrrCp <- case eNrrCp of
       Left e -> liftEffect $ Exc.throw ("nrrProver: " <> show e)
       Right p -> pure p
@@ -190,6 +192,9 @@ spec = describe "Pickles.Prove.TreeProofReturn" do
           { appInput: unit
           , prevs:
               tuple2 (InductivePrev nrrCp nrr.tag) selfPrev
+          -- Two compiled prev slots → spec-derived
+          -- `vkCarrier = Unit /\ Unit /\ Unit`.
+          , sideloadedVKs: unit /\ unit /\ unit
           }
         case eRes of
           Left e -> liftEffect $ Exc.throw ("treeProver: " <> show e)

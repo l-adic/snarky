@@ -1,4 +1,4 @@
--- | M6 acceptance test for the side-loaded `step_main` plumbing.
+-- | M6 / M7a acceptance test for the side-loaded `step_main` plumbing.
 -- |
 -- | Drives `compileMulti` over a 1-rule spec whose single prev slot is a
 -- | `PrevsSpecSideLoadedCons` (mirrors OCaml's
@@ -8,9 +8,33 @@
 -- | only spec-level difference is that the prev slot's wrap key is
 -- | side-loaded (handler-provided) instead of compile-time-known.
 -- |
--- | Acceptance criterion (the M6 milestone): `compileMulti` returns a
--- | `BranchProver` closure without crashing. Prove-time invocation is
--- | M7+; this test does NOT call the prover.
+-- | M6: `compileMulti` returns a `BranchProver` closure without
+-- |   crashing — the typeclass-driven pipeline accepts a side-loaded
+-- |   prevsSpec at compile time.
+-- |
+-- | M7a (the just-landed step): the per-prove `sideloadedVKs` channel
+-- |   on `StepInputs` / `BranchProver` is plumbed end-to-end. The 4
+-- |   pre-existing tests (NRR / Simple_chain / Tree_proof_return /
+-- |   Two_phase_chain) regression-confirm that compiled-only specs
+-- |   thread `mkUnitVkCarrier` placeholders through unchanged.
+-- |
+-- |   The side-loaded slot has NO `BasePrev` path: OCaml's analog
+-- |   `dump_side_loaded_main.ml:190-202` always passes a real child
+-- |   proof at prove time (`No_recursion.example_proof` wrapped via
+-- |   `Side_loaded.Proof.of_proof` to lift the actual width N0 into
+-- |   the side-loaded tag's bound N2). Driving the parent prover
+-- |   therefore requires an `InductivePrev` carrying a width-lifted
+-- |   child `CompiledProof 2 …`.
+-- |
+-- | M7b/M9 (next): produce a child `CompiledProof 0 (StatementIO Field
+-- |   Unit) Unit Unit` PS-side (Input-mode No_recursion asserting
+-- |   `self == 0`) — or load the OCaml fixture at
+-- |   `packages/pickles/test/fixtures/sideload_main_child/` — then
+-- |   width-lift it to `CompiledProof 2 …` (the side-loaded slot's
+-- |   compile-time bound) by repacking the existential `widthData`.
+-- |   Drive the parent prover, dump the witness via
+-- |   `KIMCHI_WITNESS_DUMP`, diff against committed
+-- |   `ocaml_main_step_b1.txt` via `tools/witness_diff.sh`.
 -- |
 -- | Reference: `docs/sideload-witness-loop-handoff.md`.
 module Test.Pickles.Prove.SideLoadedMain
@@ -88,11 +112,11 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       }
       rules
 
-    -- Project the single branch's prover. The newtype unwrap forces
-    -- the closure into scope; if `compileMulti` had crashed (e.g. on
-    -- a missing `MkUnitVkCarrier` instance for the side-loaded
-    -- carrier shape), we'd never have reached this point.
+    -- M6/M7a sanity: `compileMulti`'s side-loaded plumbing produced a
+    -- `BranchProver`. The newtype unwrap forces the closure into
+    -- scope. Prove-time invocation requires an `InductivePrev` whose
+    -- `CompiledProof 2 …` is width-lifted from a real child proof
+    -- (OCaml `Side_loaded.Proof.of_proof` analog). That bridge is
+    -- M7b — see `docs/sideload-witness-loop-handoff.md`.
     let BranchProver _chainProver = fst output.provers
-    -- M6 sanity: the compile pipeline ran end-to-end and produced a
-    -- BranchProver. Prove-time invocation is M7+.
     true `shouldEqual` true

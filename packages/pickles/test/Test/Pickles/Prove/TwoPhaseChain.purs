@@ -234,8 +234,11 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     let
       BranchProver makeZeroProver = fst output.provers
       BranchProver incrementProver = fst (snd output.provers)
+    -- Branch 0 (makeZero) has no prevs → spec-derived `vkCarrier =
+    -- Unit`. Branch 1 (increment) has one compiled prev slot →
+    -- `vkCarrier = Unit /\ Unit`.
     eRes <- liftEffect $ runExceptT $ makeZeroProver
-      { appInput: F zero, prevs: unit }
+      { appInput: F zero, prevs: unit, sideloadedVKs: unit }
     b0 <- case eRes of
       Left e -> liftEffect $ Exc.throw ("makeZeroProver: " <> show e)
       Right p -> pure p
@@ -244,6 +247,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB1 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F one
       , prevs: tuple1 (InductivePrev b0 output.tag)
+      , sideloadedVKs: unit /\ unit
       }
     b1 <- case eB1 of
       Left e -> liftEffect $ Exc.throw ("incrementProver: " <> show e)
@@ -252,6 +256,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB2 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 2 :: StepField)
       , prevs: tuple1 (InductivePrev b1 output.tag)
+      , sideloadedVKs: unit /\ unit
       }
     b2 <- case eB2 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b2: " <> show e)
@@ -260,6 +265,7 @@ spec = describe "Pickles.Prove.TwoPhaseChain" do
     eB3 <- liftEffect $ runExceptT $ incrementProver
       { appInput: F (Curves.fromInt 3 :: StepField)
       , prevs: tuple1 (InductivePrev b2 output.tag)
+      , sideloadedVKs: unit /\ unit
       }
     b3 <- case eB3 of
       Left e -> liftEffect $ Exc.throw ("incrementProver b3: " <> show e)

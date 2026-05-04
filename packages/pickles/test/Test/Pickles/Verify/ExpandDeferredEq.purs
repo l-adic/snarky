@@ -35,7 +35,7 @@ import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -95,7 +95,8 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       (tuple1 nrrEntry)
 
     let BranchProver nrrProver = fst nrr.provers
-    eCp <- liftEffect $ runExceptT $ nrrProver { appInput: unit, prevs: unit }
+    eCp <- liftEffect $ runExceptT $ nrrProver
+      { appInput: unit, prevs: unit, sideloadedVKs: unit }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("nrr prover.step: " <> show e)
       Right p -> pure p
@@ -134,7 +135,7 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       basePrev = BasePrev
         { dummyStatement: StatementIO { input: F (negate one), output: unit } }
     eCp <- liftEffect $ runExceptT $ chainProver
-      { appInput: F zero, prevs: tuple1 basePrev }
+      { appInput: F zero, prevs: tuple1 basePrev, sideloadedVKs: unit /\ unit }
     cp <- case eCp of
       Left e -> liftEffect $ Exc.throw ("simple_chain prover.step: " <> show e)
       Right p -> pure p
