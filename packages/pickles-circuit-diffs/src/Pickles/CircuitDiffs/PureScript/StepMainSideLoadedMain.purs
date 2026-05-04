@@ -159,16 +159,16 @@ compileStepMainSideLoadedMain params =
         -- doesn't exercise the runtime mux yet.
         { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
-        -- For side-loaded slots, OCaml's `side_loaded_domain` calls
-        -- `O.of_index log2_size ~length:(S max_n)` where `max_n = 16`,
-        -- producing a Vector 17 of [0..16] candidate domain log2s.
-        -- `finalizeOtherProofCircuit`'s `SideLoadedMode` traverse does
-        -- `equals_` over each, contributing ~34 R1CS Generic gates +
-        -- 1 `Boolean.Assert.any`. The previous Vector 1 [14] under-emitted.
+        -- Side-loaded slots IGNORE this Vector — `Pickles.Step.FinalizeOtherProof`'s
+        -- `SideLoadedMode` branch synthesises the `Vector 17 [0..16]`
+        -- universe internally from `branch_data.domain_log2`, mirroring
+        -- OCaml `step_verifier.ml:817-840` `side_loaded_domain`. The
+        -- placeholder here is `Vector 1 [0]` (smallest valid shape;
+        -- `nd = 1` matches what `Pickles.Prove.Compile.shapeCompileData`
+        -- produces for a single-rule side-loaded compile via
+        -- `selfStepDomainLog2s`).
         , perSlotFopDomainLog2s:
-            ( 0 :< 1 :< 2 :< 3 :< 4 :< 5 :< 6 :< 7 :< 8 :< 9 :< 10 :< 11
-                :< 12 :< 13 :< 14 :< 15 :< 16 :< Vector.nil
-            ) :< Vector.nil
+            (0 :< Vector.nil) :< Vector.nil
         , perSlotVkSources:
             SideloadedExistsVk params.sideloadedPerDomainLagrangeAt
               :< Vector.nil

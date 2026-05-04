@@ -30,7 +30,7 @@ module Pickles.Step.FinalizeOtherProof
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (unsafeFinite)
+import Data.Fin (getFinite, unsafeFinite)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
@@ -42,7 +42,7 @@ import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
-import Pickles.Linearization.FFI (class LinearizationFFI)
+import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
 import Pickles.Linearization.Interpreter (evaluateM)
 import Pickles.Linearization.Types (LinearizationPoly, runLinearizationPoly)
 import Pickles.OptSponge as OptSponge
@@ -97,19 +97,32 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- |   polynomial uses pow2_pows + `Pseudo.mask` (compiled
 -- |   `Pseudo.Domain.to_domain.vanishing_polynomial`,
 -- |   `pseudo.ml:103-128`).
--- | * `SideLoadedMode` — side-loaded prev. `params.domains` is the
--- |   universe `Vector 17` of all candidate log2s ∈ [0..16]
--- |   (= `Side_loaded_verification_key.max_domains.h`'s log2). FOP
--- |   body builds the runtime ones-prefix mask internally from
--- |   `input.domainLog2Var` (`Utils.ones_vector
--- |   ~first_zero:domainLog2Var`) and uses the iterative
--- |   `if_(mask[i], square, …)` pattern for the vanishing polynomial
--- |   (OCaml `step_verifier.ml:796-810` + `:817-840`). FOP body also
--- |   emits `Boolean.Assert.any` over the one-hot bits to mirror
--- |   `O.of_index`'s constraint (`one_hot_vector.ml:23`).
+-- | * `SideLoadedMode` — side-loaded prev. The universe `Vector 17` of
+-- |   candidate log2s ∈ [0..16] is synthesized INTERNALLY by the FOP
+-- |   body from `input.domainLog2Var` — `params.domains` is IGNORED in
+-- |   this mode. Mirrors OCaml `step_verifier.ml:817-840`
+-- |   `side_loaded_domain` exactly: that function takes only
+-- |   `~log2_size:branch_data.domain_log2` and builds `Vector.init
+-- |   (S max_n) ~f:Fn.id` internally with `max_n = 16` (=
+-- |   `Side_loaded_verification_key.max_domains.h`'s log2). The FOP
+-- |   body emits 17 `equals_` gates + `Boolean.Assert.any` (=
+-- |   OCaml `O.of_index`'s one-hot constraint at
+-- |   `one_hot_vector.ml:23`) and uses the iterative `if_(mask[i],
+-- |   square, …)` pattern for the vanishing polynomial (OCaml
+-- |   `step_verifier.ml:796-810`).
 data DomainMode
   = KnownDomainsMode
   | SideLoadedMode
+
+-- | Side-loaded domain universe size: `Vector 17` covers log2s [0..16].
+-- | Mirrors OCaml `Side_loaded_verification_key.max_domains.h` which
+-- | has `log2_size = 16` and `Vector.init (S max_n) ~f:Fn.id` with
+-- | `max_n = 16` produces a 17-element vector.
+type SideLoadedDomainCount = 17
+
+-- | Maximum log2 in the side-loaded universe (= 16).
+sideLoadedDomainLog2Max :: Int
+sideLoadedDomainLog2Max = 16
 
 type FinalizeOtherProofParams :: Int -> Type -> Row Type -> Type
 type FinalizeOtherProofParams nd f r =
@@ -232,12 +245,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- `Pseudo.mask` constraint emission.
   let
     -- Maximum log2 across all possible domains, used to size pow2_pows
-    -- in the vanishing polynomial. For nd=1 this equals the only
-    -- domain's log2 (no extra Square gates vs single-domain code).
-    -- Max log2 across the slot's possible domains. `Vector nd` is
-    -- `Foldable1` for nd ≥ 1 (witnessed by the `Add 1 _nd nd`
-    -- constraint), so this is total.
-    maxLog2 = Foldable1.maximum (map _.log2 params.domains)
+    -- in the vanishing polynomial. For KnownDomainsMode this is the
+    -- maximum across `params.domains` (Vector nd is `Foldable1` for
+    -- nd ≥ 1 via the `Add 1 _nd nd` constraint, so this is total).
+    -- For SideLoadedMode the universe is fixed at [0..16] per
+    -- `Side_loaded_verification_key.max_domains.h`, so `maxLog2 = 16`
+    -- regardless of `params.domains` — mirrors OCaml
+    -- `step_verifier.ml:840` `domain ~max:(Domain.log2_size max_domains.h)`.
+    maxLog2 = case params.domainMode of
+      KnownDomainsMode -> Foldable1.maximum (map _.log2 params.domains)
+      SideLoadedMode -> sideLoadedDomainLog2Max
     -- For non-FOP-domain code paths (`buildCircuitEnvM`) that need
     -- a single Int domain log2 — use maxLog2 (matches OCaml's
     -- `domain#log2_size` which returns the max log2 for compiled
@@ -283,26 +300,59 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
     SideLoadedMode -> Just <$> mkSideLoadedOnesPrefixMask domainLog2Var
     KnownDomainsMode -> pure Nothing
 
-  -- OCaml `step_verifier.ml:880-893` does `Vector.map unique_domains
-  -- ~f:(equals branch_data.domain_log2)` — Vector.map evaluates
-  -- right-to-left, so for domains [9, 14] OCaml emits the `equals 14`
-  -- gate (constant 14 in coeffs[4]) BEFORE the `equals 9` gate. PS's
-  -- `traverse` is left-to-right, so we mirror OCaml by reversing the
-  -- input, traversing, and reversing the output back. Without this,
-  -- the resulting CS has the constants swapped relative to OCaml.
-  domainWhichesRev <- traverse
-    (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
-    (Vector.reverse params.domains)
-  let domainWhiches = Vector.reverse domainWhichesRev
-  -- Side-loaded path mirrors OCaml's `O.of_index` which calls
-  -- `Boolean.Assert.any` over its 17 one-hot bits
-  -- (`one_hot_vector.ml:23`). Compiled `Pseudo.Domain.to_domain`
-  -- doesn't enforce one-hot — caller wiring constrains the
-  -- runtime `domainLog2Var` upstream.
-  case params.domainMode of
-    SideLoadedMode -> assertAny_ (Vector.toUnfoldable domainWhiches)
-    KnownDomainsMode -> pure unit
-  maskedGen <- Pseudo.mask domainWhiches (map _.generator params.domains)
+  -- Domain-which traversal — dispatches on `domainMode`:
+  --
+  -- * `KnownDomainsMode` reads the unique-domain Vector supplied by
+  --   the caller (`params.domains`). The result is kept at outer
+  --   scope as `Just _` and reused below by both `maskedGen` and the
+  --   pow2-mask in the vanishing-polynomial computation. OCaml
+  --   `step_verifier.ml:880-893`'s `Vector.map unique_domains
+  --   ~f:(equals branch_data.domain_log2)` evaluates right-to-left,
+  --   so for domains [9, 14] OCaml emits the `equals 14` gate
+  --   (constant 14 in coeffs[4]) BEFORE the `equals 9` gate. PS's
+  --   `traverse` is left-to-right, so we mirror OCaml by reversing
+  --   the input, traversing, and reversing the output back. Without
+  --   this, the resulting CS has the constants swapped relative to
+  --   OCaml.
+  --
+  -- * `SideLoadedMode` returns `Nothing` here — the universe
+  --   `Vector 17` of `[0..16]` log2s is synthesized inline below in
+  --   `maskedGen`, mirroring OCaml `step_verifier.ml:817-840`
+  --   `side_loaded_domain` exactly (which takes only
+  --   `branch_data.domain_log2` and builds `Vector.init (S max_n)
+  --   ~f:Fn.id` with `max_n = 16` internally — no compile-time
+  --   domain data passes through). The vanishing-poly path in
+  --   SideLoadedMode also uses `precomputedOnesPrefix` rather than
+  --   the unique-domain whiches.
+  domainWhichesKnown :: Maybe (Vector nd (BoolVar f)) <- case params.domainMode of
+    KnownDomainsMode -> do
+      domainWhichesRev <- traverse
+        (\d -> equals_ (const_ (fromInt d.log2)) domainLog2Var)
+        (Vector.reverse params.domains)
+      pure (Just (Vector.reverse domainWhichesRev))
+    SideLoadedMode -> pure Nothing
+
+  maskedGen <- case domainWhichesKnown of
+    Just dw -> Pseudo.mask dw (map _.generator params.domains)
+    Nothing -> do
+      -- SideLoadedMode: synthesize the universal `Vector 17` of
+      -- `[0..16]` candidate log2s + their generators inline. Emits 17
+      -- `equals_` gates over [16, 15, …, 0] (right-to-left) plus a
+      -- `Boolean.Assert.any` (= OCaml `O.of_index`'s one-hot
+      -- constraint at `one_hot_vector.ml:23`).
+      let
+        sideLoadedLog2s :: Vector SideLoadedDomainCount Int
+        sideLoadedLog2s = Vector.generate getFinite
+
+        sideLoadedGenerators :: Vector SideLoadedDomainCount (FVar f)
+        sideLoadedGenerators =
+          map (\log2 -> const_ (domainGenerator log2)) sideLoadedLog2s
+      domainWhichesRev <- traverse
+        (\log2 -> equals_ (const_ (fromInt log2)) domainLog2Var)
+        (Vector.reverse sideLoadedLog2s)
+      let domainWhiches = Vector.reverse domainWhichesRev
+      assertAny_ (Vector.toUnfoldable domainWhiches)
+      Pseudo.mask domainWhiches sideLoadedGenerators
   zetaw <- mul_ maskedGen zeta
 
   ---------------------------------------------------------------------------
@@ -421,18 +471,23 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- `domainVanishingPoly`. For nd>1 emits one extra Generic per
   -- additional domain (mask multiplication).
   zetaToNMinus1 <- label "domain-vanishing-poly" case params.domainMode of
-    KnownDomainsMode -> do
-      pow2PowsArr <- buildPow2PowsArray zeta maxLog2
-      let
-        pow2AtLog2 :: Vector nd (FVar f)
-        pow2AtLog2 = map
-          ( \d -> case Array.index pow2PowsArr d.log2 of
-              Just v -> v
-              Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
-          )
-          params.domains
-      masked <- Pseudo.mask domainWhiches pow2AtLog2
-      label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
+    KnownDomainsMode -> case domainWhichesKnown of
+      Just dw -> do
+        pow2PowsArr <- buildPow2PowsArray zeta maxLog2
+        let
+          pow2AtLog2 :: Vector nd (FVar f)
+          pow2AtLog2 = map
+            ( \d -> case Array.index pow2PowsArr d.log2 of
+                Just v -> v
+                Nothing -> const_ zero -- unreachable: log2 ≤ maxLog2 by construction
+            )
+            params.domains
+        masked <- Pseudo.mask dw pow2AtLog2
+        label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
+      Nothing -> unsafeThrow
+        "Pickles.Step.FinalizeOtherProof: KnownDomainsMode reached \
+        \vanishing-poly without a precomputed `domainWhichesKnown` — \
+        \bug in the domain-mode dispatch above."
     SideLoadedMode -> do
       -- Iterative side-loaded vanishing polynomial. Mirrors OCaml
       -- `step_verifier.ml:796-810` (`vanishing_polynomial mask`):
