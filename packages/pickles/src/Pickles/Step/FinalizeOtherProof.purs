@@ -435,16 +435,16 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       label "seal_domain_vanishing" $ seal (masked `sub_` const_ one)
     SideLoadedMode -> do
       -- Iterative side-loaded vanishing polynomial. Mirrors OCaml
-      -- `step_verifier.ml:796-810` + `:817-840`
-      -- (`side_loaded_domain.vanishing_polynomial mask`):
+      -- `step_verifier.ml:796-810` (`vanishing_polynomial mask`):
       --   mask = ones_vector ~first_zero:domainLog2Var (length 16)
       --   acc = x ;  for i = 0..15:
       --     acc = if mask[i] then square(acc) else acc
-      --   result = seal (acc - 1)
-      -- Mask was already computed at FOP entry (matching OCaml's
-      -- `Utils.ones_vector` call site INSIDE `side_loaded_domain`,
-      -- which runs BEFORE the `O.of_index` traversal). We just
-      -- consume the precomputed result here.
+      --   result = Field.sub (go x 0) Field.one      -- NO seal
+      -- The OCaml side-loaded path returns the result UNSEALED (just a
+      -- Cvar Add of `acc - 1`); the seal happens via downstream `mul_`s
+      -- materializing as needed. Matching this saves one Generic gate
+      -- and keeps the Generic-pair queue parity in sync with OCaml at
+      -- the start of `ft_eval0`.
       onesPrefix <- case precomputedOnesPrefix of
         Just v -> pure v
         Nothing -> unsafeThrow
@@ -458,7 +458,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
         )
         zeta
         onesPrefix
-      label "seal_domain_vanishing" $ seal (acc `sub_` const_ one)
+      pure (acc `sub_` const_ one)
 
   let
     alphaPow n = Vector.index alphaPowers (unsafeFinite @AlphaPowersLen n)
