@@ -42,13 +42,14 @@ import Prelude
 import Control.Monad.Except (runExceptT)
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
 import Effect.Exception (throw) as Exc
+import Partial.Unsafe (unsafePartial)
 import Pickles.Prove.Compile
   ( BranchProver(..)
   , CompiledProof
@@ -68,10 +69,29 @@ import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..), FVar, assertEqual_, const_)
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, assertEqual_, const_, exists)
+import Snarky.Circuit.Kimchi.EndoMul (endo)
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldChecked')
+import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
+import Snarky.Curves.Class (fromInt, generator, toAffine)
+import Snarky.Curves.Pasta (PallasG)
+import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
+import Snarky.Types.Shifted (Type1(..))
 import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Unsafe.Coerce (unsafeCoerce)
+
+-- | Pallas generator's affine coordinates as an `F StepField` pair.
+-- | Mirrors OCaml `Backend.Tick.Inner_curve.(to_affine_exn one)` (the
+-- | Pallas generator). Coordinates are over `Pallas.BaseField =
+-- | Vesta.ScalarField = StepField`.
+innerCurveGen :: { x :: F StepField, y :: F StepField }
+innerCurveGen =
+  let
+    { x, y } = unsafePartial $ fromJust $ toAffine (generator :: PallasG)
+  in
+    { x: F x, y: F y }
 
 -- | Input-mode `No_recursion` child rule: mpv=0, public input is a
 -- | field, asserts `self == 0`. PS analog of OCaml
@@ -84,9 +104,13 @@ import Test.Spec.Assertions (shouldEqual)
 -- |       Field.Assert.equal self Field.zero ; … ) }
 -- | ```
 -- |
--- | The `dummy_constraints ()` boilerplate isn't needed PS-side: kimchi
--- | only requires at least one of every gate kind, which the assertion
--- | + structural pass already covers.
+-- | The `dummy_constraints ()` block IS required for OCaml byte-parity
+-- | — each call emits a specific kimchi gate kind (EndoMulScalar,
+-- | VarBaseMul, EndoMul) plus the supporting CompleteAdd and on-curve
+-- | rows. Translation is verbatim from
+-- | `StepMainSideLoadedChild.purs`'s `sideLoadedChildRule`, which is
+-- | byte-identical to OCaml in the `step_main_side_loaded_child_circuit`
+-- | fixture comparison (86/86 circuit-diffs pass).
 noRecursionInputRule
   :: StepRule 0
        Unit
@@ -97,6 +121,24 @@ noRecursionInputRule
        (F StepField)
        (FVar StepField)
 noRecursionInputRule self = do
+  -- dummy_constraints body — translation of OCaml
+  -- dump_side_loaded_main.ml:49-73.
+  -- (1) `let x = exists Field.typ ~compute:(fun () -> 3)`
+  x <- exists (pure (F (fromInt 3) :: F StepField))
+  -- (2) `let g = exists Step_main_inputs.Inner_curve.typ ~compute:(...)`
+  --     Allocate as WeierstrassAffinePoint so `exists` triggers
+  --     assert_on_curve (matching OCaml's Inner_curve.typ).
+  WeierstrassAffinePoint g :: WeierstrassAffinePoint PallasG (FVar StepField) <-
+    exists (pure (WeierstrassAffinePoint innerCurveGen))
+  -- (3) `Scalar_challenge.to_field_checked' ~num_bits:16 (SC.create x)`.
+  _ <- toFieldChecked' @1 (unsafeCoerce x :: SizedF 16 (FVar StepField))
+  -- (4) `Step_main_inputs.Ops.scale_fast g ~num_bits:5 (Shifted_value x)` ×2.
+  _ <- scaleFast1 @1 @5 g (Type1 x)
+  _ <- scaleFast1 @1 @5 g (Type1 x)
+  -- (5) `Step_verifier.Scalar_challenge.endo g ~num_bits:4 (SC.create x)`.
+  _ <- endo @4 @1 g (unsafeCoerce x :: SizedF 4 (FVar StepField))
+
+  -- `Field.Assert.equal self Field.zero`
   assertEqual_ self (const_ zero)
   pure
     { prevPublicInputs: Vector.nil
@@ -160,8 +202,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       , prevs: unit
       , sideloadedVKs: unit
       }
-    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit Unit
-       <- case eChildCp of
+    childCp0 :: CompiledProof 0 (StatementIO (F StepField) Unit) Unit Unit <- case eChildCp of
       Left e -> liftEffect $ Exc.throw ("childProver: " <> show e)
       Right cp -> pure cp
 
