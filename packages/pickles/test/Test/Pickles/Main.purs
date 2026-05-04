@@ -5,6 +5,7 @@ import Prelude
 import Effect (Effect)
 import Effect.Aff (Aff)
 import Test.Pickles.Prove.NoRecursionReturn as NoRecursionReturn
+import Test.Pickles.Prove.SideLoadedMain as SideLoadedMain
 import Test.Pickles.Prove.SimpleChain as SimpleChain
 import Test.Pickles.Prove.TreeProofReturn as TreeProofReturn
 import Test.Pickles.Prove.TwoPhaseChain as TwoPhaseChain
@@ -36,6 +37,7 @@ spec :: SpecT Aff Unit Aff Unit
 spec = do
   NoRecursionReturn.spec
   SimpleChain.spec
+  SideLoadedMain.spec
   TreeProofReturn.spec
   TwoPhaseChain.spec
   ExpandDeferredEq.spec

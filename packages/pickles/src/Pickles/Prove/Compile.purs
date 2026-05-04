@@ -600,6 +600,7 @@ class
              StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal mpv
                carrier
                valCarrier
+               vkCarrier
          , challengePolynomialCommitments :: Vector mpv (AffinePoint StepField)
          , baseCaseWrapPublicInputs :: Vector mpv (Array WrapField)
          }
@@ -671,6 +672,8 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
         { publicInput: appInput
         , stepDomainLog2: 0
         , prevAppStates: unit
+        -- Nil has no slots so the spec-derived vkCarrier is `Unit`.
+        , sideloadedVKs: unit
         }
       bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
       dummyHash = mkDummyMsgWrapHash bcd cfg.srs.pallasSrs cfg.srs.vestaSrs
@@ -1137,6 +1140,9 @@ instance
         , kimchiPrevChallenges:
             contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
         , prevAppStates: slotData.prevStatement /\ restA.prevAppStates
+        -- Compiled slot contributes Unit; mirrors
+        -- `SideloadedVKsCarrier`'s `PrevsSpecCons` instance shape.
+        , sideloadedVKs: unit /\ restA.sideloadedVKs
         }
     pure
       { stepAdvice: combinedAdvice
@@ -1894,6 +1900,12 @@ instance
         , kimchiPrevChallenges:
             contrib.slotKimchiPrevEntry :< restA.kimchiPrevChallenges
         , prevAppStates: slotData.prevStatement /\ restA.prevAppStates
+        -- Side-loaded slot contributes the runtime VK supplied by the
+        -- caller via the spec-indexed `vkCarrier`. Mirrors OCaml's
+        -- per-prove `~handler` model: this is the channel through which
+        -- `getSideloadedVKsCarrier` reads the runtime VK in the rule
+        -- body. `headVk` was destructured at the start of this method.
+        , sideloadedVKs: headVk /\ restA.sideloadedVKs
         }
     pure
       { stepAdvice: combinedAdvice
@@ -2417,6 +2429,11 @@ instance
   , Add unfsTotal 1 digestPlusUnfs
   , Add digestPlusUnfs mpvMax outputSize
   , Reflectable ruleMpv Int
+  -- The spec-derived runtime side-loaded VK carrier; pinned by the
+  -- `SideloadedVKsCarrier` fundep `prevsSpec -> vkCarrier`. Threaded
+  -- into both the `RuleEntry` and the closure-argument `StepAdvice`
+  -- so they reference the same carrier.
+  , SideloadedVKsCarrier prevsSpec vkCarrier
   ) =>
   CompilableRulesSpec
     (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest)
@@ -2427,7 +2444,7 @@ instance
     branches
     mpvMax
     slotsMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext ruleMpv topBranches
@@ -2444,6 +2461,7 @@ instance
              ruleMpv
              carrier
              valCarrier
+             vkCarrier
         -> ExceptT EvaluationError Effect
              (PProveStep.StepProveResult outputSize)
       )
@@ -2772,7 +2790,7 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
       vkCarrier
-  , MkUnitVkCarrier vkCarrier
+  , MkUnitVkCarrier prevsSpec vkCarrier
   , PrevValuesCarrier prevsSpec valCarrier
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
@@ -2824,7 +2842,7 @@ instance
       branches
       mpvMax
       slotsMax
-      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+      ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
           /\ restCarrier
       )
       ( ( PProveStep.StepProveContext ruleMpv topBranches
@@ -2841,6 +2859,7 @@ instance
                ruleMpv
                carrier
                valCarrier
+               vkCarrier
           -> ExceptT EvaluationError Effect
                (PProveStep.StepProveResult outputSize)
         )
@@ -2861,7 +2880,7 @@ instance
     branches
     mpvMax
     slotsMax
-    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs
+    ( RuleEntry prevsSpec ruleMpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
         /\ restCarrier
     )
     ( ( PProveStep.StepProveContext ruleMpv topBranches
@@ -2878,6 +2897,7 @@ instance
              ruleMpv
              carrier
              valCarrier
+             vkCarrier
         -> ExceptT EvaluationError Effect
              (PProveStep.StepProveResult outputSize)
       )
@@ -3034,7 +3054,8 @@ data RuleEntry
   -> Int
   -> Type
   -> Type
-data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs = RuleEntry
+  -> Type
+data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs vkCarrier = RuleEntry
   { -- | Pre-pass: takes a placeholder `StepProveContext mpv` (built
     -- | with OCaml `rough_domains` log2=20) and returns the actual
     -- | `selfStepDomainLog2` derived by counting gates in a one-shot
@@ -3048,6 +3069,13 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
       PProveStep.StepProveContext mpv nd -> Effect Int
   , stepCompileFn ::
       PProveStep.StepProveContext mpv nd -> Effect PProveStep.StepCompileResult
+  -- | `vkCarrier` is the spec-derived per-slot side-loaded VK carrier
+  -- | (`SideloadedVKsCarrier prevsSpec vkCarrier`): compiled slots
+  -- | contribute `Unit`, side-loaded slots contribute a runtime
+  -- | `Pickles.Sideload.VerificationKey`. Threaded explicitly here
+  -- | because PS rejects rank-2 polymorphic record fields — pinning
+  -- | it as a `RuleEntry` parameter lets the closure body's
+  -- | `stepSolveAndProve` see a saturated `StepAdvice`.
   , stepProveFn ::
       PProveStep.StepProveContext mpv nd
       -> PProveStep.StepCompileResult
@@ -3056,6 +3084,7 @@ data RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs =
            mpv
            carrier
            valCarrier
+           vkCarrier
       -> ExceptT EvaluationError Effect (PProveStep.StepProveResult outputSize)
   , slotVKs :: slotVKs
   }
@@ -3071,7 +3100,7 @@ mkRuleEntry
        carrier carrierVar pad unfsTotal digestPlusUnfs sideloadedVkCarrier
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec mpv sideloadedVkCarrier
-  => MkUnitVkCarrier sideloadedVkCarrier
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int
@@ -3113,7 +3142,7 @@ mkRuleEntry
   => PrevValuesCarrier prevsSpec valCarrier
   => PStepRule mpv valCarrier inputVal inputVar outputVal outputVar prevInputVal prevInputVar
   -> slotVKs
-  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs)
+  -> Effect (RuleEntry prevsSpec mpv nd valCarrier inputVal carrier outputSize slotVKs sideloadedVkCarrier)
 mkRuleEntry rule slotVKs = pure $ RuleEntry
   { preComputeStepDomainLog2Fn: \ctx ->
       PProveStep.preComputeStepDomainLog2
@@ -3253,7 +3282,7 @@ runMultiProverBody
        padMax totalBasesMax totalBasesMaxPred
        vkCarrier
    . CompilableSpec prevsSpec slotVKs prevsCarrier mpv slots valCarrier carrier vkCarrier
-  => MkUnitVkCarrier vkCarrier
+  => MkUnitVkCarrier prevsSpec vkCarrier
   => PrevValuesCarrier prevsSpec valCarrier
   => CircuitGateConstructor StepField VestaG
   => CircuitGateConstructor WrapField PallasG
@@ -3321,7 +3350,7 @@ runMultiProverBody
   -- ^ this branch's step compile result
   -> Int
   -- ^ this branch's selfStepDomainLog2 (from the pre-pass)
-  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs
+  -> RuleEntry prevsSpec mpv topBranches valCarrier inputVal carrier outputSize slotVKs vkCarrier
   -> StepInputs prevsSpec inputVal prevsCarrier
   -> ExceptT ProveError Effect
        (CompiledProof mpvMax (StatementIO inputVal outputVal) outputVal Unit)
@@ -3356,7 +3385,7 @@ runMultiProverBody
       -- For specs containing `PrevsSpecSideLoadedCons`, this constraint
       -- is unsatisfiable, forcing call sites to source the carrier
       -- from `SideloadedVKsM`.
-      (mkUnitVkCarrier :: vkCarrier)
+      (mkUnitVkCarrier @prevsSpec :: vkCarrier)
 
   let
     PProveStep.StepAdvice sa = stepAdvice
@@ -3370,7 +3399,7 @@ runMultiProverBody
     proveData = shapeProveData @prevsSpec perRuleCfg wrapResult
       proveDataSideInfo
       prevs
-      (mkUnitVkCarrier :: vkCarrier)
+      (mkUnitVkCarrier @prevsSpec :: vkCarrier)
 
     -- Pad rule's mpv/slots-shaped proveData to the wrap circuit's
     -- mpvMax/slotsMax shape. Identity for single-rule callers

@@ -184,7 +184,7 @@ type StepBranchData =
 -- | derived from `prevsSpec` via the `PrevsCarrier` instance), and
 -- | reified to an Int internally via `reflectType (Proxy @len)` where
 -- | needed.
-type BuildStepAdviceInput inputVal valCarrier =
+type BuildStepAdviceInput inputVal valCarrier vkCarrier =
   { -- | Value bound to the step circuit's public input (OCaml
     -- | `Req.App_state`). Polymorphic in `inputVal` so rules with
     -- | Input-mode typ other than `Field.typ` can bind multi-field
@@ -208,6 +208,13 @@ type BuildStepAdviceInput inputVal valCarrier =
   -- | callers supply an inhabitant of the right type (the values are
   -- | irrelevant when `proofMustVerify[i] = false`).
   , prevAppStates :: valCarrier
+
+  -- | Spec-indexed runtime side-loaded VK carrier (mirrors OCaml's
+  -- | per-prove `~handler` model). Compiled slots contribute `Unit`;
+  -- | side-loaded slots contribute a runtime VerificationKey. Persisted
+  -- | into `StepAdvice.sideloadedVKs` so `getSideloadedVKsCarrier` can
+  -- | source it from inside the step rule body.
+  , sideloadedVKs :: vkCarrier
   }
 
 -- | Build a base-case `StepAdvice` keyed on a spec-indexed per-slot
@@ -224,7 +231,7 @@ type BuildStepAdviceInput inputVal valCarrier =
 -- | `Vector.replicate` at `n=0` produces nil, so slots with `n_i=0`
 -- | have empty `prevChallenges` / `prevSgs` automatically.
 buildStepAdvice
-  :: forall @prevsSpec inputVal len carrier valCarrier
+  :: forall @prevsSpec inputVal len carrier valCarrier vkCarrier
    . Reflectable len Int
   => PrevsCarrier
        prevsSpec
@@ -236,8 +243,8 @@ buildStepAdvice
        len
        carrier
   => PrevValuesCarrier prevsSpec valCarrier
-  => BuildStepAdviceInput inputVal valCarrier
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
+  => BuildStepAdviceInput inputVal valCarrier vkCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier vkCarrier
 buildStepAdvice input =
   let
     -- Pallas generator (= OCaml `Tock.Curve.one`). Never the
@@ -443,6 +450,7 @@ buildStepAdvice input =
             , challenges: Vector.replicate zero
             }
       , prevAppStates: input.prevAppStates
+      , sideloadedVKs: input.sideloadedVKs
       }
 
 -- | Extract sigma/coeff/index point triples from a compiled wrap
@@ -1679,8 +1687,8 @@ writeRowLabelsTo path publicInputSize cs = do
 -- |   element types don't depend on per-slot `n_i`.
 -- | * Singletons (`wrapVerifierIndex`, `publicInput`) stand alone.
 newtype StepAdvice
-  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type
-newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier =
+  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> Type
+newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier =
   StepAdvice
     { perProofSlotsCarrier :: carrier
     , publicInput :: inputVal
@@ -1725,11 +1733,22 @@ newtype StepAdvice prevsSpec ds dw inputVal len carrier valCarrier =
     -- | `exists` calls so the witness for the prev's app-state circuit
     -- | variable is sourced from advice rather than baked into a closure.
     , prevAppStates :: valCarrier
+    -- | Spec-indexed runtime side-loaded VK carrier, derived from the
+    -- | `prevsSpec` via `Pickles.Sideload.Advice.SideloadedVKsCarrier`.
+    -- | Compiled slots (`PrevsSpecCons`) contribute `Unit`; side-loaded
+    -- | slots (`PrevsSpecSideLoadedCons`) contribute a runtime
+    -- | `Pickles.Sideload.VerificationKey`. The
+    -- | `StepProverT`/`SideloadedVKsM` instance reads this field to
+    -- | serve `getSideloadedVKsCarrier` to the rule body — i.e. this
+    -- | is the channel through which the runtime side-loaded VK
+    -- | (set up by the test/caller per OCaml `~handler`) reaches
+    -- | `stepMain`.
+    , sideloadedVKs :: vkCarrier
     }
 
 derive instance
   Newtype
-    (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier)
+    (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier)
     _
 
 -- | Mutable side-state captured during the rule body's structural pass.
@@ -1751,48 +1770,48 @@ initialStepProverCapture =
 -- | from inside the rule body (so far: `setUserPublicOutputFields`,
 -- | the OCaml `Req.Return_value` analog).
 newtype StepProverT
-  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> (Type -> Type) -> Type -> Type
-newtype StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a =
+  :: Type -> Int -> Int -> Type -> Int -> Type -> Type -> Type -> (Type -> Type) -> Type -> Type
+newtype StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a =
   StepProverT
-    ( ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier)
+    ( ReaderT (StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier)
         (StateT StepProverCapture m)
         a
     )
 
 derive instance
   Newtype
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a)
     _
 
 derive newtype instance
   Functor m =>
-  Functor (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+  Functor (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Apply (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+  Apply (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Applicative (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+  Applicative (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Bind (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+  Bind (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
 
 derive newtype instance
   Monad m =>
-  Monad (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+  Monad (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
 
 -- | Run a `StepProverT` action with the supplied advice. Returns both
 -- | the action's result AND the post-run `StepProverCapture` so the
 -- | caller can read whatever the rule body wrote (e.g. the user's
 -- | `publicOutput` FVars).
 runStepProverT
-  :: forall prevsSpec ds dw inputVal len carrier valCarrier m a
+  :: forall prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a
    . Monad m
-  => StepAdvice prevsSpec ds dw inputVal len carrier valCarrier
-  -> StepProverT prevsSpec ds dw inputVal len carrier valCarrier m a
+  => StepAdvice prevsSpec ds dw inputVal len carrier valCarrier vkCarrier
+  -> StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m a
   -> m (Tuple a StepProverCapture)
 runStepProverT advice (StepProverT m) =
   runStateT (runReaderT m advice) initialStepProverCapture
@@ -1815,7 +1834,7 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
     len
     carrier where
   getStepSlotsCarrier _ =
@@ -1841,7 +1860,7 @@ instance
     dw
     PallasG
     StepField
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
     inputVal where
 
   getMessagesForNextWrapProof _ =
@@ -1858,7 +1877,7 @@ instance
 instance
   Monad m =>
   StepPrevValuesM
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m)
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
     valCarrier where
   getPrevAppStates _ =
     StepProverT $ map (\(StepAdvice r) -> r.prevAppStates) ask
@@ -1869,10 +1888,33 @@ instance
 instance
   Monad m =>
   StepUserOutputM
-    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier m) where
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m) where
   setUserPublicOutputFields fields =
     StepProverT $ lift $ State.modify_ \s ->
       s { userPublicOutputFields = Just fields }
+
+-- | `SideloadedVKsM` instance for `StepProverT`. Sources the runtime
+-- | side-loaded VK carrier from the `StepAdvice` Reader payload — the
+-- | same channel every other piece of prove-time advice flows through.
+-- | Mirrors OCaml's per-prove `~handler` model: `mkStepAdvice` for
+-- | `PrevsSpecSideLoadedCons` slots persists the runtime VK passed
+-- | through the spec-indexed carrier into `adv.sideloadedVKs`, and
+-- | `stepMain`'s side-loaded slot dispatch reads it back via
+-- | `getSideloadedVKsCarrier`.
+-- |
+-- | Disjoint from the `Effect` instance (line 122 in
+-- | `Pickles.Sideload.Advice`): different `m`, no overlap.
+instance
+  ( Monad m
+  , SideloadedVKsCarrier prevsSpec vkCarrier
+  ) =>
+  SideloadedVKsM
+    prevsSpec
+    (StepProverT prevsSpec ds dw inputVal len carrier valCarrier vkCarrier m)
+    vkCarrier
+  where
+  getSideloadedVKsCarrier _ =
+    StepProverT $ map (\(StepAdvice r) -> r.sideloadedVKs) ask
 
 -- | V2 compile phase — parallel to `stepCompile` but runs `stepMain`
 -- | in `Effect`, which dispatches to the `StepWitnessM`/`StepSlotsM`
@@ -1889,7 +1931,7 @@ stepCompile
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
-  => MkUnitVkCarrier sideloadedVkCarrier
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2034,7 +2076,7 @@ preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
-  => MkUnitVkCarrier sideloadedVkCarrier
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2136,7 +2178,7 @@ stepSolveAndProve
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
   => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
-  => MkUnitVkCarrier sideloadedVkCarrier
+  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2176,25 +2218,23 @@ stepSolveAndProve
        carrierVar
   => CheckedType StepField (KimchiConstraint StepField) input
   => Monad m
-  -- Source the side-loaded VK carrier from the prover monad. For
-  -- compiled-only specs `m = Effect`'s `SideloadedVKsM` instance
-  -- synthesises via `MkUnitVkCarrier`. Specs with side-loaded slots
-  -- need a `m` whose instance reads real runtime VKs.
-  => SideloadedVKsM prevsSpec m sideloadedVkCarrier
   => PrevValuesCarrier prevsSpec valCarrier
   => StepProveContext len nd
   -> StepRule len valCarrier inputVal input outputVal output prevInputVal prevInput
   -> StepCompileResult
-  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier
+  -> StepAdvice prevsSpec StepIPARounds WrapIPARounds inputVal len carrier valCarrier sideloadedVkCarrier
   -> ExceptT EvaluationError m (StepProveResult outputSize)
 stepSolveAndProve ctx rule compileResult advice = do
-  -- Source the side-loaded VK carrier from `m` and capture in the
-  -- inner Snarky lambda's closure (Step 2d-β1.5c). Routes via the
-  -- advice channel for the right semantics; for compiled-only
-  -- specs `m = Effect`'s instance synthesises an all-Unit chain.
-  sideloadedCarrier <- lift $ getSideloadedVKsCarrier @prevsSpec unit
+  -- Source the side-loaded VK carrier directly from the StepAdvice.
+  -- The advice was constructed by `mkStepAdvice` from the same
+  -- spec-indexed runtime carrier the prover monad would have served;
+  -- pulling it from the field here keeps `m` arbitrary (no
+  -- `SideloadedVKsM` constraint required) and lets `StepProverT`'s
+  -- instance for `SideloadedVKsM` route any in-rule call to
+  -- `getSideloadedVKsCarrier` to the same field.
   let
     StepAdvice adv = advice
+    sideloadedCarrier = adv.sideloadedVKs
 
     rawSolver
       :: SolverT StepField (KimchiConstraint StepField)
@@ -2202,6 +2242,7 @@ stepSolveAndProve ctx rule compileResult advice = do
                len
                carrier
                valCarrier
+               sideloadedVkCarrier
                m
            )
            Unit

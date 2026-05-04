@@ -27,7 +27,7 @@ import Data.Functor.Product (Product)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst, snd)
-import Data.Tuple.Nested (Tuple1, Tuple2, tuple1, tuple2, (/\))
+import Data.Tuple.Nested (type (/\), Tuple1, Tuple2, tuple1, tuple2, (/\))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -131,7 +131,7 @@ incrementRule self = do
 
 -- | `makeZeroRule` packaged: mpv=0, no prevs, valCarrier=Unit.
 mkMakeZeroEntry
-  :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
+  :: Effect (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit Unit)
 mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 
 -- | `incrementRule` packaged: mpv=1, one self-referential prev,
@@ -152,6 +152,7 @@ mkIncrementEntry
            )
            34
            (Tuple1 SlotWrapKey)
+           (Unit /\ Unit)
        )
 mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Self)
 
@@ -160,7 +161,7 @@ mkIncrementEntry = mkRuleEntry @1 @Unit @(F StepField) incrementRule (tuple1 Sel
 mkRulesCarrier
   :: Effect
        ( Tuple2
-           (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit)
+           (RuleEntry PrevsSpecNil 0 2 Unit (F StepField) Unit 34 Unit Unit)
            ( RuleEntry
                (PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
                1
@@ -175,6 +176,7 @@ mkRulesCarrier
                )
                34
                (Tuple1 SlotWrapKey)
+               (Unit /\ Unit)
            )
        )
 mkRulesCarrier = do
