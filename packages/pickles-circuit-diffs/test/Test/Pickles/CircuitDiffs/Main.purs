@@ -51,6 +51,7 @@ import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainT
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
+import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
@@ -532,6 +533,14 @@ spec =
             }
         -- N=1 Input mode (Simple_chain). step_widths=[1], padded=[[0];[1]].
         exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapMainSrsData)
+        -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
+        -- Same shape as `wrap_main_circuit` but the prev slot's bound is
+        -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
+        -- domain_log2=14. Iter B of M9 — diagnoses whether the parent's
+        -- self-wrap-VK divergence (PS coeff[0] / coeff[5] don't appear in
+        -- OCaml main_step_b1 fixture) comes from the wrap CS itself or
+        -- from VK extraction.
+        exactMatch "wrap_main_side_loaded_main_circuit" (fromCompiledCircuit $ compileWrapMainSideLoadedMain wrapMainSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[0;2], padded=[[0;2];[0;2]].
         exactMatch "wrap_main_n2_circuit" (fromCompiledCircuit $ compileWrapMainN2 wrapSrsData)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
