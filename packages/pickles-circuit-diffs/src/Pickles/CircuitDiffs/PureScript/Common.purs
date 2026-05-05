@@ -12,26 +12,37 @@ module Pickles.CircuitDiffs.PureScript.Common
   , srsLengthLog2
   , wrapDomainLog2
   , wrapSrsLengthLog2
+  , deriveStepVKFromCompiled
   ) where
 
 import Prelude
 
+import Data.Array (concatMap)
 import Data.Array as Array
 import Data.Maybe (fromJust)
+import Data.Newtype (un)
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
+import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.Types (StepField, WrapField)
+import Pickles.VerificationKey (StepVK)
+import Prim.Int (class Add)
 import Snarky.Backend.Builder (CircuitBuilderState)
+import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
+import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
+import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
-import Snarky.Constraint.Kimchi.Types (AuxState)
-import Snarky.Curves.Class (EndoScalar(..), endoScalar, fromBigInt, generator, toAffine)
+import Snarky.Constraint.Kimchi.Types (AuxState(..), class ToKimchiRows, toKimchiRows)
+import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
 -------------------------------------------------------------------------------
@@ -102,3 +113,47 @@ wrapDomainLog2 = 15
 
 wrapSrsLengthLog2 :: Int
 wrapSrsLengthLog2 = 15
+
+-------------------------------------------------------------------------------
+-- | Step VK derivation
+-------------------------------------------------------------------------------
+
+-- | Derive a step `VerifierIndex`'s commitments from a compiled step
+-- | constraint system, returning a `StepVK (FVar WrapField)` ready to
+-- | use as the `stepKeys` field in `WrapMainConfig`.
+-- |
+-- | This mirrors `Pickles.Prove.Step.stepCompile`'s
+-- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
+-- | createVerifierIndex` tail, then runs `extractStepVKComms +
+-- | stepVkForCircuit` on the result.
+-- |
+-- | Used by wrap-main circuit-diff fixtures (`WrapMainN2.purs` etc.)
+-- | to obtain the SAME baked-in VK constants OCaml's
+-- | `Pickles.compile_promise` produces, without importing anything from
+-- | the OCaml side. The step CS is byte-identical to OCaml's, the SRS
+-- | is the cached Vesta SRS, and the kimchi commitment algorithm is
+-- | shared via FFI — so the resulting VK is byte-identical to OCaml's
+-- | computed VK.
+deriveStepVKFromCompiled
+  :: forall @len lenPred
+   . Reflectable len Int
+  => Add 1 lenPred len
+  => CRS VestaG
+  -> CompiledCircuit StepField
+  -> StepVK (FVar WrapField)
+deriveStepVKFromCompiled vestaSrs builtState =
+  let
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    { constraintSystem } = makeConstraintSystemWithPrevChallenges @StepField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @len)
+      }
+    endo :: StepField
+    endo = let EndoBase e = (endoBase :: EndoBase StepField) in e
+    proverIndex = createProverIndex @StepField @VestaG
+      { endo, constraintSystem, crs: vestaSrs }
+    verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
+  in
+    stepVkForCircuit (extractStepVKComms verifierIndex)

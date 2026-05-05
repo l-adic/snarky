@@ -56,12 +56,17 @@ for d in "${DRIVERS[@]}"; do
 done
 
 # Copy a (stem) → fixture: stem.json, stem_cached_constants.json,
-# stem_gate_labels.jsonl all go to the corresponding fixture name.
+# stem_gate_labels.jsonl, stem_labels.jsonl all go to the
+# corresponding fixture name. The _labels.jsonl file (per-constraint
+# events with label-stack path + constraint type) is written by
+# Cs_dump.write_fixture_files; copy it here so cs_label_diff.py and
+# similar tools can read it.
 copy_fixture () {
   local src_stem="$1" dst_name="$2"
   cp "${src_stem}.json" "${FIXTURES_DIR}/${dst_name}.json"
   cp "${src_stem}_cached_constants.json" "${FIXTURES_DIR}/${dst_name}_cached_constants.json"
   cp "${src_stem}_gate_labels.jsonl" "${FIXTURES_DIR}/${dst_name}_gate_labels.jsonl"
+  cp "${src_stem}_labels.jsonl" "${FIXTURES_DIR}/${dst_name}_labels.jsonl"
 }
 
 # %c index → fixture mapping per driver. Each %c=k corresponds to the

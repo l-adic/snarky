@@ -81,8 +81,12 @@ compileStepMainSimpleChainN2
   :: StepMainSimpleChainN2Params -> Effect (CompiledCircuit StepField)
 compileStepMainSimpleChainN2 params =
   compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- Step domain log2 = 16 (OCaml: dump_circuit_impl.ml
-    -- `step_domains = Pow_2_roots_of_unity 16` in step_main_simple_chain_n2).
+    -- Step domain log2 = 15 (OCaml `compile_promise` in
+    -- `dump_simple_chain_n2.ml` auto-detects step_domains.h =
+    -- `Pow_2_roots_of_unity 15`; the previous comment referenced the
+    -- deleted `dump_circuit_impl.ml` helper that hard-coded 16).
+    -- Verified via gate_labels.jsonl: OCaml's vanishing_polynomial
+    -- emits 15 squarings per FOP, matching max_log2 = 15.
     -- Single-rule: mpvMax = len = 2, mpvPad = 0.
     ( \_ -> stepMain
         @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
@@ -104,7 +108,7 @@ compileStepMainSimpleChainN2 params =
         { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
         , blindingH: params.blindingH
         , perSlotFopDomainLog2s:
-            (16 :< Vector.nil) :< (16 :< Vector.nil) :< Vector.nil
+            (15 :< Vector.nil) :< (15 :< Vector.nil) :< Vector.nil
         , perSlotVkSources: SharedExistsVk :< SharedExistsVk :< Vector.nil
         -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
         -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the

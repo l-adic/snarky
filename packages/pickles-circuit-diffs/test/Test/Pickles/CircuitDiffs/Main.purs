@@ -541,8 +541,30 @@ spec =
         -- OCaml main_step_b1 fixture) comes from the wrap CS itself or
         -- from VK extraction.
         exactMatch "wrap_main_side_loaded_main_circuit" (fromCompiledCircuit $ compileWrapMainSideLoadedMain wrapMainSrsData)
-        -- N=2 Input mode (Simple_chain_n2). step_widths=[0;2], padded=[[0;2];[0;2]].
-        exactMatch "wrap_main_n2_circuit" (fromCompiledCircuit $ compileWrapMainN2 wrapSrsData)
+        -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
+        -- `compileWrapMainN2` deterministically computes the step VK by
+        -- recompiling the matching step CS and running the kimchi
+        -- commitment pipeline. Needs `stepMainN2StepSrsData` (the same
+        -- data used by `step_main_simple_chain_n2_circuit` below).
+        --
+        -- The wrap-side lagrange basis is at log2=14 (same as
+        -- `wrap_main_circuit`): `dump_simple_chain_n2.ml` passes
+        -- `~override_wrap_domain:Proofs_verified.N1`, so the wrap
+        -- domain is N1 = Pow_2_roots_of_unity 14.
+        let
+          wrapMainN2SrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+          wrapMainN2StepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          wrapMainN2StepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN2StepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "wrap_main_n2_circuit"
+          (fromCompiledCircuit <$> compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own

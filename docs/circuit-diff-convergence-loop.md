@@ -244,21 +244,119 @@ When Step 1's Pass 2 metric returns "no diffs":
   has both PS and OCaml gates side-by-side after a test run.
 - **Manifest summary:** `packages/pickles-circuit-diffs/circuits/results/manifest.jsonl`
   lists `match` / `mismatch` per fixture.
-- **Re-extracting the metric in one shot:**
 
-  ```sh
-  python3 -c "
-  import json
-  d = json.load(open('packages/pickles-circuit-diffs/circuits/results/<F>.json'))
-  ps, oc = d['purescript']['gates'], d['ocaml']['gates']
-  def strip(g): return {k: v for k, v in g.items() if k not in ('context', 'variables')}
-  for i, (p, o) in enumerate(zip(ps, oc)):
-      if p['kind'] != o['kind']:
-          print(f'pass1: i*={i}, PS={p[\"kind\"]}, OC={o[\"kind\"]}')
-          break
-  for i, (p, o) in enumerate(zip(ps, oc)):
-      if strip(p) != strip(o):
-          print(f'pass2: i*={i}, PS={p[\"kind\"]} OC={o[\"kind\"]}')
-          break
-  "
-  ```
+### `tools/cs_label_diff.py` — CS label diff CLI
+
+A subcommand-driven explorer over the comparison JSON + OCaml gate-label
+fixture. This is the primary inspection interface for every step of the
+loop after Step 1. The script auto-resolves three files from the
+fixture name:
+
+- `packages/pickles-circuit-diffs/circuits/results/<F>.json` (PS+OC gates)
+- `packages/pickles-circuit-diffs/circuits/ocaml/<F>_gate_labels.jsonl` (per-row OC label stack)
+- `packages/pickles-circuit-diffs/circuits/ocaml/<F>_labels.jsonl` (per-constraint OC events)
+
+```sh
+python3 tools/cs_label_diff.py FIXTURE SUBCOMMAND [ARGS]
+```
+
+`FIXTURE` is the bare name (no extension), e.g.
+`step_main_simple_chain_n2_circuit`.
+
+#### Step 1 (snapshot): `totals`
+
+```sh
+python3 tools/cs_label_diff.py F totals
+```
+
+Prints row counts (PS / OC / delta) and a per-kind breakdown
+(`Generic`, `Poseidon`, `CompleteAdd`, …). The delta-by-kind table
+localizes which gate kind is over- or under-emitting before you even
+open the JSON. Run this after every iteration to confirm direction.
+
+#### Steps 2 + 4 (localize divergence): `find_shift` and `generic_stream_diff`
+
+`find_shift [START [LIMIT]] [--coeffs]` — walks PS and OC in lockstep
+and reports the FIRST structural shift. Default compares gate **kind**
+only (Pass 1 metric); add `--coeffs` to also flag content diffs
+(kinds align, coeffs differ — Pass 2 metric). For Generic kinds it
+performs **half-level alignment**: Generic is the only gate that packs
+2 halves per row, so a single extra emission upstream shifts subsequent
+half-pairings even though kinds keep matching. Distinguishes:
+
+- half-level shift (Generic packing offset)
+- row-level insertion (non-Generic kind diff)
+- content diff (kinds align, coeffs differ)
+
+`generic_stream_diff [--kind-only] [LO [HI]]` — walks the **entire**
+Generic-half emission stream in parallel and reports EVERY structural
+insertion/deletion, with running cumulative balance. Each event prints
+which side is ahead, the coeffs of the extra half, and the row's label
+context. With `--kind-only` it skips pure coefficient diffs (different
+constants in the same gate kind shape) — what you want during Pass 1.
+
+Use them together: `find_shift` for the first divergence to drive a
+single iteration; `generic_stream_diff` to see how the imbalance
+accumulates across the whole circuit (e.g. "+2 PS extras both inside
+`domain-vanishing-poly`" → per-FOP constant offset, fixable upstream
+in one place).
+
+#### Step 2 (bilateral localization): `ps_label`, `oc_label`, `pair_count`
+
+`ps_label LABEL` / `oc_label LABEL` — print every row whose context
+contains LABEL. Use to enumerate the rows belonging to a hypothesised
+emission block on each side.
+
+`pair_count [LABEL]` — per top-level-context-prefix row counts (PS vs
+OC). When the suite is broadly aligned, this surfaces which top-level
+scopes carry the delta. With LABEL it filters to rows tagged with that
+label.
+
+`seals [LO HI]` — rows tagged with any 'seal' label. Sealing is one of
+the most common sources of +1/-1 emission divergence — use this to
+quickly enumerate seal sites near a suspected divergence.
+
+#### Step 4 (diagnose): `rows`, `gate_kinds`, `trace_var`
+
+`rows LO HI` — side-by-side dump of PS vs OC rows in [LO, HI]. Prints
+kind, coeffs (both halves for Generic), and the tail of each row's
+label context. The default first stop after `find_shift` returns an
+index.
+
+`gate_kinds LO HI` — kind histogram inside [LO, HI]. Cheaper than
+`rows` when you want a count rather than full coeffs. Note: same
+total halves on both sides means same emission count, NOT "aligned"
+— for alignment use `find_shift` / `generic_stream_diff`.
+
+`trace_var ROW COL [--side ps|oc]` — walks the wire equivalence cycle
+from the given (row, col). Useful in Pass 2 when kinds and coeffs
+match but wires don't — follow each side's cycle to compare topology
+and find where the variable identities diverge.
+
+#### Conventions
+
+- Default side is `ps` for `ps_label`, `oc` for `oc_label`. Use
+  `--side ps|oc` where the command supports it (`trace_var`).
+- Generic emission stream order: per row, R-half first then L-half.
+  This mirrors OCaml's `pending_generic_gate` queue — R is the half
+  emitted earlier (queued), L is the later half that closes the row.
+- A cumulative `+N` on PS-side from `generic_stream_diff` means PS has
+  N more Generic halves than OC. Halves come in pairs, so +2 halves
+  typically equals +1 row delta in `totals`.
+
+#### When the tool gives a false positive
+
+Every shift it reports has a concrete reason. If a reported shift
+doesn't survive Step 7's "i* advanced strictly forward" check, the
+likely causes are:
+
+- The two halves at the divergent row encode the **same constraint**
+  with negated coefficients (e.g. PS Square `[0,0,-1,1,0]` vs OC R1CS
+  `[0,0,1,-1,0]` — the kimchi backend emits different sign conventions
+  for `assert_square` vs `assert_r1cs`). `--kind-only` already
+  collapses these by shape (zero/nonzero pattern).
+- A primitive choice difference upstream (PS `square_` vs OC's local
+  `let square x = x * x in` Mul) puts the extra half in a different
+  context than `find_shift`'s top match. Cross-check with
+  `generic_stream_diff` and inspect ALL reported events — the per-FOP
+  pattern usually surfaces.
