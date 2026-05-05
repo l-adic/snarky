@@ -31,6 +31,7 @@ DRIVER_BIN_DIR="${SNARKY_ROOT}/mina/_build/default/src/lib/crypto/pickles"
 
 DRIVERS=(
   dump_simple_chain
+  dump_simple_chain_n2
   dump_no_recursion_return
   dump_add_one_return
   dump_tree_proof_return
@@ -69,6 +70,14 @@ copy_fixture () {
 # dump_simple_chain: 1 rule (Simple_chain N1) → 1 step + 1 wrap.
 copy_fixture "${TMP}/dump_simple_chain_step_0"  step_main_simple_chain_circuit
 copy_fixture "${TMP}/dump_simple_chain_wrap_0"  wrap_main_circuit
+
+# dump_simple_chain_n2: 1 rule (Simple_chain with prevs=[self;self], N2) → 1 step + 1 wrap.
+# The driver's prove step intentionally fails verification (dummy prev
+# proofs don't satisfy the recursion equation); compile + CS dump
+# complete first, so the fixtures are captured. Run with `set +e`
+# tolerance, or run the driver expecting non-zero exit.
+copy_fixture "${TMP}/dump_simple_chain_n2_step_0"  step_main_simple_chain_n2_circuit
+copy_fixture "${TMP}/dump_simple_chain_n2_wrap_0"  wrap_main_n2_circuit
 
 # dump_no_recursion_return: 1 rule (No_recursion_return) → 1 step + 1 wrap.
 # The wrap fixture for NRR isn't currently in the test set; we still
