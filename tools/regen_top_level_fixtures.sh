@@ -89,16 +89,16 @@ copy_fixture "${TMP}/dump_no_recursion_return_step_0"  step_main_no_recursion_re
 copy_fixture "${TMP}/dump_add_one_return_step_0"  step_main_add_one_return_circuit
 copy_fixture "${TMP}/dump_add_one_return_wrap_0"  wrap_main_add_one_return_circuit
 
-# dump_tree_proof_return: 2 rules (NRR + TPR self) → 2 step + 1 wrap.
-# step_0 is NRR (the inner rule); step_1 is TPR proper. Only TPR's
-# step is tested currently. NRR step CS in this context (inside TPR
-# compile) may differ from the standalone dump_no_recursion_return
-# step CS — different known_wrap_keys, etc. — so we don't conflate
-# them.
+# dump_tree_proof_return: TWO compile_promise calls (NRR at line 52,
+# TPR at line 121). Each compile emits 1 step + 1 wrap CS, so [%c]
+# advances independently for step (0=NRR step, 1=TPR step) and wrap
+# (0=NRR wrap, 1=TPR wrap). We only test the TPR step + TPR wrap
+# fixtures (the NRR ones are duplicated by `dump_no_recursion_return`
+# in the standalone case — different `known_wrap_keys` context, so
+# they aren't byte-equal, but the standalone one is the canonical
+# `step_main_no_recursion_return_circuit`).
 copy_fixture "${TMP}/dump_tree_proof_return_step_1"  step_main_tree_proof_return_circuit
-copy_fixture "${TMP}/dump_tree_proof_return_wrap_0"  wrap_main_tree_proof_return_circuit
-# (step_main_no_recursion_return_aux_circuit reserved for the
-# step_0 output if we want to test it separately)
+copy_fixture "${TMP}/dump_tree_proof_return_wrap_1"  wrap_main_tree_proof_return_circuit
 
 # dump_two_phase_chain: 2 rules (make_zero + increment) → 2 step + 1 wrap.
 # Only the wrap fixture is in the test set. step_main_two_phase_chain_*
