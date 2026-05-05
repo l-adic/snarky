@@ -113,6 +113,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
+import Snarky.Backend.Kimchi.Impl.Vesta (vestaConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
@@ -1638,6 +1639,18 @@ bumpStepLabelsCounter = do
   Ref.write (n + 1) stepLabelsCounter
   pure n
 
+-- | Independent counter for `KIMCHI_STEP_CS_DUMP`'s `%c` template so
+-- | enabling both `KIMCHI_STEP_LABELS_DUMP` and `KIMCHI_STEP_CS_DUMP`
+-- | in one run keeps each numbering sequence aligned.
+stepCsCounter :: Ref.Ref Int
+stepCsCounter = unsafePerformEffect (Ref.new 0)
+
+bumpStepCsCounter :: Effect Int
+bumpStepCsCounter = do
+  n <- Ref.read stepCsCounter
+  Ref.write (n + 1) stepCsCounter
+  pure n
+
 -- | Variant of `dumpRowLabels` that takes a destination path. Used
 -- | by the `KIMCHI_STEP_LABELS_DUMP` env-var-gated dump in
 -- | `stepCompile` so each branch's CS labels go to a distinct file.
@@ -2042,6 +2055,17 @@ stepCompile ctx rule = do
         path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
         publicInputSize = Array.length builtState.publicInputs
       writeRowLabelsTo path publicInputSize builtState.constraints
+
+  -- Optional dump of the step constraint system as JSON, gated on
+  -- `KIMCHI_STEP_CS_DUMP`. Mirrors the wrap-side `KIMCHI_WRAP_CS_DUMP`
+  -- in `Pickles.Prove.Wrap`. Filename template uses `%c` (replaced
+  -- with a monotonic counter independent of `KIMCHI_STEP_LABELS_DUMP`'s).
+  Process.lookupEnv "KIMCHI_STEP_CS_DUMP" >>= case _ of
+    Nothing -> pure unit
+    Just pathTmpl -> do
+      counter <- bumpStepCsCounter
+      let path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
+      FS.writeTextFile UTF8 path (vestaConstraintSystemToJson constraintSystem)
 
   pure
     { proverIndex

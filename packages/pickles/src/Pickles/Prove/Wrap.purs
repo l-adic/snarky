@@ -42,13 +42,17 @@ import Data.Map (Map)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, un)
 import Data.Reflectable (class Reflectable, reflectType)
+import Data.String (Pattern(..), Replacement(..))
+import Data.String as String
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
+import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
+import Node.Process as Process
 import Pickles.ProofFFI (Proof, pallasProofCommitments, pallasProofOpeningDelta, pallasProofOpeningLrVec, pallasProofOpeningSg, pallasProofOpeningZ1, pallasProofOpeningZ2, pallasSrsBlindingGenerator, pallasSrsLagrangeCommitmentAt, pallasVerifierIndexCommitments, tCommVec, vestaCreateProofWithPrev)
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Types (PaddedLength, PerProofUnfinalized, StepAllEvals, StepField, StepIPARounds, WrapField, WrapIPARounds, WrapIvpBaseline, WrapPrevProofState(..), WrapProofMessages(..), WrapProofOpening(..), WrapStatementPacked)
@@ -62,6 +66,7 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
+import Snarky.Backend.Kimchi.Impl.Pallas (pallasConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
@@ -433,6 +438,18 @@ type WrapProveResult =
   , assignments :: Map Variable WrapField
   }
 
+-- | Monotonic counter for `KIMCHI_WRAP_CS_DUMP`'s `%c` template. Each
+-- | wrap-circuit compile (one per top-level rule in `compileMulti`)
+-- | increments it, mirroring the AtomicUsize counter on the Rust side.
+wrapCsCounter :: Ref.Ref Int
+wrapCsCounter = unsafePerformEffect (Ref.new 0)
+
+bumpWrapCsCounter :: Effect Int
+bumpWrapCsCounter = do
+  n <- Ref.read wrapCsCounter
+  Ref.write (n + 1) wrapCsCounter
+  pure n
+
 -- | Compile phase of the wrap prover. Walks `wrapMain`'s circuit
 -- | shape in `Effect`, which dispatches to the `WrapWitnessM Effect`
 -- | instance — every advice method there throws. The advice values
@@ -490,6 +507,18 @@ wrapCompile ctx = do
         { endo, constraintSystem, crs: ctx.crs }
 
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
+
+  -- Optional dump of the wrap constraint system as JSON, gated on
+  -- `KIMCHI_WRAP_CS_DUMP`. Mirrors OCaml's `PICKLES_WRAP_CS_DUMP` in
+  -- `compile.ml`. Filename template uses `%c` (replaced with a
+  -- monotonic counter) so multi-rule compileMulti writes one file per
+  -- branch — same convention as `KIMCHI_WITNESS_DUMP`.
+  Process.lookupEnv "KIMCHI_WRAP_CS_DUMP" >>= case _ of
+    Nothing -> pure unit
+    Just pathTmpl -> do
+      counter <- bumpWrapCsCounter
+      let path = String.replaceAll (Pattern "%c") (Replacement (show counter)) pathTmpl
+      FS.writeTextFile UTF8 path (pallasConstraintSystemToJson constraintSystem)
 
   pure
     { proverIndex
