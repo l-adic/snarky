@@ -25,7 +25,7 @@ import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, deriveStepVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneReturnParams, compileStepMainAddOneReturn)
 import Pickles.Types (StepField, WrapField)
@@ -40,27 +40,22 @@ import Type.Proxy (Proxy(..))
 compileWrapMainAddOneReturn
   :: IvpWrapParams
   -> StepMainAddOneReturnParams
-  -> Effect (CompiledCircuit WrapField)
+  -> Effect WrapArtifact
 compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
-  -- Recompile the step CS (Add_one_return, mpv=0, no prev proofs) and
-  -- derive its VK commitments via the kimchi commitment pipeline.
-  -- Same pattern as wrap_main_circuit / wrap_main_n2_circuit fixes.
-  stepBuiltState <- compileStepMainAddOneReturn stepParams
+  stepArt <- compileStepMainAddOneReturn stepParams
   vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepBuiltState
+    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepArt.stepCs
+
     config :: WrapMainConfig 1
     config =
-      -- N=0 Add_one_return: single branch, step_widths=[0]. The
-      -- `domainLog2s` field is the STEP proof's evaluation-domain log2
+      -- N=0 Add_one_return: single branch, step_widths=[0].
+      -- `domainLog2s` is the STEP proof's evaluation-domain log2
       -- (passed into `Branch_data.Checked.Wrap.pack` as `4 * log2`),
-      -- NOT the wrap circuit's domain. For AOR the step CS is tiny
-      -- (no verify_one machinery) → step domain log2 = 9, matching
-      -- `compileStepMainAddOneReturn`'s `domain_log2 = 9` comment.
-      -- Previously this was set to 13 (the wrap_domain log2),
-      -- producing `4*13 = 52` in branch_data instead of OC's `4*9 = 36`.
+      -- derived from the step artifact.
       { stepWidths: 0 :< Vector.nil
-      , domainLog2s: 9 :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
@@ -68,10 +63,13 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- NoSlots: mpv=0, no per_proofs. OCaml's `compile_promise` for
-  -- Add_one_return sets `Max_proofs_verified.n = N0 = 0` (the rule has
-  -- `prevs = []`), so the wrap statement packs only 1 PI entry — the
-  -- previous `Slots2 0 0` (mpv=2) caused the +8103 row delta.
-  compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  -- NoSlots: mpv=0, no per_proofs.
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @NoSlots config stmt)
     Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

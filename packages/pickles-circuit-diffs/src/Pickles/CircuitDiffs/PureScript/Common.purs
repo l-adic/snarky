@@ -1,5 +1,10 @@
 module Pickles.CircuitDiffs.PureScript.Common
   ( CompiledCircuit
+  , StepArtifact
+  , WrapArtifact
+  , mkStepArtifact
+  , domainLog2OfCompiled
+  , preComputeSelfStepDomainLog2
   , unsafeIdx
   , asSizedF128
   , asSizedF10
@@ -25,6 +30,7 @@ import Data.Newtype (un)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Effect (Effect)
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
 import Pickles.Prove.Step (extractWrapVKCommsAdvice)
@@ -37,7 +43,7 @@ import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
 import Snarky.Backend.Kimchi.Types (CRS)
 import Snarky.Circuit.DSL (F(..), FVar, SizedF)
 import Snarky.Constraint.Kimchi (KimchiGate)
-import Snarky.Constraint.Kimchi.Types (AuxState(..), class ToKimchiRows, toKimchiRows)
+import Snarky.Constraint.Kimchi.Types (class ToKimchiRows, AuxState(..), KimchiRow, toKimchiRows)
 import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar, fromBigInt, generator, toAffine)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
@@ -150,6 +156,7 @@ deriveStepVKFromCompiled vestaSrs builtState =
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       }
+
     endo :: StepField
     endo = let EndoBase e = (endoBase :: EndoBase StepField) in e
     proverIndex = createProverIndex @StepField @VestaG
@@ -194,6 +201,7 @@ deriveWrapVKFromCompiled pallasSrs builtState =
       , unionFind: (un AuxState builtState.aux).wireState.unionFind
       , prevChallengesCount: reflectType (Proxy @len)
       }
+
     endo :: WrapField
     endo = let EndoBase e = (endoBase :: EndoBase WrapField) in e
     proverIndex = createProverIndex @WrapField @PallasG
@@ -201,3 +209,71 @@ deriveWrapVKFromCompiled pallasSrs builtState =
     verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
   in
     extractWrapVKCommsAdvice verifierIndex
+
+-------------------------------------------------------------------------------
+-- | Compile-result artifacts
+-- |
+-- | Compile artifacts bundle a `CompiledCircuit` with the most-commonly
+-- | needed *derived* fields (domain log2 from row count, wrap VK from
+-- | commitments) so downstream compiles consume them as records rather
+-- | than re-deriving from scratch.
+-- |
+-- | This is the test-side analog of OCaml's `Compiled.t` record
+-- | (`compile.ml`'s output bundling `step_domains`, `wrap_domains`,
+-- | `step_keys`, `wrap_key`). Eliminates the "hardcoded placeholder
+-- | values" failure mode that bit several wrap-fixture tests when
+-- | OCaml fixtures were regenerated from production drivers.
+-------------------------------------------------------------------------------
+
+type StepArtifact =
+  { stepCs :: CompiledCircuit StepField
+  , stepDomainLog2 :: Int
+  }
+
+type WrapArtifact =
+  { stepCs :: CompiledCircuit StepField
+  , stepDomainLog2 :: Int
+  , wrapCs :: CompiledCircuit WrapField
+  , wrapVk :: VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+  }
+
+-- | Construct a `StepArtifact` from a compiled step CS, deriving the
+-- | step domain log2 from the row count.
+mkStepArtifact :: CompiledCircuit StepField -> StepArtifact
+mkStepArtifact cs =
+  { stepCs: cs
+  , stepDomainLog2: domainLog2OfCompiled cs
+  }
+
+-- | Round up the constraint count to the next power-of-2 log. Mirrors
+-- | OCaml's `Fix_domains.domains` row-count → log2 calculation
+-- | (`compile.ml`), which sets the kimchi prover-index domain size.
+domainLog2OfCompiled :: CompiledCircuit StepField -> Int
+domainLog2OfCompiled builtState =
+  let
+    kimchiRows :: Array (KimchiRow StepField)
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    n = Array.length kimchiRows
+  in
+    ceilLog2 n
+  where
+  ceilLog2 :: Int -> Int
+  ceilLog2 n
+    | n <= 1 = 0
+    | otherwise = go 0 1
+        where
+        go k acc = if acc >= n then k else go (k + 1) (acc * 2)
+
+-- | Shape-pass + extract domain log2. For rules with self-prev slots
+-- | whose own step domain log2 must be baked into their own
+-- | `WrapMainConfig` — a self-circularity OCaml resolves with
+-- | `Fix_domains.domains`' two-pass compile.
+-- |
+-- | Caller supplies a thunk that compiles the rule with ANY placeholder
+-- | self log2 in `perSlotFopDomainLog2s`; we discard the resulting CS
+-- | and read only its row count. The placeholder doesn't drift because
+-- | it's never compared to anything.
+preComputeSelfStepDomainLog2
+  :: Effect (CompiledCircuit StepField) -> Effect Int
+preComputeSelfStepDomainLog2 shapeCompile =
+  domainLog2OfCompiled <$> shapeCompile

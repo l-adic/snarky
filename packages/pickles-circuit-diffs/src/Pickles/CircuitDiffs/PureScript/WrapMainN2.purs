@@ -26,7 +26,7 @@ import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, deriveStepVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (StepMainSimpleChainN2Params, compileStepMainSimpleChainN2)
 import Pickles.Types (StepField, WrapField)
@@ -41,23 +41,18 @@ import Type.Proxy (Proxy(..))
 compileWrapMainN2
   :: IvpWrapParams
   -> StepMainSimpleChainN2Params
-  -> Effect (CompiledCircuit WrapField)
+  -> Effect WrapArtifact
 compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
-  -- Recompile the step CS and derive its VK commitments. This is
-  -- exactly what OCaml `compile_promise` does when it produces the
-  -- step VK input to `Wrap_main.wrap_main`. Same step CS shape (we
-  -- already match `step_main_simple_chain_n2_circuit` byte-for-byte)
-  -- + same Vesta SRS + same kimchi commitment algorithm = same VK
-  -- constants.
-  stepBuiltState <- compileStepMainSimpleChainN2 stepParams
+  stepArt <- compileStepMainSimpleChainN2 stepParams
   vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    realStepVK =
-      deriveStepVKFromCompiled @2 vestaSrs stepBuiltState
+    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepArt.stepCs
+
     config :: WrapMainConfig 1
     config =
       { stepWidths: 2 :< Vector.nil
-      , domainLog2s: 15 :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
@@ -65,6 +60,12 @@ compileWrapMainN2 { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @(Slots2 2 2) config stmt)
     Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

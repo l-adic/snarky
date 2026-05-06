@@ -28,7 +28,7 @@ import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
@@ -118,37 +118,38 @@ sideLoadedChildRule appState = do
     }
 
 compileStepMainSideLoadedChild
-  :: StepMainSideLoadedChildParams -> Effect (CompiledCircuit StepField)
+  :: StepMainSideLoadedChildParams -> Effect StepArtifact
 compileStepMainSideLoadedChild params =
-  compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
-    (Proxy @(KimchiConstraint StepField))
-    -- N=0, Input mode (input is the rule's `self` field). Output is
-    -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
-    -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
-    -- digest — no unfinalized_proofs, no msgs_wrap entries).
-    -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
-    --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad @nd
-    ( \_ -> stepMain
-        @PrevsSpecNil
-        @1
-        @(F StepField)
-        @(FVar StepField)
-        @Unit
-        @Unit
-        @Unit
-        @Unit
-        @Unit
-        @0
-        @0
-        @1
-        sideLoadedChildRule
-        { perSlotLagrangeAt: Vector.nil
-        , blindingH: params.blindingH
-        , perSlotFopDomainLog2s: Vector.nil
-        , perSlotVkSources: Vector.nil
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-        unit
-    )
-    Kimchi.initialState
+  mkStepArtifact <$>
+    compile (Proxy @Unit) (Proxy @(Vector.Vector 1 (F StepField)))
+      (Proxy @(KimchiConstraint StepField))
+      -- N=0, Input mode (input is the rule's `self` field). Output is
+      -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
+      -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
+      -- digest — no unfinalized_proofs, no msgs_wrap entries).
+      -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
+      --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad @nd
+      ( \_ -> stepMain
+          @PrevsSpecNil
+          @1
+          @(F StepField)
+          @(FVar StepField)
+          @Unit
+          @Unit
+          @Unit
+          @Unit
+          @Unit
+          @0
+          @0
+          @1
+          sideLoadedChildRule
+          { perSlotLagrangeAt: Vector.nil
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s: Vector.nil
+          , perSlotVkSources: Vector.nil
+          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+          }
+          dummyWrapSg
+          unit
+      )
+      Kimchi.initialState

@@ -32,7 +32,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -76,37 +76,49 @@ incrementRule appState = do
     }
 
 compileStepMainTwoPhaseChainIncrement
-  :: StepMainTwoPhaseChainIncrementParams -> Effect (CompiledCircuit StepField)
-compileStepMainTwoPhaseChainIncrement params =
-  compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
-    -- mpvPad=0 (this rule's own n = 1 = mpvMax). Step domain log2 = 14.
-    ( \_ -> stepMain
-        @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        @34
-        @(F StepField)
-        @(FVar StepField)
-        @Unit
-        @Unit
-        @(F StepField)
-        @(FVar StepField)
-        @(Tuple (StatementIO (F StepField) Unit) Unit)
-        @1
-        @0
-        incrementRule
-        { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
-        , blindingH: params.blindingH
-        -- Slot 0's source = self (the 2-branch proof system). nd=2:
-        -- Vector containing both branches' step domain log2s — make_zero
-        -- step_domain=2^9, increment step_domain=2^14. OCaml's
-        -- `domain_for_compiled` (step_verifier.ml:879-899) passes this
-        -- multi-domain Vector to `Pseudo.Domain.to_domain` for runtime
-        -- dispatch on the prev's branch index.
-        , perSlotFopDomainLog2s: (9 :< 14 :< Vector.nil) :< Vector.nil
-        , perSlotVkSources: SharedExistsVk :< Vector.nil
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-        (unit /\ unit)
-    )
-    Kimchi.initialState
+  :: StepArtifact
+  -- ^ Make_zero's compiled step artifact. Slot 0's `perSlotFopDomainLog2s`
+  -- is `Vector 2 [makeZero, increment]` — make_zero's step domain
+  -- log2 is read from this artifact, increment's own is shape-passed.
+  -> StepMainTwoPhaseChainIncrementParams
+  -> Effect StepArtifact
+compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
+  -- Slot 0's source = self (the 2-branch proof system). nd=2 dispatch
+  -- list: make_zero's step domain (from artifact) + increment's own
+  -- step domain (shape-passed).
+  let makeZeroLog2 = makeZeroArt.stepDomainLog2
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile makeZeroLog2 1)
+  mkStepArtifact <$> runStepCompile makeZeroLog2 selfLog2
+  where
+  runStepCompile makeZeroLog2 selfLog2 =
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
+      -- mpvPad=0 (this rule's own n = 1 = mpvMax).
+      ( \_ -> stepMain
+          @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          @34
+          @(F StepField)
+          @(FVar StepField)
+          @Unit
+          @Unit
+          @(F StepField)
+          @(FVar StepField)
+          @(Tuple (StatementIO (F StepField) Unit) Unit)
+          @1
+          @0
+          incrementRule
+          { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
+          , blindingH: params.blindingH
+          -- nd=2 dispatch list: OCaml's `domain_for_compiled`
+          -- (step_verifier.ml:879-899) passes both branches' step
+          -- domains to `Pseudo.Domain.to_domain` for runtime dispatch
+          -- on the prev's branch index.
+          , perSlotFopDomainLog2s:
+              (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
+          , perSlotVkSources: SharedExistsVk :< Vector.nil
+          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+          }
+          dummyWrapSg
+          (unit /\ unit)
+      )
+      Kimchi.initialState

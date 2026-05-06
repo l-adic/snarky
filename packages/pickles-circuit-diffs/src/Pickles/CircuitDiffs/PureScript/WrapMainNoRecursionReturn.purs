@@ -8,12 +8,11 @@
 -- | embedded step VK differs (since NRR's step CS uses Output mode with
 -- | `output = 0`, while AOR uses Input_and_output mode).
 -- |
--- | Used by `compileStepMainTreeProofReturn` to derive NRR's wrap VK
--- | (via `deriveWrapVKFromCompiled`) so TPR's slot 0 known wrap key
--- | is the real OCaml `Lazy.force compiled.wrap_key` for NRR rather
--- | than a placeholder. Mirrors `dump_tree_proof_return.ml:50-83` which
--- | compiles NRR up-front so its `compiled.wrap_key` is loaded when TPR's
--- | compile reads slot 0's prev tag (`step_branch_data.ml:164`).
+-- | Used by `compileStepMainTreeProofReturn` to obtain NRR's compile
+-- | artifact (step CS + step domain log2 + wrap CS + wrap VK), so TPR's
+-- | slot 0 known wrap key is the real OCaml `Lazy.force compiled.wrap_key`
+-- | rather than a placeholder. Mirrors `dump_tree_proof_return.ml:50-83`
+-- | which compiles NRR up-front (`step_branch_data.ml:164`).
 module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
   ( compileWrapMainNoRecursionReturn
   ) where
@@ -25,7 +24,7 @@ import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, deriveStepVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.Types (StepField, WrapField)
@@ -40,23 +39,23 @@ import Type.Proxy (Proxy(..))
 compileWrapMainNoRecursionReturn
   :: IvpWrapParams
   -> StepMainNoRecursionReturnParams
-  -> Effect (CompiledCircuit WrapField)
+  -> Effect WrapArtifact
 compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
-  -- Recompile NRR's step CS (mpv=0, no prev proofs, Output mode) and
-  -- derive its VK commitments via the kimchi commitment pipeline.
-  -- Same pattern as `compileWrapMainAddOneReturn` — both are N=0 leaf
-  -- rules with structurally identical wrap configs.
-  stepBuiltState <- compileStepMainNoRecursionReturn stepParams
+  -- Compile NRR's step CS first, then bake its derived VK + domain
+  -- log2 into the wrap config.
+  stepArt <- compileStepMainNoRecursionReturn stepParams
   vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepBuiltState
+    realStepVK = deriveStepVKFromCompiled @0 vestaSrs stepArt.stepCs
+
     config :: WrapMainConfig 1
     config =
       -- N=0 NRR: single branch, step_widths=[0]. `domainLog2s` is the
-      -- STEP CS's evaluation-domain log2 (= 9, since NRR's step CS has
-      -- 433 gates which round up to 2^9 = 512). Identical to AOR.
+      -- STEP CS's evaluation-domain log2, derived from the step
+      -- artifact (no hardcoded value).
       { stepWidths: 0 :< Vector.nil
-      , domainLog2s: 9 :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
@@ -64,9 +63,13 @@ compileWrapMainNoRecursionReturn { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- NoSlots: mpv=0, no per_proofs. OCaml's `compile_promise` for NRR
-  -- sets `Max_proofs_verified.n = N0 = 0` (the rule has `prevs = []`),
-  -- so the wrap statement packs only 1 PI entry.
-  compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  -- NoSlots: mpv=0, no per_proofs.
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @NoSlots config stmt)
     Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

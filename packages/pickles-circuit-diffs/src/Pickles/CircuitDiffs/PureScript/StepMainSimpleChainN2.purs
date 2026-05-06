@@ -21,7 +21,7 @@ import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
@@ -78,46 +78,47 @@ simpleChainN2Rule appState = do
     }
 
 compileStepMainSimpleChainN2
-  :: StepMainSimpleChainN2Params -> Effect (CompiledCircuit StepField)
-compileStepMainSimpleChainN2 params =
-  compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- Step domain log2 = 15 (OCaml `compile_promise` in
-    -- `dump_simple_chain_n2.ml` auto-detects step_domains.h =
-    -- `Pow_2_roots_of_unity 15`; the previous comment referenced the
-    -- deleted `dump_circuit_impl.ml` helper that hard-coded 16).
-    -- Verified via gate_labels.jsonl: OCaml's vanishing_polynomial
-    -- emits 15 squarings per FOP, matching max_log2 = 15.
-    -- Single-rule: mpvMax = len = 2, mpvPad = 0.
-    ( \_ -> stepMain
-        @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
-            (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
-        )
-        @67
-        @(F StepField)
-        @(FVar StepField)
-        @Unit
-        @Unit
-        @(F StepField)
-        @(FVar StepField)
-        @( Tuple (StatementIO (F StepField) Unit)
-            (Tuple (StatementIO (F StepField) Unit) Unit)
-        )
-        @2
-        @0
-        simpleChainN2Rule
-        { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
-        , blindingH: params.blindingH
-        , perSlotFopDomainLog2s:
-            (15 :< Vector.nil) :< (15 :< Vector.nil) :< Vector.nil
-        , perSlotVkSources: SharedExistsVk :< SharedExistsVk :< Vector.nil
-        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-        -- thunks never fire — `unsafeCrashWith` is fine.
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-        -- Side-loaded VK carrier (Step 2d-β1.5b): two Cons slots,
-        -- both compiled; carrier = `Unit /\ Unit /\ Unit`.
-        (unit /\ unit /\ unit)
-    )
-    Kimchi.initialState
+  :: StepMainSimpleChainN2Params -> Effect StepArtifact
+compileStepMainSimpleChainN2 params = do
+  -- Both prev slots are self → both FOP domain log2s = this rule's own
+  -- step domain log2. Resolved via two-pass compile (mirrors OCaml
+  -- `Fix_domains.domains`).
+  selfLog2 <- preComputeSelfStepDomainLog2 (runStepCompile 1)
+  mkStepArtifact <$> runStepCompile selfLog2
+  where
+  runStepCompile selfLog2 =
+    compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      -- Single-rule: mpvMax = len = 2, mpvPad = 0.
+      ( \_ -> stepMain
+          @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
+              (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          )
+          @67
+          @(F StepField)
+          @(FVar StepField)
+          @Unit
+          @Unit
+          @(F StepField)
+          @(FVar StepField)
+          @( Tuple (StatementIO (F StepField) Unit)
+              (Tuple (StatementIO (F StepField) Unit) Unit)
+          )
+          @2
+          @0
+          simpleChainN2Rule
+          { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s:
+              (selfLog2 :< Vector.nil) :< (selfLog2 :< Vector.nil) :< Vector.nil
+          , perSlotVkSources: SharedExistsVk :< SharedExistsVk :< Vector.nil
+          -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+          -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+          -- thunks never fire — `unsafeCrashWith` is fine.
+          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+          }
+          dummyWrapSg
+          -- Side-loaded VK carrier (Step 2d-β1.5b): two Cons slots,
+          -- both compiled; carrier = `Unit /\ Unit /\ Unit`.
+          (unit /\ unit /\ unit)
+      )
+      Kimchi.initialState

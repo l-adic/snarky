@@ -53,9 +53,9 @@ import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileSte
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
-import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn (compileWrapMainAddOneReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainN2 (compileWrapMainN2)
+import Pickles.CircuitDiffs.PureScript.WrapMainSideLoadedMain (compileWrapMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.WrapMainTreeProofReturn (compileWrapMainTreeProofReturn)
 import Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain (compileWrapMainTwoPhaseChain)
 import Pickles.CircuitDiffs.PureScript.WrapVerify (compileWrapVerify)
@@ -548,7 +548,7 @@ spec =
         -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
         -- commit `cf352650`).
         exactMatchEff "wrap_main_circuit"
-          (fromCompiledCircuit <$> compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
@@ -563,14 +563,14 @@ spec =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
             , sideloadedPerDomainLagrangeAt:
-                ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp) )
-                  :< ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp) )
-                  :< ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp) )
+                (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp))
+                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp))
+                  :< (\i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp))
                   :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_side_loaded_main_circuit"
-          (fromCompiledCircuit <$> compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
@@ -594,7 +594,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN2StepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_n2_circuit"
-          (fromCompiledCircuit <$> compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainN2 wrapMainN2SrsData wrapMainN2StepSrsData)
         -- N=0 Input_and_output mode (Add_one_return). step_widths=[0],
         -- padded=[[0];[0]]. First (and only) N=0 wrap fixture — exercises
         -- the wrap verify-one-of-step path with a step proof whose own
@@ -624,7 +624,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "wrap_main_add_one_return_circuit"
-          (fromCompiledCircuit <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
@@ -648,6 +648,7 @@ spec =
             (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp)
           tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
             (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+
           -- NRR wrap+step SRS data for the chained NRR compile inside
           -- compileStepMainTreeProofReturn (the wrap fixture goes through
           -- it transitively via compileWrapMainTreeProofReturn).
@@ -657,6 +658,7 @@ spec =
                 coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
+
           wrapTprNrrStepSrsData :: StepMainNoRecursionReturnParams
           wrapTprNrrStepSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -670,7 +672,7 @@ spec =
             , nrrStepSrsData: wrapTprNrrStepSrsData
             }
         exactMatchEff "wrap_main_tree_proof_return_circuit"
-          (fromCompiledCircuit <$> compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),
@@ -698,7 +700,7 @@ spec =
             , incrementStepSrsData: tpcIncrementSrsData
             }
         exactMatchEff "wrap_main_two_phase_chain_circuit"
-          (fromCompiledCircuit <$> compileWrapMainTwoPhaseChain wrapMainTpcParams)
+          (fromCompiledCircuit <<< _.wrapCs <$> compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -753,7 +755,7 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=1, Input mode. Public input layout is input field only.
-        exactMatchEff "step_main_simple_chain_circuit" (fromCompiledCircuit <$> compileStepMainSimpleChain stepMainSrsData)
+        exactMatchEff "step_main_simple_chain_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSimpleChain stepMainSrsData)
         let
           stepMainN2SrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
@@ -761,12 +763,12 @@ spec =
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         -- N=2, Input mode. Two prev proofs verified by verify_one.
-        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <$> compileStepMainSimpleChainN2 stepMainN2SrsData)
+        exactMatchEff "step_main_simple_chain_n2_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSimpleChainN2 stepMainN2SrsData)
         -- N=0, Input_and_output mode — Add_one_return. No recursion,
         -- no verify_one; the hash_messages_for_next_step_proof absorbs
         -- BOTH input and output fields (OCaml step_main.ml:566-573
         -- Input_and_output branch → `to_field_elements (app_state, ret_var)`).
-        exactMatchEff "step_main_add_one_return_circuit" (fromCompiledCircuit <$> compileStepMainAddOneReturn stepMainSrsData)
+        exactMatchEff "step_main_add_one_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainAddOneReturn stepMainSrsData)
         -- N=0, Output mode — No_recursion_return. Rule returns
         -- `output = 0` with no input. Exercises the Output-mode branch
         -- of step_main.ml:566-573 (`Output _ -> ret_var`) at N=0: the
@@ -774,7 +776,7 @@ spec =
         -- field (no input contribution). Precursor to Tree_proof_return's
         -- proof-level byte-for-byte test, which consumes a real
         -- No_recursion_return proof in slot 0.
-        exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <$> compileStepMainNoRecursionReturn stepMainSrsData)
+        exactMatchEff "step_main_no_recursion_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainNoRecursionReturn stepMainSrsData)
         -- N=2, Output mode, HETEROGENEOUS prevs (No_recursion_return @ N0,
         -- self @ N2). All four layers of heterogeneity wired up:
         -- * per-slot SPPW sizing  (`PrevsSpecCons 0 (PrevsSpecCons 2 …)`)
@@ -794,12 +796,14 @@ spec =
           -- `wrapMainAddOneReturnSrsData` (NRR is N=0 leaf rule, same
           -- wrap config as AOR — IVP MSM lookup at step domain log2 9).
           tprNrrWrapSrs = vestaCrsCreate (2 `Int.pow` 16)
+
           tprNrrWrapSrsData :: IvpWrapParams
           tprNrrWrapSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator tprNrrWrapSrs
             }
+
           -- NRR step CS SRS data. lagrangeAt is unused at mpv=0
           -- (`compileStepMainNoRecursionReturn` passes Vector.nil for
           -- perSlotLagrangeAt) but still required by the params type.
@@ -816,7 +820,7 @@ spec =
             , nrrWrapSrsData: tprNrrWrapSrsData
             , nrrStepSrsData: tprNrrStepSrsData
             }
-        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
+        exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
         -- N=1 parent + single SIDE-LOADED prev (mpv=N2 upper bound).
         -- Mirrors `dump_side_loaded_main.ml`'s Simple_chain rule. Drives
         -- the byte-equality validation for β2 (one-hot wrap-domain
@@ -864,7 +868,7 @@ spec =
         -- To run the diff manually:
         --   `npx spago test -p pickles-circuit-diffs -- --example "side_loaded_main"`
         -- after switching `pending'` below back to `exactMatchEff`.
-        exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
+        exactMatchEff "step_main_side_loaded_main_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSideLoadedMain sideLoadedMainSrsData)
         -- N=0, Input mode — side-loaded CHILD (No_recursion + dummy_constraints).
         -- The inner rule whose proof gets verified by the side-loaded
         -- parent in `dump_side_loaded_main.ml`. Full body translated:
@@ -874,7 +878,7 @@ spec =
           sideLoadedChildSrsData =
             { blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
-        exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedChild sideLoadedChildSrsData)
+        exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainSideLoadedChild sideLoadedChildSrsData)
         -- N=1 Input mode (`increment` branch of two_phase_chain).
         -- Step domain log2 = 14. Body asserts `self_v = prev + 1` (single
         -- R1CS) with `proofMustVerify = true_`. mpvMax=1, mpvPad=0.
@@ -883,25 +887,30 @@ spec =
         -- step_1=increment); both feed into the shared wrap CS via
         -- `choose_key`-style step VK dispatch.
         let
-          twoPhaseChainIncrementSrsData =
-            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
-            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
-            }
-        exactMatchEff "step_main_two_phase_chain_increment_circuit"
-          (fromCompiledCircuit <$> compileStepMainTwoPhaseChainIncrement twoPhaseChainIncrementSrsData)
-        -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
-        -- has no prevs but the multi-branch wrap is mpv=N1, so the
-        -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
-        -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
-        let
           twoPhaseChainMakeZeroSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
                 (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
+          twoPhaseChainIncrementSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        -- Increment standalone test compiles BOTH branches: make_zero
+        -- first to obtain its artifact, then increment with that
+        -- artifact (passed as a separate arg, supplying the multi-branch
+        -- FOP domain dispatch list's `[makeZero, increment]` head).
+        exactMatchEff "step_main_two_phase_chain_increment_circuit" $ do
+          makeZeroArt <- compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData
+          fromCompiledCircuit <<< _.stepCs <$>
+            compileStepMainTwoPhaseChainIncrement makeZeroArt twoPhaseChainIncrementSrsData
+        -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
+        -- has no prevs but the multi-branch wrap is mpv=N1, so the
+        -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
+        -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
         exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
-          (fromCompiledCircuit <$> compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
+          (fromCompiledCircuit <<< _.stepCs <$> compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

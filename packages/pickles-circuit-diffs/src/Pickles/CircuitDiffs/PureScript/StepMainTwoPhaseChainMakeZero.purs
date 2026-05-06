@@ -23,10 +23,10 @@ import Prelude
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Dummy as Dummy
-import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Prove.Step (mkDummyPerProofUnfinalized)
+import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, liftDummyPerProofUnfinalized, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
@@ -58,7 +58,7 @@ makeZeroRule appState = do
     }
 
 compileStepMainTwoPhaseChainMakeZero
-  :: StepMainTwoPhaseChainMakeZeroParams -> Effect (CompiledCircuit StepField)
+  :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
 compileStepMainTwoPhaseChainMakeZero params =
   let
     -- Front-padding dummy unfinalized (mpvPad=1). Critical detail:
@@ -77,31 +77,32 @@ compileStepMainTwoPhaseChainMakeZero params =
     -- multi-rule make_zero.
     bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
   in
-    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-      -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
-      -- so step PI front-pads 1 dummy unfinalized_proof slot.
-      -- Output size = 1 * 32 + 1 + 1 = 34.
-      ( \_ -> stepMain
-          @PrevsSpecNil
-          @34
-          @(F StepField)
-          @(FVar StepField)
-          @Unit
-          @Unit
-          @Unit
-          @Unit
-          @Unit
-          @1
-          @1
-          @1
-          makeZeroRule
-          { perSlotLagrangeAt: Vector.nil
-          , blindingH: params.blindingH
-          , perSlotFopDomainLog2s: Vector.nil
-          , perSlotVkSources: Vector.nil
-          , dummyUnfp: \_ -> liftDummyPerProofUnfinalized (mkDummyPerProofUnfinalized bcd)
-          }
-          dummyWrapSg
-          unit
-      )
-      Kimchi.initialState
+    mkStepArtifact <$>
+      compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+        -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
+        -- so step PI front-pads 1 dummy unfinalized_proof slot.
+        -- Output size = 1 * 32 + 1 + 1 = 34.
+        ( \_ -> stepMain
+            @PrevsSpecNil
+            @34
+            @(F StepField)
+            @(FVar StepField)
+            @Unit
+            @Unit
+            @Unit
+            @Unit
+            @Unit
+            @1
+            @1
+            @1
+            makeZeroRule
+            { perSlotLagrangeAt: Vector.nil
+            , blindingH: params.blindingH
+            , perSlotFopDomainLog2s: Vector.nil
+            , perSlotVkSources: Vector.nil
+            , dummyUnfp: \_ -> liftDummyPerProofUnfinalized (mkDummyPerProofUnfinalized bcd)
+            }
+            dummyWrapSg
+            unit
+        )
+        Kimchi.initialState

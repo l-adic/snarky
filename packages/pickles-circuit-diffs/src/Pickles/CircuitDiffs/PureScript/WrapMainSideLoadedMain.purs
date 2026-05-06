@@ -21,7 +21,7 @@ import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, deriveStepVKFromCompiled)
+import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoadedMainParams, compileStepMainSideLoadedMain)
 import Pickles.Types (StepField, WrapField)
@@ -36,23 +36,18 @@ import Type.Proxy (Proxy(..))
 compileWrapMainSideLoadedMain
   :: IvpWrapParams
   -> StepMainSideLoadedMainParams
-  -> Effect (CompiledCircuit WrapField)
+  -> Effect WrapArtifact
 compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
-  -- Recompile the step CS and derive its VK commitments. Same pattern
-  -- as `compileWrapMainN1` / `compileWrapMainN2` etc. — the previous
-  -- `dummyVestaPt`-based VK with 28 components sharing
-  -- `(1, vestaGenY)` produced 14 fewer Generic gates than the real
-  -- production VK with distinct commitments embedded via `choose_key`.
-  stepBuiltState <- compileStepMainSideLoadedMain stepParams
+  stepArt <- compileStepMainSideLoadedMain stepParams
   vestaSrs <- createCRS @StepField
+  pallasSrs <- createCRS @WrapField
   let
-    realStepVK = deriveStepVKFromCompiled @1 vestaSrs stepBuiltState
+    realStepVK = deriveStepVKFromCompiled @1 vestaSrs stepArt.stepCs
+
     config :: WrapMainConfig 1
     config =
-      -- domainLog2 = 14 mirrors production side-loaded `Simple_chain`
-      -- (mpv=N1 → wrap_domain.h = 2^14 per `common.ml:25-29`).
       { stepWidths: 1 :< Vector.nil
-      , domainLog2s: 14 :< Vector.nil
+      , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
@@ -61,8 +56,13 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
   -- `Slots1 2`: mpv=1, single slot with bound 2 (the side-loaded
-  -- prev's `max_proofs_verified = N2` upper bound). Differs from
-  -- WrapMain's `Slots1 1` (Simple_chain's bound is N1).
-  compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+  -- prev's `max_proofs_verified = N2` upper bound).
+  wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     (\stmt -> wrapMain @1 @(Slots1 2) config stmt)
     Kimchi.initialState
+  pure
+    { stepCs: stepArt.stepCs
+    , stepDomainLog2: stepArt.stepDomainLog2
+    , wrapCs
+    , wrapVk: deriveWrapVKFromCompiled @2 pallasSrs wrapCs
+    }

@@ -28,7 +28,7 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Partial.Unsafe (unsafeCrashWith)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyWrapSg)
+import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
@@ -74,29 +74,30 @@ addOneReturnRule x = pure
   }
 
 compileStepMainAddOneReturn
-  :: StepMainAddOneReturnParams -> Effect (CompiledCircuit StepField)
+  :: StepMainAddOneReturnParams -> Effect StepArtifact
 compileStepMainAddOneReturn params =
-  compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
-    -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
-    -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
-    -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
-    -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
-    -- pick any concrete CircuitType-havers; Unit works.
-    -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-    ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0 @1
-        addOneReturnRule
-        { perSlotLagrangeAt: Vector.nil
-        , blindingH: params.blindingH
-        , perSlotFopDomainLog2s: Vector.nil
-        , perSlotVkSources: Vector.nil
-        -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-        -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-        -- thunks never fire — `unsafeCrashWith` is fine.
-        , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
-        }
-        dummyWrapSg
-        -- Side-loaded VK carrier (Step 2d-β1.5b): no side-loaded
-        -- slots in PrevsSpecNil, so the carrier is `Unit`.
-        unit
-    )
-    Kimchi.initialState
+  mkStepArtifact <$>
+    compile (Proxy @Unit) (Proxy @(Vector 1 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      -- N=0: output size = 33*0 + 1 = 1 (just the msgForNextStep digest —
+      -- no unfinalized_proofs, no messages_for_next_wrap_proof entries).
+      -- OCaml step domain log2 = 9 (tiny, no verify_one machinery).
+      -- N=0 has no prev proofs, so prevInputVal/prevInput are unused —
+      -- pick any concrete CircuitType-havers; Unit works.
+      -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
+      ( \_ -> stepMain @PrevsSpecNil @1 @(F StepField) @(FVar StepField) @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0 @1
+          addOneReturnRule
+          { perSlotLagrangeAt: Vector.nil
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s: Vector.nil
+          , perSlotVkSources: Vector.nil
+          -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
+          -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
+          -- thunks never fire — `unsafeCrashWith` is fine.
+          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
+          }
+          dummyWrapSg
+          -- Side-loaded VK carrier (Step 2d-β1.5b): no side-loaded
+          -- slots in PrevsSpecNil, so the carrier is `Unit`.
+          unit
+      )
+      Kimchi.initialState
