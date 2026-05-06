@@ -13,6 +13,7 @@ module Pickles.CircuitDiffs.PureScript.Common
   , wrapDomainLog2
   , wrapSrsLengthLog2
   , deriveStepVKFromCompiled
+  , deriveWrapVKFromCompiled
   ) where
 
 import Prelude
@@ -26,8 +27,9 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafePartial)
+import Pickles.Prove.Step (extractWrapVKCommsAdvice)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
-import Pickles.Types (StepField, WrapField)
+import Pickles.Types (StepField, VerificationKey, WrapField)
 import Pickles.VerificationKey (StepVK)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
@@ -40,7 +42,7 @@ import Snarky.Curves.Class (EndoBase(..), EndoScalar(..), endoBase, endoScalar, 
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Pasta (PallasG, VestaG)
 import Snarky.Curves.Vesta as Vesta
-import Snarky.Data.EllipticCurve (AffinePoint)
+import Snarky.Data.EllipticCurve (AffinePoint, WeierstrassAffinePoint)
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -155,3 +157,47 @@ deriveStepVKFromCompiled vestaSrs builtState =
     verifierIndex = createVerifierIndex @StepField @VestaG proverIndex
   in
     stepVkForCircuit (extractStepVKComms verifierIndex)
+
+-- | Derive a wrap `VerifierIndex`'s commitments from a compiled wrap
+-- | constraint system, returning a `VerificationKey
+-- | (WeierstrassAffinePoint PallasG (F StepField))` ready to use as the
+-- | per-slot known wrap key in `perSlotVkSources` (e.g.
+-- | `ConstVk realNrrWrapVK` for Tree_proof_return's slot 0).
+-- |
+-- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS lives
+-- | in `WrapField` over the Pallas curve; the commitments are Pallas
+-- | points whose coordinates are in `Pallas.BaseField = StepField`, so
+-- | the resulting VK is what a step circuit consumes when verifying
+-- | the wrap proof.
+-- |
+-- | This mirrors the wrap-side compile pipeline:
+-- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
+-- | createVerifierIndex`, then runs `extractWrapVKCommsAdvice` on the
+-- | result. Used by Tree_proof_return to obtain the SAME baked-in wrap
+-- | VK constants OCaml's `Pickles.compile_promise` produces for
+-- | `No_recursion_return` (see
+-- | `mina/src/lib/crypto/pickles/dump_tree_proof_return/dump_tree_proof_return.ml:50-83`,
+-- | which compiles NRR up-front so its `compiled.wrap_key` is loaded
+-- | when TPR's compile reads slot 0's prev tag).
+deriveWrapVKFromCompiled
+  :: forall @len
+   . Reflectable len Int
+  => CRS PallasG
+  -> CompiledCircuit WrapField
+  -> VerificationKey (WeierstrassAffinePoint PallasG (F StepField))
+deriveWrapVKFromCompiled pallasSrs builtState =
+  let
+    kimchiRows = concatMap (toKimchiRows <<< _.constraint) builtState.constraints
+    { constraintSystem } = makeConstraintSystemWithPrevChallenges @WrapField
+      { constraints: kimchiRows
+      , publicInputs: builtState.publicInputs
+      , unionFind: (un AuxState builtState.aux).wireState.unionFind
+      , prevChallengesCount: reflectType (Proxy @len)
+      }
+    endo :: WrapField
+    endo = let EndoBase e = (endoBase :: EndoBase WrapField) in e
+    proverIndex = createProverIndex @WrapField @PallasG
+      { endo, constraintSystem, crs: pallasSrs }
+    verifierIndex = createVerifierIndex @WrapField @PallasG proverIndex
+  in
+    extractWrapVKCommsAdvice verifierIndex

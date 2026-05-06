@@ -35,14 +35,14 @@ import Pickles.CircuitDiffs.PureScript.GroupMapStep (compileGroupMapStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesStep (compileHashMessagesStep)
 import Pickles.CircuitDiffs.PureScript.HashMessagesWrap (compileHashMessagesWrap)
 import Pickles.CircuitDiffs.PureScript.IvpStep (compileIvpStep)
-import Pickles.CircuitDiffs.PureScript.IvpWrap (compileIvpWrap)
+import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams, compileIvpWrap)
 import Pickles.CircuitDiffs.PureScript.LinearizationStep (compileLinearizationStep)
 import Pickles.CircuitDiffs.PureScript.LinearizationWrap (compileLinearizationWrap)
 import Pickles.CircuitDiffs.PureScript.OtherFieldCheck (compileOtherFieldCheck)
 import Pickles.CircuitDiffs.PureScript.Pow2Pow (compilePow2Pow)
 import Pickles.CircuitDiffs.PureScript.PseudoCircuits (compileChooseKeyN1Wrap, compileOneHotN17Step, compileOneHotN17Wrap, compileOneHotN1Step, compileOneHotN1Wrap, compileOneHotN3Step, compileOneHotN3Wrap, compilePseudoChooseN1Step, compilePseudoChooseN1Wrap, compilePseudoChooseN3Step, compilePseudoChooseN3Wrap, compilePseudoMaskN17Step, compilePseudoMaskN17Wrap, compilePseudoMaskN1Step, compilePseudoMaskN1Wrap, compilePseudoMaskN3Step, compilePseudoMaskN3Wrap, compileSideloadedVkTypStep, compileUtilsOnesVectorN16Step, compileUtilsOnesVectorN16Wrap)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (compileStepMainAddOneReturn)
-import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (compileStepMainNoRecursionReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams, compileStepMainNoRecursionReturn)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedChild (compileStepMainSideLoadedChild)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSideLoadedMain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
@@ -632,9 +632,26 @@ spec =
             (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp)
           tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
             (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+          -- NRR wrap+step SRS data for the chained NRR compile inside
+          -- compileStepMainTreeProofReturn (the wrap fixture goes through
+          -- it transitively via compileWrapMainTreeProofReturn).
+          wrapTprNrrWrapSrsData :: IvpWrapParams
+          wrapTprNrrWrapSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+          wrapTprNrrStepSrsData :: StepMainNoRecursionReturnParams
+          wrapTprNrrStepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
+            }
           tprStepSrsData =
             { perSlotLagrangeAt: tprLagrangeAtD13 :< tprLagrangeAtD14 :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
+            , nrrWrapSrsData: wrapTprNrrWrapSrsData
+            , nrrStepSrsData: wrapTprNrrStepSrsData
             }
         exactMatchEff "wrap_main_tree_proof_return_circuit"
           (fromCompiledCircuit <$> compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
@@ -739,9 +756,33 @@ spec =
           lagrangeAtD14 =
             mkConstLagrangeBaseLookup \i ->
               (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+          -- SRS data for compiling NRR's wrap CS up-front, used to
+          -- derive slot 0's known wrap key (replacing the prior
+          -- 28-copies-of-Pallas-generator placeholder). Mirrors
+          -- `wrapMainAddOneReturnSrsData` (NRR is N=0 leaf rule, same
+          -- wrap config as AOR — IVP MSM lookup at step domain log2 9).
+          tprNrrWrapSrs = vestaCrsCreate (2 `Int.pow` 16)
+          tprNrrWrapSrsData :: IvpWrapParams
+          tprNrrWrapSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt tprNrrWrapSrs 9 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator tprNrrWrapSrs
+            }
+          -- NRR step CS SRS data. lagrangeAt is unused at mpv=0
+          -- (`compileStepMainNoRecursionReturn` passes Vector.nil for
+          -- perSlotLagrangeAt) but still required by the params type.
+          -- Same shape as `aorStepSrsData`.
+          tprNrrStepSrsData :: StepMainNoRecursionReturnParams
+          tprNrrStepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
           treeProofReturnSrsData =
             { perSlotLagrangeAt: lagrangeAtD13 :< lagrangeAtD14 :< Vector.nil
             , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            , nrrWrapSrsData: tprNrrWrapSrsData
+            , nrrStepSrsData: tprNrrStepSrsData
             }
         exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
         -- N=1 parent + single SIDE-LOADED prev (mpv=N2 upper bound).
