@@ -14,19 +14,24 @@ After the M9 cleanup pass (commit `b8607be0`) every `step_main_*` /
 
 ### Distribution of mismatches sorted by delta
 
-| fixture                                | delta         |
-|----------------------------------------|---------------|
-| `wrap_main_side_loaded_main_circuit`   | −14           |
-| `wrap_main_tree_proof_return_circuit`  | −14           |
-| `step_main_side_loaded_main_circuit`   | +25           |
-| `step_main_tree_proof_return_circuit`  | −25           |
-| `wrap_main_two_phase_chain_circuit`    | +4088         |
+| fixture                                | delta         | notes                                                       |
+|----------------------------------------|---------------|-------------------------------------------------------------|
+| `wrap_main_side_loaded_main_circuit`   | −14           | Generic-only; cached_constants 147=147 (real VK in PS).     |
+| `wrap_main_tree_proof_return_circuit`  | 0 rows        | Row + kind delta zero (commit `642766e4`); coeffs differ in `choose-key` because step CS divergent. |
+| `step_main_side_loaded_main_circuit`   | +25           | Sideload-related (separate domain).                         |
+| `step_main_tree_proof_return_circuit`  | −25           | FOP `ft_eval0` mul-chain divergence (memory).               |
+| `wrap_main_two_phase_chain_circuit`    | 0 rows        | Row + kind delta zero (commit `307293f3`); coeffs differ on dummy VK — needs `compileStepMainTwoPhaseChain` for both branches. |
 
 Recently converged:
 - `step_main_simple_chain_n2_circuit` (was +1) — fixed by `perSlotFopDomainLog2s: 16 → 15` in `StepMainSimpleChainN2.purs`.
 - `wrap_main_n2_circuit` (was +4) — commit `cf352650` "byte-identical via deterministic step VK".
 - `wrap_main_circuit` (was +4074) — `WrapMain.purs` `Slots2 0 1 → Slots1 1` (mpv=2 → mpv=1, matching OCaml's `Max_proofs_verified.n = N1 = 1` for Simple_chain N1) + deterministic step VK derivation. Diagnosed via `cs_label_diff.py cached_constants` showing alternating shared / PS-only runs in cached_constants insertion order, then OCaml partition-counts instrumentation confirming `total=34 constant_part=0 non_constant_part=34` (mpv=1, not 2).
 - `wrap_main_add_one_return_circuit` (was +8103) — `WrapMainAddOneReturn.purs` `Slots2 0 0 → NoSlots` (mpv=2 → mpv=0, matching OCaml's `Max_proofs_verified.n = N0 = 0` for Add_one_return) + deterministic step VK + `domainLog2s: 13 → 9` (was confusing wrap-circuit domain with step-circuit domain) + lagrange lookup log2 13→9 in test setup. Required relaxing `deriveStepVKFromCompiled`'s `Add 1 lenPred len` constraint so it accepts `len = 0`.
+
+Partial progress (row delta closed but coeffs still diverge):
+
+- `wrap_main_tree_proof_return_circuit` (was −14): row delta 0 via `domainLog2s 13 → 15` + lagrange log2 → 15 + deterministic step VK (commit `642766e4`). Blocked on step_main_tree_proof_return_circuit's −25 (FOP ft_eval0 divergence) — once step TPR converges, the deterministic VK derivation will produce values matching OC.
+- `wrap_main_two_phase_chain_circuit` (was +4088): row delta 0 via `Slots2 0 1 → Slots1 1` (commit `307293f3`). cached_constants 9=9 byte-identical. Coefficients diverge on dummy VK — needs `compileStepMainTwoPhaseChain` (currently nonexistent) compiling both make_zero and increment rules' step CSs to derive their VKs.
 
 The +4000-gate `wrap_main_*` cluster is likely a single shared bug.
 The smaller deltas are individual emission divergences. Recommended
