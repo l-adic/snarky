@@ -48,6 +48,8 @@ import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (compileStepMainSi
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (compileStepMainSimpleChain)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2 (compileStepMainSimpleChainN2)
 import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (compileStepMainTreeProofReturn)
+import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement (compileStepMainTwoPhaseChainIncrement)
+import Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainMakeZero (compileStepMainTwoPhaseChainMakeZero)
 import Pickles.CircuitDiffs.PureScript.StepVerify (compileStepVerify)
 import Pickles.CircuitDiffs.PureScript.StepVerifyN2 (compileStepVerifyN2)
 import Pickles.CircuitDiffs.PureScript.WrapMain (compileWrapMainN1)
@@ -674,13 +676,29 @@ spec =
         -- domains [9; 14] differ (make_zero is tiny, increment full),
         -- so wrap_main goes through the per-branch dispatch path.
         -- Lagrange lookup is per-branch — needs the wrap SRS directly.
+        -- Step VKs are derived per-branch (mirrors the deterministic
+        -- VK fix family — wrap_main_circuit, wrap_main_tree_proof_return).
         let
+          tpcStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          tpcMakeZeroSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
+            }
+          tpcIncrementSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt tpcStepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator tpcStepSrs) :: AffinePoint (F Fp)
+            }
           wrapMainTpcParams =
             { vestaSrs: wrapSrs
             , lagrangeAt: wrapMainSrsData.lagrangeAt
             , blindingH: wrapMainSrsData.blindingH
+            , makeZeroStepSrsData: tpcMakeZeroSrsData
+            , incrementStepSrsData: tpcIncrementSrsData
             }
-        exactMatch "wrap_main_two_phase_chain_circuit" (fromCompiledCircuit $ compileWrapMainTwoPhaseChain wrapMainTpcParams)
+        exactMatchEff "wrap_main_two_phase_chain_circuit"
+          (fromCompiledCircuit <$> compileWrapMainTwoPhaseChain wrapMainTpcParams)
         let
           -- OCaml uses SRS.Fq.create (1 lsl 15) and domain Pow_2_roots_of_unity 15
           stepSrs = pallasCrsCreate (2 `Int.pow` 15)
@@ -857,6 +875,33 @@ spec =
             { blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
             }
         exactMatchEff "step_main_side_loaded_child_circuit" (fromCompiledCircuit <$> compileStepMainSideLoadedChild sideLoadedChildSrsData)
+        -- N=1 Input mode (`increment` branch of two_phase_chain).
+        -- Step domain log2 = 14. Body asserts `self_v = prev + 1` (single
+        -- R1CS) with `proofMustVerify = true_`. mpvMax=1, mpvPad=0.
+        -- The OCaml fixture is one of TWO step CSes the
+        -- `dump_two_phase_chain.exe` driver emits (step_0=make_zero,
+        -- step_1=increment); both feed into the shared wrap CS via
+        -- `choose_key`-style step VK dispatch.
+        let
+          twoPhaseChainIncrementSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "step_main_two_phase_chain_increment_circuit"
+          (fromCompiledCircuit <$> compileStepMainTwoPhaseChainIncrement twoPhaseChainIncrementSrsData)
+        -- N=0 Input mode (`make_zero` branch of two_phase_chain). Rule
+        -- has no prevs but the multi-branch wrap is mpv=N1, so the
+        -- step PI is 34 entries (mpvPad=1 → 1 front-padded dummy slot).
+        -- Step domain log2 = 9. Body asserts `self_v = 0` (single R1CS).
+        let
+          twoPhaseChainMakeZeroSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt stepMainSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator stepMainSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "step_main_two_phase_chain_make_zero_circuit"
+          (fromCompiledCircuit <$> compileStepMainTwoPhaseChainMakeZero twoPhaseChainMakeZeroSrsData)
       describe "Linearization" do
         exactMatch "linearization_step_circuit" (fromCompiledCircuit compileLinearizationStep)
         exactMatch "linearization_wrap_circuit" (fromCompiledCircuit compileLinearizationWrap)

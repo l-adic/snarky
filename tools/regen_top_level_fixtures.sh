@@ -106,9 +106,14 @@ copy_fixture "${TMP}/dump_tree_proof_return_step_1"  step_main_tree_proof_return
 copy_fixture "${TMP}/dump_tree_proof_return_wrap_1"  wrap_main_tree_proof_return_circuit
 
 # dump_two_phase_chain: 2 rules (make_zero + increment) → 2 step + 1 wrap.
-# Only the wrap fixture is in the test set. step_main_two_phase_chain_*
-# fixtures don't exist (the per-rule app-circuit fixtures are the
-# `app_circuit_two_phase_chain_*` sub-circuits, not full step_mains).
+# Per-branch step CSes are emitted as step_0 (make_zero, N=0) and
+# step_1 (increment, N=1). Both are required to derive the per-branch
+# step VKs that get embedded as compile-time constants in the shared
+# wrap CS via `choose_key`-style dispatch (mirrors the
+# `wrap_main_n2` / `wrap_main_tree_proof_return` deterministic-VK
+# fix family).
+copy_fixture "${TMP}/dump_two_phase_chain_step_0"  step_main_two_phase_chain_make_zero_circuit
+copy_fixture "${TMP}/dump_two_phase_chain_step_1"  step_main_two_phase_chain_increment_circuit
 copy_fixture "${TMP}/dump_two_phase_chain_wrap_0"  wrap_main_two_phase_chain_circuit
 
 # dump_side_loaded_main: 2 compiles (child + parent) → 2 step + 2 wrap.
