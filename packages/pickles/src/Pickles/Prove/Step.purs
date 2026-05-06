@@ -113,8 +113,8 @@ import Safe.Coerce (coerce)
 import Snarky.Backend.Builder (CircuitBuilderState, Labeled)
 import Snarky.Backend.Compile (SolverT, compile, makeSolver', runSolverT)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges, makeWitness)
-import Snarky.Backend.Kimchi.Impl.Vesta (vestaConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor, createProverIndex, createVerifierIndex, verifyProverIndex)
+import Snarky.Backend.Kimchi.Impl.Vesta (vestaConstraintSystemToJson)
 import Snarky.Backend.Kimchi.Types (CRS, ConstraintSystem, ProverIndex, VerifierIndex)
 import Snarky.Backend.Prover (emptyProverState)
 import Snarky.Circuit.CVar (EvaluationError(..), Variable)
@@ -2002,16 +2002,12 @@ stepCompile ctx rule = do
       ( \_ ->
           stepMain
             @prevsSpec
-            @outputSize
             @inputVal
-            @input
             @outputVal
-            @output
             @prevInputVal
-            @prevInput
             @valCarrier
             @mpvMax
-            @mpvPad
+            @nd
             rule
             ctx.srsData
             ctx.dummySg
@@ -2153,16 +2149,12 @@ preComputeStepDomainLog2 ctx rule = do
       ( \_ ->
           stepMain
             @prevsSpec
-            @outputSize
             @inputVal
-            @input
             @outputVal
-            @output
             @prevInputVal
-            @prevInput
             @valCarrier
             @mpvMax
-            @mpvPad
+            @nd
             rule
             ctx.srsData
             ctx.dummySg
@@ -2277,16 +2269,12 @@ stepSolveAndProve ctx rule compileResult advice = do
         ( \_ ->
             stepMain
               @prevsSpec
-              @outputSize
               @inputVal
-              @input
               @outputVal
-              @output
               @prevInputVal
-              @prevInput
               @valCarrier
               @mpvMax
-              @mpvPad
+              @nd
               rule
               ctx.srsData
               ctx.dummySg

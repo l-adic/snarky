@@ -44,9 +44,9 @@ import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
-import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Sideload.Advice (class TraverseSideloadedVKsCarrier, traverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
+import Pickles.Sponge (initialSpongeCircuit)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM, getMessagesForNextWrapProof, getMessagesForNextWrapProofDummyHash, getStepPublicInput, getStepSlotsCarrier, getStepUnfinalizedProofs, getWrapVerifierIndex, setUserPublicOutputFields)
 import Pickles.Step.FinalizeOtherProof (DomainMode(..))
 import Pickles.Step.Prevs (class PrevsCarrier, StepSlot(..), traversePrevsA)
@@ -695,8 +695,8 @@ unfFields unf =
 -------------------------------------------------------------------------------
 
 stepMain
-  :: forall @prevsSpec pad @outputSize @inputVal @input @outputVal @output @prevInputVal @prevInput
-       @valCarrier @mpvMax @mpvPad @nd ndPred
+  :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
+       @valCarrier @mpvMax mpvPad @nd ndPred
        len carrier carrierVar sideloadedVkCarrier
        unfsTotal digestPlusUnfs
        t m
@@ -1025,7 +1025,8 @@ stepMain
               (msgsWrapReal !! i)
               slotVkComms
               constDummySg
-          r <- verifyOne slotFopParams input slotIvpParams
+          r <- label ("slot_" <> show (getFinite i)) $
+            verifyOne slotFopParams input slotIvpParams
           -- Carry pw.sg out alongside the verify_one result so the
           -- outer hash can absorb it.
           pure { sg: pw.sg, expandedChallenges: r.expandedChallenges, result: r.result }

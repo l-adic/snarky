@@ -127,19 +127,16 @@ compileStepMainSideLoadedChild params =
       -- Unit. Single-rule, no prevs ⇒ mpvMax=0, mpvPad=0,
       -- outputSize = mpvMax*32+1+mpvMax = 1 (just the msgForNextStep
       -- digest — no unfinalized_proofs, no msgs_wrap entries).
-      -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
-      --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad @nd
+      -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
+      -- @valCarrier @mpvMax @nd. Implicit: input/output/prevInput
+      -- (CircuitType funcdep), mpvPad (MpvPadding), outputSize
+      -- (Mul/Add chain).
       ( \_ -> stepMain
           @PrevsSpecNil
-          @1
           @(F StepField)
-          @(FVar StepField)
           @Unit
           @Unit
           @Unit
-          @Unit
-          @Unit
-          @0
           @0
           @1
           sideLoadedChildRule

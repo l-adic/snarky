@@ -90,11 +90,13 @@ compileStepMainNoRecursionReturn params =
       -- outputVal/output are `F StepField` / `FVar StepField` (the returned
       -- field). Contrast Add_one_return's Input_and_output mode where
       -- inputVal/outputVal are both `F StepField`.
-      -- Axes: @prevsSpec @outputSize @inputVal @input @outputVal @output
-      --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad
+      -- Visible axes: @prevsSpec @inputVal @outputVal @prevInputVal
+      -- @valCarrier @mpvMax. Implicit: input/output/prevInput (via
+      -- CircuitType), mpvPad (MpvPadding), outputSize (Mul/Add chain),
+      -- nd (from perSlotFopDomainLog2s shape).
       -- Single-rule, Nil prevs: len = 0, mpvMax = 0, mpvPad = 0.
-      -- output = mpvMax*32 + 1 + mpvMax = 1.
-      ( \_ -> stepMain @PrevsSpecNil @1 @Unit @Unit @(F StepField) @(FVar StepField) @Unit @Unit @Unit @0 @0 @1
+      -- outputSize = mpvMax*32 + 1 + mpvMax = 1.
+      ( \_ -> stepMain @PrevsSpecNil @Unit @(F StepField) @Unit @Unit @0 @1
           noRecursionReturnRule
           { perSlotLagrangeAt: Vector.nil
           , blindingH: params.blindingH

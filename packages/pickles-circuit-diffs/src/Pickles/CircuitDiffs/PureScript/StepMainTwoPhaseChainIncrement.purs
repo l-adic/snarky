@@ -96,16 +96,12 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
           @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-          @34
           @(F StepField)
-          @(FVar StepField)
-          @Unit
           @Unit
           @(F StepField)
-          @(FVar StepField)
           @(Tuple (StatementIO (F StepField) Unit) Unit)
           @1
-          @0
+          @2
           incrementRule
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH

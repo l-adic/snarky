@@ -91,16 +91,12 @@ compileStepMainSimpleChain params = do
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
           @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil)
-          @34
           @(F StepField)
-          @(FVar StepField)
-          @Unit
           @Unit
           @(F StepField)
-          @(FVar StepField)
           @(Tuple (StatementIO (F StepField) Unit) Unit)
           @1
-          @0
+          @1
           simpleChainRule
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH

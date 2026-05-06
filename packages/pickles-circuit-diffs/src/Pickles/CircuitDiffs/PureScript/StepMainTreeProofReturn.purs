@@ -168,18 +168,14 @@ compileStepMainTreeProofReturn params = do
           @( PrevsSpecCons 0 (StatementIO Unit (F StepField))
               (PrevsSpecCons 2 (StatementIO Unit (F StepField)) PrevsSpecNil)
           )
-          @67
-          @Unit
           @Unit
           @(F StepField)
-          @(FVar StepField)
           @(F StepField)
-          @(FVar StepField)
           @( Tuple (StatementIO Unit (F StepField))
               (Tuple (StatementIO Unit (F StepField)) Unit)
           )
           @2
-          @0
+          @1
           treeProofReturnRule
           { perSlotLagrangeAt: params.perSlotLagrangeAt
           , blindingH: params.blindingH

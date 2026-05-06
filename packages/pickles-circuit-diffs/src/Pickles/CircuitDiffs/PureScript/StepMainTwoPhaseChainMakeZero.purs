@@ -84,15 +84,10 @@ compileStepMainTwoPhaseChainMakeZero params =
         -- Output size = 1 * 32 + 1 + 1 = 34.
         ( \_ -> stepMain
             @PrevsSpecNil
-            @34
             @(F StepField)
-            @(FVar StepField)
             @Unit
             @Unit
             @Unit
-            @Unit
-            @Unit
-            @1
             @1
             @1
             makeZeroRule

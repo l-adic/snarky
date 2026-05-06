@@ -131,16 +131,12 @@ compileStepMainSideLoadedMain params =
           @( PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit)
               PrevsSpecNil
           )
-          @34
           @(F StepField)
-          @(FVar StepField)
-          @Unit
           @Unit
           @(F StepField)
-          @(FVar StepField)
           @(Tuple (StatementIO (F StepField) Unit) Unit)
           @1
-          @0
+          @1
           sideLoadedMainRule
           -- The compile-time SRS data lookup is unused for the
           -- side-loaded slot's lagrange (Step.Main reads from

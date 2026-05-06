@@ -93,18 +93,14 @@ compileStepMainSimpleChainN2 params = do
           @( PrevsSpecCons 2 (StatementIO (F StepField) Unit)
               (PrevsSpecCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
           )
-          @67
           @(F StepField)
-          @(FVar StepField)
-          @Unit
           @Unit
           @(F StepField)
-          @(FVar StepField)
           @( Tuple (StatementIO (F StepField) Unit)
               (Tuple (StatementIO (F StepField) Unit) Unit)
           )
           @2
-          @0
+          @1
           simpleChainN2Rule
           { perSlotLagrangeAt: params.lagrangeAt :< params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH
