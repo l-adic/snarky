@@ -550,11 +550,25 @@ spec =
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],
-        -- domain_log2=14. Iter B of M9 — diagnoses whether the parent's
-        -- self-wrap-VK divergence (PS coeff[0] / coeff[5] don't appear in
-        -- OCaml main_step_b1 fixture) comes from the wrap CS itself or
-        -- from VK extraction.
-        exactMatch "wrap_main_side_loaded_main_circuit" (fromCompiledCircuit $ compileWrapMainSideLoadedMain wrapMainSrsData)
+        -- domain_log2=14. `compileWrapMainSideLoadedMain` deterministically
+        -- computes the step VK by recompiling the matching step CS
+        -- (mirrors the wrap_main_n2_circuit fix in commit `cf352650`).
+        let
+          -- Step SRS data for SideLoadedMain: same shape as
+          -- `wrapMainN1StepSrsData` but with the side-loaded
+          -- per-domain lagrange tables at log2 ∈ {13, 14, 15}.
+          wrapMainSlmStepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+            , sideloadedPerDomainLagrangeAt:
+                ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 13 i)) :: AffinePoint (F Fp) )
+                  :< ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp) )
+                  :< ( \i -> (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 15 i)) :: AffinePoint (F Fp) )
+                  :< Vector.nil
+            , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "wrap_main_side_loaded_main_circuit"
+          (fromCompiledCircuit <$> compileWrapMainSideLoadedMain wrapMainSrsData wrapMainSlmStepSrsData)
         -- N=2 Input mode (Simple_chain_n2). step_widths=[2], padded=[[0;2];[0;2]].
         -- `compileWrapMainN2` deterministically computes the step VK by
         -- recompiling the matching step CS and running the kimchi
