@@ -28,9 +28,9 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainAddOneReturn (StepMainAddOneReturnParams, compileStepMainAddOneReturn)
+import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField, WrapField)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (NoSlots)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -50,10 +50,6 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
 
     config :: WrapMainConfig 1
     config =
-      -- N=0 Add_one_return: single branch, step_widths=[0].
-      -- `domainLog2s` is the STEP proof's evaluation-domain log2
-      -- (passed into `Branch_data.Checked.Wrap.pack` as `4 * log2`),
-      -- derived from the step artifact.
       { stepWidths: 0 :< Vector.nil
       , domainLog2s: stepArt.stepDomainLog2 :< Vector.nil
       , stepKeys: realStepVK :< Vector.nil
@@ -63,9 +59,9 @@ compileWrapMainAddOneReturn { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- NoSlots: mpv=0, no per_proofs.
+  -- `slots` derived from `@PrevsSpecNil` via `SlotsForPrevsSpec` funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @1 @NoSlots config stmt)
+    (\stmt -> wrapMainForPrevs @1 @PrevsSpecNil config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

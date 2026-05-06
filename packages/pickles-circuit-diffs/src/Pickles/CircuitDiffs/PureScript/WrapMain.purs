@@ -17,9 +17,10 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSimpleChain (StepMainSimpleChainParams, compileStepMainSimpleChain)
-import Pickles.Types (StepField, WrapField)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots1)
+import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil)
+import Pickles.Types (StatementIO, StepField, WrapField)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Snarky.Circuit.DSL (F)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -48,9 +49,9 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- Slots1 1: mpv=1, slot 0 width=1.
+  -- mpv=1, slot 0 width=1; slots derived from PrevsSpec via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @1 @(Slots1 1) config stmt)
+    (\stmt -> wrapMainForPrevs @1 @(PrevsSpecCons 1 (StatementIO (F StepField) Unit) PrevsSpecNil) config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

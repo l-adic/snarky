@@ -24,9 +24,10 @@ import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (WrapArtifact, deriveStepVKFromCompiled, deriveWrapVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoadedMainParams, compileStepMainSideLoadedMain)
-import Pickles.Types (StepField, WrapField)
-import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots1)
+import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Pickles.Types (StatementIO, StepField, WrapField)
+import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
+import Snarky.Circuit.DSL (F)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
@@ -55,10 +56,14 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  -- `Slots1 2`: mpv=1, single slot with bound 2 (the side-loaded
-  -- prev's `max_proofs_verified = N2` upper bound).
+  -- mpv=1, single side-loaded slot with bound 2 (the side-loaded
+  -- prev's `max_proofs_verified = N2` upper bound). Slots derived
+  -- from PrevsSpecSideLoadedCons via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMain @1 @(Slots1 2) config stmt)
+    (\stmt ->
+        wrapMainForPrevs @1
+          @(PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
+          config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

@@ -30,6 +30,7 @@ module Pickles.Wrap.Main
   , WrapMainInput
   , WrapMainInputVar
   , wrapMain
+  , wrapMainForPrevs
   ) where
 
 import Prelude
@@ -67,6 +68,7 @@ import Pickles.Wrap.Advice (class WrapWitnessM, getEvals, getMessages, getOldBul
 import Pickles.Wrap.FinalizeOtherProof (wrapFinalizeOtherProofCircuit)
 import Pickles.Wrap.MessageHash (dummyPaddingSpongeStates, hashMessagesForNextWrapProofCircuit')
 import Pickles.Wrap.Slots (class PadSlots, padAllSlots, slotWidthsOf)
+import Pickles.Wrap.SlotsForPrevs (class SlotsForPrevsSpec)
 import Pickles.Wrap.Verify (wrapVerify)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
@@ -864,3 +866,34 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 
+-- | Thin wrapper around `wrapMain` that takes `@prevsSpec` instead of
+-- | `@slots`. The slots type is derived via the `SlotsForPrevsSpec
+-- | prevsSpec slots` funcdep — no hand-coded `@(Slots1 1)` / `@(Slots2
+-- | 0 2)` at call sites that can desync from the rule's actual prev
+-- | structure.
+-- |
+-- | Single-rule only: the single-prevsSpec funcdep can't express the
+-- | per-slot max across rules required by multi-rule (compileMulti)
+-- | wraps. Multi-rule callers should keep using `wrapMain @branches
+-- | @slots` directly with `slots` derived from `CompilableRulesSpec`.
+wrapMainForPrevs
+  :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
+   . CircuitM WrapField (KimchiConstraint WrapField) t m
+  => SlotsForPrevsSpec prevsSpec slots
+  => PadSlots slots mpv
+  => WrapWitnessM branches mpv slots VestaG WrapField m
+  => CircuitType WrapField
+       (slots (Vector WrapIPARounds (F WrapField)))
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => CheckedType WrapField (KimchiConstraint WrapField)
+       (slots (Vector WrapIPARounds (FVar WrapField)))
+  => Reflectable branches Int
+  => Reflectable mpv Int
+  => Add 1 branchesPred branches
+  => Compare mpv 3 LT
+  => Add mpv WrapIvpBaseline totalBases
+  => Add 1 totalBasesPred totalBases
+  => WrapMainConfig branches
+  -> WrapMainInputVar
+  -> Snarky (KimchiConstraint WrapField) t m Unit
+wrapMainForPrevs = wrapMain @branches @slots
