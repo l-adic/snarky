@@ -531,8 +531,22 @@ spec =
                 coerce (pallasSrsLagrangeCommitmentAt wrapSrs 14 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
+          -- N=1 step CS commits over the Vesta SRS at log2=14. The
+          -- step shape is the same one `step_main_simple_chain_circuit`
+          -- already byte-matches.
+          wrapMainN1StepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          wrapMainN1StepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt wrapMainN1StepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator wrapMainN1StepSrs) :: AffinePoint (F Fp)
+            }
         -- N=1 Input mode (Simple_chain). step_widths=[1], padded=[[0];[1]].
-        exactMatch "wrap_main_circuit" (fromCompiledCircuit $ compileWrapMainN1 wrapMainSrsData)
+        -- `compileWrapMainN1` deterministically computes the step VK by
+        -- recompiling the matching step CS and running the kimchi
+        -- commitment pipeline (mirrors the wrap_main_n2_circuit fix at
+        -- commit `cf352650`).
+        exactMatchEff "wrap_main_circuit"
+          (fromCompiledCircuit <$> compileWrapMainN1 wrapMainSrsData wrapMainN1StepSrsData)
         -- N=1 side-loaded parent (`Simple_chain` from `dump_side_loaded_main`).
         -- Same shape as `wrap_main_circuit` but the prev slot's bound is
         -- N2 instead of N1: step_widths=[1], padded=[[0];[2]],

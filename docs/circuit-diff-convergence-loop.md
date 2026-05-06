@@ -9,28 +9,28 @@ only.
 After the M9 cleanup pass (commit `b8607be0`) every `step_main_*` /
 `wrap_main_*` fixture is sourced from production OCaml drivers
 (`tools/regen_top_level_fixtures.sh` + `PICKLES_STEP_CS_DUMP` /
-`PICKLES_WRAP_CS_DUMP`). The truth state of `pickles-circuit-diffs`:
-**78/87 pass**, 9 mismatches.
+`PICKLES_WRAP_CS_DUMP`). The truth state of `pickles-circuit-diffs`
+(2026-05-05): **81/87 pass**, 6 mismatches.
 
 ### Distribution of mismatches sorted by delta
 
 | fixture                                | delta         |
 |----------------------------------------|---------------|
-| `step_main_simple_chain_n2_circuit`    | +1 ← simplest |
-| `wrap_main_n2_circuit`                 | +4            |
 | `wrap_main_side_loaded_main_circuit`   | −14           |
 | `wrap_main_tree_proof_return_circuit`  | −14           |
 | `step_main_side_loaded_main_circuit`   | +25           |
 | `step_main_tree_proof_return_circuit`  | −25           |
-| `wrap_main_circuit`                    | +4074         |
 | `wrap_main_two_phase_chain_circuit`    | +4088         |
 | `wrap_main_add_one_return_circuit`     | +8103         |
 
+Recently converged:
+- `step_main_simple_chain_n2_circuit` (was +1) — fixed by `perSlotFopDomainLog2s: 16 → 15` in `StepMainSimpleChainN2.purs`.
+- `wrap_main_n2_circuit` (was +4) — commit `cf352650` "byte-identical via deterministic step VK".
+- `wrap_main_circuit` (was +4074) — `WrapMain.purs` `Slots2 0 1 → Slots1 1` (mpv=2 → mpv=1, matching OCaml's `Max_proofs_verified.n = N1 = 1` for Simple_chain N1) + deterministic step VK derivation. Diagnosed via `cs_label_diff.py cached_constants` showing alternating shared / PS-only runs in cached_constants insertion order, then OCaml partition-counts instrumentation confirming `total=34 constant_part=0 non_constant_part=34` (mpv=1, not 2).
+
 The +4000-gate `wrap_main_*` cluster is likely a single shared bug.
 The smaller deltas are individual emission divergences. Recommended
-order: convergence in delta-magnitude order, smallest first. Closing
-the +1 first should help triangulate the per-FOP-iteration boundary
-in PS's `traversePrevsA`.
+order: convergence in delta-magnitude order, smallest first.
 
 ## Workflow
 
@@ -221,15 +221,70 @@ When Step 1's Pass 2 metric returns "no diffs":
 
 ## When stuck
 
+- **First response when out of ideas: ADD MORE LABELS, on BOTH sides.**
+  If the bilateral localization in Step 2 yields a label scope that's
+  too coarse to pin down the divergent emission (e.g. a 30-row block
+  that contains a single +1 you can't explain), the answer is almost
+  never "stare harder at the source" — it is "narrow the labels until
+  the divergence localizes to a single emission site on each side".
+  Add `with_label "<descriptive name>"` around the suspect OCaml
+  region and a matching `label "<same name>"` around the PS region,
+  regenerate the OCaml fixture (`tools/regen_top_level_fixtures.sh`),
+  re-run the PS test, and re-inspect with `tools/cs_label_diff.py`.
+  Iterate label-density until each side reports the divergence inside
+  a label whose body is small enough to read in one glance. The
+  step_main_simple_chain_n2 +1 was unblocked by labels around
+  `Pseudo.Domain.to_domain.vanishing_polynomial`'s squaring loop;
+  `bp_assert_iter_<i>_if` / `_eq` labels around the bp_assert region
+  proved decisively that OC's `Field.if_` was emitting zero gates per
+  iteration. Both findings would have been guesses without the labels.
 - If two consecutive iterations both fail Step 7 check 1 (`i*`
-  doesn't advance), the block hypothesis is wrong. Read OCaml's
-  reference block more carefully; widen the bilateral localization.
+  doesn't advance), the block hypothesis is wrong. Add labels to
+  widen the bilateral localization, then re-run.
 - If the candidate fix requires touching a primitive (e.g.,
   `Snarky.Circuit.Kimchi.EndoMul.endo`) AND the blast-radius memo
   can't explain why other tests don't see it, the bug is in the
   primitive itself — but the existing tests were comparing against a
   synthetic dump that *also had* the bug. Surface this finding to the
   human before proceeding (echo of the M9 iter D situation).
+
+## Interacting with the OCaml side
+
+**Default to merlin/LSP, not naive file reads.** The `mina/` submodule
+is large and many module paths route through functor applications that
+are invisible without type resolution. Reading the source as text will
+mislead you about which `Field.t`, which `Impl`, which functor
+instantiation is in scope at a given line. Use the LSP tooling instead
+— we are already in the nix shell when this loop runs.
+
+Order of preference:
+
+1. **`tools/merlin_type.sh <file> <line> <col>`** — first stop for any
+   "what is the type of this expression here?" question. Use this
+   before opening the file in Read; it tells you which field/curve is
+   live and which functor instantiation supplies the operation.
+2. **`mcp__ocamllsp__hover` / `mcp__ocamllsp__definition` /
+   `mcp__ocamllsp__references`** — for navigation. `definition` jumps
+   through `include`/functor to the real source. `references` finds
+   every call site of an identifier across the submodule. Both are
+   far more reliable than `grep` for OCaml because they understand
+   scope.
+3. **`mcp__ocamllsp__diagnostics`** — verify a file builds cleanly
+   after edits. Use this as the inner loop when adding labels to
+   OCaml; it surfaces type errors faster than `dune build`.
+4. **Direct `Read` on `.ml` / `.mli`** — only after merlin has located
+   the precise file and line, OR when you need to see the full body
+   of a function whose signature merlin has already given you. Never
+   open an unfamiliar OCaml file with Read as your first step.
+
+**Why this matters for the convergence loop**: the labels on both
+sides have to name the *same logical region of the circuit*. If you
+guess the OCaml emission site from naive file reading, you frequently
+end up labeling the wrong functor instantiation (e.g. labeling
+`Field.Checked.equal` in the wrong `Impl`) and the OC fixture comes
+back with no rows under your new label. Merlin tells you exactly
+which `Impl` is in scope before you place the `with_label`, so the
+first regeneration produces useful data.
 
 ## Tooling reference
 
@@ -315,6 +370,28 @@ label.
 `seals [LO HI]` — rows tagged with any 'seal' label. Sealing is one of
 the most common sources of +1/-1 emission divergence — use this to
 quickly enumerate seal sites near a suspected divergence.
+
+`cached_constants [--depth N] [--limit N] [--samples K] [--field fp|fq] [--side ps|oc|both]`
+— compare the PS vs OC cached_constants tables. Each entry is a
+constant value that was materialized into a Variable via an
+`assert_equal_constant` Generic gate. Both sides ship a
+`<F>_cached_constants.json` (OC dump) and the comparison JSON's
+`purescript.cachedConstants` field (PS dump). The handler:
+
+  1. Canonicalizes every value modulo the field (Fp for `step_main_*`,
+     Fq for `wrap_main_*`; auto-detected from fixture name).
+  2. Reports totals and the set diff (PS-only / OC-only / shared).
+  3. For each extra value, scans Generic gates for the
+     `assert_equal_constant` half-pattern (`[cl≠0, 0, 0, 0, cc≠0]` →
+     value = `-cc/cl mod field`) and bins the matched rows by their
+     label-prefix at depth `--depth`.
+
+Read this BEFORE staring at row coefficients — a delta in cached
+constants is the cleanest possible signal for "PS materialized a
+constant where OC kept it algebraic" or "OC pre-summed a chain where
+PS folds it in-circuit". A typical wrap_main_circuit run shows ~140
+PS-extras concentrated in `public-input-commit > add_fast`, which
+isolates the divergence to one block before any per-row inspection.
 
 #### Step 4 (diagnose): `rows`, `gate_kinds`, `trace_var`
 

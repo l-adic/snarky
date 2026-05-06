@@ -38,6 +38,10 @@ Subcommands:
                             both sides means same emission count, not "aligned"
   seals [LO HI]            Rows tagged with any 'seal' label
   trace_var ROW COL        Walk the wire equivalence cycle from (row, col)
+  cached_constants [--depth N] [--limit N] [--samples K] [--field fp|fq]
+                            Diff PS vs OC cached_constants tables. Reports
+                            totals + set diff, then bins each side's extras
+                            by emission-row label prefix.
 
 Conventions:
   - Default side is 'ps' for ps_label, 'oc' for oc_label etc.
@@ -54,6 +58,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "packages/pickles-circuit-diffs/circuits/results"
 OCAML = ROOT / "packages/pickles-circuit-diffs/circuits/ocaml"
+
+# Pasta field moduli. Wrap circuits run over Fq (Pallas scalar / Vesta base);
+# step circuits run over Fp (Pallas base / Vesta scalar). Auto-detected from
+# the fixture name unless --field overrides.
+PASTA_FP = 28948022309329048855892746252171976963363056481941560715954676764349967630337
+PASTA_FQ = 28948022309329048855892746252171976963363056481941647379679742748393362948097
+
+
+def detect_field(fixture, override):
+    if override == "fp":
+        return PASTA_FP
+    if override == "fq":
+        return PASTA_FQ
+    # auto: wrap_* → Fq, anything else (step_*, gadget tests) → Fp
+    return PASTA_FQ if fixture.startswith("wrap_") else PASTA_FP
 
 
 def cat_half(coeffs):
@@ -119,7 +138,12 @@ def ctx_short(g, n=3):
 
 
 def load(fixture):
-    """Load PS gates, OC gates, OC gate-labels (per-row), OC event-labels."""
+    """Load PS gates, OC gates, OC gate-labels (per-row), OC event-labels.
+
+    Returns (ps, oc, events, raw_json) — raw_json holds the full JSON so callers
+    that need the cachedConstants lists (or other top-level keys) can reach them
+    without re-reading the file.
+    """
     j = json.loads((RESULTS / f"{fixture}.json").read_text())
     ps = j["purescript"]["gates"]
     oc = j["ocaml"]["gates"]
@@ -143,7 +167,7 @@ def load(fixture):
                 continue
             events.append(json.loads(line))
 
-    return ps, oc, events
+    return ps, oc, events, j
 
 
 def cmd_rows(ps, oc, args):
@@ -596,6 +620,94 @@ def cmd_generic_stream_diff(ps, oc, args):
         print(f"unprocessed tail: PS@{pi}/{len(ps_stream)} OC@{oi}/{len(oc_stream)}")
 
 
+def cmd_cached_constants(ps, oc, args):
+    """Compare PS vs OC cached_constants tables.
+
+    Both sides dump a list of (variable_id, value) entries — every constant
+    that was ever materialized through the constraint-system's cached_constants
+    cache. A delta in the *set* of canonical values means one side allocated
+    constants the other side computed algebraically, which is one of the
+    cleanest signals available for divergent emission patterns inside MSM /
+    seal / addFast paths.
+
+    The handler:
+      1. Computes set diff after canonicalizing each value modulo the field.
+      2. For each PS-extra (and optionally OC-extra), finds the row where the
+         constant was emitted by scanning Generic gates for the
+         assert_equal_constant signature: a half whose coeffs match
+         [cl≠0, 0, 0, 0, cc≠0]. The constant value is `-cc/cl mod p`.
+      3. Bins the located rows by label-prefix at the configured depth and
+         prints per-prefix counts plus sample rows.
+    """
+    raw = args.raw
+    ps_cc = raw.get("purescript", {}).get("cachedConstants", [])
+    oc_cc = raw.get("ocaml", {}).get("cachedConstants", [])
+
+    field = detect_field(args.fixture if hasattr(args, "fixture") else "", args.field)
+
+    def canon_set(entries):
+        return {int(c["value"]) % field for c in entries}
+
+    ps_canon = canon_set(ps_cc)
+    oc_canon = canon_set(oc_cc)
+    ps_only = ps_canon - oc_canon
+    oc_only = oc_canon - ps_canon
+
+    print(f"=== totals ===")
+    print(f"PS cached_constants entries: {len(ps_cc)}, distinct values: {len(ps_canon)}")
+    print(f"OC cached_constants entries: {len(oc_cc)}, distinct values: {len(oc_canon)}")
+    print(f"shared values:  {len(ps_canon & oc_canon)}")
+    print(f"PS-only values: {len(ps_only)}")
+    print(f"OC-only values: {len(oc_only)}")
+    print(f"field: {field}")
+    print()
+
+    def find_emissions(gates, target_values):
+        """Walk Generic gates, return list of (row_idx, value, ctx) for each
+        half that materializes a value in target_values."""
+        out = []
+        for idx, g in enumerate(gates):
+            if g.get("kind") != "Generic":
+                continue
+            coeffs = g.get("coeffs") or []
+            ctx = g.get("context") or []
+            for half_off in (0, 5):
+                if len(coeffs) < half_off + 5:
+                    continue
+                cl, cr, co, cm, cc = (int(coeffs[half_off + i]) for i in range(5))
+                if cl == 0 or cr != 0 or co != 0 or cm != 0 or cc == 0:
+                    continue
+                val = (-cc * pow(cl, -1, field)) % field
+                if val in target_values:
+                    out.append((idx, val, ctx))
+        return out
+
+    def report(side, gates, extras_set):
+        emissions = find_emissions(gates, extras_set)
+        # Bin by label prefix (depth args.depth).
+        bins = Counter()
+        per_bin_samples = {}
+        for row, val, ctx in emissions:
+            key = " > ".join(ctx[: args.depth]) if ctx else "<no-label>"
+            bins[key] += 1
+            per_bin_samples.setdefault(key, []).append((row, val, ctx))
+
+        print(f"=== {side}-extra emissions ({len(emissions)} total in {len(bins)} buckets) ===")
+        for key, n in bins.most_common(args.limit):
+            print(f"  {n:5d}  {key}")
+            for row, val, ctx in per_bin_samples[key][: args.samples]:
+                vstr = str(val)[:50] + ("..." if len(str(val)) > 50 else "")
+                print(f"        row {row} val={vstr}")
+                if len(ctx) > args.depth:
+                    print(f"          full ctx tail: {ctx[args.depth:]}")
+        print()
+
+    if args.side in ("ps", "both"):
+        report("PS", ps, ps_only)
+    if args.side in ("oc", "both"):
+        report("OC", oc, oc_only)
+
+
 def cmd_trace_var(ps, oc, args):
     side = args.side
     gates = ps if side == "ps" else oc
@@ -638,9 +750,25 @@ def main():
     sp = sub.add_parser("seals"); sp.add_argument("lo", nargs="?"); sp.add_argument("hi", nargs="?"); sp.set_defaults(func=cmd_seals)
     sp = sub.add_parser("generic_stream_diff"); sp.add_argument("lo", nargs="?"); sp.add_argument("hi", nargs="?"); sp.add_argument("--kind-only", action="store_true", help="only compare gate kind signature, skip pure coefficient diffs"); sp.set_defaults(func=cmd_generic_stream_diff)
     sp = sub.add_parser("trace_var"); sp.add_argument("row"); sp.add_argument("col"); sp.add_argument("--side", choices=["ps", "oc"], default="ps"); sp.set_defaults(func=cmd_trace_var)
+    sp = sub.add_parser("cached_constants",
+                        help="Compare cached_constants tables: totals, set diff, "
+                             "and per-label distribution of PS-extras/OC-extras.")
+    sp.add_argument("--depth", type=int, default=4,
+                    help="label nesting depth used for binning extras (default 4)")
+    sp.add_argument("--limit", type=int, default=20,
+                    help="top N label-prefixes to show (default 20)")
+    sp.add_argument("--samples", type=int, default=2,
+                    help="sample rows per label-prefix (default 2)")
+    sp.add_argument("--field", choices=["fp", "fq"], default=None,
+                    help="override field modulus (default: auto from fixture name)")
+    sp.add_argument("--side", choices=["ps", "oc", "both"], default="both",
+                    help="show extras on PS side, OC side, or both (default both)")
+    sp.set_defaults(func=cmd_cached_constants)
 
     args = p.parse_args()
-    ps, oc, events = load(args.fixture)
+    ps, oc, events, raw = load(args.fixture)
+    # Pass raw via args so existing handlers don't need new kwargs.
+    args.raw = raw
     args.func(ps, oc, args)
 
 
