@@ -43,6 +43,9 @@ module Pickles.Prove.Compile
   , buildWrapPerBranchVec
   , class CompilableRulesSpecShape
   , prePassDomainLog2s
+  , class MaxOfRulesMpvs
+  , class IntMax
+  , class IntMaxOrd
   , runMultiCompile
   , buildBranchProvers
   , module Pickles.Prove.Verify
@@ -173,7 +176,8 @@ import Pickles.Verify.Types (toPlonkMinimal)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Pickles.Wrap.Slots (class PadSlots, NoSlots, noSlots, replicateSlots)
 import Prim.Int (class Add, class Compare, class Mul)
-import Prim.Ordering (LT)
+import Prim.Ordering (EQ, GT, LT)
+import Prim.Ordering as PrimOrdering
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (class CircuitGateConstructor)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
@@ -2194,6 +2198,41 @@ foreign import data RulesNil :: RulesSpec
 -- | slotVKs; the fifth is the rest of the list.
 foreign import data RulesCons :: Int -> Type -> Type -> Type -> RulesSpec -> RulesSpec
 
+-- | Type-level `max` over two `Int` kinds, dispatched via `Compare`.
+class IntMax (a :: Int) (b :: Int) (c :: Int) | a b -> c
+
+class IntMaxOrd :: PrimOrdering.Ordering -> Int -> Int -> Int -> Constraint
+class IntMaxOrd ord a b c | ord a b -> c
+
+instance IntMaxOrd LT a b b
+instance IntMaxOrd EQ a b a
+instance IntMaxOrd GT a b a
+
+instance (Compare a b ord, IntMaxOrd ord a b c) => IntMax a b c
+
+-- | `MaxOfRulesMpvs rules mpvMax` enforces `mpvMax = max(ruleMpv across
+-- | rules)` at the type level — strict equality, not just `≥`. The
+-- | per-rule `MpvPadding ruleMpv mpvPad mpvMax` constraint inside
+-- | `CompilableRulesSpecShape` already requires `ruleMpv ≤ mpvMax`,
+-- | but doesn't pin `mpvMax` to the actual maximum. Threading
+-- | `MaxOfRulesMpvs` alongside CompilableRulesSpecShape closes that
+-- | gap: any `RulesSpec` uniquely determines its `mpvMax`, so two
+-- | call sites that derive `mpvMax` from the same `rules` cannot
+-- | disagree.
+-- |
+-- | Mirrors OCaml's `compile_promise` behavior, which derives
+-- | `mpvMax` from the `~max_proofs_verified:(module Nat.NX)`
+-- | argument that itself is `max` over each rule's prev count.
+class MaxOfRulesMpvs (rules :: RulesSpec) (mpvMax :: Int) | rules -> mpvMax
+
+instance MaxOfRulesMpvs RulesNil 0
+
+instance
+  ( MaxOfRulesMpvs rest restMax
+  , IntMax ruleMpv restMax mpvMax
+  ) =>
+  MaxOfRulesMpvs (RulesCons ruleMpv valCarrier prevsSpec slotVKs rest) mpvMax
+
 -- | Multi-branch compile config. Shape is shared across all branches;
 -- | per-branch data lives in the value-level `rulesCarrier` argument
 -- | passed alongside (a `Tuple` chain matching the `RulesSpec` shape).
@@ -3748,6 +3787,12 @@ compileMulti
   => Add mpvMax WrapIvpBaseline totalBases
   => Add 1 totalBasesPred totalBases
   => PadSlots slots mpvMax
+  -- Strict-equality enforcement: `mpvMax = max(ruleMpv across rs)`,
+  -- not just `≥` (which the per-rule `MpvPadding` constraints inside
+  -- `CompilableRulesSpecShape` already provide). Mirrors OCaml's
+  -- `compile_promise ~max_proofs_verified:(module Nat.NX)` where X is
+  -- the actual max across rules' prev counts.
+  => MaxOfRulesMpvs rs mpvMax
   => CircuitType WrapField
        (slots (Vector WrapIPARounds (F WrapField)))
        (slots (Vector WrapIPARounds (FVar WrapField)))
