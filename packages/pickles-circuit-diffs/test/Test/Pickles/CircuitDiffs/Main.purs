@@ -587,12 +587,28 @@ spec =
         -- for the N=0 step circuit is 2^9, wrap domain is 2^13 per OCaml
         -- dump_add_one_return's `compile.wrap_domains.h.log2` trace).
         let
+          -- Lagrange lookup is for the STEP proof's evaluation domain
+          -- (= step circuit's domain log2 = 9 for AOR), NOT the wrap
+          -- circuit's domain log2 = 13. Mirrors `wrap_main_circuit`
+          -- and `wrap_main_n2_circuit` test setups where the lagrange
+          -- log2 matches `domainLog2s` (the step proof's domain).
           wrapMainAddOneReturnSrsData =
             { lagrangeAt: mkConstLagrangeBaseLookup \i ->
-                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 13 i)
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 9 i)
             , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
             }
-        exactMatch "wrap_main_add_one_return_circuit" (fromCompiledCircuit $ compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData)
+          -- Step CS params for Add_one_return (mpv=0, no prev proofs).
+          -- Lagrange lookup is unused at mpv=0 (perSlotLagrangeAt is
+          -- Vector.nil). blindingH and SRS size match the Vesta CRS
+          -- used by createCRS in deriveStepVKFromCompiled.
+          aorStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          aorStepSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                (coerce (vestaSrsLagrangeCommitmentAt aorStepSrs 14 i)) :: AffinePoint (F Fp)
+            , blindingH: (coerce $ vestaSrsBlindingGenerator aorStepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "wrap_main_add_one_return_circuit"
+          (fromCompiledCircuit <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
         -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]],

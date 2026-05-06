@@ -29,7 +29,6 @@ import Partial.Unsafe (unsafePartial)
 import Pickles.Prove.Wrap (extractStepVKComms, stepVkForCircuit)
 import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (StepVK)
-import Prim.Int (class Add)
 import Snarky.Backend.Builder (CircuitBuilderState)
 import Snarky.Backend.Kimchi (makeConstraintSystemWithPrevChallenges)
 import Snarky.Backend.Kimchi.Class (createProverIndex, createVerifierIndex)
@@ -135,9 +134,8 @@ wrapSrsLengthLog2 = 15
 -- | shared via FFI — so the resulting VK is byte-identical to OCaml's
 -- | computed VK.
 deriveStepVKFromCompiled
-  :: forall @len lenPred
+  :: forall @len
    . Reflectable len Int
-  => Add 1 lenPred len
   => CRS VestaG
   -> CompiledCircuit StepField
   -> StepVK (FVar WrapField)
