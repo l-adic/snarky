@@ -34,7 +34,7 @@ import Pickles.ProofFFI (pallasSrsLagrangeCommitmentAt)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Types (WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
-import Pickles.Wrap.Slots (Slots2)
+import Pickles.Wrap.Slots (Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Types (CRS)
@@ -93,6 +93,14 @@ compileWrapMainTwoPhaseChain { vestaSrs, lagrangeAt, blindingH } =
       }
   in
     unsafePerformEffect $
+      -- Slots1 1: mpv=1, single slot of max width 1.
+      -- OCaml's `compile_promise` for two_phase_chain uses
+      -- `~max_proofs_verified:(module Nat.N1)` (per
+      -- `dump_two_phase_chain.ml:92`); the shared wrap VK is sized for
+      -- the MAX prev count across both rules — make_zero has 0 prevs,
+      -- increment has 1 → max = 1. `Slots2 0 1` (mpv=2) was packing 67
+      -- PI entries instead of 34 — same +4088 row delta family as
+      -- wrap_main_circuit / wrap_main_add_one_return_circuit.
       compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @2 @(Slots2 0 1) config stmt)
+        (\stmt -> wrapMain @2 @(Slots1 1) config stmt)
         Kimchi.initialState
