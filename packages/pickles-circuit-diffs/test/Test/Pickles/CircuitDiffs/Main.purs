@@ -611,10 +611,33 @@ spec =
           (fromCompiledCircuit <$> compileWrapMainAddOneReturn wrapMainAddOneReturnSrsData aorStepSrsData)
         -- N=2 Output mode (Tree_proof_return). Single branch with
         -- heterogeneous prev slots [0; 2] (No_recursion_return at
-        -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]],
-        -- wrap domain 2^13. Same SRS config as Add_one_return (both
-        -- use domain_log2=13).
-        exactMatch "wrap_main_tree_proof_return_circuit" (fromCompiledCircuit $ compileWrapMainTreeProofReturn wrapMainAddOneReturnSrsData)
+        -- slot 0, self at slot 1). step_widths=[2], padded=[[0];[2]].
+        -- TPR step CS has step_domain log2 = 15 (empirically verified
+        -- via OC's `branch_data` row 81 R coeff = 4*15 = 60); wrap
+        -- circuit uses override_wrap_domain:N1 → wrap domain log2 = 14.
+        -- The IVP MSM lagrange lookup is at the STEP domain log2 (15),
+        -- matching `domainLog2s` in the WrapMainConfig.
+        let
+          wrapMainTprSrsData =
+            { lagrangeAt: mkConstLagrangeBaseLookup \i ->
+                coerce (pallasSrsLagrangeCommitmentAt wrapSrs 15 i)
+            , blindingH: coerce $ pallasSrsBlindingGenerator wrapSrs
+            }
+          -- Step CS params for TPR (mpv=2, heterogeneous prevs [N0,N2]).
+          -- Per-slot lagrange domains: slot 0 (NRR) at 2^13, slot 1
+          -- (self) at 2^14 (override_wrap_domain:N1). Same shape used
+          -- by `step_main_tree_proof_return_circuit`'s direct test.
+          tprStepSrs = pallasCrsCreate (2 `Int.pow` 15)
+          tprLagrangeAtD13 = mkConstLagrangeBaseLookup \i ->
+            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 13 i)) :: AffinePoint (F Fp)
+          tprLagrangeAtD14 = mkConstLagrangeBaseLookup \i ->
+            (coerce (vestaSrsLagrangeCommitmentAt tprStepSrs 14 i)) :: AffinePoint (F Fp)
+          tprStepSrsData =
+            { perSlotLagrangeAt: tprLagrangeAtD13 :< tprLagrangeAtD14 :< Vector.nil
+            , blindingH: (coerce $ vestaSrsBlindingGenerator tprStepSrs) :: AffinePoint (F Fp)
+            }
+        exactMatchEff "wrap_main_tree_proof_return_circuit"
+          (fromCompiledCircuit <$> compileWrapMainTreeProofReturn wrapMainTprSrsData tprStepSrsData)
         -- Multi-branch (2 branches: make_zero + increment) sharing ONE wrap
         -- key. step_widths=[0;1], padded=[[0;0];[0;1]]; per-branch step
         -- domains [9; 14] differ (make_zero is tiny, increment full),

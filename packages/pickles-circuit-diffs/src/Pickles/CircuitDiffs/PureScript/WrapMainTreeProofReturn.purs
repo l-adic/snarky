@@ -17,53 +17,51 @@ import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
 import Data.Vector ((:<))
 import Data.Vector as Vector
-import Effect.Unsafe (unsafePerformEffect)
-import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt)
+import Effect (Effect)
+import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, deriveStepVKFromCompiled)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
-import Pickles.Types (WrapField)
+import Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn (StepMainTreeProofReturnParams, compileStepMainTreeProofReturn)
+import Pickles.Types (StepField, WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMain)
 import Pickles.Wrap.Slots (Slots2)
 import Snarky.Backend.Compile (compile)
-import Snarky.Circuit.DSL (F(..), const_)
+import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
-import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
 
-compileWrapMainTreeProofReturn :: IvpWrapParams -> CompiledCircuit WrapField
-compileWrapMainTreeProofReturn { lagrangeAt, blindingH } =
+compileWrapMainTreeProofReturn
+  :: IvpWrapParams
+  -> StepMainTreeProofReturnParams
+  -> Effect (CompiledCircuit WrapField)
+compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
+  -- Recompile the TPR step CS (mpv=2 with heterogeneous prevs [N0, N2])
+  -- and derive its VK commitments. Mirrors the wrap_main_circuit /
+  -- wrap_main_n2 / wrap_main_add_one_return fixes — replaces the
+  -- dummyVestaPt-based VK whose 27 components share `(1, vestaGenY)`
+  -- coords with the real production VK from the kimchi commitment
+  -- pipeline.
+  stepBuiltState <- compileStepMainTreeProofReturn stepParams
+  vestaSrs <- createCRS @StepField
   let
-    { x: F dummyX, y: F dummyY } = dummyVestaPt
-
-    dummyPt :: AffinePoint _
-    dummyPt = { x: const_ dummyX, y: const_ dummyY }
-    dummyVK =
-      { sigmaComm: Vector.replicate dummyPt :: _ 7 _
-      , coefficientsComm: Vector.replicate dummyPt :: _ 15 _
-      , genericComm: dummyPt
-      , psmComm: dummyPt
-      , completeAddComm: dummyPt
-      , mulComm: dummyPt
-      , emulComm: dummyPt
-      , endomulScalarComm: dummyPt
-      }
-
+    realStepVK = deriveStepVKFromCompiled @2 vestaSrs stepBuiltState
     config :: WrapMainConfig 1
     config =
-      -- N=2 Tree_proof_return: single branch, step_widths=[2], wrap
-      -- domain 2^13 (from compile.wrap_domains.h.log2 in
-      -- dump_tree_proof_return).
+      -- N=2 Tree_proof_return: single branch, step_widths=[2].
+      -- `domainLog2s` is the STEP proof's evaluation domain log2,
+      -- consumed by `Branch_data.Checked.Wrap.pack` as `4 * log2`.
+      -- For TPR the step CS rounds to 2^15 (verified empirically:
+      -- branch_data row 81's R coeff is `60 = 4*15` in the OCaml
+      -- fixture, not 64 = 4*16).
       { stepWidths: 2 :< Vector.nil
-      , domainLog2s: 13 :< Vector.nil
-      , stepKeys: dummyVK :< Vector.nil
+      , domainLog2s: 15 :< Vector.nil
+      , stepKeys: realStepVK :< Vector.nil
       , lagrangeAt
       , perBranchLagrangeAt: Nothing
       , blindingH
       , allPossibleDomainLog2s:
           unsafeFinite @16 13 :< unsafeFinite @16 14 :< unsafeFinite @16 15 :< Vector.nil
       }
-  in
-    unsafePerformEffect $
-      compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-        (\stmt -> wrapMain @1 @(Slots2 0 2) config stmt)
-        Kimchi.initialState
+  compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
+    (\stmt -> wrapMain @1 @(Slots2 0 2) config stmt)
+    Kimchi.initialState
