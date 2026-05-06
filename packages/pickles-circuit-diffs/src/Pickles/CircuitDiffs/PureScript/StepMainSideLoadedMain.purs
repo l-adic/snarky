@@ -40,7 +40,7 @@ import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
 import Pickles.Types (StatementIO, StepField)
 import Snarky.Backend.Compile (compile)
 import Snarky.Circuit.CVar (add_) as CVar
-import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, not_)
+import Snarky.Circuit.DSL (class CircuitM, F, FVar, Snarky, assertAny_, const_, equals_, exists, true_)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Snarky.Data.EllipticCurve (AffinePoint)
@@ -92,12 +92,17 @@ sideLoadedMainRule
 sideLoadedMainRule appState = do
   prev <- exists $ lift $ getSideLoadedMainPrev unit
   isBaseCase <- equals_ (const_ zero) appState
-  let proofMustVerify = not_ isBaseCase
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
+  -- Mirrors `dump_side_loaded_main.ml:179`'s `proof_must_verify =
+  -- Boolean.true_`. Earlier PS used `not_ isBaseCase` (matching the
+  -- pre-M9-iter-D synth fixture); when `proof_must_verify` is a
+  -- non-constant Cvar, downstream `if_ proof_must_verify ...` paths
+  -- in `stepMain` emit ~25 extra Generic gates that vanish under
+  -- constant-`true_` folding.
   pure
     { prevPublicInputs: prev :< Vector.nil
-    , proofMustVerify: proofMustVerify :< Vector.nil
+    , proofMustVerify: true_ :< Vector.nil
     , publicOutput: unit
     }
 
