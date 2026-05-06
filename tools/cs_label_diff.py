@@ -27,7 +27,15 @@ Subcommands:
                               - half-level shift (Generic packing offset)
                               - row-level insertion (non-Generic kind diff)
                               - content diff (kinds align, coeffs differ)
-  rows LO HI               PS vs OC rows in [LO, HI], showing kind+coeffs+label tail
+  rows LO HI [--coeffs]    PS vs OC rows in [LO, HI]; --coeffs shows full annotated coeffs.
+                            Constants are abbreviated by `annotate_constant` (e.g.
+                            Pallas.endo_base = 8503... → "Pallas.endo_base").
+  half_stream [LO [HI]]    Print Generic-half emission stream in queue order
+                            (R = older queued, L = newer emit per row), both PS and OC.
+  find_constant VALUE       Locate rows whose coeffs contain VALUE. VALUE may
+                            be a literal decimal or a known tag like
+                            'Pallas.endo_base'. Reports per-side counts and
+                            first --limit occurrences with full label tail.
   diff [START [END]]       First row where kind or coeffs differ (legacy)
   totals                   Total row count, kind breakdown
   ps_label LABEL           Show all PS rows whose context contains LABEL
@@ -170,8 +178,63 @@ def load(fixture):
     return ps, oc, events, j
 
 
+# Known special field constants. When a coeff matches one of these, the
+# pretty-printer abbreviates it to a tag — saves eyeballing 78-digit numbers.
+KNOWN_CONSTANTS_FP = {
+    "8503465768106391777493614032514048814691664078728891710322960303815233784505": "Pallas.endo_base",
+    "8503465768106391777493614032514048814691664078728891710322960303815233784506": "Pallas.endo_base+1",
+}
+KNOWN_CONSTANTS_FQ = {
+    # Vesta.endo_base = primitive cube root of 1 in Fq
+}
+
+
+def annotate_constant(c, fp_or_fq="fp"):
+    """Map a known constant string to a short tag, or return abbreviated form."""
+    table = KNOWN_CONSTANTS_FP if fp_or_fq == "fp" else KNOWN_CONSTANTS_FQ
+    if c in table:
+        return table[c]
+    # Short form: keep zero/one as-is, otherwise truncate
+    if c in ("0", "1", "-1"):
+        return c
+    if len(c) <= 8:
+        return c
+    return f"{c[:8]}…"
+
+
+def coeffs_pretty(coeffs, half, fp_or_fq="fp"):
+    """Pretty-print a 5-coeff half with constants annotated."""
+    if not coeffs or len(coeffs) < 5:
+        return "?"
+    c5 = coeffs[:5] if half == "L" else coeffs[5:10] if len(coeffs) >= 10 else []
+    if not c5:
+        return "?"
+    return "[" + ",".join(annotate_constant(c, fp_or_fq) for c in c5) + "]"
+
+
 def cmd_rows(ps, oc, args):
     lo, hi = int(args.lo), int(args.hi)
+    field_tag = "fq" if (args.fixture if hasattr(args, "fixture") else "").startswith("wrap_") else "fp"
+    if args.coeffs:
+        # Wide format: print full coeffs (annotated) for each half on each side.
+        for i in range(lo, hi + 1):
+            if i >= len(ps) or i >= len(oc):
+                break
+            p = ps[i]
+            o = oc[i]
+            pc = p.get("coeffs", [])
+            oc_ = o.get("coeffs", [])
+            ps_L = coeffs_pretty(pc, "L", field_tag)
+            ps_R = coeffs_pretty(pc, "R", field_tag)
+            oc_L = coeffs_pretty(oc_, "L", field_tag)
+            oc_R = coeffs_pretty(oc_, "R", field_tag)
+            marker = "  " if p.get("coeffs") == o.get("coeffs") else "*"
+            ps_lbl = ctx_short(p, 2)
+            oc_lbl = ctx_short(o, 2)
+            print(f"row {i:5d} {marker}")
+            print(f"  PS L={ps_L} R={ps_R}  ctx={ps_lbl[:60]}")
+            print(f"  OC L={oc_L} R={oc_R}  ctx={oc_lbl[:60]}")
+        return
     print(f"{'row':>5} | {'PS L|R':14s} | {'OC L|R':14s} | PS label / OC label")
     print("-" * 110)
     for i in range(lo, hi + 1):
@@ -187,6 +250,153 @@ def cmd_rows(ps, oc, args):
         oc_lbl = ctx_short(o, 2)
         marker = "  " if p.get("kind") == o.get("kind") else "*K"
         print(f"{i:>5} {marker}| {ps_LR:14s} | {oc_LR:14s} | {ps_lbl[:50]} || {oc_lbl[:50]}")
+
+
+def cmd_find_constant(ps, oc, args):
+    """Find rows whose coefficients contain a given constant value.
+
+    `value` can be one of:
+      - A literal field element (decimal string).
+      - A known tag like 'Pallas.endo_base'. Names are resolved via the
+        `KNOWN_CONSTANTS_FP/FQ` tables (extend those when a new constant is
+        diagnostically interesting). Falls through to literal interpretation
+        if the tag isn't registered.
+
+    Default mode lists per-side occurrences. With `--diff`, walks the two
+    occurrence sequences in lockstep and prints the first row where one side
+    emits an occurrence the other doesn't (= where the cumulative counts
+    diverge). Most useful for chasing a "+N extra constant emissions in one
+    side" symptom that totals say must be there but rows alone don't show.
+    """
+    val = args.value
+    field_tag = "fq" if args.fixture.startswith("wrap_") else "fp"
+    table = KNOWN_CONSTANTS_FP if field_tag == "fp" else KNOWN_CONSTANTS_FQ
+    # Resolve name → literal value (reverse lookup).
+    name_to_val = {v: k for k, v in table.items()}
+    needle = name_to_val.get(val, val)
+
+    def find(side, gates):
+        out = []
+        for i, g in enumerate(gates):
+            coeffs = g.get("coeffs") or []
+            if needle in coeffs:
+                ctx = g.get("context") or []
+                # Note which halves contain the value.
+                halves = []
+                if len(coeffs) >= 5 and needle in coeffs[:5]:
+                    halves.append("L")
+                if len(coeffs) >= 10 and needle in coeffs[5:10]:
+                    halves.append("R")
+                out.append((i, halves, ctx))
+        return out
+
+    ps_hits = find("PS", ps)
+    oc_hits = find("OC", oc)
+    print(f"value: {needle[:30]}{'...' if len(needle) > 30 else ''}  ({val})")
+    print(f"PS occurrences: {len(ps_hits)}")
+    print(f"OC occurrences: {len(oc_hits)}")
+    print()
+
+    if args.diff:
+        # Walk both sequences in lockstep. Reports:
+        #   1. First k where PS[k]'s row != OC[k]'s row (= start of "PS lags
+        #      OC by N rows" or vice versa). Most useful for narrowing what
+        #      logical operation lives at the divergence boundary.
+        #   2. If totals differ, the trailing tail (where one side has
+        #      occurrences the other doesn't) — that's where the COUNT delta
+        #      lives, distinct from the offset-shift in #1.
+        max_n = max(len(ps_hits), len(oc_hits))
+        first_div = None
+        for k in range(max_n):
+            p = ps_hits[k] if k < len(ps_hits) else None
+            o = oc_hits[k] if k < len(oc_hits) else None
+            if p is None or o is None:
+                # one side ran out — handle below
+                break
+            ps_row, ps_halves, ps_ctx = p
+            oc_row, oc_halves, oc_ctx = o
+            if first_div is None and (ps_row != oc_row or ps_halves != oc_halves):
+                first_div = (k, p, o)
+                # don't break — keep walking to detect tail / count delta
+
+        if first_div is None and len(ps_hits) == len(oc_hits):
+            print("PS and OC occurrences align row-for-row; no divergence found.")
+            return
+
+        if first_div is not None:
+            k, (ps_row, ps_halves, ps_ctx), (oc_row, oc_halves, oc_ctx) = first_div
+            print(f"#{k}: first row-offset divergence")
+            print(f"  PS[{ps_row}] halves={ps_halves}  ctx={ctx_short({'context': ps_ctx}, 3)}")
+            print(f"  OC[{oc_row}] halves={oc_halves}  ctx={ctx_short({'context': oc_ctx}, 3)}")
+            print(f"  next 5 occurrences:")
+            for kk in range(k+1, min(k+6, max_n)):
+                pp = ps_hits[kk] if kk < len(ps_hits) else None
+                oo = oc_hits[kk] if kk < len(oc_hits) else None
+                p_str = f"PS[{pp[0]}]/{pp[1]}" if pp else "—"
+                o_str = f"OC[{oo[0]}]/{oo[1]}" if oo else "—"
+                print(f"    #{kk}: {p_str:25s}  vs  {o_str:25s}")
+            print()
+
+        # Trailing tail: occurrences only one side has.
+        if len(ps_hits) != len(oc_hits):
+            n_common = min(len(ps_hits), len(oc_hits))
+            print(f"=== count delta (PS={len(ps_hits)} OC={len(oc_hits)}, delta={len(ps_hits)-len(oc_hits):+d}) ===")
+            print(f"last {min(5, n_common)} aligned occurrences:")
+            for kk in range(max(0, n_common-5), n_common):
+                pp = ps_hits[kk]
+                oo = oc_hits[kk]
+                print(f"  #{kk}: PS[{pp[0]}]/{pp[1]}  vs  OC[{oo[0]}]/{oo[1]}")
+            print()
+            if len(oc_hits) > len(ps_hits):
+                print(f"OC tail (PS exhausted, OC continues for {len(oc_hits)-len(ps_hits)} more):")
+                for kk in range(len(ps_hits), min(len(ps_hits)+5, len(oc_hits))):
+                    o = oc_hits[kk]
+                    print(f"  OC[{o[0]}]/{o[1]}  ctx={ctx_short({'context': o[2]}, 3)}")
+            else:
+                print(f"PS tail (OC exhausted, PS continues for {len(ps_hits)-len(oc_hits)} more):")
+                for kk in range(len(oc_hits), min(len(oc_hits)+5, len(ps_hits))):
+                    p = ps_hits[kk]
+                    print(f"  PS[{p[0]}]/{p[1]}  ctx={ctx_short({'context': p[2]}, 3)}")
+        return
+
+    n = args.limit
+    print(f"=== first {n} PS rows ===")
+    for i, halves, ctx in ps_hits[:n]:
+        print(f"  PS[{i}]/{','.join(halves)}  ctx={ctx_short({'context': ctx}, 3)}")
+    print()
+    print(f"=== first {n} OC rows ===")
+    for i, halves, ctx in oc_hits[:n]:
+        print(f"  OC[{i}]/{','.join(halves)}  ctx={ctx_short({'context': ctx}, 3)}")
+
+
+def cmd_half_stream(ps, oc, args):
+    """Print Generic-half emission stream in queue order: per row, R first
+    (older queued half), then L (newer half emitted that drained the queue).
+
+    OCaml's `add_generic_constraint` queues every other Generic gate. When a
+    new gate fills the queue, the row is emitted as [NEW][QUEUED]: the row's L
+    columns are the NEW gate's data, R columns are the QUEUED gate's data. So
+    in JSON `coeffs[0:5]` = NEW (= L = newer), `coeffs[5:10]` = QUEUED (= R =
+    older). Half-stream order: ..., R(N-1), L(N-1), R(N), L(N), ...
+    """
+    lo = int(args.lo) if args.lo else 0
+    hi = int(args.hi) if args.hi else min(len(ps), len(oc))
+    field_tag = "fq" if (args.fixture if hasattr(args, "fixture") else "").startswith("wrap_") else "fp"
+    print(f"{'row':>5} | {'side':4s} | older→queued (R)  ⤓  newer→pops (L)        | label")
+    print("-" * 110)
+    for i in range(lo, hi):
+        if i >= len(ps) or i >= len(oc):
+            break
+        for side, g in (("PS", ps[i]), ("OC", oc[i])):
+            if g.get("kind") != "Generic":
+                continue
+            coeffs = g.get("coeffs", [])
+            R = coeffs_pretty(coeffs, "R", field_tag)
+            L = coeffs_pretty(coeffs, "L", field_tag)
+            lbl = ctx_short(g, 2)
+            print(f"{i:>5} | {side:4s} | R={R:24s} L={L:24s} | {lbl[:60]}")
+        if args.both:
+            print()  # blank line between rows when comparing both sides
 
 
 def cmd_diff(ps, oc, args):
@@ -740,7 +950,9 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sp = sub.add_parser("find_shift"); sp.add_argument("start", nargs="?"); sp.add_argument("limit", nargs="?"); sp.add_argument("--coeffs", action="store_true", help="also flag content diffs (kinds align, coeffs differ)"); sp.set_defaults(func=cmd_find_shift)
-    sp = sub.add_parser("rows"); sp.add_argument("lo"); sp.add_argument("hi"); sp.set_defaults(func=cmd_rows)
+    sp = sub.add_parser("rows", help="Side-by-side row dump in [LO, HI]. Default: kind tags. With --coeffs: full coeffs annotated with known constants."); sp.add_argument("lo"); sp.add_argument("hi"); sp.add_argument("--coeffs", action="store_true", help="show full coefficients (annotated)"); sp.set_defaults(func=cmd_rows)
+    sp = sub.add_parser("half_stream", help="Print Generic-half emission stream in queue order (R queued first, L emitted second per row)."); sp.add_argument("lo", nargs="?"); sp.add_argument("hi", nargs="?"); sp.add_argument("--both", action="store_true", help="separator between rows when comparing both sides"); sp.set_defaults(func=cmd_half_stream)
+    sp = sub.add_parser("find_constant", help="Find rows whose coefficients contain a value. Accepts a known tag (e.g. 'Pallas.endo_base') or a decimal literal."); sp.add_argument("value", help="constant tag or decimal literal"); sp.add_argument("--limit", type=int, default=20, help="show first N occurrences per side"); sp.add_argument("--diff", action="store_true", help="walk PS/OC occurrence sequences in lockstep and report the first divergent ordinal"); sp.set_defaults(func=cmd_find_constant)
     sp = sub.add_parser("diff"); sp.add_argument("start", nargs="?"); sp.add_argument("end", nargs="?"); sp.set_defaults(func=cmd_diff)
     sp = sub.add_parser("totals"); sp.set_defaults(func=cmd_totals)
     sp = sub.add_parser("ps_label"); sp.add_argument("label"); sp.set_defaults(func=cmd_ps_label)
