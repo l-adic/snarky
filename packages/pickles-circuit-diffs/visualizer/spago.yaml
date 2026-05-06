@@ -19,4 +19,8 @@ package:
     - react-basic
     - react-basic-dom
     - react-basic-hooks
+    - refs
     - simple-json
+    - web-events
+    - web-html
+    - web-uievents

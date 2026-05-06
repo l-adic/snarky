@@ -7,6 +7,8 @@ module Styles where
 type AppStyles =
   { root :: String
   , sidebar :: String
+  , resizer :: String
+  , resizerActive :: String
   , sidebarTitle :: String
   , navSectionHeader :: String
   , navItem :: String

@@ -197,7 +197,8 @@ instance
 
 class TraverseSideloadedVKsCarrier
   :: Type -> Int -> Type -> Constraint
-class TraverseSideloadedVKsCarrier spec len carrier
+class
+  TraverseSideloadedVKsCarrier spec len carrier
   | spec -> len carrier
   where
   traverseSideloadedVKsCarrier

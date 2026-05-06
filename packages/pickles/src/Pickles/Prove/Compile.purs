@@ -51,10 +51,10 @@ module Pickles.Prove.Compile
 import Prelude
 
 import Control.Monad.Except (ExceptT)
+import Data.Enum (fromEnum)
 import Data.Exists (runExists)
 import Data.Fin (unsafeFinite)
 import Data.Functor.Product (Product, product)
-import Data.Enum (fromEnum)
 import Data.Maybe (Maybe(..))
 import Data.Newtype (class Newtype, over, wrap)
 import Data.Reflectable (class Reflectable, reflectType)
@@ -148,12 +148,12 @@ import Pickles.Prove.Wrap
   , wrapSolveAndProve
   )
 import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
-import Pickles.Step.Main (SlotVkSource(..))
-import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Main as PStepMain
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
+import Pickles.Step.Main (SlotVkSource(..))
+import Pickles.Step.Main as MpvPadding
+import Pickles.Step.Main as PStepMain
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
 import Pickles.Types
   ( PaddedLength
@@ -1578,8 +1578,8 @@ instance
       -- muxes among these via the in-circuit one-hot bits. Mirrors
       -- OCaml `step_verifier.ml`'s `wrap_domain = Side_loaded …` path
       -- (`public_input_commitment_dynamic`).
-      sideloadedPerDomainLagrangeAts ::
-        Vector 3 (Int -> AffinePoint (F StepField))
+      sideloadedPerDomainLagrangeAts
+        :: Vector 3 (Int -> AffinePoint (F StepField))
       sideloadedPerDomainLagrangeAts = map
         ( \log2 i ->
             (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs log2 i))

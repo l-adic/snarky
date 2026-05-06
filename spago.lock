@@ -131,6 +131,7 @@
             "curves",
             "effect",
             "either",
+            "enums",
             "exceptions",
             "exists",
             "foldable-traversable",
@@ -166,6 +167,9 @@
         "test": {
           "dependencies": [
             "aff",
+            "argonaut-codecs",
+            "argonaut-core",
+            "bifunctors",
             "effect",
             "prelude",
             "spec",

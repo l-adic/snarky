@@ -42,11 +42,10 @@ import Data.Bifunctor (lmap)
 import Data.Char (toCharCode)
 import Data.Either (Either(..), either)
 import Data.Maybe (Maybe(..))
+import Data.Reflectable (class Reflectable, reflectType)
 import Data.String.CodeUnits (charAt)
 import Data.Traversable (traverse)
-import Data.Reflectable (class Reflectable, reflectType)
 import Data.Tuple (Tuple(..))
-import Type.Proxy (Proxy(..))
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -72,7 +71,6 @@ import Pickles.Types (PaddedLength, StepField, StepIPARounds, WrapField)
 import Pickles.Verify.Types (BranchData, PlonkMinimal, ScalarChallenge)
 import Pickles.Wrap.MessageHash (hashMessagesForNextWrapProofPureGeneral)
 import Snarky.Backend.Kimchi.Class (createCRS)
-import Unsafe.Coerce (unsafeCoerce)
 import Snarky.Backend.Kimchi.Impl.Pallas (pallasCrsCreate)
 import Snarky.Backend.Kimchi.Types (CRS, VerifierIndex)
 import Snarky.Circuit.DSL (F)
@@ -81,6 +79,8 @@ import Snarky.Curves.Class (class PrimeField, fromBigInt)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
+import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- BigInt-preserving JSON parser
@@ -213,6 +213,7 @@ loadFixture cfg dir = do
     -- `Pickles.Prove.Step:701`. The real prev (sg, expandedBpChals) entries
     -- would go here for mpv > 0.
     wrapVkStep = extractWrapVKForStepHash vk
+
     msgStep :: StepField
     msgStep = hashMessagesForNextStepProofPure
       { stepVk: wrapVkStep

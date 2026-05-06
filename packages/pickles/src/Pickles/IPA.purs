@@ -285,7 +285,7 @@ bulletReduceCircuit { pairs, challenges } = label "bullet-reduce" do
   -- OCaml let-binding order: endo_inv(L) first, then endo(R), then add_fast
   terms <- for (Vector.zip pairs challenges) \(Tuple { l, r } u) -> do
     lScaled <- endoInv @f @f' @g l u
-    rScaled <- endo r u
+    rScaled <- endo @128 @32 r u
     addComplete lScaled rScaled
   let
     { head, tail } = Vector.uncons terms
@@ -440,7 +440,7 @@ ipaFinalCheckCircuit scalarOps params input = do
 
   success <- liftSnarky $ label "ipa_final_eq" $ do
     -- 7. Compute LHS: c*Q + delta = endo(Q, c) + delta
-    cQ <- label "ipa_endo_q" $ endo q c
+    cQ <- label "ipa_endo_q" $ endo @128 @32 q c
     { p: lhs } <- label "ipa_lhs_add" $ addComplete cQ input.delta
 
     -- 8. Compute RHS: z1*(sg + b*u) + z2*H
@@ -499,7 +499,7 @@ combinePolynomials bases masks xi = label "combine-polynomials" do
     { head: Tuple h _, tail: t } = Vector.uncons reversed
   foldM
     ( \acc (Tuple base mKeep) -> do
-        xiAcc <- endo acc xi
+        xiAcc <- endo @128 @32 acc xi
         { p } <- addComplete base xiAcc
         -- OCaml: if_ keep ~then_:point ~else_:acc.point (for Opt.Maybe entries)
         case mKeep of

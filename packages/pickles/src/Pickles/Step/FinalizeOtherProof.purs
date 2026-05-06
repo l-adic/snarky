@@ -40,6 +40,7 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
+import Effect.Exception.Unsafe (unsafeThrow)
 import Pickles.IPA (bCorrectCircuit, bPolyCircuit)
 import Pickles.Linearization.Env (AlphaPowersLen, EnvM, buildCircuitEnvM, precomputeAlphaPowers)
 import Pickles.Linearization.FFI (class LinearizationFFI, domainGenerator)
@@ -59,7 +60,6 @@ import Poseidon (class PoseidonField)
 import Prim.Int (class Add, class Compare)
 import Prim.Ordering (LT)
 import Snarky.Circuit.CVar (negate_)
-import Effect.Exception.Unsafe (unsafeThrow)
 import Snarky.Circuit.DSL (class CircuitM, BoolVar, FVar, Snarky, add_, all_, and_, assertAny_, const_, div_, equals_, if_, inv_, label, mul_, not_, pow_, seal, square_, sub_, true_)
 import Snarky.Circuit.DSL.SizedF as SizedF
 import Snarky.Circuit.Kimchi (toField)
@@ -530,9 +530,10 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
   -- path in this region.
   permResult <- label "ft_eval0_perm" do
     let w6 = w0 !! unsafeFinite @15 6
-    term1Init <- mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
+    term1Init <- label "term1_init" $
+      mul_ (add_ w6 gamma) zOmegaTimesZeta >>= \t -> mul_ t a21 >>= \t' -> mul_ t' zkPoly
     let wSigma = zipWith Tuple (Vector.take @6 w0) s0
-    term1 <- foldM
+    term1 <- label "term1_fold" $ foldM
       ( \acc (Tuple wi si) -> do
           betaSi <- mul_ beta si
           mul_ (add_ (add_ betaSi wi) gamma) acc
@@ -542,9 +543,10 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
 
     let term1MinusP = sub_ term1 pEval0
 
-    term2Init <- mul_ a21 zkPoly >>= \t -> mul_ t zZeta
+    term2Init <- label "term2_init" $
+      mul_ a21 zkPoly >>= \t -> mul_ t zZeta
     let wShifts = zipWith Tuple (Vector.take @7 w0) shifts
-    term2 <- foldM
+    term2 <- label "term2_fold" $ foldM
       ( \acc (Tuple wi si) -> do
           betaZetaSi <- mul_ beta zeta >>= \t -> mul_ t si
           mul_ acc (add_ (add_ gamma betaZetaSi) wi)
@@ -557,7 +559,7 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       zetaMinusOmegaZk = sub_ zeta omegaZk
       zetaMinus1 = sub_ zeta (const_ one)
 
-    boundary <- do
+    boundary <- label "boundary" do
       term23 <- mul_ zetaToNMinus1 a23 >>= \t -> mul_ t zetaMinus1
       term22 <- mul_ zetaToNMinus1 a22 >>= \t -> mul_ t zetaMinusOmegaZk
       let oneMinusZ = sub_ (const_ one) zZeta
@@ -721,7 +723,9 @@ mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
   -- order; convert to Vector 16 via `unsafePartial fromJust`
   -- (length is statically 16 by construction).
   let
-    step :: { acc :: BoolVar f, masks :: Array (BoolVar f) } -> Int
+    step
+      :: { acc :: BoolVar f, masks :: Array (BoolVar f) }
+      -> Int
       -> Snarky (KimchiConstraint f) t m
            { acc :: BoolVar f, masks :: Array (BoolVar f) }
     step st i = do

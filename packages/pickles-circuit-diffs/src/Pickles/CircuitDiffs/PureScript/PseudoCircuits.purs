@@ -312,7 +312,12 @@ pseudoMaskN17Circuit inputs = do
     gens :: Vector 17 (FVar _)
     gens = map (\i -> const_ (fromBigInt (fromInt i)))
       ( 0 :< 1 :< 2 :< 3 :< 4 :< 5 :< 6 :< 7 :< 8 :< 9 :< 10 :< 11
-          :< 12 :< 13 :< 14 :< 15 :< 16 :< Vector.nil
+          :< 12
+          :< 13
+          :< 14
+          :< 15
+          :< 16
+          :< Vector.nil
       )
   _ <- label "pseudo_mask_n17" $ Pseudo.mask bits gens
   pure unit

@@ -58,6 +58,7 @@ import Pickles.Types (StepField, WrapField)
 import Pickles.Types (VerificationKey(..)) as PT
 import RandomOracle.Input (Chunked)
 import RandomOracle.Input as RO
+import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Types (VerifierIndex)
 import Snarky.Circuit.DSL (Bool(..), BoolVar, F(..), FVar, assertExactlyOne_, label)
 import Snarky.Circuit.DSL.Monad (class CheckedType, check)
@@ -65,7 +66,6 @@ import Snarky.Circuit.Types (class CircuitType, genericFieldsToValue, genericFie
 import Snarky.Curves.Class (class PrimeField)
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
-import Safe.Coerce (coerce)
 import Type.Proxy (Proxy(..))
 
 --------------------------------------------------------------------------------
@@ -340,10 +340,12 @@ boolVecToProofsVerified v =
 -- | (it's an FFI handle, not field-element-encodable).
 toInputValue :: VerificationKey -> Chunked StepField
 toInputValue vk =
-  let Checked r = vk.circuit in
-  oneHotChunk (boolVecToOneHot r.maxProofsVerified)
-    `RO.append` oneHotChunk (boolVecToOneHot r.actualWrapDomainSize)
-    `RO.append` wrapIndexInput r.wrapIndex
+  let
+    Checked r = vk.circuit
+  in
+    oneHotChunk (boolVecToOneHot r.maxProofsVerified)
+      `RO.append` oneHotChunk (boolVecToOneHot r.actualWrapDomainSize)
+      `RO.append` wrapIndexInput r.wrapIndex
   where
   -- Convert a length-3 Boolean one-hot vec to its StepField
   -- representation (true → one, false → zero).
