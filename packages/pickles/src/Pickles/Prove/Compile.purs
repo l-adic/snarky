@@ -66,6 +66,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
+import Effect.Exception (throw) as Exception
 import JS.BigInt as BigInt
 import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Constants (roughDomainsLog2, zkRows)
@@ -200,6 +201,20 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 
 type ProveError = EvaluationError
+
+-- | Extract the runtime kimchi `VerifierIndex` from a side-loaded
+-- | `Sideload.VerificationKey`, throwing if the bundle's `wrapVk`
+-- | field is `Nothing`. Hydration via
+-- | `Pickles.Sideload.FFI.vestaHydrateVerifierIndex` is the caller's
+-- | responsibility.
+requireWrapVk :: Sideload.VerificationKey -> Effect (VerifierIndex PallasG WrapField)
+requireWrapVk vk = case vk.wrapVk of
+  Just kvk -> pure kvk
+  Nothing -> Exception.throw
+    "Pickles.Prove.Compile: side-loaded VerificationKey is missing \
+    \kimchi `wrapVk` (was `Nothing`). Hydrate via \
+    \`Pickles.Sideload.FFI.vestaHydrateVerifierIndex` before passing \
+    \to a side-loaded prover."
 
 -- | Identity bundle for a Pickles rule emitted by `compile`. Carries:
 -- |
@@ -1592,6 +1607,7 @@ instance
   --       masks its downstream effect); InductivePrev reads the
   --       prev's own `stepDomainLog2`.
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) = do
+    slotWrapVK <- requireWrapVk headVk
     let
       slotMpvMax = reflectType (Proxy @mpvMax)
       _ /\ restSlotVKs = cfg.perSlotImportedVKs
@@ -1605,14 +1621,7 @@ instance
         Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
 
       slotParams =
-        { slotWrapVK: case headVk.wrapVk of
-            Just kvk -> kvk
-            Nothing ->
-              unsafeCrashWith
-                "Pickles.Prove.Compile: side-loaded VerificationKey \
-                \is missing kimchi `wrapVk` (was `Nothing`). Hydrate \
-                \via `Pickles.Sideload.FFI.vestaHydrateVerifierIndex` \
-                \before passing to a side-loaded prover."
+        { slotWrapVK
         , slotWrapDomainLog2:
             Dummy.wrapDomainLog2ForProofsVerified
               (fromEnum headActualWrapDomainSize)
@@ -1881,14 +1890,15 @@ instance
       headActualWrapDomainSize =
         Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
 
+      -- Already validated upstream: `mkStepAdvice` runs first via
+      -- `liftEffect $ mkStepAdvice` in `runMultiProverBody` and calls
+      -- `requireWrapVk` on this same `headVk`, throwing on `Nothing`.
+      -- Reaching the `Nothing` arm here means a control-flow bug.
       slotWrapVK = case headVk.wrapVk of
         Just kvk -> kvk
-        Nothing ->
-          unsafeCrashWith
-            "Pickles.Prove.Compile: side-loaded VerificationKey \
-            \is missing kimchi `wrapVk` (was `Nothing`). Hydrate via \
-            \`Pickles.Sideload.FFI.vestaHydrateVerifierIndex` before \
-            \passing to a side-loaded prover."
+        Nothing -> unsafeCrashWith
+          "Pickles.Prove.Compile.shapeProveData: side-loaded wrapVk \
+          \was Nothing despite mkStepAdvice's upstream validation."
 
       slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 =
@@ -3659,7 +3669,7 @@ runMultiProverBody
       , msgWrapChallenges: proveData.msgWrapChallenges
       , outerStepChalPolyComms:
           map (\e -> { x: e.sgX, y: e.sgY }) proveData.kimchiPrevEntries
-      , wrapDvInput
+      , wrapDvInput: Just wrapDvInput
       -- Front-padding dummies for the `Vector PaddedLength` views
       -- mkSomeCompiledProofWidthData precomputes. Match what
       -- mkStepAdvice / shapeProveData's InductivePrev case fills the

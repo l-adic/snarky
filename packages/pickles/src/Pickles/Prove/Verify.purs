@@ -45,6 +45,7 @@ import Prelude
 
 import Data.Array as Array
 import Data.Exists (Exists, mkExists, runExists)
+import Data.Maybe (Maybe)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
@@ -151,9 +152,13 @@ data CompiledProofWidthData width = CompiledProofWidthData
   -- proof was generated.
   , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
 
-  -- The prover's deferred-values input; carries `prevSgs` and
-  -- `prevChallenges` Vectors at the per-rule width.
-  , wrapDvInput :: WrapDeferredValuesInput width
+  -- | Prover-side `WrapDeferredValuesInput`; carries `prevSgs` and
+  -- | `prevChallenges` at the per-rule width. `Just` for proofs
+  -- | produced via `compileMulti`; `Nothing` for proofs loaded from
+  -- | external fixtures (which only carry verify-side data). Read
+  -- | only by `Test.Pickles.Verify.ExpandDeferredEq`'s self-
+  -- | consistency check, never by `verifyOne`.
+  , wrapDvInput :: Maybe (WrapDeferredValuesInput width)
 
   -- ===== Pre-padded views (front-padded with the matching dummy). =====
   --
@@ -190,7 +195,7 @@ mkSomeCompiledProofWidthData
   => { oldBulletproofChallenges :: Vector width (Vector StepIPARounds StepField)
      , msgWrapChallenges :: Vector width (Vector WrapIPARounds WrapField)
      , outerStepChalPolyComms :: Vector width (AffinePoint StepField)
-     , wrapDvInput :: WrapDeferredValuesInput width
+     , wrapDvInput :: Maybe (WrapDeferredValuesInput width)
      -- Front-padding dummies, one per padded view. Used to fill the
      -- `pad` slots prepended to each `Vector width X` to lift it to
      -- `Vector PaddedLength X`.

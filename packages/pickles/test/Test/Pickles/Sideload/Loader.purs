@@ -80,7 +80,6 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
 import Type.Proxy (Proxy(..))
-import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- BigInt-preserving JSON parser
@@ -191,18 +190,15 @@ loadFixture cfg dir = do
     dummySgs = computeDummySgValues bcd srs vestaSrs
     dummyWrapSgInStepField = dummySgs.ipa.wrap.sg
 
-    -- Empty width-indexed widthData for `mpv = 0`.
-    --
-    -- `wrapDvInput` is only consulted by prover-side machinery; verifyOne
-    -- doesn't read it. Filling with `unsafeCoerce {}` keeps the type-fit
-    -- without us having to fabricate an inner step proof + step VK from
-    -- the loaded fixture (which only carries the *wrap* side).
+    -- Empty width-indexed widthData for `mpv = 0`. `wrapDvInput`
+    -- is `Nothing` since the loaded fixture carries only verify-side
+    -- data (no inner step proof + step VK).
     widthData :: SomeCompiledProofWidthData
     widthData = mkSomeCompiledProofWidthData @0 @PaddedLength
       { oldBulletproofChallenges: Vector.nil
       , msgWrapChallenges: Vector.nil
       , outerStepChalPolyComms: Vector.nil
-      , wrapDvInput: unsafeCoerce {}
+      , wrapDvInput: Nothing
       , dummyOldBp: dummyIpaChallenges.stepExpanded
       , dummyMsgWrap: dummyIpaChallenges.wrapExpanded
       , dummyChalPolyComm: dummyWrapSgInStepField
@@ -277,15 +273,15 @@ liftEffectThrow = either (\msg -> liftEffect (throw msg)) pure
 
 -- | Parse a big-endian hex string (e.g. `"0x2B7F..."`) into a prime-field
 -- | element. OCaml's `Pasta_field.to_yojson` emits BE hex with `0x` prefix.
-fromHexBe :: forall f. PrimeField f => String -> f
+fromHexBe :: forall f. PrimeField f => String -> Either String f
 fromHexBe s = case JsBigInt.fromString s of
-  Just bi -> fromBigInt bi
-  Nothing -> unsafeCrashWith ("fromHexBe: failed to parse " <> s)
+  Just bi -> Right (fromBigInt bi)
+  Nothing -> Left ("fromHexBe: failed to parse " <> s)
 
 decodeHex :: forall f. PrimeField f => Json -> Either JsonDecodeError f
 decodeHex j = do
   s <- decodeJson j :: Either JsonDecodeError String
-  pure (fromHexBe s)
+  lmap TypeMismatch (fromHexBe s)
 
 decodeAffinePoint :: forall f. PrimeField f => Json -> Either JsonDecodeError (AffinePoint f)
 decodeAffinePoint j = do
