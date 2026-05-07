@@ -3,12 +3,11 @@ module Pickles.Wrap.SlotsForPrevs
   , slotsProxy
   ) where
 
-import Prelude (Unit)
-
 import Data.Const (Const)
 import Data.Functor.Product (Product)
 import Data.Vector (Vector)
 import Pickles.Step.Prevs (PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons)
+import Prelude (Unit)
 import Type.Proxy (Proxy(..))
 
 -- | Derive a wrap-side `Slots*` shape from a step-side `PrevsSpec*`.

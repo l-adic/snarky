@@ -27,9 +27,9 @@ import Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain (StepMainSideLoade
 import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
 import Pickles.Types (StatementIO, StepField, WrapField)
 import Pickles.Wrap.Main (WrapMainConfig, WrapMainInput, wrapMainForPrevs)
-import Snarky.Circuit.DSL (F)
 import Snarky.Backend.Compile (compile)
 import Snarky.Backend.Kimchi.Class (createCRS)
+import Snarky.Circuit.DSL (F)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 import Snarky.Constraint.Kimchi as Kimchi
 import Type.Proxy (Proxy(..))
@@ -60,10 +60,12 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   -- prev's `max_proofs_verified = N2` upper bound). Slots derived
   -- from PrevsSpecSideLoadedCons via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt ->
+    ( \stmt ->
         wrapMainForPrevs @1
           @(PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit) PrevsSpecNil)
-          config stmt)
+          config
+          stmt
+    )
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

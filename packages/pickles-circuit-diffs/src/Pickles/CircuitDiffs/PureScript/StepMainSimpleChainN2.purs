@@ -95,7 +95,7 @@ compileStepMainSimpleChainN2 params = do
           @(F StepField)
           @Unit
           @(F StepField)
-          @(Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
+          @( Tuple2 (StatementIO (F StepField) Unit) (StatementIO (F StepField) Unit)
           )
           @2
           @1

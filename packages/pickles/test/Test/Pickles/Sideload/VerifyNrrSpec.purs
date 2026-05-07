@@ -14,14 +14,15 @@ module Test.Pickles.Sideload.VerifyNrrSpec
 
 import Prelude
 
+import Data.Reflectable (reflectType)
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Pickles.Constants (zkRows)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.ProofFFI (permutationVanishingPolynomial)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Verify (CompiledProof(..), mkVerifier, verifyOne)
-import Pickles.ProofFFI (permutationVanishingPolynomial)
 import Pickles.Types (StepField, StepIPARounds)
 import Safe.Coerce (coerce)
 import Snarky.Circuit.DSL (F(..))
@@ -31,7 +32,6 @@ import Test.Pickles.Sideload.Loader (loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Type.Proxy (Proxy(..))
-import Data.Reflectable (reflectType)
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Sideload.NRR verify" do

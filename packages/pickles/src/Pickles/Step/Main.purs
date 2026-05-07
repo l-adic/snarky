@@ -1114,9 +1114,11 @@ stepMain
   let
     dummyUnfp _ =
       liftDummyPerProofUnfinalized
-        (Dummy.mkDummyPerProofUnfinalized
-            (Dummy.baseCaseDummies
-                { maxProofsVerified: reflectType (Proxy @len) }))
+        ( Dummy.mkDummyPerProofUnfinalized
+            ( Dummy.baseCaseDummies
+                { maxProofsVerified: reflectType (Proxy @len) }
+            )
+        )
 
     unfinalizedProofsPadded :: Vector mpvMax UnfinalizedProof
     unfinalizedProofsPadded = mpvFrontPad dummyUnfp unfinalizedProofs

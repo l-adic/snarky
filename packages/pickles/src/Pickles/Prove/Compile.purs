@@ -636,21 +636,21 @@ class
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
   shapeCompileData cfg _ =
-      { stepProveCtx:
-          { srsData:
-              { perSlotLagrangeAt: Vector.nil
-              , blindingH:
-                  (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
-                    :: AffinePoint (F StepField)
-              , perSlotFopDomainLog2s: Vector.nil
-              , perSlotVkSources: Vector.nil
-              }
-          , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
-          , crs: cfg.srs.vestaSrs
-          , debug: cfg.debug
-          }
-      , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
-      }
+    { stepProveCtx:
+        { srsData:
+            { perSlotLagrangeAt: Vector.nil
+            , blindingH:
+                (coerce $ ProofFFI.vestaSrsBlindingGenerator cfg.srs.pallasSrs)
+                  :: AffinePoint (F StepField)
+            , perSlotFopDomainLog2s: Vector.nil
+            , perSlotVkSources: Vector.nil
+            }
+        , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
+        , crs: cfg.srs.vestaSrs
+        , debug: cfg.debug
+        }
+    , wrapDomainLog2: Dummy.wrapDomainLog2ForProofsVerified 0
+    }
     where
     -- | Ro-derived `Dummy.Ipa.Wrap.sg`. Unused at N=0 (no `verify_one`)
     -- | but required by `stepCompile` as the sg_old padding constant.
