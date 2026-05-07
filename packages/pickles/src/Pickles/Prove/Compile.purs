@@ -66,9 +66,7 @@ import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Exception (throw) as Exception
 import JS.BigInt as BigInt
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.Constants (roughDomainsLog2, zkRows)
 import Pickles.Dummy
   ( baseCaseDummies
@@ -154,6 +152,8 @@ import Pickles.PublicInputCommit (mkConstLagrangeBaseLookup)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class TraverseSideloadedVKsCarrier)
 import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
+import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
+import Pickles.Sideload.VerificationKey.Internal (SideloadedVK(..)) as SideloadInternal
 import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
@@ -201,20 +201,6 @@ import Type.Proxy (Proxy(..))
 --------------------------------------------------------------------------------
 
 type ProveError = EvaluationError
-
--- | Extract the runtime kimchi `VerifierIndex` from a side-loaded
--- | `Sideload.VerificationKey`, throwing if the bundle's `wrapVk`
--- | field is `Nothing`. Hydration via
--- | `Pickles.Sideload.FFI.vestaHydrateVerifierIndex` is the caller's
--- | responsibility.
-requireWrapVk :: Sideload.VerificationKey -> Effect (VerifierIndex PallasG WrapField)
-requireWrapVk vk = case vk.wrapVk of
-  Just kvk -> pure kvk
-  Nothing -> Exception.throw
-    "Pickles.Prove.Compile: side-loaded VerificationKey is missing \
-    \kimchi `wrapVk` (was `Nothing`). Hydrate via \
-    \`Pickles.Sideload.FFI.vestaHydrateVerifierIndex` before passing \
-    \to a side-loaded prover."
 
 -- | Identity bundle for a Pickles rule emitted by `compile`. Carries:
 -- |
@@ -1607,16 +1593,15 @@ instance
   --       masks its downstream effect); InductivePrev reads the
   --       prev's own `stepDomainLog2`.
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) = do
-    slotWrapVK <- requireWrapVk headVk
     let
+      SideloadInternal.SideloadedVK headVkR = headVk
+      slotWrapVK = headVkR.wrapVk
       slotMpvMax = reflectType (Proxy @mpvMax)
       _ /\ restSlotVKs = cfg.perSlotImportedVKs
 
       -- Decode `actualWrapDomainSize` from the `Checked` shape's
-      -- length-3 one-hot bool vector. Lives in the `circuit` part of
-      -- the bundle (alongside `wrapIndex`); the runtime `wrapVk` is
-      -- the sibling field.
-      headCheckedRec = case headVk.circuit of Checked r -> r
+      -- length-3 one-hot bool vector.
+      headCheckedRec = case headVkR.circuit of Checked r -> r
       headActualWrapDomainSize =
         Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
 
@@ -1886,19 +1871,12 @@ instance
 
       -- Decode actualWrapDomainSize from the bundle's `circuit` part
       -- (a `Checked`); the runtime `wrapVk` is the sibling field.
-      headCheckedRec = case headVk.circuit of Checked r -> r
+      SideloadInternal.SideloadedVK headVkR = headVk
+      headCheckedRec = case headVkR.circuit of Checked r -> r
       headActualWrapDomainSize =
         Sideload.boolVecToProofsVerified headCheckedRec.actualWrapDomainSize
 
-      -- Already validated upstream: `mkStepAdvice` runs first via
-      -- `liftEffect $ mkStepAdvice` in `runMultiProverBody` and calls
-      -- `requireWrapVk` on this same `headVk`, throwing on `Nothing`.
-      -- Reaching the `Nothing` arm here means a control-flow bug.
-      slotWrapVK = case headVk.wrapVk of
-        Just kvk -> kvk
-        Nothing -> unsafeCrashWith
-          "Pickles.Prove.Compile.shapeProveData: side-loaded wrapVk \
-          \was Nothing despite mkStepAdvice's upstream validation."
+      slotWrapVK = headVkR.wrapVk
 
       slotWrapDomainLog2 :: Int
       slotWrapDomainLog2 =
@@ -2783,7 +2761,6 @@ instance
   , CompilableSpec prevsSpec slotVKs prevsCarrier ruleMpv slots valCarrier
       carrier
       vkCarrier
-  , MkUnitVkCarrier prevsSpec vkCarrier
   , PrevValuesCarrier prevsSpec valCarrier
   -- Per-rule step+wrap constraints needed by runMultiProverBody.
   , CircuitGateConstructor StepField VestaG
@@ -3090,10 +3067,17 @@ mkRuleEntry
   :: forall @mpvMax @outputVal @prevInputVal
        prevsSpec mpv mpvPad nd ndPred outputSize valCarrier
        inputVal inputVar outputVar prevInputVar slotVKs
-       carrier carrierVar pad unfsTotal digestPlusUnfs sideloadedVkCarrier
+       carrier carrierVar pad unfsTotal digestPlusUnfs
+       compileSideloadedVkCarrier sideloadedVkCarrier
    . CircuitGateConstructor StepField VestaG
-  => TraverseSideloadedVKsCarrier prevsSpec mpv sideloadedVkCarrier
-  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  -- Compile-path carrier: cells = `CompilePlaceholderVK`. Synthesised
+  -- by `MkUnitVkCarrier` for the `getSideloadedVKsCarrier` Effect
+  -- instance inside `stepCompile` / `preComputeStepDomainLog2`.
+  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec mpv compileSideloadedVkCarrier
+  => MkUnitVkCarrier prevsSpec compileSideloadedVkCarrier
+  -- Prove-path carrier: cells = `Sideload.VerificationKey`. Sourced
+  -- from `StepAdvice.sideloadedVKs` inside `stepSolveAndProve`.
+  => TraverseSideloadedVKsCarrier Sideload.VerificationKey prevsSpec mpv sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable mpv Int
   => Reflectable pad Int

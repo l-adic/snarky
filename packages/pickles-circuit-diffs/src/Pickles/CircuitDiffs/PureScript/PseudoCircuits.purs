@@ -32,7 +32,7 @@ import JS.BigInt (fromInt)
 import Pickles.CircuitDiffs.PureScript.Common (CompiledCircuit, dummyVestaPt, unsafeIdx)
 import Pickles.Pseudo (choose, oneHotVector)
 import Pickles.Pseudo as Pseudo
-import Pickles.Sideload.VerificationKey as Sideload
+import Pickles.Sideload.VerificationKey.Internal (cellCircuit, compileDummy)
 import Pickles.Step.FinalizeOtherProof as FOP
 import Pickles.Types (StepField, WrapField)
 import Pickles.VerificationKey (chooseKey)
@@ -349,7 +349,7 @@ sideloadedVkTypStepCircuit
   => Unit
   -> Snarky (KimchiConstraint StepField) t m Unit
 sideloadedVkTypStepCircuit _ = do
-  _ <- label "sideloaded_vk_typ" $ exists (pure (Sideload.dummy.circuit))
+  _ <- label "sideloaded_vk_typ" $ exists (pure $ cellCircuit compileDummy)
   pure unit
 
 compileSideloadedVkTypStep :: CompiledCircuit StepField

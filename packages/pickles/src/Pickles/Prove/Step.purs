@@ -95,6 +95,8 @@ import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Prove.Pure.Step (ExpandProofInput, ExpandProofOutput, expandProof) as PureStep
 import Pickles.Prove.Pure.Wrap (packBranchDataWrap, revOnesVector)
 import Pickles.Sideload.Advice (class MkUnitVkCarrier, class SideloadedVKsCarrier, class SideloadedVKsM, class TraverseSideloadedVKsCarrier, getSideloadedVKsCarrier)
+import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
+import Pickles.Sideload.VerificationKey.Internal (CompilePlaceholderVK)
 import Pickles.Step.Advice (class StepPrevValuesM, class StepSlotsM, class StepUserOutputM, class StepWitnessM)
 import Pickles.Step.Main (RuleOutput, StepMainSrsData, stepMain)
 import Pickles.Step.Main as MpvPadding
@@ -1893,9 +1895,8 @@ stepCompile
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs
    . CircuitGateConstructor StepField VestaG
-  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec len sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -1958,6 +1959,7 @@ stepCompile ctx rule = do
             @valCarrier
             @mpvMax
             @nd
+            @CompilePlaceholderVK
             rule
             ctx.srsData
             ctx.dummySg
@@ -2044,9 +2046,8 @@ preComputeStepDomainLog2
   -- Side-loaded VK carrier — see stepMain. preComputeStepDomainLog2
   -- runs at compile time; the caller synthesizes a placeholder
   -- carrier (e.g. `mkUnitVkCarrier` for compiled-only specs).
-  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  => TraverseSideloadedVKsCarrier CompilePlaceholderVK prevsSpec len sideloadedVkCarrier
   => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
-  => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
   => Reflectable mpvMax Int
@@ -2104,6 +2105,7 @@ preComputeStepDomainLog2 ctx rule = do
             @valCarrier
             @mpvMax
             @nd
+            @CompilePlaceholderVK
             rule
             ctx.srsData
             ctx.dummySg
@@ -2141,8 +2143,7 @@ stepSolveAndProve
        @mpvMax @mpvPad @nd ndPred len carrier carrierVar sideloadedVkCarrier
        pad unfsTotal digestPlusUnfs m
    . CircuitGateConstructor StepField VestaG
-  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
-  => MkUnitVkCarrier prevsSpec sideloadedVkCarrier
+  => TraverseSideloadedVKsCarrier Sideload.VerificationKey prevsSpec len sideloadedVkCarrier
   => SideloadedVKsCarrier prevsSpec sideloadedVkCarrier
   => Reflectable len Int
   => Reflectable pad Int
@@ -2223,6 +2224,7 @@ stepSolveAndProve ctx rule compileResult advice = do
               @valCarrier
               @mpvMax
               @nd
+              @Sideload.VerificationKey
               rule
               ctx.srsData
               ctx.dummySg

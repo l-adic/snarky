@@ -38,8 +38,8 @@ import Pickles.Prove.Compile
   , compileMulti
   , mkRuleEntry
   )
-import Pickles.Prove.Step (StepRule, extractWrapVKCommsAdvice)
-import Pickles.Sideload.VerificationKey (ProofsVerified(..), mkChecked)
+import Pickles.Prove.Step (StepRule)
+import Pickles.Sideload.VerificationKey (ProofsVerified(..), fromCompiledWrap)
 import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
 import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
@@ -192,20 +192,15 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       childTag2 :: Tag (F StepField) Unit 2
       childTag2 = coerce child.tag
 
-    -- Assemble the runtime side-loaded VerificationKey. `circuit` is
-    -- the pickles-level metadata the in-circuit dispatch reads;
-    -- `wrapVk` is the live kimchi `VerifierIndex` handle. NRR's wrap
+    -- Assemble the runtime side-loaded VerificationKey. NRR's wrap
     -- circuit at log2 = 13 → `actualWrapDomainSize = N0`; child mpv =
     -- 0 → `maxProofsVerified = N0`.
     let
       childVK :: Sideload.VerificationKey
-      childVK =
-        { circuit: mkChecked
-            { maxProofsVerified: N0
-            , actualWrapDomainSize: N0
-            , wrapIndex: extractWrapVKCommsAdvice child.vks.wrap.verifierIndex
-            }
-        , wrapVk: Just child.vks.wrap.verifierIndex
+      childVK = fromCompiledWrap
+        { verifierIndex: child.vks.wrap.verifierIndex
+        , maxProofsVerified: N0
+        , actualWrapDomainSize: N0
         }
 
     -- Compile the side-loaded parent.

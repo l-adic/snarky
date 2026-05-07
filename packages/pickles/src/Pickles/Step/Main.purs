@@ -645,19 +645,19 @@ unfFields unf =
 
 stepMain
   :: forall @prevsSpec pad outputSize @inputVal input @outputVal output @prevInputVal prevInput
-       @valCarrier @mpvMax mpvPad @nd ndPred
+       @valCarrier @mpvMax mpvPad @nd ndPred @cell
        len carrier carrierVar sideloadedVkCarrier
        unfsTotal digestPlusUnfs
        t m
    . CircuitM StepField (KimchiConstraint StepField) t m
   -- Spec-indexed walk that allocates a per-side-loaded-slot
-  -- `VerificationKeyVar StepField` via `exists` against each
-  -- bundle's `circuit` (a `Checked Boolean ...`). Compiled slots
-  -- contribute `Nothing`. Caller decides where the carrier value
-  -- comes from — for compiled-only specs the carrier is an
-  -- all-Unit chain (`mkUnitVkCarrier` synthesizes one); for specs
-  -- with side-loaded slots the caller sources from advice.
-  => TraverseSideloadedVKsCarrier prevsSpec len sideloadedVkCarrier
+  -- `VerificationKeyVar StepField` via `exists` against each cell's
+  -- `circuit` (a `Checked Boolean ...`, extracted via `HasCircuit`).
+  -- Compiled slots contribute `Nothing`. The cell type — compile-
+  -- placeholder vs prove-time `VerificationKey` — is supplied by
+  -- the caller via `@cell` and matched by the `sideloadedVkCarrier`
+  -- value's shape.
+  => TraverseSideloadedVKsCarrier cell prevsSpec len sideloadedVkCarrier
   => Add 1 ndPred nd
   => Compare 0 nd LT
   => Reflectable nd Int
@@ -720,7 +720,7 @@ stepMain
   -- `traverseSideloadedVKsCarrier` emits no constraints.
   { prevPublicInputs, proofMustVerify, publicOutput, perSlotSideloadedVks } <-
     label "rule_main" do
-      vks <- traverseSideloadedVKsCarrier @prevsSpec sideloadedVkCarrier
+      vks <- traverseSideloadedVKsCarrier @cell @prevsSpec sideloadedVkCarrier
       result <- rule publicInput
       pure
         { prevPublicInputs: result.prevPublicInputs
