@@ -102,7 +102,7 @@ compileStepMainSimpleChain params = do
           , perSlotVkSources: SharedExistsVk :< Vector.nil
           }
           dummyWrapSg
-          -- Side-loaded VK carrier (Step 2d-β1.5b): one Cons slot,
+          -- Side-loaded VK carrier: one Cons slot,
           -- compiled (Unit), no side-loaded position; carrier = `Unit /\ Unit`.
           (tuple1 unit)
       )

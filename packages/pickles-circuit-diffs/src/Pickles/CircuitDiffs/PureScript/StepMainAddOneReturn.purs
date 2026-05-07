@@ -91,7 +91,7 @@ compileStepMainAddOneReturn params =
           , perSlotVkSources: Vector.nil
           }
           dummyWrapSg
-          -- Side-loaded VK carrier (Step 2d-β1.5b): no side-loaded
+          -- Side-loaded VK carrier: no side-loaded
           -- slots in PrevsSpecNil, so the carrier is `Unit`.
           unit
       )

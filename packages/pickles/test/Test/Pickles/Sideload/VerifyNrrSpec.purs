@@ -1,4 +1,4 @@
--- | Phase 5.4: end-to-end verify of an OCaml-produced NRR wrap proof.
+-- | End-to-end verify of an OCaml-produced NRR wrap proof.
 -- |
 -- | Loads the OCaml NRR fixture (vk + kimchi proof + statement +
 -- | wrapping), assembles a `CompiledProof`, builds a `Verifier` via

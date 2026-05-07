@@ -8,19 +8,14 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 -- | step_main circuit for the side-loaded variant of Simple_chain
 -- | (parent rule: mpv=N1, single side-loaded prev with mpv=N2).
 -- |
--- | Reference: mina/src/lib/crypto/pickles/dump_circuit_impl.ml
--- |   (`step_main_side_loaded_main`, mirroring
--- |   dump_side_loaded_main.ml's `Simple_chain` rule).
+-- | Reference: OCaml `dump_side_loaded_main.ml`. Fixture:
+-- | `step_main_side_loaded_main_circuit.json` — 11862 gates, pi=34.
 -- |
--- | OCaml fixture:
--- |   `step_main_side_loaded_main_circuit.json` — 11862 gates, pi=34.
--- |
--- | The rule body is structurally identical to
--- | `StepMainSimpleChain.simpleChainRule`; the only difference is the
--- | spec's prev tag — `PrevsSpecSideLoadedCons` instead of
--- | `PrevsSpecCons` — which routes the slot's wrap-VK / step-domain
--- | / max-proofs-verified through the runtime side-loaded VK
--- | (β2/β3/β4 paths in `Pickles.Step.Main`'s slot dispatch).
+-- | Same rule body as `StepMainSimpleChain.simpleChainRule`; the only
+-- | difference is the spec's prev tag (`PrevsSpecSideLoadedCons`
+-- | instead of `PrevsSpecCons`), which routes the slot's wrap-VK,
+-- | step-domain, and max-proofs-verified through the runtime
+-- | side-loaded VK.
 
 import Prelude
 
@@ -46,15 +41,13 @@ import Type.Proxy (Proxy(..))
 
 -- | Parameters for the side-loaded main fixture.
 -- |
--- |   * `lagrangeAt` — placeholder per-slot table (`Step.Main` ignores
--- |     it on the side-loaded path; only consumed for compiled
--- |     slots, of which the side-loaded fixture has none).
--- |   * `sideloadedPerDomainLagrangeAt` — three SRS lagrange lookups
--- |     at log2 ∈ {13, 14, 15} (= wrap-domain log2s for `actual_wrap_domain_size
--- |     ∈ {N0, N1, N2}` per `common.ml:25-29`). `Step.Main` muxes
--- |     among these via the runtime one-hot bits — exactly what
--- |     `Pickles.Prove.Compile.shapeCompileData` would emit for
--- |     `PrevsSpecSideLoadedCons`.
+-- | * `lagrangeAt` — placeholder per-slot table; ignored by
+-- |   `Step.Main` on the side-loaded path (only consumed for
+-- |   compiled slots).
+-- | * `sideloadedPerDomainLagrangeAt` — three SRS lagrange lookups
+-- |   at log2 ∈ {13, 14, 15} (= the wrap-domain log2s for
+-- |   `actualWrapDomainSize ∈ {N0, N1, N2}`). `Step.Main`
+-- |   one-hot-muxes among them at runtime.
 type StepMainSideLoadedMainParams =
   { lagrangeAt :: LagrangeBaseLookup StepField
   , sideloadedPerDomainLagrangeAt ::
@@ -62,24 +55,22 @@ type StepMainSideLoadedMainParams =
   , blindingH :: AffinePoint (F StepField)
   }
 
--- | Application-specific advice for the side-loaded main rule.
--- |
--- | Identical shape to `StepMainSimpleChain.SimpleChainAdvice`: one
+-- | Application-specific advice for the side-loaded main rule. Same
+-- | shape as `StepMainSimpleChain.SimpleChainAdvice`: one
 -- | previous-proof public-input field. The side-loaded distinction
--- | shows up only in the spec / vkCarrier, not in the rule body.
+-- | shows up in the spec / vkCarrier, not the rule body.
 class Monad m <= SideLoadedMainAdvice m where
   getSideLoadedMainPrev :: Unit -> m (F StepField)
 
 -- | Compilation instance: throws if evaluated. `exists` in
--- | CircuitBuilderT discards the AsProverT entirely so the throw
--- | never fires.
+-- | `CircuitBuilderT` discards the `AsProverT` so the throw never
+-- | fires.
 instance SideLoadedMainAdvice Effect where
   getSideLoadedMainPrev _ =
     throw "SideLoadedMainAdvice.getSideLoadedMainPrev: not available during compilation"
 
--- | Side-loaded main rule body. Mirrors
--- | `StepMainSimpleChain.simpleChainRule` exactly:
--- |   self_correct = (1 + prev == self) || is_base_case.
+-- | Side-loaded main rule body: same as `simpleChainRule` —
+-- | `selfCorrect = (1 + prev == self) || isBaseCase`.
 sideLoadedMainRule
   :: forall t m
    . CircuitM StepField (KimchiConstraint StepField) t m
@@ -92,12 +83,10 @@ sideLoadedMainRule appState = do
   isBaseCase <- equals_ (const_ zero) appState
   selfCorrect <- equals_ (CVar.add_ (const_ one) prev) appState
   assertAny_ [ selfCorrect, isBaseCase ]
-  -- Mirrors `dump_side_loaded_main.ml:179`'s `proof_must_verify =
-  -- Boolean.true_`. Earlier PS used `not_ isBaseCase` (matching the
-  -- pre-M9-iter-D synth fixture); when `proof_must_verify` is a
-  -- non-constant Cvar, downstream `if_ proof_must_verify ...` paths
-  -- in `stepMain` emit ~25 extra Generic gates that vanish under
-  -- constant-`true_` folding.
+  -- `proofMustVerify = true_` (constant) is required for byte-parity:
+  -- a non-constant Cvar makes downstream `if_ proofMustVerify ...`
+  -- emit ~25 extra Generic gates that vanish under `true_` constant-
+  -- folding. Reference: OCaml `dump_side_loaded_main.ml:179`.
   pure
     { prevPublicInputs: prev :< Vector.nil
     , proofMustVerify: true_ :< Vector.nil
@@ -110,21 +99,10 @@ compileStepMainSideLoadedMain params =
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField)))
       (Proxy @(KimchiConstraint StepField))
-      -- Parent N=1, public input/output sizes match SimpleChain N1
-      -- (pi=34: 1 input field + 33 output = 1*18 unfp + 13 digest + 2
-      -- msgs_wrap). Spec encodes the slot's mpv at the side-loaded
-      -- tag's compile-time upper bound (= N2 from
-      -- `Side_loaded.create ~max_proofs_verified:N2` in
-      -- dump_side_loaded_main.ml:120). vkCarrier = `VerificationKey /\
-      -- Unit` per the `SideloadedVKsCarrier
-      -- (PrevsSpecSideLoadedCons …) (VerificationKey /\ rest)`
-      -- instance in `Pickles.Sideload.Advice`.
-      --
-      -- `shapeCompileData` for `PrevsSpecSideLoadedCons` (in
-      -- Pickles.Prove.Compile) emits `SideloadedExistsVk` with three
-      -- per-domain lagrange tables (Step 2d-β2). Step.Main's per-slot
-      -- dispatch then reads the slot's `actualWrapDomainSize` one-hot
-      -- and muxes among them.
+      -- Parent N=1, pi=34 (1 input + 33 output = 1*32 unfp + 1 digest
+      -- + 1 msgs_wrap). The spec sizes the slot at the side-loaded
+      -- tag's compile-time upper bound (`N2`). vkCarrier =
+      -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
           @( PrevsSpecSideLoadedCons 2 (StatementIO (F StepField) Unit)
               PrevsSpecNil
@@ -136,37 +114,20 @@ compileStepMainSideLoadedMain params =
           @1
           @1
           sideLoadedMainRule
-          -- The compile-time SRS data lookup is unused for the
-          -- side-loaded slot's lagrange (Step.Main reads from
-          -- `SideloadedExistsVk`'s carried per-domain tables instead).
-          -- We still need to populate `perSlotLagrangeAt` with
-          -- something Vector-shaped. The `lagrangeAt` param flows
-          -- through; the side-loaded slot ignores it.
-          --
-          -- NOTE: this `perSlotLagrangeAt` / `perSlotVkSources` /
-          -- `perSlotFopDomainLog2s` triple is what
-          -- `Pickles.Prove.Compile.shapeCompileData` populates for
-          -- regular compilation. For the CircuitDiffs harness we
-          -- bypass `compileMulti` and call `stepMain` directly with
-          -- inlined SRS data — that's why the `SideloadedExistsVk`
-          -- variant is constructed here at the test site rather than
-          -- coming from `shapeCompileData`. The carrier with three
-          -- per-domain lagrange tables is the same `vestaSrsLagrange`
-          -- closure family
-          -- `Pickles.Prove.Compile.shapeCompileData` would emit at
-          -- log2 ∈ {13, 14, 15}; we pass `params.lagrangeAt`
-          -- (single-domain) for all three because the test fixture
-          -- doesn't exercise the runtime mux yet.
+          -- This circuit-diff harness builds `perSlotLagrangeAt` /
+          -- `perSlotVkSources` / `perSlotFopDomainLog2s` inline rather
+          -- than going through `Pickles.Prove.Compile.shapeCompileData`.
+          -- The side-loaded slot ignores `perSlotLagrangeAt` (Step.Main
+          -- reads `SideloadedExistsVk`'s per-domain tables instead);
+          -- it's still required to satisfy the Vector shape.
           { perSlotLagrangeAt: params.lagrangeAt :< Vector.nil
           , blindingH: params.blindingH
-          -- Side-loaded slots IGNORE this Vector — `Pickles.Step.FinalizeOtherProof`'s
-          -- `SideLoadedMode` branch synthesises the `Vector 17 [0..16]`
-          -- universe internally from `branch_data.domain_log2`, mirroring
-          -- OCaml `step_verifier.ml:817-840` `side_loaded_domain`. The
-          -- placeholder here is `Vector 1 [0]` (smallest valid shape;
-          -- `nd = 1` matches what `Pickles.Prove.Compile.shapeCompileData`
-          -- produces for a single-rule side-loaded compile via
-          -- `selfStepDomainLog2s`).
+          -- Side-loaded slots ignore this Vector —
+          -- `Step.FinalizeOtherProof`'s `SideLoadedMode` synthesises
+          -- the `Vector 17 [0..16]` universe from
+          -- `branch_data.domain_log2`. The `Vector 1 [0]` placeholder
+          -- here matches `nd = 1` for a single-rule side-loaded
+          -- compile.
           , perSlotFopDomainLog2s:
               (0 :< Vector.nil) :< Vector.nil
           , perSlotVkSources:
@@ -174,9 +135,7 @@ compileStepMainSideLoadedMain params =
                 :< Vector.nil
           }
           dummyWrapSg
-          -- Side-loaded VK carrier: one slot with the dummy VK,
-          -- mirroring OCaml's `exists Side_loaded_verification_key.typ
-          -- ~compute:(... .dummy)` allocation.
+          -- Single side-loaded slot with the dummy VK.
           (tuple1 Sideload.dummy)
       )
       Kimchi.initialState

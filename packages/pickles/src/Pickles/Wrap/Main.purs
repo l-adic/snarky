@@ -269,8 +269,8 @@ processOneSlotFopBody fopBaseParams slotIdx domain unfView witness paddedChals =
     , srsLengthLog2: fopBaseParams.srsLengthLog2
     , endo: fopBaseParams.endo
     , linearizationPoly: fopBaseParams.linearizationPoly
-    -- Wrap circuit only verifies compiled step proofs; side-loaded
-    -- step proofs aren't a thing in Pickles. Always KnownDomainsMode.
+    -- Wrap verifies compiled step proofs only (no side-loaded step
+    -- proofs in Pickles).
     , domainMode: KnownDomainsMode
     }
     domain.vanishingPolynomial
@@ -654,8 +654,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
       )
       revIdxs
     pure (Vector.reverse revMsgs)
-  -- iter 2ac diag: dump per-slot msgsForWrap to compare with
-  -- step PI[mpv*32 + 1 + i] (which the step prover wrote).
+  -- Per-slot `msgsForWrap` trace, for diffing against the step
+  -- prover's `PI[mpv*32 + 1 + i]`.
   forWithIndex_ msgsForWrap \fi v -> do
     let i = getFinite fi
     ivpTrace ("wrap.dbg.msgsForWrap." <> show i) v
@@ -768,8 +768,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
     --   * Fast path (`Nothing`): all branches share the step domain (or
     --     the wrap circuit is single-branch). The constant lagrange
     --     basis at `config.lagrangeAt` works for every branch — no
-    --     in-circuit per-branch masking needed. Same circuit shape as
-    --     before this refactor.
+    --     in-circuit per-branch masking needed.
     --   * Per-branch path (`Just`): branch domains differ. For each
     --     index `i`, fetch one constant point per branch, sum-mask via
     --     `branchBools`, and produce an in-circuit correction at scale
@@ -795,11 +794,8 @@ wrapMain config (WrapStatementPacked stmtR) = do
           , circuit: lb.circuit
           , condAddPt: sumMaskByBranch replicatedConst
           , correctionAt: Nothing
-          -- Wrap multi-branch's `lagrange` (used for Cond_add) does
-          -- NOT seal — `wrap_verifier.ml:380`'s
-          -- `Vector.reduce_exn ~f:(... Field.( + ))` returns the
-          -- raw sum without `Util.Wrap.seal`. Only
-          -- `lagrange_with_correction` seals (line 443).
+          -- Cond_add `lagrange` path is unsealed; only the
+          -- `lagrange_with_correction` path seals.
           , sealCondAddPt: false
           }
       Just perBranchAt ->
@@ -825,8 +821,7 @@ wrapMain config (WrapStatementPacked stmtR) = do
           , circuit: summed
           , condAddPt: summed
           , correctionAt: Just correctionAt
-          -- Wrap multi-branch's `lagrange` (Cond_add path) is
-          -- unsealed — see comment on the `Nothing` arm above.
+          -- Same as the `Nothing` arm: Cond_add `lagrange` is unsealed.
           , sealCondAddPt: false
           }
     ivpParams =
@@ -866,16 +861,11 @@ wrapMain config (WrapStatementPacked stmtR) = do
 
   label "block6-wrapVerify" $ wrapVerify ivpParams fullIvpInput verifyInput
 
--- | Thin wrapper around `wrapMain` that takes `@prevsSpec` instead of
--- | `@slots`. The slots type is derived via the `SlotsForPrevsSpec
--- | prevsSpec slots` funcdep — no hand-coded `@(Slots1 1)` / `@(Slots2
--- | 0 2)` at call sites that can desync from the rule's actual prev
--- | structure.
--- |
--- | Single-rule only: the single-prevsSpec funcdep can't express the
--- | per-slot max across rules required by multi-rule (compileMulti)
--- | wraps. Multi-rule callers should keep using `wrapMain @branches
--- | @slots` directly with `slots` derived from `CompilableRulesSpec`.
+-- | `wrapMain` wrapper that takes `@prevsSpec` instead of `@slots`,
+-- | deriving `slots` via `SlotsForPrevsSpec`. Single-rule only —
+-- | multi-rule wraps need a per-slot max across rules, which a single-
+-- | `prevsSpec` funcdep can't express, so multi-rule callers use
+-- | `wrapMain @branches @slots` directly.
 wrapMainForPrevs
   :: forall @branches @prevsSpec slots mpv branchesPred totalBases totalBasesPred t m
    . CircuitM WrapField (KimchiConstraint WrapField) t m

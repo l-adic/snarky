@@ -103,7 +103,7 @@ compileStepMainNoRecursionReturn params =
           , perSlotVkSources: Vector.nil
           }
           dummyWrapSg
-          -- Side-loaded VK carrier (Step 2d-β1.5b): no slots, carrier = `Unit`.
+          -- Side-loaded VK carrier: no slots, carrier = `Unit`.
           unit
       )
       Kimchi.initialState

@@ -105,77 +105,39 @@ type RuleOutput n prevInput output =
   , publicOutput :: output
   }
 
--------------------------------------------------------------------------------
 -- | Per-slot wrap VK source — three-way dispatch.
 -- |
--- | Each prev slot's verifier-circuit wrap-VK comes from one of
--- | three sources, mirroring OCaml `step_main.ml:513-528`'s dispatch
--- | on `Type_equal.Id.same_witness self.id tag.id` + `tag.kind`:
+-- | * `ConstVk constVk` — compiled External tag whose wrap VK is
+-- |   known at step-compile time. The VK is baked as compile-time
+-- |   constants; downstream `mul_ const var` short-circuits to
+-- |   `Scale` (no allocation, no on-curve checks).
 -- |
--- |   * `ConstVk constVk` — slot's prev is a COMPILED rule whose
--- |     wrap VK is known at step-compile time. OCaml
--- |     `of_compiled_with_known_wrap_key` maps `~f:Inner_curve.constant`
--- |     over the coords; the VK lives as compile-time CONSTANTS in
--- |     the circuit (no allocation, no on-curve checks, downstream
--- |     `mul_ const var` short-circuits to `Scale`). Used for
--- |     External tags.
+-- | * `SharedExistsVk` — Self tag. Self's wrap VK doesn't exist at
+-- |   step-compile time (cycle with wrap compile), so it's allocated
+-- |   ONCE at the top of `stepMain` via `Req.Wrap_index` and every
+-- |   Self slot reuses that single allocation.
 -- |
--- |   * `SharedExistsVk` — slot's prev is SELF. Self's wrap VK
--- |     doesn't exist at step-compile time (chicken-and-egg with wrap
--- |     compile), so OCaml uses `dlog_plonk_index`
--- |     (`step_main.ml:498`) — the SHARED VK allocated ONCE at the
--- |     top of `step_main` via `Req.Wrap_index`. Every Self slot
--- |     reuses that single allocation. Used for Self tags.
+-- | * `SideloadedExistsVk perDomainLagrangeAts` — side-loaded tag.
+-- |   The wrap VK is supplied at runtime via
+-- |   `Pickles.Sideload.Advice.SideloadedVKsCarrier` and allocated
+-- |   PER SLOT against `verificationKeyTyp`. The carried `Vector 3
+-- |   (Int -> AffinePoint (F StepField))` is the three per-domain
+-- |   lagrange-base lookup tables (one per `wrap_domain ∈ {N0, N1,
+-- |   N2}`); the IVP's `lagrangeAt` for this slot muxes among them
+-- |   via the in-circuit `actualWrapDomainSize` one-hot bits (see
+-- |   `Pickles.PublicInputCommit.mkSideloadedLagrangeLookup`).
 -- |
--- |   * `SideloadedExistsVk perDomainLagrangeAts` — slot's prev is a
--- |     side-loaded tag whose wrap VK is supplied at runtime via the
--- |     `Pickles.Sideload.Advice.SideloadedVKsCarrier`. The in-circuit
--- |     VK is allocated PER SLOT against `verificationKeyTyp` —
--- |     distinct from `SharedExistsVk` because each side-loaded slot
--- |     can have a different VK and because the side-loaded VK
--- |     carries extra fields (`max_proofs_verified` and
--- |     `actual_wrap_domain_size` one-hot bits) for the verifier's
--- |     proofs-verified mask + lagrange-domain mux. Mirrors OCaml
--- |     `dump_side_loaded_main.ml:142-156`'s
--- |     `exists Side_loaded.Verification_key.typ ~compute:` +
--- |     `Side_loaded.in_circuit` flow.
--- |
--- |     The carried `Vector 3 (Int -> AffinePoint (F StepField))` are
--- |     the three per-domain lagrange-base lookup tables (one each
--- |     for `wrap_domain ∈ {N0, N1, N2}`). The IVP's
--- |     `lagrangeAt` for this slot muxes among them via the in-circuit
--- |     `actualWrapDomainSize` one-hot bits — see
--- |     `Pickles.PublicInputCommit.mkSideloadedLagrangeLookup` and
--- |     OCaml `step_verifier.ml`'s `public_input_commitment_dynamic`
--- |     (lines 409-456).
+-- | Reference: OCaml `step_main.ml`'s tag-kind dispatch.
 data SlotVkSource
   = ConstVk (VerificationKey (WeierstrassAffinePoint PallasG (F StepField)))
   | SharedExistsVk
   | SideloadedExistsVk (Vector 3 (Int -> AffinePoint (F StepField)))
 
--------------------------------------------------------------------------------
--- | SRS data for step_main
--------------------------------------------------------------------------------
-
--- | SRS data that carries per-slot FOP domain-log2 values and
--- | per-slot wrap-VK sources.
--- |
--- | In OCaml's `step_main`, `finalize_other_proof` is called per prev
--- | slot with `~step_domains:d.step_domains` — the PREV'S
--- | step_domains vector. For self-recursive rules (Simple_chain) all
--- | slots share the same value; for heterogeneous prevs
--- | (Tree_proof_return: slot 0's prev = No_recursion_return @ 2^13;
--- | slot 1's prev = self @ 2^16) the per-slot values differ.
--- |
--- | Per-slot wrap-VK source dispatched via `SlotVkSource` — see its
--- | doc above for the semantics of each constructor.
--- |
--- | Shapes for the test fixtures:
--- |   * Simple_chain N1  : `[SharedExistsVk]`
--- |   * Simple_chain N2  : `[SharedExistsVk, SharedExistsVk]`
--- |   * Add_one_return   : `[]` (N=0, no slots)
--- |   * Tree_proof_return: `[ConstVk no_rec_vk, SharedExistsVk]`
--- |   * Side-loaded main : `[SideloadedExistsVk, …]`
+-- | SRS data for `stepMain`. Carries per-slot FOP domain-log2s
+-- | (`finalize_other_proof` consumes the prev's `step_domains` Vector;
+-- | self-recursive rules share one value across slots, heterogeneous
+-- | prevs differ per slot) and per-slot wrap-VK sources (see
+-- | `SlotVkSource`).
 type StepMainSrsData len nd =
   { -- | Per-slot lagrange commitments. In OCaml
     -- | `x_hat = Σᵢ x[i] * lagrange_commitment(~domain:d.wrap_domain, srs, i)`
@@ -1097,20 +1059,16 @@ stepMain
     ivpTrace "step_main_outer.digest" digest
     pure digest
 
-  -- 10. Build output: mpvMax × 32 (unfinalized) + 1 (step msg) + mpvMax (wrap msgs).
-  --     Front-pad `unfinalizedProofs` from `len` to `mpvMax` with const_
-  --     dummies (mirrors OCaml `step.ml:782-787`'s
-  --     `Vector.extend_front ... Unfinalized.dummy`). `msgsWrap` is
-  --     already mpvMax-sized: padding entries were exists-allocated at
-  --     step 6 (mirroring OCaml step_main.ml:368-370), so its dummy
-  --     positions are circuit Vars (not Constants) and the
-  --     output→PI assertEqual_ permutation-ties without emitting an
-  --     extra Generic gate.
+  -- 10. Build output: `mpvMax × 32` (unfinalized) + 1 (step msg) +
+  --     `mpvMax` (wrap msgs). Front-pad `unfinalizedProofs` from `len`
+  --     to `mpvMax` with `const_` dummies. `msgsWrap` is already
+  --     `mpvMax`-sized — padding entries were `exists`-allocated at
+  --     step 6, so its dummy positions are circuit Vars (not
+  --     Constants) and the output→PI `assertEqual_` permutation-ties
+  --     without emitting an extra Generic gate.
   --
-  -- The dummy is derived from `Dummy.baseCaseDummies { maxProofsVerified =
-  -- len }` — the rule's own prev count, NOT mpvMax. Matches what every
-  -- caller used to pass (production CompilableSpec instances and the
-  -- one fixture that actually fired the thunk all set bcd's mpv = ruleMpv).
+  -- The padding dummy uses `bcd.maxProofsVerified = len` (the rule's
+  -- own prev count, NOT `mpvMax`).
   let
     dummyUnfp _ =
       liftDummyPerProofUnfinalized

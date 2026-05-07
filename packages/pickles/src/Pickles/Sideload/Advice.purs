@@ -1,29 +1,17 @@
--- | Advice class for the prover-side runtime side-loaded VKs.
+-- | Advice classes for prover-side runtime side-loaded VKs.
 -- |
--- | The PS analog of the user-supplied `Verifier_index` request in
--- | OCaml's standalone reference (`dump_side_loaded_main.ml:99-116`):
--- | the rule body needs the runtime VK for each side-loaded prev so
--- | it can populate the in-circuit `VerificationKeyVar`'s witnesses
--- | and (in the follow-up that wires the slot dispatch) feed
--- | `actual_wrap_domain_size` and `wrap_index` into step_main's
--- | per-prev verification.
+-- | Parallel to `Pickles.Step.Advice`'s `StepWitnessM`/`StepSlotsM`:
+-- | the prover monad implements `SideloadedVKsM` concretely; the
+-- | compile-time `Effect` instance throws (the constraint-system pass
+-- | discards the `~compute` body).
 -- |
--- | This is parallel to `Pickles.Step.Advice`'s
--- | `StepWitnessM`/`StepSlotsM`: the prover monad implements it
--- | concretely, the compile-time `Effect` instance throws (the
--- | constraint-system pass discards the `~compute` body).
+-- | Carriers are spec-indexed via `SideloadedVKsCarrier`: a `PrevsSpec`
+-- | chain produces an interleaved tuple where each compiled prev
+-- | (`PrevsSpecCons`) contributes `Unit` and each side-loaded prev
+-- | (`PrevsSpecSideLoadedCons`) contributes a `VerificationKey`.
+-- | Mismatch between spec and carrier becomes a type error.
 -- |
--- | The carrier is **spec-indexed** via `SideloadedVKsCarrier`:
--- | given a `PrevsSpec*` chain, the carrier interleaves a slot per
--- | prev — `Unit` for compiled slots (`PrevsSpecCons`) and a
--- | `VerificationKey` for side-loaded slots (`PrevsSpecSideLoadedCons`).
--- | This mirrors the spec's structure exactly, so a side-loaded slot
--- | without a VK or a compiled slot with a VK becomes a type error.
--- |
--- | Reference:
--- |   mina/src/lib/crypto/pickles/dump_side_loaded_main/dump_side_loaded_main.ml:99-156
--- |   mina/src/lib/crypto/pickles/compile.ml:1049-1051 (in_circuit / in_prover)
--- |   mina/src/lib/crypto/pickles/step_main.ml:520-525 (`Side_loaded -> of_side_loaded`)
+-- | Reference: OCaml `Pickles.Side_loaded` + `step_main.ml:520-525`.
 module Pickles.Sideload.Advice
   ( class SideloadedVKsCarrier
   , class SideloadedVKsM
@@ -49,53 +37,37 @@ import Snarky.Circuit.DSL (Snarky, exists)
 import Snarky.Circuit.DSL.Monad (class CheckedType, class CircuitM)
 import Snarky.Constraint.Kimchi (KimchiConstraint)
 
---------------------------------------------------------------------------------
--- SideloadedVKsCarrier — derive the per-slot VK carrier from the spec
---
--- Walks the same `PrevsSpec*` chain as `PrevsCarrier` /
--- `PrevValuesCarrier` (in `Pickles.Step.Prevs`) and produces an
--- interleaved tuple of VK slots:
---   PrevsSpecNil                              → Unit
---   PrevsSpecCons n stmt rest                 → Unit            /\ rest_carrier
---   PrevsSpecSideLoadedCons mpvMax stmt rest  → VerificationKey /\ rest_carrier
---
--- The fundep `spec -> carrier` lets the compiler pin the carrier
--- shape from the spec alone — no explicit length parameter, no
--- per-slot Maybe.
---------------------------------------------------------------------------------
-
+-- | Spec-indexed VK carrier shape. Funcdep `spec -> carrier` lets the
+-- | compiler pin the carrier from the spec alone.
+-- |
+-- | * `PrevsSpecNil` → `Unit`
+-- | * `PrevsSpecCons n stmt rest` → `Unit /\ restCarrier`
+-- | * `PrevsSpecSideLoadedCons mpvMax stmt rest` → `VerificationKey /\ restCarrier`
 class SideloadedVKsCarrier :: Type -> Type -> Constraint
 class SideloadedVKsCarrier spec carrier | spec -> carrier
 
 instance SideloadedVKsCarrier PrevsSpecNil Unit
 
--- | Compiled slot contributes `Unit` — its wrap_key + step_domains
--- | come from compile-time-baked data (the existing per-slot path).
+-- | Compiled slot — wrap_key + step_domains come from compile-time-baked
+-- | data, no runtime VK needed.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
     (PrevsSpecCons n statement rest)
     (Unit /\ restCarrier)
 
--- | Side-loaded slot contributes a `VerificationKey` — supplied at
--- | prove time via the rule's `~handler` analog (the prover monad's
--- | `getSideloadedVKsCarrier`).
+-- | Side-loaded slot — runtime VK supplied via the prover monad's
+-- | `getSideloadedVKsCarrier`.
 instance
   SideloadedVKsCarrier rest restCarrier =>
   SideloadedVKsCarrier
     (PrevsSpecSideLoadedCons mpvMax statement rest)
     (VerificationKey /\ restCarrier)
 
---------------------------------------------------------------------------------
--- SideloadedVKsM — prover-monad source for the carrier
---------------------------------------------------------------------------------
-
--- | Spec-indexed runtime VK source.
--- |
--- | The `spec` parameter pins the carrier shape via
--- | `SideloadedVKsCarrier`; the `m -> spec` fundep lets a single
--- | prover-monad instance fix the carrier without callers needing to
--- | annotate the spec at every call.
+-- | Prover-monad source for the spec-indexed VK carrier. Funcdeps:
+-- | `spec -> carrier`, `m -> spec carrier` (so a single prover-monad
+-- | instance fixes both without callers annotating spec at every
+-- | call).
 class
   ( Monad m
   , SideloadedVKsCarrier spec carrier
@@ -105,20 +77,10 @@ class
   , m -> spec carrier where
   getSideloadedVKsCarrier :: Unit -> m carrier
 
--- | Effect instance: synthesizes the all-Unit carrier via
--- | `MkUnitVkCarrier`. This covers compiled-only specs (where the
--- | carrier shape is `Unit /\ Unit /\ … /\ Unit`); specs that
--- | contain `PrevsSpecSideLoadedCons` slots have carriers shaped
--- | like `… /\ VerificationKey /\ …` and the `MkUnitVkCarrier`
--- | constraint won't resolve — those callers must use a different
--- | prover monad whose `SideloadedVKsM` instance reads real
--- | runtime VKs from the test setup.
--- |
--- | Routing the synthesis through this instance (rather than
--- | calling `mkUnitVkCarrier` directly at the use sites) keeps the
--- | side-loaded VK source uniformly behind `getSideloadedVKsCarrier`
--- | — the right channel for any future swap to a real
--- | runtime-VK-providing prover monad.
+-- | `Effect` instance — synthesises an all-`Unit` carrier via
+-- | `MkUnitVkCarrier`. Resolves only for compiled-only specs; specs
+-- | with side-loaded prevs need a different prover monad whose
+-- | instance reads real runtime VKs.
 instance
   ( SideloadedVKsCarrier spec carrier
   , MkUnitVkCarrier spec carrier
@@ -126,27 +88,12 @@ instance
   SideloadedVKsM spec Effect carrier where
   getSideloadedVKsCarrier _ = pure (mkUnitVkCarrier @spec)
 
---------------------------------------------------------------------------------
--- MkUnitVkCarrier — synthesize a placeholder VK carrier
---
--- Synthesises a structurally-shaped value for any
--- `SideloadedVKsCarrier`-derived carrier. Compiled-slot positions
--- become `Unit`; side-loaded-slot positions become
--- `VerificationKey.dummy`.
---
--- Used at compile-time call sites (e.g. `stepCompile`,
--- `preComputeStepDomainLog2`) where the circuit shape is built but
--- prover-supplied values are discarded by the constraint-system pass
--- (`exists ~compute:` on the dummy is never run). Real prove-time
--- carriers come from the spec-indexed advice channel (set up by the
--- caller and persisted into `StepAdvice.sideloadedVKs`).
---
--- Spec-keyed (with fundep `spec -> carrier`) so the side-loaded slot
--- instance can dispatch on `VerificationKey` (a record-typed
--- synonym) — PS only allows record types in instance heads at
--- argument positions covered by a fundep.
---------------------------------------------------------------------------------
-
+-- | Synthesises a placeholder VK carrier matching the spec shape.
+-- | Compiled slots become `Unit`; side-loaded slots become
+-- | `VerificationKey.dummy`. Used at compile time where prover-supplied
+-- | values are discarded by the constraint-system pass; real prove-time
+-- | carriers come through `SideloadedVKsM` (persisted into
+-- | `StepAdvice.sideloadedVKs`).
 class MkUnitVkCarrier :: Type -> Type -> Constraint
 class MkUnitVkCarrier spec (carrier :: Type) | spec -> carrier where
   mkUnitVkCarrier :: carrier
@@ -159,12 +106,6 @@ instance
   MkUnitVkCarrier (PrevsSpecCons n statement rest) (Unit /\ restCarrier) where
   mkUnitVkCarrier = unit /\ mkUnitVkCarrier @rest
 
--- | Side-loaded slot at the head — synthesise `VerificationKey.dummy`
--- | (the OCaml `side_loaded_verification_key.ml:330-345` placeholder).
--- | At compile time the bundle's `circuit` field drives `exists`
--- | allocations for the in-circuit `VerificationKeyVar`; at prove time
--- | the real runtime VK is supplied via the `StepAdvice.sideloadedVKs`
--- | channel rather than via this instance.
 instance
   MkUnitVkCarrier rest restCarrier =>
   MkUnitVkCarrier
@@ -172,29 +113,15 @@ instance
     (VerificationKey /\ restCarrier) where
   mkUnitVkCarrier = dummy /\ mkUnitVkCarrier @rest
 
---------------------------------------------------------------------------------
--- TraverseSideloadedVKsCarrier — walk the carrier in lockstep with the spec
--- and allocate per-slot side-loaded VK vars
---
--- Walks a `SideloadedVKsCarrier`-shaped value (each `PrevsSpecCons`
--- slot is `Unit`, each `PrevsSpecSideLoadedCons` slot is a
--- `VerificationKey` bundle), emitting a parallel `Vector len (Maybe
--- (VerificationKeyVar StepField))`:
---
---   * Compiled slot (`PrevsSpecCons`) → `Nothing` (its wrap VK comes
---     from the shared `Req.Wrap_index` allocation, not a per-slot
---     exists).
---   * Side-loaded slot (`PrevsSpecSideLoadedCons`) → `Just var`,
---     where `var :: VerificationKeyVar StepField` is allocated by
---     `exists` against the bundle's `circuit` (a `Checked Boolean
---     …`). The existing `CircuitType (Checked b pt) (Checked bvar
---     ptvar)` instance handles the per-bit boolean check and
---     on-curve check on each wrap_index commitment.
---
--- The instance head's spec drives the dispatch; `len` is the prev
--- count (matching `PrevsCarrier`'s `len` fundep).
---------------------------------------------------------------------------------
-
+-- | Walks the carrier in lockstep with the spec and emits a parallel
+-- | `Vector len (Maybe (VerificationKeyVar StepField))`:
+-- |
+-- | * Compiled slot → `Nothing` (its wrap VK comes from the shared
+-- |   `Req.Wrap_index` allocation, not a per-slot `exists`).
+-- | * Side-loaded slot → `Just var`, where `var` is allocated by
+-- |   `exists` against the bundle's `circuit` field. The wrap_index's
+-- |   per-bit boolean check and on-curve check are emitted by the
+-- |   parameterised `CircuitType` instance on `Checked`.
 class TraverseSideloadedVKsCarrier
   :: Type -> Int -> Type -> Constraint
 class
@@ -235,13 +162,9 @@ instance
     (VerificationKey /\ restCarrier)
   where
   traverseSideloadedVKsCarrier (headVk /\ rest) = do
-    -- `exists` against the bundle's `circuit` field — a `Checked
-    -- Boolean (WeierstrassAffinePoint Pallas.G (F StepField))` —
-    -- allocates a `VerificationKeyVar StepField` (= `Checked
-    -- (BoolVar StepField) (WeierstrassAffinePoint Pallas.G (FVar
-    -- StepField))`). The bundle's `wrapVk` field is irrelevant here
-    -- and stays in the runtime advice for `mkStepAdvice` /
-    -- `shapeProveData` consumption.
+    -- `exists` against the bundle's `circuit` field allocates a
+    -- `VerificationKeyVar`. The bundle's `wrapVk` is irrelevant here
+    -- and stays in the runtime advice.
     headVar <- exists (pure headVk.circuit)
     restVks <- traverseSideloadedVKsCarrier @rest rest
     pure (Vector.cons (Just headVar) restVks)

@@ -59,10 +59,9 @@ compileStepMainTwoPhaseChainMakeZero
   :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
 compileStepMainTwoPhaseChainMakeZero params =
   -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
-  -- so step PI front-pads 1 dummy unfinalized_proof slot. Output size
-  -- = 1*32 + 1 + 1 = 34. The dummy's `bcd` is now derived inside
-  -- `stepMain` from `len = 0`, matching what we used to pass here
-  -- explicitly (`baseCaseDummies { maxProofsVerified: 0 }`).
+  -- so step PI front-pads 1 dummy unfinalized_proof slot. Output
+  -- size = 1*32 + 1 + 1 = 34. `stepMain` derives the front-padding
+  -- dummy from `len`.
   mkStepArtifact <$>
     compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
       ( \_ -> stepMain

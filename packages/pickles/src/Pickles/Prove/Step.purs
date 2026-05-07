@@ -1568,13 +1568,9 @@ type StepProveResult (outputSize :: Int) =
 -- |
 -- | Row numbering aligns with the final kimchi witness file
 -- | (`KIMCHI_WITNESS_DUMP`): the first `publicInputSize` rows are
--- | reserved by `makeGateData` for public-input placement, so constraint
--- | rows begin at `publicInputSize`. Passing the wrong offset gives
--- | labels that look correct but point to the wrong row — past mistakes
--- | on Tree_proof_return wasted multiple iterations chasing the wrong
--- | context because labels said `exists_unfinalized` when the actual
--- | kimchi row was in `exists_prevs` (see
--- | `memory/project_tree_proof_return_iter2.md` iter 2ap).
+-- | reserved by `makeGateData` for public-input placement, so
+-- | constraint rows begin at `publicInputSize`. The wrong offset
+-- | gives labels that look correct but point at the wrong row.
 dumpRowLabels
   :: Int -- ^ publicInputSize — number of rows kimchi reserves for PI
   -> Array (Labeled (KimchiGate StepField))
@@ -1965,9 +1961,8 @@ stepCompile ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Side-loaded VK carrier sourced via the
-            -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
-            -- Effect's instance synthesises for compiled-only specs.
+            -- Sourced via `SideloadedVKsM` — Effect's instance
+            -- synthesises an all-Unit carrier for compiled-only specs.
             sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
@@ -2112,9 +2107,8 @@ preComputeStepDomainLog2 ctx rule = do
             rule
             ctx.srsData
             ctx.dummySg
-            -- Side-loaded VK carrier sourced via the
-            -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
-            -- Effect's instance synthesises for compiled-only specs.
+            -- Sourced via `SideloadedVKsM` — Effect's instance
+            -- synthesises an all-Unit carrier for compiled-only specs.
             sideloadedCarrier
       )
       (Kimchi.initialState :: CircuitBuilderState (KimchiGate StepField) (AuxState StepField))
@@ -2232,9 +2226,8 @@ stepSolveAndProve ctx rule compileResult advice = do
               rule
               ctx.srsData
               ctx.dummySg
-              -- Side-loaded VK carrier sourced via the
-              -- `SideloadedVKsM` advice channel (Step 2d-β1.5c).
-              -- Captured from the outer monad-`m` bind below.
+              -- Sourced via `SideloadedVKsM`; captured from the
+              -- outer monad-`m` bind below.
               sideloadedCarrier
         )
 

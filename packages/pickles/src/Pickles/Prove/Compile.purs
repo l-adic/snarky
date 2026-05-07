@@ -1507,29 +1507,14 @@ instance
     )
     (Sideload.VerificationKey /\ restVkCarrier)
   where
-  -- PLACEHOLDER body: structural mirror of the `PrevsSpecCons`
-  -- `shapeCompileData`, but the slot's compile-time choices for
-  -- wrap-domain / step-domain / lagrange basis are SUBSTITUTES for
-  -- the proper side-loaded routing:
-  --
-  --   * `slotWrapDomainLog2` → `mpvMax`-domain (the upper bound).
-  --     Real side-loaded routing needs in-circuit one-hot multiplexed
-  --     selection across {N0, N1, N2} based on the runtime VK's
-  --     `actual_wrap_domain_size` bits.
-  --   * `slotFopDomainLog2s` → outer rule's `selfStepDomainLog2s`.
-  --     Real routing needs Pseudo step-domain dispatch (OCaml
-  --     `step_domains = `Side_loaded`).
-  --   * `headKnownWrapKey = Nothing` → uses the shared
-  --     `Req.Wrap_index` exists-allocated VK. Real routing needs a
-  --     per-slot exists-allocated VK against `verificationKeyTyp`,
-  --     bound to that slot's runtime VK at `~compute` time.
-  --
-  -- These placeholders unblock the type-level path through
-  -- `compile`; rules that hit `mkStepAdvice` / `shapeProveData`
-  -- still crash with explicit messages from their own (placeholder
-  -- step-domain) sites. The follow-up that actually changes the
-  -- step verifier circuit (`Pickles.Step.Main`'s `slotVkRec`
-  -- dispatch + per-slot lagrange resolution) is Step 2d-β.
+  -- Structural mirror of the `PrevsSpecCons` `shapeCompileData`. The
+  -- slot's compile-time `slotWrapDomainLog2` and `slotLagrange` are
+  -- carried as placeholders so the `perSlotLagrangeAt` /
+  -- `perSlotFopDomainLog2s` vectors still have the right shape; the
+  -- side-loaded slot's actual wrap-domain / lagrange come from
+  -- `headSlotVkSource = SideloadedExistsVk …` (one-hot multiplexed
+  -- against the runtime VK's `actualWrapDomainSize` bits in
+  -- `Step.Main`).
   shapeCompileData cfg selfStepDomainLog2s =
     let
       _ /\ restSlotVKs = cfg.perSlotImportedVKs
@@ -1541,27 +1526,23 @@ instance
         Just o -> o
         Nothing -> Dummy.wrapDomainLog2ForProofsVerified outerMpv
 
-      -- PLACEHOLDER: side-loaded `step_domains = `Side_loaded`. Real
-      -- routing dispatches via Pseudo on the prev's step domain.
+      -- Carried only to fill the per-slot vector shape; the
+      -- side-loaded slot's real step-domain dispatch is in
+      -- `Step.FinalizeOtherProof`'s SideLoadedMode.
       slotFopDomainLog2s = selfStepDomainLog2s
 
-      -- The per-slot lagrange lookup is unused for side-loaded slots
-      -- (Step.Main's dispatch consults the per-domain triple inside
-      -- `SideloadedExistsVk`). Carry the slotMpvMax-domain lookup as
-      -- a placeholder so the `perSlotLagrangeAt` vector still has the
-      -- right shape — `Step.Main`'s side-loaded branch never reads
-      -- it.
+      -- Unused for side-loaded slots (Step.Main reads the per-domain
+      -- triple inside `SideloadedExistsVk`); kept to match the
+      -- `perSlotLagrangeAt` vector shape.
       slotWrapDomainLog2 = Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
       slotLagrange =
         mkConstLagrangeBaseLookup \i ->
           (coerce (ProofFFI.vestaSrsLagrangeCommitmentAt cfg.srs.pallasSrs slotWrapDomainLog2 i))
             :: AffinePoint (F StepField)
 
-      -- The three per-domain lagrange tables for the side-loaded VK's
-      -- `actual_wrap_domain_size` ∈ {N0=13, N1=14, N2=15}. Step.Main
-      -- muxes among these via the in-circuit one-hot bits. Mirrors
-      -- OCaml `step_verifier.ml`'s `wrap_domain = Side_loaded …` path
-      -- (`public_input_commitment_dynamic`).
+      -- Per-domain lagrange tables for the side-loaded VK's
+      -- `actualWrapDomainSize` ∈ {N0=13, N1=14, N2=15}. Step.Main
+      -- one-hot-muxes among these via `mkSideloadedLagrangeLookup`.
       sideloadedPerDomainLagrangeAts
         :: Vector 3 (Int -> AffinePoint (F StepField))
       sideloadedPerDomainLagrangeAts = map
@@ -1574,11 +1555,8 @@ instance
       outerBcd = Dummy.baseCaseDummies { maxProofsVerified: outerMpv }
       outerDummySgs = Dummy.computeDummySgValues outerBcd cfg.srs.pallasSrs cfg.srs.vestaSrs
 
-      -- Emit `SideloadedExistsVk` carrying the three per-domain
-      -- lagrange tables. `Pickles.Step.Main`'s dispatch reads the
-      -- side-loaded VK's `actualWrapDomainSize` one-hot bits and
-      -- muxes among the three tables via
-      -- `mkSideloadedLagrangeLookup`.
+      -- `Step.Main` reads `SideloadedExistsVk`'s per-domain tables and
+      -- one-hot-muxes via `mkSideloadedLagrangeLookup`.
       headSlotVkSource = SideloadedExistsVk sideloadedPerDomainLagrangeAts
     in
       { stepProveCtx:
@@ -1601,31 +1579,18 @@ instance
       , wrapDomainLog2: outerWrapDomainLog2
       }
 
-  -- Structural copy of the `PrevsSpecCons` `mkStepAdvice` body with
-  -- three substitutions:
-  --   (1) `slotN := slotMpvMax = reflectType (Proxy @mpvMax)`. The
-  --       per-slot witness is sized at the side-loaded tag's
-  --       compile-time upper bound; the runtime VK's
-  --       `actual_wrap_domain_size` ≤ `mpvMax` is masked in-circuit.
+  -- Structural copy of the `PrevsSpecCons` `mkStepAdvice` with two
+  -- changes:
+  --   (1) per-slot witness sized at `mpvMax` (the side-loaded tag's
+  --       compile-time upper bound); the runtime VK's
+  --       `actualWrapDomainSize` ≤ `mpvMax` is masked in-circuit.
   --   (2) `slotParams` sourced from the runtime VK at the head of
-  --       `vkCarrier` instead of `cfg.perSlotImportedVKs`. The
-  --       runtime VK's `wrapVk` field provides the kimchi VerifierIndex;
-  --       `actualWrapDomainSize` (as `Int`) gives the wrap-domain log2
-  --       via `Dummy.wrapDomainLog2ForProofsVerified`. The
-  --       `slotStepDomainLog2` placeholder uses the side-loaded
-  --       tag's compile-time upper bound (= mpvMax → {N0=13, N1=14,
-  --       N2=15}) — only consumed at the BasePrev / dummy site, where
-  --       the dummy is signalled by `proofMustVerify=false` so the
-  --       value is structurally a stand-in. The full Pseudo
-  --       step-domain dispatch in the step verifier circuit
-  --       (OCaml `step_main.ml:520-525` `Side_loaded.step_domains =
-  --       `Side_loaded`) is β3 proper — the in-circuit
-  --       `Pickles.Step.FinalizeOtherProof` rewrite mirroring
-  --       `step_verifier.ml:817-840` `side_loaded_domain` (Pseudo over
-  --       [0..16] with iterative `if_/square` vanishing polynomial).
-  --       InductivePrev's prev `widthData` carries enough step info
-  --       to avoid the placeholder.
-  --   (3) Rest recursion threads `restVkCarrier`.
+  --       `vkCarrier`: `wrapVk` → kimchi `VerifierIndex`,
+  --       `actualWrapDomainSize` → wrap-domain log2. The
+  --       `slotStepDomainLog2` placeholder is consumed only at the
+  --       BasePrev / dummy site (where `proofMustVerify = false`
+  --       masks its downstream effect); InductivePrev reads the
+  --       prev's own `stepDomainLog2`.
   mkStepAdvice cfg stepCR wrapCR appInput (headSlot /\ restPrevs) (headVk /\ restVkCarrier) = do
     let
       slotMpvMax = reflectType (Proxy @mpvMax)
@@ -1652,19 +1617,12 @@ instance
             Dummy.wrapDomainLog2ForProofsVerified
               (fromEnum headActualWrapDomainSize)
         , slotStepDomainLog2:
-            -- Side-loaded VKs don't carry the prev's step domain —
-            -- the step circuit handles arbitrary step domains via
-            -- Pseudo dispatch (β3). At the prove-time BasePrev / dummy
-            -- site, only the dummy `wrapBranchData.domainLog2` and
-            -- `dummyWrapTockPublicInput`'s `stepDomainLog2` field need a
-            -- value, and only as a stand-in (the dummy is signalled by
-            -- `proofMustVerify=false`, so its FOP-domain values flow
-            -- into the per-slot `branch_data.domain_log2` PI but the
-            -- IVP mask zeros their downstream effect).
-            -- Use the side-loaded tag's compile-time upper-bound wrap
-            -- domain log2 (= mpvMax → {N0=13, N1=14, N2=15}). Mirrors
-            -- the placeholder lagrange in `shapeCompileData` for
-            -- SideLoadedCons. InductivePrev reads its own
+            -- Side-loaded VKs don't carry the prev's step domain;
+            -- the step circuit dispatches via Pseudo over [0..16] in
+            -- `Step.FinalizeOtherProof`'s SideLoadedMode. This stand-
+            -- in (= mpvMax-domain wrap log2) is consumed only at the
+            -- BasePrev/dummy site, where `proofMustVerify=false`
+            -- masks its downstream effect; InductivePrev reads
             -- `prev.stepDomainLog2`.
             Dummy.wrapDomainLog2ForProofsVerified slotMpvMax
         }

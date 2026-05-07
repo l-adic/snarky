@@ -1,35 +1,9 @@
--- | Data model + Typ for Pickles side-loaded verification keys.
--- |
--- | The PS analog of OCaml's
--- | `Pickles.Side_loaded.Verification_key` (compile.ml:1020-1047) and
--- | `Pickles_base.Side_loaded_verification_key` (the underlying
--- | `Poly.t` + `to_input`).
--- |
--- | A side-loaded VK is the verification key for the WRAP proof of
--- | another Pickles circuit, supplied at runtime rather than baked
--- | into the compile output. Used inside a STEP circuit to verify a
+-- | Data model and `Typ` for Pickles side-loaded verification keys: the
+-- | wrap-proof verification key supplied at runtime rather than baked
+-- | into compile output, used inside a step circuit to verify a
 -- | side-loaded child's wrap proof.
 -- |
--- | * Concrete value (`VerificationKey`): produced via
--- |   `vestaVerifierIndexFromSerdeJson` + `vestaHydrateVerifierIndex`,
--- |   plus the Pickles-domain wrapping fields. Carries an extra
--- |   runtime `wrapVk :: Maybe (VerifierIndex …)` consumed by the
--- |   verify path but never by the in-circuit hash.
--- | * Circuit shape (`Checked b pt`): the parameterized newtype that
--- |   the `CircuitType` / `CheckedType` instances target. It is
--- |   parameterised so that the same record carries both the value
--- |   form (`Checked Boolean (WeierstrassAffinePoint Pallas.G (F StepField))`)
--- |   and the var form (`Checked (BoolVar f) (WeierstrassAffinePoint Pallas.G (FVar f))`),
--- |   following the same idiom as `Pickles.Types.BranchData`.
--- |
--- | The `wrap_index` commitments are Pallas points (Pallas's base
--- | field is Fp = `StepField`), so each commitment is a
--- | `WeierstrassAffinePoint Pallas.G _` over the appropriate field.
--- |
--- | Reference:
--- |   mina/src/lib/crypto/pickles_base/side_loaded_verification_key.ml
--- |   mina/src/lib/crypto/pickles/side_loaded_verification_key.ml
--- |   mina/src/lib/crypto/pickles/compile.ml:1017-1047
+-- | Reference: OCaml `Pickles.Side_loaded.Verification_key`.
 module Pickles.Sideload.VerificationKey
   ( ProofsVerified(..)
   , proofsVerifiedToOneHotValue
@@ -68,17 +42,8 @@ import Snarky.Curves.Pallas as Pallas
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
 import Type.Proxy (Proxy(..))
 
---------------------------------------------------------------------------------
--- ProofsVerified — three-state nat with one-hot encoding
---------------------------------------------------------------------------------
-
--- | Number of proofs a Pickles VK verifies. The side-loaded protocol
--- | caps this at 2 (matching `Width.Max = Nat.N2`); the three-state
--- | enum lets the in-circuit one-hot vector cover {N0, N1, N2}.
--- |
--- | Mirrors `Pickles_base.Proofs_verified.t = N0 | N1 | N2`. Use
--- | `fromEnum` / `toEnum` for the OCaml `to_int` / `of_int_exn`
--- | analogs.
+-- | Number of proofs a Pickles VK verifies; capped at 2 for the
+-- | side-loaded protocol (`Width.Max = Nat.N2`).
 data ProofsVerified = N0 | N1 | N2
 
 derive instance Eq ProofsVerified
@@ -101,11 +66,8 @@ instance BoundedEnum ProofsVerified where
   toEnum = genericToEnum
   fromEnum = genericFromEnum
 
--- | One-hot vector of length 3 in field-element form:
--- |   N0 → [1, 0, 0]; N1 → [0, 1, 0]; N2 → [0, 0, 1].
--- |
--- | Mirrors OCaml's `Pickles_base.Proofs_verified.One_hot.to_input`
--- | (`pickles_base/proofs_verified.ml:147-157`).
+-- | One-hot field-element encoding:
+-- | `N0 → [1,0,0]`, `N1 → [0,1,0]`, `N2 → [0,0,1]`.
 proofsVerifiedToOneHotValue
   :: forall f. PrimeField f => ProofsVerified -> Vector 3 f
 proofsVerifiedToOneHotValue = case _ of
@@ -113,34 +75,19 @@ proofsVerifiedToOneHotValue = case _ of
   N1 -> zero :< one :< zero :< Vector.nil
   N2 -> zero :< zero :< one :< Vector.nil
 
--- | Boolean-form one-hot vector (the value-side representation when
--- | bridging to `Checked Boolean _`).
+-- | Boolean-form one-hot vector.
 proofsVerifiedToBoolVec :: ProofsVerified -> Vector 3 Boolean
 proofsVerifiedToBoolVec = case _ of
   N0 -> true :< false :< false :< Vector.nil
   N1 -> false :< true :< false :< Vector.nil
   N2 -> false :< false :< true :< Vector.nil
 
---------------------------------------------------------------------------------
--- Checked — the parameterized circuit-shape record
---
--- Carries the three Typ-relevant fields of a side-loaded VK in OCaml
--- hlist order (`side_loaded_verification_key.ml:396-401`):
---   [ max_proofs_verified ; actual_wrap_domain_size ; wrap_index ]
---
--- Parameterized on:
---   * `b`  — the boolean element type (Boolean for value, BoolVar for var)
---   * `pt` — the curve-point element type
---           (WeierstrassAffinePoint g (F f) for value,
---            WeierstrassAffinePoint g (FVar f) for var)
---
--- Following the `Pickles.Types.BranchData` idiom: a single newtype
--- carries both forms, and the CircuitType instance bridges
--- `Checked b pt → Checked bvar ptvar` whenever the inner instances
--- exist. This piggybacks on the existing `Pickles.Types.VerificationKey`
--- newtype's CircuitType for the wrap_index.
---------------------------------------------------------------------------------
-
+-- | Circuit-shape record carrying the three Typ-relevant fields of a
+-- | side-loaded VK, in OCaml hlist order
+-- | `[ max_proofs_verified ; actual_wrap_domain_size ; wrap_index ]`.
+-- |
+-- | Parameterised on `b` (Boolean / BoolVar) and `pt` (concrete /
+-- | circuit-var curve point) so the same record carries both forms.
 newtype Checked b pt = Checked
   { maxProofsVerified :: Vector 3 b
   , actualWrapDomainSize :: Vector 3 b
@@ -186,16 +133,10 @@ instance
         )
         tup
 
--- | CheckedType specialized to the side-loaded VK's actual Var form
--- | (`bvar = BoolVar f`). Mirrors OCaml
--- | `Side_loaded_verification_key.Checked.typ` which composes
--- | `One_hot.typ` (= Vector Boolean.typ + Assert.exactly_one) for both
--- | `max_proofs_verified` and `actual_wrap_domain_size`, plus
--- | `Plonk_verification_key_evals.typ` for `wrap_index`.
--- |
--- | The exactly_one constraints emit one R1CS Generic each (sum of
--- | bools = 1) — without these, PS would silently accept non-one-hot
--- | bitvecs.
+-- | `CheckedType` for the var form. Each one-hot field gets boolean
+-- | checks immediately followed by `assertExactlyOne` (matching OCaml
+-- | `One_hot.typ`'s emission order); `wrap_index` runs its on-curve
+-- | checks last.
 instance
   ( CheckedType f c ptvar
   , CheckedType f c (BoolVar f)
@@ -203,17 +144,6 @@ instance
   ) =>
   CheckedType f c (Checked (BoolVar f) ptvar) where
   check (Checked r) = do
-    -- Match OCaml `Side_loaded_verification_key.typ`'s field order:
-    -- each `One_hot.typ` runs its own boolean checks IMMEDIATELY
-    -- followed by `Boolean.Assert.exactly_one` (`one_hot_vector.ml:30-40`)
-    -- BEFORE moving to the next field. So the emission order is:
-    --   1. bool checks for max_proofs_verified bits, then exactly_one
-    --   2. bool checks for actual_wrap_domain_size bits, then exactly_one
-    --   3. on-curve checks for wrap_index points
-    --
-    -- Labels added so the circuit-diff harness can attribute each
-    -- emitted gate to a specific check (rather than them all
-    -- appearing under the parent `rule_main` scope).
     label "vk_max_proofs_verified" do
       label "boolean_checks" $ check r.maxProofsVerified
       label "exactly_one"
@@ -224,51 +154,28 @@ instance
         $ assertExactlyOne_ (Vector.toUnfoldable r.actualWrapDomainSize)
     label "vk_wrap_index" $ check r.wrapIndex
 
---------------------------------------------------------------------------------
--- User-facing types
---------------------------------------------------------------------------------
-
--- | In-circuit form of a side-loaded VK. Pallas inner-curve (= Tick's
--- | inner curve), step circuit's host field. Allocated via
+-- | In-circuit form of a side-loaded VK. Pallas inner-curve, step
+-- | circuit's host field. Allocated via
 -- | `exists @(VerificationKeyVar f) ~compute:(\_ -> toChecked vk)`.
 type VerificationKeyVar f =
   Checked (BoolVar f) (WeierstrassAffinePoint Pallas.G (FVar f))
 
 -- | Concrete (prover-side) side-loaded verification key.
 -- |
--- | Bundles two pieces:
--- |
--- |   * `circuit` — the circuit-relevant data already in `Checked`
--- |     form (one-hot bitvecs + `wrapIndex` commitments). This is
--- |     the side that gets allocated as a `VerificationKeyVar` via
--- |     `exists` — the existing parameterized `CircuitType` instance
--- |     on `Checked b pt` covers the marshalling.
--- |
--- |   * `wrapVk` — the runtime kimchi `VerifierIndex` for the
--- |     side-loaded child's wrap proof, produced via
--- |     `vestaVerifierIndexFromSerdeJson` + `vestaHydrateVerifierIndex`
--- |     (see `Pickles.Sideload.FFI`). This is an FFI handle that
--- |     can't be field-element-encoded, so we keep it OUT of the
--- |     circuit-marshalled side. Used by the Pickles verify path and
--- |     by `mkStepAdvice` for `vestaProofOracles` (driving the
--- |     dummy/InductivePrev wrap-side oracles at prove time). May be
--- |     `Nothing` when only the circuit shape is known (e.g. the
--- |     `dummy` placeholder before a real VK is loaded).
--- |
--- | This split mirrors OCaml's
--- | `Side_loaded.Verification_key.t` semantics: the `Typ.t` only
--- | marshals the Checked shape (`value_to_hlist` drops `wrap_vk`).
--- | We model that explicitly here — `circuit` and `wrapVk` are
--- | independent fields, no asymmetric `CircuitType` instance needed.
+-- | * `circuit` — the circuit-relevant data in `Checked` form;
+-- |   allocated as a `VerificationKeyVar` via `exists`.
+-- | * `wrapVk` — runtime kimchi `VerifierIndex` for the side-loaded
+-- |   child's wrap proof. FFI handle (not field-encodable), kept out
+-- |   of the circuit-marshalled side. Consumed by the verify path
+-- |   and by `mkStepAdvice` for `vestaProofOracles`. `Nothing` for
+-- |   the `dummy` placeholder.
 type VerificationKey =
   { circuit :: Checked Boolean (WeierstrassAffinePoint Pallas.G (F StepField))
   , wrapVk :: Maybe (VerifierIndex Pallas.G WrapField)
   }
 
--- | Convenience constructor for the `circuit` part: take the
--- | user-friendly `ProofsVerified` ADT for the two one-hot fields
--- | and produce the `Checked` shape with bool-vec encoding. The
--- | wrap-index commitments pass through unchanged.
+-- | Build the `circuit` part from the user-friendly `ProofsVerified`
+-- | enum for the two one-hot fields.
 mkChecked
   :: { maxProofsVerified :: ProofsVerified
      , actualWrapDomainSize :: ProofsVerified
@@ -281,10 +188,10 @@ mkChecked r = Checked
   , wrapIndex: r.wrapIndex
   }
 
--- | The dummy side-loaded VK. Mirrors `dummy` in
--- | `mina/src/lib/crypto/pickles/side_loaded_verification_key.ml:330-345`:
--- | `max_proofs_verified = N2`, `actual_wrap_domain_size = N2`,
--- | `wrap_index` filled with the curve generator, `wrap_vk = None`.
+-- | Sentinel side-loaded VK: `maxProofsVerified = N2`,
+-- | `actualWrapDomainSize = N2`, zero curve points for `wrap_index`,
+-- | `wrapVk = Nothing`. Reference: OCaml
+-- | `side_loaded_verification_key.ml`'s `dummy`.
 dummy :: VerificationKey
 dummy =
   { circuit: mkChecked
@@ -300,22 +207,14 @@ dummy =
   , wrapVk: Nothing
   }
   where
-  -- The OCaml dummy populates wrap_index with `Backend.Tock.Curve.one`'s
-  -- affine coordinates; Tock = Pallas, so this is the Pallas generator.
-  -- The exact numerical values aren't load-bearing for use as a sentinel
-  -- (the dummy is only consumed before the real VK is bound), so we use
-  -- a zero placeholder to avoid pulling in a curve-generator dependency.
+  -- The dummy is only consumed before the real VK is bound, so the
+  -- concrete commitment values aren't load-bearing — zero placeholder
+  -- avoids pulling in a curve-generator dependency.
   g :: WeierstrassAffinePoint Pallas.G (F StepField)
   g = WeierstrassAffinePoint { x: F zero, y: F zero }
 
--- | Inverse of `proofsVerifiedToBoolVec`. Reads a length-3 one-hot
--- | bit vector and returns the corresponding `ProofsVerified`.
--- |
--- | Defaults to `N0` for the zero-bit input and for malformed
--- | (non-one-hot) inputs. Callers that need strict validation
--- | should check the input themselves; in normal use the input
--- | always comes from a `proofsVerifiedToBoolVec` round-trip and is
--- | well-formed.
+-- | Inverse of `proofsVerifiedToBoolVec`. Defaults to `N0` for the
+-- | zero-bit input and for malformed (non-one-hot) inputs.
 boolVecToProofsVerified :: Vector 3 Boolean -> ProofsVerified
 boolVecToProofsVerified v =
   let
@@ -325,19 +224,10 @@ boolVecToProofsVerified v =
   in
     if b0 then N0 else if b1 then N1 else if b2 then N2 else N0
 
---------------------------------------------------------------------------------
--- to_input — the random-oracle input for hashing the side-loaded VK
---
--- Mirrors `Pickles_base.Side_loaded_verification_key.to_input`
--- (`pickles_base/side_loaded_verification_key.ml:183-200`):
---   one_hot(max_proofs_verified)        -- 3 packed 1-bit chunks
---   ++ one_hot(actual_wrap_domain_size) -- 3 packed 1-bit chunks
---   ++ field_elements(wrap_index)       -- 56 raw field elements
---------------------------------------------------------------------------------
-
--- | Build the random-oracle input for a value-side VK. Operates on
--- | the bundle's `circuit` part — `wrapVk` is irrelevant to the hash
--- | (it's an FFI handle, not field-element-encodable).
+-- | Random-oracle input for a value-side VK: 3 packed 1-bit chunks for
+-- | each one-hot field, then 56 raw field elements for `wrap_index`
+-- | (sigma · coeff · index, two coords per point). `wrapVk` is not
+-- | hashed.
 toInputValue :: VerificationKey -> Chunked StepField
 toInputValue vk =
   let
@@ -347,8 +237,6 @@ toInputValue vk =
       `RO.append` oneHotChunk (boolVecToOneHot r.actualWrapDomainSize)
       `RO.append` wrapIndexInput r.wrapIndex
   where
-  -- Convert a length-3 Boolean one-hot vec to its StepField
-  -- representation (true → one, false → zero).
   boolVecToOneHot :: Vector 3 Boolean -> Vector 3 StepField
   boolVecToOneHot = map (\b -> if b then one else zero)
 
@@ -356,10 +244,6 @@ toInputValue vk =
   oneHotChunk v =
     RO.packeds $ map (\b -> { value: b, length: 1 }) (Vector.toUnfoldable v)
 
-  -- For the value-side `wrap_index`, the inner element is
-  -- `WeierstrassAffinePoint Pallas.G (F StepField)`; flatten via the
-  -- existing CircuitType instance (which orders sigma · coeff · index
-  -- and emits `[x, y]` per point, already unwrapping each `F`).
   wrapIndexInput
     :: PT.VerificationKey (WeierstrassAffinePoint Pallas.G (F StepField))
     -> Chunked StepField
@@ -371,9 +255,8 @@ toInputValue vk =
         wi
 
 -- | In-circuit version of `toInputValue`. The one-hot bitvec lives as
--- | `BoolVar`s; we coerce to `FVar` (single-bit field expressions) for
--- | the packed chunks. The wrap_index var-side flatten goes through
--- | `varToFields` on `PT.VerificationKey`'s instance.
+-- | `BoolVar`s, coerced to `FVar` (single-bit field expressions) for
+-- | the packed chunks.
 toInputVar
   :: forall f
    . PrimeField f

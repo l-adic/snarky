@@ -87,37 +87,28 @@ import Snarky.Curves.Class (class FieldSizeInBits, class HasEndo, class PrimeFie
 -- | - `endo`: Endomorphism coefficient for scalar challenge conversion
 -- | - `linearizationPoly`: The linearization polynomial for gate constraints
 -- |
--- | Reference: step_verifier.ml:823 `finalize_other_proof` parameters,
--- |            pseudo.ml `Pseudo.Domain.to_domain`
 -- | Domain-resolution mode for `finalize_other_proof`.
 -- |
--- | * `KnownDomainsMode` — compiled-rule path. `params.domains` is the
--- |   compile-time `unique_domains` Vector (typically `Vector 1` for
--- |   single-rule, larger for multi-branch self prevs). Vanishing
--- |   polynomial uses pow2_pows + `Pseudo.mask` (compiled
--- |   `Pseudo.Domain.to_domain.vanishing_polynomial`,
--- |   `pseudo.ml:103-128`).
--- | * `SideLoadedMode` — side-loaded prev. The universe `Vector 17` of
--- |   candidate log2s ∈ [0..16] is synthesized INTERNALLY by the FOP
--- |   body from `input.domainLog2Var` — `params.domains` is IGNORED in
--- |   this mode. Mirrors OCaml `step_verifier.ml:817-840`
--- |   `side_loaded_domain` exactly: that function takes only
--- |   `~log2_size:branch_data.domain_log2` and builds `Vector.init
--- |   (S max_n) ~f:Fn.id` internally with `max_n = 16` (=
--- |   `Side_loaded_verification_key.max_domains.h`'s log2). The FOP
--- |   body emits 17 `equals_` gates + `Boolean.Assert.any` (=
--- |   OCaml `O.of_index`'s one-hot constraint at
--- |   `one_hot_vector.ml:23`) and uses the iterative `if_(mask[i],
--- |   square, …)` pattern for the vanishing polynomial (OCaml
--- |   `step_verifier.ml:796-810`).
+-- | * `KnownDomainsMode` — compiled-rule path. `params.domains` is
+-- |   the compile-time `unique_domains` Vector (typically `Vector 1`
+-- |   for single-rule, larger for multi-branch self prevs). Vanishing
+-- |   polynomial uses `pow2_pows` + `Pseudo.mask`.
+-- | * `SideLoadedMode` — side-loaded prev. The candidate-log2
+-- |   universe `Vector 17` (log2s ∈ [0..16]) is synthesized
+-- |   internally from `input.domainLog2Var`; `params.domains` is
+-- |   ignored. The FOP body emits 17 `equals_` gates +
+-- |   `Boolean.Assert.any` for the one-hot mask and uses iterative
+-- |   `if_(mask[i], square, …)` for the vanishing polynomial.
+-- |
+-- | Reference: OCaml `step_verifier.ml`'s `finalize_other_proof` +
+-- | `side_loaded_domain`.
 data DomainMode
   = KnownDomainsMode
   | SideLoadedMode
 
--- | Side-loaded domain universe size: `Vector 17` covers log2s [0..16].
--- | Mirrors OCaml `Side_loaded_verification_key.max_domains.h` which
--- | has `log2_size = 16` and `Vector.init (S max_n) ~f:Fn.id` with
--- | `max_n = 16` produces a 17-element vector.
+-- | Side-loaded domain universe size: 17 covers log2s [0..16] (= the
+-- | `max_domains.h` upper bound from
+-- | `Side_loaded_verification_key`).
 type SideLoadedDomainCount = 17
 
 -- | Maximum log2 in the side-loaded universe (= 16).

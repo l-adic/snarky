@@ -1,19 +1,11 @@
--- | N=0 wrapper for the wrap_main library circuit (Add_one_return).
+-- | N=0 wrapper for the `wrap_main` library circuit (Add_one_return):
+-- | the wrapped step proof has no prev `unfinalized_proofs` /
+-- | `messages_for_next_wrap_proof` entries, so the wrap circuit's
+-- | verify-one-of-step is minimal.
 -- |
--- | Configuration: branches=1, step_widths=[0], Max_widths_by_slot=[N0; N0],
--- | Features.none. The slot widths come from the [[0]; [0]] padded vector
--- | passed to `Wrap_main.wrap_main` in `dump_circuit_impl.ml` for this fixture.
--- |
--- | **N = 0**: no previous proofs in the step proof being wrapped. This is
--- | the only N=0 wrap fixture in the suite — the step proof's own public
--- | input has no unfinalized_proofs slots and no messages_for_next_wrap_proof
--- | entries, so the wrap circuit's verify-one-of-step is a minimal
--- | configuration compared to Simple_chain (step_widths=[1]) and
--- | Simple_chain_n2 (step_widths=[0;2]).
--- |
--- | OCaml dump target: `wrap_main_add_one_return_circuit.json` produced by
--- | `mina/src/lib/crypto/pickles/dump_circuit_impl.ml` with
--- | `step_widths:[0]`, `padded:[[0];[0]]`, `domain_log2:13`.
+-- | Configuration: `branches=1`, `step_widths=[0]`,
+-- | `Max_widths_by_slot=[N0; N0]`, `Features.none`. OCaml fixture:
+-- | `wrap_main_add_one_return_circuit.json`.
 module Pickles.CircuitDiffs.PureScript.WrapMainAddOneReturn
   ( compileWrapMainAddOneReturn
   ) where

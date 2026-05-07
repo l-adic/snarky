@@ -224,16 +224,10 @@ type LagrangeBase f =
   , circuit :: AffinePoint (FVar f)
   , condAddPt :: AffinePoint (FVar f)
   , correctionAt :: Maybe (Int -> AffinePoint (FVar f))
-  -- | When `true`, the BoolVar `Cond_add` path seals `condAddPt`
-  -- | before use. Mirrors OCaml `step_verifier.ml:436`'s
-  -- | `select_curve_points` `Vector.map ~f:(Double.map ~f:Utils.seal)`
-  -- | which seals the muxed point per coordinate. Step side-loaded
-  -- | uses `select_curve_points` for both `lagrange` (Cond_add) and
-  -- | `lagrange_with_correction` (scalarMul); WRAP multi-branch
-  -- | seals only `lagrange_with_correction` (per
-  -- | `wrap_verifier.ml:443`) and leaves `lagrange` unsealed (line
-  -- | 380). So this flag is `true` only for step side-loaded; wrap
-  -- | multi-branch leaves it `false`.
+  -- | Whether the BoolVar `Cond_add` path seals `condAddPt` before
+  -- | use. `true` for step side-loaded (which seals both `lagrange`
+  -- | and `lagrange_with_correction`); `false` for wrap multi-branch
+  -- | (which seals only `lagrange_with_correction`).
   , sealCondAddPt :: Boolean
   }
 
@@ -266,14 +260,11 @@ mkConstLagrangeBaseLookup
   -> LagrangeBaseLookup f
 mkConstLagrangeBaseLookup f i = mkConstLagrangeBase (f i)
 
--- | Sum-mask a vector of constant affine points against a vector of
--- | one-hot booleans, producing an in-circuit affine point. For 1-hot
--- | bits this reduces to selecting the active entry's point.
--- |
--- | Each coordinate is computed as `Σᵢ bᵢ * pᵢ` via pure
--- | `CVar.scale_` + `CVar.add_` ops — no R1CS constraints emitted.
--- | Mirrors the `sumMaskByBranch` pattern in `Pickles.Wrap.Main` and
--- | OCaml's `select_curve_points` (`step_verifier.ml:392-407`).
+-- | Sum-mask a vector of constant affine points against a one-hot
+-- | bitvec, producing an in-circuit affine point. Each coordinate is
+-- | computed as `Σᵢ bᵢ * pᵢ` via pure `CVar.scale_` + `CVar.add_` —
+-- | no R1CS constraints emitted. Mirrors OCaml's
+-- | `select_curve_points`.
 sumMaskedAffine
   :: forall n m f
    . PrimeField f
@@ -303,23 +294,14 @@ sumMaskedAffine bits perBranchPts =
       spTail
 
 -- | Build a `LagrangeBaseLookup` for a side-loaded slot that muxes
--- | among three per-domain lagrange tables based on a one-hot bitvec.
+-- | among three per-domain lagrange tables (`actualWrapDomainSize ∈
+-- | {N0, N1, N2}`) using a one-hot bitvec. The correction at scale
+-- | `2^shift` is computed in-circuit by sum-masking the same way.
 -- |
--- | The side-loaded VK's `actual_wrap_domain_size` is one-hot over
--- | `{N0, N1, N2}` (i.e. the three legal wrap-domain log2s). For each
--- | base index `i` we fetch one constant point per domain and
--- | sum-mask via the bitvec; the correction at scale `2^shift` is
--- | computed in-circuit by sum-masking the same way.
--- |
--- | Mirrors OCaml `step_verifier.ml`'s `wrap_domain = Side_loaded …`
--- | path (`public_input_commitment_dynamic`, lines 409-456): per-domain
--- | lagrange points are selected via `select_curve_points` over the
--- | one-hot bit vector before each scalar mul.
--- |
--- | The returned `LagrangeBase` populates `correctionAt = Just …`,
--- | which routes `scalarMulLeaf` through the per-branch path
--- | (`AddWithCircuitCorrection`). Callers must therefore use
--- | `InCircuitCorrections` mode for slots that consult this lookup.
+-- | The returned `LagrangeBase` sets `correctionAt = Just …`, which
+-- | routes `scalarMulLeaf` through the per-branch
+-- | (`AddWithCircuitCorrection`) path; callers must use
+-- | `InCircuitCorrections` mode.
 mkSideloadedLagrangeLookup
   :: forall f
    . PrimeField f
@@ -344,19 +326,14 @@ mkSideloadedLagrangeLookup curveP bits perDomainAt i =
             perDomainPts
         )
   in
-    { -- `constant` is unused on the per-branch path: every
-      -- `scalarMulLeaf` consults `correctionAt` instead, and the
-      -- in-circuit corrections are emitted via
-      -- `AddWithCircuitCorrection`. Carry the head domain's point as a
-      -- placeholder so the record typechecks.
+    { -- `constant` is unused on the per-branch path; carry the head
+      -- domain's point as a placeholder so the record typechecks.
       constant: (Vector.uncons perDomainPts).head
     , circuit: summed
     , condAddPt: summed
     , correctionAt: Just correctionAt
-    -- Step side-loaded muxes lagrange via `select_curve_points`
-    -- which seals each coordinate at line 436. Bool var `Cond_add`
-    -- consumers must seal before use to match OCaml gate emission
-    -- (~62 R1CS Generic across all bool vars in the slot's PI).
+    -- Step side-loaded seals each `Cond_add` coordinate before use
+    -- (= OCaml `select_curve_points`).
     , sealCondAddPt: true
     }
 

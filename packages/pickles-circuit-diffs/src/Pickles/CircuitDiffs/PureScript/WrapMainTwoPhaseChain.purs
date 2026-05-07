@@ -1,24 +1,19 @@
--- | Two_phase_chain wrap_main fixture: 2 branches sharing one wrap key.
+-- | Two_phase_chain `wrap_main` fixture: 2 branches sharing one wrap
+-- | key.
 -- |
--- | Configuration:
--- |   branches=2 (make_zero + increment)
--- |   step_widths=[0; 1]   (make_zero=0 prev, increment=1 prev)
--- |   slots = Slots1 1       (mpv=N1, single slot of width 1)
--- |   per-branch step domains: [9; 14] — make_zero compiles to a tiny
--- |     step circuit (no verify_one), increment compiles to a full one;
--- |     the domains DIFFER, so wrap_main goes through the per-branch
--- |     `lagrange_with_correction` dispatch path.
--- |   Features.none
+-- | * `branches = 2` (make_zero + increment).
+-- | * `step_widths = [0; 1]` (make_zero verifies 0 prevs, increment 1).
+-- | * `slots = Slots1 1` (mpv=N1, single slot of width 1).
+-- | * Per-branch step domains `[9; 14]` differ, so `wrap_main` goes
+-- |   through the per-branch `lagrange_with_correction` dispatch path.
+-- | * `Features.none`.
 -- |
--- | Step VKs are derived deterministically by recompiling each branch's
--- | step CS (which we match byte-for-byte via
--- | `compileStepMainTwoPhaseChain{MakeZero,Increment}`) and running the
--- | kimchi commitment pipeline. Mirrors the deterministic-VK fix family.
+-- | Step VKs are derived from each branch's compiled step CS via
+-- | `deriveStepVKFromCompiled`.
 -- |
--- | Note: the returned `WrapArtifact`'s `stepCs` / `stepDomainLog2` fields
--- | reflect the INCREMENT branch (the last-compiled, "main" branch). For
--- | multi-branch wraps without a parent consumer, these fields are
--- | informational only.
+-- | The returned `WrapArtifact`'s `stepCs` / `stepDomainLog2` fields
+-- | reflect the increment branch (the last-compiled "main" branch);
+-- | informational only for a multi-branch wrap with no parent consumer.
 module Pickles.CircuitDiffs.PureScript.WrapMainTwoPhaseChain
   ( WrapMainTwoPhaseChainParams
   , compileWrapMainTwoPhaseChain

@@ -121,26 +121,19 @@ wrapDomainLog2 = 15
 wrapSrsLengthLog2 :: Int
 wrapSrsLengthLog2 = 15
 
--------------------------------------------------------------------------------
--- | Step VK derivation
--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+-- VK derivation
+--------------------------------------------------------------------------------
 
 -- | Derive a step `VerifierIndex`'s commitments from a compiled step
--- | constraint system, returning a `StepVK (FVar WrapField)` ready to
--- | use as the `stepKeys` field in `WrapMainConfig`.
+-- | constraint system. Returns a `StepVK (FVar WrapField)` for use as
+-- | the `stepKeys` field in `WrapMainConfig`.
 -- |
--- | This mirrors `Pickles.Prove.Step.stepCompile`'s
+-- | Mirrors `Pickles.Prove.Step.stepCompile`'s
 -- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
 -- | createVerifierIndex` tail, then runs `extractStepVKComms +
--- | stepVkForCircuit` on the result.
--- |
--- | Used by wrap-main circuit-diff fixtures (`WrapMainN2.purs` etc.)
--- | to obtain the SAME baked-in VK constants OCaml's
--- | `Pickles.compile_promise` produces, without importing anything from
--- | the OCaml side. The step CS is byte-identical to OCaml's, the SRS
--- | is the cached Vesta SRS, and the kimchi commitment algorithm is
--- | shared via FFI — so the resulting VK is byte-identical to OCaml's
--- | computed VK.
+-- | stepVkForCircuit`. Byte-identical to OCaml's
+-- | `Pickles.compile_promise` for the same step CS + SRS.
 deriveStepVKFromCompiled
   :: forall @len
    . Reflectable len Int
@@ -165,27 +158,13 @@ deriveStepVKFromCompiled vestaSrs builtState =
   in
     stepVkForCircuit (extractStepVKComms verifierIndex)
 
--- | Derive a wrap `VerifierIndex`'s commitments from a compiled wrap
--- | constraint system, returning a `VerificationKey
--- | (WeierstrassAffinePoint PallasG (F StepField))` ready to use as the
--- | per-slot known wrap key in `perSlotVkSources` (e.g.
--- | `ConstVk realNrrWrapVK` for Tree_proof_return's slot 0).
--- |
--- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS lives
--- | in `WrapField` over the Pallas curve; the commitments are Pallas
--- | points whose coordinates are in `Pallas.BaseField = StepField`, so
--- | the resulting VK is what a step circuit consumes when verifying
--- | the wrap proof.
--- |
--- | This mirrors the wrap-side compile pipeline:
--- | `makeConstraintSystemWithPrevChallenges + createProverIndex +
--- | createVerifierIndex`, then runs `extractWrapVKCommsAdvice` on the
--- | result. Used by Tree_proof_return to obtain the SAME baked-in wrap
--- | VK constants OCaml's `Pickles.compile_promise` produces for
--- | `No_recursion_return` (see
--- | `mina/src/lib/crypto/pickles/dump_tree_proof_return/dump_tree_proof_return.ml:50-83`,
--- | which compiles NRR up-front so its `compiled.wrap_key` is loaded
--- | when TPR's compile reads slot 0's prev tag).
+-- | Wrap-side analog of `deriveStepVKFromCompiled`. The wrap CS
+-- | lives in `WrapField` over Pallas; commitments are Pallas points
+-- | with coordinates in `Pallas.BaseField = StepField`, so the
+-- | resulting VK is what a step circuit consumes when verifying the
+-- | wrap proof. Used as a per-slot known wrap key in
+-- | `perSlotVkSources` (e.g. `ConstVk realNrrWrapVK` for
+-- | Tree_proof_return's slot 0).
 deriveWrapVKFromCompiled
   :: forall @len
    . Reflectable len Int

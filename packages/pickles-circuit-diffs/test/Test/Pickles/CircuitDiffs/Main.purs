@@ -821,15 +821,11 @@ spec =
             , nrrStepSrsData: tprNrrStepSrsData
             }
         exactMatchEff "step_main_tree_proof_return_circuit" (fromCompiledCircuit <<< _.stepCs <$> compileStepMainTreeProofReturn treeProofReturnSrsData)
-        -- N=1 parent + single SIDE-LOADED prev (mpv=N2 upper bound).
-        -- Mirrors `dump_side_loaded_main.ml`'s Simple_chain rule. Drives
-        -- the byte-equality validation for β2 (one-hot wrap-domain
-        -- lagrange mux), β3 (pseudo step-domain dispatch), and β4
-        -- (max_proofs_verified runtime mask). The three per-domain
-        -- lagrange tables are at log2 ∈ {13, 14, 15} — the wrap-domain
-        -- log2s for `actual_wrap_domain_size ∈ {N0, N1, N2}` per
-        -- `common.ml:25-29`. OCaml's side_loaded_domain (step_verifier.ml:817)
-        -- muxes these via the runtime one-hot bits.
+        -- N=1 parent + single side-loaded prev (mpv=N2 upper bound).
+        -- The three per-domain lagrange tables sit at log2 ∈ {13, 14,
+        -- 15} (= the wrap-domain log2s for `actualWrapDomainSize ∈
+        -- {N0, N1, N2}`); the in-circuit dispatch one-hot-muxes among
+        -- them. Reference: OCaml `dump_side_loaded_main.ml`.
         let
           lagrangeAtD15 =
             mkConstLagrangeBaseLookup \i ->

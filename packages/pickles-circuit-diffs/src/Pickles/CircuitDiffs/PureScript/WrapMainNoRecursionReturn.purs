@@ -1,18 +1,12 @@
--- | N=0 wrapper for the wrap_main library circuit (No_recursion_return).
--- |
--- | Configuration: branches=1, step_widths=[0], Max_widths_by_slot=[N0; N0],
--- | Features.none. Same shape as Add_one_return — both are N=0 leaf rules
--- | whose step proofs have no prev unfinalized_proofs and no
--- | messages_for_next_wrap_proof entries. The wrap circuit's
--- | verify_one-of-step is the same minimal configuration; only the
--- | embedded step VK differs (since NRR's step CS uses Output mode with
--- | `output = 0`, while AOR uses Input_and_output mode).
+-- | N=0 wrapper for the `wrap_main` library circuit
+-- | (No_recursion_return). Same shape as Add_one_return; only the
+-- | embedded step VK differs (NRR uses Output mode with `output = 0`,
+-- | AOR uses Input_and_output).
 -- |
 -- | Used by `compileStepMainTreeProofReturn` to obtain NRR's compile
--- | artifact (step CS + step domain log2 + wrap CS + wrap VK), so TPR's
--- | slot 0 known wrap key is the real OCaml `Lazy.force compiled.wrap_key`
--- | rather than a placeholder. Mirrors `dump_tree_proof_return.ml:50-83`
--- | which compiles NRR up-front (`step_branch_data.ml:164`).
+-- | artifact (step CS + step domain log2 + wrap CS + wrap VK), so
+-- | TPR's slot-0 known wrap key is the real
+-- | `Lazy.force compiled.wrap_key` rather than a placeholder.
 module Pickles.CircuitDiffs.PureScript.WrapMainNoRecursionReturn
   ( compileWrapMainNoRecursionReturn
   ) where

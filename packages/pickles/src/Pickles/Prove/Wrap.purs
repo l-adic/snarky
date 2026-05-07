@@ -423,11 +423,8 @@ type WrapCompileResult =
   , constraints :: Array (KimchiRow WrapField)
   }
 
--- | Artifacts produced by `wrapProve`.
--- |
--- | Mirrors `TestContext'` shape so downstream code that previously
--- | consumed a `WrapProofContext` can be retargeted with minimal
--- | glue.
+-- | Artifacts produced by `wrapProve`. Shaped like `TestContext'` so
+-- | `WrapProofContext` consumers can be retargeted with minimal glue.
 type WrapProveResult =
   { proverIndex :: ProverIndex PallasG WrapField
   , verifierIndex :: VerifierIndex PallasG WrapField

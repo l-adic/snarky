@@ -121,11 +121,11 @@ type LoadedFixture stmtVal =
   , prevEvals :: AllEvals StepField
   , pEval0Chunks :: Array StepField
 
-  -- Phase 5.2: message digests (computed for max_proofs_verified = 0).
+  -- Message digests (computed for `max_proofs_verified = 0`).
   , messagesForNextStepProofDigest :: StepField
   , messagesForNextWrapProofDigest :: WrapField
 
-  -- Phase 5.3: width-existential carrier of width-indexed prev-proof data.
+  -- Width-existential carrier of width-indexed prev-proof data.
   -- For NRR (mpv = 0) the inner Vector width fields are all empty;
   -- `verifyOne` reads only `oldBulletproofChallenges`, which is
   -- `Vector.nil`. Other CompiledProofWidthData fields (wrapDvInput
@@ -191,7 +191,7 @@ loadFixture cfg dir = do
     dummySgs = computeDummySgValues bcd srs vestaSrs
     dummyWrapSgInStepField = dummySgs.ipa.wrap.sg
 
-    -- Phase 5.3: empty width-indexed widthData for mpv = 0.
+    -- Empty width-indexed widthData for `mpv = 0`.
     --
     -- `wrapDvInput` is only consulted by prover-side machinery; verifyOne
     -- doesn't read it. Filling with `unsafeCoerce {}` keeps the type-fit
@@ -364,7 +364,7 @@ parseStatement decode raw = do
   lmap show (decode json)
 
 --------------------------------------------------------------------------------
--- Phase 5.0: Pickles wrapping decoders
+-- Pickles wrapping decoders
 --------------------------------------------------------------------------------
 
 type DecodedPickles =
@@ -406,7 +406,7 @@ decodePicklesJson j = do
   cpcJ <- msgWrap .: "challenge_polynomial_commitment"
   cpc <- decodeAffinePoint cpcJ :: Either JsonDecodeError (AffinePoint WrapField)
 
-  -- Phase 5.1: prev_evals
+  -- prev_evals
   prevEvalsJ <- (obj .: "prev_evals") >>= decodeJson
   prevEvals <- decodeAllEvals prevEvalsJ
   let pEval0Chunks = [ prevEvals.publicEvals.zeta ]
@@ -530,7 +530,7 @@ decodeOcamlByte j = do
     Nothing -> Left (TypeMismatch ("expected single-char byte string, got empty"))
 
 --------------------------------------------------------------------------------
--- Phase 5.1: AllEvals decoder
+-- AllEvals decoder
 --------------------------------------------------------------------------------
 
 -- | Decode `prev_evals :: Plonk_types.All_evals.t` from

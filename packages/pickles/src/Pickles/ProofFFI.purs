@@ -172,13 +172,11 @@ class ProofFFI f g | f -> g where
   -- | a 128-bit value pre-endo-expansion; consumers feed them through
   -- | `Scalar_challenge.to_field` to recover full-field bulletproof
   -- | challenges.
-  -- NOTE: `proofOpeningPrechallenges` was previously a class method but
-  -- with the addition of the `prevChallenges` argument (whose `sgX`/`sgY`
-  -- field type depends on the curve's BaseField, not the scalar field
-  -- `f`), the type can't be expressed cleanly with the existing fundep.
-  -- Callers use the curve-specific foreign imports
-  -- `pallasProofOpeningPrechallenges` / `vestaProofOpeningPrechallenges`
-  -- directly.
+  -- NOTE: `proofOpeningPrechallenges` is not a class method —
+  -- `prevChallenges`'s `sgX`/`sgY` type depends on the curve's
+  -- BaseField (not the scalar field `f`), which can't be expressed
+  -- through the existing fundep. Use `pallasProofOpeningPrechallenges`
+  -- / `vestaProofOpeningPrechallenges` directly.
   proofBulletproofChallenges :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Array f
   verifyOpeningProof :: VerifierIndex g f -> { proof :: Proof g f, publicInput :: Array f } -> Boolean
   permutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: f } -> f

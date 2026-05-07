@@ -1,17 +1,16 @@
 -- | Round-trip validation for the OCaml-emitted NRR side-load fixture.
+-- | Confirms:
 -- |
--- | Phase 3 of the side-load fixtures plan (see `docs/sideload-nrr-fixtures.md`).
--- | Confirms that:
--- |   * `loadNrrFixture` parses the three OCaml-emitted files without error
--- |   * The kimchi VerifierIndex re-serializes byte-identically via Rust serde
--- |     (the JSON shape is invariant: same kimchi crate on both ends)
--- |   * The NRR statement is `Field.zero` (NRR's hard-coded `public_output`)
--- |   * The wire proof handle was constructed (didn't crash through
--- |     `vestaMakeWireProof`'s array-length and field-parsing checks)
+-- | * `loadNrrFixture` parses the OCaml-emitted files without error.
+-- | * The kimchi `VerifierIndex` re-serialises byte-identically via
+-- |   Rust serde (same kimchi crate on both ends).
+-- | * The NRR statement is `Field.zero` (NRR's hard-coded
+-- |   `public_output`).
+-- | * The wire proof handle was constructed without crashing.
 -- |
--- | Wire proof byte-round-trip is intentionally NOT tested here because
--- | the source of truth is OCaml-yojson (Pickles' hand-written shape),
--- | not Rust serde. The two formats encode the same data but differ
+-- | Wire-proof byte-round-trip is intentionally NOT tested: the source
+-- | of truth on the OCaml side is yojson (Pickles' hand-written
+-- | shape), which encodes the same data as Rust serde but differs
 -- | structurally.
 module Test.Pickles.Sideload.RoundTripNrrSpec
   ( spec
