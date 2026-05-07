@@ -58,6 +58,7 @@ packages/pickles-codegen/rust/output/
 # diff scripts in `tools/`, not by the automated test suite.
 packages/pickles/test/fixtures/*.trace
 packages/pickles/test/fixtures/witness/
+packages/pickles/test/fixtures/witness_nrr/
 
 # Generated dependency graph
 deps.svg
