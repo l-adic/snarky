@@ -32,13 +32,11 @@ module Pickles.CircuitDiffs.PureScript.StepMainTreeProofReturn
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (Tuple2, tuple2)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.CircuitDiffs.PureScript.IvpWrap (IvpWrapParams)
 import Pickles.CircuitDiffs.PureScript.StepMainNoRecursionReturn (StepMainNoRecursionReturnParams)
@@ -171,9 +169,7 @@ compileStepMainTreeProofReturn params = do
           @Unit
           @(F StepField)
           @(F StepField)
-          @( Tuple (StatementIO Unit (F StepField))
-              (Tuple (StatementIO Unit (F StepField)) Unit)
-          )
+          @(Tuple2 (StatementIO Unit (F StepField)) (StatementIO Unit (F StepField)))
           @2
           @1
           treeProofReturnRule
@@ -185,10 +181,9 @@ compileStepMainTreeProofReturn params = do
                 :< Vector.nil
           , perSlotVkSources:
               ConstVk nrrArt.wrapVk :< SharedExistsVk :< Vector.nil
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
           -- Side-loaded VK carrier: two Cons slots, both compiled.
-          (unit /\ unit /\ unit)
+          (tuple2 unit unit)
       )
       Kimchi.initialState

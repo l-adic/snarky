@@ -130,7 +130,6 @@ import Pickles.Prove.Step
   , dummyWrapTockPublicInput
   , extractWrapVKCommsAdvice
   , mkDummyMsgWrapHash
-  , mkDummyPerProofUnfinalized
   )
 import Pickles.Prove.Verify
   ( CompiledProof(..)
@@ -156,7 +155,6 @@ import Pickles.Sideload.VerificationKey (Checked(..))
 import Pickles.Sideload.VerificationKey (VerificationKey, boolVecToProofsVerified) as Sideload
 import Pickles.Step.Main (SlotVkSource(..))
 import Pickles.Step.Main as MpvPadding
-import Pickles.Step.Main as PStepMain
 import Pickles.Step.Prevs (class PrevValuesCarrier, class PrevsCarrier, PrevsSpecCons, PrevsSpecNil, PrevsSpecSideLoadedCons, StepSlot)
 import Pickles.Types
   ( PaddedLength
@@ -638,9 +636,6 @@ class
 
 instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
   shapeCompileData cfg _ =
-    let
-      bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
-    in
       { stepProveCtx:
           { srsData:
               { perSlotLagrangeAt: Vector.nil
@@ -649,16 +644,6 @@ instance CompilableSpec PrevsSpecNil Unit Unit 0 NoSlots Unit Unit Unit where
                     :: AffinePoint (F StepField)
               , perSlotFopDomainLog2s: Vector.nil
               , perSlotVkSources: Vector.nil
-              -- mpvMax-padding dummy. Wrapped in a `Unit ->` thunk
-              -- so the (Rust-FFI-using) `computeDummySgValues` call
-              -- inside `mkDummyMsgWrapHash` only fires when
-              -- `mpvFrontPad` actually needs the dummy (mpvPad > 0).
-              -- For single-rule callers `mpvPad = 0`, so the thunk
-              -- never fires and the chacha8 RNG state stays
-              -- consistent with the no-padding path.
-              , dummyUnfp: \_ ->
-                  PStepMain.liftDummyPerProofUnfinalized
-                    (mkDummyPerProofUnfinalized bcd)
               }
           , dummySg: nrrDummyWrapSg cfg.srs.pallasSrs cfg.srs.vestaSrs
           , crs: cfg.srs.vestaSrs
@@ -840,11 +825,6 @@ instance
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotVkSources:
                   headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
-              -- mpvMax-padding dummy (thunk; see Nil instance for
-              -- rationale).
-              , dummyUnfp: \_ ->
-                  PStepMain.liftDummyPerProofUnfinalized
-                    (mkDummyPerProofUnfinalized outerBcd)
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs
@@ -1613,9 +1593,6 @@ instance
                     :< restShape.stepProveCtx.srsData.perSlotFopDomainLog2s
               , perSlotVkSources:
                   headSlotVkSource :< restShape.stepProveCtx.srsData.perSlotVkSources
-              , dummyUnfp: \_ ->
-                  PStepMain.liftDummyPerProofUnfinalized
-                    (mkDummyPerProofUnfinalized outerBcd)
               }
           , dummySg: outerDummySgs.ipa.wrap.sg
           , crs: cfg.srs.vestaSrs

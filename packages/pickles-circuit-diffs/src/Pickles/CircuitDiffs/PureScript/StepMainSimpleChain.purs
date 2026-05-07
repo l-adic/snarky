@@ -13,13 +13,11 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
@@ -94,7 +92,7 @@ compileStepMainSimpleChain params = do
           @(F StepField)
           @Unit
           @(F StepField)
-          @(Tuple (StatementIO (F StepField) Unit) Unit)
+          @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
           simpleChainRule
@@ -102,14 +100,10 @@ compileStepMainSimpleChain params = do
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: (selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotVkSources: SharedExistsVk :< Vector.nil
-          -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-          -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-          -- thunks never fire — `unsafeCrashWith` is fine.
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
           -- Side-loaded VK carrier (Step 2d-β1.5b): one Cons slot,
           -- compiled (Unit), no side-loaded position; carrier = `Unit /\ Unit`.
-          (unit /\ unit)
+          (tuple1 unit)
       )
       Kimchi.initialState

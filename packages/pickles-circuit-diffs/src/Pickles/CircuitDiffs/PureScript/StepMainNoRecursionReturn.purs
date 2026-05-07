@@ -32,7 +32,6 @@ import Prelude
 import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, stepMain)
@@ -102,10 +101,6 @@ compileStepMainNoRecursionReturn params =
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotVkSources: Vector.nil
-          -- Phase 2b.31a: thunks for mpvMax-padding dummies. Single-rule
-          -- callers have mpvPad=0 so `mpvFrontPad` short-circuits and the
-          -- thunks never fire — `unsafeCrashWith` is fine.
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
           -- Side-loaded VK carrier (Step 2d-β1.5b): no slots, carrier = `Unit`.

@@ -47,7 +47,6 @@ module Pickles.Prove.Step
   , preComputeStepDomainLog2
   , stepSolveAndProve
   -- mpvMax-padding helpers
-  , mkDummyPerProofUnfinalized
   , mkDummyMsgWrapHash
   ) where
 
@@ -508,51 +507,6 @@ extractWrapVKForStepHash vk =
 -- single-rule callers `mpvMax = len → mpvPad = 0`, so the dummies
 -- are unused.
 --------------------------------------------------------------------------------
-
--- | Cross-field-encoded step-side dummy `PerProofUnfinalized` (value
--- | level). Extracts to a top-level helper the local
--- | `dummyPublicUnfinalized` defined inside `dummyAdviceShape`.
-mkDummyPerProofUnfinalized
-  :: Dummy.BaseCaseDummies
-  -> PerProofUnfinalized
-       WrapIPARounds
-       (Type2 (SplitField (F StepField) Boolean))
-       (F StepField)
-       Boolean
-mkDummyPerProofUnfinalized bcd =
-  let
-    du = wrapDummyUnfinalizedProof bcd
-    dvDu = du.deferredValues
-    pDu = dvDu.plonk
-
-    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
-    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
-
-    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
-    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
-
-    digestStep :: F StepField
-    digestStep =
-      let
-        F digestWrap = du.spongeDigestBeforeEvaluations
-      in
-        F (crossFieldDigest digestWrap)
-  in
-    PerProofUnfinalized
-      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
-      , b: t2toT2sf dvDu.b
-      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
-      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
-      , perm: t2toT2sf pDu.perm
-      , spongeDigest: digestStep
-      , beta: UnChecked (chalToStep pDu.beta)
-      , gamma: UnChecked (chalToStep pDu.gamma)
-      , alpha: UnChecked (chalToStep pDu.alpha)
-      , zeta: UnChecked (chalToStep pDu.zeta)
-      , xi: UnChecked (chalToStep dvDu.xi)
-      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
-      , shouldFinalize: false
-      }
 
 -- | Cross-field-encoded step-side dummy `messages_for_next_wrap_proof`
 -- | digest (value level). Hashes a constant

@@ -24,10 +24,8 @@ import Data.Vector (Vector)
 import Data.Vector as Vector
 import Effect (Effect)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
-import Pickles.Dummy as Dummy
-import Pickles.Prove.Step (mkDummyPerProofUnfinalized)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
-import Pickles.Step.Main (RuleOutput, liftDummyPerProofUnfinalized, stepMain)
+import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
 import Pickles.Types (StepField)
 import Snarky.Backend.Compile (compile)
@@ -60,44 +58,28 @@ makeZeroRule appState = do
 compileStepMainTwoPhaseChainMakeZero
   :: StepMainTwoPhaseChainMakeZeroParams -> Effect StepArtifact
 compileStepMainTwoPhaseChainMakeZero params =
-  let
-    -- Front-padding dummy unfinalized (mpvPad=1). Critical detail:
-    -- pass `maxProofsVerified: 0` here (NOT the wrap's mpv=N1).
-    -- `baseCaseDummies` uses this only to pick the Ro force order
-    -- via `forceOrderFor`: mpv=1 → ProofDummyFirst, anything else →
-    -- UnfinalizedFirst. In OCaml's two_phase_chain make_zero step CS
-    -- build, `Unfinalized.Constant.dummy` is forced BEFORE any
-    -- `Proof.dummy` (make_zero has no prev slots), so the
-    -- `unfinalizedConstantDummy` Ro samples should come from a state
-    -- that hasn't been advanced by `proofDummy`. `UnfinalizedFirst`
-    -- (chosen by mpv≠1) gives that state. The `forceOrderFor mpv=1
-    -- → ProofDummyFirst` mapping was empirically derived from
-    -- single-rule SimpleChain N1, where the rule has 1 prev slot →
-    -- Proof.dummy DOES force first; that's not the case for
-    -- multi-rule make_zero.
-    bcd = Dummy.baseCaseDummies { maxProofsVerified: 0 }
-  in
-    mkStepArtifact <$>
-      compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
-        -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
-        -- so step PI front-pads 1 dummy unfinalized_proof slot.
-        -- Output size = 1 * 32 + 1 + 1 = 34.
-        ( \_ -> stepMain
-            @PrevsSpecNil
-            @(F StepField)
-            @Unit
-            @Unit
-            @Unit
-            @1
-            @1
-            makeZeroRule
-            { perSlotLagrangeAt: Vector.nil
-            , blindingH: params.blindingH
-            , perSlotFopDomainLog2s: Vector.nil
-            , perSlotVkSources: Vector.nil
-            , dummyUnfp: \_ -> liftDummyPerProofUnfinalized (mkDummyPerProofUnfinalized bcd)
-            }
-            dummyWrapSg
-            unit
-        )
-        Kimchi.initialState
+  -- mpvMax=1, mpvPad=1: rule has n=0 prevs but the wrap is mpv=N1,
+  -- so step PI front-pads 1 dummy unfinalized_proof slot. Output size
+  -- = 1*32 + 1 + 1 = 34. The dummy's `bcd` is now derived inside
+  -- `stepMain` from `len = 0`, matching what we used to pass here
+  -- explicitly (`baseCaseDummies { maxProofsVerified: 0 }`).
+  mkStepArtifact <$>
+    compile (Proxy @Unit) (Proxy @(Vector 34 (F StepField))) (Proxy @(KimchiConstraint StepField))
+      ( \_ -> stepMain
+          @PrevsSpecNil
+          @(F StepField)
+          @Unit
+          @Unit
+          @Unit
+          @1
+          @1
+          makeZeroRule
+          { perSlotLagrangeAt: Vector.nil
+          , blindingH: params.blindingH
+          , perSlotFopDomainLog2s: Vector.nil
+          , perSlotVkSources: Vector.nil
+          }
+          dummyWrapSg
+          unit
+      )
+      Kimchi.initialState

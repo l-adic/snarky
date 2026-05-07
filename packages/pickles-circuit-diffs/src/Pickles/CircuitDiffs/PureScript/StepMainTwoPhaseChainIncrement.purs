@@ -25,13 +25,11 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact, preComputeSelfStepDomainLog2)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Step.Main (RuleOutput, SlotVkSource(..), stepMain)
@@ -99,7 +97,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           @(F StepField)
           @Unit
           @(F StepField)
-          @(Tuple (StatementIO (F StepField) Unit) Unit)
+          @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @2
           incrementRule
@@ -112,9 +110,8 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
           , perSlotFopDomainLog2s:
               (makeZeroLog2 :< selfLog2 :< Vector.nil) :< Vector.nil
           , perSlotVkSources: SharedExistsVk :< Vector.nil
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
-          (unit /\ unit)
+          (tuple1 unit)
       )
       Kimchi.initialState

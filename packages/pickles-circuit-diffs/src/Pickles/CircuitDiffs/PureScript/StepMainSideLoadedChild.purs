@@ -27,7 +27,7 @@ import Prelude
 import Data.Maybe (fromJust)
 import Data.Vector as Vector
 import Effect (Effect)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.Step.Main (RuleOutput, stepMain)
 import Pickles.Step.Prevs (PrevsSpecNil)
@@ -144,7 +144,6 @@ compileStepMainSideLoadedChild params =
           , blindingH: params.blindingH
           , perSlotFopDomainLog2s: Vector.nil
           , perSlotVkSources: Vector.nil
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
           unit

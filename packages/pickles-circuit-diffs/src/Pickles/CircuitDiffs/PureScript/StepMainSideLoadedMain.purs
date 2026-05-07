@@ -25,13 +25,11 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested ((/\))
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
 import Effect.Exception (throw)
-import Partial.Unsafe (unsafeCrashWith)
 import Pickles.CircuitDiffs.PureScript.Common (StepArtifact, dummyWrapSg, mkStepArtifact)
 import Pickles.PublicInputCommit (LagrangeBaseLookup)
 import Pickles.Sideload.VerificationKey as Sideload
@@ -134,7 +132,7 @@ compileStepMainSideLoadedMain params =
           @(F StepField)
           @Unit
           @(F StepField)
-          @(Tuple (StatementIO (F StepField) Unit) Unit)
+          @(Tuple1 (StatementIO (F StepField) Unit))
           @1
           @1
           sideLoadedMainRule
@@ -174,12 +172,11 @@ compileStepMainSideLoadedMain params =
           , perSlotVkSources:
               SideloadedExistsVk params.sideloadedPerDomainLagrangeAt
                 :< Vector.nil
-          , dummyUnfp: \_ -> unsafeCrashWith "dummyUnfp: unused at mpvPad=0"
           }
           dummyWrapSg
           -- Side-loaded VK carrier: one slot with the dummy VK,
           -- mirroring OCaml's `exists Side_loaded_verification_key.typ
           -- ~compute:(... .dummy)` allocation.
-          (Sideload.dummy /\ unit)
+          (tuple1 Sideload.dummy)
       )
       Kimchi.initialState

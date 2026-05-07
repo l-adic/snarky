@@ -11,6 +11,7 @@ module Pickles.Dummy
   , computeDummySgValues
   , dummyIpaChallenges
   , wrapDummyUnfinalizedProof
+  , mkDummyPerProofUnfinalized
   , stepDummyUnfinalizedProof
   , wrapDomainLog2ForProofsVerified
   , Ro
@@ -54,22 +55,23 @@ import Pickles.PlonkChecks (AllEvals)
 import Pickles.PlonkChecks.GateConstraints (buildChallenges, buildEvalPoint)
 import Pickles.PlonkChecks.Permutation (permContribution, permScalar)
 import Pickles.PlonkChecks.XiCorrect (FrSpongeInput, frSpongeChallengesPure)
+import Pickles.Prove.Pure.Common (crossFieldDigest)
 import Pickles.Sponge (initialSponge)
-import Pickles.Types (StepField, StepIPARounds, WrapField, WrapIPARounds)
+import Pickles.Types (PerProofUnfinalized(..), StepField, StepIPARounds, WrapField, WrapIPARounds)
 import Pickles.Verify.Types (UnfinalizedProof)
 import Prim.Int (class Add)
 import RandomOracle.Sponge as PureSponge
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
 import Snarky.Backend.Kimchi.Impl.Vesta as VestaImpl
 import Snarky.Backend.Kimchi.Types (CRS)
-import Snarky.Circuit.DSL (F(..), SizedF, coerceViaBits, fromBits)
-import Snarky.Circuit.DSL.SizedF (fromField, toField, wrapF) as SizedF
+import Snarky.Circuit.DSL (F(..), SizedF, UnChecked(..), coerceViaBits, fromBits)
+import Snarky.Circuit.DSL.SizedF (fromField, toField, unwrapF, wrapF) as SizedF
 import Snarky.Circuit.Kimchi (toFieldPure)
 import Snarky.Curves.Class (class FieldSizeInBits, class PrimeField, EndoScalar(..), endoScalar, fromBigInt, pow) as Curves
 import Snarky.Curves.Pallas as Pallas
 import Snarky.Curves.Vesta as Vesta
 import Snarky.Data.EllipticCurve (AffinePoint)
-import Snarky.Types.Shifted (class Shifted, Type2(..), toShifted)
+import Snarky.Types.Shifted (class Shifted, SplitField, Type2(..), fromShifted, toShifted)
 import Type.Proxy (Proxy(..))
 
 -------------------------------------------------------------------------------
@@ -611,6 +613,52 @@ wrapDummyUnfinalizedProof bcd =
     , shouldFinalize: false
     , spongeDigestBeforeEvaluations: F digestDummy
     }
+
+-- | Cross-field-encoded step-side dummy `PerProofUnfinalized` (value
+-- | level). Used by `stepMain` to front-pad the step PI's
+-- | `unfinalized_proofs` vector from `len` to `mpvMax`. Mirrors OCaml
+-- | `step.ml:782-787`'s `Vector.extend_front ... Unfinalized.dummy`.
+mkDummyPerProofUnfinalized
+  :: BaseCaseDummies
+  -> PerProofUnfinalized
+       WrapIPARounds
+       (Type2 (SplitField (F StepField) Boolean))
+       (F StepField)
+       Boolean
+mkDummyPerProofUnfinalized bcd =
+  let
+    du = wrapDummyUnfinalizedProof bcd
+    dvDu = du.deferredValues
+    pDu = dvDu.plonk
+
+    t2toT2sf :: Type2 (F WrapField) -> Type2 (SplitField (F StepField) Boolean)
+    t2toT2sf t = toShifted (fromShifted t :: F WrapField)
+
+    chalToStep :: SizedF 128 (F WrapField) -> SizedF 128 (F StepField)
+    chalToStep s = SizedF.wrapF (coerceViaBits (SizedF.unwrapF s))
+
+    digestStep :: F StepField
+    digestStep =
+      let
+        F digestWrap = du.spongeDigestBeforeEvaluations
+      in
+        F (crossFieldDigest digestWrap)
+  in
+    PerProofUnfinalized
+      { combinedInnerProduct: t2toT2sf dvDu.combinedInnerProduct
+      , b: t2toT2sf dvDu.b
+      , zetaToSrsLength: t2toT2sf pDu.zetaToSrsLength
+      , zetaToDomainSize: t2toT2sf pDu.zetaToDomainSize
+      , perm: t2toT2sf pDu.perm
+      , spongeDigest: digestStep
+      , beta: UnChecked (chalToStep pDu.beta)
+      , gamma: UnChecked (chalToStep pDu.gamma)
+      , alpha: UnChecked (chalToStep pDu.alpha)
+      , zeta: UnChecked (chalToStep pDu.zeta)
+      , xi: UnChecked (chalToStep dvDu.xi)
+      , bulletproofChallenges: map (UnChecked <<< chalToStep) dvDu.bulletproofChallenges
+      , shouldFinalize: false
+      }
 
 -- | Step-side dummy unfinalized proof, mirroring OCaml's
 -- | `Wrap_deferred_values.expand_deferred` applied to `Proof.dummy`.

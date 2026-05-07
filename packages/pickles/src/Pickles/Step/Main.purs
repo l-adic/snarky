@@ -41,6 +41,7 @@ import Data.Traversable (traverse)
 import Data.Vector (Vector, (!!), (:<))
 import Data.Vector as Vector
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Pickles.Dummy as Dummy
 import Pickles.Linearization as Linearization
 import Pickles.Linearization.FFI as LinFFI
 import Pickles.PublicInputCommit (CorrectionMode(..), LagrangeBaseLookup, mkSideloadedLagrangeLookup)
@@ -201,20 +202,6 @@ type StepMainSrsData len nd =
   -- | `unique_domains` for `Pseudo.Domain.to_domain` dispatch.
   , perSlotFopDomainLog2s :: Vector len (Vector nd Int)
   , perSlotVkSources :: Vector len SlotVkSource
-  -- | Thunk producing the dummy `UnfinalizedProof` used to front-pad
-  -- | the step PI's unfinalized_proofs vector from `len` to `mpvMax`.
-  -- | Mirrors OCaml `step.ml:782-787` (`Vector.extend_front ...
-  -- | Unfinalized.dummy`). Construct via
-  -- | `liftDummyPerProofUnfinalized` applied to
-  -- | `Pickles.Prove.Step.mkDummyPerProofUnfinalized`.
-  -- |
-  -- | Wrapped in `Unit ->` because `mkDummyPerProofUnfinalized`
-  -- | indirectly calls Rust FFI (`pallasSrsBPolyCommitmentPoint`,
-  -- | `vestaSrsBPolyCommitmentPoint`) which can advance the chacha8
-  -- | RNG counter shared with the kimchi prover. Forcing the thunk
-  -- | only when `mpvPad > 0` keeps the single-rule path
-  -- | byte-identical with the pre-Phase-2b.31a witness.
-  , dummyUnfp :: Unit -> UnfinalizedProof
   }
 
 -------------------------------------------------------------------------------
@@ -754,7 +741,6 @@ stepMain
   , blindingH
   , perSlotFopDomainLog2s
   , perSlotVkSources
-  , dummyUnfp
   }
   dummySg
   sideloadedVkCarrier = do
@@ -1120,7 +1106,18 @@ stepMain
   --     positions are circuit Vars (not Constants) and the
   --     output→PI assertEqual_ permutation-ties without emitting an
   --     extra Generic gate.
+  --
+  -- The dummy is derived from `Dummy.baseCaseDummies { maxProofsVerified =
+  -- len }` — the rule's own prev count, NOT mpvMax. Matches what every
+  -- caller used to pass (production CompilableSpec instances and the
+  -- one fixture that actually fired the thunk all set bcd's mpv = ruleMpv).
   let
+    dummyUnfp _ =
+      liftDummyPerProofUnfinalized
+        (Dummy.mkDummyPerProofUnfinalized
+            (Dummy.baseCaseDummies
+                { maxProofsVerified: reflectType (Proxy @len) }))
+
     unfinalizedProofsPadded :: Vector mpvMax UnfinalizedProof
     unfinalizedProofsPadded = mpvFrontPad dummyUnfp unfinalizedProofs
 
