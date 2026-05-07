@@ -30,7 +30,8 @@ module Pickles.Step.FinalizeOtherProof
 import Prelude
 
 import Data.Array as Array
-import Data.Fin (getFinite, unsafeFinite)
+import Data.Fin (Finite, getFinite, unsafeFinite)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Foldable (foldM)
 import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
@@ -652,12 +653,11 @@ finalizeOtherProofCircuit ops params { unfinalized, witness, mask, prevChallenge
       t2 <- label "perm_init_2" $ mul_ t1 a21
       label "perm_init_3" $ mul_ t2 zkPoly
     let
-      wSigmaPerm :: Array (Tuple Int (Tuple (FVar f) (FVar f)))
-      wSigmaPerm = Array.mapWithIndex Tuple
-        $ Vector.toUnfoldable
+      wSigmaPerm :: Vector 6 (Tuple (Finite 6) (Tuple (FVar f) (FVar f)))
+      wSigmaPerm = mapWithIndex Tuple
         $ Vector.zipWith Tuple (Vector.take @6 w0) s0
     result <- foldM
-      ( \acc (Tuple i (Tuple wi si)) -> label ("perm_fold_" <> show i) do
+      ( \acc (Tuple fi (Tuple wi si)) -> label ("perm_fold_" <> show (getFinite fi)) do
           betaSigma <- label "betaSigma" $ mul_ beta si
           let term = add_ (add_ gamma betaSigma) wi
           label "acc_mul" $ mul_ acc term
