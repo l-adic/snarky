@@ -29,6 +29,8 @@ module Pickles.Step.FinalizeOtherProof
 
 import Prelude
 
+import Control.Monad.State.Trans (evalStateT, get, put)
+import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
 import Data.FunctorWithIndex (mapWithIndex)
@@ -38,6 +40,7 @@ import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
 import Data.Semigroup.Foldable as Foldable1
 import Data.Traversable (for, traverse)
+import Data.TraversableWithIndex (traverseWithIndex)
 import Data.Tuple (Tuple(..))
 import Data.Vector (Vector, zipWith, (!!))
 import Data.Vector as Vector
@@ -709,23 +712,24 @@ mkSideLoadedOnesPrefixMask
   => FVar f
   -> Snarky (KimchiConstraint f) t m (Vector 16 (BoolVar f))
 mkSideLoadedOnesPrefixMask first_zero = label "ones_prefix_mask" do
-  -- Iterate i = 0..15, threading the running `value` and collecting
-  -- it after each AND. The collected bits land in left-to-right
-  -- order; convert to Vector 16 via `unsafePartial fromJust`
-  -- (length is statically 16 by construction).
+  -- Iterate i = 0..15 in `StateT BoolVar` over the underlying Snarky
+  -- monad: each step reads the running AND from state, computes
+  -- `newAcc = prev ∧ (first_zero ≠ i)`, writes it back, and emits it
+  -- as the visited value. `traverseWithIndex` collects the per-index
+  -- values into the result `Vector 16`.
   let
-    step
-      :: { acc :: BoolVar f, masks :: Array (BoolVar f) }
-      -> Int
-      -> Snarky (KimchiConstraint f) t m
-           { acc :: BoolVar f, masks :: Array (BoolVar f) }
-    step st i = do
-      eq <- equals_ first_zero (const_ (fromInt i))
-      newAcc <- (and_ st.acc) (not_ eq)
-      pure { acc: newAcc, masks: st.masks <> [ newAcc ] }
-  result <- foldM step { acc: true_, masks: [] } (Array.range 0 15)
-  case Vector.toVector result.masks of
-    Just v -> pure v
-    Nothing -> unsafeThrow
-      "Pickles.Step.FinalizeOtherProof.mkSideLoadedOnesPrefixMask: \
-      \expected exactly 16 mask bits — bug in helper construction."
+    indices :: Vector 16 (Finite 16)
+    indices = Vector.generate identity
+  evalStateT
+    ( traverseWithIndex
+        ( \fi _ -> do
+            let i = getFinite fi
+            prev <- get
+            eq <- lift $ equals_ first_zero (const_ (fromInt i))
+            newAcc <- lift $ (and_ prev) (not_ eq)
+            put newAcc
+            pure newAcc
+        )
+        indices
+    )
+    true_
