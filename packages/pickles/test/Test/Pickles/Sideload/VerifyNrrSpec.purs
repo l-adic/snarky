@@ -14,11 +14,24 @@ module Test.Pickles.Sideload.VerifyNrrSpec
 
 import Prelude
 
+import Data.Vector as Vector
 import Effect.Aff (Aff)
+import Pickles.Constants (zkRows)
+import Pickles.Linearization (pallas) as Linearization
+import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Verify (CompiledProof(..), mkVerifier, verifyOne)
+import Pickles.ProofFFI (permutationVanishingPolynomial)
+import Pickles.Types (StepField, StepIPARounds)
+import Safe.Coerce (coerce)
+import Snarky.Circuit.DSL (F(..))
+import Snarky.Circuit.Kimchi.EndoScalar (toFieldPure)
+import Snarky.Curves.Class (EndoScalar(..), endoScalar)
 import Test.Pickles.Sideload.Loader (loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
+import Type.Proxy (Proxy(..))
+import Data.Reflectable (reflectType)
 
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Sideload.NRR verify" do
@@ -30,6 +43,51 @@ spec = describe "Pickles.Sideload.NRR verify" do
         { wrapVK: fixture.vk
         , vestaSrs: fixture.vestaSrs
         , stepDomainLog2: fixture.stepDomainLog2
+        }
+
+      -- Compute `wrapDv` by running the same `expandDeferredForVerify`
+      -- the verifier's stage 1 runs internally. The field is unused by
+      -- `verifyOne` (it reconstructs deferred values from the skeleton
+      -- itself), but `CompiledProof` carries it for the prover-side
+      -- self-consistency test in `Test.Pickles.Verify.ExpandDeferredEq`,
+      -- which compares the prover's `wrapComputeDeferredValues` output
+      -- against `expandDeferredForVerify` of the same skeleton.
+      --
+      -- That ExpandDeferredEq check requires a PROVER-COMPUTED
+      -- `wrapDv` (different code path from the verifier's
+      -- expansion) — OCaml fixtures only ship the skeleton, so we
+      -- can't run that consistency check here. The end-to-end
+      -- `verifyOne` assertion below is the meaningful cross-stack
+      -- check: if it returns `true`, PS's `expandDeferredForVerify`
+      -- agrees with OCaml's expansion to within whatever the kimchi
+      -- batch-verify pins down.
+      stepEndo = case (endoScalar :: EndoScalar StepField) of EndoScalar e -> e
+      zetaField = coerce (toFieldPure fixture.rawPlonk.zeta (F stepEndo)) :: StepField
+      vanishesOnZkAtZeta = permutationVanishingPolynomial
+        { domainLog2: fixture.stepDomainLog2
+        , zkRows
+        , pt: zetaField
+        }
+
+      wrapDv = expandDeferredForVerify
+        { rawPlonk: fixture.rawPlonk
+        , rawBulletproofChallenges: fixture.rawBulletproofChallenges
+        , branchData: fixture.branchData
+        , spongeDigestBeforeEvaluations: fixture.spongeDigestBeforeEvaluations
+        , allEvals: fixture.prevEvals
+        , pEval0Chunks: fixture.pEval0Chunks
+        -- NRR has `mpv = 0` → `oldBulletproofChallenges` is `Vector 0`
+        -- (empty). The challenge-digest sub-sponge absorbs nothing.
+        , oldBulletproofChallenges: Vector.nil
+        , domainLog2: fixture.stepDomainLog2
+        , zkRows
+        , srsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
+        , generator: domainGenerator fixture.stepDomainLog2 :: StepField
+        , shifts: domainShifts fixture.stepDomainLog2
+        , vanishesOnZk: vanishesOnZkAtZeta
+        , omegaForLagrange: \_ -> one
+        , endo: stepEndo
+        , linearizationPoly: Linearization.pallas
         }
 
       compiledProof
@@ -50,11 +108,7 @@ spec = describe "Pickles.Sideload.NRR verify" do
         , messagesForNextWrapProofDigest: fixture.messagesForNextWrapProofDigest
         , widthData: fixture.widthData
         , stepDomainLog2: fixture.stepDomainLog2
-        -- `wrapDv` is only consulted by self-consistency tests; verifyOne
-        -- doesn't read it. We don't have it from the OCaml fixture.
-        , wrapDv: unsafeUndefined
+        , wrapDv
         }
 
     verifyOne verifier compiledProof `shouldEqual` true
-
-foreign import unsafeUndefined :: forall a. a

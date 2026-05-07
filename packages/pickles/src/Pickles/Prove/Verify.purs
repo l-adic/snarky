@@ -48,6 +48,7 @@ import Data.Exists (Exists, mkExists, runExists)
 import Data.Reflectable (class Reflectable, reflectType)
 import Data.Vector (Vector)
 import Data.Vector as Vector
+import Pickles.Constants (zkRows)
 import Pickles.Linearization (pallas) as Linearization
 import Pickles.Linearization.FFI (domainGenerator, domainShifts)
 import Pickles.Linearization.Types (LinearizationPoly)
@@ -81,7 +82,7 @@ type Verifier =
   -- | Per-compiled-circuit — varies depending on constraint count;
   -- | read via `pallasProverIndexDomainLog2` at `mkVerifier` time.
   , stepDomainLog2 :: Int
-  -- | Kimchi `zkRows` (= 3 in standard Mina).
+  -- | Kimchi `zkRows` (`Pickles.Constants.zkRows`).
   , stepZkRows :: Int
   -- | Step SRS size log2. Protocol constant for the Pasta/Pickles cycle
   -- | (= `Common.Max_degree.step_log2` = `StepIPARounds` = 16), NOT a
@@ -112,7 +113,7 @@ mkVerifier { wrapVK, vestaSrs, stepDomainLog2 } =
   { wrapVK
   , vestaSrs
   , stepDomainLog2
-  , stepZkRows: 3
+  , stepZkRows: zkRows
   , stepSrsLengthLog2: reflectType (Proxy :: Proxy StepIPARounds)
   , stepGenerator: domainGenerator stepDomainLog2 :: StepField
   , stepShifts: domainShifts stepDomainLog2 :: Vector 7 StepField
