@@ -40,11 +40,13 @@ module Test.Pickles.Prove.SideLoadedMain
 import Prelude
 
 import Control.Monad.Except (runExceptT)
+import Control.Monad.Trans.Class (lift) as MT
 import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
 import Data.Tuple.Nested (Tuple1, tuple1, (/\))
+import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -63,13 +65,15 @@ import Pickles.Prove.Compile
 import Pickles.Prove.Step (StepRule, extractWrapVKCommsAdvice)
 import Pickles.Sideload.VerificationKey (ProofsVerified(..), mkChecked)
 import Pickles.Sideload.VerificationKey (VerificationKey) as Sideload
+import Pickles.Step.Advice (getPrevAppStates)
 import Pickles.Step.Prevs (PrevsSpecNil, PrevsSpecSideLoadedCons)
-import Pickles.Types (StatementIO, StepField)
+import Pickles.Types (StatementIO(..), StepField)
 import Pickles.Wrap.Slots (NoSlots, Slots1)
 import Safe.Coerce (coerce)
 import Snarky.Backend.Kimchi.Class (createCRS)
 import Snarky.Backend.Kimchi.Impl.Pallas as PallasImpl
-import Snarky.Circuit.DSL (F(..), FVar, SizedF, assertEqual_, const_, exists)
+import Snarky.Circuit.CVar (add_) as CVar
+import Snarky.Circuit.DSL (F(..), FVar, SizedF, assertAny_, assertEqual_, const_, equals_, exists, true_)
 import Snarky.Circuit.Kimchi.EndoMul (endo)
 import Snarky.Circuit.Kimchi.EndoScalar (toFieldChecked')
 import Snarky.Circuit.Kimchi.VarBaseMul (scaleFast1)
@@ -77,7 +81,6 @@ import Snarky.Curves.Class (fromInt, generator, toAffine)
 import Snarky.Curves.Pasta (PallasG)
 import Snarky.Data.EllipticCurve (WeierstrassAffinePoint(..))
 import Snarky.Types.Shifted (Type1(..))
-import Test.Pickles.Prove.SimpleChain (simpleChainRule)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Unsafe.Coerce (unsafeCoerce)
@@ -163,6 +166,37 @@ type SideLoadedMainRules =
     (Tuple1 Unit)
     RulesNil
 
+-- | Side-loaded main rule. Body is structurally `simpleChainRule`'s
+-- | (assert `1 + prev == self` OR base case), but `proofMustVerify`
+-- | is the constant `true_` instead of `not_ isBaseCase` — mirrors
+-- | OCaml `dump_side_loaded_main.ml:179`. A non-constant
+-- | `proofMustVerify` would emit ~25 extra Generic gates in the step
+-- | circuit (vanishing under `true_` constant-folding), shifting the
+-- | step VK and cascading through the wrap CS's baked `step_keys`
+-- | constants → wrap VK `coefficients_comm[0,5]` divergence.
+sideLoadedMainRule
+  :: StepRule 1
+       (Tuple1 (StatementIO (F StepField) Unit))
+       (F StepField)
+       (FVar StepField)
+       Unit
+       Unit
+       (F StepField)
+       (FVar StepField)
+sideLoadedMainRule self = do
+  prev <- exists $ MT.lift do
+    stmt /\ _ <- getPrevAppStates unit
+    let StatementIO { input } = stmt
+    pure input
+  isBaseCase <- equals_ (const_ zero) self
+  selfCorrect <- equals_ (CVar.add_ (const_ one) prev) self
+  assertAny_ [ selfCorrect, isBaseCase ]
+  pure
+    { prevPublicInputs: prev :< Vector.nil
+    , proofMustVerify: true_ :< Vector.nil
+    , publicOutput: unit
+    }
+
 spec :: SpecT Aff Unit Aff Unit
 spec = describe "Pickles.Prove.SideLoadedMain" do
   it "parent prove with InductivePrev (PS-compiled child, width-lifted to N2)" \_ -> do
@@ -246,7 +280,7 @@ spec = describe "Pickles.Prove.SideLoadedMain" do
       @1
       @Unit
       @(F StepField)
-      simpleChainRule
+      sideLoadedMainRule
       (tuple1 unit)
 
     parent <- liftEffect $ compileMulti
