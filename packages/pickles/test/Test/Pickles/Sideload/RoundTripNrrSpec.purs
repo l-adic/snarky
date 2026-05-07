@@ -22,7 +22,7 @@ import Effect.Aff (Aff)
 import Pickles.Sideload.FFI (vestaVerifierIndexToSerdeJson)
 import Pickles.Types (StepField)
 import Snarky.Curves.Class (fromInt)
-import Test.Pickles.Sideload.Loader (loadNrrFixture)
+import Test.Pickles.Sideload.Loader (OcamlProof(..), loadNrrFixture)
 import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
@@ -32,8 +32,9 @@ spec = describe "Pickles.Sideload.NRR roundtrip" do
     fixture <- loadNrrFixture "packages/pickles/test/fixtures/sideload/nrr"
     -- VK byte-identity round-trip: re-serialize the loaded handle and check
     -- it matches the original on-disk JSON.
-    let reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
+    let
+      reSerializedVk = vestaVerifierIndexToSerdeJson fixture.vk
+      OcamlProof p = fixture.ocamlProof
     reSerializedVk `shouldEqual` fixture.vkJson
-    -- NRR's public_output is hard-coded to `Field.zero` (see
-    -- `dump_nrr_fixtures.ml` line 41 / `dump_no_recursion_return.ml`).
-    fixture.statement `shouldEqual` (fromInt 0 :: StepField)
+    -- NRR's public_output is hard-coded to `Field.zero`.
+    p.statement `shouldEqual` (fromInt 0 :: StepField)

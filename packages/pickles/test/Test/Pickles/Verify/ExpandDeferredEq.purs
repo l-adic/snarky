@@ -102,23 +102,16 @@ spec = describe "Pickles.Prove.Pure.Verify" do
       Right p -> pure p
 
     -- The width-sized fields (including wrapDvInput) are hidden behind
-    -- `r.widthData`'s existential after the GADT-like refactor of
-    -- `CompiledProof`. `runExists` recovers the typed values inside a
-    -- polymorphic continuation. `wrapDvInput` is always `Just …` for
-    -- a `compileMulti`-produced `CompiledProof`.
+    -- `r.widthData`'s existential. `runExists` recovers the typed
+    -- values inside a polymorphic continuation.
     let CompiledProof r = cp
     runExists
-      ( \(CompiledProofWidthData wd) -> case wd.wrapDvInput of
-          Just dvInput ->
-            assertExpandDeferredMatches
-              { dvProver: r.wrapDv
-              , dvInput
-              , oldBulletproofChallenges: wd.oldBulletproofChallenges
-              }
-          Nothing ->
-            liftEffect $ Exc.throw
-              "ExpandDeferredEq: expected Just wrapDvInput from \
-              \compileMulti-produced CompiledProof"
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.oldBulletproofChallenges
+            }
       )
       r.widthData
 
@@ -148,20 +141,15 @@ spec = describe "Pickles.Prove.Pure.Verify" do
 
     let CompiledProof r = cp
     -- Simple_chain b0: prev proof is the dummy wrap, its step-side IPA
-    -- challenges are `dummyIpaChallenges.stepExpanded`. The
-    -- compile-API surfaces these as part of `wrapDvInput.prevChallenges`.
+    -- challenges are `dummyIpaChallenges.stepExpanded`. The compile-API
+    -- surfaces these as part of `wrapDvInput.prevChallenges`.
     runExists
-      ( \(CompiledProofWidthData wd) -> case wd.wrapDvInput of
-          Just dvInput ->
-            assertExpandDeferredMatches
-              { dvProver: r.wrapDv
-              , dvInput
-              , oldBulletproofChallenges: dvInput.prevChallenges
-              }
-          Nothing ->
-            liftEffect $ Exc.throw
-              "ExpandDeferredEq: expected Just wrapDvInput from \
-              \compileMulti-produced CompiledProof"
+      ( \(CompiledProofWidthData wd) ->
+          assertExpandDeferredMatches
+            { dvProver: r.wrapDv
+            , dvInput: wd.wrapDvInput
+            , oldBulletproofChallenges: wd.wrapDvInput.prevChallenges
+            }
       )
       r.widthData
 

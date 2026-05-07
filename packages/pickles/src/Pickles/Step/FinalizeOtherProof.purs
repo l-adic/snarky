@@ -33,8 +33,8 @@ import Control.Monad.State.Trans (evalStateT, get, put)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Fin (Finite, getFinite, unsafeFinite)
-import Data.FunctorWithIndex (mapWithIndex)
 import Data.Foldable (foldM)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Int (pow) as Int
 import Data.Maybe (Maybe(..))
 import Data.Reflectable (class Reflectable)
