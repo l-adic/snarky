@@ -14,8 +14,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChainN2
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple (Tuple)
-import Data.Tuple.Nested (type (/\), Tuple2, tuple2)
+import Data.Tuple.Nested (Tuple2, tuple2)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -89,8 +88,7 @@ compileStepMainSimpleChainN2 params = do
     compile (Proxy @Unit) (Proxy @(Vector 67 (F StepField))) (Proxy @(KimchiConstraint StepField))
       -- Single-rule: mpvMax = len = 2, mpvPad = 0.
       ( \_ -> stepMain
-          @( Slot Compiled 2 (StatementIO (F StepField) Unit) /\ (Slot Compiled 2 (StatementIO (F StepField) Unit) /\ Unit)
-          )
+          @(Tuple2 (Slot Compiled 2 (StatementIO (F StepField) Unit)) (Slot Compiled 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

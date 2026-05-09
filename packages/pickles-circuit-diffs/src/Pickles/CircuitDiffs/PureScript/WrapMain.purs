@@ -11,6 +11,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
+import Data.Tuple.Nested (Tuple1)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -51,7 +52,7 @@ compileWrapMainN1 { lagrangeAt, blindingH } stepParams = do
       }
   -- mpv=1, slot 0 width=1; slots derived from PrevsSpec via funcdep.
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
-    (\stmt -> wrapMainForPrevs @1 @(Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit) config stmt)
+    (\stmt -> wrapMainForPrevs @1 @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit))) config stmt)
     Kimchi.initialState
   pure
     { stepCs: stepArt.stepCs

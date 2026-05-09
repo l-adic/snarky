@@ -18,6 +18,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
+import Data.Tuple.Nested (Tuple1)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -62,7 +63,7 @@ compileWrapMainSideLoadedMain { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @(Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit)
+          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
           config
           stmt
     )

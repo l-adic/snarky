@@ -39,7 +39,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (type (/\), Tuple2, tuple1, tuple2, (/\))
+import Data.Tuple.Nested (Tuple2, tuple1, tuple2, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -70,7 +70,9 @@ import Test.Spec (SpecT, describe, it)
 import Test.Spec.Assertions (shouldEqual)
 
 type TreeProofReturnPrevsSpec =
-  Slot Compiled 0 (StatementIO Unit (F StepField)) /\ (Slot Compiled 2 (StatementIO Unit (F StepField)) /\ Unit)
+  Tuple2
+    (Slot Compiled 0 (StatementIO Unit (F StepField)))
+    (Slot Compiled 2 (StatementIO Unit (F StepField)))
 
 treeProofReturnRule
   :: StepRule 2

@@ -21,7 +21,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Tuple (fst)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -110,7 +110,7 @@ type NoRecursionInputRules =
 type SideLoadedMainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit)
+    (Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
     (Tuple1 Unit)
     RulesNil
 

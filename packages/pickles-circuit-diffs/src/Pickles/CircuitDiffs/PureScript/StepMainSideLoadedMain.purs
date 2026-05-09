@@ -20,7 +20,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSideLoadedMain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -104,8 +104,7 @@ compileStepMainSideLoadedMain params =
       -- tag's compile-time upper bound (`N2`). vkCarrier =
       -- `VerificationKey /\ Unit` (from `SideloadedVKsCarrier`).
       ( \_ -> stepMain
-          @( Slot SideLoaded 2 (StatementIO (F StepField) Unit) /\ Unit
-          )
+          @(Tuple1 (Slot SideLoaded 2 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

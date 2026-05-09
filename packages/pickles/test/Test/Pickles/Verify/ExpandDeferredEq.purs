@@ -35,7 +35,7 @@ import Data.Exists (runExists)
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector (Vector)
 import Effect.Aff (Aff)
 import Effect.Class (liftEffect)
@@ -74,7 +74,7 @@ type NrrRules =
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 

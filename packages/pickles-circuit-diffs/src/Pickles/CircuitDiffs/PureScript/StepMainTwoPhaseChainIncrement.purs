@@ -25,7 +25,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainTwoPhaseChainIncrement
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -93,7 +93,7 @@ compileStepMainTwoPhaseChainIncrement makeZeroArt params = do
       -- mpvMax=1 (matches the multi-branch wrap's max_proofs_verified=N1).
       -- mpvPad=0 (this rule's own n = 1 = mpvMax).
       ( \_ -> stepMain
-          @(Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+          @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)

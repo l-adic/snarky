@@ -22,7 +22,7 @@ import Data.Either (Either(..))
 import Data.Int.Bits as Int
 import Data.Maybe (Maybe(..))
 import Data.Tuple (fst)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1, (/\))
+import Data.Tuple.Nested (Tuple1, tuple1, (/\))
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect.Aff (Aff)
@@ -89,7 +89,7 @@ simpleChainRule self = do
 type SimpleChainRules =
   RulesCons 1
     (Tuple1 (StatementIO (F StepField) Unit))
-    (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+    (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
     (Tuple1 SlotWrapKey)
     RulesNil
 

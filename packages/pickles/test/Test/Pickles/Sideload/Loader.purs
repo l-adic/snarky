@@ -62,12 +62,10 @@ import JS.BigInt as JsBigInt
 import Node.Encoding (Encoding(..))
 import Node.FS.Sync (readTextFile)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
-import Pickles.Dummy (baseCaseDummies, computeDummySgValues, dummyIpaChallenges)
-import Pickles.Linearization.FFI (PointEval)
-import Pickles.Linearization.FFI (domainGenerator, domainShifts)
+import Pickles.Dummy (dummyIpaChallenges)
+import Pickles.Linearization.FFI (PointEval, domainGenerator, domainShifts)
 import Pickles.PlonkChecks (AllEvals)
-import Pickles.ProofFFI (Proof)
-import Pickles.ProofFFI (permutationVanishingPolynomial, verifyOpeningProof)
+import Pickles.ProofFFI (Proof, permutationVanishingPolynomial, verifyOpeningProof)
 import Pickles.Prove.Pure.Verify (expandDeferredForVerify)
 import Pickles.Prove.Pure.Wrap (WrapDeferredValuesOutput)
 import Pickles.Prove.Step (extractWrapVKForStepHash)
@@ -294,9 +292,6 @@ loadFixture cfg dir = do
 
   let
     appStateFields = cfg.toFields statement
-    bcd = baseCaseDummies { maxProofsVerified: 0 }
-    dummySgs = computeDummySgValues bcd srs vestaSrs
-    dummyWrapSgInStepField = dummySgs.ipa.wrap.sg
 
     -- Empty width-indexed widthData for `mpv = 0`.
     widthData :: SomeOcamlProofWidthData

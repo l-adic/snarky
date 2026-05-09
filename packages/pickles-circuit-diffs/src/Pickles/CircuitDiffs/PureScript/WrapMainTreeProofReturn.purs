@@ -15,6 +15,7 @@ import Prelude
 
 import Data.Fin (unsafeFinite)
 import Data.Maybe (Maybe(..))
+import Data.Tuple.Nested (Tuple2)
 import Data.Vector ((:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -60,8 +61,7 @@ compileWrapMainTreeProofReturn { lagrangeAt, blindingH } stepParams = do
   wrapCs <- compile (Proxy @WrapMainInput) (Proxy @Unit) (Proxy @(KimchiConstraint WrapField))
     ( \stmt ->
         wrapMainForPrevs @1
-          @( Slot Compiled 0 (StatementIO Unit (F StepField)) /\ (Slot Compiled 2 (StatementIO Unit (F StepField)) /\ Unit)
-          )
+          @(Tuple2 (Slot Compiled 0 (StatementIO Unit (F StepField))) (Slot Compiled 2 (StatementIO Unit (F StepField))))
           config
           stmt
     )

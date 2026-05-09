@@ -139,7 +139,7 @@ mkMakeZeroEntry = mkRuleEntry @1 @Unit @(F StepField) makeZeroRule unit
 mkIncrementEntry
   :: Effect
        ( RuleEntry
-           (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+           (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
            1
            2
            (Tuple1 (StatementIO (F StepField) Unit))
@@ -163,7 +163,7 @@ mkRulesCarrier
        ( Tuple2
            (RuleEntry Unit 0 2 Unit (F StepField) Unit 34 Unit Unit)
            ( RuleEntry
-               (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+               (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
                1
                2
                (Tuple1 (StatementIO (F StepField) Unit))
@@ -192,7 +192,7 @@ type TwoPhaseChainRules =
   RulesCons 0 Unit Unit Unit
     ( RulesCons 1
         (Tuple1 (StatementIO (F StepField) Unit))
-        (Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+        (Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
         (Tuple1 SlotWrapKey)
         RulesNil
     )

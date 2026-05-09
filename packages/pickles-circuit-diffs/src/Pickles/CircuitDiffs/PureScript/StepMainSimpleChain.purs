@@ -13,7 +13,7 @@ module Pickles.CircuitDiffs.PureScript.StepMainSimpleChain
 import Prelude
 
 import Control.Monad.Trans.Class (lift)
-import Data.Tuple.Nested (type (/\), Tuple1, tuple1)
+import Data.Tuple.Nested (Tuple1, tuple1)
 import Data.Vector (Vector, (:<))
 import Data.Vector as Vector
 import Effect (Effect)
@@ -88,7 +88,7 @@ compileStepMainSimpleChain params = do
       --       @prevInputVal @prevInput @valCarrier @mpvMax @mpvPad.
       -- Single-rule: mpvMax = len = 1, mpvPad = 0.
       ( \_ -> stepMain
-          @(Slot Compiled 1 (StatementIO (F StepField) Unit) /\ Unit)
+          @(Tuple1 (Slot Compiled 1 (StatementIO (F StepField) Unit)))
           @(F StepField)
           @Unit
           @(F StepField)
