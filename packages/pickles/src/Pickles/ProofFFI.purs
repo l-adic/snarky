@@ -25,12 +25,8 @@ module Pickles.ProofFFI
   -- Functions not in typeclass (use different field than circuit field f)
   , pallasProofOracles
   , vestaProofOracles
-  , pallasSpongeCheckpointBeforeChallenges
-  , vestaSpongeCheckpointBeforeChallenges
   , pallasProofOpeningLr
   , vestaProofOpeningLr
-  , pallasProofLrProd
-  , vestaProofLrProd
   , pallasProofOpeningDelta
   , vestaProofOpeningDelta
   , pallasProofOpeningSg
@@ -41,41 +37,18 @@ module Pickles.ProofFFI
   , vestaProofOpeningZ2
   , pallasProofOpeningPrechallenges
   , vestaProofOpeningPrechallenges
-  , pallasProverIndexBlindingGenerator
-  , vestaProverIndexBlindingGenerator
-  , pallasCombinedPolynomialCommitment
-  , vestaCombinedPolynomialCommitment
-  , pallasDebugVerify
-  , vestaDebugVerify
-  , pallasComputeUT
-  , vestaComputeUT
-  , pallasVerifierIndexMaxPolySize
   , pallasProverIndexDomainLog2
-  , vestaProverIndexDomainLog2
-  , vestaVerifierIndexMaxPolySize
-  , pallasVerifierIndexDigest
   , vestaVerifierIndexDigest
-  , pallasPublicComm
-  , vestaPublicComm
-  , pallasLagrangeCommitments
-  , vestaLagrangeCommitments
-  , pallasSrsLagrangeCommitments
-  , vestaSrsLagrangeCommitments
   , pallasSrsLagrangeCommitmentAt
   , vestaSrsLagrangeCommitmentAt
   , pallasSrsBlindingGenerator
   , vestaSrsBlindingGenerator
   , pallasProofCommitments
   , vestaProofCommitments
-  , pallasFtComm
-  , vestaFtComm
-  , pallasPermScalar
-  , vestaPermScalar
   , pallasSigmaCommLast
   , vestaSigmaCommLast
   , pallasVerifierIndexColumnComms
   , vestaVerifierIndexColumnComms
-  , pallasChallengePolyCommitment
   , vestaChallengePolyCommitment
   , vestaMakeWireProof
   , Dehydrated(..)
@@ -348,9 +321,6 @@ foreign import vestaVerifyOpeningProof :: VerifierIndex Pallas.G Vesta.BaseField
 -- `group_map`. It is squeezed in the commitment curve's BASE field (=
 -- the OTHER scalar field in the 2-cycle): for a Vesta proof it's Fq =
 -- `Pallas.ScalarField`; for a Pallas proof it's Fp = `Vesta.ScalarField`.
-foreign import pallasComputeUT :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Pallas.ScalarField
-foreign import vestaComputeUT :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Vesta.ScalarField
-
 foreign import pallasPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Pallas.BaseField } -> Pallas.BaseField
 foreign import vestaPermutationVanishingPolynomial :: { domainLog2 :: Int, zkRows :: Int, pt :: Vesta.BaseField } -> Vesta.BaseField
 
@@ -366,9 +336,6 @@ foreign import vestaProofIpaRounds :: Proof Pallas.G Vesta.BaseField -> Int
 -- Note: Sponge checkpoint state is in the commitment curve's base field (the "other" field in the 2-cycle)
 -- Pallas circuits use Vesta for commitments, so sponge is over Vesta.BaseField = Pallas.ScalarField
 -- Vesta circuits use Pallas for commitments, so sponge is over Pallas.BaseField = Vesta.ScalarField
-foreign import pallasSpongeCheckpointBeforeChallenges :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> SpongeCheckpoint Pallas.ScalarField
-foreign import vestaSpongeCheckpointBeforeChallenges :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> SpongeCheckpoint Vesta.ScalarField
-
 -- Note: L/R coordinates are in the commitment curve's base field (the "other" field in the 2-cycle)
 -- For Pallas circuits using Vesta commitments: Vesta.BaseField = Pallas.ScalarField
 -- For Vesta circuits using Pallas commitments: Pallas.BaseField = Vesta.ScalarField
@@ -378,9 +345,6 @@ foreign import vestaProofOpeningLr :: Proof Pallas.G Vesta.BaseField -> Array (L
 -- lr_prod: the curve point sum from bullet_reduce
 -- lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
 -- Returns the coordinates of the result point in the commitment curve's base field
-foreign import pallasProofLrProd :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
-foreign import vestaProofLrProd :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
-
 -- Opening proof delta (curve point)
 -- Coordinates are in the commitment curve's base field
 foreign import pallasProofOpeningDelta :: Proof Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
@@ -400,22 +364,10 @@ foreign import pallasProofOpeningZ2 :: Proof Vesta.G Pallas.BaseField -> Pallas.
 foreign import vestaProofOpeningZ2 :: Proof Pallas.G Vesta.BaseField -> Vesta.BaseField
 
 -- Blinding generator H from SRS (coordinates in commitment curve's base field)
-foreign import pallasProverIndexBlindingGenerator :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
-foreign import vestaProverIndexBlindingGenerator :: VerifierIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
-
 -- Combined polynomial commitment (coordinates in commitment curve's base field)
 -- This is the batched commitment: sum_i polyscale^i * C_i
-foreign import pallasCombinedPolynomialCommitment :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
-foreign import vestaCombinedPolynomialCommitment :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
-
 -- Debug verification: prints intermediate IPA values to stderr
-foreign import pallasDebugVerify :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Unit
-foreign import vestaDebugVerify :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Unit
-
 -- Max polynomial size from verifier index
-foreign import pallasVerifierIndexMaxPolySize :: VerifierIndex Vesta.G Pallas.BaseField -> Int
-foreign import vestaVerifierIndexMaxPolySize :: VerifierIndex Pallas.G Vesta.BaseField -> Int
-
 -- | Domain log2 size from a prover index. This is the `log_size_of_group` of
 -- | the `d1` evaluation domain, i.e. the kimchi compile domain — what
 -- | `Fix_domains.domains` returned for the circuit that was compiled.
@@ -424,24 +376,11 @@ foreign import vestaVerifierIndexMaxPolySize :: VerifierIndex Pallas.G Vesta.Bas
 -- | use `pallasProverIndexDomainLog2`. For wrap-circuit prover indices
 -- | (Pallas commitments, Vesta.BaseField = Fq), use `vestaProverIndexDomainLog2`.
 foreign import pallasProverIndexDomainLog2 :: ProverIndex Vesta.G Pallas.BaseField -> Int
-foreign import vestaProverIndexDomainLog2 :: ProverIndex Pallas.G Vesta.BaseField -> Int
-
 -- Fq-sponge transcript helpers
 -- VK digest: returns Fq element (Pallas.ScalarField)
-foreign import pallasVerifierIndexDigest :: VerifierIndex Vesta.G Pallas.BaseField -> Pallas.ScalarField
-
 -- Public input polynomial commitment: returns array of {x, y} points in Fq (one per chunk)
-foreign import pallasPublicComm :: VerifierIndex Vesta.G Pallas.BaseField -> Array Pallas.BaseField -> Array (AffinePoint Pallas.ScalarField)
-foreign import vestaPublicComm :: VerifierIndex Pallas.G Vesta.BaseField -> Array Vesta.BaseField -> Array (AffinePoint Vesta.ScalarField)
-
 -- Lagrange commitment points from SRS (constant bases for public input MSM)
-foreign import pallasLagrangeCommitments :: VerifierIndex Vesta.G Pallas.BaseField -> Int -> Array (AffinePoint Pallas.ScalarField)
-foreign import vestaLagrangeCommitments :: VerifierIndex Pallas.G Vesta.BaseField -> Int -> Array (AffinePoint Vesta.ScalarField)
-
 -- Lagrange commitments directly from SRS (no verifier index needed)
-foreign import pallasSrsLagrangeCommitments :: CRS Vesta.G -> Int -> Int -> Array (AffinePoint Pallas.ScalarField)
-foreign import vestaSrsLagrangeCommitments :: CRS Pallas.G -> Int -> Int -> Array (AffinePoint Vesta.ScalarField)
-
 -- | Fetch a single lagrange commitment by index from an SRS. PureScript
 -- | analog of OCaml `Kimchi_bindings.Protocol.SRS.Fq.lagrange_commitment`
 -- | (used in `step_verifier.ml:360-368`). Kimchi caches the full basis on
@@ -458,11 +397,7 @@ foreign import pallasSrsBlindingGenerator :: CRS Vesta.G -> AffinePoint Pallas.S
 foreign import vestaSrsBlindingGenerator :: CRS Pallas.G -> AffinePoint Vesta.ScalarField
 
 -- ft_comm: the chunked commitment of the linearized constraint polynomial (in Fq)
-foreign import pallasFtComm :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> AffinePoint Pallas.ScalarField
-
 -- perm_scalar: the scalar multiplier for sigma_comm_last in the linearization (in Fp)
-foreign import pallasPermScalar :: VerifierIndex Vesta.G Pallas.BaseField -> { proof :: Proof Vesta.G Pallas.BaseField, publicInput :: Array Pallas.BaseField } -> Pallas.BaseField
-
 -- sigma_comm[PERMUTS-1] from verifier index (in Fq)
 foreign import pallasSigmaCommLast :: VerifierIndex Vesta.G Pallas.BaseField -> AffinePoint Pallas.ScalarField
 
@@ -473,7 +408,6 @@ foreign import vestaVerifierIndexColumnComms :: VerifierIndex Pallas.G Vesta.Bas
 -- Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
 -- Challenges are in the commitment curve's scalar field (= circuit field)
 -- Returns point coordinates in the commitment curve's base field
-foreign import pallasChallengePolyCommitment :: VerifierIndex Vesta.G Pallas.BaseField -> Array Pallas.BaseField -> AffinePoint Pallas.ScalarField
 foreign import vestaChallengePolyCommitment :: VerifierIndex Pallas.G Vesta.BaseField -> Array Vesta.BaseField -> AffinePoint Vesta.ScalarField
 
 -- | Proof commitments structured for Fq-sponge absorption.
@@ -490,11 +424,7 @@ foreign import pallasProofCommitments :: Proof Vesta.G Pallas.BaseField -> Proof
 foreign import vestaProofCommitments :: Proof Pallas.G Vesta.BaseField -> ProofCommitments Vesta.ScalarField
 
 -- ft_comm for Vesta/Fq circuits
-foreign import vestaFtComm :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> AffinePoint Vesta.ScalarField
-
 -- perm_scalar for Vesta/Fq circuits
-foreign import vestaPermScalar :: VerifierIndex Pallas.G Vesta.BaseField -> { proof :: Proof Pallas.G Vesta.BaseField, publicInput :: Array Vesta.BaseField } -> Vesta.BaseField
-
 -- sigma_comm[PERMUTS-1] from Vesta verifier index
 foreign import vestaSigmaCommLast :: VerifierIndex Pallas.G Vesta.BaseField -> AffinePoint Vesta.ScalarField
 

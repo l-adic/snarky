@@ -1,22 +1,14 @@
 -- | Side-loading FFI wrappers for kimchi VK + proof JSON serialization.
 -- |
--- | Naming follows `pallasCreateProof`/`vestaCreateProof`:
--- | `pallas`-prefixed functions operate on the Pallas-protocol (Fp
--- | scalar field, Vesta-curve commitments → `Proof Vesta.G
--- | Pallas.BaseField`); `vesta`-prefixed ones on the Vesta-protocol
--- | (Fq, Pallas-curve → `Proof Pallas.G Vesta.BaseField`).
+-- | Vesta-protocol only (Pickles wrap proofs are always
+-- | `Proof Pallas.G Vesta.BaseField`); the Pallas-protocol family was
+-- | never used.
 module Pickles.Sideload.FFI
-  ( pallasVerifierIndexToSerdeJson
-  , pallasVerifierIndexFromSerdeJson
-  , pallasHydrateVerifierIndex
+  ( VkFeatureFlags
   , vestaVerifierIndexToSerdeJson
   , vestaVerifierIndexFromSerdeJson
   , vestaHydrateVerifierIndex
-  , VkFeatureFlags
   , noOptionalFeatures
-  , pallasProofToSerdeJson
-  , pallasProofFromSerdeJson
-  , vestaProofToSerdeJson
   , vestaProofFromSerdeJson
   ) where
 
@@ -49,57 +41,29 @@ noOptionalFeatures =
   , lookup: false
   }
 
--- | Pallas-protocol VK serde JSON.
-foreign import pallasVerifierIndexToSerdeJson :: VerifierIndex Vesta.G Pallas.BaseField -> String
-
--- | Inverse of `pallasVerifierIndexToSerdeJson`. Reattaches the
--- | supplied SRS (skipped on serialize). The kimchi VK's
--- | `linearization` and `powers_of_alpha` fields also serde-skip and
--- | come back empty, so the result is *dehydrated* — pipe through
--- | `pallasHydrateVerifierIndex` before verify.
-foreign import pallasVerifierIndexFromSerdeJson
-  :: String
-  -> CRS Vesta.G
-  -> Dehydrated (VerifierIndex Vesta.G Pallas.BaseField)
-
--- | Hydrate a dehydrated Pallas-protocol VK by recomputing
--- | `linearization` + `powers_of_alpha` from the feature flags. The
--- | trailing `Boolean` is `generic` (include Generic gate constraints);
--- | always `true` for Pickles wrap proofs.
-foreign import pallasHydrateVerifierIndex
-  :: Dehydrated (VerifierIndex Vesta.G Pallas.BaseField)
-  -> VkFeatureFlags
-  -> Boolean
-  -> VerifierIndex Vesta.G Pallas.BaseField
-
 -- | Vesta-protocol VK serde JSON.
 foreign import vestaVerifierIndexToSerdeJson :: VerifierIndex Pallas.G Vesta.BaseField -> String
 
--- | Inverse of `vestaVerifierIndexToSerdeJson`. Dehydrated result;
--- | see `pallasVerifierIndexFromSerdeJson`.
+-- | Inverse of `vestaVerifierIndexToSerdeJson`. Reattaches the supplied
+-- | SRS (skipped on serialize). The kimchi VK's `linearization` and
+-- | `powers_of_alpha` fields also serde-skip and come back empty, so
+-- | the result is *dehydrated* — pipe through `vestaHydrateVerifierIndex`
+-- | before verify.
 foreign import vestaVerifierIndexFromSerdeJson
   :: String
   -> CRS Pallas.G
   -> Dehydrated (VerifierIndex Pallas.G Vesta.BaseField)
 
--- | Hydrate a dehydrated Vesta-protocol VK; see
--- | `pallasHydrateVerifierIndex` for argument semantics.
+-- | Hydrate a dehydrated Vesta-protocol VK by recomputing
+-- | `linearization` + `powers_of_alpha` from the feature flags. The
+-- | trailing `Boolean` is `generic` (include Generic gate constraints);
+-- | always `true` for Pickles wrap proofs.
 foreign import vestaHydrateVerifierIndex
   :: Dehydrated (VerifierIndex Pallas.G Vesta.BaseField)
   -> VkFeatureFlags
   -> Boolean
   -> VerifierIndex Pallas.G Vesta.BaseField
 
--- | Pallas-protocol kimchi `ProverProof` serde JSON. Public input is
+-- | Vesta-protocol kimchi `ProverProof` serde JSON. Public input is
 -- | NOT included; callers serialize it separately.
-foreign import pallasProofToSerdeJson :: Proof Vesta.G Pallas.BaseField -> String
-
--- | Inverse of `pallasProofToSerdeJson`. Public input must be supplied
--- | separately.
-foreign import pallasProofFromSerdeJson :: String -> Proof Vesta.G Pallas.BaseField
-
--- | Vesta-protocol kimchi `ProverProof` serde JSON.
-foreign import vestaProofToSerdeJson :: Proof Pallas.G Vesta.BaseField -> String
-
--- | Inverse of `vestaProofToSerdeJson`.
 foreign import vestaProofFromSerdeJson :: String -> Proof Pallas.G Vesta.BaseField

@@ -107,9 +107,7 @@ readFixture path = do
 --------------------------------------------------------------------------------
 -- SRS FFI
 
-foreign import pallasSrsLagrangeCommitments :: CRS VestaG -> Int -> Int -> Array (AffinePoint Fq)
 foreign import pallasSrsBlindingGenerator :: CRS VestaG -> AffinePoint Fq
-foreign import vestaSrsLagrangeCommitments :: CRS PallasG -> Int -> Int -> Array (AffinePoint Fp)
 foreign import vestaSrsBlindingGenerator :: CRS PallasG -> AffinePoint Fp
 
 -- Index-based per-commitment lookup, OCaml-parity for

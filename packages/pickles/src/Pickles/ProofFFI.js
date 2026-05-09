@@ -146,13 +146,6 @@ export const vestaProofBulletproofChallenges = (verifierIndex) => ({ proof, publ
 
 // Compute kimchi's `u_t` scalar (post-CIP-absorb, pre-group_map). Used for
 // byte-diffing against the wrap circuit's in-circuit sponge state.
-export const pallasComputeUT = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.pallasComputeUT(verifierIndex, proof, publicInput);
-
-export const vestaComputeUT = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.vestaComputeUT(verifierIndex, proof, publicInput);
-
-// Verify opening proof
 export const pallasVerifyOpeningProof = (verifierIndex) => ({ proof, publicInput }) =>
   crypto.pallasVerifyOpeningProof(verifierIndex, proof, publicInput);
 
@@ -189,24 +182,6 @@ export const vestaProofIpaRounds = (proof) =>
 
 // Sponge checkpoint before L/R processing
 // Returns { state: [f, f, f], spongeMode: String, modeCount: Int }
-export const pallasSpongeCheckpointBeforeChallenges = (verifierIndex) => ({ proof, publicInput }) => {
-  const checkpoint = crypto.pallasSpongeCheckpoint(verifierIndex, proof, publicInput);
-  return {
-    state: crypto.pallasSpongeCheckpointState(checkpoint),
-    spongeMode: crypto.pallasSpongeCheckpointMode(checkpoint),
-    modeCount: crypto.pallasSpongeCheckpointModeCount(checkpoint)
-  };
-};
-
-export const vestaSpongeCheckpointBeforeChallenges = (verifierIndex) => ({ proof, publicInput }) => {
-  const checkpoint = crypto.vestaSpongeCheckpoint(verifierIndex, proof, publicInput);
-  return {
-    state: crypto.vestaSpongeCheckpointState(checkpoint),
-    spongeMode: crypto.vestaSpongeCheckpointMode(checkpoint),
-    modeCount: crypto.vestaSpongeCheckpointModeCount(checkpoint)
-  };
-};
-
 
 // Proof opening L/R pairs - parse flat array into structured points
 // Returns [{l: {x, y}, r: {x, y}}, ...]
@@ -230,16 +205,6 @@ export const vestaProofOpeningLr = (proof) =>
 // lr_prod: the curve point sum from bullet_reduce
 // lr_prod = Σ_i [chal_inv[i] * L_i + chal[i] * R_i]
 // Returns { x, y } coordinates of the result point
-export const pallasProofLrProd = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.pallasProofLrProd(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
-export const vestaProofLrProd = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.vestaProofLrProd(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
 // Opening proof delta (curve point)
 // Returns { x, y } coordinates
 export const pallasProofOpeningDelta = (proof) => {
@@ -280,105 +245,15 @@ export const vestaProofOpeningZ2 = (proof) =>
 
 // Blinding generator H from SRS
 // Returns { x, y } coordinates
-export const pallasProverIndexBlindingGenerator = (verifierIndex) => {
-  const coords = crypto.pallasProverIndexBlindingGenerator(verifierIndex);
-  return { x: coords[0], y: coords[1] };
-};
-
-export const vestaProverIndexBlindingGenerator = (verifierIndex) => {
-  const coords = crypto.vestaProverIndexBlindingGenerator(verifierIndex);
-  return { x: coords[0], y: coords[1] };
-};
-
 // Combined polynomial commitment (batched sum_i polyscale^i * C_i)
 // Returns { x, y } coordinates
-export const pallasCombinedPolynomialCommitment = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.pallasCombinedPolynomialCommitment(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
-export const vestaCombinedPolynomialCommitment = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.vestaCombinedPolynomialCommitment(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
 // Debug verification - prints intermediate IPA values
-export const pallasDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.pallasDebugVerify(verifierIndex, proof, publicInput);
-
-export const vestaDebugVerify = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.vestaDebugVerify(verifierIndex, proof, publicInput);
-
-// Max polynomial size from verifier index
-export const pallasVerifierIndexMaxPolySize = (verifierIndex) =>
-  crypto.pallasVerifierIndexMaxPolySize(verifierIndex);
-
-export const vestaVerifierIndexMaxPolySize = (verifierIndex) =>
-  crypto.vestaVerifierIndexMaxPolySize(verifierIndex);
-
-// Domain log2 size (d1.log_size_of_group) from a prover index — i.e. the
-// actual kimchi compile domain returned by Fix_domains.domains for this
-// circuit. Use this instead of hardcoded domain constants when the caller
-// needs to match the compiled circuit's size.
 export const pallasProverIndexDomainLog2 = (proverIndex) =>
   crypto.pallasProverIndexDomainLog2(proverIndex);
 
-export const vestaProverIndexDomainLog2 = (proverIndex) =>
-  crypto.vestaProverIndexDomainLog2(proverIndex);
-
-// Verifier index digest (Fq element)
-export const pallasVerifierIndexDigest = (verifierIndex) =>
-  crypto.pallasVerifierIndexDigest(verifierIndex);
-
-// Public input polynomial commitment (returns array of {x, y} points in Fq, one per chunk)
-export const pallasPublicComm = (verifierIndex) => (publicInput) => {
-  const flat = crypto.pallasPublicComm(verifierIndex, publicInput);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
 // Lagrange commitments from SRS
 // Returns array of {x, y} points
-export const pallasLagrangeCommitments = (verifierIndex) => (count) => {
-  const flat = crypto.pallasLagrangeCommitments(verifierIndex, count);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
-export const vestaLagrangeCommitments = (verifierIndex) => (count) => {
-  const flat = crypto.vestaLagrangeCommitments(verifierIndex, count);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
 // Lagrange commitments directly from SRS (no verifier index needed)
-export const pallasSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => {
-  const flat = crypto.pallasSrsLagrangeCommitments(srs, domainLog2, count);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
-export const vestaSrsLagrangeCommitments = (srs) => (domainLog2) => (count) => {
-  const flat = crypto.vestaSrsLagrangeCommitments(srs, domainLog2, count);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
 // Index-based lagrange commitment lookup (OCaml-parity for
 // `Kimchi_bindings.Protocol.SRS.Fq/Fp.lagrange_commitment`).
 export const pallasSrsLagrangeCommitmentAt = (srs) => (domainLog2) => (i) => {
@@ -402,22 +277,8 @@ export const vestaSrsBlindingGenerator = (srs) => {
   return { x: flat[0], y: flat[1] };
 };
 
-export const vestaPublicComm = (verifierIndex) => (publicInput) => {
-  const flat = crypto.vestaPublicComm(verifierIndex, publicInput);
-  const result = [];
-  for (let i = 0; i < flat.length; i += 2) {
-    result.push({ x: flat[i], y: flat[i + 1] });
-  }
-  return result;
-};
-
 // Challenge polynomial commitment: MSM of b_poly_coefficients against SRS
 // Returns { x, y } coordinates
-export const pallasChallengePolyCommitment = (verifierIndex) => (challenges) => {
-  const coords = crypto.pallasChallengePolyCommitment(verifierIndex, challenges);
-  return { x: coords[0], y: coords[1] };
-};
-
 export const vestaChallengePolyCommitment = (verifierIndex) => (challenges) => {
   const coords = crypto.vestaChallengePolyCommitment(verifierIndex, challenges);
   return { x: coords[0], y: coords[1] };
@@ -425,18 +286,8 @@ export const vestaChallengePolyCommitment = (verifierIndex) => (challenges) => {
 
 // ft_comm: the chunked commitment of the linearized constraint polynomial
 // Returns { x, y } coordinates in Fq
-export const pallasFtComm = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.pallasFtComm(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
 // perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization
 // Returns a single Fp element
-export const pallasPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.pallasPermScalar(verifierIndex, proof, publicInput);
-
-// sigma_comm[PERMUTS-1]: the last sigma commitment from verifier index
-// Returns { x, y } coordinates in Fq
 export const pallasSigmaCommLast = (verifierIndex) => {
   const coords = crypto.pallasVerifierIndexSigmaCommLast(verifierIndex);
   return { x: coords[0], y: coords[1] };
@@ -463,18 +314,8 @@ export const vestaVerifierIndexColumnComms = (verifierIndex) => {
 
 // ft_comm: the chunked commitment of the linearized constraint polynomial (Vesta/Fq circuits)
 // Returns { x, y } coordinates in Fp
-export const vestaFtComm = (verifierIndex) => ({ proof, publicInput }) => {
-  const coords = crypto.vestaFtComm(verifierIndex, proof, publicInput);
-  return { x: coords[0], y: coords[1] };
-};
-
 // perm_scalar: the scalar multiplier for sigma_comm[PERMUTS-1] in the linearization (Vesta/Fq circuits)
 // Returns a single Fq element
-export const vestaPermScalar = (verifierIndex) => ({ proof, publicInput }) =>
-  crypto.vestaPermScalar(verifierIndex, proof, publicInput);
-
-// sigma_comm[PERMUTS-1]: the last sigma commitment from Vesta verifier index
-// Returns { x, y } coordinates in Fp
 export const vestaSigmaCommLast = (verifierIndex) => {
   const coords = crypto.vestaVerifierIndexSigmaCommLast(verifierIndex);
   return { x: coords[0], y: coords[1] };
